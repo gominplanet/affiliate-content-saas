@@ -16,8 +16,9 @@ import { walkthroughId } from '@/lib/tutorial-videos'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe, getScoutStatus, requestPinComment } from '@/lib/extension-frame'
-import { SCOUT_STORE_LISTING_URL, SCOUT_PIN_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { pinFirstComment } from '@/lib/first-comment-pins'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { draftVisibility, productLinkFor, studioDisclosuresConfirmed, studioSetVisibility, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone } from '@/lib/studio-finish'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -559,27 +560,8 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   )
 }
 
-/**
- * PIN A FIRST COMMENT THROUGH SCOUT, AND SAY WHAT HAPPENED. YouTube has no
- * pin API, so SCOUT pins it in the creator's own signed-in YouTube and
- * reports whether the pinned badge showed; that report is saved.
- */
-async function pinFirstComment(rowId: string, youtubeVideoId: string, commentId: string): Promise<{ pinned: boolean; error?: string }> {
-  const scout = await getScoutStatus()
-  const fail = (error: string) => ({ pinned: false, error })
-  let r: { pinned: boolean; error?: string }
-  if (!scout.installed) r = fail('SCOUT is not installed in this browser, so it is not pinned. Pin it in YouTube Studio.')
-  else if (!scoutAtLeast(scout.version, SCOUT_PIN_MIN_VERSION)) r = fail(`SCOUT ${scout.version ?? ''} cannot pin yet; Chrome updates it by itself soon.`)
-  else {
-    const res = await requestPinComment(youtubeVideoId, commentId)
-    r = res.ok && res.pinned ? { pinned: true } : fail(`${res.error || 'SCOUT could not pin it.'}${res.steps ? ` What SCOUT saw: ${res.steps}.` : ''}`)
-  }
-  await fetch(`/api/youtube/first-comment/${rowId}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'pin_result', pinned: r.pinned, error: r.error }),
-  }).catch(() => {})
-  return r
-}
+// pinFirstComment lives in lib/first-comment-pins, shared with Liftoff and
+// the older videos tool.
 
 /**
  * FIRST COMMENTS WAITING FOR THEIR PIN. A scheduled video gets its first
@@ -888,8 +870,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
     | null
   >(null)
   async function queueFirstComment() {
+    // EVERY PUSH GETS ONE. An empty generated comment used to mean no comment
+    // and no word about it; the server writes one from the video instead.
     const text = (generated?.pinnedComment || '').trim()
-    if (!canFirstComment || !firstCommentOn || !text) return
+    if (!canFirstComment || !firstCommentOn) return
     setFirstComment({ state: 'sending' })
     try {
       const r = await fetch('/api/youtube/first-comment', {

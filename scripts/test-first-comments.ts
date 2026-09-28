@@ -5,6 +5,7 @@
 
 import { readFileSync } from 'node:fs'
 import { firstCommentDue } from '../lib/first-comments'
+import { productLinkIn, withLinkDisclosure, fallbackFirstComment } from '../lib/first-comment-text'
 import { canUsePreview } from '../lib/labs-preview'
 
 const failures: string[] = []
@@ -50,7 +51,8 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   check('pushing queues it (both push paths), and the creator can switch it off first',
     (P.match(/setApplied\(true\)\s*\n\s*void queueFirstComment\(\)/g) ?? []).length === 2 && /Post and pin it for me/.test(P))
   check('pinned is said only when SCOUT saw it, and the result is saved',
-    /res\.ok && res\.pinned \? \{ pinned: true \}/.test(P) && /action: 'pin_result'/.test(P))
+    /res\.ok && res\.pinned \? \{ pinned: true \}/.test(read('lib/first-comment-pins.ts')) && /action: 'pin_result'/.test(read('lib/first-comment-pins.ts'))
+    && /import \{ pinFirstComment \} from '@\/lib\/first-comment-pins'/.test(P))
   check('posted comments not yet pinned can be pinned in one press', /<FirstCommentsToPin \/>/.test(P) && /Pin them with SCOUT/.test(P))
 }
 
@@ -63,6 +65,36 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   check('and the sale ending restores the original comment exactly', /lasting_text: first\.text/.test(C))
   check('a deleted first comment falls back to a new comment, and says so on its row', /The first comment is no longer on the video\./.test(C))
   check('the Encore page does not re-pin a comment that already holds the pin', /if \(j\.pinned\) \{ setPin\(\{ pinned: true \}\); return \}/.test(read('components/labs/OnSale.tsx')))
+}
+
+// ── Every Co-Pilot and Liftoff upload gets one, and it says it is a paid link ──
+{
+  check('the product link is the description\'s own, not a social link',
+    productLinkIn('Subscribe https://youtube.com/@me\nGet it: https://mvpl.ink/Ab12Cd. Follow https://instagram.com/me') === 'https://mvpl.ink/Ab12Cd')
+  check('no link, no link', productLinkIn('just words') === null)
+  check('a bare affiliate link gets "(paid link)" beside it', withLinkDisclosure('Grab it here https://amzn.to/x !', 'https://amzn.to/x') === 'Grab it here https://amzn.to/x (paid link) !')
+  check('an already disclosed comment is left alone', withLinkDisclosure('https://amzn.to/x #ad', 'https://amzn.to/x') === 'https://amzn.to/x #ad')
+  check('the plain comment discloses its link', /https:\/\/amzn\.to\/x \(paid link\)/.test(fallbackFirstComment('T', 'https://amzn.to/x')))
+  const DRAIN = read('app/api/cron/launch-drain/route.ts')
+  check('Liftoff queues a first comment for every video it uploads, behind the Labs gate, never failing the upload',
+    /if \(canUsePreview\('first_comment', tier\)\) \{\s*const q = await queueFirstComment\(sb, \{/.test(DRAIN) && /\[launch-drain\] first comment not queued/.test(DRAIN)
+    && DRAIN.indexOf('await queueFirstComment(sb, {') < DRAIN.indexOf('const handed = await handOverToAmazon(sb, it, videoId, channelId, goNow'))
+  check('videos Liftoff uploaded before this, or whose queueing failed, are caught up',
+    /async function firstCommentCatchUp\(/.test(DRAIN) && /await firstCommentCatchUp\(sb, left\)/.test(DRAIN))
+  const Q = read('lib/first-comment-queue.ts')
+  check('one per video, whoever asks first', /if \(existing\) return \{ queued: false, why: 'already'/.test(Q) && /error\?\.code === '23505'/.test(Q))
+  const ROUTE = read('app/api/youtube/first-comment/route.ts')
+  check('a push with no generated comment still gets one, written from the video', /if \(!text\) \{\s*const w = await writeFirstComment\(/.test(ROUTE))
+  const CP = read('app/(dashboard)/co-pilot/page.tsx')
+  check('Co-Pilot queues on every push, not only when a comment was generated', /if \(!canFirstComment \|\| !firstCommentOn\) return/.test(CP) && !/!firstCommentOn \|\| !text\) return/.test(CP))
+  const RUN = read('components/launch/LiftoffRunner.tsx')
+  check('Liftoff\'s background tab pins what was posted, and comes back for one due soon',
+    /const pins = await pinUntriedFirstComments\(say\)/.test(RUN) && /if \(pins\.dueSoon\) \{ more = true/.test(RUN))
+  const PINS = read('lib/first-comment-pins.ts')
+  check('the background only pins what was never tried', /x\.pinned === null/.test(PINS))
+  const REP = read('components/launch/LaunchReport.tsx')
+  check('the launch report shows each video\'s first comment, pinned being the only yes',
+    /<Check label="First comment"/.test(REP) && /fc\.pinned === true/.test(REP))
 }
 
 if (failures.length) {

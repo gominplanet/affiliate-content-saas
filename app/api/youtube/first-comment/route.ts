@@ -3,7 +3,8 @@
 // /api/youtube/first-comment — the pinned first comment Co-Pilot posts on a
 // video it pushed (lib/first-comments, migration 377). LABS.
 //
-// POST { youtubeVideoId, text, videoTitle? } queues it, and posts it at once
+// POST { youtubeVideoId, text?, videoTitle? } queues it (writing the text when
+// none is sent), and posts it at once
 // when the video is already public. A video that already has its first
 // comment posted is never given a second one.
 // GET lists the creator's first comments, newest first, for the page to show
@@ -14,6 +15,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { postFirstCommentIfPublic, type FirstCommentRow } from '@/lib/first-comments'
+import { writeFirstComment } from '@/lib/first-comment-writer'
+import { productLinkIn } from '@/lib/first-comment-text'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -45,16 +48,28 @@ export async function POST(req: Request) {
   if ('error' in g) return g.error
   const body = await req.json().catch(() => ({})) as { youtubeVideoId?: string; text?: string; videoTitle?: string }
   const videoId = String(body.youtubeVideoId || '').trim()
-  const text = String(body.text || '').trim().slice(0, 1500)
-  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !text) {
-    return NextResponse.json({ error: 'A video and the comment text are both needed.' }, { status: 400 })
+  let text = String(body.text || '').trim().slice(0, 1500)
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+    return NextResponse.json({ error: 'Which video is this for? No YouTube video id was sent.' }, { status: 400 })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
   // The video's channel, when MVP knows it; the job asks YouTube either way.
-  const { data: vid } = await admin.from('youtube_videos').select('channel_id')
+  const { data: vid } = await admin.from('youtube_videos').select('channel_id,title,description')
     .eq('user_id', g.user.id).eq('youtube_video_id', videoId).maybeSingle()
   const channel = /^UC[\w-]{22}$/.test(String(vid?.channel_id || '')) ? String(vid?.channel_id) : null
+  // NO TEXT IS NOT NO COMMENT. A push whose generated comment came back empty
+  // used to queue nothing and say nothing; the comment is written here instead,
+  // from the video's own title and the link in its description.
+  let written: 'sent' | 'ai' | 'plain' = 'sent'
+  if (!text) {
+    const w = await writeFirstComment({
+      userId: g.user.id, title: body.videoTitle || vid?.title || null,
+      description: vid?.description ?? null, link: productLinkIn(vid?.description),
+    })
+    text = w.text.slice(0, 1500)
+    written = w.written
+  }
 
   const { data: existing, error: exErr } = await admin.from('video_first_comments')
     .select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at')
@@ -82,5 +97,5 @@ export async function POST(req: Request) {
     row = ins
   }
   const out = await postFirstCommentIfPublic(admin, row)
-  return NextResponse.json({ ok: out.state !== 'failed', id: row.id, ...out })
+  return NextResponse.json({ ok: out.state !== 'failed', id: row.id, written, ...out })
 }

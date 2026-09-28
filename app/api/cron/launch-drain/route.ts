@@ -34,6 +34,8 @@ import { wrongChannelMessage } from '@/lib/launch-channel'
 import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
+import { canUsePreview } from '@/lib/labs-preview'
+import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
 import { coveragePriority } from '@/lib/storefront-coverage'
@@ -799,6 +801,16 @@ async function styledThumbnail(
  */
 /** A missed slot in plain words, in the creator's own zone. Their 17:00 read
  *  back as "21:00 UTC" would look like a second mistake on top of the first. */
+/** The owner's plan, read once per creator per firing. */
+const tierCache = new Map<string, string | null>()
+async function ownerTier(sb: Sb, userId: string): Promise<string | null> {
+  if (tierCache.has(userId)) return tierCache.get(userId) ?? null
+  const { data } = await sb.from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+  const t = (data?.tier as string | undefined) ?? null
+  tierCache.set(userId, t)
+  return t
+}
+
 function missedWhen(iso: string, timezone: string | null): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return 'the time you picked'
@@ -814,6 +826,7 @@ function missedWhen(iso: string, timezone: string | null): string {
 }
 
 async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; failed: number }> {
+  tierCache.clear()
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
@@ -1272,6 +1285,27 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         await sb.from('launch_items').update({ playlist_added_at: added, playlist_error: plError }).eq('id', it.id)
       }
 
+      // ── THE PINNED FIRST COMMENT, EVERY VIDEO (Labs) ─────────────────────
+      // Liftoff never had one, while Co-Pilot always did. Queued the moment
+      // the video exists; the first-comments cron posts it when YouTube shows
+      // the video as public, and SCOUT pins it from the browser. Never fails
+      // the upload, and a retried row never gets a second one.
+      if (left() > 30_000) {
+        try {
+          const tier = await ownerTier(sb, it.user_id)
+          if (canUsePreview('first_comment', tier)) {
+            const q = await queueFirstComment(sb, {
+              userId: it.user_id, tier, youtubeVideoId: videoId, channelId,
+              title, description: it.description ?? null,
+              publishAt: goNow ? stamp() : heldBack || missed ? null : it.planned_publish_at,
+            })
+            if (!q.queued && q.why !== 'already') console.warn('[launch-drain] first comment not queued', { item: it.id, why: q.why, detail: q.detail })
+          }
+        } catch (fe) {
+          console.warn('[launch-drain] first comment not queued', { item: it.id, said: fe instanceof Error ? fe.message : String(fe) })
+        }
+      }
+
       await sb.from('launch_items').update({
         thumbnail_set_at: thumb.at,
         thumbnail_error: thumb.error,
@@ -1722,6 +1756,42 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
   return { scheduled, waiting, late }
 }
 
+/**
+ * FIRST COMMENTS FOR LIFTOFF VIDEOS THAT WENT UP WITHOUT ONE: every video
+ * uploaded before Liftoff queued them, and any whose queueing failed. Recent
+ * videos only, a few a firing, and one per video (lib/first-comment-queue
+ * answers "already" for any video that has a row).
+ */
+async function firstCommentCatchUp(sb: Sb, left: Left): Promise<{ queued: number; failed: number }> {
+  const since = new Date(Date.now() - 21 * 86_400_000).toISOString()
+  const { data: rows } = await sb.from('launch_items')
+    .select('id,user_id,youtube_video_id,title,description,planned_publish_at,publish_at,state')
+    .not('youtube_video_id', 'is', null).gte('updated_at', since)
+    .order('updated_at', { ascending: false }).limit(60)
+  const items = (rows ?? []) as Array<{ id: string; user_id: string; youtube_video_id: string; title: string | null; description: string | null; planned_publish_at: string | null; publish_at: string | null; state: string }>
+  if (items.length === 0) return { queued: 0, failed: 0 }
+  const { data: have, error } = await sb.from('video_first_comments')
+    .select('user_id,youtube_video_id').in('youtube_video_id', items.map((i) => i.youtube_video_id))
+  if (error) return { queued: 0, failed: 0 }  // no table yet: nothing to catch up into
+  const got = new Set((have ?? []).map((h: { user_id: string; youtube_video_id: string }) => `${h.user_id}|${h.youtube_video_id}`))
+  let queued = 0, failed = 0
+  for (const it of items) {
+    if (queued + failed >= 5 || left() < 25_000) break
+    if (got.has(`${it.user_id}|${it.youtube_video_id}`)) continue
+    const tier = await ownerTier(sb, it.user_id)
+    if (!canUsePreview('first_comment', tier)) continue
+    const q = await queueFirstComment(sb, {
+      userId: it.user_id, tier, youtubeVideoId: it.youtube_video_id,
+      title: it.title, description: it.description,
+      publishAt: it.publish_at ?? null,
+    })
+    got.add(`${it.user_id}|${it.youtube_video_id}`)
+    if (q.queued) queued++
+    else if (q.why !== 'already') failed++
+  }
+  return { queued, failed }
+}
+
 async function settle(sb: Sb): Promise<number> {
   const { data: batches } = await sb.from('launch_batches')
     .select('id,state').in('state', ['draft', 'preparing', 'launching']).limit(50)
@@ -1868,6 +1938,7 @@ export async function GET(request: Request) {
   // Videos on YouTube that never reached the Amazon side. Cheap when empty.
   const repaired = left() > 20_000 ? await repairs(sb) : null
   const playlisted = left() > 20_000 ? await playlistCatchUp(sb) : null
+  const firstComments = left() > 30_000 ? await firstCommentCatchUp(sb, left) : null
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, settled })
+  return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, firstComments, settled })
 }

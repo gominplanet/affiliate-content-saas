@@ -39,6 +39,20 @@ export interface ReportItem {
   /** asin: the ASIN that country's listing is tagged with. It differs from
    *  the video's own when the store sells the product under another listing. */
   amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null }>
+  /** The video's pinned first comment (migration 377), when it has one. */
+  first_comment?: { state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null } | null
+}
+
+/** The first comment as a tick: pinned is the only yes. Posted and not
+ *  pinned, or not posted, is a no with the reason; waiting is a question. */
+function firstCommentCheck(fc: ReportItem['first_comment']): { value: boolean | null; title: string } | null {
+  if (!fc) return null
+  if (fc.state === 'posted') return fc.pinned === true
+    ? { value: true, title: 'Posted and pinned' }
+    : { value: fc.pinned === false ? false : null, title: fc.pinned === false ? `Posted, not pinned: ${fc.pin_error || 'no reason given'}` : 'Posted; SCOUT pins it next time Liftoff or Co-Pilot is open' }
+  if (fc.state === 'waiting') return { value: null, title: 'Posts itself when YouTube shows the video public, then SCOUT pins it' }
+  if (fc.state === 'failed') return { value: false, title: `Not posted: ${fc.last_error || 'no reason given'}` }
+  return null
 }
 
 type Cell = { word: string; colour: string; done: boolean; problem?: string }
@@ -241,6 +255,7 @@ export default function LaunchReport({
                           <Check label="Playlist" value={i.playlist_added_at ? true : i.playlist_error ? false : null}
                             title={i.playlist_error || undefined} />
                         )}
+                        {(() => { const fc = firstCommentCheck(i.first_comment); return fc ? <Check label="First comment" value={fc.value} title={fc.title} /> : null })()}
                         <Check label="Studio steps" value={run ? run.ok : null}
                           title={run ? run.steps.map((s) => `${s.step}: ${s.detail}`).join('\n') : studioPossible ? 'Not run yet' : 'SCOUT is not available in this browser'} />
                       </span>

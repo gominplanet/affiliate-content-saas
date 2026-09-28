@@ -128,7 +128,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     else for (const r of (frows ?? []) as Array<{ id: string; thumbnail_face: unknown }>) faceById.set(r.id, r.thumbnail_face ?? null)
   }
 
+  // EACH VIDEO'S PINNED FIRST COMMENT (migration 377), read on its own: a
+  // database without the table still loads the batch.
+  const firstCommentByVideo = new Map<string, { state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null }>()
+  {
+    const yids = items.map((i) => String((i as { youtube_video_id?: string | null }).youtube_video_id || '')).filter(Boolean)
+    if (yids.length) {
+      const { data: frows, error: ferr } = await sb.from('video_first_comments')
+        .select('youtube_video_id,state,pinned,pin_error,last_error,publish_at').eq('user_id', user.id).in('youtube_video_id', yids)
+      if (!ferr) for (const r of (frows ?? []) as Array<{ youtube_video_id: string; state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null }>) {
+        firstCommentByVideo.set(r.youtube_video_id, { state: r.state, pinned: r.pinned, pin_error: r.pin_error, last_error: r.last_error, publish_at: r.publish_at })
+      }
+    }
+  }
+
   const itemsOut = items.map((i) => ({
+    first_comment: firstCommentByVideo.get(String((i as { youtube_video_id?: string | null }).youtube_video_id || '')) ?? null,
     amazon_title: amazonTitleById.get(i.id) ?? null,
     thumbnail_face: faceById.get(i.id) ?? null,
     api_disclosures: disclosuresById.get(i.id) ?? null,
