@@ -41,6 +41,7 @@ import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { upgradeTikTokImage } from '@/lib/tiktok-product'
 import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn, tiktokProductFacts } from '@/lib/product-ownership'
 import { DEAL_VOICE_RULES, scrubReviewLanguage } from '@/lib/deal-scrub'
+import { stripHashtagBlock, withProvenanceNote, } from '@/lib/post-provenance'
 import { resolveExperience } from '@/lib/experience-source'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
@@ -679,7 +680,8 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   try {
     wpPost = await wpService.createPost({
       title,
-      content: bodyHtml,
+      // How it was made, said on the post, and no hashtag block (lib/post-provenance).
+      content: withProvenanceNote(stripHashtagBlock(bodyHtml), experience.source, (brand?.author_name as string) || null),
       excerpt: scrub(parsed.meta_description),
       slug,
       status: 'publish',

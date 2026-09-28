@@ -2,6 +2,8 @@ import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
+import { stripHashtagBlock, withProvenanceNote } from '@/lib/post-provenance'
+import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1759,6 +1761,10 @@ async function handleGenerate(request: Request) {
   // Guarantee the mechanical SEO checks (answer-first lead + image alt) on the
   // final body before publish, so a review never lands with a fixable SEO gap.
   content = enforceSeoBasics(content, { title: generated.title, seoKeyword: generated.seoKeyword })
+
+  // HOW IT WAS MADE, SAID ON THE POST; NO HASHTAG BLOCK (lib/post-provenance).
+  content = stripHashtagBlock(content)
+  content = withProvenanceNote(content, (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null, authorName)
 
   // EVERY AFFILIATE LINK CARRIES rel="sponsored" BEFORE IT IS PUBLISHED.
   //

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.98
+ * Version: 1.0.99
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -1741,7 +1741,7 @@ add_action('template_redirect', function () {
   <p>Products in our catalogue are purchased, requested, or accepted as samples under a clear policy: we keep editorial control of every word. Reviews are not paid placements. Affiliate links are how the site stays free for readers — they never change what we say about a product.</p>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">The four kinds of reviews you'll see</h2>
-  <p>Not every product gets the same kind of test. We use four review types depending on the product, the question we're trying to answer, and how much time we've spent with it. The review itself will say which kind you're reading.</p>
+  <p>Not every product gets the same kind of test. We use four review types depending on the product, the question we're trying to answer, and how much time we've spent with it. Every review says at the top how it was made: from our own video, from our own notes, or from research.</p>
   <div style="display:grid;gap:14px;margin:18px 0 8px">
     <div style="padding:14px 16px;border:1px solid #e5e5e7;border-left:4px solid #7C3AED;border-radius:6px;background:#fafafa">
       <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#7C3AED;text-transform:uppercase;letter-spacing:.8px">Full Review</p>
@@ -1763,7 +1763,7 @@ add_action('template_redirect', function () {
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">What every review has in common</h2>
   <ul style="padding-left:22px">
-    <li><strong>Hands-on, not desk-research.</strong> We don't review products from spec sheets. If you're reading a review here, we've held the product or used it.</li>
+    <li><strong>Hands-on where it says so.</strong> A review built from our own video or notes says so at the top, and everything personal in it happened. A post built from the listing, the specs and buyers' questions says that instead, and never claims a test we did not run.</li>
     <li><strong>Specific claims, not vibes.</strong> If we say something is loud, we say how loud. If we say it's heavy, we say how heavy or what we struggled to carry.</li>
     <li><strong>Trade-offs called out.</strong> No product is perfect. Every review names at least one real downside — and which buyer that downside actually matters to.</li>
     <li><strong>Score reflects the test.</strong> A First Impressions 4.5 isn't a promise the product stays a 4.5 forever — it's the score it earned in the test we ran. When deeper use changes the number, we update the post.</li>
@@ -1788,7 +1788,7 @@ add_action('template_redirect', function () {
   <p>Reviews are living documents. When a product gets a meaningful update — a software change, a price shift that flips the verdict, or a long-term issue we couldn't see on day one — we revisit the post and bump the &ldquo;Updated&rdquo; date you see at the top. If we got something wrong, we mark the correction inline and explain what changed.</p>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">Affiliate disclosure</h2>
-  <p>Links to retailers (Amazon, Geniuslink, and others) on this site may earn a small commission when you click through and buy. That's how the site stays free. It never changes our score, our verdict, or which products we recommend. We've turned down products that didn't earn a recommendation, and we've kept products in the &ldquo;Avoid&rdquo; tier even when an affiliate would have rather we softened the language.</p>
+  <p>Links to retailers (Amazon, Geniuslink, and others) on this site may earn a small commission when you click through and buy. That's how the site stays free. It never changes our score, our verdict, or which products we recommend.</p>
 </main>
     <?php
     get_footer();

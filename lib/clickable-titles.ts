@@ -95,7 +95,7 @@ ${CLICKABLE_FRAMINGS.map(f => `  • ${f.family}: ${list(f.examples)}`).join('\n
  * framing sits alongside the name as its "angle".
  */
 export function clickableTitleRulesForBlog(): string {
-  return `TITLE STYLE (clickable — questions are proven to lift clicks): the title's "angle" must be EITHER a question ("Is it really the best {category}?", "Does it actually work?", "Should you buy it?") OR one of these clickable framings, worded fresh each time (patterns, not strings to copy): "Exploring every feature", "Tested: why it might be the best {category}", "How to use it like a pro", "Everything you need to know". Never a flat descriptive label such as "Review" or "Overview" alone. NEVER put a calendar year in the title.`
+  return `TITLE STYLE: the title's "angle" is THIS post's own deciding finding, not a stock framing: the specific trade-off, number, or who it is for, in the creator's words where they fit ("Quiet Enough for an Apartment, Too Small for a Family", "Half the Weight of My Old One, Same Suction"). A question is fine when it is this product's own question ("Can One Router Cover a Two-Story House?"), never a generic one that fits any product ("Does it actually work?", "Should you buy it?", "Is it really the best?"). Never "Tested:" or any claim of testing unless the post comes from the creator's own video or notes. Never a flat label such as "Review" or "Overview" alone. The same framing must not repeat across this creator's recent titles. NEVER put a calendar year in the title.`
 }
 
 /**

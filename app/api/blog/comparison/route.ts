@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { clickableTitleRulesForComparison } from '@/lib/clickable-titles'
 import { stripTitleYear as stripYear } from '@/lib/title-year'
 import { createServerClient } from '@/lib/supabase/server'
+import { stripHashtagBlock, withProvenanceNote, comparisonProvenanceText } from '@/lib/post-provenance'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -966,6 +967,11 @@ CRITICAL RULES:
     const catId = await wpService.createCategory(mode === 'comparison' ? 'We Compare' : 'Shopping Guide')
     if (catId) categoryIds = [catId]
   } catch { /* publish uncategorized rather than fail */ }
+
+  // HOW IT WAS MADE, said on the post: from the creator's own videos, some of
+  // them, or research and other creators' public videos (lib/post-provenance).
+  body = withProvenanceNote(stripHashtagBlock(body), null, null,
+    comparisonProvenanceText(resolved.filter((p) => p.isOwn).length, resolved.length, (brand?.author_name as string) || null))
 
   let wpPost
   try {

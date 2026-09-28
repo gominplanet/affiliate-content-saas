@@ -1525,22 +1525,8 @@ Use the exact same product name string here as in the mid-article CTA from [4]:
   </div>
 </div>
 
-[8] HASHTAG TAGS (HTML block — immediately after [7], no gap)
-10 hashtags researched for SEO value AND social virality in this product's niche.
-Mix: 3-4 broad high-traffic tags + 3-4 niche-specific tags + 2-3 product/brand-specific tags.
-Format exactly like this:
-<div class="gr-tags">
-  <span>#Tag1</span>
-  <span>#Tag2</span>
-  <span>#Tag3</span>
-  <span>#Tag4</span>
-  <span>#Tag5</span>
-  <span>#Tag6</span>
-  <span>#Tag7</span>
-  <span>#Tag8</span>
-  <span>#Tag9</span>
-  <span>#Tag10</span>
-</div>
+[8] NO HASHTAG BLOCK. Do not write hashtags anywhere in the post: they carry no
+search value on a blog, and the same block on every post marks it as mass-produced.
 
 ═══════════════════════════════════════
 OUTPUT FORMAT — TWO BLOCKS, IN THIS ORDER
