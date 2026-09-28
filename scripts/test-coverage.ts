@@ -15,6 +15,7 @@
 // year. The grid does not start or finish. It drains.
 import { readFileSync } from 'node:fs'
 import { MARKETS } from '../lib/markets'
+import { pickEquivalent, normalizeCode } from '../lib/asin-equivalent'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -608,6 +609,29 @@ const SEARCH = read('lib/app-search-index.ts')
     && /add column if not exists confirmed_at/.test(M362)
     && /add column if not exists confirm_tries/.test(M362),
     'a column the code writes and the database has not got is a silent failure on every row')
+}
+
+// ── The same product under another country's ASIN ──────────────────────
+{
+  // B091G65HH6 on amazon.com is B091GX3LWR on amazon.ca: the case that was
+  // written off as "not sold in Canada".
+  const us = ['840030701283']
+  const ca = [
+    { asin: 'B000EMPTY1', title: null, codes: ['840030701283'] },
+    { asin: 'B091GX3LWR', title: 'Router', codes: ['0840030701283'] },
+    { asin: 'B0OTHER001', title: 'Something else', codes: ['123456789012'] },
+  ]
+  check('a listing sharing the barcode (UPC or its EAN form) is the local product', pickEquivalent(us, ca, 'B091G65HH6') === 'B091GX3LWR')
+  check('an empty Keepa shell or an unrelated listing is never picked', pickEquivalent(us, [ca[0], ca[2]], 'B091G65HH6') === null)
+  check('no barcode means no guess', pickEquivalent([], ca, 'B091G65HH6') === null)
+  check('UPC-A and EAN-13 compare equal', normalizeCode('840030701283') === normalizeCode('0840030701283'))
+  check('blocked "not sold" cells are looked for again by barcode, right after stock()',
+    /async function equivalents\(sb: Sb\)/.test(DRAIN) && /const stocked = await stock\(sb\)\s+[\s\S]{0,120}?const matched = await equivalents\(sb\)/.test(DRAIN)
+    && /\.eq\('stock', 'not_listed'\)/.test(DRAIN) && /\.not\('reason', 'like', '%same barcode%'\)/.test(DRAIN))
+  check('a match goes back through the stock check under the local ASIN, not assumed buyable',
+    /asin: local, stock: null, stock_at: null, state: 'unknown'/.test(DRAIN))
+  check('a failed barcode lookup is not recorded as "no listing"', /if \(listings === null\) \{ unread \+= readable\.length; continue \}/.test(DRAIN))
+  check('each country is tagged with its own ASIN', /asin: r\.asin \?\? g\.asin, state: 'pending'/.test(DRAIN))
 }
 
 if (failures.length) {

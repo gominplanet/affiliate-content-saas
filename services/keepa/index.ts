@@ -1148,3 +1148,66 @@ export function buildPriceSnapshotHtml(a: DealAssessment): string {
 ${bar}
 </div>`
 }
+
+/**
+ * The barcodes (UPC, EAN, GTIN) Keepa holds for each ASIN in one marketplace.
+ * One /product call covers up to 100 ASINs. Never throws: a failed batch
+ * yields no entries, which the caller must read as "not looked at", not as
+ * "has no barcode".
+ */
+export async function fetchKeepaCodes(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const key = process.env.KEEPA_API_KEY
+  const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
+  if (!key || !valid.length) return out
+  for (let i = 0; i < valid.length; i += 100) {
+    const batch = valid.slice(i, i + 100)
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${batch.join(',')}&stats=0&history=0`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      if (!res.ok) continue
+      const data = await res.json() as { products?: unknown[] }
+      for (const raw of (Array.isArray(data.products) ? data.products : [])) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = raw as any
+        const asin = String(p?.asin || '').toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+        out.set(asin, keepaCodesOf(p))
+      }
+    } catch { /* skip this batch */ }
+  }
+  return out
+}
+
+/** Every product Keepa lists in one marketplace under any of these barcodes.
+ *  Up to 100 codes a call; one code can match several listings. */
+export async function fetchKeepaByCodes(codes: string[], domainId: number): Promise<Array<{ asin: string; title: string | null; codes: string[] }> | null> {
+  const key = process.env.KEEPA_API_KEY
+  const valid = [...new Set(codes.map((c) => String(c || '').trim()).filter((c) => /^\d{8,14}$/.test(c)))]
+  if (!key || !valid.length) return []
+  const out: Array<{ asin: string; title: string | null; codes: string[] }> = []
+  for (let i = 0; i < valid.length; i += 100) {
+    const batch = valid.slice(i, i + 100)
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&code=${batch.join(',')}&stats=0&history=0`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      // Not an answer: the caller must not record "no listing" off a failure.
+      if (!res.ok) return null
+      const data = await res.json() as { products?: unknown[] }
+      for (const raw of (Array.isArray(data.products) ? data.products : [])) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = raw as any
+        const asin = String(p?.asin || '').toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+        out.push({ asin, title: typeof p.title === 'string' && p.title.trim() ? p.title.trim().slice(0, 300) : null, codes: keepaCodesOf(p) })
+      }
+    } catch { return null }
+  }
+  return out
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function keepaCodesOf(p: any): string[] {
+  const list = ([] as unknown[]).concat(p?.upcList ?? [], p?.eanList ?? [], p?.gtinList ?? [])
+  return [...new Set(list.map((c) => String(c || '').trim()).filter((c) => /^\d{8,14}$/.test(c)))]
+}

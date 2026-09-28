@@ -43,7 +43,9 @@ import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
-import { lookupAvailability } from '@/lib/product-availability'
+import { lookupAvailability, MIN_KEEPA_TOKENS } from '@/lib/product-availability'
+import { pickEquivalent } from '@/lib/asin-equivalent'
+import { fetchKeepaCodes, fetchKeepaByCodes, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 import { dubTarget } from '@/lib/dub-target'
 import { normalizeTier } from '@/lib/tier'
 import { STALL_AFTER_MS } from '@/lib/global-sync-recovery'
@@ -317,6 +319,79 @@ async function writeStock(
   return { answered: withAnswer.length, blocked }
 }
 
+/** Blocked cells looked at again per firing, by barcode. Each costs Keepa about
+ *  two tokens: the source's barcodes, then the country's listings under them. */
+const EQUIV_CELLS = 30
+
+/**
+ * NOT SOLD UNDER THIS ASIN IS NOT NOT SOLD.
+ *
+ * stock() asks whether the video's own ASIN is listed in each country, and a
+ * product Amazon lists under a different ASIN there (a router that is
+ * B091G65HH6 on amazon.com and B091GX3LWR on amazon.ca) was blocked as "not
+ * sold" in a country that sells it. Here each such cell is looked for again by
+ * the product's barcode in that store. Found: the cell takes that country's
+ * ASIN and goes back through stock() under it, so the listing is checked,
+ * dubbed and tagged with the product Canada actually sells. Not found: the
+ * reason says the barcode was tried too, which is also what stops it being
+ * asked again.
+ */
+async function equivalents(sb: Sb): Promise<{ found: number; none: number; unread: number; skipped?: string }> {
+  const { data: cells } = await sb.from('storefront_coverage')
+    .select('id,domain,asin').eq('state', 'blocked').eq('stock', 'not_listed')
+    .like('reason', 'Amazon does not sell this product in %')
+    .not('reason', 'like', '%same barcode%')
+    .not('asin', 'is', null)
+    .order('priority', { ascending: false }).limit(EQUIV_CELLS)
+  const rows: Array<{ id: string; domain: string; asin: string }> = (cells ?? [])
+    .filter((c: { domain: string }) => marketByDomain(c.domain)?.keepa != null)
+  if (rows.length === 0) return { found: 0, none: 0, unread: 0 }
+  if (!keepaConfigured()) return { found: 0, none: 0, unread: rows.length, skipped: 'keepa_unconfigured' }
+  const tok = await fetchKeepaTokenStatus()
+  if (tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS) return { found: 0, none: 0, unread: rows.length, skipped: 'low_tokens' }
+
+  // The barcodes, read from the US store where these ASINs come from. A source
+  // missing from the answer was not looked at, and its cells are left alone.
+  const sourceCodes = await fetchKeepaCodes([...new Set(rows.map((r) => r.asin.toUpperCase()))])
+  const now = new Date().toISOString()
+  let found = 0, none = 0, unread = 0
+
+  const byDomain = new Map<string, typeof rows>()
+  for (const r of rows) byDomain.set(r.domain, [...(byDomain.get(r.domain) ?? []), r])
+  for (const [domain, list] of byDomain) {
+    const mkt = marketByDomain(domain)!
+    const readable = list.filter((r) => sourceCodes.has(r.asin.toUpperCase()))
+    unread += list.length - readable.length
+    const codes = [...new Set(readable.flatMap((r) => sourceCodes.get(r.asin.toUpperCase()) ?? []))]
+    // No barcode at all: nothing to look for, said so on the cell.
+    const listings = codes.length ? await fetchKeepaByCodes(codes, mkt.keepa as number) : []
+    if (listings === null) { unread += readable.length; continue }
+    for (const r of readable) {
+      const local = pickEquivalent(sourceCodes.get(r.asin.toUpperCase()) ?? [], listings, r.asin)
+      if (local) {
+        // Back through stock() under the local ASIN: listed and buyable are
+        // still checked, not assumed from a barcode match.
+        await sb.from('storefront_coverage').update({
+          asin: local, stock: null, stock_at: null, state: 'unknown', checked_at: null,
+          reason: `Sold in ${mkt.country} as ${local} (same barcode as ${r.asin.toUpperCase()})`,
+          updated_at: now,
+        }).eq('id', r.id)
+        found++
+      } else {
+        const why = (sourceCodes.get(r.asin.toUpperCase()) ?? []).length
+          ? 'and no listing there has the same barcode either'
+          : 'and Amazon has no barcode for it to look for another listing by (same barcode check not possible)'
+        await sb.from('storefront_coverage').update({
+          reason: `Amazon does not sell this product in ${mkt.country}, ${why}`.slice(0, 200),
+          updated_at: now,
+        }).eq('id', r.id)
+        none++
+      }
+    }
+  }
+  return { found, none, unread }
+}
+
 /**
  * Is there anything to dub FROM, and which voice will ship.
  *
@@ -431,12 +506,12 @@ async function prepare(sb: Sb): Promise<{ sent: number; failed: number }> {
     .select('id,user_id,video_id,domain,asin').eq('state', 'preparing').is('sync_job_id', null)
     .order('priority', { ascending: false }).limit(PREPARE * 9)
 
-  const groups = new Map<string, { userId: string; asin: string | null; rows: Array<{ id: string; domain: string }> }>()
+  const groups = new Map<string, { userId: string; asin: string | null; rows: Array<{ id: string; domain: string; asin: string | null }> }>()
   for (const c of (cells ?? [])) {
     if (!groups.has(c.video_id) && groups.size >= PREPARE) continue
     const g = groups.get(c.video_id)
-      ?? { userId: c.user_id as string, asin: (c.asin as string | null) ?? null, rows: [] as Array<{ id: string; domain: string }> }
-    g.rows.push({ id: c.id, domain: c.domain })
+      ?? { userId: c.user_id as string, asin: (c.asin as string | null) ?? null, rows: [] as Array<{ id: string; domain: string; asin: string | null }> }
+    g.rows.push({ id: c.id, domain: c.domain, asin: (c.asin as string | null) ?? null })
     groups.set(c.video_id, g)
   }
   if (groups.size === 0) return { sent: 0, failed: 0 }
@@ -464,7 +539,9 @@ async function prepare(sb: Sb): Promise<{ sent: number; failed: number }> {
       const mkt = marketByDomain(r.domain)!
       return {
         job_id: job.id, user_id: g.userId, domain: r.domain,
-        lang: mkt.lang, dub: mkt.needsTranslation, asin: g.asin, state: 'pending' as const,
+        // EACH COUNTRY'S OWN ASIN. A product Canada sells under another ASIN
+        // is tagged with that one, not the US listing Canada does not have.
+        lang: mkt.lang, dub: mkt.needsTranslation, asin: r.asin ?? g.asin, state: 'pending' as const,
       }
     })
     const { error: tErr } = await sb.from('global_sync_targets').insert(targets)
@@ -741,6 +818,8 @@ export async function GET(request: Request) {
   // query rather than only by the order of these lines, because a reordering
   // here would otherwise be invisible.
   const stocked = await stock(sb)
+  // Right after stock(): a product blocked there may be sold under another ASIN.
+  const matched = await equivalents(sb)
   const checked = await checks(sb)
   const prepared = await prepare(sb)
   // LAST, and the only step that can use the whole remaining budget. A dub is a
@@ -748,5 +827,5 @@ export async function GET(request: Request) {
   // the cheap steps would mean a single slow render starves the grid.
   const audio = await dubs(sb)
 
-  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, checked, prepared, audio })
+  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, matched, checked, prepared, audio })
 }
