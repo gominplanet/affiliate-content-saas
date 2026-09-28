@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
-import { requestSendByAsin, requestSendByCampaign, startCreatorHubVideosScan, getVideoScanStatus, startVideoProductsScan, getVideoProductsStatus, type VideoScanStatus, type VideoProductsStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin } from '@/lib/extension-frame'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -82,135 +82,65 @@ export default function BrandRecap() {
   const stopWatching = useRef(false)
   const [, setTick] = useState(0)
   useEffect(() => { if (!prog) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t) }, [prog])
-  // SCOUT's own reason, in words, with what it saw. "Stopped after 0 videos"
-  // on its own looked the same whatever went wrong and could not be acted on.
-  function productReadFailure(st: VideoProductsStatus): string {
-    const where = st.read ? `after ${st.read.toLocaleString()} videos (those are saved)` : 'before reading any videos, so nothing was stored'
-    const why =
-      st.error === 'no-detail-call' ? 'Amazon never loaded a single video on its own, so SCOUT had no request to copy.'
-      : st.error === 'same-products-every-video' ? 'Amazon gave the same products for every video, so SCOUT stored nothing rather than stamp one video\'s products on all of them.'
-      : st.error === 'MVP did not hand back any videos to read' ? 'MVP had no saved videos to hand SCOUT. Sign in to MVP in this Chrome, then try again.'
-      : st.error === 'could not reach MVP' || st.error === 'could not save' ? 'SCOUT could not save to MVP. Check you are signed in to MVP in this Chrome.'
-      : `SCOUT said: ${st.error}.`
-    const detail = [st.endpoint && `Request: ${st.endpoint}.`, st.probe, st.scoutVersion && `SCOUT ${st.scoutVersion}.`].filter(Boolean).join(' ')
-    return `Reading which product each video sells stopped ${where}. ${why}${detail ? ` ${detail}` : ''}`
-  }
+  // ── FIND MY AMAZON VIDEOS, ONE PRODUCT AT A TIME ─────────────────────────
+  // The library read cannot join a video to its product: Amazon's video list
+  // carries no product ids, and its page makes no per-video request SCOUT can
+  // copy (SCOUT 1.21.17 said so in as many words). Brand recap does not need
+  // the whole library anyway, only the products on this page. So SCOUT opens
+  // each of those product pages in your signed-in Chrome and reads the
+  // "Content Made" link OINK adds for your own video, the exact public /vdp/
+  // page, and MVP keeps it. Each product's answer is counted, and a run that
+  // cannot work (no SCOUT, signed out, no OINK) stops early and says why.
   async function findAmazonVideos() {
-    setScanning(true); setScanNote({ ok: true, text: 'Starting SCOUT…' })
+    const want = [...new Map((data?.brands ?? []).flatMap((b) => b.products)
+      .filter((p) => !p.links.some((l) => l.platform === 'amazon_video'))
+      .map((p) => [p.asin, p])).values()]
+    if (want.length === 0) { setScanNote({ ok: true, text: 'Every product on this page already has its Amazon video link.' }); return }
+    setScanning(true); setScanNote(null)
     stopWatching.current = false
     const started = Date.now()
-    let lastDone = -1
-    const track = (step: 1 | 2, done: number, total: number | null, page: string | null, phase: string | null = null, quietOk = 90_000) => {
-      setProg((p) => {
-        const moved = !p || p.step !== step || done !== lastDone || (phase ?? null) !== (p.phase ?? null)
-        lastDone = done
-        return { step, done, total, startedAt: p?.startedAt ?? started, movedAt: moved ? Date.now() : p.movedAt, page, phase, quietOk }
-      })
-    }
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
-    try {
-      const stopped = () => {
-        if (!stopWatching.current) return false
-        setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' })
+    let movedAt = started
+    const found: Array<{ vdpUrl: string; asin: string }> = []
+    let none = 0, unreadable = 0, errors = 0, oinkSeen = 0, savedTotal = 0
+    const save = async () => {
+      if (found.length === 0) return true
+      const batch = found.splice(0, found.length)
+      try {
+        const r = await fetch('/api/brand-recap/amazon-videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videos: batch }) })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || !j.ok) { setScanNote({ ok: false, text: `Found videos, but MVP could not keep them: ${j.error || `HTTP ${r.status}`}` }); return false }
+        savedTotal += Number(j.kept || 0)
         return true
-      }
-      // 1. The video list. Resume from what MVP already holds (as the Earnings
-      // page does), join a run that is already going, and pick up again from
-      // its own checkpoint when Chrome pauses SCOUT. Watched until it is
-      // actually finished: a library of thousands takes a long time, and
-      // moving on early would read products for a list still being read.
-      let from = 0
-      try { from = (await fetch('/api/amazon-videos').then((x) => x.json()))?.count || 0 } catch { from = 0 }
-      let list: VideoScanStatus | null = null
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const s1 = await startCreatorHubVideosScan(undefined, from || undefined)
-        if (!s1.ok) {
-          setScanNote({ ok: false, text: s1.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
-            : s1.error === 'needs-update' ? 'Your SCOUT is too old to read your Amazon videos. Update it, then try again.'
-              : 'SCOUT could not start reading your Amazon videos. Open amazon.com signed in to your Influencer account, then try again.' })
-          return
+      } catch { setScanNote({ ok: false, text: 'Found videos, but could not reach MVP to keep them.' }); return false }
+    }
+    try {
+      for (let i = 0; i < want.length; i++) {
+        if (stopWatching.current) { setScanNote({ ok: true, text: `Stopped after ${i} of ${want.length} products. What was found is kept.` }); break }
+        const p = want[i]
+        setProg({ step: 1, done: i, total: want.length, startedAt: started, movedAt, page: p.name, phase: 'SCOUT opens each product page in your Chrome and reads the Content Made link for your video.', quietOk: 120_000 })
+        const r = await requestAmazonVideoForAsin(p.asin)
+        movedAt = Date.now()
+        if (!r.ok) {
+          if (r.error === 'not-installed') { setScanNote({ ok: false, text: 'This needs the SCOUT extension in this Chrome.' }); return }
+          errors++
+          continue
         }
-        list = null
-        for (;;) {
-          await wait(2000)
-          if (stopped()) return
-          const st = await getVideoScanStatus()
-          if (!st) continue
-          list = st
-          if (st.done || st.interrupted) break
-          track(1, st.offset || from, st.total, st.pageTitle || st.landedOn || null)
-          setScanNote(null)
+        if (r.signedOut) { setScanNote({ ok: false, text: `Amazon shows you as signed out, so SCOUT cannot see your videos. Sign in to amazon.com in this Chrome and press again. ${found.length + savedTotal} found so far are kept.` }); break }
+        if (r.oinkDetected) oinkSeen++
+        if (r.video?.vdpUrl) found.push({ vdpUrl: r.video.vdpUrl, asin: p.asin })
+        else if (r.contentMadeSeen) unreadable++
+        else none++
+        // NO OINK, NO LINKS: after five products with no sign of it, say so
+        // rather than spending an hour opening pages that cannot answer.
+        if (i === 4 && oinkSeen === 0 && found.length + savedTotal === 0) {
+          setScanNote({ ok: false, text: 'SCOUT reads your video link from the "Content Made" label the OINK extension adds to product pages, and OINK did not show on the first five products. Turn OINK on in this Chrome (or sign in to it), then press again.' })
+          break
         }
-        // SCOUT ends each run after 15 minutes and marks it partial, and Chrome
-        // can pause it outright. Neither is the end of the list: carry on from
-        // where it stopped. Restart only when it moved; a run stuck in one
-        // place would loop forever.
-        const unfinished = list?.interrupted || (list?.partial && !list.error)
-        if (!list || !unfinished) break
-        if ((list.offset || 0) <= from) break
-        from = list.offset
-        setScanNote({ ok: true, text: list.interrupted ? `Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.` : `Read up to ${from.toLocaleString()} videos. Carrying on from there.` })
+        if (found.length >= 10) { if (!(await save())) return }
       }
-      // A list that did not reach Amazon's own total is still worth reading
-      // products for. Amazon's count includes videos its list never shows
-      // (6,875 said, pages stopped at 6,851), so insisting on the total blocked
-      // step 2 forever. Stop only when nothing at all is saved.
-      let listGap = ''
-      if (!list || list.error || list.interrupted || list.partial) {
-        let have = 0
-        try { have = (await fetch('/api/amazon-videos').then((x) => x.json()))?.count || 0 } catch { have = 0 }
-        const why = list?.stopped || list?.error || (list?.interrupted ? 'Chrome paused SCOUT' : 'no reason given')
-        if (!have) {
-          setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.'
-            : `SCOUT could not read your video list (${why}), and no videos are saved yet. Open Manage Content once on Amazon, then try again.` })
-          return
-        }
-        listGap = `Your video list has ${have.toLocaleString()} videos saved${list?.total && list.total > have ? `, of the ${list.total.toLocaleString()} Amazon counts` : ''}; the list read stopped with: ${why}. Pressing again later picks up any new ones.`
-        setScanNote({ ok: true, text: `${have.toLocaleString()} videos saved. Going on to which product each one sells.` })
-      }
-      // 2. Which product each video sells, for the videos not read yet. Same
-      // rules: join, restart after a pause when it moved, watch until done.
-      let prod: VideoProductsStatus | null = null
-      let lastRead = -1
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const s2 = await startVideoProductsScan()
-        if (!s2.ok) { setScanNote({ ok: false, text: 'Your video list is saved, but SCOUT could not start reading which product each video sells. Press again to carry on.' }); return }
-        prod = null
-        for (;;) {
-          await wait(2000)
-          if (stopped()) return
-          const st = await getVideoProductsStatus()
-          if (!st) continue
-          prod = st
-          if (st.done || st.interrupted) break
-          // Which stage step 2 is in, from SCOUT itself. It first has to work
-          // out how Amazon loads one video's products, and then reports once
-          // per batch of 60 videos (one Amazon call each), so the count moves
-          // in jumps a few minutes apart. The stuck warning allows for that.
-          const viaList = !!st.endpoint && /get-content-list/.test(st.endpoint)
-          const phase = !st.endpoint
-            ? 'SCOUT is opening one of your videos on Amazon to see how Amazon loads its products. This can take a couple of minutes.'
-            : viaList
-              ? 'Amazon\'s video list carries the products, so SCOUT reads them 100 videos at a time.'
-              : `SCOUT asks Amazon about each video (${st.endpoint}) and reports every 60 videos, newest first, so the count moves in jumps.`
-          track(2, st.read, st.remaining != null ? st.read + st.remaining : null, null, phase, !st.endpoint ? 180_000 : viaList ? 90_000 : 330_000)
-          setScanNote({ ok: true, text: `${st.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
-        }
-        // A pause, or a run that hit SCOUT's time limit with videos still to
-        // read, carries on. Only when this run read something, so a run that
-        // fails the same way each time does not loop.
-        const more = prod?.interrupted || (prod?.done && !prod.error && (prod.remaining || 0) > 0)
-        if (!prod || !more || prod.read <= 0 || prod.read <= lastRead) break
-        lastRead = prod.read
-        setScanNote({ ok: true, text: prod.interrupted ? 'Chrome paused SCOUT. Picking up from where it stopped.' : `${(prod.remaining || 0).toLocaleString()} videos still to read. Carrying on.` })
-      }
+      if (!(await save())) return
       await load()
-      const withGap = (t: string) => (listGap ? `${t} ${listGap}` : t)
-      if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
-      else if (prod.interrupted) setScanNote({ ok: true, text: withGap(`Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.`) })
-      else if (prod.error) setScanNote({ ok: false, text: withGap(productReadFailure(prod)) })
-      else if ((prod.remaining || 0) > 0) setScanNote({ ok: true, text: withGap(`Read ${prod.read.toLocaleString()} videos this run, ${prod.withProducts.toLocaleString()} with a product, and ${(prod.remaining || 0).toLocaleString()} are still to read. What was read is in the list; press again to carry on.`) })
-      else setScanNote({ ok: true, text: withGap(`Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.`) })
+      setScanNote((prev) => prev && !prev.ok ? prev : { ok: true, text: `Found ${savedTotal} Amazon video ${savedTotal === 1 ? 'link' : 'links'} and added them to the brands below. ${none} ${none === 1 ? 'product has' : 'products have'} no video of yours on Amazon${unreadable ? `, ${unreadable} showed Content Made but the link could not be read` : ''}${errors ? `, ${errors} could not be checked (press again to retry those)` : ''}.` })
     } finally { setScanning(false); setProg(null) }
   }
 
@@ -521,7 +451,7 @@ function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: nu
       <div className="flex flex-wrap items-center gap-2 mb-1.5">
         <Loader2 size={13} className="animate-spin" style={{ color: ACCENT }} />
         <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-          Step {p.step} of 2: {p.step === 1 ? 'reading your Amazon videos' : 'reading which product each video sells'}
+          Finding your Amazon videos, product by product
         </span>
         <span className="text-[#86868b] tabular-nums">
           {p.done.toLocaleString()}{p.total ? ` of ${p.total.toLocaleString()}` : ''}{pct != null ? ` (${pct}%)` : ''}

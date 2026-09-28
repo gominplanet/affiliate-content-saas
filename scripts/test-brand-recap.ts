@@ -126,25 +126,18 @@ check('an error page from the host reads as a sentence, not a JSON error',
   const AV = read('app/api/brand-recap/amazon-videos/route.ts')
   check('scanned Amazon videos are kept only as real /vdp/ links with a product, and the answer counts both',
     /const VDP = \/\^https:/.test(AV) && /noProduct\+\+/.test(AV) && /kept: rows\.length/.test(AV) && /source: 'amazon_scan'/.test(AV))
-  check('Find my Amazon videos runs the full library sync, list then products, with progress in numbers',
-    inOrder(UI, 'await startCreatorHubVideosScan(undefined, from || undefined)', 'await startVideoProductsScan()') && /reading which product each video sells/.test(UI) && /const stuck = still > \(p\.quietOk \?\? 90_000\)/.test(UI) && /Last moved \{since\(still\)\} ago/.test(UI) && /Stop watching/.test(UI) && /have a product, and their Amazon video links are now in the list/.test(UI))
-  check('the video sync resumes from what is saved, joins a running job, and is watched until it is actually done',
-    /fetch\('\/api\/amazon-videos'\)[^\n]*count/.test(UI) && !/tick < 900/.test(UI) && (UI.match(/for \(;;\)/g) || []).length >= 2
-      && /if \(\(list\.offset \|\| 0\) <= from\) break/.test(UI) && /prod\.read <= lastRead\) break/.test(UI) && /Stopped watching\. SCOUT carries on in the background/.test(UI))
-  check('a list run SCOUT ended at its 15 minute limit (partial) carries on rather than counting as the whole list',
-    /const unfinished = list\?\.interrupted \|\| \(list\?\.partial && !list\.error\)/.test(UI) && /list\.interrupted \|\| list\.partial\) \{/.test(UI))
-  check('a failed product read says SCOUT\'s reason and what it saw, not only a count',
-    /function productReadFailure/.test(UI) && /'no-detail-call'/.test(UI) && /st\.probe/.test(UI) && /text: withGap\(productReadFailure\(prod\)\)/.test(UI)
-      && /\(prod\.remaining \|\| 0\) > 0/.test(UI))
-  check('step 2 says which stage SCOUT is in, and its stuck warning allows for batches of 60',
-    /phase = !st\.endpoint/.test(UI) && /still > \(p\.quietOk \?\? 90_000\)/.test(UI) && /330_000/.test(UI) && /\{p\.phase && </.test(UI))
   {
     const PEND = readFileSync('app/api/amazon-videos/pending/route.ts', 'utf8')
     check('the product read is handed unread videos newest first, so recent videos get their products first',
       /\.order\('published_at', \{ ascending: false, nullsFirst: false \}\)/.test(PEND) && /q = q\.is\('products_synced_at', null\)/.test(PEND))
   }
-  check('a video list short of Amazon\'s own total still goes on to read products; only an empty list stops',
-    /if \(!have\) \{/.test(UI) && /listGap = `Your video list has/.test(UI) && inOrder(UI, 'if (!have) {', 'await startVideoProductsScan()') && /withGap\(productReadFailure\(prod\)\)/.test(UI))
+  check('Find my Amazon videos goes product by product through SCOUT and keeps what it finds',
+    /const r = await requestAmazonVideoForAsin\(p\.asin\)/.test(UI) && /if \(r\.video\?\.vdpUrl\) found\.push/.test(UI) && /fetch\('\/api\/brand-recap\/amazon-videos'/.test(UI))
+  check('only products without an Amazon video link are looked up', /\.filter\(\(p\) => !p\.links\.some\(\(l\) => l\.platform === 'amazon_video'\)\)/.test(UI))
+  check('a run that cannot work stops early and says why (no SCOUT, signed out, no OINK)',
+    /r\.error === 'not-installed'/.test(UI) && /if \(r\.signedOut\)/.test(UI) && /if \(i === 4 && oinkSeen === 0/.test(UI))
+  check('the end says what was found, what has no video, and what could not be checked',
+    /Found \$\{savedTotal\} Amazon video/.test(UI) && /could not be checked \(press again to retry those\)/.test(UI))
   const codes = new Map([['Ab12Cd', 'B000000002']])
   check('a video description names its products through Amazon links and the creator\'s own short links',
     asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')
