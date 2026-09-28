@@ -16,6 +16,7 @@ import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw,
 import PageHero from '@/components/layout/PageHero'
 import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
+import { readAllVideoProducts } from '@/lib/amazon-video-products-client'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -79,7 +80,7 @@ export default function BrandRecap() {
   // Live progress, so a long run reads as working or stuck, never as a
   // frozen sentence: how far, out of how many, how long it has been running,
   // when the count last moved, and which Amazon page SCOUT is on.
-  const [prog, setProg] = useState<{ step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number } | null>(null)
+  const [prog, setProg] = useState<{ step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number; title?: string; server?: boolean } | null>(null)
   const stopWatching = useRef(false)
   const [, setTick] = useState(0)
   useEffect(() => { if (!prog) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t) }, [prog])
@@ -94,12 +95,44 @@ export default function BrandRecap() {
   // same link and SCOUT reads it there too, but it is not needed.) Each
   // product's answer is counted, and a run that cannot work (no SCOUT, signed
   // out) stops early and says why.
+  // THE WHOLE LIBRARY, ON MVP'S SERVER. Every Amazon video has a public page
+  // naming its products (lib/amazon-vdp), so MVP reads those itself: no SCOUT,
+  // no tabs, and it carries on in the cron if this page is closed. SCOUT's
+  // product-by-product lookup is only the fallback, for when Amazon blocks
+  // MVP's server or the video library has never been read.
   async function findAmazonVideos() {
+    setScanning(true); setScanNote(null)
+    stopWatching.current = false
+    const started = Date.now()
+    let movedAt = started
+    let fallback: string | null = null
+    try {
+      const out = await readAllVideoProducts((p) => {
+        movedAt = Date.now()
+        const total = p.total ?? 0
+        setProg({ step: 1, done: Math.max(0, total - (p.remaining ?? total)), total: p.total, startedAt: started, movedAt, page: null, server: true,
+          title: 'Matching your Amazon videos to their products',
+          phase: `MVP reads each video's public page on Amazon from its own server: no tabs, and it keeps going if you leave this page. ${p.withProducts.toLocaleString()} videos matched to a product so far.`,
+          quietOk: 150_000 })
+      }, () => stopWatching.current)
+      await load()
+      const p = out.p
+      const tally = `${p.withProducts.toLocaleString()} videos matched to their products this run${p.noProducts ? `, ${p.noProducts.toLocaleString()} name no product on Amazon` : ''}${p.notFound ? `, ${p.notFound.toLocaleString()} have no page on Amazon any more` : ''}${p.errors ? `, ${p.errors.toLocaleString()} did not answer and are tried again later` : ''}.`
+      if (out.kind === 'done') setScanNote({ ok: true, text: `Every video in your Amazon library is matched. ${tally} Products on this page with no Amazon video have none in your library.` })
+      else if (out.kind === 'stopped') setScanNote({ ok: true, text: `Stopped watching. ${tally} MVP keeps reading the rest in the background.` })
+      else if (out.kind === 'blocked') fallback = `Amazon started answering MVP's server with robot checks, so SCOUT is looking up the products on this page one by one instead. ${tally}`
+      else if (out.kind === 'no-library') fallback = 'MVP has not read your Amazon video list yet (Earnings, Read my video library), so SCOUT is looking up the products on this page one by one.'
+      else setScanNote({ ok: false, text: `The read stopped: ${out.error}. ${tally} What was read is kept; press again to carry on.` })
+    } finally { setScanning(false); setProg(null) }
+    if (fallback) await findAmazonVideosWithScout(fallback)
+  }
+
+  async function findAmazonVideosWithScout(why: string) {
     const want = [...new Map((data?.brands ?? []).flatMap((b) => b.products)
       .filter((p) => !p.links.some((l) => l.platform === 'amazon_video'))
       .map((p) => [p.asin, p])).values()]
     if (want.length === 0) { setScanNote({ ok: true, text: 'Every product on this page already has its Amazon video link.' }); return }
-    setScanning(true); setScanNote(null)
+    setScanning(true); setScanNote({ ok: true, text: why })
     stopWatching.current = false
     const started = Date.now()
     let movedAt = started
@@ -148,7 +181,7 @@ export default function BrandRecap() {
       }
       if (!(await save())) return
       await load()
-      setScanNote((prev) => prev && !prev.ok ? prev : { ok: true, text: `Found ${savedTotal} Amazon video ${savedTotal === 1 ? 'link' : 'links'} and added them to the brands below. ${none} ${none === 1 ? 'product has' : 'products have'} no video of yours on Amazon${unreadable ? `, ${unreadable} showed Content Made but the link could not be read` : ''}${errors ? `, ${errors} could not be checked (press again to retry those)` : ''}.` })
+      setScanNote((prev) => prev && !prev.ok ? prev : { ok: true, text: `${why} Found ${savedTotal} Amazon video ${savedTotal === 1 ? 'link' : 'links'} and added them to the brands below. ${none} ${none === 1 ? 'product has' : 'products have'} no video of yours on Amazon${unreadable ? `, ${unreadable} showed Content Made but the link could not be read` : ''}${errors ? `, ${errors} could not be checked (press again to retry those)` : ''}.` })
     } finally { setScanning(false); setProg(null) }
   }
 
@@ -449,7 +482,7 @@ const since = (ms: number) => { const sec = Math.max(0, Math.round(ms / 1000)); 
 /** The Amazon video sync, in progress: a bar when the total is known, a
  *  moving stripe when it is not, the time running, when the count last
  *  moved, and a plain warning once it has not moved for 90 seconds. */
-function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number }; onStop: () => void }) {
+function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number; title?: string; server?: boolean }; onStop: () => void }) {
   const now = Date.now()
   const still = now - p.movedAt
   const stuck = still > (p.quietOk ?? 90_000)
@@ -459,7 +492,7 @@ function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: nu
       <div className="flex flex-wrap items-center gap-2 mb-1.5">
         <Loader2 size={13} className="animate-spin" style={{ color: ACCENT }} />
         <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-          Finding your Amazon videos, product by product
+          {p.title ?? 'Finding your Amazon videos, product by product'}
         </span>
         <span className="text-[#86868b] tabular-nums">
           {p.done.toLocaleString()}{p.total ? ` of ${p.total.toLocaleString()}` : ''}{pct != null ? ` (${pct}%)` : ''}
@@ -475,7 +508,12 @@ function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: nu
       <p className="mt-1.5 text-[11px] text-[#86868b] tabular-nums">
         Running {since(now - p.startedAt)}. Last moved {since(still)} ago.{p.page ? ` SCOUT is on: ${p.page}.` : ''}
       </p>
-      {stuck && (
+      {stuck && p.server && (
+        <p className="mt-1 text-[11px] text-[#c93400]">
+          Nothing has moved for {since(still)}. Amazon may be answering slowly. Everything read so far is saved, and MVP keeps reading in the background even if you press Stop watching.
+        </p>
+      )}
+      {stuck && !p.server && (
         <p className="mt-1 text-[11px] text-[#c93400]">
           Nothing has moved for {since(still)}. SCOUT may be waiting on Amazon: check the Amazon tab it opened{p.page ? ` (${p.page})` : ''} and sign in if asked. Everything read so far is saved, so you can press Stop watching and try again later.
         </p>

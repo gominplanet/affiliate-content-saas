@@ -19,10 +19,11 @@ import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video, Package } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, startVideoProductsScan, getVideoProductsStatus, type EarningsSyncStatus, type VideoScanStatus, type VideoProductsStatus } from '@/lib/extension-frame'
+import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, type EarningsSyncStatus, type VideoScanStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 import VideoInsights from '@/components/earnings/VideoInsights'
 import VideoProducts from '@/components/earnings/VideoProducts'
+import { readAllVideoProducts } from '@/lib/amazon-video-products-client'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -337,86 +338,27 @@ export default function EarningsPage() {
   // Same shape as the library read, and for the same reason: one call per video
   // over thousands of videos cannot be held open across a message, so SCOUT runs
   // it as a job and this watches it.
+  // Reads which products each video features, from each video's public page
+  // on Amazon, on MVP's server (lib/amazon-video-products). The SCOUT job this
+  // replaced looked for a per-video request to replay and found none, so it
+  // stored nothing. The read carries on in the cron if this page is closed.
   async function loadVideoProducts() {
     setScanningProducts(true)
     try {
-      let status: VideoProductsStatus | null = null
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const started = await startVideoProductsScan(hubUrl.trim() || undefined)
-        if (!started.ok) {
-          const human =
-            started.error === 'not-installed' ? 'Install SCOUT and sign in to Amazon to read your videos.'
-            : started.error === 'needs-update' ? 'Your SCOUT is too old to run this. Reinstall it from the link above, then try again.'
-            : 'Could not start reading the products on your videos.'
-          setProductScan(human)
-          toast.error(human)
-          return
-        }
-        setProductScan('Opening your video list and watching what Amazon asks for, so the right request can be replayed.')
-        status = null
-        for (let tick = 0; tick < 1200; tick++) {
-          await new Promise(r => setTimeout(r, 2500))
-          status = await getVideoProductsStatus()
-          if (!status) continue
-          if (status.done || status.interrupted) break
-          setProductScan(
-            status.endpoint
-              ? `Reading products: ${status.read.toLocaleString()} videos done${status.remaining != null ? `, ${status.remaining.toLocaleString()} to go` : ''}. ${status.withProducts.toLocaleString()} had a product on them.`
-              : 'Opening your video list and watching what Amazon asks for, so the right request can be replayed.'
-          )
-        }
-        if (!status?.interrupted) break
-        // Nothing gained means whatever stopped it will stop it again.
-        if (!status.read) break
-        setProductScan(`Chrome paused SCOUT after ${status.read.toLocaleString()} videos. Picking up from there.`)
-      }
-
+      setProductScan('Reading the public page of each of your videos on Amazon, from MVP\'s server. No tabs, and it keeps going if you leave this page.')
+      const out = await readAllVideoProducts((p) => {
+        const total = p.total ?? 0
+        const done = Math.max(0, total - (p.remaining ?? total))
+        setProductScan(`Reading products: ${done.toLocaleString()} of ${total.toLocaleString()} videos done. ${p.withProducts.toLocaleString()} matched to a product this run.`)
+      }, () => false)
       setDataVersion(v => v + 1)
       void load()
-      if (status?.sample) setVideoSample(status.sample)
-
-      if (!status) {
-        setProductScan('SCOUT stopped answering, so there is nothing to report. Reload the page and try again.')
-        toast.error('SCOUT stopped answering.')
-        return
-      }
-      if (!status.done && !status.interrupted) {
-        setProductScan(`Still reading, ${status.read.toLocaleString()} videos done and ${status.remaining?.toLocaleString() ?? 'more'} to go. What has been read is saved. Run it again to carry on.`)
-        return
-      }
-      if (status.interrupted) {
-        setProductScan(`Chrome stopped SCOUT after ${status.read.toLocaleString()} videos. What was read is saved. Run it again to carry on.`)
-        toast(`${status.read.toLocaleString()} videos read. Run it again to continue.`)
-        return
-      }
-      if (status.error === 'same-products-every-video') {
-        // Nothing was stored, deliberately. One video's products written across
-        // the whole library would be worse than no products at all, and much
-        // harder to spot afterwards.
-        setProductScan(`Amazon returned the same products for every video, which means the request SCOUT found does not actually take a video id. Nothing was stored rather than putting one video's products against all of them.${status.endpoint ? ` The request tried was ${status.endpoint}.` : ''}`)
-        toast.error('That request ignores the video id, so nothing was stored.')
-        return
-      }
-      if (status.error === 'no-detail-call') {
-        // The honest outcome when Amazon offers no per-video call: say exactly
-        // what was seen rather than storing something invented from the wrong
-        // response.
-        setProductScan(`Amazon never asked for a single video on its own, so there was no request to replay and nothing was stored. ${status.probe || ''}`)
-        toast.error('No per-video request to replay, so nothing was stored.')
-        return
-      }
-      if (status.error) {
-        setProductScan(`Stopped after ${status.read.toLocaleString()} videos: ${status.error}. What was read is saved.${status.endpoint ? ` Replaying ${status.endpoint}.` : ''}`)
-        toast.error('The product read stopped early.')
-        return
-      }
-      setProductScan(
-        `${status.read.toLocaleString()} videos read, ${status.withProducts.toLocaleString()} of them with a product attached, ${status.savedProducts.toLocaleString()} product rows saved.` +
-        `${status.remaining ? ` ${status.remaining.toLocaleString()} still to go, run it again to carry on.` : ''}` +
-        `${status.durationsFound ? ` Amazon also gave a length for ${status.durationsFound.toLocaleString()} of them.` : ' Amazon gave no length on this call either.'}` +
-        `${status.endpoint ? ` Read from ${status.endpoint}.` : ''}`
-      )
-      toast.success(`${status.withProducts.toLocaleString()} videos now have their products.`)
+      const p = out.p
+      const tally = `${p.withProducts.toLocaleString()} videos matched to their products this run${p.noProducts ? `, ${p.noProducts.toLocaleString()} name no product on Amazon` : ''}${p.notFound ? `, ${p.notFound.toLocaleString()} have no page on Amazon any more` : ''}${p.errors ? `, ${p.errors.toLocaleString()} did not answer and are tried again later` : ''}.`
+      if (out.kind === 'done') { setProductScan(`Every video is matched. ${tally}`); toast.success('Every video now has its products.') }
+      else if (out.kind === 'no-library') setProductScan('Read your video library first (the step above), then this.')
+      else if (out.kind === 'blocked') { setProductScan(`Amazon started answering MVP's server with robot checks, so the read paused. ${tally} MVP tries again on its own every minute.`); toast.error('Amazon paused the read. MVP will retry.') }
+      else if (out.kind === 'stuck') { setProductScan(`The read stopped: ${out.error}. ${tally} What was read is kept; press again to carry on.`); toast.error('The product read stopped early.') }
     } finally { setScanningProducts(false) }
   }
 
