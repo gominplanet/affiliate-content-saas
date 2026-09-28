@@ -6,6 +6,8 @@ import { findAiTells, AI_TELL_HOLD_AT } from '@/lib/ai-tells'
 import { stripHashtagBlock, withProvenanceNote } from '@/lib/post-provenance'
 import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
+import { checkSamePost } from '@/lib/post-site'
+import { titleNamesProduct, plainProductTitle } from '@/lib/title-product'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
@@ -1130,6 +1132,8 @@ async function handleGenerate(request: Request) {
   //          no user accounts (see lib/keyword-research.ts).
   let targetKeyword: string | null = null
   let supportingKeywords: string[] = []
+  // The product the Amazon listing names, kept for the title check before publishing.
+  let titleProduct: { brand: string | null; canonical: string | null } | null = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let amazonStep: any = null
   if (asinOverride) {
@@ -1153,6 +1157,7 @@ async function handleGenerate(request: Request) {
       null,
     )
     if (amazonStep?.product?.title) {
+      titleProduct = deriveProductName(amazonStep.product.title as string)
       // Hand the writer the seller's listing as GROUND TRUTH for the product's
       // brand + specs. This is what stops the writer inventing a brand from a
       // generic transcript/web phrase (e.g. titling a PURRUGS mat "Muddy Mat").
@@ -1790,6 +1795,24 @@ async function handleGenerate(request: Request) {
     } catch { /* not checked here; the after() pass tries once more */ }
   }
 
+  // ── THE TITLE NAMES THE PRODUCT, BEFORE ANYONE SEES IT ───────────────────
+  // Checked against the Amazon listing (lib/title-product). A miss gets the
+  // title-vs-body correction now rather than after publishing, and if that
+  // still misses, the product's own name. What happened is kept on the post.
+  let titleFix: { from: string; to: string; how: 'ai' | 'product-name' } | null = null
+  {
+    const first = titleNamesProduct(generated.title, titleProduct)
+    if (!first.ok && titleProduct?.canonical) {
+      const before = generated.title
+      try {
+        const fixed = scrubBanned(((await claude.factCheckTitleVsBody(generated.title, content, { userId: user.id, tier: (wp?.tier as string) ?? null })) || '').trim())
+        if (fixed && titleNamesProduct(fixed, titleProduct).ok) { generated.title = fixed; titleFix = { from: before, to: fixed, how: 'ai' } }
+      } catch { /* the product-name fallback below */ }
+      if (!titleFix) { generated.title = plainProductTitle(titleProduct.canonical); titleFix = { from: before, to: generated.title, how: 'product-name' } }
+      console.warn('[blog-generate] title did not name the product; corrected before publishing', titleFix)
+    }
+  }
+
   // ── THE QUALITY GATE ─────────────────────────────────────────────────────
   // What still reads as machine-written after every pass is counted (lib/
   // ai-tells). An auto-pilot post, which goes out with nobody looking, is
@@ -1830,6 +1853,19 @@ async function handleGenerate(request: Request) {
 
   // A held post goes to WordPress as a draft, whatever was asked.
   if (heldForReview) wpStatus = 'draft'
+
+  // A REBUILD WRITES TO THE POST MVP HAS ON FILE, AND ONLY THAT ONE. The number
+  // came from blog_posts, and filed under the wrong site it names another post
+  // there: the rebuild would replace a stranger post's title and body. Checked
+  // against the address on file before anything is written (lib/post-site).
+  // Numbers that came from this job's own earlier attempt or from the slug
+  // adoption above were just read from this site, so they are not rechecked.
+  if (existingWpPostId && !existingIsThisJobsPost && existingWpPostId === (existingForLimit?.wordpress_post_id ?? null) && existingForLimit?.wordpress_url) {
+    const same = await checkSamePost(wpService, existingWpPostId, existingForLimit.wordpress_url as string)
+    if (!same.ok) {
+      return NextResponse.json({ error: `${same.error} Nothing was published. Pick the site this post is on in the site picker, then rebuild.` }, { status: 409 })
+    }
+  }
 
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via
@@ -3098,7 +3134,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // The gate's findings travel with the score: what still reads as AI, and,
     // for a held post, why it is a draft. Written even when scoring failed,
     // because a hold with no record is a draft nobody is told about.
-    const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
+    const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(titleFix ? { titleFix } : {}), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
     try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
   }
 
@@ -3108,6 +3144,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     aio,
     // HELD, said as held: a draft on WordPress, with the reasons.
     held: heldForReview ? { reasons: heldReasons } : null,
+    // The title was changed before publishing because it did not name the product.
+    titleFix,
     aiTells: tells.length,
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,

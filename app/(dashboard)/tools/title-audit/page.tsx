@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import SeoHubTabs from '@/components/seo/SeoHubTabs'
+import LiveTitleCheck from '@/components/seo/LiveTitleCheck'
 import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck, EyeOff, Info } from 'lucide-react'
 
 interface Mismatch {
@@ -186,6 +187,10 @@ export default function TitleAuditPage() {
       />
 
       <SeoHubTabs />
+
+      {/* The live titles first: a title changed on the site is invisible to the
+          scan below, which reads MVP's own copy. */}
+      <LiveTitleCheck />
 
       {/* What this is + why it's here — written for the creator, not for us.
           The old subtitle leaned on internal jargon ("WagComb-class

@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 
 export async function GET(request: Request) {
   try {
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
-      .select('id,wordpress_post_id,wordpress_site_id')
+      .select('id,wordpress_post_id,wordpress_site_id,wordpress_url')
       .eq(byWpId ? 'wordpress_post_id' : 'id', byWpId ? Number(postId) : postId)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -82,11 +82,7 @@ export async function POST(request: Request) {
 
     // Multi-site: push to the SAME site the post lives on (not the user's
     // default). Edits to a Wine post must hit the Wine site's WP API.
-    const site = await getWordPressCredentials(
-      supabase,
-      user.id,
-      (post as { wordpress_site_id?: string | null }).wordpress_site_id,
-    )
+    const site = await credsForPost(supabase, user.id, post as { wordpress_url?: string | null; wordpress_site_id?: string | null })
     if (!site) {
       return NextResponse.json({ ok: true, pushedToWp: false, warning: 'Saved, but WordPress not connected.' })
     }
@@ -95,6 +91,8 @@ export async function POST(request: Request) {
       const wpService = createWordPressService(
         site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined,
       )
+      const same = await checkSamePost(wpService, post.wordpress_post_id, (post as { wordpress_url?: string | null }).wordpress_url)
+      if (!same.ok) return NextResponse.json({ ok: true, pushedToWp: false, warning: `Saved in MVP. ${same.error}` })
       await wpService.updatePost(post.wordpress_post_id, { content })
       return NextResponse.json({ ok: true, pushedToWp: true })
     } catch (err: unknown) {

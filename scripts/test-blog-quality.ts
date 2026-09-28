@@ -105,7 +105,7 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   const A = read('app/api/blog/refresh/route.ts')
   check('the update is built on the raw blocks WordPress has now, never the rendered page', /const read = await wp\.readRawPost/.test(A) && /refreshedBody\(live\.content/.test(A) && !/getPostContent/.test(A))
   check('the update is confirmed in what WordPress returns before it is reported', /const after = await wp\.readRawPost/.test(A) && /if \(!landed\)/.test(A))
-  check('the post is read from the site its own address is on, not the default site', /find\(\(x\) => hostOf\(x\.url\) === postHost\)/.test(A))
+  check('the post is read from the site its own address is on, and confirmed as the same post', /credsForPost\(admin, g\.ownerId, post\)/.test(A) && /checkSamePost\(wp, post\.wordpress_post_id, post\.wordpress_url\)/.test(A))
   check('a failed read says what WordPress answered', /is not on \$\{where\}/.test(A) && /would not let MVP open this post for editing/.test(A))
   const W = read('services/wordpress/index.ts')
   const rawRead = W.slice(W.indexOf('async readRawPost'), W.indexOf('async getPostMetaValue'))

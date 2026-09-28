@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { applyPostFixes, fixableFailing, type FixablePost } from '@/lib/seo-fix'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { hostOf } from '@/lib/post-site'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postsRaw } = await supabase
     .from('blog_posts')
-    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id')
+    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,wordpress_url')
     .eq('user_id', user.id)
     .not('wordpress_post_id', 'is', null)
     .not('content', 'is', null)
@@ -118,6 +119,10 @@ export async function POST(request: Request) {
       ? sitePosts.filter(p => p.wordpress_post_id != null && ctx.liveIds!.has(p.wordpress_post_id))
       : sitePosts
     for (const p of filtered) {
+      // A post whose own address is on another site is filed under the wrong
+      // one: writing to this number here would change a different post.
+      const url = (p as { wordpress_url?: string | null }).wordpress_url
+      if (url && hostOf(url) && hostOf(url) !== hostOf(ctx.wpBase)) continue
       const fixes = fixableFailing(p, ctx.wpBase)
       if (fixes.length > 0) needFix.push({ post: p, fixes, siteKey })
     }

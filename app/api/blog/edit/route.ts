@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -79,10 +79,10 @@ export async function PATCH(request: Request) {
     const sb = supabase as any
     const { data: row } = await sb
       .from('blog_posts')
-      .select('id,wordpress_post_id,wordpress_site_id')
+      .select('id,wordpress_post_id,wordpress_site_id,wordpress_url')
       .eq('id', postId).eq('user_id', user.id).maybeSingle()
     if (!row) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-    const p = row as Pick<PostRow, 'id' | 'wordpress_post_id' | 'wordpress_site_id'>
+    const p = row as Pick<PostRow, 'id' | 'wordpress_post_id' | 'wordpress_site_id'> & { wordpress_url: string | null }
 
     // 1. Save to blog_posts (source of truth MVP reads from).
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -96,9 +96,11 @@ export async function PATCH(request: Request) {
     let wpError: string | null = null
     if (p.wordpress_post_id) {
       try {
-        const creds = await getWordPressCredentials(supabase, user.id, p.wordpress_site_id ?? null)
-        if (!creds) throw new Error('WordPress site not connected.')
+        const creds = await credsForPost(supabase, user.id, p)
+        if (!creds) throw new Error('The site this post is on is not connected.')
         const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token || undefined)
+        const same = await checkSamePost(wp, p.wordpress_post_id, p.wordpress_url)
+        if (!same.ok) throw new Error(same.error)
         const wpPatch: Record<string, unknown> = {}
         if (title != null) wpPatch.title = title
         if (content != null) wpPatch.content = content

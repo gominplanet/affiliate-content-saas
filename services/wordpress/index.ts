@@ -1086,6 +1086,30 @@ export class WordPressService {
     }
   }
 
+  /** Up to 100 posts' live title, slug and address, as WordPress has them
+   *  now (raw title, not the rendered one). Null when the site would not
+   *  answer, which is not the same as the posts being gone. */
+  async getPostsBrief(ids: number[]): Promise<Map<number, { title: string; slug: string; link: string; status: string }> | null> {
+    const wanted = [...new Set(ids.filter((n) => Number.isFinite(n) && n > 0))].slice(0, 100)
+    if (!wanted.length) return new Map()
+    try {
+      const rows = await this.request<Array<{ id?: number; title?: { raw?: string; rendered?: string } | string; slug?: string; link?: string; status?: string }>>(
+        `/posts?include=${wanted.join(',')}&per_page=${wanted.length}&status=any&_fields=id,title,slug,link,status&context=edit`,
+        { method: 'GET' }, { nonceOnReadRefusal: true },
+      )
+      if (!Array.isArray(rows)) return null
+      const out = new Map<number, { title: string; slug: string; link: string; status: string }>()
+      for (const r of rows) {
+        if (typeof r?.id !== 'number') continue
+        const t = typeof r.title === 'string' ? r.title : (r.title?.raw ?? r.title?.rendered ?? '')
+        out.set(r.id, { title: String(t), slug: String(r.slug ?? ''), link: String(r.link ?? ''), status: String(r.status ?? '') })
+      }
+      return out
+    } catch {
+      return null
+    }
+  }
+
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {
     post = this.healBlocks(post)
     return this.request<WPPostResponse>(`/posts/${id}`, {
@@ -1140,6 +1164,21 @@ export class WordPressService {
       const msg = e instanceof Error ? e.message : String(e)
       const m = /^WordPress (\d{3}):/.exec(msg)
       return { ok: false, status: m ? Number(m[1]) : null, reason: msg.slice(0, 300) }
+    }
+  }
+
+  /** Which post this number is on this site: its slug and address. For
+   *  checking, before a write, that the number still names the post MVP
+   *  means (lib/post-site checkSamePost). Never throws. */
+  async getPostIdentity(id: number): Promise<{ ok: true; slug: string; link: string; status: string } | { ok: false; status: number | null; reason: string }> {
+    try {
+      const r = await this.request<{ slug?: string; link?: string; status?: string }>(
+        `/posts/${id}?context=edit&_fields=id,slug,link,status`, { method: 'GET' }, { nonceOnReadRefusal: true })
+      return { ok: true, slug: String(r?.slug ?? ''), link: String(r?.link ?? ''), status: String(r?.status ?? '') }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const m = /^WordPress (\d{3}):/.exec(msg)
+      return { ok: false, status: m ? Number(m[1]) : null, reason: msg.slice(0, 200) }
     }
   }
 

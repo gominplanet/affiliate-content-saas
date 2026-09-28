@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { canUsePreview } from '@/lib/labs-preview'
-import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError } from '@/lib/wp-errors'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
@@ -131,21 +131,15 @@ export async function POST(request: Request) {
   if (note.length < 15) return NextResponse.json({ error: 'Write a sentence about how it has held up. That line is what makes the update worth having.' }, { status: 400 })
   if (!post.wordpress_post_id || !post.published_at) return NextResponse.json({ error: 'This post is not on your WordPress site.' }, { status: 400 })
 
-  // THE SITE THE POST IS ON, by its own address. Posts written before
-  // multi-site carry no site id, and "no site id" means the default site,
-  // which for a creator with several blogs is often not where the post is:
-  // the post id then names nothing there, or a different post.
+  // THE SITE THE POST IS ON, by its own address (lib/post-site), and a check
+  // that the number names this post there before anything is written.
   const hostOf = (u: string | null | undefined) => { try { return u ? new URL(u).host.replace(/^www\./, '').toLowerCase() : null } catch { return null } }
-  const postHost = hostOf(post.wordpress_url)
-  const byHost = postHost ? (await listSites(admin, g.ownerId)).find((x) => hostOf(x.url) === postHost) : undefined
-  const site = byHost
-    ? { url: byHost.url, username: byHost.username, appPassword: byHost.appPassword, apiToken: byHost.apiToken, id: byHost.id }
-    : await getWordPressCredentials(admin, g.ownerId, post.wordpress_site_id ?? null).then((c) => c && { url: c.wordpress_url, username: c.wordpress_username, appPassword: c.wordpress_app_password, apiToken: c.wordpress_api_token, id: c.site_id })
-  if (!site) return NextResponse.json({ error: 'Your WordPress details could not be read, so nothing was changed. Reconnect your site under Blog Set Up.' }, { status: 400 })
-  if (postHost && hostOf(site.url) !== postHost) {
-    return NextResponse.json({ error: `This post lives on ${postHost}, which is not one of your connected sites, so nothing was changed.` }, { status: 400 })
-  }
-  const wp = createWordPressService(site.url, site.username, site.appPassword, site.apiToken || undefined)
+  const creds = await credsForPost(admin, g.ownerId, post)
+  if (!creds) return NextResponse.json({ error: `The site this post is on${hostOf(post.wordpress_url) ? ` (${hostOf(post.wordpress_url)})` : ''} is not connected, so nothing was changed.` }, { status: 400 })
+  const site = { url: creds.wordpress_url, id: creds.site_id }
+  const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token || undefined)
+  const same = await checkSamePost(wp, post.wordpress_post_id, post.wordpress_url)
+  if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
 
   // The body WordPress has NOW, not the copy MVP saved: the creator may have
   // edited it there since, and those edits must survive. RAW blocks only; the

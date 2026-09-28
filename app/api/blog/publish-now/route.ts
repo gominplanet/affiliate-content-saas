@@ -21,7 +21,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError } from '@/lib/wp-errors'
 
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    const creds = await getWordPressCredentials(supabase, user.id, post.wordpress_site_id ?? null)
+    const creds = await credsForPost(supabase, user.id, post)
     if (!creds) {
       return NextResponse.json({
         error: 'Your WordPress details could not be read, so nothing was published. Reconnect your site under Blog Set Up, then try again.',
@@ -64,6 +64,10 @@ export async function POST(request: Request) {
       creds.wordpress_url, creds.wordpress_username,
       creds.wordpress_app_password, creds.wordpress_api_token || undefined,
     )
+
+    // Publishing a different post by mistake is the worst kind of wrong post.
+    const same = await checkSamePost(wp, post.wordpress_post_id, post.wordpress_url)
+    if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
 
     let updated
     try {

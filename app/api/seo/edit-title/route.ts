@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scorePostSeo } from '@/lib/seo-score'
@@ -30,17 +30,21 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: post } = await (supabase as any)
     .from('blog_posts')
-    .select('id,title,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id')
+    .select('id,title,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,wordpress_url')
     .eq('user_id', ownerId).eq('id', postId).maybeSingle()
   if (!post) return NextResponse.json({ error: 'Post not found.' }, { status: 404 })
   if (!post.wordpress_post_id) return NextResponse.json({ error: 'This post isn’t published to WordPress yet.' }, { status: 404 })
 
-  const site = await getWordPressCredentials(supabase, ownerId, (post.wordpress_site_id as string | null) ?? null)
-  if (!site) return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
+  // The site this post's own address is on (lib/post-site), not the default.
+  const site = await credsForPost(supabase, ownerId, post)
+  if (!site) return NextResponse.json({ error: 'The site this post is on is not connected, so nothing was changed.' }, { status: 400 })
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
 
-  // Update the live WP post title, then mirror to blog_posts.
+  // Update the live WP post title, then mirror to blog_posts. Only once
+  // WordPress confirms the number names this post.
+  const same = await checkSamePost(wpService, post.wordpress_post_id as number, post.wordpress_url as string | null)
+  if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
   try {
     await wpService.updatePost(post.wordpress_post_id as number, { title: clean })
   } catch (e) {

@@ -13,7 +13,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
-      .select('id,wordpress_post_id,wordpress_site_id')
+      .select('id,wordpress_post_id,wordpress_site_id,wordpress_url')
       .eq('id', postId)
       .eq('user_id', ownerId)
       .maybeSingle()
@@ -61,10 +61,13 @@ export async function POST(request: Request) {
     // out of sync with the live site.
     if (post.wordpress_post_id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const siteId = (post as Record<string, unknown>).wordpress_site_id as string | null | undefined
-      const creds = await getWordPressCredentials(supabase, ownerId, siteId ?? null)
-      if (!creds) return NextResponse.json({ error: 'WordPress credentials not found' }, { status: 500 })
+      // The site this post's own address is on, and a check that the number
+      // names this post there, before its title changes (lib/post-site).
+      const creds = await credsForPost(supabase, ownerId, post as { wordpress_url?: string | null; wordpress_site_id?: string | null })
+      if (!creds) return NextResponse.json({ error: 'The site this post is on is not connected, so nothing was changed.' }, { status: 400 })
       const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
+      const same = await checkSamePost(wp, post.wordpress_post_id, (post as { wordpress_url?: string | null }).wordpress_url)
+      if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
       try {
         await wp.updatePost(post.wordpress_post_id, { title: newTitle.trim() })
       } catch (e) {
