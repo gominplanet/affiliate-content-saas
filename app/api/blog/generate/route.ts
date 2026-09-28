@@ -1659,7 +1659,11 @@ async function handleGenerate(request: Request) {
   // Preserve the slug of any existing live WP post so rebuilds keep the same
   // URL (and the same Google indexing history). Only fall through to the
   // freshly-generated slug for genuinely new posts.
-  const slug = existingSlug || generated.slug.slice(0, 60)
+  // Only while the record still points at a post: a record unlinked from a
+  // post it never should have had (the baskets video filed on the Jikasho
+  // review) would otherwise carry that post's address into its new post, and
+  // the adoption below would find the old post by it and overwrite it again.
+  const slug = (existingForLimit?.wordpress_post_id ? existingSlug : null) || generated.slug.slice(0, 60)
 
   // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
   // Credentials come from `site` (multi-site resolver), not the legacy `wp`
@@ -1768,8 +1772,18 @@ async function handleGenerate(request: Request) {
     try {
       const owner = await wpService.findPublishedPostBySlug(slug)
       if (owner?.id) {
-        existingWpPostId = owner.id
-        console.log(`[blog-generate] slug "${slug}" is already live (WP post ${owner.id}) — updating it in place instead of publishing a duplicate`)
+        // Never adopt a post that is another video's in MVP: updating it would
+        // replace that video's review with this one. A second post on the same
+        // product is a duplicate to tidy later; an overwritten one is lost.
+        const { data: claimed } = await supabase.from('blog_posts')
+          .select('id,video_id').eq('user_id', ownerId).eq('wordpress_post_id', owner.id)
+          .neq('video_id', videoId).limit(1)
+        if (claimed && claimed.length) {
+          console.warn(`[blog-generate] slug "${slug}" is live as WP post ${owner.id}, which belongs to another video in MVP; creating a new post instead of adopting it`)
+        } else {
+          existingWpPostId = owner.id
+          console.log(`[blog-generate] slug "${slug}" is already live (WP post ${owner.id}) — updating it in place instead of publishing a duplicate`)
+        }
       }
     } catch { /* lookup failed — fall through to a normal create */ }
   }

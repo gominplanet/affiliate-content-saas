@@ -58,6 +58,8 @@ check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(r
   const L = read('app/api/tools/title-audit/live/route.ts')
   check('the live check lists posts about something other than their address', /offTopic\.push\(/.test(L) && /offTopic, shared, unread/.test(L) && /res\.offTopic/.test(read('components/seo/LiveTitleCheck.tsx')))
   check('the live check lists posts claimed by more than one video', /const shared = \[\.\.\.sharing\.values\(\)\]\.filter\(\(g\) => g\.length > 1\)/.test(L) && /res\.shared/.test(read('components/seo/LiveTitleCheck.tsx')))
+  check('a record unlinked from a post does not carry that post\'s address into its new one', /const slug = \(existingForLimit\?\.wordpress_post_id \? existingSlug : null\) \|\| generated\.slug/.test(G))
+  check('a post that is another video\'s in MVP is never adopted by address', /\.neq\('video_id', videoId\)\.limit\(1\)\s*if \(claimed && claimed\.length\)/.test(G))
   check('a held generation says so on the Content page', /Saved as a draft, not published\./.test(read('components/content/GenerateButton.tsx')) && /Draft, not published/.test(read('components/content/GenerateButton.tsx')))
 }
 
