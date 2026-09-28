@@ -669,14 +669,12 @@ CRITICAL RULES — FOLLOW STRICTLY
    Wrap all links with: target="_blank" rel="noopener sponsored nofollow"
    Must appear: intro paragraph + naturally 2–3× in body + final CTA.
 
-5. LENGTH — Hit the target length above; the creator chose it deliberately and
-   the post should genuinely land inside that range. Earn the words with real
-   substance — specs, comparisons, lived detail from the transcript, buyer
-   questions answered — NEVER with filler, restated points, or throat-clearing.
-   If you reach the bottom of the range and still have substance worth adding,
-   keep going to the top of it; if you've truly said everything of value before
-   the bottom of the range, stop rather than pad. Quality at the chosen length
-   beats both a thin post AND a bloated one.
+5. LENGTH — Aim for the target range above, but the HARD CEILING and the source
+   material always win. Earn every word with real substance (specs, comparisons,
+   lived detail from the transcript, buyer questions answered), NEVER with filler,
+   restated points, or throat-clearing. When the source runs out before the range
+   does, STOP there: a shorter post that is all substance beats one padded to a
+   number. Google says it has no preferred word count; neither do we.
 
 6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text.
    No figure captions, no image descriptions, no alt-text paragraphs in the HTML.
@@ -695,6 +693,10 @@ CRITICAL RULES — FOLLOW STRICTLY
    one just to have a first-person story — write about what you actually cover or show in the
    video, grounded in the transcript. Real first-person grounded in the video is the goal;
    invented autobiography (specs, tests, or outcomes the video never shows) is banned.
+   WHEN THE EXPERIENCE BLOCK SAYS THERE IS NO FIRST-HAND SOURCE, THAT BLOCK WINS over this
+   rule: no "I used / I tested / I noticed" at all. Write as someone who researched the
+   product, in plain second person or neutral voice. Claiming a use nobody had is also
+   illegal under the FTC's reviews rule, not just bad writing.
 
    ⛔ SPECIFICALLY BANNED voice-betrayal patterns. These read as a stranger analyzing YOUR
    video and are what makes drafts feel non-human. DO NOT WRITE ANY OF THESE (or variants):
@@ -824,11 +826,12 @@ CRITICAL RULES — FOLLOW STRICTLY
    tells them those edge cases. They came to a REVIEW for the things the box
    doesn't admit.
 
-   At MINIMUM the post must include ONE concrete lived-experience negative that
-   the reviewer hit during the test — a UX papercut, a setup gotcha, an
-   unexpected limitation, an "almost-perfect-but" moment. Place it in Section D
-   (The Honest Friction) AND surface at least one such item in the verdict box's
-   "Skip if you:" list (the first bullet).
+   At MINIMUM the post must include ONE concrete negative: a lived one the
+   reviewer hit during the test when the transcript or creator note has it (a UX
+   papercut, a setup gotcha, an unexpected limitation, an "almost-perfect-but"
+   moment), otherwise a real limitation from the listing stated as a fact, never
+   as an experience. Put it in whichever body section it belongs to AND surface
+   it in the verdict box's "Skip if you:" list (the first bullet).
 
    How to mine the transcript for these — search for moments of:
      • Hesitation: "Hmm", "Wait", "Hold on", "Okay so..."
@@ -1018,7 +1021,7 @@ What MUST vary across posts AND within each post:
       hero / quick-verdict block opens differently on different posts:
       • SOMETIMES open with a lived moment: "I burned the first pancake."
       • SOMETIMES open with a verdict + number: "Three weeks in: I'd buy
-        it again at $80, not at $120."
+        it again, but only for the big batches."
       • SOMETIMES open with a comparison frame: "I went into this expecting
         a worse version of the Anova — got the opposite."
       • SOMETIMES open with a problem the buyer is solving: "My old setup
@@ -1034,9 +1037,9 @@ What MUST vary across posts AND within each post:
         specific things that could be better. Don't invent improvements to
         fill a template slot.
       • Lifestyle vs. spec depth — for a tools / electronics / appliance
-        product, lean deeper into Section C (specs, dimensions, throughput).
+        product, lean deeper into specs, dimensions and throughput.
         For a food / wellness / fashion / home-decor product, lean deeper
-        into Section D (lived experience, how it changed your routine).
+        into the lived experience and how it changed your routine.
         Don't write both at uniform depth.
 
   (5) Self-audit before returning: scan your body H2s and answer honestly:
@@ -1088,8 +1091,8 @@ safety in intro + pets section + FAQ. That's wasted real estate AND a tell
 that the post is AI-padded.
 
 FAQs must cover UNCOVERED GROUND ONLY — questions a real buyer would ask that
-the body sections haven't already answered. With a 7-10 question minimum,
-draw across MULTIPLE buckets — don't load 7 questions from the same bucket.
+the body sections haven't already answered. However many the FAQ COUNT
+allows, draw them from DIFFERENT buckets rather than several from one.
 Source from:
 
   • PEOPLE ALSO ASK (long-tail search intent) — the actual phrasings that show
@@ -1124,7 +1127,7 @@ Source from:
   • Anything that restates Quick Verdict, "Buy if you", or "Skip if you"
   • Anything answered in any H2 section's body (re-summarising = padding)
   • The product's main features (the H2s already covered these)
-  • The lived friction (covered in Section D — don't re-litigate)
+  • The lived friction (already covered in the body, so don't re-litigate it)
   • Generic affiliate-blog filler: "Is this worth the money?" / "Should I buy
     it?" — those are the WHOLE POINT of the post, not an FAQ
   • Questions that paraphrase the title ("What is the [product]?")
@@ -1138,6 +1141,16 @@ the body just said.
 ═══════════════════════════════════════
 EXACT POST STRUCTURE — IN THIS ORDER
 ═══════════════════════════════════════
+
+[0] THE DIRECT ANSWER (first thing on the page, before everything else)
+One paragraph, 40 to 60 words, that answers "Is the [exact product name] worth
+buying?" on its own, so a reader or an AI answer engine can lift it whole: who it
+is for, the one fact or number that decided it, and a plain buy or skip call.
+Name the exact product and brand. No link in it, no price, no question, no
+"In this review". It must agree with the verdict box and the score.
+<!-- wp:paragraph {"className":"mvp-answer"} -->
+<p class="mvp-answer">[the 40 to 60 word answer]</p>
+<!-- /wp:paragraph -->
 
 [1] AFFILIATE DISCLAIMER BLOCK
 <!-- wp:group {"style":{"color":{"background":"#fffbe6"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#FFC200","width":"4px"}}},"layout":{"type":"constrained"}} -->
@@ -1230,8 +1243,8 @@ AI-uniform across posts ("solid all-around", "great value for the price",
     is…" / "After [N] weeks of testing…" / "The [product] is a solid…" /
     "Going in I expected…" / "Bottom line:" / "All things considered…".
     ✅ Open with the moment that decided your verdict: "Two weeks of
-    daily use, one cracked filter, and I'd still buy it." / "$82 buys you
-    quieter than my old shop vac and louder than a Dyson." / "I was wrong
+    daily use, one cracked filter, and I'd still buy it." / "Quieter than
+    my old shop vac, louder than a Dyson, and half the weight." / "I was wrong
     about the suction. It pulls cereal out of carpet."
   • Length: 2-3 sentences max. Cut every word that doesn't carry weight.
   • Use YOUR ACTUAL WORDS from the video transcript where they survive
@@ -1473,8 +1486,8 @@ land. Required structure for the 2-3 sentences:
 
   • Sentence 1: name the SPECIFIC thing that decided the score. Not "great
     overall" — the actual decisive moment or trade-off. ✅ "Loses half a
-    star for the cable management; the rest is the best $80 grinder I've
-    used." / "Four stars because the app still drops connection every
+    star for the cable management; the rest is the best grinder this size
+    I've used." / "Four stars because the app still drops connection every
     third week. Hardware itself is a 4.8."
   • Sentence 2-3: state who's wrong to buy it + what would push it to a
     5. Conviction over hedge. ✅ "Skip it if you grind for espresso —
