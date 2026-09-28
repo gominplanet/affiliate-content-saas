@@ -72,6 +72,20 @@ ${'x'.repeat(9000)}
   check('every product\'s brand is looked up when the lookup function exists', /for \(let i = 0; i < lookFor\.length; i \+= 1000\)/.test(B) && !/missing\.slice\(0, 600\)/.test(B))
 }
 
+// ── New videos keep arriving without anyone asking ──
+{
+  const I = read('app/api/amazon-videos/ingest/route.ts')
+  const videoRow = I.slice(I.indexOf("const row: Record<string, unknown> = { user_id: user.id, aci, synced_at"), I.indexOf("const row: Record<string, unknown> = { user_id: user.id, aci, synced_at") + 900)
+  check('re-reading the video list never wipes a video\'s products', !/products_synced_at/.test(videoRow))
+  const R = read('app/api/global-sync/deliver/result/route.ts')
+  check('a Liftoff upload to amazon.com files its video with its product at once',
+    /from\('amazon_video_products'\)\.upsert\(/.test(R) && /amazon\\\.com\$\/i\.test\(String\(row\.domain/.test(R) && /synced_at: new Date\(0\)\.toISOString\(\)/.test(R))
+  const B = read('components/brand-recap/BrandRecap.tsx')
+  check('Brand recap re-reads a list older than a day when it opens, and before matching when asked',
+    /useEffect\(\(\) => \{ void readList\('open'\) \}, \[readList\]\)/.test(B) && /const list = await readList\('button'\)/.test(B) && /why === 'open' \? 24 : 1/.test(B))
+  check('a list check that could not start says so', /Could not check your Amazon video list for new videos/.test(B))
+}
+
 if (failures.length) {
   console.error(`\n❌ amazon-vdp: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

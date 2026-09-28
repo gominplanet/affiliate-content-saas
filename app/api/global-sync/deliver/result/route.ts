@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { nextUploadTry, uploadFailureKind } from '@/lib/amazon-upload-errors'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
@@ -65,10 +66,34 @@ export async function POST(req: Request) {
   }
 
   const { data: wrote, error } = await sb.from('global_sync_targets').update(patch)
-    .eq('id', targetId).eq('user_id', user.id).select('id')
+    .eq('id', targetId).eq('user_id', user.id).select('id,domain,asin,title')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   // NOTHING MATCHED IS NOT RECORDED. A wrong or someone else's id used to
   // come back ok, and the listing was counted as saved when nothing was.
   if (!wrote || wrote.length === 0) return NextResponse.json({ error: 'No such listing to record.' }, { status: 404 })
+
+  // AN UPLOAD KNOWS ITS OWN PRODUCT. A video Liftoff put on amazon.com is
+  // filed straight into the video library with the product it was uploaded
+  // for, so Brand recap and Earnings have it the moment it is up rather than
+  // after the next read of the whole library. The server's page read confirms
+  // it later (products_synced_at is left empty for that), and the next library
+  // read fills in the rest of Amazon's own figures. Best-effort: the delivery
+  // itself is already recorded above.
+  const row = wrote[0] as { domain?: string | null; asin?: string | null; title?: string | null }
+  if (body.ok && aci && /^amzn1\.vse\.video\.[0-9a-f]{32}$/i.test(aci) && /^(www\.)?amazon\.com$/i.test(String(row.domain || '')) && /^[A-Z0-9]{10}$/.test(String(row.asin || ''))) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const admin = createAdminClient() as any
+      await admin.from('amazon_videos').upsert(
+        // synced_at is when a read of the library last saw the video, and
+        // none has yet: left at the epoch so this row does not make the list
+        // look freshly read (Brand recap decides whether to re-read from it).
+        { user_id: user.id, aci, description: row.title ? String(row.title).slice(0, 500) : null, published_at: new Date().toISOString(), synced_at: new Date(0).toISOString() },
+        { onConflict: 'user_id,aci', ignoreDuplicates: true })
+      await admin.from('amazon_video_products').upsert(
+        { user_id: user.id, aci, asin: String(row.asin).toUpperCase(), title: null },
+        { onConflict: 'user_id,aci,asin', ignoreDuplicates: true })
+    } catch { /* the library read will find it */ }
+  }
   return NextResponse.json({ ok: true, ...(retry ? { tries: retry.tries, nextTryAt: retry.nextTryAt } : {}) })
 }

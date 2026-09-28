@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
-import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin, startCreatorHubVideosScan, getVideoScanStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { readAllVideoProducts, readVideoProductsViaScout, type ProductReadProgress } from '@/lib/amazon-video-products-client'
 import {
@@ -69,6 +69,32 @@ export default function BrandRecap() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  // NEW VIDEOS FIND THEIR WAY IN. MVP only knows the Amazon videos in the last
+  // read of the creator's video list; the matching to products then runs on
+  // its own. So when the list is more than a day old, SCOUT reads it again in
+  // a background tab when this page opens, and the new videos are matched by
+  // the server job with nobody watching. Said on screen, including when it
+  // could not start.
+  const [libraryNote, setLibraryNote] = useState<string | null>(null)
+  const listReadAt = useRef<number | null>(null)
+  const readList = useCallback(async (why: 'open' | 'button'): Promise<'started' | 'fresh' | 'no-scout' | 'failed'> => {
+    const st = await fetch('/api/amazon-videos/library-status', { cache: 'no-store' }).then((r) => r.json()).catch(() => null) as { total?: number; lastReadAt?: string | null } | null
+    const last = st?.lastReadAt ? new Date(st.lastReadAt).getTime() : 0
+    listReadAt.current = last || null
+    const age = Date.now() - last
+    if (!st?.total && why === 'open') return 'fresh' // never read: the button explains, not a surprise tab on open
+    if (age < (why === 'open' ? 24 : 1) * 3600_000) return 'fresh'
+    const started = await startCreatorHubVideosScan()
+    if (!started.ok) {
+      if (started.error === 'not-installed') return 'no-scout'
+      setLibraryNote(`Could not check your Amazon video list for new videos (${started.error === 'needs-update' ? 'SCOUT needs updating' : started.error || 'SCOUT did not start'}). Videos posted since ${last ? new Date(last).toLocaleDateString() : 'the last read'} are not matched yet.`)
+      return 'failed'
+    }
+    setLibraryNote(`SCOUT is checking your Amazon video list for new videos in a background tab${last ? ` (last read ${new Date(last).toLocaleDateString()})` : ''}. New ones are matched to their products automatically.`)
+    return 'started'
+  }, [])
+  useEffect(() => { void readList('open') }, [readList])
+
   // AMAZON VIDEOS: the same sync the Earnings page runs. SCOUT reads the whole
   // video library from Amazon's own data in the creator's signed-in browser
   // (thousands of videos, no paging through Manage Content), then reads which
@@ -107,6 +133,19 @@ export default function BrandRecap() {
     let movedAt = started
     let fallback: string | null = null
     try {
+      // New videos first: if the list is over an hour old, SCOUT reads it
+      // again in a background tab, and matching starts once the newest are in
+      // (or after a minute and a half; the rest carries on behind).
+      const list = await readList('button')
+      if (list === 'started') {
+        for (let i = 0; i < 45 && !stopWatching.current; i++) {
+          const st = await getVideoScanStatus()
+          setProg({ step: 1, done: st?.saved ?? 0, total: st?.total ?? null, startedAt: started, movedAt: Date.now(), page: null, server: true,
+            title: 'Checking your Amazon video list for new videos', phase: 'SCOUT is reading your video list in a background tab. Matching starts right after.', quietOk: 150_000 })
+          if (!st || st.done || (st.saved ?? 0) >= 400) break
+          await new Promise((r) => setTimeout(r, 2000))
+        }
+      }
       const out = await readAllVideoProducts((p) => {
         movedAt = Date.now()
         const total = p.total ?? 0
@@ -234,6 +273,7 @@ export default function BrandRecap() {
       {data && data.unread.length > 0 && (
         <Notice tone="warn">Could not read {data.unread.join(', ')}, so some links may be missing below. Refresh to try again.</Notice>
       )}
+      {libraryNote && <Notice tone="info">{libraryNote}</Notice>}
       {data && data.privateVideos > 0 && (
         <Notice tone="info">{data.privateVideos} video{data.privateVideos === 1 ? ' is' : 's are'} private or scheduled on YouTube, so {data.privateVideos === 1 ? 'it is' : 'they are'} left out until public.</Notice>
       )}
