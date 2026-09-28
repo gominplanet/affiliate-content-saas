@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { canUsePreview } from '@/lib/labs-preview'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError } from '@/lib/wp-errors'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
@@ -131,14 +131,36 @@ export async function POST(request: Request) {
   if (note.length < 15) return NextResponse.json({ error: 'Write a sentence about how it has held up. That line is what makes the update worth having.' }, { status: 400 })
   if (!post.wordpress_post_id || !post.published_at) return NextResponse.json({ error: 'This post is not on your WordPress site.' }, { status: 400 })
 
-  const creds = await getWordPressCredentials(admin, g.ownerId, post.wordpress_site_id ?? null)
-  if (!creds) return NextResponse.json({ error: 'Your WordPress details could not be read, so nothing was changed. Reconnect your site under Blog Set Up.' }, { status: 400 })
-  const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token || undefined)
+  // THE SITE THE POST IS ON, by its own address. Posts written before
+  // multi-site carry no site id, and "no site id" means the default site,
+  // which for a creator with several blogs is often not where the post is:
+  // the post id then names nothing there, or a different post.
+  const hostOf = (u: string | null | undefined) => { try { return u ? new URL(u).host.replace(/^www\./, '').toLowerCase() : null } catch { return null } }
+  const postHost = hostOf(post.wordpress_url)
+  const byHost = postHost ? (await listSites(admin, g.ownerId)).find((x) => hostOf(x.url) === postHost) : undefined
+  const site = byHost
+    ? { url: byHost.url, username: byHost.username, appPassword: byHost.appPassword, apiToken: byHost.apiToken, id: byHost.id }
+    : await getWordPressCredentials(admin, g.ownerId, post.wordpress_site_id ?? null).then((c) => c && { url: c.wordpress_url, username: c.wordpress_username, appPassword: c.wordpress_app_password, apiToken: c.wordpress_api_token, id: c.site_id })
+  if (!site) return NextResponse.json({ error: 'Your WordPress details could not be read, so nothing was changed. Reconnect your site under Blog Set Up.' }, { status: 400 })
+  if (postHost && hostOf(site.url) !== postHost) {
+    return NextResponse.json({ error: `This post lives on ${postHost}, which is not one of your connected sites, so nothing was changed.` }, { status: 400 })
+  }
+  const wp = createWordPressService(site.url, site.username, site.appPassword, site.apiToken || undefined)
 
   // The body WordPress has NOW, not the copy MVP saved: the creator may have
-  // edited it there since, and those edits must survive.
-  const live = await wp.getPostContent(post.wordpress_post_id)
-  if (!live) return NextResponse.json({ error: 'WordPress would not return this post, so nothing was changed.' }, { status: 502 })
+  // edited it there since, and those edits must survive. RAW blocks only; the
+  // rendered page is never saved back (services/wordpress readRawPost).
+  const read = await wp.readRawPost(post.wordpress_post_id)
+  if (!read.ok) {
+    const where = hostOf(site.url) || 'your site'
+    const why = read.status === 404 || /rest_post_invalid_id/.test(read.reason)
+      ? `Post #${post.wordpress_post_id} is not on ${where}. It may have been deleted there.`
+      : read.status === 401 || read.status === 403
+        ? `${where} would not let MVP open this post for editing (${read.reason}). Run the connection doctor under Blog Set Up.`
+        : `${where} did not return this post for editing: ${read.reason}`
+    return NextResponse.json({ error: `${why} Nothing was changed.` }, { status: 502 })
+  }
+  const live = { title: read.title, content: read.content }
 
   let content = refreshedBody(live.content, note, sinceLabel(post.published_at))
 
@@ -168,10 +190,10 @@ export async function POST(request: Request) {
   }
 
   // VERIFY: the line is in the post WordPress now returns, not just sent.
-  const after = await wp.getPostContent(post.wordpress_post_id)
-  // Counted, not matched as text: a rendered read curls the apostrophes.
+  const after = await wp.readRawPost(post.wordpress_post_id)
+  // Counted rather than matched as text, so any reformatting on save is fine.
   const updates = (h: string) => h.split('class="mvp-update"').length - 1
-  const landed = !!after && updates(after.content) > updates(live.content)
+  const landed = after.ok && updates(after.content) > updates(live.content)
   if (!landed) {
     return NextResponse.json({ error: 'WordPress accepted the change but the update is not in the post it returns. A security or caching plugin may be rewriting saves. Run the connection doctor under Blog Set Up.' }, { status: 502 })
   }
@@ -180,7 +202,7 @@ export async function POST(request: Request) {
   const { error: upErr } = await admin.from('blog_posts')
     .update({ refreshed_at: at, refresh_note: note, refresh_snoozed_until: null, content })
     .eq('id', post.id)
-  const pinged = post.wordpress_url ? await pingIndexNowForUrl(admin, g.ownerId, post.wordpress_url, post.wordpress_site_id) : false
+  const pinged = post.wordpress_url ? await pingIndexNowForUrl(admin, g.ownerId, post.wordpress_url, site.id) : false
   return NextResponse.json({
     ok: true, at, pinged,
     // The post is updated either way; this says whether MVP could remember it.

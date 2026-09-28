@@ -363,7 +363,7 @@ export class WordPressService {
     }
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, options: RequestInit = {}, extra?: { nonceOnReadRefusal?: boolean }): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
@@ -431,7 +431,9 @@ export class WordPressService {
     let res = await run(buildHeaders())
 
     // On write 401/403, retry with login+nonce (server strips Authorization on POST)
-    if ((res.status === 401 || res.status === 403) && isWrite) {
+    // Reads normally never need it; a read that asks (the edit-context read of
+    // a post's raw blocks) gets the same second go as a write.
+    if ((res.status === 401 || res.status === 403) && (isWrite || extra?.nonceOnReadRefusal)) {
       const nonce = await this.loginAndGetNonce()
       res = await run(buildHeaders(nonce), nonce)
 
@@ -1113,6 +1115,32 @@ export class WordPressService {
       } catch { /* edit context may be denied → try view; both failing → null */ }
     }
     return null
+  }
+
+  /**
+   * The post's RAW block HTML, the only form that is safe to edit and save
+   * back. getPostContent above falls back to the rendered page, which carries
+   * whatever the theme and plugins add at display time and has lost its block
+   * markers; saving that back would bake the additions in and break the
+   * blocks. So this never falls back, and a refusal comes back with the
+   * reason WordPress gave instead of a bare null.
+   */
+  async readRawPost(id: number): Promise<{ ok: true; title: string; content: string } | { ok: false; status: number | null; reason: string }> {
+    type Field = { raw?: string; rendered?: string } | string | undefined
+    try {
+      const r = await this.request<{ title?: Field; content?: Field }>(
+        `/posts/${id}?context=edit&_fields=id,title,content`, { method: 'GET' }, { nonceOnReadRefusal: true })
+      const raw = (f: Field) => (typeof f === 'object' && f ? f.raw : undefined)
+      const content = raw(r?.content)
+      if (typeof content !== 'string' || !content.trim()) {
+        return { ok: false, status: null, reason: 'WordPress returned the post without its editable content.' }
+      }
+      return { ok: true, title: String(raw(r?.title) ?? ''), content }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const m = /^WordPress (\d{3}):/.exec(msg)
+      return { ok: false, status: m ? Number(m[1]) : null, reason: msg.slice(0, 300) }
+    }
   }
 
   /** Read one of our own post meta values.
