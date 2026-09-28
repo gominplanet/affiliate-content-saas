@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.97
+ * Version: 1.0.98
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -2754,20 +2754,28 @@ add_action('wp_head', function () {
     $og     = trim((string) get_post_meta($post_id, 'mvp_og_image', true));
     $jsonld = trim((string) get_post_meta($post_id, 'mvp_jsonld', true));
 
-    if ($desc !== '') {
+    // A DEDICATED SEO PLUGIN WRITES ITS OWN description and Open Graph tags.
+    // Printing ours as well gave every post two descriptions and two sets of
+    // OG tags, and which one a search engine takes is its choice, not ours.
+    // Our JSON-LD graph still goes out: it carries the review, product and
+    // video data those plugins do not have.
+    $seo_plugin = function_exists('mvp_affiliate_seo_plugin_active') && mvp_affiliate_seo_plugin_active();
+    if (!$seo_plugin && $desc !== '') {
         echo "\n<meta name=\"description\" content=\"" . esc_attr($desc) . "\" />";
         echo "\n<meta property=\"og:description\" content=\"" . esc_attr($desc) . "\" />";
         echo "\n<meta name=\"twitter:description\" content=\"" . esc_attr($desc) . "\" />";
     }
+    if (!$seo_plugin) {
     echo "\n<meta property=\"og:title\" content=\"" . esc_attr(get_the_title($post_id)) . "\" />";
     echo "\n<meta property=\"og:type\" content=\"article\" />";
     echo "\n<meta property=\"og:url\" content=\"" . esc_url(get_permalink($post_id)) . "\" />";
     echo "\n<meta property=\"og:site_name\" content=\"" . esc_attr(get_bloginfo('name')) . "\" />";
     echo "\n<meta property=\"article:published_time\" content=\"" . esc_attr(get_the_date('c', $post_id)) . "\" />";
     echo "\n<meta property=\"article:modified_time\" content=\"" . esc_attr(get_the_modified_date('c', $post_id)) . "\" />";
+    }
     // (Canonical is left to WP core / Kadence, which emit rel=canonical by
     //  default — adding our own would risk a duplicate canonical tag.)
-    if ($og !== '') {
+    if (!$seo_plugin && $og !== '') {
         echo "\n<meta property=\"og:image\" content=\"" . esc_url($og) . "\" />";
         echo "\n<meta name=\"twitter:card\" content=\"summary_large_image\" />";
         echo "\n<meta name=\"twitter:image\" content=\"" . esc_url($og) . "\" />";
@@ -2777,6 +2785,19 @@ add_action('wp_head', function () {
         // escapes < / > (neutralizes any "</script>" breakout). Never echo raw.
         $decoded = json_decode($jsonld, true);
         if (is_array($decoded)) {
+            // THE DATES ARE WORDPRESS'S OWN. The graph is written once, when
+            // the post is made, so its dateModified never moved when the post
+            // was refreshed, converted or rebuilt, and a rebuild could stamp a
+            // new datePublished. WordPress knows both for certain.
+            if (isset($decoded['@graph']) && is_array($decoded['@graph'])) {
+                foreach ($decoded['@graph'] as $i => $node) {
+                    $t = isset($node['@type']) ? (array) $node['@type'] : [];
+                    if (array_intersect($t, ['BlogPosting', 'Article', 'NewsArticle', 'Review'])) {
+                        $decoded['@graph'][$i]['datePublished'] = get_the_date('c', $post_id);
+                        $decoded['@graph'][$i]['dateModified']  = get_the_modified_date('c', $post_id);
+                    }
+                }
+            }
             echo "\n<script type=\"application/ld+json\">"
                . wp_json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP)
                . "</script>\n";
@@ -2799,6 +2820,11 @@ add_action('wp_head', function () {
     if (!is_singular('post')) return;
     $post = get_post(get_queried_object_id());
     if (!$post || !$post->post_content) return;
+    // ONE FAQPage, NOT TWO. MVP's own graph (mvp_jsonld, printed above)
+    // already carries the FAQ for every post it wrote; a second, separate
+    // FAQPage block is a competing copy. This one stays for posts without it.
+    $graph = (string) get_post_meta($post->ID, 'mvp_jsonld', true);
+    if ($graph !== '' && strpos($graph, 'FAQPage') !== false) return;
 
     // Find the FAQ section start — case-insensitive, tolerant of heading
     // level + class attributes.
@@ -2806,8 +2832,10 @@ add_action('wp_head', function () {
     $faq_start = $hm[0][1] + strlen($hm[0][0]);
     $faq_chunk = substr($post->post_content, $faq_start);
 
-    // Cut at the next H2 (next major section, e.g. wrap-up)
-    if (preg_match('/<h2[^>]*>/i', $faq_chunk, $nxt, PREG_OFFSET_CAPTURE)) {
+    // Cut at the next H2, or at whatever follows the FAQ (the scorecard, the
+    // CTA card, the hashtags, a related-reviews aside, any custom HTML block),
+    // or that text becomes part of the last answer.
+    if (preg_match('/<h2[^>]*>|<!--\s*wp:(?:html|group|columns|separator)\b|<aside\b|<div\b/i', $faq_chunk, $nxt, PREG_OFFSET_CAPTURE)) {
         $faq_chunk = substr($faq_chunk, 0, $nxt[0][1]);
     }
 
@@ -5187,8 +5215,10 @@ add_action('deleted_post', function () {
 add_filter('robots_txt', function ($output) {
     $bots = [
         'GPTBot', 'OAI-SearchBot', 'ChatGPT-User',  // OpenAI
-        'ClaudeBot', 'Claude-Web', 'anthropic-ai',  // Anthropic
-        'PerplexityBot',                            // Perplexity
+        // Claude-SearchBot is the one that decides whether Claude can cite a
+        // page; ClaudeBot is training only.
+        'ClaudeBot', 'Claude-SearchBot', 'Claude-User', 'Claude-Web', 'anthropic-ai',  // Anthropic
+        'PerplexityBot', 'Perplexity-User',         // Perplexity
         'Google-Extended',                          // Google AI / Gemini
         'Applebot-Extended',                        // Apple Intelligence
         'Amazonbot', 'meta-externalagent',          // Amazon, Meta

@@ -1970,7 +1970,7 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingPost } = await supabase
     .from('blog_posts')
-    .select('id')
+    .select('id,published_at')
     .eq('user_id', ownerId)
     .eq('video_id', videoId)
     .order('created_at', { ascending: false })
@@ -2053,7 +2053,11 @@ async function handleGenerate(request: Request) {
     ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
     ai_model: 'claude-opus-4-8', // matches the #248 writer upgrade (was stale 'claude-sonnet-4-6')
     generation_prompt_version: 'v3.0',
-    published_at: new Date().toISOString(),
+    // THE FIRST PUBLICATION STAYS THE FIRST PUBLICATION. A rebuild used to
+    // stamp now here, and this value is the schema's datePublished, so every
+    // rebuild told search engines the post was brand new while WordPress kept
+    // its real date. A rebuild is a modification, said as dateModified.
+    published_at: ((existingPost as { published_at?: string | null } | null)?.published_at) || new Date().toISOString(),
     // Record the thumbnail-upload outcome, but ONLY when this run attempted the
     // upload (a fresh generate, or an existing post found with no image).
     // Runs that skipped it must not clobber a prior post's flag. Cleared by the re-attach
@@ -2275,8 +2279,11 @@ async function handleGenerate(request: Request) {
     // accessibility) — replaces the old "<title> — 2" placeholder. Varies the
     // descriptor per slot so each image's alt is distinct.
     const altBase = (generated.seoKeyword || generated.title || '').trim()
-    const ALT_DESCRIPTORS = ['in use', 'close-up detail', 'in a real setting', 'hands-on', 'key feature', 'overview']
-    const altFor = (i: number) => altBase ? `${altBase} — ${ALT_DESCRIPTORS[i % ALT_DESCRIPTORS.length]}` : `Product review image ${i + 1}`
+    // DESCRIBES THE PICTURE, NEVER CLAIMS A USE. These images are composed,
+    // so "in use" or "hands-on" would describe a scene nobody photographed,
+    // and the old separator was an em dash.
+    const ALT_DESCRIPTORS = ['product view', 'detail view', 'design and features', 'side view', 'key feature', 'overview']
+    const altFor = (i: number) => altBase ? `${altBase}, ${ALT_DESCRIPTORS[i % ALT_DESCRIPTORS.length]}` : `Product review image ${i + 1}`
 
     // ── SEO/AEO structured data writer (idempotent — safe to call twice) ─────
     // Builds the JSON-LD @graph + meta and writes them as post meta; the MVP
@@ -2300,6 +2307,8 @@ async function handleGenerate(request: Request) {
           title: generated.title,
           description: generated.excerpt,
           datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
+          // A rebuild of a post that already existed is a real change to it.
+          ...(existingPost ? { dateModified: new Date().toISOString() } : {}),
           imageUrl: ogImage,
           // Author-authority + entity signals (2026 E-E-A-T): bio, headshot,
           // job title, expertise topics, brand socials. All optional/additive.

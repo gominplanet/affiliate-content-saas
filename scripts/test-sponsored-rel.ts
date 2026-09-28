@@ -94,6 +94,38 @@ const GEN = live(read('app/api/blog/generate/route.ts'))
     'a silent repair hides the path that produced an untagged link')
 }
 
+// ── Blog fix 1: every short and redirect form is caught too ──
+{
+  const { isAffiliateHref: aff } = require('../lib/sponsored-rel') as typeof import('../lib/sponsored-rel')
+  check('a.co, bit.ly, mvpl.ink and MVP /go/ links are affiliate links',
+    aff('https://a.co/d/abc') && aff('https://bit.ly/x') && aff('https://mvpl.ink/Ab12Cd') && aff('https://www.mvpaffiliate.io/go/Ab12Cd') && aff('https://links.example.com/go/Ab12'))
+  check('an ordinary link is left alone', !aff('https://example.com/review') && !aff('https://example.com/go/'))
+}
+{
+  const { extractFaqFromHtml } = require('../lib/seo-schema') as typeof import('../lib/seo-schema')
+  const { insertRelatedLinks } = require('../lib/internal-links') as typeof import('../lib/internal-links')
+  const post = `<!-- wp:heading --><h2>Build</h2><!-- /wp:heading --><p>Solid.</p>
+<!-- wp:heading --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
+<!-- wp:heading {"level":3} --><h3>Is it loud?</h3><!-- /wp:heading --><p>No, about 40 dB.</p>
+<!-- wp:heading {"level":3} --><h3>Does it fold?</h3><!-- /wp:heading --><p>Yes, flat.</p>
+<!-- wp:html --><div class="gr-scorecard">Overall 4.5</div><!-- /wp:html --><!-- wp:html --><div class="gr-cta-card">Check price</div><!-- /wp:html -->`
+  const html = insertRelatedLinks(post, '<!-- wp:html --><aside><h2>Also worth considering</h2></aside><!-- /wp:html -->')
+  const faq = extractFaqFromHtml(html)
+  check('the related block goes before the FAQ, not inside it', html.indexOf('<aside>') < html.indexOf('Frequently Asked'))
+  check('every FAQ question reaches the schema, and nothing after the FAQ leaks into an answer',
+    faq.length === 2 && faq[1].answer === 'Yes, flat.')
+  const PHP = read('wp-plugin/mvpaffiliate-platform/mvpaffiliate-platform.php')
+  check('the plugin prints no second FAQPage when MVP\'s graph has one, and cuts its own at the scorecard',
+    /strpos\(\$graph, 'FAQPage'\) !== false\) return;/.test(PHP) && /<aside\\b\|<div\\b\/i', \$faq_chunk/.test(PHP))
+  check('the schema dates are WordPress\'s own', /\['dateModified'\]  = get_the_modified_date\('c', \$post_id\)/.test(PHP))
+  check('no duplicate description or OG tags beside an SEO plugin', /if \(!\$seo_plugin && \$desc !== ''\)/.test(PHP))
+  const GEN = read('app/api/blog/generate/route.ts')
+  check('a rebuild keeps the first publication date and says it was modified',
+    /published_at: \(\(existingPost as \{ published_at\?: string \| null \} \| null\)\?\.published_at\) \|\| new Date\(\)\.toISOString\(\)/.test(GEN) && /existingPost \? \{ dateModified: new Date\(\)\.toISOString\(\) \}/.test(GEN))
+  check('image alt text claims no use and has no dash', !/'in use'|'hands-on'/.test(GEN) && /`\$\{altBase\}, \$\{ALT_DESCRIPTORS/.test(GEN))
+  check('Claude\'s search crawler is allowed', /'Claude-SearchBot'/.test(PHP) && /Claude-SearchBot/.test(read('lib/ai-crawlers.ts')))
+}
+
 if (failures.length) {
   console.error(`\n❌ sponsored-rel: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

@@ -61,7 +61,13 @@ check('the plugin decides ended on the server, from the date or the ended flag',
 check('an ended box says so and keeps a working button', /This deal has ended<\/div>/.test(PHP) && /Check today&apos;s price →/.test(PHP))
 check('the countdown no longer disables the button', !/cta\.style\.pointerEvents = 'none'/.test(PHP) && /heading\.textContent = 'This deal has ended'/.test(PHP))
 check('the closing block reads the end date from the same post\'s deal box', /preg_match\('\/\\\[mvp_deal_banner/.test(PHP) && /Still thinking about it\?/.test(PHP))
-check('the plugin version is advertised', /Version: 1\.0\.97/.test(PHP) && WP_VERSIONS.plugin.version === '1.0.97')
+// At least the version that shipped the ended state, and the header and the
+// advertised version agree (pinning one number broke on every later release).
+check('the plugin version is advertised', (() => {
+  const head = (PHP.match(/\* Version: (\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number)
+  const adv = String(WP_VERSIONS.plugin.version)
+  return head.length === 3 && head.join('.') === adv && (head[0] > 1 || head[1] > 0 || head[2] >= 97)
+})())
 
 // ── the conversion ──────────────────────────────────────────────────────────
 const SRV = read('lib/deal-aftercare-server.ts')

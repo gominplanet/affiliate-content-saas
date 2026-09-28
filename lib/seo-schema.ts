@@ -157,7 +157,10 @@ export function extractFaqFromHtml(html: string): SeoFaqItem[] {
   // Bound the FAQ section so post-FAQ blocks don't leak into the last answer:
   // stop at the next <h2> OR the verdict / rating / CTA cards that follow the
   // FAQ in our template (those are <div>s, not headings).
-  const bound = section.slice(1).search(/<h2[^>]*>|class="gr-(?:rating-box|verdict|cta)/i)
+  // The answers are paragraphs and lists; anything else after the FAQ (the
+  // scorecard, the CTA card, the hashtags, the related-reviews aside, any
+  // custom HTML block) ends it, or its text becomes the last "answer".
+  const bound = section.slice(1).search(/<h2[^>]*>|<!--\s*wp:(?:html|group|columns|separator)\b|<aside\b|<div\b|class="gr-/i)
   if (bound !== -1) section = section.slice(0, bound + 1)
 
   const h3re = /<h3[^>]*>([\s\S]*?)<\/h3>/gi

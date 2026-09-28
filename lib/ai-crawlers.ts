@@ -9,14 +9,18 @@
 
 /** The crawlers that feed the major AI answer engines, with who they serve. */
 export const AI_CRAWLERS: Array<{ token: string; label: string; serves: string }> = [
-  { token: 'GPTBot', label: 'GPTBot', serves: 'ChatGPT (training)' },
-  { token: 'OAI-SearchBot', label: 'OAI-SearchBot', serves: 'ChatGPT Search' },
-  { token: 'ChatGPT-User', label: 'ChatGPT-User', serves: 'ChatGPT (live browse)' },
-  { token: 'PerplexityBot', label: 'PerplexityBot', serves: 'Perplexity' },
-  { token: 'Google-Extended', label: 'Google-Extended', serves: 'Gemini / AI Overviews' },
-  { token: 'ClaudeBot', label: 'ClaudeBot', serves: 'Claude' },
+  // What each one decides, from each company's own documentation. The search
+  // ones are what get a page cited in answers; the training ones are not, and
+  // Google-Extended has no effect on AI Overviews at all.
+  { token: 'OAI-SearchBot', label: 'OAI-SearchBot', serves: 'ChatGPT search answers' },
+  { token: 'ChatGPT-User', label: 'ChatGPT-User', serves: 'ChatGPT opening a page for a user' },
+  { token: 'GPTBot', label: 'GPTBot', serves: 'OpenAI training (not search answers)' },
+  { token: 'Claude-SearchBot', label: 'Claude-SearchBot', serves: 'Claude search answers' },
+  { token: 'ClaudeBot', label: 'ClaudeBot', serves: 'Anthropic training (not search answers)' },
+  { token: 'PerplexityBot', label: 'PerplexityBot', serves: 'Perplexity answers' },
+  { token: 'Google-Extended', label: 'Google-Extended', serves: 'Gemini training (not AI Overviews)' },
   { token: 'CCBot', label: 'CCBot', serves: 'Common Crawl (many LLMs)' },
-  { token: 'Applebot-Extended', label: 'Applebot-Extended', serves: 'Apple Intelligence' },
+  { token: 'Applebot-Extended', label: 'Applebot-Extended', serves: 'Apple Intelligence training' },
 ]
 
 export interface AiCrawlerCheck {

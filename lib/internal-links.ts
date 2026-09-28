@@ -159,12 +159,17 @@ ${cards}
  */
 export function insertRelatedLinks(content: string, block: string): string {
   if (!block) return content
-  const re = /<!-- wp:heading\b/g
+  // BEFORE THE FAQ'S OWN HEADING. This used to go before the LAST heading of
+  // any level, which in a post with an FAQ is the last question's <h3>: the
+  // block split the FAQ, and its <h2> cut the last question out of the FAQ
+  // schema. So the FAQ heading is found first, and otherwise the last H2.
+  const faq = content.search(/<!-- wp:heading[^>]*-->\s*<h2[^>]*>\s*(?:Frequently Asked Questions|FAQs?)\s*<\/h2>/i)
+  if (faq !== -1) return content.slice(0, faq) + block + content.slice(faq)
+  const re = /<!-- wp:heading(?![^>]*"level"\s*:\s*[3-6])[^>]*-->/g
   const offsets: number[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(content)) !== null) offsets.push(m.index)
   if (offsets.length === 0) return content + block
-  // Insert before the LAST heading (FAQ tail) → related reviews precede the FAQ.
   const at = offsets[offsets.length - 1]
   return content.slice(0, at) + block + content.slice(at)
 }

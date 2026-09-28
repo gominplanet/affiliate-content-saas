@@ -18,7 +18,7 @@
 // without it hands the opened page a handle on ours.
 
 /** Hosts whose links are affiliate links for our purposes. */
-const AFFILIATE_HOST = /(?:^|\.)(?:amazon\.[a-z.]+|amzn\.to|geni\.us|walmart\.com|shareasale\.com)$/i
+const AFFILIATE_HOST = /(?:^|\.)(?:amazon\.[a-z.]+|amzn\.to|amzn\.eu|a\.co|geni\.us|mvpl\.ink|bit\.ly|walmart\.com|shareasale\.com)$/i
 
 /** Does this href point somewhere that earns. */
 export function isAffiliateHref(href: string): boolean {
@@ -26,6 +26,9 @@ export function isAffiliateHref(href: string): boolean {
     const u = new URL(href.trim())
     if (!/^https?:$/.test(u.protocol)) return false
     if (AFFILIATE_HOST.test(u.hostname)) return true
+    // MVP's own redirect links (Passport /go/ codes on the app or a creator's
+    // custom link domain) always end at an affiliate link.
+    if (/^\/go\/[A-Za-z0-9_-]+\/?$/.test(u.pathname)) return true
     // A creator's own branded shortener (their Geniuslink domain) carries a
     // tag we cannot see from the hostname, so the query is checked too.
     return /(?:^|[?&])tag=/.test(u.search)
