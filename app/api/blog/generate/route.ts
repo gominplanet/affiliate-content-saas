@@ -2,6 +2,7 @@ import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
+import { findAiTells, AI_TELL_HOLD_AT } from '@/lib/ai-tells'
 import { stripHashtagBlock, withProvenanceNote } from '@/lib/post-provenance'
 import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
@@ -186,6 +187,8 @@ async function handleGenerate(request: Request) {
   // handler so it survives to the response rather than dying in the block that
   // set it.
   let linkFallbackNote: string | null = null
+  // For the fact-check before publishing: it runs only while there is time.
+  const routeStartedAt = Date.now()
   // 2026-06-09 Phase 2: resolve the effective owner so a VA's generation
   // reads + writes under the OWNER's user_id (their workspace), while
   // usage caps + generation tracking still bill the caller (the VA).
@@ -261,6 +264,9 @@ async function handleGenerate(request: Request) {
     /** ISO 8601 timestamp the post should go live. Required when
      *  scheduleMode is set. */
     scheduledFor?: string
+    /** Set by the daily auto-pilot. Its posts go out with nobody looking, so
+     *  they are the ones the quality gate holds as drafts. */
+    autopilot?: boolean
   }
   const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
   const scheduleMode = body.scheduleMode
@@ -294,7 +300,7 @@ async function handleGenerate(request: Request) {
   // Resolve the effective WP status. Default 'publish' (current behaviour).
   // wp-native scheduling carries the date through. draft-flip leaves date
   // unset — the post sits as a plain draft until our cron flips it.
-  const wpStatus: 'publish' | 'future' | 'draft' =
+  let wpStatus: 'publish' | 'future' | 'draft' =
     scheduleMode === 'wp-native' ? 'future' :
     scheduleMode === 'draft-flip' ? 'draft' :
     'publish'
@@ -339,6 +345,10 @@ async function handleGenerate(request: Request) {
   // When set: skip createPost and updatePost(existingWpPostId) instead, so the
   // live URL + Google indexing history are preserved across the rebuild.
   let existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
+  // True when existingWpPostId is the post an earlier attempt of THIS job
+  // created. The quality gate still applies to it: a retry must not publish a
+  // draft the first attempt held.
+  let existingIsThisJobsPost = false
   const existingSlug: string | null = existingForLimit?.slug ?? null
   // Multi-site: if this is a rewrite and the existing post is tied to a
   // specific wordpress_sites row, ROUTE THE REGENERATE TO THE SAME SITE
@@ -1271,6 +1281,7 @@ async function handleGenerate(request: Request) {
     if (typeof priorWpId === 'number' && priorWpId > 0 && !existingWpPostId) {
       console.log('[blog/generate] job', serviceJobId, 'already published WP post', priorWpId, '— updating it instead of creating another')
       existingWpPostId = priorWpId
+      existingIsThisJobsPost = true
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generated = checkpointGen as any
@@ -1762,6 +1773,41 @@ async function handleGenerate(request: Request) {
   // final body before publish, so a review never lands with a fixable SEO gap.
   content = enforceSeoBasics(content, { title: generated.title, seoKeyword: generated.seoKeyword })
 
+  // ── FACT-CHECK BEFORE PUBLISHING, NOT AFTER ────────────────────────────
+  // It used to run in after(), once the post was already live, so a wrong
+  // spec was public until the check caught up (and stayed public when it did
+  // not run). Now it runs here whenever there is time, and the corrected text
+  // is what publishes; the after() pass only runs when this one could not.
+  let factCheckedPrePublish = false
+  if (Date.now() - routeStartedAt < 400_000) {
+    try {
+      const checked = await claude.factCheckAndGuard(content, transcript, productResearch, { userId: user.id, tier: (wp?.tier as string) ?? null })
+      factCheckedPrePublish = true
+      if (checked && checked !== content) {
+        const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
+      }
+    } catch { /* not checked here; the after() pass tries once more */ }
+  }
+
+  // ── THE QUALITY GATE ─────────────────────────────────────────────────────
+  // What still reads as machine-written after every pass is counted (lib/
+  // ai-tells). An auto-pilot post, which goes out with nobody looking, is
+  // held as a WordPress draft when it has no first-hand source at all or
+  // carries AI_TELL_HOLD_AT tells or more, and the reason is kept on the post
+  // for the Content page to show with Publish anyway. A post the creator
+  // generated themselves publishes as they asked; the count is kept either way.
+  const tells = findAiTells(content)
+  const heldReasons: string[] = []
+  if (body.autopilot === true) {
+    const src = (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null
+    if (src === 'none') heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
+    if (tells.length >= AI_TELL_HOLD_AT) heldReasons.push(`It still reads as machine-written in ${tells.length} places: ${tells.slice(0, 5).map((t) => t.kind.replace(/^word: /, '"') + (t.kind.startsWith('word: ') ? '"' : '')).join(', ')}.`)
+  }
+  // Never on a post that is already live (a rebuild or an adopted slug), whose
+  // status the gate does not get to take back; always on this job's own retry.
+  const heldForReview = heldReasons.length > 0 && (!existingWpPostId || existingIsThisJobsPost)
+
   // HOW IT WAS MADE, SAID ON THE POST; NO HASHTAG BLOCK (lib/post-provenance).
   content = stripHashtagBlock(content)
   content = withProvenanceNote(content, (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null, authorName)
@@ -1782,6 +1828,9 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // A held post goes to WordPress as a draft, whatever was asked.
+  if (heldForReview) wpStatus = 'draft'
+
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via
   // /api/blog/attach-video, or any prior generate run on the same video) we
@@ -1801,7 +1850,7 @@ async function handleGenerate(request: Request) {
           title: generated.title,
           content,
           excerpt: generated.excerpt,
-          status: 'publish',
+          status: heldForReview ? 'draft' : 'publish',
           tags: tagIds,
           categories: categoryIds,
         })
@@ -1883,7 +1932,8 @@ async function handleGenerate(request: Request) {
   // WP's transition_post_status hook).
   // For draft-flip: the cron worker will fire IndexNow when it flips the
   // post to publish.
-  if (!isScheduled) {
+  // A held draft is not live either: no ping until it is published.
+  if (!isScheduled && !heldForReview) {
     void pingIndexNowForUrl(supabase, ownerId, wpPost.link, effectiveSiteId).catch(() => {})
   }
 
@@ -2045,7 +2095,9 @@ async function handleGenerate(request: Request) {
     // The Library reads scheduled_for to render the "Scheduled · X" pill
     // and to hide the Schedule/Publish-to-all buttons on rows that are
     // already queued.
-    ...(isScheduled && scheduledForIso
+    // A held draft carries no schedule: the draft-flip cron publishes any
+    // draft whose time has come, which would release it unreviewed.
+    ...(isScheduled && scheduledForIso && !heldForReview
       ? {
           scheduled_for: scheduledForIso,
           schedule_mode: scheduleMode,
@@ -2390,7 +2442,7 @@ async function handleGenerate(request: Request) {
     // calls re-sending the same sources). Subjective voice + lived-experience
     // anecdotes are left untouched. Safety rails (length floor + affiliate-link
     // preservation) live inside factCheckAndGuard().
-    try {
+    if (!factCheckedPrePublish) try {
       const checked = await claude.factCheckAndGuard(content, transcript, productResearch, { userId: user.id, tier: (wp?.tier as string) ?? null })
       if (checked && checked !== content) {
         // Re-scrub for voice patterns too — fact-check rewrites can occasionally
@@ -3037,15 +3089,22 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       hasAuthorAuthority: !!(authorBio && authorBio.trim()),
       hasFreshness: true,     // the post carries a published/updated date
     })
-    if (savedPost?.id) {
-      try { await (supabase as any).from('blog_posts').update({ aio }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
-    }
   } catch { /* scoring is best-effort — never block a publish */ }
+  if (savedPost?.id) {
+    // The gate's findings travel with the score: what still reads as AI, and,
+    // for a held post, why it is a draft. Written even when scoring failed,
+    // because a hold with no record is a draft nobody is told about.
+    const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
+    try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
+  }
 
   return NextResponse.json({
     success: true,
     postId: savedPost?.id,
     aio,
+    // HELD, said as held: a draft on WordPress, with the reasons.
+    held: heldForReview ? { reasons: heldReasons } : null,
+    aiTells: tells.length,
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,
     title: generated.title,

@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,wordpress_post_id,wordpress_site_id,wordpress_url,scheduled_for')
+      .select('id,title,wordpress_post_id,wordpress_site_id,wordpress_url,scheduled_for,aio')
       .eq('user_id', user.id)
       .eq('id', blogPostId)
       .maybeSingle()
@@ -103,6 +103,13 @@ export async function POST(request: Request) {
     const freshLink = (updated?.link || '').trim()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const patch: Record<string, unknown> = { scheduled_for: null }
+    // A post the quality gate held is released by publishing it: the hold
+    // comes off, and the rest of the gate's record stays.
+    if (post.aio && typeof post.aio === 'object' && 'held' in post.aio) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { held, ...rest } = post.aio as Record<string, unknown>
+      patch.aio = { ...rest, releasedAt: new Date().toISOString() }
+    }
     if (freshLink && freshLink !== post.wordpress_url) patch.wordpress_url = freshLink
     // scheduled_for is cleared so the post stops being reported as overdue.
     // Stripped and retried without it if migration 104 never ran, because a

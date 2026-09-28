@@ -46,7 +46,7 @@ export interface AutoSocialReport {
   alreadyQueued: string[]
   /** Set when the cascade could not run at all, rather than running and
    *  scheduling nothing. These are different failures. */
-  skipped?: 'no-socials-selected' | 'no-post-id'
+  skipped?: 'no-socials-selected' | 'no-post-id' | 'held-for-review'
   error?: string
 }
 
@@ -70,6 +70,8 @@ async function cascadeAutopilotSocials(
     requested, scheduled: [], notConnected: [], notInTier: [], unsupported: [], alreadyQueued: [],
   }
   if (!requested.length) { report.skipped = 'no-socials-selected'; return report }
+  // A post the quality gate held is a draft: nothing is shared until it is live.
+  if (result?.held) { report.skipped = 'held-for-review'; return report }
 
   const postId = result?.postId as string | undefined
   if (!postId) {

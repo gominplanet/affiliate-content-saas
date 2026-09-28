@@ -141,7 +141,9 @@ export async function GET(request: Request) {
       // targeting THIS site.
       const jobId = await enqueueGenerationJob(admin, {
         userId, ownerId: userId, kind: 'blog',
-        input: { videoId: nextVideo.id, siteId, autoSocials: Array.isArray(state.socials) ? state.socials : [] },
+        // autopilot: its posts go out with nobody looking, so the quality gate
+        // holds weak ones as drafts (app/api/blog/generate).
+        input: { videoId: nextVideo.id, siteId, autoSocials: Array.isArray(state.socials) ? state.socials : [], autopilot: true },
       })
       if (!jobId) { results.push({ user: userId, status: 'enqueue_failed' }); continue }
 

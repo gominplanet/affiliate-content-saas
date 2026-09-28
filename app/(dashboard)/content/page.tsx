@@ -21,6 +21,7 @@ import type { SchedulableSocial } from '@/lib/schedule-types'
 import { SocialPill } from '@/components/content/SocialPill'
 import { OrphanPostShare, OrphanShareWithBrand } from '@/components/content/OrphanPostShare'
 import { ManualEdit } from '@/components/content/ManualEdit'
+import { HeldPosts } from '@/components/content/HeldPosts'
 import { ChangeThumbnailButton } from '@/components/content/ChangeThumbnailButton'
 import { ArtDirectorThumbnailButton } from '@/components/content/ArtDirectorThumbnailButton'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
@@ -4325,6 +4326,10 @@ export default function ContentPage() {
           </div>
         }
       />
+
+      {/* Auto-pilot posts the quality gate kept as drafts, with the reasons.
+          Renders nothing when there are none. */}
+      <HeldPosts />
 
       {/* Toolbar — colour-coded action tiles, 3 per row. Full-width grid below
           the hero (Refresh lives up in the header next to the site picker).
