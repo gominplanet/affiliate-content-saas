@@ -12,7 +12,7 @@
 // failed (with why), or cancelled. A comment that could not be posted never
 // shows as posted.
 
-import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { getChannelOAuthToken, listYouTubeChannels } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,12 +55,16 @@ export type FirstCommentOutcome =
   | { state: 'posted'; commentId: string }
   | { state: 'waiting'; publishAt: string | null; reason?: 'not_public' | 'no_answer' | 'quota' }
   | { state: 'failed'; error: string }
+  /** YouTube no longer has the video, so MVP forgot it: this row and the
+   *  video's own record are gone. */
+  | { state: 'gone' }
 
 /**
  * Ask YouTube whether the video is public; post the comment if it is.
  * Every outcome is written to the row before it is returned.
  */
-export async function postFirstCommentIfPublic(sb: Sb, row: FirstCommentRow): Promise<FirstCommentOutcome> {
+export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): Promise<FirstCommentOutcome> {
+  let row = rowIn
   const at = new Date().toISOString()
   const fail = async (error: string): Promise<FirstCommentOutcome> => {
     await sb.from('video_first_comments').update({ state: 'failed', last_error: error, last_checked_at: at, updated_at: at }).eq('id', row.id)
@@ -69,14 +73,44 @@ export async function postFirstCommentIfPublic(sb: Sb, row: FirstCommentRow): Pr
   if (row.state === 'posted' && row.comment_id) return { state: 'posted', commentId: row.comment_id }
   const token = await getChannelOAuthToken(sb, row.user_id, row.channel_id)
   if (!token) return fail('The channel this video is on is not connected for publishing. Connect it under Settings.')
-  const yt = new YouTubeOAuthService(token)
+  let yt = new YouTubeOAuthService(token)
   let status: Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>> = null
   try { status = await yt.getVideoStatus(row.youtube_video_id) } catch {
     // YouTube did not answer: not a verdict. Try again on the next run.
     await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
     return { state: 'waiting', publishAt: null, reason: 'no_answer' }
   }
-  if (!status) return fail('The saved login cannot see this video: it was deleted, or it is on a channel that login is not. Nothing was posted.')
+  // NOT SEEN BY ONE LOGIN IS NOT GONE. A private or scheduled video is only
+  // visible to the channel it is on, and when MVP did not know that channel it
+  // asked with the default one and called the video deleted. Every other
+  // connected channel is asked before anything is written off.
+  if (!status) {
+    const others = (await listYouTubeChannels(sb, row.user_id).catch(() => []))
+      .filter((c) => c.hasOAuth && c.channelId && c.channelId !== row.channel_id)
+    for (const c of others) {
+      const t = await getChannelOAuthToken(sb, row.user_id, c.channelId).catch(() => null)
+      if (!t || t === token) continue
+      const other = new YouTubeOAuthService(t)
+      const seen = await other.getVideoStatus(row.youtube_video_id).catch(() => null)
+      if (seen) { yt = other; status = seen; row = { ...row, channel_id: c.channelId }; break }
+    }
+  }
+  if (!status) {
+    // DELETED FROM YOUTUBE IS FORGOTTEN BY MVP. Only when it is certain: the
+    // channel the video belongs to is connected, and even its own login cannot
+    // see it. A video on a channel that is not connected might simply be out
+    // of sight, and wiping it would be the wrong answer to a disconnect.
+    const { data: vid } = await sb.from('youtube_videos').select('id,channel_id')
+      .eq('user_id', row.user_id).eq('youtube_video_id', row.youtube_video_id).maybeSingle()
+    const owner = String(vid?.channel_id || row.channel_id || '')
+    const connected = owner ? (await listYouTubeChannels(sb, row.user_id).catch(() => [])).some((c) => c.channelId === owner && c.hasOAuth) : false
+    if (connected) {
+      await sb.from('video_first_comments').delete().eq('id', row.id)
+      if (vid?.id) await sb.from('youtube_videos').delete().eq('id', vid.id).eq('user_id', row.user_id)
+      return { state: 'gone' }
+    }
+    return fail('None of your connected YouTube channels can see this video. If it was deleted, MVP forgets it once the channel it was on is connected; if it is on a channel not connected to MVP, connect that channel. Nothing was posted.')
+  }
   if (status.privacy !== 'public') {
     const ageDays = (Date.now() - Date.parse(row.created_at)) / 86_400_000
     if (ageDays > FIRST_COMMENT_MAX_WAIT_DAYS && !status.publishAt) {

@@ -114,6 +114,21 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   check('it is in the Labs menu', /href: '\/first-comments'/.test(read('components/layout/DashboardShellV2.tsx')))
 }
 
+// ── A video one login cannot see is not deleted; a deleted one is forgotten ──
+{
+  const L = read('lib/first-comments.ts')
+  check('every connected channel is asked before a video is called missing',
+    /const others = \(await listYouTubeChannels\(sb, row\.user_id\)/.test(L) && /if \(seen\) \{ yt = other; status = seen;/.test(L))
+  check('a video its own connected channel cannot see is forgotten, and only then',
+    /if \(connected\) \{\s*await sb\.from\('video_first_comments'\)\.delete\(\)/.test(L) && /from\('youtube_videos'\)\.delete\(\)/.test(L) && /return \{ state: 'gone' \}/.test(L))
+  check('comments written off by the old single-login check get one more look',
+    /\.like\('last_error', 'The saved login cannot see this video%'\)/.test(read('app/api/cron/first-comments/route.ts')))
+  const CP = read('app/(dashboard)/co-pilot/page.tsx')
+  check('every first comment problem can be tried again or dismissed',
+    /onClick=\{\(\) => void retry\(r\)\}/.test(CP) && /onClick=\{\(\) => void dismiss\(r\.id\)\}/.test(CP)
+    && /body\.action === 'dismiss'/.test(read('app/api/youtube/first-comment/[id]/route.ts')))
+}
+
 if (failures.length) {
   console.error(`\n❌ first-comments: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

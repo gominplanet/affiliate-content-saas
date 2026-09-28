@@ -24,6 +24,11 @@ export async function GET(req: Request) {
   const started = Date.now()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = createAdminClient() as any
+  // ONE MORE LOOK for comments written off by the old single-login check,
+  // which called any video the default channel could not see deleted. Asked
+  // again with every connected channel; a video truly gone is then forgotten.
+  await sb.from('video_first_comments').update({ state: 'waiting', last_checked_at: null })
+    .eq('state', 'failed').like('last_error', 'The saved login cannot see this video%')
   const { data, error } = await sb.from('video_first_comments')
     .select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at,publish_at,last_checked_at')
     .eq('state', 'waiting').order('last_checked_at', { ascending: true, nullsFirst: true }).limit(500)
@@ -31,13 +36,14 @@ export async function GET(req: Request) {
   const now = Date.now()
   const due = ((data ?? []) as Array<FirstCommentRow & { publish_at: string | null; last_checked_at: string | null }>)
     .filter((r) => firstCommentDue(r, now)).slice(0, 150)
-  let posted = 0, waiting = 0, failed = 0
+  let posted = 0, waiting = 0, failed = 0, gone = 0
   for (const row of due) {
     if (Date.now() - started > 270_000) break
     const out = await postFirstCommentIfPublic(sb, row)
     if (out.state === 'posted') posted++
     else if (out.state === 'failed') failed++
+    else if (out.state === 'gone') gone++
     else waiting++
   }
-  return NextResponse.json({ ok: true, waitingTotal: (data ?? []).length, checked: due.length, posted, waiting, failed })
+  return NextResponse.json({ ok: true, waitingTotal: (data ?? []).length, checked: due.length, posted, waiting, failed, gone })
 }

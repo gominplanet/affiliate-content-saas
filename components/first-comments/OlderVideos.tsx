@@ -109,6 +109,10 @@ export default function OlderVideos() {
         update(v.youtubeVideoId, { step: 'failed', note: 'Could not reach MVP. Nothing was posted.' })
         continue
       }
+      if (j.state === 'gone') {
+        update(v.youtubeVideoId, { step: 'held', note: 'YouTube no longer has this video, so MVP forgot it.' })
+        continue
+      }
       if (j.state === 'waiting') {
         if (j.reason === 'quota') {
           update(v.youtubeVideoId, { step: 'held', note: "YouTube's daily comment limit for MVP is used up. It posts itself when the limit resets." })

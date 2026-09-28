@@ -583,6 +583,30 @@ function FirstCommentsToPin() {
     } catch { /* the banner is extra */ }
   }, [])
   useEffect(() => { void load() }, [load])
+  const [busyRow, setBusyRow] = useState<string | null>(null)
+  const [retried, setRetried] = useState<Record<string, string>>({})
+  async function dismiss(id: string) {
+    setBusyRow(id)
+    try {
+      await fetch(`/api/youtube/first-comment/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dismiss' }) })
+    } catch { /* the reload below shows whether it went */ }
+    setBusyRow(null)
+    void load()
+  }
+  async function retry(r: Row) {
+    setBusyRow(r.id)
+    try {
+      const res = await fetch('/api/youtube/first-comment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeVideoId: r.youtube_video_id, videoTitle: r.video_title }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (j.state === 'posted' && j.commentId && j.id) await pinFirstComment(String(j.id), r.youtube_video_id, String(j.commentId))
+      else if (j.state === 'failed' || !res.ok) setRetried((m) => ({ ...m, [r.id]: String(j.error || 'Still not posted.') }))
+    } catch { setRetried((m) => ({ ...m, [r.id]: 'Could not reach MVP.' })) }
+    setBusyRow(null)
+    void load()
+  }
   const toPin = rows.filter((r) => r.state === 'posted' && r.comment_id && r.pinned !== true)
   const failed = rows.filter((r) => r.state === 'failed').slice(0, 3)
   if (toPin.length === 0 && failed.length === 0) return null
@@ -621,8 +645,15 @@ function FirstCommentsToPin() {
         </ul>
       )}
       {failed.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] text-[#ff3b30]">
-          {failed.map((r) => <li key={r.id}>First comment not posted on {r.video_title || r.youtube_video_id}: {r.last_error}</li>)}
+        <ul className="mt-2 flex flex-col gap-1 text-[11.5px] text-[#ff3b30]">
+          {failed.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span>First comment not posted on {r.video_title || r.youtube_video_id}: {retried[r.id] || r.last_error}</span>
+              {/* EVERY PROBLEM CAN BE CLEARED: tried again, or dismissed. */}
+              <button type="button" disabled={busyRow === r.id} onClick={() => void retry(r)} className="underline text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-50">Try again</button>
+              <button type="button" disabled={busyRow === r.id} onClick={() => void dismiss(r.id)} className="underline text-[#86868b] disabled:opacity-50">Dismiss</button>
+            </li>
+          ))}
         </ul>
       )}
     </div>
@@ -886,6 +917,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
         setFirstComment({ state: 'posted', pinned: null })
         const pin = await pinFirstComment(String(j.id), video.youtubeVideoId, String(j.commentId))
         setFirstComment({ state: 'posted', pinned: pin.pinned, pinError: pin.error })
+      } else if (j.state === 'gone') {
+        setFirstComment({ state: 'failed', error: 'YouTube no longer has this video, so MVP forgot it.' })
       } else if (j.state === 'waiting') {
         setFirstComment({ state: 'waiting', publishAt: (j.publishAt ?? null) as string | null })
       } else {
