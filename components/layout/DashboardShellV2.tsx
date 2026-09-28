@@ -504,6 +504,10 @@ export default function DashboardShellV2({
         // when the sale ends. Beside Co-Pilot because both work on their videos.
         // Pro and admin (lib/labs-preview decides, so nav and routes agree).
         { href: '/encore', icon: <Repeat size={15} />, label: 'Encore', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: 'New' },
+        // Pinned Comments (was First comments, Labs): a pinned comment with the
+        // product link on each video. New uploads get one automatically; this
+        // page gives the older videos theirs. Out of Labs 2026-09, Pro.
+        { href: '/first-comments', icon: <Pin size={15} />, label: 'Pinned Comments', gate: previewOpenToPro('first_comment') ? isPro : isAdmin, badge: 'New' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
@@ -535,6 +539,9 @@ export default function DashboardShellV2({
         // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
+        // Ended deals: deal posts whose sale is over become lasting reviews at
+        // the same address. Beside Deals Hub, which makes them. Out of Labs 2026-09, Pro.
+        { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended Deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'New' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Shop Burner retired 2026-08 → /instagram-burner redirects to
@@ -553,6 +560,9 @@ export default function DashboardShellV2({
         { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnail Generator', gate: canAmazonHub },
         { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', gate: canAmazonHub },
         { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer', gate: canAmazonHub },
+        // Amazon Live prep: pick products, get the show (lineup, timings, talking
+        // points from the creator's own reviews, teleprompter). Out of Labs 2026-09, Pro.
+        { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live Prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'New' },
       ],
     },
     {
@@ -615,6 +625,9 @@ export default function DashboardShellV2({
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         // Inbound: brand messages from the blog's "Work with brands" banner.
         { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
+        // Brand recap: one message per Creator Connections brand with every link
+        // made for its products. Out of Labs 2026-09, Pro.
+        { href: '/brand-recap', icon: <Send size={15} />, label: 'Brand Recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin, badge: 'New' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
     },
@@ -674,14 +687,8 @@ export default function DashboardShellV2({
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
-        // Amazon Live prep — pick products, get the show: lineup, timings,
-        // talking points from the creator's own reviews, and a teleprompter.
-        { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },
-        { href: '/brand-recap', icon: <Send size={15} />, label: 'Brand recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin, badge: 'Test' },
-        { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'Test' },
-        // First comments for older videos: every new upload gets one; this
-        // gives the rest of the channel one, pinned by SCOUT.
-        { href: '/first-comments', icon: <Pin size={15} />, label: 'First comments', gate: previewOpenToPro('first_comment') ? isPro : isAdmin, badge: 'Test' },
+        // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
+        // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
         // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create

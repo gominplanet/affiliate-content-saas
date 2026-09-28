@@ -2,8 +2,9 @@
 //
 // GET /api/cron/deal-aftercare — Ended deals, on its own (every six hours).
 //
-// For each creator who can use it and has it switched on
-// (integrations.deal_aftercare_auto, migration 380):
+// For each creator who can use it and switched it on themselves, and for the
+// owner (integrations.deal_aftercare_auto, migrations 380 and 386: opt-in, so
+// opening Ended Deals to Pro did not start rewriting anyone's posts unasked):
 //   1. a price check for deal posts whose state is not known yet
 //   2. deal posts whose sale ended become lasting reviews
 //   3. lasting reviews whose product is on sale again get their deal back
@@ -44,11 +45,12 @@ export async function GET(req: Request) {
   const admin = createAdminClient() as any
   const tiers = TIERS.filter((t) => canUsePreview('deal_aftercare', t))
 
-  // Who has it on. Without migration 380 the switch does not exist yet, and
-  // everyone who can use the feature counts as on, its default.
+  // Who has it on: the owner, and creators who switched it on themselves.
   let owners: string[] = []
-  let r = await admin.from('integrations').select('user_id').in('tier', tiers).eq('deal_aftercare_auto', true).limit(2000)
-  if (r.error) r = await admin.from('integrations').select('user_id').in('tier', tiers).limit(2000)
+  let r = await admin.from('integrations').select('user_id').in('tier', tiers).eq('deal_aftercare_auto', true)
+    .or('tier.eq.admin,deal_aftercare_auto_chosen_at.not.is.null').limit(2000)
+  // Before migration 386 nobody's choice is recorded, so only the owner runs.
+  if (r.error) r = await admin.from('integrations').select('user_id').eq('tier', 'admin').limit(50)
   if (r.error) return NextResponse.json({ ok: false, error: r.error.message }, { status: 500 })
   owners = [...new Set(((r.data ?? []) as Array<{ user_id: string }>).map((x) => x.user_id))]
 

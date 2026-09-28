@@ -151,7 +151,7 @@ check('Deal Radar and Encore posts keep their links', inOrder(read('lib/deal-qui
 for (const [f, p] of [['fb', 'facebook'], ['ig', 'instagram'], ['pin', 'pinterest']] as const) {
   check(`the Amazon ${p} push keeps its link`, new RegExp(`recordProductPostLinks\\(user\\.id, body\\.asin, \\[\\{ platform: '${p}'`).test(read(`app/api/amazon/${f}/route.ts`)))
 }
-check('Brand recap is admin only while it is tested', !canUsePreview('brand_recap', 'pro') && canUsePreview('brand_recap', 'admin'))
+check('Brand recap is Pro (out of Labs, September)', canUsePreview('brand_recap', 'pro') && canUsePreview('brand_recap', 'admin') && !canUsePreview('brand_recap', 'trial'))
 check('the page and the routes use the same gate',
   /canUsePreview\('brand_recap'/.test(read('app/api/brand-recap/route.ts')) && /canUsePreview\('brand_recap'/.test(read('app/api/brand-recap/log/route.ts'))
   && /canUsePreview\('brand_recap', tier\)/.test(read('app/(dashboard)/brand-recap/page.tsx')))

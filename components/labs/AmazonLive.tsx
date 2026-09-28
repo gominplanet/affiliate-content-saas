@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Radio, Check, Printer, MonitorPlay, Trash2, ChevronLeft, ChevronRight, X, Tag, MessageCircle, Search, Wand2 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { AmazonLiveGuide } from '@/components/guide/tool-guides'
 import { clockLabel, LIVE_LENGTHS, LIVE_MAX_PRODUCTS, type LivePlan, type LiveSegment } from '@/lib/live-plan'
 
 const ACCENT = '#0E7C86'
@@ -282,7 +283,8 @@ export default function AmazonLive() {
       }`}</style>
       <PageHero
         accent={ACCENT}
-        title="Amazon Live prep"
+        guide={<AmazonLiveGuide />}
+        title="Amazon Live Prep"
         subtitle="Pick the products, and MVP builds your show: the order, the timings, what to say about each one from your own reviews, and what viewers will ask."
       />
 

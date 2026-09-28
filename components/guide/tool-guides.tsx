@@ -19,6 +19,7 @@ import {
   Zap, Scissors, Users, Inbox, Clock, KeyRound, Instagram,
   RefreshCw, ListChecks, Download, Eye, Globe, Camera, Shirt, Trash2, Brain, Upload,
   Calendar, Trophy, Table2, Signpost, Gauge, Wand2, Bot, Star, Smartphone,
+  Pin, Radio, Monitor, Printer, Tv,
 } from 'lucide-react'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TIERS } from '@/lib/tier'
@@ -704,6 +705,93 @@ export function LiftoffGuide() {
         { icon: <Store size={18} />, title: 'What happens on Amazon', body: <>Amazon does not follow the YouTube schedule: once a video is launched, MVP checks the product is sold in each country, then translates the title and dubs the audio for the non-English stores. SCOUT uploads each listing through your own signed-in Amazon Creator account, checking every two minutes while the page is open. Turn on <strong>Keep going when this page is closed</strong> and SCOUT finishes in a pinned background tab whenever Chrome is open.</> },
       ]}
       footerNote={<><strong className="text-foreground">The report shows what happened, not what was planned.</strong> After launch, every video’s YouTube and Amazon country results come from what came back, and a stopped row says why, with <strong>Try again</strong> to put it back in the queue.</>}
+    />
+  )
+}
+
+// ── Pinned Comments ──────────────────────────────────────────────────────────
+export function PinnedCommentsGuide() {
+  return (
+    <ToolGuide
+      guideKey="pinned-comments"
+      version={1}
+      accent="#0EA5A4"
+      icon={<Pin size={20} />}
+      title="Your guide to Pinned Comments"
+      subtitle="A comment from your channel with the product link, pinned to the top of every video."
+      sections={[
+        { icon: <Pin size={18} />, title: 'What it is', body: <>On a phone, a video&apos;s description sits folded away; the pinned comment is the first thing people read under the video. MVP writes one from your video&apos;s title and the product link in its description, marks the link <strong>(paid link)</strong> as the FTC asks, posts it from your channel and pins it.</> },
+        { icon: <Rocket size={18} />, title: 'New videos get one automatically', body: <>Every video <strong>YouTube Co-Pilot</strong> or <strong>Liftoff</strong> uploads gets its pinned comment when it goes public. Nothing to set. SCOUT does the pinning, because YouTube only lets a person pin, so keep Chrome open with MVP in a tab.</> },
+        { icon: <ListChecks size={18} />, title: 'Older videos: tick and press', body: <>This page lists your channel&apos;s videos with what each has: <strong>Pinned</strong>, <strong>Posted, not pinned</strong> (and why), <strong>Waiting until the video is public</strong>, or none. Tick <strong>Only videos without one</strong>, then <strong>Select all shown</strong>, and press <strong>Post and pin</strong>. Videos go one at a time and each row says what happened.</> },
+        { icon: <RefreshCw size={18} />, title: 'Posted but not pinned', body: <>If SCOUT could not pin one (Chrome closed, signed out of YouTube), <strong>Pin the ones not pinned</strong> button (it shows how many) tries again without posting a second comment.</> },
+        { icon: <Clock size={18} />, title: 'Good to know', body: <>Pinning replaces a comment you pinned yourself on that video. YouTube allows roughly 190 comments a day; when that runs out the run stops and says so, and you carry on tomorrow. A video with no product link in its description gets a comment without a link. <strong>Encore</strong> edits the pinned comment when that product goes on sale.</> },
+      ]}
+      footerNote={<><strong className="text-foreground">Each row shows what YouTube shows.</strong> A comment is only called pinned when SCOUT saw the pinned badge on it.</>}
+    />
+  )
+}
+
+// ── Ended Deals ──────────────────────────────────────────────────────────────
+export function EndedDealsGuide() {
+  return (
+    <ToolGuide
+      guideKey="ended-deals"
+      version={1}
+      accent="#7C3AED"
+      icon={<Wand2 size={20} />}
+      title="Your guide to Ended Deals"
+      subtitle="Deal posts whose sale is over become lasting reviews at the same address."
+      sections={[
+        { icon: <Tag size={18} />, title: 'Why it matters', body: <>A deal post that still says &quot;Save 27%&quot; after the sale ended disappoints readers and slowly loses its place in search. Turned into a lasting review, the same page keeps its address, its ranking and its links, and keeps earning.</> },
+        { icon: <Search size={18} />, title: 'How MVP knows a deal ended', body: <>From the deal&apos;s end date when it had one, otherwise from a price check. <strong>Check prices</strong> looks up posts whose sale is not known (up to 40 a press). Every post says why it counts as ended, still on, or not known.</> },
+        { icon: <Wand2 size={18} />, title: 'Make it a lasting review', body: <>One press per post, or <strong>Make all ended deals lasting reviews</strong>. MVP marks the deal boxes ended (they then show &quot;This deal has ended&quot; with a working price button), takes the sale wording out of the article, and gives it a title and intro that stay true. Each card then lists what was done, step by step.</> },
+        { icon: <Zap size={18} />, title: 'Back on sale', body: <>When a lasting review&apos;s product goes on sale again, it shows under <strong>Back on sale</strong>. <strong>Bring the deal back</strong> puts the deal box and a sale intro back, and it becomes a lasting review again when that sale ends.</> },
+        { icon: <Clock size={18} />, title: 'Automatic', body: <>With <strong>Automatic</strong> on, MVP does both every six hours, only on a real answer: a passed end date or a fresh price check. Switch it off and nothing changes on its own. The deal boxes need the MVP plugin 1.0.97 or later.</> },
+      ]}
+      footerNote={<><strong className="text-foreground">Nothing reads as done unless it was.</strong> A step that was skipped says why on the post&apos;s card.</>}
+    />
+  )
+}
+
+// ── Brand Recap ──────────────────────────────────────────────────────────────
+export function BrandRecapGuide() {
+  return (
+    <ToolGuide
+      guideKey="brand-recap"
+      version={1}
+      accent="#7C3AED"
+      icon={<Send size={20} />}
+      title="Your guide to Brand Recap"
+      subtitle="Every link you made for a brand, in one message to them on Creator Connections."
+      sections={[
+        { icon: <Handshake size={18} />, title: 'Why brands want it', body: <>Brands on Creator Connections decide who to keep working with by what they can see. A recap lists everything you made for their products: YouTube videos, blog posts, Amazon videos and social posts, each as a link.</> },
+        { icon: <Layers size={18} />, title: 'What is listed', body: <>Your Creator Connections brands, each with its products and every public link MVP knows for them. Private and scheduled YouTube videos are left out until they are public. <strong>New</strong> counts the links that brand has not had from you yet.</> },
+        { icon: <Video size={18} />, title: 'Your Amazon videos', body: <><strong>Find my Amazon videos</strong> matches every Amazon video you have made to its product, from each video&apos;s public page, with no tabs opening. When your video list is more than a day old, SCOUT checks it for new videos in a background tab, and videos uploaded by Liftoff are added as they go up.</> },
+        { icon: <Send size={18} />, title: 'Send it', body: <>Open a brand, tick the links, and edit the message if you like. <strong>Send on Creator Connections</strong> sends it through SCOUT; <strong>Copy message</strong> and email are there to send it yourself, and <strong>I sent it</strong> records a message you sent by hand.</> },
+        { icon: <Clock size={18} />, title: 'Next time', body: <>MVP remembers what each brand already got, so the next recap starts with only what is new.</> },
+      ]}
+      footerNote={<><strong className="text-foreground">Sent means sent.</strong> A brand is marked sent only when Creator Connections confirmed the message, or when you pressed I sent it.</>}
+    />
+  )
+}
+
+// ── Amazon Live Prep ─────────────────────────────────────────────────────────
+export function AmazonLiveGuide() {
+  return (
+    <ToolGuide
+      guideKey="amazon-live"
+      version={1}
+      accent="#0E7C86"
+      icon={<Radio size={20} />}
+      title="Your guide to Amazon Live Prep"
+      subtitle="Pick the products, and MVP builds your show."
+      sections={[
+        { icon: <ShoppingBag size={18} />, title: 'Pick the products', body: <>Choose from <strong>All my products</strong>, <strong>Only ones I made a video for</strong>, or <strong>On sale today</strong>, or let MVP suggest a lineup from what earns and what is on sale. Up to 39 products, in the order you set with the arrows.</> },
+        { icon: <Clock size={18} />, title: 'Choose how long', body: <>30, 45, 60, 90 or 120 minutes. MVP spaces the products across the show with an opening and a closing, and gives each a start time.</> },
+        { icon: <MessageCircle size={18} />, title: 'What to say', body: <>Each product gets talking points from your own reviews of it, the questions viewers are likely to ask, and a note when it is on sale today.</> },
+        { icon: <Tv size={18} />, title: 'Go live with it', body: <><strong>Teleprompter</strong> shows the run of show full screen with a clock you start when you go live; <strong>Print</strong> gives you a paper copy. Shows are saved, so you can open one again under <strong>Saved shows</strong>.</> },
+      ]}
+      footerNote={<><strong className="text-foreground">Your words, not invented ones.</strong> Talking points come from what you said about each product in your own videos and posts.</>}
     />
   )
 }

@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('first_comment', intg?.tier)) {
-    return NextResponse.json({ error: 'Pinned first comments are in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Pinned Comments are part of Pro.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const body = await req.json().catch(() => ({})) as { action?: string; pinned?: boolean; error?: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

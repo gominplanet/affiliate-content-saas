@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const { user, ownerId } = auth as { user: { id: string }; ownerId: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('brand_recap', intg?.tier)) return NextResponse.json({ error: 'Brand recap is still being tested.' }, { status: 403 })
+  if (!canUsePreview('brand_recap', intg?.tier)) return NextResponse.json({ error: 'Brand Recap is part of Pro.' }, { status: 403 })
 
   const b = await req.json().catch(() => ({})) as { videos?: Array<{ vdpUrl?: unknown; asin?: unknown }> }
   const list = Array.isArray(b.videos) ? b.videos.slice(0, 2000) : []

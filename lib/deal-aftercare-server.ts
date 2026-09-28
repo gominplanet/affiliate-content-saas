@@ -52,6 +52,9 @@ export interface DealPostRow {
   aftercare: AftercareReport | null
   /** What bringing the deal back did. */
   revive: ReviveReport | null
+  /** Check prices would look this one up (needsPriceCheck), so the page's
+   *  count is the server's own rule rather than a guess at it. */
+  needsCheck?: boolean
 }
 
 export interface ReviveReport {
@@ -117,6 +120,7 @@ export async function listDealPosts(sb: Sb, ownerId: string): Promise<{ posts: D
     .order('created_at', { ascending: false }).limit(500)
   if (error) return { posts: [], error: error.message }
   const posts = ((data ?? []) as PostDb[]).map((p) => rowOf(p)).filter(Boolean) as DealPostRow[]
+  for (const p of posts) p.needsCheck = needsPriceCheck(p)
   return { posts, error: null }
 }
 

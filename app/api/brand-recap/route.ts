@@ -27,7 +27,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('brand_recap', intg?.tier)) {
-    return NextResponse.json({ error: 'Brand recap is still being tested.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Brand Recap is part of Pro.', code: 'tier_not_allowed' }, { status: 403 })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any

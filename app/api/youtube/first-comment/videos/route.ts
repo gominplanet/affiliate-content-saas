@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('first_comment', intg?.tier)) {
-    return NextResponse.json({ error: 'Pinned first comments are in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Pinned Comments are part of Pro.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const url = new URL(req.url)
   const missing = url.searchParams.get('missing') === '1'

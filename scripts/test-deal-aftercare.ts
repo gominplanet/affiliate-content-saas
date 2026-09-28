@@ -77,7 +77,7 @@ check('the article is replaced only when the rewrite kept every link and box',
 check('the change is recorded only after WordPress took it', inOrder(SRV, 'await wp.updatePost(', 'endedAt: at, aftercare: report'))
 check('the price check spends a capped number of Keepa lookups', /const batch = need\.slice\(0, cap\)/.test(SRV) && /cap = CHECK_MAX\)/.test(SRV))
 check('the address never changes', !/slug\s*:/.test(SRV))
-check('Ended deals is admin only while it is tested', !canUsePreview('deal_aftercare', 'pro') && canUsePreview('deal_aftercare', 'admin'))
+check('Ended deals is Pro (out of Labs, September)', canUsePreview('deal_aftercare', 'pro') && canUsePreview('deal_aftercare', 'admin') && !canUsePreview('deal_aftercare', 'trial'))
 
 // ── back on sale, and ended again ───────────────────────────────────────────
 check('a post moves deal, lasting, revived, lasting by its timestamps',

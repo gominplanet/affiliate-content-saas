@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { BrandRecapGuide } from '@/components/guide/tool-guides'
 import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin, startCreatorHubVideosScan, getVideoScanStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { readAllVideoProducts, readVideoProductsViaScout, type ProductReadProgress } from '@/lib/amazon-video-products-client'
@@ -255,7 +256,8 @@ export default function BrandRecap() {
   return (
     <div className="max-w-5xl mx-auto">
       <PageHero
-        title="Brand recap"
+        guide={<BrandRecapGuide />}
+        title="Brand Recap"
         subtitle="Every link you published for a brand's products, in one message you can send them on Creator Connections."
       />
 

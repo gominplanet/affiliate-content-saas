@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Ended deals (LABS): deal posts whose sale is over, and one press to turn
+// Ended Deals: deal posts whose sale is over, and one press to turn
 // each into a lasting review at the same address.
 //
 // Every post says why it counts as ended, still on, or not known, and after a
@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw, Wand2, ExternalLink, CheckCircle2, AlertTriangle, Search } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { EndedDealsGuide } from '@/components/guide/tool-guides'
 import type { DealPostRow, AftercareReport, ReviveReport } from '@/lib/deal-aftercare-server'
 
 const ACCENT = '#7C3AED'
@@ -25,6 +26,11 @@ export default function EndedDeals() {
   const [results, setResults] = useState<Record<string, { ok: boolean; text: string }>>({})
   const [auto, setAuto] = useState<{ on: boolean; column: boolean } | null>(null)
   const [savingAuto, setSavingAuto] = useState(false)
+  // REFRESH SAYS IT REFRESHED. It used to reload quietly: with nothing new,
+  // the list looked the same and the button looked broken.
+  const [refreshing, setRefreshing] = useState(false)
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null)
+  const [convertingAll, setConvertingAll] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -36,8 +42,20 @@ export default function EndedDeals() {
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
       setPosts(j.posts ?? [])
       setAuto({ on: j.auto !== false, column: j.autoColumn !== false })
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+      setLoadedAt(new Date())
+      return j.posts ?? []
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); return null }
   }, [])
+
+  async function refresh() {
+    setRefreshing(true)
+    const got = await load()
+    setRefreshing(false)
+    if (!got) { toast.error('Could not reload your deal posts. The reason is shown on the page.'); return }
+    const live = got.filter((p) => p.phase !== 'lasting')
+    const n = (f: (p: DealPostRow) => boolean) => live.filter(f).length
+    toast.success(`Up to date: ${n((p) => p.state === 'ended')} ended, ${n((p) => p.state === 'on')} still on sale, ${n((p) => p.state === 'unknown')} not known yet, ${got.length - live.length} lasting reviews.`)
+  }
   useEffect(() => { load() }, [load])
 
   const groups = useMemo(() => {
@@ -51,7 +69,7 @@ export default function EndedDeals() {
       revived: live.filter((p) => p.state === 'on' && p.phase === 'revived'),
       saleAgain: lasting.filter((p) => p.state === 'on'),
       done: lasting.filter((p) => p.state !== 'on'),
-      toCheck: all.filter((p) => p.state === 'unknown').length,
+      toCheck: all.filter((p) => p.needsCheck ?? p.state === 'unknown').length,
     }
   }, [posts])
 
@@ -103,15 +121,21 @@ export default function EndedDeals() {
   }
 
   async function convertAll() {
+    if (convertingAll) return
+    setConvertingAll(true)
+    const list = [...groups.ended]
     let done = 0
-    for (const p of groups.ended) { if (await convert(p)) done++ }
-    toast.success(`${done} of ${groups.ended.length} posts are now lasting reviews.`)
+    try {
+      for (const p of list) { if (await convert(p)) done++ }
+    } finally { setConvertingAll(false) }
+    if (done === list.length) toast.success(`${done} of ${list.length} posts are now lasting reviews.`)
+    else toast.warning(`${done} of ${list.length} posts are now lasting reviews. The others say why on their cards.`)
     await load()
   }
 
   return (
     <div className="max-w-5xl mx-auto">
-      <PageHero title="Ended deals" subtitle="Deal posts whose sale is over. Turn each into a lasting review at the same address, so it keeps ranking and keeps earning." />
+      <PageHero guide={<EndedDealsGuide />} title="Ended Deals" subtitle="Deal posts whose sale is over. Turn each into a lasting review at the same address, so it keeps ranking and keeps earning." />
 
       <div className="card p-4 mb-4 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d1d1d6]">
         When a deal ends, its post still says &quot;Save 27%&quot; and &quot;Active deal&quot;. Making it a lasting review marks the deal
@@ -130,21 +154,26 @@ export default function EndedDeals() {
             {auto.on
               ? 'Every six hours MVP makes ended deals lasting reviews, and brings the deal back when a product is on sale again. Only on a real answer: a passed end date or a fresh price check.'
               : 'Nothing changes on its own. The buttons below still work.'}
-            {!auto.column && ' Run migration 380 to be able to switch it off.'}
+            {!auto.column && ' Run migrations 380 and 386 to be able to switch it on or off.'}
           </span>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <button onClick={convertAll} disabled={!groups.ended.length || !!busy}
+        <button onClick={convertAll} disabled={!groups.ended.length || !!busy || convertingAll}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[13px] font-semibold disabled:opacity-40" style={{ background: ACCENT }}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Make all {groups.ended.length} ended deals lasting reviews
+          {busy || convertingAll ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Make all {groups.ended.length} ended deals lasting reviews
         </button>
         <button onClick={checkPrices} disabled={checking || !groups.toCheck}
+          title={groups.toCheck ? 'Look up whether these are on sale now' : 'Every post has a recent answer; nothing to check'}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[13px] font-medium disabled:opacity-40">
           {checking ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Check prices for {groups.toCheck} not known yet
         </button>
-        <button onClick={load} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px]"><RefreshCw size={12} /> Refresh</button>
+        <button onClick={() => void refresh()} disabled={refreshing}
+          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px] disabled:opacity-60">
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+        {loadedAt && <span className="self-center text-[11.5px] text-[#86868b]">Updated {loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>}
       </div>
 
       {error && <div className="card p-3 mb-3 text-[12px] text-[#ff3b30]">Could not load your deal posts: {error}</div>}

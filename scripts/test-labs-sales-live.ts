@@ -28,10 +28,10 @@ const inOrderCheck = (src: string, a: string, b: string) => { const i = src.inde
 }
 
 // ── preview gate: only the owner sees these until they are opened ───────────
-check('On sale now is open to Pro (and admin) only, and Amazon Live prep is still admin only',
+check('On sale now and Amazon Live prep (out of Labs, September) are open to Pro (and admin) only',
   canUsePreview('on_sale', 'admin') && canUsePreview('on_sale', 'pro') && !canUsePreview('on_sale', 'trial')
   && !canUsePreview('on_sale', 'creator') && !canUsePreview('on_sale', 'agency')
-  && canUsePreview('amazon_live', 'admin') && !canUsePreview('amazon_live', 'pro'),
+  && canUsePreview('amazon_live', 'admin') && canUsePreview('amazon_live', 'pro') && !canUsePreview('amazon_live', 'trial') && !canUsePreview('amazon_live', 'creator'),
   'the wrong tiers would see a feature')
 {
   const SHELL = read('components/layout/DashboardShellV2.tsx')

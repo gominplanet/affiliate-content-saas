@@ -40,7 +40,7 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
     /state: 'posted', comment_id: id/.test(L) && /state: 'failed', last_error: error/.test(L) && /if \(\/quota\/i\.test\(msg\)\)/.test(L))
   const R = read('app/api/youtube/first-comment/route.ts')
   check('a video never gets a second first comment', inOrder(R, "existing?.state === 'posted' && existing.comment_id", 'postFirstCommentIfPublic('))
-  check('it is behind Labs', /canUsePreview\('first_comment'/.test(R) && canUsePreview('first_comment', 'admin') && !canUsePreview('first_comment', 'pro'))
+  check('it is Pro (out of Labs, September), behind the same switch', /canUsePreview\('first_comment'/.test(R) && canUsePreview('first_comment', 'admin') && canUsePreview('first_comment', 'pro') && !canUsePreview('first_comment', 'trial'))
   const M = read('supabase/migrations/377_video_first_comments.sql')
   check('migration 377 is twice-runnable, one row per video', /create table if not exists public\.video_first_comments/.test(M) && /create unique index if not exists video_first_comments_video_idx/.test(M))
 }

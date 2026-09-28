@@ -15,17 +15,21 @@ export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Encore: open to Pro, and in the Create menu since it left Labs.
   on_sale: 'labs',
-  amazon_live: 'admin',
+  // Amazon Live prep: graduated out of Labs to Pro 2026-09, in Amazon Influencer.
+  amazon_live: 'labs',
   // Co-Pilot comparison videos: 2 to 4 products in one video. Open to Pro.
   comparison: 'labs',
   // Co-Pilot Short mode: Shorts get Short-shaped metadata (links in Shorts are not clickable).
   shorts_mode: 'admin',
-  // Co-Pilot's pinned first comment, posted when the video goes public.
-  first_comment: 'admin',
-  // Brand recap: one message per Creator Connections brand with every link made for it.
-  brand_recap: 'admin',
-  // Ended deals: deal posts whose sale is over, turned into lasting reviews in place.
-  deal_aftercare: 'admin',
+  // Pinned comments (Co-Pilot, Liftoff, older videos): graduated out of Labs
+  // to Pro 2026-09. The page is Create > Pinned Comments.
+  first_comment: 'labs',
+  // Brand recap: one message per Creator Connections brand with every link made
+  // for it. Graduated out of Labs to Pro 2026-09, in Collaborate.
+  brand_recap: 'labs',
+  // Ended deals: deal posts whose sale is over, turned into lasting reviews in
+  // place. Graduated out of Labs to Pro 2026-09, in Create beside Deals Hub.
+  deal_aftercare: 'labs',
   // Post updates: after 90 days, the creator adds one first-hand line to a review.
   post_refresh: 'admin',
 }

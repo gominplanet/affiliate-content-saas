@@ -28,8 +28,8 @@ async function gate() {
   const { user, ownerId } = auth as { user: { id: string }; ownerId: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('deal_aftercare', intg?.tier)) return { error: NextResponse.json({ error: 'Ended deals is still being tested.' }, { status: 403 }) }
-  return { ownerId }
+  if (!canUsePreview('deal_aftercare', intg?.tier)) return { error: NextResponse.json({ error: 'Ended Deals is part of Pro.' }, { status: 403 }) }
+  return { ownerId, isAdmin: intg?.tier === 'admin' }
 }
 
 export async function GET() {
@@ -39,11 +39,11 @@ export async function GET() {
   const admin = createAdminClient() as any
   const r = await listDealPosts(admin, g.ownerId)
   if (r.error) return NextResponse.json({ error: r.error }, { status: 500 })
-  // The switch. Without migration 380 it does not exist, and the job treats
-  // everyone as on (its default), so the page says so rather than "off".
-  const a = await admin.from('integrations').select('deal_aftercare_auto').eq('user_id', g.ownerId).maybeSingle()
+  const a = await admin.from('integrations').select('deal_aftercare_auto, deal_aftercare_auto_chosen_at').eq('user_id', g.ownerId).maybeSingle()
   const autoColumn = !a.error
-  const auto = autoColumn ? a.data?.deal_aftercare_auto !== false : true
+  const auto = autoColumn
+    ? a.data?.deal_aftercare_auto === true && (g.isAdmin || !!a.data?.deal_aftercare_auto_chosen_at)
+    : g.isAdmin
   return NextResponse.json({ ...r, auto, autoColumn })
 }
 
@@ -67,10 +67,10 @@ export async function POST(req: Request) {
     if (body.action === 'auto') {
       const on = (body as { on?: boolean }).on === true
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (admin as any).from('integrations').update({ deal_aftercare_auto: on }).eq('user_id', g.ownerId).select('deal_aftercare_auto')
+      const { data, error } = await (admin as any).from('integrations').update({ deal_aftercare_auto: on, deal_aftercare_auto_chosen_at: new Date().toISOString() }).eq('user_id', g.ownerId).select('deal_aftercare_auto')
       if (error) {
         const missing = /deal_aftercare_auto/.test(error.message)
-        return NextResponse.json({ ok: false, error: missing ? 'The switch needs migration 380, so nothing was changed.' : error.message }, { status: missing ? 422 : 500 })
+        return NextResponse.json({ ok: false, error: missing ? 'The switch needs migrations 380 and 386, so nothing was changed.' : error.message }, { status: missing ? 422 : 500 })
       }
       if (!(data ?? []).length) return NextResponse.json({ ok: false, error: 'Your account settings row was not found, so nothing was changed.' }, { status: 404 })
       return NextResponse.json({ ok: true, auto: data[0].deal_aftercare_auto === true })

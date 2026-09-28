@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// First comments for older videos (LABS). Every video uploaded through
+// Pinned Comments, for older videos. Every video uploaded through
 // Co-Pilot or Liftoff now gets a pinned first comment; this gives the rest of
 // the channel one. Tick the videos, and MVP writes each comment from the
 // video's own title and the product link in its description, posts it, and
@@ -16,6 +16,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, Pin, Search } from 'lucide-react'
 import { pinFirstComment } from '@/lib/first-comment-pins'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import PageHero from '@/components/layout/PageHero'
+import { PinnedCommentsGuide } from '@/components/guide/tool-guides'
 
 const ACCENT = '#0EA5A4'
 const PAGE = 50
@@ -156,6 +158,12 @@ export default function OlderVideos() {
 
   return (
     <div className="max-w-5xl mx-auto">
+      <PageHero
+        accent={ACCENT}
+        guide={<PinnedCommentsGuide />}
+        title="Pinned Comments"
+        subtitle="A comment from your channel with the product link, pinned to the top of every video, where viewers look first."
+      />
       <div className="card p-4 mb-4 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d1d1d6]">
         Every video Co-Pilot or Liftoff uploads now gets a pinned first comment. This gives your older videos one too. Tick the videos, and MVP writes each comment from the video&apos;s title and the product link in its description (marked &quot;(paid link)&quot;), posts it from your channel, and SCOUT pins it.
         <span className="block mt-1.5 text-[12px] text-[#86868b]">
