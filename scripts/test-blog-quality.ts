@@ -80,6 +80,38 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('uniform sentence length is caught on long posts', kinds(`<p>${level}</p>`).includes('uniform sentence length'))
 }
 
+// ── Fix 5: posts kept current by the creator, never by a reworded date bump ──
+{
+  const R = require('../lib/post-refresh') as typeof import('../lib/post-refresh')
+  const pub = new Date('2026-01-01T00:00:00Z')
+  check('the update is labelled by elapsed time, never a calendar year',
+    R.sinceLabel(pub, new Date('2026-04-02T00:00:00Z')) === '3 months in' && R.sinceLabel(pub, new Date('2027-01-01T00:00:00Z')) === '1 year in'
+    && R.sinceLabel(pub, new Date('2029-02-01T00:00:00Z')) === '3 years in' && !/\b20\d\d\b/.test(R.updateBlock('x', R.sinceLabel(pub))))
+  check('the note goes in as plain text', R.cleanRefreshNote('<b>Still</b> <script>x</script>  great') === 'Still x great' && /&lt;/.test(R.updateBlock('a < b', '3 months in')))
+  const post = `<!-- wp:group {"style":{"color":{"background":"#fffbe6"}}} --><div>Disclosure</div><!-- /wp:group -->
+<!-- wp:paragraph {"className":"mvp-provenance"} --><p class="mvp-provenance">How made</p><!-- /wp:paragraph -->
+<p>Body <a href="https://amzn.to/abc">buy</a></p><div class="gr-tags"><span>#a</span></div>`
+  const once = R.refreshedBody(post, 'First line here', '3 months in')
+  const twice = R.refreshedBody(once, 'Second line here', '6 months in')
+  check('the update sits after the provenance line, newest first, and earlier ones stay',
+    once.indexOf('mvp-update') > once.indexOf('How made') && once.indexOf('mvp-update') < once.indexOf('Body')
+    && twice.indexOf('Second line') < twice.indexOf('First line') && twice.split('class="mvp-update"').length === 3)
+  check('the same save tags affiliate links and drops the hashtag block', /rel="[^"]*sponsored/.test(once) && !/gr-tags/.test(once))
+  const aside = '\n<!-- wp:html -->\n<aside class="gr-also-consider" aria-label="x"><h2>Old</h2></aside>\n<!-- /wp:html -->\n'
+  const swapped = R.withFreshRelated(`<p>a</p>${aside}<p>b</p>`, aside.replace('Old', 'New'), (h, b) => h + b)
+  check('related posts are swapped, not stacked', /New/.test(swapped) && !/Old/.test(swapped) && swapped.split('gr-also-consider').length === 2)
+  check('with nothing to link to, the related block is left alone', R.withFreshRelated(`<p>a</p>${aside}`, '', (h, b) => h + b).includes('Old'))
+
+  const A = read('app/api/blog/refresh/route.ts')
+  check('the update is built on the body WordPress has now, not MVP\'s copy', /const live = await wp\.getPostContent/.test(A) && /refreshedBody\(live\.content/.test(A))
+  check('the update is confirmed in what WordPress returns before it is reported', /const after = await wp\.getPostContent/.test(A) && /if \(!landed\)/.test(A))
+  check('a one-word note is refused', /note\.length < 15/.test(A))
+  check('only reviews and comparisons are asked, and only after the wait', /REFRESH_TYPES = \['review', 'comparison'\]/.test(A) && /lte\('published_at', cutoff\)/.test(A))
+  check('a missing migration is said, not shown as nothing due', /needsMigration: 384/.test(A))
+  check('it is Labs while tested', /canUsePreview\('post_refresh'/.test(A) && /post_refresh: 'admin'/.test(read('lib/labs-preview.ts')))
+  check('the Content page shows it', /<PostUpdates \/>/.test(read('app/(dashboard)/content/page.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ blog-quality: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
