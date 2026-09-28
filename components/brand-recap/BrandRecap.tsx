@@ -87,10 +87,12 @@ export default function BrandRecap() {
   // carries no product ids, and its page makes no per-video request SCOUT can
   // copy (SCOUT 1.21.17 said so in as many words). Brand recap does not need
   // the whole library anyway, only the products on this page. So SCOUT opens
-  // each of those product pages in your signed-in Chrome and reads the
-  // "Content Made" link OINK adds for your own video, the exact public /vdp/
-  // page, and MVP keeps it. Each product's answer is counted, and a run that
-  // cannot work (no SCOUT, signed out, no OINK) stops early and says why.
+  // each of those product pages in your signed-in Chrome and reads Amazon's
+  // own "Content Made" link, which Amazon shows only to the signed-in creator
+  // of a video for that product: the exact public /vdp/ page. (OINK shows the
+  // same link and SCOUT reads it there too, but it is not needed.) Each
+  // product's answer is counted, and a run that cannot work (no SCOUT, signed
+  // out) stops early and says why.
   async function findAmazonVideos() {
     const want = [...new Map((data?.brands ?? []).flatMap((b) => b.products)
       .filter((p) => !p.links.some((l) => l.platform === 'amazon_video'))
@@ -101,7 +103,7 @@ export default function BrandRecap() {
     const started = Date.now()
     let movedAt = started
     const found: Array<{ vdpUrl: string; asin: string }> = []
-    let none = 0, unreadable = 0, errors = 0, oinkSeen = 0, savedTotal = 0
+    let none = 0, unreadable = 0, errors = 0, savedTotal = 0
     const save = async () => {
       if (found.length === 0) return true
       const batch = found.splice(0, found.length)
@@ -126,16 +128,9 @@ export default function BrandRecap() {
           continue
         }
         if (r.signedOut) { setScanNote({ ok: false, text: `Amazon shows you as signed out, so SCOUT cannot see your videos. Sign in to amazon.com in this Chrome and press again. ${found.length + savedTotal} found so far are kept.` }); break }
-        if (r.oinkDetected) oinkSeen++
         if (r.video?.vdpUrl) found.push({ vdpUrl: r.video.vdpUrl, asin: p.asin })
         else if (r.contentMadeSeen) unreadable++
         else none++
-        // NO OINK, NO LINKS: after five products with no sign of it, say so
-        // rather than spending an hour opening pages that cannot answer.
-        if (i === 4 && oinkSeen === 0 && found.length + savedTotal === 0) {
-          setScanNote({ ok: false, text: 'SCOUT reads your video link from the "Content Made" label the OINK extension adds to product pages, and OINK did not show on the first five products. Turn OINK on in this Chrome (or sign in to it), then press again.' })
-          break
-        }
         if (found.length >= 10) { if (!(await save())) return }
       }
       if (!(await save())) return

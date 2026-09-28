@@ -134,8 +134,8 @@ check('an error page from the host reads as a sentence, not a JSON error',
   check('Find my Amazon videos goes product by product through SCOUT and keeps what it finds',
     /const r = await requestAmazonVideoForAsin\(p\.asin\)/.test(UI) && /if \(r\.video\?\.vdpUrl\) found\.push/.test(UI) && /fetch\('\/api\/brand-recap\/amazon-videos'/.test(UI))
   check('only products without an Amazon video link are looked up', /\.filter\(\(p\) => !p\.links\.some\(\(l\) => l\.platform === 'amazon_video'\)\)/.test(UI))
-  check('a run that cannot work stops early and says why (no SCOUT, signed out, no OINK)',
-    /r\.error === 'not-installed'/.test(UI) && /if \(r\.signedOut\)/.test(UI) && /if \(i === 4 && oinkSeen === 0/.test(UI))
+  check('a run that cannot work stops early and says why (no SCOUT, signed out), and OINK is not required',
+    /r\.error === 'not-installed'/.test(UI) && /if \(r\.signedOut\)/.test(UI) && !/oinkSeen/.test(UI))
   check('the end says what was found, what has no video, and what could not be checked',
     /Found \$\{savedTotal\} Amazon video/.test(UI) && /could not be checked \(press again to retry those\)/.test(UI))
   const codes = new Map([['Ab12Cd', 'B000000002']])
