@@ -52,10 +52,10 @@ export function HeldPosts() {
   return (
     <div className="rounded-xl border p-4 mb-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>
-        {held.length} auto-pilot post{held.length !== 1 ? 's' : ''} held for your review
+        {held.length} post{held.length !== 1 ? 's' : ''} held for your review
       </div>
       <p className="text-[12.5px] mt-1 mb-3" style={{ color: 'var(--text-soft)' }}>
-        These were saved as drafts on your site instead of going live, because Google and AI search rank down posts with nothing first-hand in them and posts that read as machine-written. Add something you know about the product, then publish. They stay drafts until you do.
+        These were saved as drafts on your site instead of going live. Each says why: a link that is for a different product than the video, or an auto-pilot post with nothing first-hand in it or that reads as machine-written. Fix what it names, then publish. They stay drafts until you do.
       </p>
       <div className="flex flex-col gap-2">
         {held.map((h) => {

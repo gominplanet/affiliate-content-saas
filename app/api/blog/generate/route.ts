@@ -6,7 +6,7 @@ import { findAiTells, AI_TELL_HOLD_AT } from '@/lib/ai-tells'
 import { stripHashtagBlock, withProvenanceNote } from '@/lib/post-provenance'
 import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
-import { checkSamePost } from '@/lib/post-site'
+import { checkSamePost, slugOfUrl, titleFitsSlug } from '@/lib/post-site'
 import { titleNamesProduct, plainProductTitle } from '@/lib/title-product'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -1795,14 +1795,28 @@ async function handleGenerate(request: Request) {
     } catch { /* not checked here; the after() pass tries once more */ }
   }
 
-  // ── THE TITLE NAMES THE PRODUCT, BEFORE ANYONE SEES IT ───────────────────
-  // Checked against the Amazon listing (lib/title-product). A miss gets the
-  // title-vs-body correction now rather than after publishing, and if that
-  // still misses, the product's own name. What happened is kept on the post.
+  // ── THE LINK, THE VIDEO AND THE POST ARE ABOUT THE SAME PRODUCT ─────────
+  // Three things decide what a post is about: the product link (from the
+  // video's description, or found by search), the video, and the text written
+  // from the video. A baskets video whose description linked a car phone
+  // holder published as a baskets review at a phone-holder address, selling
+  // the phone holder. So, before publishing (lib/title-product):
+  //   - the body never names the linked product: the link is not this
+  //     video's product. The post is held as a draft with that reason, and
+  //     the title is left alone (renaming it to the linked product would make
+  //     a baskets article claim to be a phone-holder review).
+  //   - the body names it but the title does not: the title is the thing that
+  //     is wrong, and gets the title-vs-body correction, else the product's
+  //     own name.
   let titleFix: { from: string; to: string; how: 'ai' | 'product-name' } | null = null
-  {
-    const first = titleNamesProduct(generated.title, titleProduct)
-    if (!first.ok && titleProduct?.canonical) {
+  let productMismatch: string | null = null
+  if (titleProduct?.canonical) {
+    const bodyText = content.replace(/<[^>]+>/g, ' ')
+    const bodyNames = titleNamesProduct(bodyText, titleProduct).ok
+    if (!bodyNames) {
+      productMismatch = `The post MVP wrote from your video never mentions the product it links to (${titleProduct.canonical}). The link in the video's description, or the product MVP found for it, is probably for a different product. Check the link in the video's description, then generate again or publish this draft yourself.`
+      console.warn('[blog-generate] linked product not in the post; holding', { product: titleProduct.canonical, title: generated.title })
+    } else if (!titleNamesProduct(generated.title, titleProduct).ok) {
       const before = generated.title
       try {
         const fixed = scrubBanned(((await claude.factCheckTitleVsBody(generated.title, content, { userId: user.id, tier: (wp?.tier as string) ?? null })) || '').trim())
@@ -1822,6 +1836,9 @@ async function handleGenerate(request: Request) {
   // generated themselves publishes as they asked; the count is kept either way.
   const tells = findAiTells(content)
   const heldReasons: string[] = []
+  // Wrong product: held whoever pressed Generate, since publishing it would
+  // sell a product the post is not about.
+  if (productMismatch) heldReasons.push(productMismatch)
   if (body.autopilot === true) {
     const src = (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null
     if (src === 'none') heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
@@ -1830,6 +1847,29 @@ async function handleGenerate(request: Request) {
   // Never on a post that is already live (a rebuild or an adopted slug), whose
   // status the gate does not get to take back; always on this job's own retry.
   const heldForReview = heldReasons.length > 0 && (!existingWpPostId || existingIsThisJobsPost)
+
+  // A REBUILD THAT WOULD PUT THE WRONG THING IN A LIVE POST IS REFUSED, not
+  // published and not held (a live post cannot be taken back to a draft
+  // unasked). Two ways it goes wrong:
+  //   - the link and the text disagree (productMismatch above);
+  //   - the post on file is about another product altogether: its address,
+  //     made from its first title and never changed, shares nothing with this
+  //     video's product or new title. That is a video attached to the wrong
+  //     post, and rebuilding would replace that post with this one.
+  if (existingWpPostId && !existingIsThisJobsPost) {
+    const onFile = (existingForLimit?.wordpress_url as string | null) || null
+    if (productMismatch) {
+      return NextResponse.json({ error: `${productMismatch} Your live post${onFile ? ` at ${onFile}` : ''} was left as it was.` }, { status: 409 })
+    }
+    const fileSlug = existingSlug || slugOfUrl(onFile) || ''
+    if (fileSlug && fileSlug.split('-').filter((w) => w.length >= 3).length >= 2
+      && titleFitsSlug(generated.title, fileSlug) === 0
+      && !(titleProduct && titleNamesProduct(fileSlug.replace(/-/g, ' '), titleProduct).ok)) {
+      return NextResponse.json({
+        error: `This video is linked to the post at ${onFile || fileSlug}, which is about something else, so it was not rebuilt and nothing was changed. Generate this video as a new post, or fix which post it is linked to.`,
+      }, { status: 409 })
+    }
+  }
 
   // HOW IT WAS MADE, SAID ON THE POST; NO HASHTAG BLOCK (lib/post-provenance).
   content = stripHashtagBlock(content)

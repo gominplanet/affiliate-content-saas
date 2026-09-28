@@ -11,7 +11,8 @@ import { Loader2, Globe, ExternalLink } from 'lucide-react'
 
 interface Differs { postId: string; url: string; mvpTitle: string; liveTitle: string; suggest: 'mvp' | 'site' | null; why: string }
 interface Misfiled { postId: string; url: string; mvpTitle: string; numberNowNames: string }
-interface Result { checked: number; missing: number; differs: Differs[]; misfiled: Misfiled[]; unread: string[]; unconnected: string[] }
+interface OffTopic { postId: string; url: string; title: string }
+interface Result { checked: number; missing: number; differs: Differs[]; misfiled: Misfiled[]; offTopic?: OffTopic[]; unread: string[]; unconnected: string[] }
 
 export default function LiveTitleCheck() {
   const [busy, setBusy] = useState(false)
@@ -76,6 +77,20 @@ export default function LiveTitleCheck() {
               <ul className="mt-2 flex flex-col gap-1 text-[12px]">
                 {res.misfiled.slice(0, 20).map((m) => (
                   <li key={m.postId}><a href={m.url} target="_blank" rel="noopener noreferrer" className="underline">{m.mvpTitle || m.url}</a>: that number on the site is now {m.numberNowNames}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(res.offTopic?.length ?? 0) > 0 && (
+            <div className="mt-3 rounded-lg border border-[#ff3b30]/40 p-3">
+              <p className="font-semibold">{res.offTopic!.length} post{res.offTopic!.length === 1 ? ' is' : 's are'} about something other than {res.offTopic!.length === 1 ? 'its' : 'their'} address</p>
+              <p className="text-[12px] text-[#6e6e73] mt-0.5">
+                The title shares no word with the post&apos;s address, which was made from its first title. Usually the video and the product link disagreed, so the post was written about one product and links another. Open each one: check the video, the product link and the text all match, and fix it in WordPress or regenerate it from the right video.
+              </p>
+              <ul className="mt-2 flex flex-col gap-1 text-[12px]">
+                {res.offTopic!.map((o) => (
+                  <li key={o.postId}><a href={o.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{o.url}</a>: titled &quot;{o.title}&quot;</li>
                 ))}
               </ul>
             </div>

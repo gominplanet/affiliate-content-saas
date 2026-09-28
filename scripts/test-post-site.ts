@@ -42,6 +42,24 @@ const M = read('supabase/migrations/385_post_site_by_address.sql')
 check('migration 385 backfills and keeps posts filed by address', /update public\.blog_posts bp\s+set wordpress_site_id = ws\.id/.test(M) && /create trigger blog_posts_site_from_url/.test(M) && /if match is not null then/.test(M))
 check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(read('app/(dashboard)/tools/title-audit/page.tsx')))
 
+// ── The link, the video and the post agree (28 Sep: a baskets review at a
+//    car-phone-holder address, linking the holder) ──
+{
+  const slug = 'jikasho-vacuum-magnetic-car-phone-holder-review'
+  const holder = { brand: 'Jikasho', canonical: 'Jikasho Vacuum Magnetic Car Phone Holder' }
+  check('a baskets body does not name the linked phone holder', !titleNamesProduct('The BROWNLILY handwoven storage baskets do exactly what the title says. With 16 kids...', holder).ok)
+  check('a baskets title at a phone-holder address is off topic', titleFitsSlug('These Baskets Make Organization Look Good', slug) === 0 && titleFitsSlug('Jikasho Magnetic Phone Holder: Does It Hold?', slug) > 0)
+  const G = read('app/api/blog/generate/route.ts')
+  check('a post whose body never names the linked product is held, for every generation',
+    /if \(productMismatch\) heldReasons\.push\(productMismatch\)/.test(G) && G.indexOf('if (productMismatch) heldReasons.push') < G.indexOf('if (body.autopilot === true)'))
+  check('the title is not renamed to a product the body is not about', /if \(!bodyNames\) \{\s*productMismatch =/.test(G) && /\} else if \(!titleNamesProduct\(generated\.title, titleProduct\)\.ok\)/.test(G))
+  check('a rebuild never puts mismatched content into a live post', /if \(productMismatch\) \{\s*return NextResponse\.json\(\{ error: `\$\{productMismatch\} Your live post/.test(G))
+  check('a rebuild never overwrites a post whose address is about something else', /which is about something else, so it was not rebuilt and nothing was changed/.test(G))
+  const L = read('app/api/tools/title-audit/live/route.ts')
+  check('the live check lists posts about something other than their address', /offTopic\.push\(/.test(L) && /offTopic, unread/.test(L) && /res\.offTopic/.test(read('components/seo/LiveTitleCheck.tsx')))
+  check('a held generation says so on the Content page', /Saved as a draft, not published\./.test(read('components/content/GenerateButton.tsx')) && /Draft, not published/.test(read('components/content/GenerateButton.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ post-site: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

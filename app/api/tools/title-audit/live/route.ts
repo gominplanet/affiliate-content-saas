@@ -64,6 +64,7 @@ export async function GET() {
 
   const differs: Array<{ postId: string; url: string; mvpTitle: string; liveTitle: string; suggest: 'mvp' | 'site' | null; why: string }> = []
   const misfiled: Array<{ postId: string; url: string; mvpTitle: string; numberNowNames: string }> = []
+  const offTopic: Array<{ postId: string; url: string; title: string }> = []
   let checked = 0, missing = 0
   const unread: string[] = []
   const started = Date.now()
@@ -83,7 +84,18 @@ export async function GET() {
           misfiled.push({ postId: r.id, url: r.wordpress_url as string, mvpTitle: r.title || '', numberNowNames: w.link || w.slug })
           continue
         }
-        if (!r.title || sameTitle(r.title, w.title)) continue
+        if (!r.title) continue
+        if (sameTitle(r.title, w.title)) {
+          // Same title in both places, but is it the post its address says it
+          // is? The address is made from the first title and never changes, so
+          // a title sharing no word with it is content about something else:
+          // a baskets review at a car-phone-holder address, linking the holder.
+          const slug = slugOfUrl(r.wordpress_url) || w.slug
+          if (slug.replace(/-\d+$/, '').split('-').filter((x) => x.length >= 3).length >= 2 && titleFitsSlug(w.title, slug) === 0) {
+            offTopic.push({ postId: r.id, url: r.wordpress_url as string, title: w.title })
+          }
+          continue
+        }
         const slug = slugOfUrl(r.wordpress_url) || w.slug
         const fm = titleFitsSlug(r.title, slug), fs = titleFitsSlug(w.title, slug)
         const suggest = fm > fs + 0.2 ? 'mvp' : fs > fm + 0.2 ? 'site' : null
@@ -98,7 +110,7 @@ export async function GET() {
   }
   // The likeliest wrong titles first.
   differs.sort((a, b) => (a.suggest === 'mvp' ? 0 : 1) - (b.suggest === 'mvp' ? 0 : 1))
-  return NextResponse.json({ checked, missing, differs, misfiled, unread, unconnected })
+  return NextResponse.json({ checked, missing, differs, misfiled, offTopic, unread, unconnected })
 }
 
 export async function POST(request: Request) {

@@ -78,7 +78,7 @@ export function GenerateButton({
    *  capture; kept on the call-site signature for backwards compat
    *  but no longer read here (storyboards path handles it server-side). */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesHostedCount?: number | null; imagesStatus?: string | null } | null
+  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesHostedCount?: number | null; imagesStatus?: string | null; held?: boolean } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: Tier
   /** The user's saved Brand Profile → "Images per article" preference
@@ -366,7 +366,7 @@ export function GenerateButton({
         }
         throw new Error(errText(data.error) || 'Generation failed')
       }
-      setResult({ url: data.wordpressUrl as string, title: data.title as string })
+      setResult({ url: data.wordpressUrl as string, title: data.title as string, held: !!(data.held as { reasons?: string[] } | null)?.reasons?.length })
 
       // The AI in-article image step lives inside the generate route's
       // after() block. Vercel routinely cuts that block off before the slow
@@ -455,6 +455,12 @@ export function GenerateButton({
       if (typeof data.linkFallbackNote === 'string' && data.linkFallbackNote) {
         toast.warning(data.linkFallbackNote as string, { duration: 14000 })
       }
+      // HELD, said as held: a draft on the site, not a live post. The list at
+      // the top of this page has it with Publish anyway.
+      const heldReasons = (data.held as { reasons?: string[] } | null)?.reasons
+      if (Array.isArray(heldReasons) && heldReasons.length) {
+        toast.error(`Saved as a draft, not published. ${heldReasons.join(' ')}`, { duration: 20000 })
+      }
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Unknown error'
@@ -477,9 +483,15 @@ export function GenerateButton({
   if (status === 'done' && result) {
     return (
       <div className="flex items-center gap-2">
-        <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
-          <CheckCircle size={13} /> View post <ExternalLink size={11} />
-        </a>
+        {result.held ? (
+          <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#c93400] hover:underline">
+            Draft, not published <ExternalLink size={11} />
+          </a>
+        ) : (
+          <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
+            <CheckCircle size={13} /> View post <ExternalLink size={11} />
+          </a>
+        )}
         {/* Google indexing status (from the nightly cron + on-demand re-checks).
             ✓ = in Google's index. ⚠️ = not in the index yet (new posts can take
             days; old ones that flip back to this state may have been dropped).
