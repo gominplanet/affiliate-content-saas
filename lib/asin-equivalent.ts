@@ -54,8 +54,31 @@ const STOP = new Set(['the', 'and', 'for', 'with', 'of', 'a', 'an', 'in', 'on', 
 const norm = (s: string | null | undefined) => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
 export const brandKey = (b: string | null | undefined) => norm(b).replace(/^visit the\s+|\s+store$/g, '').replace(/[^a-z0-9]/g, '')
 const modelKey = (m: string | null | undefined) => norm(m).replace(/[^a-z0-9]/g, '')
-const words = (t: string | null | undefined) => new Set(norm(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !STOP.has(w)))
-const numbers = (t: string | null | undefined) => new Set(norm(t).match(/\d+(?:\.\d+)?/g) ?? [])
+/** A "model number" that is really an ASIN is no model number. Amazon's own
+ *  devices carry their ASIN there (the eero router's model is B091G65HH6), and
+ *  searching another store for it finds nothing, because that store's listing
+ *  has its own ASIN. */
+export const realModel = (m: string | null | undefined, asin?: string) => {
+  const k = String(m || '').trim()
+  if (!k) return null
+  if (/^B0[A-Z0-9]{8}$/i.test(k) || (asin && k.toUpperCase() === asin.toUpperCase())) return null
+  return k
+}
+/** The product's name without the selling points Amazon titles carry after a
+ *  dash, a bar, a comma or a bracket: "Amazon eero Pro 6E mesh wifi router -
+ *  Supports internet plans up to 2.5 Gbps, ..." is "Amazon eero Pro 6E mesh
+ *  wifi router". Those tails differ by store and say nothing about identity. */
+export const coreName = (t: string | null | undefined) => String(t || '').split(/\s[-–—|]\s|[,|(\[]/)[0].trim()
+const joined = (t: string | null | undefined) => norm(t).replace(/([a-z0-9])-(?=[a-z0-9])/g, '$1')
+const words = (t: string | null | undefined) => new Set(joined(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !STOP.has(w)))
+/** The words in a name that carry a digit, whole: "6E" is not "6", "47" is
+ *  not "36". These are what tells one model from its sibling. */
+const numbers = (t: string | null | undefined) => new Set(joined(t).split(/[^a-z0-9.]+/).map((w) => w.replace(/^\.+|\.+$/g, '')).filter((w) => /\d/.test(w)))
+/** "1-pack", "3 pack", "pack of 2": a different count is a different listing. */
+const packOf = (t: string | null | undefined) => {
+  const m = norm(t).match(/(\d+)\s*-?\s*(?:pack|pk|count|ct)\b|pack of\s*(\d+)/)
+  return m ? Number(m[1] || m[2]) : null
+}
 
 /** How alike two names are, 0 to 1: shared words over all words. */
 export function nameSimilarity(a: string | null | undefined, b: string | null | undefined): number {
@@ -75,13 +98,17 @@ export function pickByName(
 ): NameMatch | null {
   const brand = brandKey(source.brand)
   if (!brand || !source.title) return null
-  const model = modelKey(source.model)
-  const nums = numbers(source.title)
+  const model = modelKey(realModel(source.model, source.asin))
+  const core = coreName(source.title)
+  const nums = numbers(core)
+  const pack = packOf(source.title) ?? 1
   let best: { asin: string; how: 'model' | 'name'; score: number } | null = null
   for (const c of candidates) {
     if (!c.title || c.asin.toUpperCase() === source.asin.toUpperCase()) continue
     if (brandKey(c.brand) !== brand) continue
-    const cm = modelKey(c.model)
+    // A 3-pack is not the 1-pack, whatever else agrees.
+    if ((packOf(c.title) ?? 1) !== pack) continue
+    const cm = modelKey(realModel(c.model, c.asin))
     if (model.length >= 3 && cm === model) {
       const score = 2 + nameSimilarity(source.title, c.title)
       if (!best || score > best.score) best = { asin: c.asin.toUpperCase(), how: 'model', score }
@@ -90,9 +117,10 @@ export function pickByName(
     // A different model number on both sides is a different product.
     if (model.length >= 3 && cm.length >= 3) continue
     if (!sameLanguage) continue
-    const cn = numbers(c.title)
-    if ([...nums].some((n) => !cn.has(n))) continue
-    const sim = nameSimilarity(source.title, c.title)
+    const cc = coreName(c.title)
+    const cn = numbers(cc)
+    if ([...nums].some((n) => !cn.has(n)) || [...cn].some((n) => !nums.has(n))) continue
+    const sim = nameSimilarity(core, cc)
     if (sim < NAME_MATCH_MIN) continue
     if (!best || sim > best.score) best = { asin: c.asin.toUpperCase(), how: 'name', score: sim }
   }
@@ -102,10 +130,11 @@ export function pickByName(
 /** What to search a store for: the brand with the model number when there is
  *  one, else the brand with the start of the name. */
 export function nameSearchTerm(source: { brand: string | null; title: string | null; model: string | null }): string | null {
+  // (realModel with no ASIN still drops anything shaped like one.)
   const brand = String(source.brand || '').trim()
   if (!brand) return null
-  const model = String(source.model || '').trim()
+  const model = String(realModel(source.model) || '')
   if (model.length >= 3) return `${brand} ${model}`
-  const title = String(source.title || '').replace(/[,|(\[].*$/, '').trim().split(/\s+/).slice(0, 8).join(' ')
+  const title = coreName(source.title).split(/\s+/).slice(0, 8).join(' ')
   return title ? (norm(title).includes(norm(brand)) ? title : `${brand} ${title}`) : null
 }

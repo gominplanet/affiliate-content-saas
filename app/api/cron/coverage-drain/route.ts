@@ -347,7 +347,11 @@ async function equivalents(sb: Sb): Promise<{ found: number; byName: number; non
   const { data: cells } = await sb.from('storefront_coverage')
     .select('id,domain,asin').eq('state', 'blocked').eq('stock', 'not_listed')
     .like('reason', 'Amazon does not sell this product in %')
-    .not('reason', 'like', '%same barcode%')
+    // SKIPPED ONLY ONCE EVERYTHING WAS TRIED. The first version wrote off
+    // cells after the barcode alone, before the name search existed, and
+    // skipped anything saying "same barcode", so those never got a name
+    // search. Now only "barcode and name checked" is final.
+    .not('reason', 'like', '%barcode and name checked%')
     .not('asin', 'is', null)
     .order('priority', { ascending: false }).limit(EQUIV_CELLS)
   const rows: Array<{ id: string; domain: string; asin: string }> = (cells ?? [])
@@ -414,8 +418,8 @@ async function equivalents(sb: Sb): Promise<{ found: number; byName: number; non
         ? (searched ? 'no listing there has the same barcode, or the same brand and model or name' : 'no listing there has the same barcode')
         : (searched ? 'Amazon has no barcode for it, and no listing there has the same brand and model or name' : 'Amazon has no barcode or brand for it to look for another listing by')
       await sb.from('storefront_coverage').update({
-        // "same barcode" in every one: it is what the claim query skips.
-        reason: `Amazon does not sell this product in ${mkt.country}: ${tried} (same barcode checked)`.slice(0, 200),
+        // The marker the claim query skips, and only when nothing is left to try.
+        reason: `Amazon does not sell this product in ${mkt.country}: ${tried} (barcode and name checked)`.slice(0, 200),
         updated_at: now,
       }).eq('id', r.id)
       none++

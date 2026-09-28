@@ -628,7 +628,7 @@ const SEARCH = read('lib/app-search-index.ts')
   check('UPC-A and EAN-13 compare equal', normalizeCode('840030701283') === normalizeCode('0840030701283'))
   check('blocked "not sold" cells are looked for again by barcode, right after stock()',
     /async function equivalents\(sb: Sb\)/.test(DRAIN) && /const stocked = await stock\(sb\)\s+[\s\S]{0,120}?const matched = await equivalents\(sb\)/.test(DRAIN)
-    && /\.eq\('stock', 'not_listed'\)/.test(DRAIN) && /\.not\('reason', 'like', '%same barcode%'\)/.test(DRAIN))
+    && /\.eq\('stock', 'not_listed'\)/.test(DRAIN) && /\.not\('reason', 'like', '%barcode and name checked%'\)/.test(DRAIN))
   check('a match goes back through the stock check under the local ASIN, not assumed buyable',
     /asin: local, stock: null, stock_at: null, state: 'unknown'/.test(DRAIN))
   check('a failed barcode lookup is not recorded as "no listing"', /if \(listings === null\) \{ unread \+= readable\.length; continue \}/.test(DRAIN))
@@ -653,8 +653,16 @@ const SEARCH = read('lib/app-search-index.ts')
   check('no brand, no search', nameSearchTerm({ brand: null, title: 'x', model: null }) === null)
   check('a name search runs only for what the barcode could not place, capped per firing',
     /if \(!local && searchesLeft > 0\) \{/.test(DRAIN) && /const NAME_SEARCHES = 4/.test(DRAIN) && /if \(hits === null\) \{ unread\+\+; continue \}/.test(DRAIN))
-  check('every write-off still carries the text the claim query skips',
-    /\(same barcode checked\)`/.test(DRAIN))
+  check('every write-off carries the text the claim query skips, and rows written off by barcode alone come back for a name search',
+    /\(barcode and name checked\)`/.test(DRAIN) && !/'%same barcode%'/.test(DRAIN))
+  // The eero case, from the check link: Keepa's "model" is its ASIN, the
+  // barcode finds nothing in Canada, and the title carries a selling-point tail.
+  const eero = { asin: 'B091G65HH6', brand: 'eero', model: 'B091G65HH6', title: 'Amazon eero Pro 6E mesh wifi router - Supports internet plans up to 2.5 Gbps, Coverage up to 2,000 sq. ft., Connect 100+ devices, 1-pack' }
+  check('an ASIN in the model field is not searched for', nameSearchTerm(eero) === 'Amazon eero Pro 6E mesh wifi router')
+  check('the same product under Canada\'s listing matches by brand and name',
+    pickByName(eero, [{ asin: 'B091GX3LWR', brand: 'eero', model: 'B091GX3LWR', title: 'Amazon eero Pro 6E mesh Wi-Fi router | Fast and reliable gigabit + speeds | connect 100+ devices | Coverage up to 2,000 sq. ft. | 2021 release' }], true)?.asin === 'B091GX3LWR')
+  check('its 3-pack does not', pickByName(eero, [{ asin: 'B091GYYYYY', brand: 'eero', model: null, title: 'Amazon eero Pro 6E mesh Wi-Fi router, 3-pack' }], true) === null)
+  check('nor its 6 (not 6E) sibling', pickByName(eero, [{ asin: 'B08ZZZZZZZ', brand: 'eero', model: null, title: 'Amazon eero Pro 6 mesh Wi-Fi 6 router' }], true) === null)
 
   // Upload failures in words.
   check('"Receiving end does not exist" says to sign in to that store',

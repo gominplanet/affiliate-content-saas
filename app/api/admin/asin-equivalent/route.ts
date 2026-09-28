@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   const { data: waiting, error: qErr } = await sb.from('storefront_coverage')
     .select('id,domain,asin,reason,updated_at').eq('state', 'blocked').eq('stock', 'not_listed')
     .like('reason', 'Amazon does not sell this product in %')
-    .not('reason', 'like', '%same barcode%')
+    .not('reason', 'like', '%barcode and name checked%')
     .not('asin', 'is', null)
     .order('priority', { ascending: false }).limit(30)
 
