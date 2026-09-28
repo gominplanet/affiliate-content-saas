@@ -21,7 +21,6 @@ import { deliverPreparedStorefronts } from '@/lib/storefront-delivery'
 import { liftoffStudioRequest, normalizeStudioOptions, storeStudioRun, type StoredStudioRun } from '@/lib/studio-finish'
 import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
-import { pinUntriedFirstComments } from '@/lib/first-comment-pins'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -115,13 +114,11 @@ export default function LiftoffRunner() {
           const after = liftoffPending((a.items ?? []) as RunnerItem[], markets, pend)
           if (after.youtube + after.studio + after.amazon > 0) { more = true; sigs.push(after.signature) }
         }
-        // ── THE PINNED FIRST COMMENTS (Labs) ─────────────────────────────
-        // The first-comments job posts each video's comment when YouTube shows
-        // it public, and only SCOUT can pin. So this tab pins what was posted
-        // and not tried yet, and comes back when one is due within two hours.
-        const pins = await pinUntriedFirstComments(say)
-        if (pins.pinned + pins.failed > 0) say(`First comments: ${pins.pinned} pinned${pins.failed ? `, ${pins.failed} not pinned (see Co-Pilot)` : ''}`)
-        if (pins.dueSoon) { more = true; sigs.push('fc:due') }
+        // THE PINNED FIRST COMMENTS ARE NOT PINNED FROM HERE. SCOUT pins by
+        // bringing a YouTube tab to the front for a few seconds, and doing
+        // that from a hidden tab would pull the creator away from whatever
+        // they are typing. The Liftoff page, Co-Pilot and the First comments
+        // page pin them when the creator opens one.
       } catch (e) {
         say(`Stopped: ${e instanceof Error ? e.message : String(e)}`)
         more = true

@@ -88,8 +88,8 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   const CP = read('app/(dashboard)/co-pilot/page.tsx')
   check('Co-Pilot queues on every push, not only when a comment was generated', /if \(!canFirstComment \|\| !firstCommentOn\) return/.test(CP) && !/!firstCommentOn \|\| !text\) return/.test(CP))
   const RUN = read('components/launch/LiftoffRunner.tsx')
-  check('Liftoff\'s background tab pins what was posted, and comes back for one due soon',
-    /const pins = await pinUntriedFirstComments\(say\)/.test(RUN) && /if \(pins\.dueSoon\) \{ more = true/.test(RUN))
+  check('the Liftoff page pins what was posted since, and the hidden background tab never does (a pin brings YouTube to the front)',
+    /void pinUntriedFirstComments\(\)\.then/.test(read('components/launch/LaunchBoard.tsx')) && !/pinUntriedFirstComments|requestPinComment/.test(RUN))
   const PINS = read('lib/first-comment-pins.ts')
   check('the background only pins what was never tried', /x\.pinned === null/.test(PINS))
   const REP = read('components/launch/LaunchReport.tsx')

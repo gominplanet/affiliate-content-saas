@@ -49,7 +49,7 @@ function firstCommentCheck(fc: ReportItem['first_comment']): { value: boolean | 
   if (!fc) return null
   if (fc.state === 'posted') return fc.pinned === true
     ? { value: true, title: 'Posted and pinned' }
-    : { value: fc.pinned === false ? false : null, title: fc.pinned === false ? `Posted, not pinned: ${fc.pin_error || 'no reason given'}` : 'Posted; SCOUT pins it next time Liftoff or Co-Pilot is open' }
+    : { value: fc.pinned === false ? false : null, title: fc.pinned === false ? `Posted, not pinned: ${fc.pin_error || 'no reason given'}` : 'Posted; SCOUT pins it the next time you open Liftoff, Co-Pilot or First comments' }
   if (fc.state === 'waiting') return { value: null, title: 'Posts itself when YouTube shows the video public, then SCOUT pins it' }
   if (fc.state === 'failed') return { value: false, title: `Not posted: ${fc.last_error || 'no reason given'}` }
   return null

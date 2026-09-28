@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
+import { pinUntriedFirstComments } from '@/lib/first-comment-pins'
 import { toast } from 'sonner'
 import {
   Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2, ChevronUp, ChevronDown,
@@ -293,6 +294,23 @@ export default function LaunchBoard() {
   }, [])
   const [scoutReady, setScoutReady] = useState<boolean | null>(null)
   const [scoutVersion, setScoutVersion] = useState<string | null>(null)
+  // ── PIN THE FIRST COMMENTS POSTED SINCE LAST TIME (Labs) ─────────────────
+  // A scheduled video's first comment is posted by the job when it goes
+  // public, often with nobody here, and only SCOUT can pin it. Pinning brings
+  // a YouTube tab to the front for a few seconds, so it happens here, with
+  // the creator on the page, and not from the hidden background tab.
+  const pinnedOnce = useRef(false)
+  useEffect(() => {
+    if (scoutReady !== true || pinnedOnce.current) return
+    pinnedOnce.current = true
+    const t = setTimeout(() => {
+      void pinUntriedFirstComments().then((r) => {
+        if (r.pinned > 0) toast.success(`Pinned ${r.pinned} first ${r.pinned === 1 ? 'comment' : 'comments'} posted since you were last here.`)
+        if (r.failed > 0) toast(`${r.failed} first ${r.failed === 1 ? 'comment' : 'comments'} could not be pinned. The report shows why.`, { duration: 9000 })
+      }).catch(() => {})
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [scoutReady])
   // ── KEEP GOING WHEN THIS PAGE IS CLOSED ──────────────────────────────────
   // On unless the creator turns it off (remembered in this browser). SCOUT
   // then wakes every few minutes and, with this page closed, opens Liftoff in
