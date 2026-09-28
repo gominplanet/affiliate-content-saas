@@ -66,7 +66,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // upload failed looked the same as one that went up. Each row now carries
   // each country's own state and, for a failure, SCOUT's reason. Read-only and
   // best effort: a failure here leaves the list empty, never the batch.
-  const amazonByVideo = new Map<string, Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean }>>()
+  const amazonByVideo = new Map<string, Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null }>>()
   const vids = items.map((i) => i.video_id).filter((v): v is string => !!v)
   if (vids.length) {
     const { data: jobs } = await sb.from('global_sync_jobs').select('id,video_id').eq('user_id', user.id).in('video_id', vids)
@@ -74,14 +74,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     for (const j of (jobs ?? []) as Array<{ id: string; video_id: string }>) videoByJob.set(j.id, j.video_id)
     if (videoByJob.size) {
       const { data: targets } = await sb.from('global_sync_targets')
-        .select('job_id,domain,state,detail,dub,video_url').eq('user_id', user.id).in('job_id', [...videoByJob.keys()])
+        .select('job_id,domain,state,detail,dub,video_url,asin').eq('user_id', user.id).in('job_id', [...videoByJob.keys()])
       const wanted = new Set((batch as BatchRow).markets ?? [])
-      for (const t of (targets ?? []) as Array<{ job_id: string; domain: string; state: string; detail: string | null; dub: unknown; video_url: string | null }>) {
+      for (const t of (targets ?? []) as Array<{ job_id: string; domain: string; state: string; detail: string | null; dub: unknown; video_url: string | null; asin: string | null }>) {
         if (wanted.size && !wanted.has(t.domain)) continue
         const v = videoByJob.get(t.job_id)
         if (!v) continue
         const list = amazonByVideo.get(v) ?? []
-        list.push({ domain: t.domain, state: t.state, detail: t.detail, waitingOnDub: !!t.dub && !t.video_url })
+        list.push({ domain: t.domain, state: t.state, detail: t.detail, waitingOnDub: !!t.dub && !t.video_url, asin: t.asin ?? null })
         amazonByVideo.set(v, list)
       }
     }
@@ -91,12 +91,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // countries showed one and said nothing about the other six. Those come
     // from the grid, with its own state and reason.
     const { data: cells } = await sb.from('storefront_coverage')
-      .select('video_id,domain,state,reason').eq('user_id', user.id).in('video_id', vids)
-    for (const c of (cells ?? []) as Array<{ video_id: string; domain: string; state: string; reason: string | null }>) {
+      .select('video_id,domain,state,reason,asin').eq('user_id', user.id).in('video_id', vids)
+    for (const c of (cells ?? []) as Array<{ video_id: string; domain: string; state: string; reason: string | null; asin: string | null }>) {
       if (!((batch as BatchRow).markets ?? []).includes(c.domain)) continue
       const list = amazonByVideo.get(c.video_id) ?? []
       if (list.some((a) => a.domain === c.domain)) continue
-      list.push({ domain: c.domain, state: `grid:${c.state}`, detail: c.reason, waitingOnDub: false })
+      list.push({ domain: c.domain, state: `grid:${c.state}`, detail: c.reason, waitingOnDub: false, asin: c.asin ?? null })
       amazonByVideo.set(c.video_id, list)
     }
   }

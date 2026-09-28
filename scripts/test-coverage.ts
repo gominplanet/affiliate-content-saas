@@ -15,7 +15,8 @@
 // year. The grid does not start or finish. It drains.
 import { readFileSync } from 'node:fs'
 import { MARKETS } from '../lib/markets'
-import { pickEquivalent, normalizeCode } from '../lib/asin-equivalent'
+import { pickEquivalent, normalizeCode, pickByName, nameSearchTerm } from '../lib/asin-equivalent'
+import { explainAmazonUpload } from '../lib/amazon-upload-errors'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -632,6 +633,35 @@ const SEARCH = read('lib/app-search-index.ts')
     /asin: local, stock: null, stock_at: null, state: 'unknown'/.test(DRAIN))
   check('a failed barcode lookup is not recorded as "no listing"', /if \(listings === null\) \{ unread \+= readable\.length; continue \}/.test(DRAIN))
   check('each country is tagged with its own ASIN', /asin: r\.asin \?\? g\.asin, state: 'pending'/.test(DRAIN))
+
+  // Brand and model, or brand and name: strict, because the wrong product is worse than none.
+  const island = { asin: 'B0HGWGLM1R', brand: 'Homestyle', model: 'KI-47W', title: 'Homestyle 47" Wide Rolling Kitchen Island with Storage, White' }
+  check('the same brand and model number matches, in any language',
+    pickByName(island, [{ asin: 'B0FR000001', brand: 'HOMESTYLE', model: 'ki47w', title: 'Îlot de cuisine roulant 47 pouces' }], false)?.how === 'model')
+  check('another brand never matches, whatever the name',
+    pickByName(island, [{ asin: 'B0XX000001', brand: 'Other Co', model: 'KI-47W', title: island.title }], true) === null)
+  check('a different model number from the same brand is a different product',
+    pickByName(island, [{ asin: 'B0XX000002', brand: 'Homestyle', model: 'KI-36W', title: island.title }], true) === null)
+  const noModel = { ...island, model: null }
+  check('with no model number, a close name from the same brand matches on a same-language store',
+    pickByName(noModel, [{ asin: 'B0CA000001', brand: 'Homestyle', model: null, title: 'Homestyle 47" Wide Rolling Kitchen Island with Storage (White)' }], true)?.how === 'name')
+  check('but not when a number in the name differs (36 inch is not 47 inch)',
+    pickByName(noModel, [{ asin: 'B0CA000002', brand: 'Homestyle', model: null, title: 'Homestyle 36" Wide Rolling Kitchen Island with Storage, White' }], true) === null)
+  check('and never on a store in another language, by name alone',
+    pickByName(noModel, [{ asin: 'B0DE000001', brand: 'Homestyle', model: null, title: island.title }], false) === null)
+  check('the search is brand plus model when there is one', nameSearchTerm(island) === 'Homestyle KI-47W')
+  check('no brand, no search', nameSearchTerm({ brand: null, title: 'x', model: null }) === null)
+  check('a name search runs only for what the barcode could not place, capped per firing',
+    /if \(!local && searchesLeft > 0\) \{/.test(DRAIN) && /const NAME_SEARCHES = 4/.test(DRAIN) && /if \(hits === null\) \{ unread\+\+; continue \}/.test(DRAIN))
+  check('every write-off still carries the text the claim query skips',
+    /\(same barcode checked\)`/.test(DRAIN))
+
+  // Upload failures in words.
+  check('"Receiving end does not exist" says to sign in to that store',
+    /not signed in to amazon\.ca/.test(explainAmazonUpload('Could not establish connection. Receiving end does not exist.', 'amazon.ca') || ''))
+  check('a missing Creator session says to finish creator setup there',
+    /Creator tools there/.test(explainAmazonUpload('Could not read your Creator session token. [ctx:dom:csrf]', 'amazon.de') || ''))
+  check('anything unrecognised is passed through untouched', explainAmazonUpload('Something new', 'amazon.fr') === 'Something new')
 }
 
 if (failures.length) {

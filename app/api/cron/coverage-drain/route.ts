@@ -44,8 +44,8 @@ import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
 import { lookupAvailability, MIN_KEEPA_TOKENS } from '@/lib/product-availability'
-import { pickEquivalent } from '@/lib/asin-equivalent'
-import { fetchKeepaCodes, fetchKeepaByCodes, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { pickEquivalent, pickByName, nameSearchTerm } from '@/lib/asin-equivalent'
+import { fetchKeepaIdentity, fetchKeepaByCodes, fetchKeepaSearch, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 import { dubTarget } from '@/lib/dub-target'
 import { normalizeTier } from '@/lib/tier'
 import { STALL_AFTER_MS } from '@/lib/global-sync-recovery'
@@ -322,6 +322,9 @@ async function writeStock(
 /** Blocked cells looked at again per firing, by barcode. Each costs Keepa about
  *  two tokens: the source's barcodes, then the country's listings under them. */
 const EQUIV_CELLS = 30
+/** Name-and-brand searches per firing, for what the barcode could not place.
+ *  Ten Keepa tokens each, so this is the costly half and is kept small. */
+const NAME_SEARCHES = 4
 
 /**
  * NOT SOLD UNDER THIS ASIN IS NOT NOT SOLD.
@@ -329,14 +332,18 @@ const EQUIV_CELLS = 30
  * stock() asks whether the video's own ASIN is listed in each country, and a
  * product Amazon lists under a different ASIN there (a router that is
  * B091G65HH6 on amazon.com and B091GX3LWR on amazon.ca) was blocked as "not
- * sold" in a country that sells it. Here each such cell is looked for again by
- * the product's barcode in that store. Found: the cell takes that country's
- * ASIN and goes back through stock() under it, so the listing is checked,
- * dubbed and tagged with the product Canada actually sells. Not found: the
- * reason says the barcode was tried too, which is also what stops it being
- * asked again.
+ * sold" in a country that sells it. Here each such cell is looked for again in
+ * that store: by barcode first, then, where the barcode finds nothing or there
+ * is none, by brand and model number, or brand and name on a store in the same
+ * language (lib/asin-equivalent says exactly what counts).
+ *
+ * Found: the cell takes that country's ASIN, says how it was matched, and goes
+ * back through stock() under it, so the listing is checked, dubbed and tagged
+ * with the product that country sells. Not found: the reason says what was
+ * tried, which is also what stops it being asked again. A lookup that could not
+ * run is left alone to retry, never written as "no listing".
  */
-async function equivalents(sb: Sb): Promise<{ found: number; none: number; unread: number; skipped?: string }> {
+async function equivalents(sb: Sb): Promise<{ found: number; byName: number; none: number; unread: number; skipped?: string }> {
   const { data: cells } = await sb.from('storefront_coverage')
     .select('id,domain,asin').eq('state', 'blocked').eq('stock', 'not_listed')
     .like('reason', 'Amazon does not sell this product in %')
@@ -345,51 +352,76 @@ async function equivalents(sb: Sb): Promise<{ found: number; none: number; unrea
     .order('priority', { ascending: false }).limit(EQUIV_CELLS)
   const rows: Array<{ id: string; domain: string; asin: string }> = (cells ?? [])
     .filter((c: { domain: string }) => marketByDomain(c.domain)?.keepa != null)
-  if (rows.length === 0) return { found: 0, none: 0, unread: 0 }
-  if (!keepaConfigured()) return { found: 0, none: 0, unread: rows.length, skipped: 'keepa_unconfigured' }
+  if (rows.length === 0) return { found: 0, byName: 0, none: 0, unread: 0 }
+  if (!keepaConfigured()) return { found: 0, byName: 0, none: 0, unread: rows.length, skipped: 'keepa_unconfigured' }
   const tok = await fetchKeepaTokenStatus()
-  if (tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS) return { found: 0, none: 0, unread: rows.length, skipped: 'low_tokens' }
+  if (tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS) return { found: 0, byName: 0, none: 0, unread: rows.length, skipped: 'low_tokens' }
+  let searchesLeft = tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS + NAME_SEARCHES * 10 ? 0 : NAME_SEARCHES
 
-  // The barcodes, read from the US store where these ASINs come from. A source
-  // missing from the answer was not looked at, and its cells are left alone.
-  const sourceCodes = await fetchKeepaCodes([...new Set(rows.map((r) => r.asin.toUpperCase()))])
+  // Who each source product is, read from the US store these ASINs come from.
+  // A source missing from the answer was not looked at; its cells wait.
+  const ids = await fetchKeepaIdentity([...new Set(rows.map((r) => r.asin.toUpperCase()))])
   const now = new Date().toISOString()
-  let found = 0, none = 0, unread = 0
+  let found = 0, byName = 0, none = 0, unread = 0
+  const english = (d: string) => marketByDomain(d)?.lang.startsWith('en') ?? false
 
   const byDomain = new Map<string, typeof rows>()
   for (const r of rows) byDomain.set(r.domain, [...(byDomain.get(r.domain) ?? []), r])
   for (const [domain, list] of byDomain) {
     const mkt = marketByDomain(domain)!
-    const readable = list.filter((r) => sourceCodes.has(r.asin.toUpperCase()))
+    const readable = list.filter((r) => ids.has(r.asin.toUpperCase()))
     unread += list.length - readable.length
-    const codes = [...new Set(readable.flatMap((r) => sourceCodes.get(r.asin.toUpperCase()) ?? []))]
-    // No barcode at all: nothing to look for, said so on the cell.
+    const codes = [...new Set(readable.flatMap((r) => ids.get(r.asin.toUpperCase())?.codes ?? []))]
     const listings = codes.length ? await fetchKeepaByCodes(codes, mkt.keepa as number) : []
     if (listings === null) { unread += readable.length; continue }
     for (const r of readable) {
-      const local = pickEquivalent(sourceCodes.get(r.asin.toUpperCase()) ?? [], listings, r.asin)
+      const src = ids.get(r.asin.toUpperCase())!
+      let local: string | null = pickEquivalent(src.codes, listings, r.asin)
+      let how = `same barcode as ${r.asin.toUpperCase()}`
+      let searched = false
+      if (!local && searchesLeft > 0) {
+        const term = nameSearchTerm(src)
+        if (term) {
+          searchesLeft--
+          const hits = await fetchKeepaSearch(term, mkt.keepa as number)
+          // Could not search: left for the next firing, not written off.
+          if (hits === null) { unread++; continue }
+          searched = true
+          // The source is an amazon.com (English) listing.
+          const m = pickByName(src, hits, english(domain))
+          if (m) {
+            local = m.asin
+            how = m.how === 'model' ? `same brand and model number as ${r.asin.toUpperCase()}` : `same brand and name as ${r.asin.toUpperCase()}`
+          }
+        }
+      }
       if (local) {
         // Back through stock() under the local ASIN: listed and buyable are
-        // still checked, not assumed from a barcode match.
+        // still checked, not assumed from a match.
         await sb.from('storefront_coverage').update({
           asin: local, stock: null, stock_at: null, state: 'unknown', checked_at: null,
-          reason: `Sold in ${mkt.country} as ${local} (same barcode as ${r.asin.toUpperCase()})`,
+          reason: `Sold in ${mkt.country} as ${local} (${how})`.slice(0, 200),
           updated_at: now,
         }).eq('id', r.id)
         found++
-      } else {
-        const why = (sourceCodes.get(r.asin.toUpperCase()) ?? []).length
-          ? 'and no listing there has the same barcode either'
-          : 'and Amazon has no barcode for it to look for another listing by (same barcode check not possible)'
-        await sb.from('storefront_coverage').update({
-          reason: `Amazon does not sell this product in ${mkt.country}, ${why}`.slice(0, 200),
-          updated_at: now,
-        }).eq('id', r.id)
-        none++
+        if (!how.startsWith('same barcode')) byName++
+        continue
       }
+      // A cell that still has a name search owed waits for one rather than
+      // being written off because this firing's searches ran out.
+      if (!searched && nameSearchTerm(src) && searchesLeft === 0) { unread++; continue }
+      const tried = src.codes.length
+        ? (searched ? 'no listing there has the same barcode, or the same brand and model or name' : 'no listing there has the same barcode')
+        : (searched ? 'Amazon has no barcode for it, and no listing there has the same brand and model or name' : 'Amazon has no barcode or brand for it to look for another listing by')
+      await sb.from('storefront_coverage').update({
+        // "same barcode" in every one: it is what the claim query skips.
+        reason: `Amazon does not sell this product in ${mkt.country}: ${tried} (same barcode checked)`.slice(0, 200),
+        updated_at: now,
+      }).eq('id', r.id)
+      none++
     }
   }
-  return { found, none, unread }
+  return { found, byName, none, unread }
 }
 
 /**

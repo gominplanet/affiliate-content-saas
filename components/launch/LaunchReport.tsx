@@ -9,6 +9,7 @@
 // working says so, and the headline only says "All done" when no cell is.
 'use client'
 
+import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
 import { MARKETS } from '@/lib/markets'
 import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
 
@@ -34,7 +35,10 @@ export interface ReportItem {
     asked?: boolean; paidPromotion?: boolean | null; aiUseNo?: boolean | null
     embeddable?: boolean | null; madeForKids?: boolean | null; error?: string | null
   } | null
-  amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean }>
+  asin?: string | null
+  /** asin: the ASIN that country's listing is tagged with. It differs from
+   *  the video's own when the store sells the product under another listing. */
+  amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null }>
 }
 
 type Cell = { word: string; colour: string; done: boolean; problem?: string }
@@ -58,9 +62,18 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
   return { word: 'Still being prepared', colour: BUSY, done: false }
 }
 
+/** A blocked cell's reason: an upload failure in plain words, anything else
+ *  as the coverage step wrote it. */
+function blockedWhy(entry: { domain: string; detail: string | null }): string {
+  if (!entry.detail) return 'Blocked, with no reason recorded.'
+  const said = explainAmazonUpload(entry.detail, entry.domain) || entry.detail
+  const t = said.charAt(0).toUpperCase() + said.slice(1)
+  return /[.!?]$/.test(t) ? t : `${t}.`
+}
+
 /** One Amazon country for one video. */
 type AmazonEntry = NonNullable<ReportItem['amazon']>[number]
-function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeFailed: boolean): Cell {
+function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeFailed: boolean, itemAsin?: string | null): Cell {
   if (!entry) {
     // THE VIDEO NEVER MADE IT, so nothing is coming: said as such, not left
     // as "After YouTube", which held the report on "Still working" for ever.
@@ -71,11 +84,17 @@ function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeF
     case 'delivered': case 'grid:uploaded': case 'grid:live':
       // Up, but with the English-text image on a non-English store: amber,
       // and said, not a plain green tick.
+    {
+      // UNDER THAT COUNTRY'S OWN ASIN, said: the listing is tagged with the
+      // product that store sells, which is not the one the video names.
+      const own = entry.asin && itemAsin && entry.asin.toUpperCase() !== itemAsin.toUpperCase() ? entry.asin.toUpperCase() : null
+      const word = own ? `Listed as ${own}` : 'Listed'
       return /english-text thumbnail/i.test(entry.detail || '')
-        ? { word: 'Listed', colour: WARN, done: true, problem: 'Listed with the English-text thumbnail, because the text-free one was never made.' }
-        : { word: 'Listed', colour: GOOD, done: true }
+        ? { word, colour: WARN, done: true, problem: 'Listed with the English-text thumbnail, because the text-free one was never made.' }
+        : { word, colour: GOOD, done: true }
+    }
     case 'failed':
-      return { word: 'Failed', colour: BAD, done: true, problem: entry.detail || 'The upload failed.' }
+      return { word: 'Failed', colour: BAD, done: true, problem: explainAmazonUpload(entry.detail, entry.domain) || 'The upload failed.' }
     case 'grid:blocked':
       // NOT SOLD HERE ONLY WHEN IT IS NOT SOLD HERE. A missing product link,
       // no audio to dub, or a dub that gave up was drawn the same grey "Not
@@ -83,7 +102,7 @@ function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeF
       // fix. The coverage step's own reason decides.
       return /does not sell this product/i.test(entry.detail || '')
         ? { word: 'Not sold here', colour: IDLE, done: true, problem: undefined }
-        : { word: 'Blocked', colour: BAD, done: true, problem: entry.detail ? entry.detail.charAt(0).toUpperCase() + entry.detail.slice(1) + '.' : 'Blocked, with no reason recorded.' }
+        : { word: 'Blocked', colour: BAD, done: true, problem: blockedWhy(entry) }
     case 'localized':
       return entry.waitingOnDub ? { word: 'Dubbing', colour: BUSY, done: false } : { word: 'Ready to send', colour: BUSY, done: false }
     default:
@@ -144,10 +163,10 @@ export default function LaunchReport({
     const reachable = !!i.youtube_video_id || i.state === 'amazon_only'
     const ytFailed = i.state === 'blocked' && !i.youtube_video_id
     for (const m of mkts) {
-      const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), reachable, ytFailed)
+      const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), reachable, ytFailed, i.asin)
       amzTotal++
       if (!c.done) amzLeft++
-      if (c.word === 'Listed') { listed++; if (c.problem) problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem }) }
+      if (c.word === 'Listed' || c.word.startsWith('Listed as ')) { listed++; if (c.problem) problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem }) }
       if (c.word === 'Not sold here') notSold++
       if (c.word === 'Failed' || c.word === 'Blocked') { failed++; problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem || '' }) }
     }
@@ -228,10 +247,10 @@ export default function LaunchReport({
                     )}
                   </td>
                   {mkts.map((m) => {
-                    const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), !!i.youtube_video_id || i.state === 'amazon_only', i.state === 'blocked' && !i.youtube_video_id)
+                    const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), !!i.youtube_video_id || i.state === 'amazon_only', i.state === 'blocked' && !i.youtube_video_id, i.asin)
                     return (
                       <td key={m.domain} className="py-2 pr-2" title={c.problem || undefined}>
-                        <span style={{ color: c.colour }}>{c.done && c.word === 'Listed' ? '✓ ' : c.word === 'Failed' ? '✗ ' : ''}{c.word}</span>
+                        <span style={{ color: c.colour }}>{c.done && (c.word === 'Listed' || c.word.startsWith('Listed as ')) ? '✓ ' : c.word === 'Failed' ? '✗ ' : ''}{c.word}</span>
                       </td>
                     )
                   })}

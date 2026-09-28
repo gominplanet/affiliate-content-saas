@@ -16,6 +16,7 @@
 // Amazon. The sentence is now true, which is the better of the two ways to fix
 // a screen that says something untrue.
 
+import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
 import { requestStorefrontDelivery } from '@/lib/extension-frame'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -150,7 +151,7 @@ export async function deliverPreparedStorefronts(scope?: {
     const it = byTarget.get(String(r.targetId))
     if (r.ok) uploaded++
     else if (dup) duplicates++
-    else failed.push({ domain: String(it?.domain || ''), country: String(it?.country || it?.domain || ''), error: String(r.error || 'no reason given') })
+    else failed.push({ domain: String(it?.domain || ''), country: String(it?.country || it?.domain || ''), error: explainAmazonUpload(String(r.error || ''), String(it?.domain || '')) || 'no reason given' })
     // THE RECORD IS CHECKED. A refused write used to be ignored, so a listing
     // counted "uploaded" was never marked delivered and was offered again.
     let recorded = false
@@ -164,7 +165,7 @@ export async function deliverPreparedStorefronts(scope?: {
           mediaAci: r.mediaAci ?? null,
           detail: dup ? 'Already on this storefront, skipped duplicate'
             : r.ok ? (it?.thumbnailIsTextFallback ? 'Uploaded, with the English-text thumbnail (no text-free one was made)' : 'Uploaded to storefront')
-            : (r.error || 'Upload failed'),
+            : (explainAmazonUpload(r.error, String(it?.domain || '')) || 'Upload failed'),
         }),
         timeoutMs: 15_000,
       })

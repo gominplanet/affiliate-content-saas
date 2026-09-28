@@ -1149,14 +1149,17 @@ ${bar}
 </div>`
 }
 
+/** What identifies a product across Amazon stores: its barcodes, and for the
+ *  name-and-brand fallback, its brand, title and model number. */
+export interface KeepaIdentity { asin: string; codes: string[]; brand: string | null; title: string | null; model: string | null }
+
 /**
- * The barcodes (UPC, EAN, GTIN) Keepa holds for each ASIN in one marketplace.
- * One /product call covers up to 100 ASINs. Never throws: a failed batch
- * yields no entries, which the caller must read as "not looked at", not as
- * "has no barcode".
+ * Identity for each ASIN in one marketplace. One /product call covers up to 100
+ * ASINs. Never throws: a failed batch yields no entries, which the caller must
+ * read as "not looked at", not as "has no barcode".
  */
-export async function fetchKeepaCodes(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>()
+export async function fetchKeepaIdentity(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, KeepaIdentity>> {
+  const out = new Map<string, KeepaIdentity>()
   const key = process.env.KEEPA_API_KEY
   const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
   if (!key || !valid.length) return out
@@ -1168,15 +1171,45 @@ export async function fetchKeepaCodes(asins: string[], domainId = KEEPA_DOMAIN_U
       if (!res.ok) continue
       const data = await res.json() as { products?: unknown[] }
       for (const raw of (Array.isArray(data.products) ? data.products : [])) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const p = raw as any
-        const asin = String(p?.asin || '').toUpperCase()
-        if (!/^[A-Z0-9]{10}$/.test(asin)) continue
-        out.set(asin, keepaCodesOf(p))
+        const id = keepaIdentityOf(raw)
+        if (id) out.set(id.asin, id)
       }
     } catch { /* skip this batch */ }
   }
   return out
+}
+
+/** The barcodes alone, for callers that only match on those. */
+export async function fetchKeepaCodes(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, string[]>> {
+  const ids = await fetchKeepaIdentity(asins, domainId)
+  return new Map([...ids].map(([a, v]) => [a, v.codes]))
+}
+
+/**
+ * Keepa's product search in one marketplace: the listings Amazon's own search
+ * shows for a term, sponsored ones left out. 10 tokens a search, up to 20
+ * results. Null when the search could not run, which is not "nothing found".
+ */
+export async function fetchKeepaSearch(term: string, domainId: number): Promise<KeepaIdentity[] | null> {
+  const key = process.env.KEEPA_API_KEY
+  const q = String(term || '').trim().slice(0, 150)
+  if (!key || !q) return null
+  const url = `${KEEPA_BASE}/search?key=${encodeURIComponent(key)}&domain=${domainId}&type=product&term=${encodeURIComponent(q)}&stats=0&history=0`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+    if (!res.ok) return null
+    const data = await res.json() as { products?: unknown[] }
+    return (Array.isArray(data.products) ? data.products : []).map(keepaIdentityOf).filter((x): x is KeepaIdentity => !!x)
+  } catch { return null }
+}
+
+function keepaIdentityOf(raw: unknown): KeepaIdentity | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = raw as any
+  const asin = String(p?.asin || '').toUpperCase()
+  if (!/^[A-Z0-9]{10}$/.test(asin)) return null
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 300) : null)
+  return { asin, codes: keepaCodesOf(p), brand: str(p.brand), title: str(p.title), model: str(p.model) ?? str(p.partNumber) }
 }
 
 /** Every product Keepa lists in one marketplace under any of these barcodes.
