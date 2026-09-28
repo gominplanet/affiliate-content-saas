@@ -8,10 +8,11 @@
 // same work the page does (the same request builder, the same delivery helper),
 // then tells SCOUT whether anything is still coming, and SCOUT closes it.
 //
-// IT NEVER RETRIES WHAT FAILED. A Studio pass that ran is kept whatever it
-// found, and a refused Amazon listing is left for a person to press Send
-// again: the background is for work that has not been tried, not for
-// hammering work that was.
+// IT RETRIES ONLY ON A SCHEDULE. A Studio pass that ran is kept whatever it
+// found. An Amazon listing that failed for a reason that passes (a slow
+// upload, a store not signed in yet) is offered again when its next try comes
+// (migration 383), up to five tries; one Amazon refused is left for a person
+// to press Send again. The background never hammers work that was tried.
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -99,10 +100,11 @@ export default function LiftoffRunner() {
           const videoIds = items.filter((i) => liftoffPending([i], markets, pend).amazon > 0)
             .map((i) => i.video_id).filter((v): v is string => !!v)
           if (markets.length > 0 && videoIds.length > 0) {
-            const out = await deliverPreparedStorefronts({ videoIds, domains: markets, retryFailed: false })
+            const out = await deliverPreparedStorefronts({ videoIds, domains: markets, retryFailed: false, retryDue: true })
             if (out.error) { say(`Amazon: ${out.error}`); if (/still uploading/i.test(out.error)) more = true }
             else if (out.nothingReady) say(out.waitingOnDub ? `Amazon: ${out.waitingOnDub} waiting on their dub` : 'Amazon: nothing ready yet')
             else say(`Amazon: ${out.handedOver} uploaded${out.duplicates ? `, ${out.duplicates} already there` : ''}${out.failed.length ? `, ${out.failed.length} failed` : ''}`)
+            if (out.needsSignIn?.length) say(`Amazon: not signed in to ${out.needsSignIn.map((x) => x.country).join(', ')}, so those wait`)
           }
 
           // What is left AFTER this run, re-read, decides whether to come back.

@@ -66,22 +66,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // upload failed looked the same as one that went up. Each row now carries
   // each country's own state and, for a failure, SCOUT's reason. Read-only and
   // best effort: a failure here leaves the list empty, never the batch.
-  const amazonByVideo = new Map<string, Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null }>>()
+  const amazonByVideo = new Map<string, Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null; tries?: number | null; nextTryAt?: string | null }>>()
   const vids = items.map((i) => i.video_id).filter((v): v is string => !!v)
   if (vids.length) {
     const { data: jobs } = await sb.from('global_sync_jobs').select('id,video_id').eq('user_id', user.id).in('video_id', vids)
     const videoByJob = new Map<string, string>()
     for (const j of (jobs ?? []) as Array<{ id: string; video_id: string }>) videoByJob.set(j.id, j.video_id)
     if (videoByJob.size) {
-      const { data: targets } = await sb.from('global_sync_targets')
-        .select('job_id,domain,state,detail,dub,video_url,asin').eq('user_id', user.id).in('job_id', [...videoByJob.keys()])
+      // With the retry columns (migration 383) when they exist, without them
+      // before, so the batch always loads.
+      let { data: targets, error: tgErr } = await sb.from('global_sync_targets')
+        .select('job_id,domain,state,detail,dub,video_url,asin,upload_tries,next_try_at').eq('user_id', user.id).in('job_id', [...videoByJob.keys()])
+      if (tgErr) ({ data: targets } = await sb.from('global_sync_targets')
+        .select('job_id,domain,state,detail,dub,video_url,asin').eq('user_id', user.id).in('job_id', [...videoByJob.keys()]))
       const wanted = new Set((batch as BatchRow).markets ?? [])
-      for (const t of (targets ?? []) as Array<{ job_id: string; domain: string; state: string; detail: string | null; dub: unknown; video_url: string | null; asin: string | null }>) {
+      for (const t of (targets ?? []) as Array<{ job_id: string; domain: string; state: string; detail: string | null; dub: unknown; video_url: string | null; asin: string | null; upload_tries?: number | null; next_try_at?: string | null }>) {
         if (wanted.size && !wanted.has(t.domain)) continue
         const v = videoByJob.get(t.job_id)
         if (!v) continue
         const list = amazonByVideo.get(v) ?? []
-        list.push({ domain: t.domain, state: t.state, detail: t.detail, waitingOnDub: !!t.dub && !t.video_url, asin: t.asin ?? null })
+        list.push({ domain: t.domain, state: t.state, detail: t.detail, waitingOnDub: !!t.dub && !t.video_url, asin: t.asin ?? null,
+          tries: t.upload_tries ?? null, nextTryAt: t.state === 'failed' ? (t.next_try_at ?? null) : null })
         amazonByVideo.set(v, list)
       }
     }

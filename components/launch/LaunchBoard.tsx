@@ -776,9 +776,11 @@ export default function LaunchBoard() {
       const out = await deliverPreparedStorefronts({
         videoIds,
         domains: batch?.markets.map((m) => m.domain) ?? [],
-        // A press means try again, failures included; the automatic run
-        // leaves a refused listing alone until somebody asks.
+        // A press means try again, failures included. The automatic run
+        // offers only failures whose next try has come (migration 383): a
+        // slow upload or a sign-in done since, never a listing Amazon refused.
         retryFailed: !auto,
+        retryDue: auto,
       })
       const lines = deliverySummary(out)
       // SWITCHED BATCH WHILE IT RAN: this answer belongs to the other one,

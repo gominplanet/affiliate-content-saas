@@ -1535,7 +1535,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // BOTH HALVES. Looking the videos up and then not narrowing the query with
   // what came back is the same bug with extra steps, and it reads as finished.
   check('the queue can be scoped to named videos',
-    /\.in\('video_id', onlyVideoIds\)/.test(QUEUE) && /q = q\.in\('job_id', ids\)/.test(QUEUE),
+    /\.in\('video_id', onlyVideoIds\)/.test(QUEUE) && /if \(scopedJobIds\) q = q\.in\('job_id', scopedJobIds\)/.test(QUEUE),
     'without a scope every call reaches the whole account')
   check('and to named countries',
     /onlyDomains/.test(QUEUE) && /q\.in\('domain', onlyDomains\)/.test(QUEUE),
@@ -1543,7 +1543,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   // NO SILENT WIDENING. A scope that matches nothing must return nothing.
   check('a scope that matches nothing returns nothing',
-    /if \(ids\.length === 0\) return NextResponse\.json\(\{ ok: true, items: \[\]/.test(QUEUE),
+    /if \(scopedJobIds!\.length === 0\) return NextResponse\.json\(\{ ok: true, items: \[\]/.test(QUEUE),
     'falling back to everything is exactly what published to Spain')
 
   check('the delivery helper passes a scope through',

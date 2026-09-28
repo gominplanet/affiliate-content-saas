@@ -801,16 +801,27 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
  */
 async function reconcile(sb: Sb): Promise<number> {
   const { data: cells } = await sb.from('storefront_coverage')
-    .select('id,sync_job_id,domain').in('state', ['ready', 'uploading'])
+    .select('id,sync_job_id,domain,state').in('state', ['ready', 'uploading'])
     .not('sync_job_id', 'is', null).limit(300)
-  const rows = cells ?? []
+  // A LISTING WRITTEN OFF CAN STILL GO UP: a press of Send again, or an
+  // automatic retry, delivers a target whose cell was already blocked, and
+  // that cell used to stay blocked for ever. Recent blocked cells with a job
+  // are read too, and move only when their listing is now delivered.
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString()
+  const { data: blockedCells } = await sb.from('storefront_coverage')
+    .select('id,sync_job_id,domain,state').eq('state', 'blocked')
+    .not('sync_job_id', 'is', null).gte('updated_at', weekAgo).limit(150)
+  const rows = [...(cells ?? []), ...(blockedCells ?? [])]
   if (rows.length === 0) return 0
 
-  const { data: targets } = await sb.from('global_sync_targets')
-    .select('job_id,domain,state,detail,media_aci')
-    .in('job_id', [...new Set(rows.map((r: { sync_job_id: string }) => r.sync_job_id))])
-  const byKey = new Map<string, { state: string; detail: string | null; media_aci: string | null }>()
-  for (const t of (targets ?? [])) byKey.set(`${t.job_id}:${t.domain}`, { state: t.state, detail: t.detail, media_aci: t.media_aci ?? null })
+  const jobIds = [...new Set(rows.map((r: { sync_job_id: string }) => r.sync_job_id))]
+  let { data: targets, error: tErr } = await sb.from('global_sync_targets')
+    .select('job_id,domain,state,detail,media_aci,next_try_at').in('job_id', jobIds)
+  // Before migration 383 there is no next_try_at, and no failure retries.
+  if (tErr) ({ data: targets } = await sb.from('global_sync_targets')
+    .select('job_id,domain,state,detail,media_aci').in('job_id', jobIds))
+  const byKey = new Map<string, { state: string; detail: string | null; media_aci: string | null; next_try_at: string | null }>()
+  for (const t of (targets ?? [])) byKey.set(`${t.job_id}:${t.domain}`, { state: t.state, detail: t.detail, media_aci: t.media_aci ?? null, next_try_at: t.next_try_at ?? null })
 
   let moved = 0
   const now = new Date().toISOString()
@@ -824,7 +835,16 @@ async function reconcile(sb: Sb): Promise<number> {
       await sb.from('storefront_coverage')
         .update({ state: 'uploaded', media_aci: t.media_aci, reason: null, updated_at: now }).eq('id', c.id)
       moved++
-    } else if (t.state === 'failed') {
+    } else if (t.state === 'failed' && c.state !== 'blocked') {
+      // GOING AGAIN ON ITS OWN is not blocked: the cell stays ready, saying
+      // why the last try failed, and moves when the retry is answered.
+      if (t.next_try_at) {
+        await sb.from('storefront_coverage').update({
+          reason: `Last upload failed, tries again by itself: ${(t.detail || 'no reason given').slice(0, 150)}`,
+          updated_at: now,
+        }).eq('id', c.id)
+        continue
+      }
       await sb.from('storefront_coverage').update({
         state: 'blocked',
         reason: (t.detail || 'the storefront upload failed without saying why').slice(0, 200),

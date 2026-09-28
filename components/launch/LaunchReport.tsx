@@ -9,7 +9,7 @@
 // working says so, and the headline only says "All done" when no cell is.
 'use client'
 
-import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
+import { explainAmazonUpload, MAX_UPLOAD_TRIES } from '@/lib/amazon-upload-errors'
 import { MARKETS } from '@/lib/markets'
 import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
 
@@ -38,7 +38,7 @@ export interface ReportItem {
   asin?: string | null
   /** asin: the ASIN that country's listing is tagged with. It differs from
    *  the video's own when the store sells the product under another listing. */
-  amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null }>
+  amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean; asin?: string | null; tries?: number | null; nextTryAt?: string | null }>
   /** The video's pinned first comment (migration 377), when it has one. */
   first_comment?: { state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null } | null
 }
@@ -107,8 +107,16 @@ function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeF
         ? { word, colour: WARN, done: true, problem: 'Listed with the English-text thumbnail, because the text-free one was never made.' }
         : { word, colour: GOOD, done: true }
     }
-    case 'failed':
-      return { word: 'Failed', colour: BAD, done: true, problem: explainAmazonUpload(entry.detail, entry.domain) || 'The upload failed.' }
+    case 'failed': {
+      const why = explainAmazonUpload(entry.detail, entry.domain) || 'The upload failed.'
+      // GOING AGAIN ON ITS OWN is not a failure yet, and says when.
+      if (entry.nextTryAt) {
+        const at = new Date(entry.nextTryAt)
+        const when = Number.isFinite(at.getTime()) ? at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'soon'
+        return { word: 'Retrying', colour: BUSY, done: false, problem: `Tries again by itself ${when}${entry.tries ? ` (try ${entry.tries + 1} of ${MAX_UPLOAD_TRIES})` : ''}. Last time: ${why}` }
+      }
+      return { word: 'Failed', colour: BAD, done: true, problem: entry.tries && entry.tries >= MAX_UPLOAD_TRIES ? `Gave up after ${entry.tries} tries. ${why} Press Send to Amazon now to try again.` : why }
+    }
     case 'grid:blocked':
       // NOT SOLD HERE ONLY WHEN IT IS NOT SOLD HERE. A missing product link,
       // no audio to dub, or a dub that gave up was drawn the same grey "Not

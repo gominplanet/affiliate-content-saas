@@ -17,7 +17,8 @@
 // a screen that says something untrue.
 
 import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
-import { requestStorefrontDelivery } from '@/lib/extension-frame'
+import { requestStorefrontDelivery, requestStorefrontPreflight } from '@/lib/extension-frame'
+import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export interface DeliveryOutcome {
@@ -42,6 +43,10 @@ export interface DeliveryOutcome {
    *  uploaded either: English audio under a French title is invisible from
    *  every angle except a French shopper pressing play. */
   waitingOnDub: number
+  /** Storefronts this Chrome is not signed in to, found by SCOUT's check
+   *  before anything was sent. Their listings were held back, not failed, and
+   *  go on the next run once signed in. */
+  needsSignIn?: Array<{ domain: string; country: string; listings: number }>
   /** Storefronts that have had their allowance today, in their own words. */
   atCap: string[]
   /** What is left today, per storefront. */
@@ -65,6 +70,10 @@ export async function deliverPreparedStorefronts(scope?: {
    *  an automatic run does not, so a listing Amazon refused is not retried
    *  every two minutes. */
   retryFailed?: boolean
+  /** Offer failed listings whose next automatic try has come (migration 383).
+   *  The background and the page's automatic run pass this; a listing Amazon
+   *  refused has no next try, so it is never offered by this. */
+  retryDue?: boolean
   /** And only these countries, AND-ed with the videos above. Two filters
    *  because the batch knows both, and either one alone still leaves a way to
    *  publish somewhere nobody chose. */
@@ -87,6 +96,7 @@ export async function deliverPreparedStorefronts(scope?: {
     if (scope?.videoIds?.length) qs.set('videoIds', scope.videoIds.join(','))
     if (scope?.domains?.length) qs.set('domains', scope.domains.join(','))
     if (scope?.retryFailed) qs.set('retryFailed', '1')
+    else if (scope?.retryDue) qs.set('retryDue', '1')
     const q = await fetchWithTimeout(
       `/api/global-sync/deliver/queue${qs.toString() ? `?${qs}` : ''}`,
       { timeoutMs: 60_000 },
@@ -121,7 +131,27 @@ export async function deliverPreparedStorefronts(scope?: {
     return { ...empty, nothingReady: true, waitingOnDub: waiting.length, atCap, dailyRoom }
   }
 
-  const res = await requestStorefrontDelivery(items)
+  // ── SIGNED IN FIRST ───────────────────────────────────────────────────
+  // A store this Chrome is not signed in to used to be sent anyway: SCOUT's
+  // tab landed on Amazon's sign-in page, the upload failed with Chrome's
+  // "Receiving end does not exist", and the listing was written off. SCOUT now
+  // checks each store first, and a signed-out one is held back, said, and sent
+  // on the next run once signed in. A check that could not run holds nothing.
+  const domains = [...new Set(items.map((i: { domain: string }) => String(i.domain)))]
+  const signedOut = new Set(await signedOutStores(domains, !!scope?.retryFailed))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const held = items.filter((i: any) => signedOut.has(String(i.domain)))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sendNow = items.filter((i: any) => !signedOut.has(String(i.domain)))
+  const needsSignIn = [...signedOut].map((d) => ({
+    domain: d, country: marketByDomain(d)?.country ?? d,
+    listings: held.filter((i: { domain: string }) => i.domain === d).length,
+  })).filter((x) => x.listings > 0)
+  if (sendNow.length === 0) {
+    return { ...empty, needsSignIn, waitingOnDub: waiting.length, atCap, dailyRoom }
+  }
+
+  const res = await requestStorefrontDelivery(sendNow)
   if (!res?.ok && !res?.results) {
     return {
       ...empty, waitingOnDub: waiting.length, atCap, dailyRoom,
@@ -142,7 +172,7 @@ export async function deliverPreparedStorefronts(scope?: {
   // Written the same way Launchpad writes them, so the coverage grid, the
   // queue and the batch board all read one truth.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const byTarget = new Map<string, any>(items.map((i: any) => [String(i.targetId), i]))
+  const byTarget = new Map<string, any>(sendNow.map((i: any) => [String(i.targetId), i]))
   const rows = Array.isArray(res.results) ? res.results : []
   let uploaded = 0, duplicates = 0, unrecorded = 0
   const failed: DeliveryOutcome['failed'] = []
@@ -163,6 +193,7 @@ export async function deliverPreparedStorefronts(scope?: {
           ok: r.ok || dup,
           duplicate: dup,
           mediaAci: r.mediaAci ?? null,
+          rawError: r.ok ? null : (r.error ?? null),
           detail: dup ? 'Already on this storefront, skipped duplicate'
             : r.ok ? (it?.thumbnailIsTextFallback ? 'Uploaded, with the English-text thumbnail (no text-free one was made)' : 'Uploaded to storefront')
             : (explainAmazonUpload(r.error, String(it?.domain || '')) || 'Upload failed'),
@@ -176,7 +207,7 @@ export async function deliverPreparedStorefronts(scope?: {
   // A listing SCOUT never answered for is a failure too, not a silent gap.
   const answered = new Set(rows.map((r) => String(r.targetId)))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const it of items as any[]) {
+  for (const it of sendNow as any[]) {
     if (!answered.has(String(it.targetId))) failed.push({ domain: String(it.domain || ''), country: String(it.country || it.domain || ''), error: 'SCOUT did not report on this one' })
   }
   if (unrecorded > 0) {
@@ -188,7 +219,7 @@ export async function deliverPreparedStorefronts(scope?: {
   const englishThumb = rows.filter((r) => r.ok && byTarget.get(String(r.targetId))?.thumbnailIsTextFallback).map((r) => String(byTarget.get(String(r.targetId))?.country || byTarget.get(String(r.targetId))?.domain || ''))
   return {
     ok: uploaded + duplicates > 0 && failed.length === 0,
-    handedOver: uploaded, duplicates, failed, englishThumb,
+    handedOver: uploaded, duplicates, failed, englishThumb, needsSignIn,
     waitingOnDub: waiting.length, atCap, dailyRoom,
     nothingReady: false,
     error: uploaded + duplicates === 0 && failed.length > 0
@@ -207,7 +238,7 @@ export async function deliverPreparedStorefronts(scope?: {
 export function deliverySummary(o: DeliveryOutcome): string[] {
   const out: string[] = []
   if (o.error) { out.push(o.error); return out }
-  if (o.nothingReady) {
+  if (o.nothingReady && !(o.needsSignIn && o.needsSignIn.length)) {
     out.push(o.waitingOnDub > 0
       ? `${o.waitingOnDub} ${o.waitingOnDub === 1 ? 'listing is' : 'listings are'} still waiting on their translated audio. They go up as soon as the voiceover is done.`
       : 'Nothing is prepared yet. The background worker fills this as it goes.')
@@ -225,8 +256,37 @@ export function deliverySummary(o: DeliveryOutcome): string[] {
       out.push(`${o.englishThumb.length} went up with the English-text thumbnail (${[...new Set(o.englishThumb)].join(', ')}), because the text-free one was never made.`)
     }
   }
+  if (o.needsSignIn && o.needsSignIn.length > 0) {
+    const n = o.needsSignIn.reduce((a, x) => a + x.listings, 0)
+    out.push(`Not sent to ${o.needsSignIn.map((x) => x.country).join(', ')} (${n} ${n === 1 ? 'listing' : 'listings'}): this Chrome is not signed in to ${o.needsSignIn.map((x) => `amazon.${x.domain.replace(/^amazon\./, '')}`).join(', ')}. Sign in there and they go on the next run.`)
+  }
   // THE CAP IS AMAZON'S AND THE ONLY REMEDY IS TOMORROW, so it is said whether
   // or not anything went up: a number that stops moving reads as a break.
   for (const r of o.atCap.slice(0, 3)) out.push(r)
   return out
+}
+
+// ── WHICH STORES THIS CHROME IS SIGNED OUT OF ─────────────────────────────
+// SCOUT's check opens each store's upload page in a background tab, so its
+// answer is kept for fifteen minutes (in this browser only) and not asked for
+// on every two-minute run. A press asks again, since the creator may have just
+// signed in. Only "not signed in" holds a store back: "not enrolled" can be a
+// store SCOUT reads the creator session from another way, so it is still sent,
+// and a failure there is retried on its own schedule.
+const PREFLIGHT_KEY = 'mvp_sf_preflight_v1'
+const PREFLIGHT_TTL_MS = 15 * 60_000
+async function signedOutStores(domains: string[], fresh: boolean): Promise<string[]> {
+  if (domains.length === 0) return []
+  let cache: Record<string, { status: string; at: number }> = {}
+  try { cache = JSON.parse(localStorage.getItem(PREFLIGHT_KEY) || '{}') || {} } catch { cache = {} }
+  const now = Date.now()
+  const stale = fresh ? domains : domains.filter((d) => !cache[d] || now - cache[d].at > PREFLIGHT_TTL_MS)
+  if (stale.length > 0) {
+    const pf = await requestStorefrontPreflight(stale).catch(() => null)
+    if (pf?.ok && Array.isArray(pf.results)) {
+      for (const r of pf.results) cache[r.domain] = { status: r.status, at: now }
+      try { localStorage.setItem(PREFLIGHT_KEY, JSON.stringify(cache)) } catch { /* kept for this run only */ }
+    }
+  }
+  return domains.filter((d) => cache[d]?.status === 'not_signed_in' && now - cache[d].at <= PREFLIGHT_TTL_MS + 60_000)
 }

@@ -18,7 +18,7 @@ export interface PendingItem {
   youtube_video_id: string | null
   video_id?: string | null
   studio_finish?: { ok: boolean; error?: string | null; tries?: number } | null
-  amazon?: Array<{ domain: string; state: string; waitingOnDub?: boolean }>
+  amazon?: Array<{ domain: string; state: string; waitingOnDub?: boolean; nextTryAt?: string | null }>
 }
 
 export interface Pending {
@@ -27,7 +27,8 @@ export interface Pending {
   /** On YouTube and not yet through SCOUT's Studio pass. */
   studio: number
   /** Amazon listings that are not finished: preparing, dubbing, ready to
-   *  send, or not handed over yet. Failed, listed and not-sold are finished. */
+   *  send, not handed over yet, or failed with a next try coming. Listed,
+   *  not-sold, and failed for good are finished. */
   amazon: number
   /** A short fingerprint of what is pending, so a caller can tell "nothing
    *  moved" from "still moving". */
@@ -67,9 +68,12 @@ export function liftoffPending(
     if (!reachable) continue
     for (const d of markets) {
       const a = (i.amazon ?? []).find((x) => x.domain === d)
-      if (!a || !AMAZON_FINISHED.has(a.state)) {
+      // A FAILURE WITH A NEXT TRY IS NOT FINISHED: it goes again on its own
+      // (migration 383), so the background has to come back for it.
+      const retrying = !!a && a.state === 'failed' && !!a.nextTryAt
+      if (!a || !AMAZON_FINISHED.has(a.state) || retrying) {
         amazon++
-        parts.push(`${i.id}:${d}:${a ? a.state : 'none'}${a?.waitingOnDub ? ':dub' : ''}`)
+        parts.push(`${i.id}:${d}:${a ? a.state : 'none'}${a?.waitingOnDub ? ':dub' : ''}${retrying ? `:${a!.nextTryAt}` : ''}`)
       }
     }
   }

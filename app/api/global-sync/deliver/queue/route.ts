@@ -44,29 +44,43 @@ export async function GET(req: Request) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  let q = sb.from('global_sync_targets')
-    .select('id,job_id,domain,lang,title,description,video_url,asin,state,delivered_at,dub')
-    .eq('user_id', user.id)
-    // A failed listing comes back only when somebody asked to try again: an
-    // automatic run must not re-offer what Amazon just refused.
-    .in('state', url.searchParams.get('retryFailed') === '1' ? ['localized', 'failed'] : ['localized'])
-    .is('delivered_at', null)
-  if (jobId) q = q.eq('job_id', jobId)
-  if (onlyDomains.length > 0) q = q.in('domain', onlyDomains)
 
   // THE VIDEO FILTER GOES THROUGH THE JOBS, because a target names its job and
   // the job names the video. An empty result here means "none of these videos
   // have anything queued", which is a real answer and not a reason to fall
   // back to everything: falling back is exactly what published to Spain.
+  let scopedJobIds: string[] | null = null
   if (onlyVideoIds.length > 0) {
     const { data: scoped } = await sb.from('global_sync_jobs')
       .select('id').eq('user_id', user.id).in('video_id', onlyVideoIds)
-    const ids = (scoped ?? []).map((j: { id: string }) => j.id)
-    if (ids.length === 0) return NextResponse.json({ ok: true, items: [], skipped: [], dailyRoom: [] })
-    q = q.in('job_id', ids)
+    scopedJobIds = (scoped ?? []).map((j: { id: string }) => j.id)
+    if (scopedJobIds!.length === 0) return NextResponse.json({ ok: true, items: [], skipped: [], dailyRoom: [] })
   }
 
-  const { data: targets } = await q
+  // WHICH FAILED LISTINGS COME BACK:
+  //  - a press (?retryFailed=1): every failed one, because a person asked;
+  //  - an automatic run (?retryDue=1): the ones whose next try has come
+  //    (migration 383), never one Amazon refused (it has no next try);
+  //  - otherwise none.
+  const mode = url.searchParams.get('retryFailed') === '1' ? 'all'
+    : url.searchParams.get('retryDue') === '1' ? 'due' : 'none'
+  const build = (m: 'all' | 'due' | 'none') => {
+    let q = sb.from('global_sync_targets')
+      .select('id,job_id,domain,lang,title,description,video_url,asin,state,delivered_at,dub')
+      .eq('user_id', user.id)
+      .is('delivered_at', null)
+    q = m === 'all' ? q.in('state', ['localized', 'failed'])
+      : m === 'due' ? q.or(`state.eq.localized,and(state.eq.failed,next_try_at.lte.${new Date().toISOString()})`)
+      : q.in('state', ['localized'])
+    if (jobId) q = q.eq('job_id', jobId)
+    if (onlyDomains.length > 0) q = q.in('domain', onlyDomains)
+    if (scopedJobIds) q = q.in('job_id', scopedJobIds)
+    return q
+  }
+  let { data: targets, error: tErr } = await build(mode)
+  // Before migration 383 there is no next_try_at: an automatic run then
+  // offers what it always did rather than nothing at all.
+  if (tErr && mode === 'due') ({ data: targets } = await build('none'))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (targets ?? []) as any[]

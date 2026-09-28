@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.17'
+export const SCOUT_LATEST_VERSION = '1.21.18'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Liftoff in Studio: end screens work on uploaded videos, the product search is found wherever Studio opens it, and paid promotion is answered again when Studio did not keep it the first time.'
+  'Amazon uploads abroad: a store this Chrome is not signed in to is said as such, and a slow upload, a page that was not ready or a Creator session not read yet gets up to two more goes on a freshly loaded page. Plus the Liftoff Studio fixes from 1.21.17.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

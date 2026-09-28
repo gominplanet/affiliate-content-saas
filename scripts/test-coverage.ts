@@ -16,7 +16,8 @@
 import { readFileSync } from 'node:fs'
 import { MARKETS } from '../lib/markets'
 import { pickEquivalent, normalizeCode, pickByName, nameSearchTerm } from '../lib/asin-equivalent'
-import { explainAmazonUpload } from '../lib/amazon-upload-errors'
+import { explainAmazonUpload, uploadFailureKind, nextUploadTry, MAX_UPLOAD_TRIES } from '../lib/amazon-upload-errors'
+import { liftoffPending } from '../lib/liftoff-pending'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -670,6 +671,43 @@ const SEARCH = read('lib/app-search-index.ts')
   check('a missing Creator session says to finish creator setup there',
     /Creator tools there/.test(explainAmazonUpload('Could not read your Creator session token. [ctx:dom:csrf]', 'amazon.de') || ''))
   check('anything unrecognised is passed through untouched', explainAmazonUpload('Something new', 'amazon.fr') === 'Something new')
+}
+
+// ── Amazon abroad: failures that pass are tried again, signed-out stores wait ──
+{
+  check('failures are sorted into what passes and what Amazon refused',
+    uploadFailureKind('Could not establish connection. Receiving end does not exist.') === 'signin'
+    && uploadFailureKind('not signed in: Amazon amazon.ca sent SCOUT to its sign-in page') === 'signin'
+    && uploadFailureKind('Could not read your Creator session token ... [ctx:dom:csrf]') === 'creator'
+    && uploadFailureKind('[upload-video] S3 PUT timed out') === 'transient'
+    && uploadFailureKind('Video rejected: does not meet community guidelines') === 'refused')
+  const t0 = Date.parse('2026-01-01T00:00:00Z')
+  check('a slow upload tries again in ten minutes, then half an hour, then wider',
+    nextUploadTry('transient', 1, t0) === '2026-01-01T00:10:00.000Z' && nextUploadTry('transient', 2, t0) === '2026-01-01T00:30:00.000Z')
+  check('Amazon\'s own refusal is never retried on its own, and nothing goes past the last try',
+    nextUploadTry('refused', 1, t0) === null && nextUploadTry('transient', MAX_UPLOAD_TRIES, t0) === null)
+  const RESULT = read('app/api/global-sync/deliver/result/route.ts')
+  check('a failure counts a try and records the next one, and a database without migration 383 still records the failure',
+    /const nextTryAt = nextUploadTry\(uploadFailureKind\(body\.rawError \|\| body\.detail\), tries\)/.test(RESULT) && /if \(!cErr && cur\)/.test(RESULT))
+  const QUEUE = read('app/api/global-sync/deliver/queue/route.ts')
+  check('an automatic run is offered the retries that are due, and falls back when the column is missing',
+    /and\(state\.eq\.failed,next_try_at\.lte\./.test(QUEUE) && /if \(tErr && mode === 'due'\)/.test(QUEUE))
+  const DEL = read('lib/storefront-delivery.ts')
+  check('stores this Chrome is signed out of are held back and said, not failed',
+    /const signedOut = new Set\(await signedOutStores\(domains, !!scope\?\.retryFailed\)\)/.test(DEL) && /requestStorefrontDelivery\(sendNow\)/.test(DEL)
+    && /this Chrome is not signed in to/.test(DEL) && /rawError: r\.ok \? null/.test(DEL))
+  check('the background and the page\'s automatic run offer due retries',
+    /retryDue: true/.test(read('components/launch/LiftoffRunner.tsx')) && /retryDue: auto,/.test(read('components/launch/LaunchBoard.tsx')))
+  const pend = liftoffPending([{ id: 'a', state: 'scheduled', youtube_video_id: 'x', amazon: [{ domain: 'amazon.ca', state: 'failed', nextTryAt: '2030-01-01T00:00:00Z' }, { domain: 'amazon.de', state: 'failed' }] }], ['amazon.ca', 'amazon.de'], { sendToYouTube: false, studioPossible: false })
+  check('a failure with a next try is still work, one without is finished', pend.amazon === 1)
+  const REP = read('components/launch/LaunchReport.tsx')
+  check('the report says Retrying with the time, and Gave up after the last try',
+    /word: 'Retrying', colour: BUSY, done: false/.test(REP) && /Gave up after \$\{entry\.tries\} tries/.test(REP))
+  check('a written-off cell whose listing later went up is marked uploaded, and a retrying one is not blocked',
+    /\.eq\('state', 'blocked'\)\s*\.not\('sync_job_id', 'is', null\)/.test(DRAIN) && /else if \(t\.state === 'failed' && c\.state !== 'blocked'\)/.test(DRAIN) && /if \(t\.next_try_at\) \{/.test(DRAIN))
+  const BG = read('extension/background.js')
+  check('SCOUT says a signed-out store as signed out, and gives passing failures two more goes on a fresh page',
+    /const signedOutWhere = async \(\) =>/.test(BG) && /const worthAnotherGo = \(r\) =>/.test(BG) && /for \(let extra = 0; extra < 2 && worthAnotherGo\(r\); extra\+\+\)/.test(BG) && /await reloadTab\(\)/.test(BG))
 }
 
 if (failures.length) {

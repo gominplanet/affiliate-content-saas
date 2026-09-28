@@ -9881,9 +9881,37 @@ async function deliverOneDomain(domain, jobs) {
   // connection. Receiving end does not exist." Injecting it here — idempotent,
   // guarded by window.__mvpStorefrontUploadLoaded — self-heals that. Mirrors
   // the scanTab() inject-then-retry pattern.
-  if (tabId) {
-    try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
+  const inject = async () => {
+    try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* the send below says if it is not there */ }
   }
+  // SIGNED OUT IS SAID AS SIGNED OUT. Amazon sends a signed-out tab to its
+  // sign-in page, where SCOUT has no access, and every upload then failed with
+  // Chrome's "Receiving end does not exist". The tab's address says it
+  // plainly, so it is read first and each listing is told why.
+  const signedOutWhere = async () => {
+    try {
+      const t = await chrome.tabs.get(tabId)
+      const u = String((t && t.url) || '')
+      return /\/ap\/signin|\/ap\/register|\/ap\/mfa|\/ap\/cvf|signin\?/i.test(u) ? u : null
+    } catch { return null }
+  }
+  // A FRESH PAGE FOR ONE MORE GO. Used when the page script could not be
+  // reached, the Creator session could not be read yet, or a slow upload
+  // timed out: all three have been seen to pass on a reload.
+  const reloadTab = async () => {
+    try {
+      await chrome.tabs.reload(tabId)
+      try { await waitForTabLoad(tabId, 30000) } catch { /* read below */ }
+      await _sleep(3500)
+      await inject()
+    } catch { /* the next send says what is wrong */ }
+  }
+  const worthAnotherGo = (r) => !!r && !r.ok && !r.duplicate && (
+    r._unreachable ||
+    /creator session token|ctx:dom:csrf|slatetoken/i.test(String(r.error || '')) ||
+    /timed out|timeout|s3 put|503|502|504|network/i.test(String(r.error || ''))
+  )
+  if (tabId) await inject()
   const sendJob = (job) => new Promise((resolve) => {
     const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 1500000)
     chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
@@ -9892,13 +9920,22 @@ async function deliverOneDomain(domain, jobs) {
       resolve(resp || { ok: false, error: 'no response' })
     })
   })
+  const signinAt = tabId ? await signedOutWhere() : null
   for (const job of jobs) {
     if (!tabId) { out.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
+    if (signinAt) {
+      out.push({ targetId: job.targetId, ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${signinAt.slice(0, 80)}). Sign in there, then send again.` })
+      continue
+    }
     try {
       let r = await sendJob(job)
-      // One retry if the content script wasn't reachable: (re)inject and resend.
-      if (r && r._unreachable) {
-        try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* ignore */ }
+      // Up to two more goes, each on a freshly loaded page, for the failures
+      // that pass. Amazon's own refusals are not retried here.
+      for (let extra = 0; extra < 2 && worthAnotherGo(r); extra++) {
+        setSfProgress(domain, { step: 'Trying again', pct: null })
+        await reloadTab()
+        const nowAt = await signedOutWhere()
+        if (nowAt) { r = { ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${nowAt.slice(0, 80)}). Sign in there, then send again.` }; break }
         r = await sendJob(job)
       }
       out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })

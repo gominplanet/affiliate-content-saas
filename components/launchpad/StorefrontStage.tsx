@@ -7,6 +7,7 @@
 // (with its own picker).
 'use client'
 
+import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
@@ -787,6 +788,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         setWave(new Set())
         if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return [] }
         const rows = (res.results || []) as WaveResult[]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const byId = new Map<string, any>(items.map((i: any) => [String(i.targetId), i]))
         // Report each outcome so the UI shows delivery state. A duplicate is not a
         // failure — the video is already on that storefront — so mark it present
         // (green) with a clear note instead of an error, and don't create a copy.
@@ -797,7 +800,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             body: JSON.stringify({
               targetId: r.targetId,
               ok: r.ok || isDup,
-              detail: isDup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
+              detail: isDup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (explainAmazonUpload(r.error, String(byId.get(String(r.targetId))?.domain || '')) || 'Upload failed')),
+              rawError: r.ok ? null : (r.error ?? null),
             }),
           }).catch(() => {})
         }
