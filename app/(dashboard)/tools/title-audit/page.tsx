@@ -92,7 +92,7 @@ export default function TitleAuditPage() {
         if (!j.hasMore) break
       }
       setScan(prev => ({ ...prev, scanning: false }))
-      toast.success(`Scan complete — ${allMismatches.length} mismatch${allMismatches.length === 1 ? '' : 'es'} found out of ${scanned} post${scanned === 1 ? '' : 's'}`)
+      toast.success(`Scan complete: ${allMismatches.length} mismatch${allMismatches.length === 1 ? '' : 'es'} found out of ${scanned} post${scanned === 1 ? '' : 's'}`)
     } catch (e) {
       setScan(prev => ({ ...prev, scanning: false }))
       toast.error(e instanceof Error ? e.message : String(e))
@@ -154,13 +154,13 @@ export default function TitleAuditPage() {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error || `Failed (${res.status})`)
       }
-      toast.success("Got it — we won't flag this title again", {
+      toast.success("Got it. This title won't be flagged again.", {
         action: { label: 'Undo', onClick: () => undoIgnore(m) },
       })
     } catch (e) {
       // Restore the row if the dismissal didn't persist.
       setScan(prev => ({ ...prev, mismatches: [m, ...prev.mismatches] }))
-      toast.error(e instanceof Error ? e.message : 'Could not ignore — try again')
+      toast.error(e instanceof Error ? e.message : 'Could not ignore it. Try again.')
     }
   }
 
@@ -173,7 +173,7 @@ export default function TitleAuditPage() {
       })
       setScan(prev => prev.mismatches.some(x => x.postId === m.postId) ? prev : { ...prev, mismatches: [m, ...prev.mismatches] })
     } catch {
-      toast.error('Undo failed — re-run the scan to bring it back')
+      toast.error('Undo failed. Run the scan again to bring it back.')
     }
   }
 
@@ -183,7 +183,7 @@ export default function TitleAuditPage() {
     <div>
       <PageHero
         title="Title accuracy check"
-        subtitle="Find published posts whose title names the wrong product — then fix each title in one click, without touching the rest of the post."
+        subtitle="Find published posts whose title names the wrong product, then fix each title in one click without touching the rest of the post."
       />
 
       <SeoHubTabs />
@@ -200,15 +200,15 @@ export default function TitleAuditPage() {
         <div className="flex items-start gap-3">
           <ShieldCheck size={20} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
           <div className="space-y-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">
-            <p className="font-semibold">What this checks — and why it&apos;s here</p>
+            <p className="font-semibold">What the scan below checks</p>
             <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
-              Once in a while a post&apos;s <strong>title</strong> can name a product the article isn&apos;t actually about — for example, the title says one model while the review covers another. It&apos;s rare, and it mostly shows up on older posts published before MVP started fact-checking every title as it&apos;s written.
+              Once in a while a post&apos;s <strong>title</strong> can name a product the article isn&apos;t actually about. For example, the title says one model while the review covers another. It&apos;s rare, and it mostly shows up on older posts published before MVP started fact-checking every title as it&apos;s written.
             </p>
             <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
-              A wrong product in the title is the most damaging title problem to leave live: it misleads readers, kills your click-through from Google, and can get the page demoted in search. This keeps your titles honest — always matching what&apos;s actually on the page.
+              A wrong product in the title is the most damaging title problem to leave live: it misleads readers, kills your click-through from Google, and can get the page demoted in search. This keeps each title matching what&apos;s actually on the page.
             </p>
             <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
-              <strong>How it works:</strong> hit <em>Run scan</em> — MVP reads each post&apos;s title against its body and flags only genuine mismatches. For each one you get a corrected title you can edit first, then apply with one click; it updates WordPress and your library together. <strong>Nothing changes until you click Apply.</strong>
+              <strong>How it works:</strong> press <em>Run scan</em> and MVP reads each post&apos;s title against its body, as MVP saved them, and flags genuine mismatches. A title changed on your site itself is found by <em>Check live titles</em> above. For each one you get a corrected title you can edit first, then apply with one click; it updates WordPress and your library together. <strong>Nothing changes until you click Apply.</strong>
             </p>
           </div>
         </div>
@@ -322,7 +322,7 @@ export default function TitleAuditPage() {
                           onClick={() => ignoreOne(m)}
                           disabled={isApplying}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-[#6e6e73] dark:text-[#ebebf0] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-60 transition-colors"
-                          title="The current title is fine — don't flag it on future scans"
+                          title="The current title is fine. Don't flag it on future scans."
                         >
                           <EyeOff size={11} /> Ignore
                         </button>
