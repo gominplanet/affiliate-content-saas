@@ -577,7 +577,7 @@ export default function LaunchpadPage() {
       const r = await fetch('/api/youtube/upload-video', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: renderedUrl, title: chosenTitle.trim(), description,
+          videoUrl: renderedUrl, masterUrl: cleanUrl || undefined, title: chosenTitle.trim(), description,
           tags: tagList, privacyStatus: 'private',
           // The same toggle on the upload as on the status call below, so the
           // two can never disagree about whether to notify.

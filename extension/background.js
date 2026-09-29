@@ -7678,6 +7678,102 @@ async function scanStudioSchedule() {
   }
 }
 
+// ── Your own video's file, from YouTube Studio (MVP_STUDIO_VIDEO_FILE) ─────
+// Clip Factory needs a video's file to cut clips from. MVP's server cannot
+// download from YouTube (it blocks data centres, and cookies there are
+// revoked within days). The creator owns the video and is signed in, and
+// Studio offers every owner a Download; this asks Studio for that same link in
+// a background Studio tab, fetches the file from the creator's own browser and
+// PUTs it straight to a one-time upload address MVP issued. Nothing lands in
+// Downloads and no tab comes forward. Every step that fails says which.
+function studioVideoFileInPage(videoId, uploadUrl, maxBytes) {
+  return (async () => {
+    const out = { ok: false, debug: {} }
+    try {
+      const cfg = (window.ytcfg && (window.ytcfg.data_ || {})) || {}
+      const get = (k) => { try { return window.ytcfg && window.ytcfg.get ? window.ytcfg.get(k) : cfg[k] } catch (e) { return cfg[k] } }
+      const apiKey = get('INNERTUBE_API_KEY')
+      const context = get('INNERTUBE_CONTEXT')
+      if (!apiKey || !context) { out.error = 'no-ytcfg'; return out }
+      const origin = 'https://studio.youtube.com'
+      const cookie = (name) => { const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : '' }
+      const sapisid = cookie('SAPISID') || cookie('__Secure-3PAPISID') || cookie('__Secure-1PAPISID')
+      if (!sapisid) { out.error = 'signed-out'; return out }
+      const ts = Math.floor(Date.now() / 1000)
+      const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(`${ts} ${sapisid} ${origin}`))
+      const auth = 'SAPISIDHASH ' + ts + '_' + Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+      // 1. The owner's download link for this one video.
+      const res = await fetch(`${origin}/youtubei/v1/creator/get_creator_videos?alt=json&key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Authorization': auth, 'X-Origin': origin },
+        body: JSON.stringify({ context, videoIds: [videoId], mask: { videoId: true, title: true, lengthSeconds: true, downloadUrl: true } }),
+      })
+      out.debug.status = res.status
+      const j = await res.json().catch(() => null)
+      const v = j && Array.isArray(j.videos) ? j.videos[0] : null
+      out.debug.keys = v ? Object.keys(v).slice(0, 20) : (j ? Object.keys(j).slice(0, 10) : [])
+      if (!res.ok) { out.error = 'studio-http-' + res.status; return out }
+      if (!v) { out.error = 'not-your-video'; return out }
+      const dl = v.downloadUrl || (Array.isArray(v.downloadUrls) ? v.downloadUrls[0] : '')
+      if (!dl) { out.error = 'no-download-url'; return out }
+      out.dl = dl
+      // 2. The file, from this browser.
+      let fr
+      try { fr = await fetch(dl, { credentials: 'include' }) } catch (e) { out.error = 'page-fetch-blocked'; return out }
+      out.debug.fileStatus = fr.status
+      if (!fr.ok) { out.error = 'download-http-' + fr.status; return out }
+      const blob = await fr.blob()
+      out.debug.bytes = blob.size
+      if (!blob.size) { out.error = 'empty-file'; return out }
+      if (maxBytes && blob.size > maxBytes) { out.error = 'too-large'; out.bytes = blob.size; return out }
+      // 3. Straight into MVP's storage, at the one-time address it issued.
+      const up = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'video/mp4', 'x-upsert': 'true' }, body: blob })
+      out.debug.uploadStatus = up.status
+      if (!up.ok) { out.error = 'upload-http-' + up.status; return out }
+      return { ok: true, bytes: blob.size, lengthSeconds: Number(v.lengthSeconds) || null, debug: out.debug }
+    } catch (e) {
+      out.error = (e && e.message) ? String(e.message).slice(0, 120) : 'exception'
+      return out
+    }
+  })()
+}
+
+async function fetchStudioVideoFile(videoId, uploadUrl, maxBytes) {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || '')) return { ok: false, error: 'bad-video-id' }
+  if (!/^https:\/\//.test(uploadUrl || '')) return { ok: false, error: 'no-upload-url' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: STUDIO_URL, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioVideoFileInPage, args: [videoId, uploadUrl, maxBytes || 0] })
+    const r = (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+    // The page may not be allowed to read the file (another YouTube host):
+    // SCOUT fetches it itself, with its own YouTube access, and uploads it.
+    if (!r.ok && r.dl && /page-fetch-blocked|download-http/.test(r.error || '')) {
+      try {
+        const fr = await fetch(r.dl, { credentials: 'include' })
+        if (!fr.ok) return { ok: false, error: 'download-http-' + fr.status, debug: r.debug }
+        const blob = await fr.blob()
+        if (!blob.size) return { ok: false, error: 'empty-file', debug: r.debug }
+        if (maxBytes && blob.size > maxBytes) return { ok: false, error: 'too-large', bytes: blob.size, debug: r.debug }
+        const up = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'video/mp4', 'x-upsert': 'true' }, body: blob })
+        if (!up.ok) return { ok: false, error: 'upload-http-' + up.status, debug: r.debug }
+        return { ok: true, bytes: blob.size, via: 'background', debug: r.debug }
+      } catch (e) {
+        return { ok: false, error: 'download-blocked', debug: r.debug }
+      }
+    }
+    delete r.dl
+    return r
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'fetch-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Studio FULL video list scrape (MVP_STUDIO_VIDEOS) ───────────────────────
 // The Data API can't enumerate a big channel's full library cheaply (the
 // uploads playlist walk is quota-heavy and truncates). Studio's own Content
@@ -11044,6 +11140,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // fallback when Amazon robot-checks MVP's server (see readVdpPages).
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 170000)
     readVdpPages(Array.isArray(msg.ids) ? msg.ids : [])
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
+  }
+  if (msg.type === 'MVP_STUDIO_VIDEO_FILE') {
+    // Clip Factory: the creator's own video file, fetched in their Studio
+    // session and uploaded straight to MVP (see fetchStudioVideoFile).
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
+    fetchStudioVideoFile(msg.videoId, msg.uploadUrl, msg.maxBytes)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true

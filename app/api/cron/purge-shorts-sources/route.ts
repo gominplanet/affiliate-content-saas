@@ -44,9 +44,23 @@ export async function GET(request: Request) {
     .limit(300)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // ORIGINALS MVP KEEPS (migration 389) are never deleted here: a Co-Pilot or
+  // Liftoff upload's own file is what Clip Factory cuts clips from, and
+  // deleting it after a day is why clips had to come back from YouTube.
+  // The pointer is still cleared; Clip Factory re-attaches the original.
+  const kept = new Set<string>()
+  try {
+    const owners = [...new Set(((rows || []) as Array<{ user_id: string }>).map((r) => r.user_id))]
+    if (owners.length) {
+      const { data: masters } = await sb.from('video_masters').select('file_url').in('user_id', owners).limit(10000)
+      for (const m of (masters || []) as Array<{ file_url: string }>) kept.add(m.file_url)
+    }
+  } catch { /* table absent pre-389: nothing is kept, as before */ }
+
   let storageDeleted = 0, cloudinaryDeleted = 0, cleared = 0
   for (const r of (rows || [])) {
-    const path = storagePathFromPublicUrl(r.source_video_url as string, BUCKET)
+    const isKept = kept.has(r.source_video_url as string)
+    const path = isKept ? null : storagePathFromPublicUrl(r.source_video_url as string, BUCKET)
     // SECURITY: source_video_url is user-writable (RLS), and this runs as the
     // service role (RLS-bypassing). Only ever delete a file that lives under
     // this row's OWN user-id folder, so a user can't point their row at another

@@ -48,6 +48,26 @@ check('a clip can be removed, the creator\'s own only', /export async function D
 check('the upload box survives a reload while a clip still says YouTube refused',
   /clips\.some\(c => c\.status === 'failed' && \/YouTube\/i\.test/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| youtubeRefused\)/.test(PANEL))
 
+// THE FILE, WITHOUT MVP DOWNLOADING FROM YOUTUBE.
+const PURGE = readFileSync('app/api/cron/purge-shorts-sources/route.ts', 'utf8')
+const SHORTS_GET = readFileSync('app/api/youtube/shorts/route.ts', 'utf8')
+const UPV = readFileSync('app/api/youtube/upload-video/route.ts', 'utf8')
+const DRAIN = readFileSync('app/api/cron/launch-drain/route.ts', 'utf8')
+const SF = readFileSync('app/api/youtube/shorts/studio-file/route.ts', 'utf8')
+const BGJ = readFileSync('extension/background.js', 'utf8')
+check('the original of a Co-Pilot or Liftoff upload is kept',
+  /from\('video_masters'\)\.upsert\(\{ user_id: user\.id, youtube_video_id: id/.test(UPV)
+  && /from\('video_masters'\)\.upsert\(\{ user_id: it\.user_id, youtube_video_id: videoId, file_url: it\.clean_url/.test(DRAIN))
+check('the clean-up never deletes a kept original', /const isKept = kept\.has\(r\.source_video_url as string\)/.test(PURGE) && /isKept \? null :/.test(PURGE))
+check('Clip Factory renders from the kept original, checked to exist first',
+  /from\('video_masters'\)\.select\('file_url'\)/.test(SHORTS_GET) && /method: 'HEAD'/.test(SHORTS_GET) && /if \(head\?\.ok\)/.test(SHORTS_GET))
+check('a Studio upload lands only in the creator\'s own folder, under the name MVP issued',
+  /\$\{o\.user\.id\}\/source-\$\{crypto\.randomUUID\(\)\}\.mp4/.test(SF) && /\^\$\{o\.user\.id\}\/source-\[0-9a-f-\]\{36\}/.test(SF))
+check('it is attached only after the file is really in storage', SF.indexOf("method: 'HEAD'") < SF.indexOf("update({ source_video_url: pub.publicUrl"))
+check('SCOUT fetches it in the creator\'s Studio session and never hands the download link back',
+  /msg\.type === 'MVP_STUDIO_VIDEO_FILE'/.test(BGJ) && /get_creator_videos/.test(BGJ) && /delete r\.dl/.test(BGJ))
+check('the button says what went wrong in words', /YouTube Studio did not offer a download for this video/.test(PANEL) && /Update SCOUT to 1\.21\.22/.test(PANEL))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

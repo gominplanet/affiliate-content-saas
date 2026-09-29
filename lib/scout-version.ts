@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.21'
+export const SCOUT_LATEST_VERSION = '1.21.22'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Liftoff checks Australia before launch: SCOUT asks the live Amazon store whether each product is sold there, and under which listing, in the background with no tab.'
+  'Clip Factory gets your own video from YouTube Studio in your browser, so clips render without MVP downloading from YouTube.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

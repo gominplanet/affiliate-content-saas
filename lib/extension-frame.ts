@@ -1104,6 +1104,22 @@ export async function requestVdpReads(ids: string[]): Promise<{ ok: boolean; res
   return { ok: false, error: resp.error || 'needs-update' }
 }
 
+/** The creator's own video file, fetched by SCOUT from YouTube Studio in
+ *  their signed-in browser and uploaded straight to MVP (1.21.22+).
+ *  `error`: 'not-installed', 'needs-update', 'signed-out', 'not-your-video',
+ *  'no-download-url', 'too-large', 'download-blocked', 'timeout', or an
+ *  HTTP step ('studio-http-…', 'download-http-…', 'upload-http-…'). */
+export async function requestStudioVideoFile(videoId: string, uploadUrl: string, maxBytes: number): Promise<{ ok: boolean; bytes?: number; error?: string }> {
+  const st = await getScoutStatus()
+  if (!st.installed) return { ok: false, error: 'not-installed' }
+  if (_cmpVersion(st.version, '1.21.22') < 0) return { ok: false, error: 'needs-update' }
+  const resp = await sendToExtension<{ ok?: boolean; bytes?: number; error?: string }>(
+    { type: 'MVP_STUDIO_VIDEO_FILE', videoId, uploadUrl, maxBytes }, 295000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, bytes: resp.bytes, error: resp.error }
+}
+
 /** One product's answer from a live Amazon store, read by SCOUT with fetch
  *  and no tab (1.21.21+). `localAsin` is the same product under that store's
  *  own ASIN, found by brand and model or name and confirmed on its page. */

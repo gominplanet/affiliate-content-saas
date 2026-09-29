@@ -282,7 +282,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
     try {
       const r = await fetch('/api/youtube/upload-video', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: rendered, title: title.trim(), privacyStatus: 'private' }),
+        body: JSON.stringify({ videoUrl: rendered, masterUrl: source?.url, title: title.trim(), privacyStatus: 'private' }),
       })
       const j = await r.json().catch(() => ({}))
       if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }

@@ -1422,6 +1422,11 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
     if (upsertErr || !video?.id) {
       return { ok: false, error: upsertErr?.message || 'the video record came back empty' }
     }
+    // The original kept for Clip Factory (migration 389): the Clip Factory
+    // clean-up clears source_video_url after a day, this record it leaves alone.
+    if (it.clean_url) {
+      try { await sb.from('video_masters').upsert({ user_id: it.user_id, youtube_video_id: videoId, file_url: it.clean_url, source: 'liftoff' }, { onConflict: 'user_id,youtube_video_id' }) } catch { /* table absent pre-389 */ }
+    }
 
     // THE STOREFRONT'S OWN TITLE rides with the video to the Amazon side,
     // where the localizing step prefers it over the YouTube title. Its own

@@ -122,7 +122,7 @@ const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith(
 // ── YouTube gets the CTA cut, Amazon gets the clean one ─────────────────────
 {
   check('YouTube publishes the render with the CTA burned in',
-    /videoUrl: renderedUrl, title: chosenTitle/.test(PAGE))
+    /videoUrl: renderedUrl, (masterUrl: cleanUrl \|\| undefined, )?title: chosenTitle/.test(PAGE))
   check('Amazon gets the clean upload', /videoUrl: cleanUrl,/.test(PAGE))
   check('and there is NO fallback to the CTA cut',
     !/videoUrl: cleanUrl \|\| renderedUrl/.test(PAGE),

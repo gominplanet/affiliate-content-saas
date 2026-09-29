@@ -18,7 +18,7 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { ShortsQuotaBadge, notifyShortsUsageChanged } from '@/components/vertical/ShortsQuotaBadge'
 import { errText } from '@/lib/err-text'
-import { requestVideoTranscriptCues } from '@/lib/extension-frame'
+import { requestVideoTranscriptCues, requestStudioVideoFile } from '@/lib/extension-frame'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 const PURPLE = '#7C3AED'
@@ -137,6 +137,41 @@ export function ShortsCreatePanel({
   // YouTube refused the download, now or on an earlier visit (the failed
   // clip's saved reason says so): the upload box stays until a file is in.
   const youtubeRefused = needsUpload || clips.some(c => c.status === 'failed' && /YouTube/i.test(c.renderError || ''))
+
+  // YOUR OWN VIDEO, FROM YOUTUBE STUDIO. SCOUT fetches the file in the
+  // creator's signed-in browser and uploads it straight to MVP, so nothing is
+  // downloaded from YouTube on MVP's server (which YouTube blocks).
+  const [fromStudio, setFromStudio] = useState<'idle' | 'working' | 'done'>('idle')
+  const [studioError, setStudioError] = useState<string | null>(null)
+  const getFromStudio = useCallback(async () => {
+    if (!youtubeVideoId) return
+    setFromStudio('working'); setStudioError(null)
+    try {
+      const a = await fetch('/api/youtube/shorts/studio-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId }) })
+      const aj = await safeJson(a)
+      if (!a.ok || !aj.uploadUrl) throw new Error(aj.error || 'MVP could not open an upload for the file.')
+      const r = await requestStudioVideoFile(youtubeVideoId, aj.uploadUrl, aj.maxBytes)
+      if (!r.ok) {
+        const e = r.error || ''
+        throw new Error(
+          e === 'not-installed' ? 'SCOUT is not installed in this browser.'
+          : e === 'needs-update' ? 'Update SCOUT to 1.21.22 or later, then try again.'
+          : e === 'signed-out' ? 'YouTube Studio is signed out in this browser. Sign in at studio.youtube.com, then try again.'
+          : e === 'not-your-video' ? 'YouTube Studio does not list this video for the account signed in here. Sign in to the channel that owns it.'
+          : e === 'no-download-url' ? 'YouTube Studio did not offer a download for this video. Download it in Studio (the ⋮ menu, then Download) and drop it in the box.'
+          : e === 'too-large' ? 'The video is over 300 MB, too big for Clip Factory. Upload a smaller copy.'
+          : e === 'timeout' ? 'It took too long. A long video can; try again, or drop the file in the box.'
+          : `SCOUT could not bring the file in (${e || 'unknown'}). Drop the file in the box instead.`)
+      }
+      const at = await fetch('/api/youtube/shorts/studio-file', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, path: aj.path }) })
+      const atj = await safeJson(at)
+      if (!at.ok || !atj.ok) throw new Error(atj.error || 'The file did not attach.')
+      setHasSource(true); setNeedsUpload(false); setFromStudio('done')
+      toast.success('Your video is in, from YouTube Studio. Press Render again.')
+    } catch (e) {
+      setFromStudio('idle'); setStudioError(errText(e))
+    }
+  }, [videoId, youtubeVideoId])
 
   // Remove a clip from the list. Posted clips stay posted on the platforms.
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -261,6 +296,21 @@ export function ShortsCreatePanel({
               ? 'YouTube would not let MVP download this video. Upload the video file here once, then press Render again.'
               : 'Upload the full video once. MVP transcribes it and cuts your clips from it.'}
           </p>
+          {youtubeVideoId && (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={getFromStudio}
+                disabled={fromStudio === 'working'}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: PURPLE }}
+              >
+                {fromStudio === 'working' ? <Loader2 size={12} className="animate-spin" /> : <Film size={12} />}
+                {fromStudio === 'working' ? 'SCOUT is getting it from YouTube Studio…' : 'Get it from YouTube Studio'}
+              </button>
+              <span className="text-[11px] text-[#86868b]">SCOUT fetches your own video in your signed-in browser. Or drop the file below.</span>
+              {studioError && <p className="w-full text-[11px] text-[#ff3b30] flex items-center gap-1"><AlertCircle size={11} /> {studioError}</p>}
+            </div>
+          )}
           <ShortVideoUpload
             videoId={videoId}
             targetColumn="source_video_url"

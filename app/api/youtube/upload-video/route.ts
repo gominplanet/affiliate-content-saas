@@ -66,7 +66,7 @@ async function handleUpload(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
+  let body: { videoUrl?: string; masterUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -144,6 +144,15 @@ async function handleUpload(request: Request) {
       productText: title,
     }).catch(() => {})
     // channelId lets the caller build a Studio link scoped to the owning channel.
+    // THE ORIGINAL IS KEPT (migration 389), so Clip Factory can cut clips from
+    // it later instead of downloading the video back from YouTube, which
+    // YouTube blocks. The clean original when the page sent it, else the file
+    // that was uploaded. Best-effort: a missing table never fails a publish.
+    try {
+      const keep = /^https:\/\//i.test(String(body.masterUrl || '')) ? String(body.masterUrl) : videoUrl
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('video_masters').upsert({ user_id: user.id, youtube_video_id: id, file_url: keep, source: 'copilot' }, { onConflict: 'user_id,youtube_video_id' })
+    } catch { /* table absent pre-389 */ }
     return NextResponse.json({ ok: true, videoId: id, channelId, url: `https://youtube.com/watch?v=${id}` })
   } catch (e) {
     // Never return an empty reason (a thrown Error with no message became a bare
