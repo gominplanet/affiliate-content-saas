@@ -232,7 +232,7 @@ export async function POST(request: Request) {
       // one clean, actionable line.
       if (!hasSource) {
         return NextResponse.json({
-          error: 'YouTube didn’t let us grab this clip automatically (it does this sometimes). Click “Upload or pick a short” to add the video once, then every clip from it renders reliably.',
+          error: 'YouTube would not let MVP download this video (it does this sometimes). Upload the video file in the box above once, then every clip from it renders reliably.',
           needsUpload: true, videoId: short.video_id,
         }, { status: 412 })
       }

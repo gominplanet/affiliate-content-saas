@@ -43,7 +43,7 @@ async function safeJson(res: Response): Promise<any> {
     return raw ? JSON.parse(raw) : {}
   } catch {
     if (res.status === 504 || res.status === 502 || res.status === 503 || res.status === 524) {
-      throw new Error('The render took too long and timed out on the server. Try again — or use “Upload or pick a short” to add the source video once, then clips render faster and more reliably.')
+      throw new Error('The render took too long and timed out on the server. Try again, or upload the video file once (the upload box on this page), then clips render faster and more reliably.')
     }
     throw new Error(`The server hit an error (${res.status || 'network'}). Give it a moment and try again.`)
   }
@@ -64,6 +64,9 @@ export function ShortsCreatePanel({
   const [planning, setPlanning] = useState(false)
   const [clips, setClips] = useState<ShortRow[]>([])
   const [hasSource, setHasSource] = useState(false)
+  // YouTube refused the server download for this video: the upload box shows
+  // even though the video has a YouTube id, because it is now the only way.
+  const [needsUpload, setNeedsUpload] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
@@ -153,7 +156,7 @@ export function ShortsCreatePanel({
       // parse error.
       const data = await safeJson(res)
       if (!res.ok) {
-        if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Prepare the source video first.') }
+        if (data.needsUpload) { setHasSource(false); setNeedsUpload(true); throw new Error(data.error || 'Prepare the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Render failed')
       }
@@ -232,10 +235,12 @@ export function ShortsCreatePanel({
       {/* Source-video prompt — only when we can't fetch from YouTube (no id) and
           nothing's uploaded. With a YouTube id we transcribe from audio and cut
           each clip's window on demand, so no full upload/download is needed. */}
-      {!hasSource && !youtubeVideoId && (
+      {!hasSource && (!youtubeVideoId || needsUpload) && (
         <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
           <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-            Upload the full video once — we transcribe it and cut your clips from it
+            {needsUpload
+              ? 'YouTube would not let MVP download this video. Upload the video file here once, then press Render again.'
+              : 'Upload the full video once. MVP transcribes it and cuts your clips from it.'}
           </p>
           <ShortVideoUpload
             videoId={videoId}
@@ -243,7 +248,7 @@ export function ShortsCreatePanel({
             extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
             label="Drop the full video (the long one) here"
             helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
-            onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts') }}
+            onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(needsUpload ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
           />
         </div>
       )}
@@ -279,7 +284,11 @@ export function ShortsCreatePanel({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: PURPLE }}>{clip.score}/100</span>
+                      {/* The whole video was never scored, so it says what it is
+                          instead of a 0/100 that reads as a bad clip. */}
+                      <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: PURPLE }}>
+                        {clip.score > 0 ? `${clip.score}/100` : clip.startSec === 0 ? 'Whole video' : 'Your clip'}
+                      </span>
                       <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)}–{fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
                       {ytLink && <a href={ytLink} target="_blank" rel="noreferrer" className="text-[11px] inline-flex items-center gap-0.5 hover:underline" style={{ color: PURPLE }}><ExternalLink size={10} /> Watch moment</a>}
                     </div>

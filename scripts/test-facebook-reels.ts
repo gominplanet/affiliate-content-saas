@@ -35,6 +35,13 @@ check('a clip too long for Facebook Reels does not offer Facebook', /!\(clip\?\.
 check('the platform limits are said before posting', /Facebook Reels take up to 90 seconds/.test(PAGE) && /over 3 minutes as a regular video/.test(PAGE))
 check('the whole clip joins the list instead of wiping rendered clips', /prev\.filter\(c => c\.status !== 'suggested'\)/.test(PANEL))
 
+// When YouTube refuses the download, the way out is on the page.
+const RENDER = readFileSync('app/api/youtube/shorts/render/route.ts', 'utf8')
+check('a refused download shows the upload box, even for a video from YouTube',
+  /setNeedsUpload\(true\)/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| needsUpload\)/.test(PANEL))
+check('no message names a button that is not on the page', !/Upload or pick a short/.test(PANEL + RENDER))
+check('the whole video is labelled, not scored 0/100', /'Whole video'/.test(PANEL) && /clip\.score > 0 \?/.test(PANEL))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
