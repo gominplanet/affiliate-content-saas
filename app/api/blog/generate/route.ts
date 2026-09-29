@@ -8,6 +8,8 @@ import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { checkSamePost, slugOfUrl, titleFitsSlug } from '@/lib/post-site'
 import { titleNamesProduct, plainProductTitle } from '@/lib/title-product'
+import { fixBrandSpelling, fixBrandInSlug } from '@/lib/brand-spelling'
+import { fetchKeepaIdentity } from '@/services/keepa'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
@@ -1656,6 +1658,35 @@ async function handleGenerate(request: Request) {
     if (mpNote && !linkFallbackNote) linkFallbackNote = mpNote
   } catch { /* multi-product enrichment is best-effort; never block generation */ }
 
+  // ── BRAND NAMES ARE NEVER ALTERED (lib/brand-spelling) ──────────────────
+  // The text is written from the transcript, which spells a brand the way it
+  // sounds (COOFANDY came out "Kofandi" in the title, the address, the text
+  // and the shop list). The brand as Amazon lists it, from Keepa by the ASIN,
+  // else the listing, is put back everywhere before anything is saved. After
+  // the multi-product step so its shop list is covered, before the slug.
+  let officialBrand: string | null = null
+  if (effectiveAsin) {
+    const ids = await withTimeout(fetchKeepaIdentity([effectiveAsin]), 8000, new Map())
+    officialBrand = (ids.get(String(effectiveAsin).toUpperCase())?.brand || '').trim() || null
+  }
+  if (!officialBrand && titleProduct?.brand) officialBrand = titleProduct.brand
+  const brandFixes = new Set<string>()
+  const byBrand = (t: string | null | undefined): string => {
+    if (!t || !officialBrand) return t || ''
+    const r = fixBrandSpelling(t, officialBrand)
+    r.replaced.forEach((x) => brandFixes.add(x))
+    return r.text
+  }
+  if (officialBrand) {
+    generated.title = byBrand(generated.title)
+    content = byBrand(content)
+    generated.excerpt = byBrand(generated.excerpt)
+    generated.metaDescription = byBrand(generated.metaDescription)
+    generated.seoKeyword = byBrand(generated.seoKeyword)
+    if (!existingSlug && generated.slug) generated.slug = fixBrandInSlug(generated.slug, officialBrand)
+    if (brandFixes.size) console.warn('[blog-generate] brand spelling put back to the listing', { brand: officialBrand, from: [...brandFixes] })
+  }
+
   // Preserve the slug of any existing live WP post so rebuilds keep the same
   // URL (and the same Google indexing history). Only fall through to the
   // freshly-generated slug for genuinely new posts.
@@ -1907,6 +1938,10 @@ async function handleGenerate(request: Request) {
 
   // A held post goes to WordPress as a draft, whatever was asked.
   if (heldForReview) wpStatus = 'draft'
+
+  // The brand once more, on the final text: steps after the first pass (the
+  // title correction, the notes) can bring the heard spelling back.
+  if (officialBrand) { content = byBrand(content); generated.title = byBrand(generated.title) }
 
   // A REBUILD WRITES TO THE POST MVP HAS ON FILE, AND ONLY THAT ONE. The number
   // came from blog_posts, and filed under the wrong site it names another post
@@ -3188,7 +3223,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // The gate's findings travel with the score: what still reads as AI, and,
     // for a held post, why it is a draft. Written even when scoring failed,
     // because a hold with no record is a draft nobody is told about.
-    const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(titleFix ? { titleFix } : {}), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
+    const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(titleFix ? { titleFix } : {}), ...(brandFixes.size ? { brandFix: { brand: officialBrand, from: [...brandFixes] } } : {}), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
     try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
   }
 
@@ -3200,6 +3235,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     held: heldForReview ? { reasons: heldReasons } : null,
     // The title was changed before publishing because it did not name the product.
     titleFix,
+    // Heard spellings of the brand put back to the listing's.
+    brandFix: brandFixes.size ? { brand: officialBrand, from: [...brandFixes] } : null,
     aiTells: tells.length,
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,

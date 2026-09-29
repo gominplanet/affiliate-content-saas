@@ -162,13 +162,13 @@ async function resolveLink(
 function renderShopEverything(primary: { name: string; url: string } | null, extras: LinkedProduct[]): string {
   const rows: string[] = []
   const row = (label: string, url: string) =>
-    `<!-- wp:paragraph --><p style="margin:6px 0">🛍️ <strong>${esc(label)}</strong> — <a href="${url}" target="_blank" rel="${REL}">check price on Amazon →</a></p><!-- /wp:paragraph -->`
+    `<!-- wp:paragraph --><p style="margin:6px 0">🛍️ <strong>${esc(label)}</strong>: <a href="${url}" target="_blank" rel="${REL}">check price on Amazon →</a></p><!-- /wp:paragraph -->`
   if (primary) rows.push(row(primary.name, primary.url))
   for (const e of extras) rows.push(row(e.name, e.url))
   if (rows.length === 0) return ''
   return (
     `\n<!-- wp:heading --><h2>🛍️ Shop everything in this video</h2><!-- /wp:heading -->\n` +
-    `<!-- wp:paragraph --><p>Every product mentioned, in one place — these are affiliate links, so I may earn a small commission at no extra cost to you.</p><!-- /wp:paragraph -->\n` +
+    `<!-- wp:paragraph --><p>Every product mentioned, in one place. These are affiliate links, so I may earn a small commission at no extra cost to you.</p><!-- /wp:paragraph -->\n` +
     rows.join('\n')
   )
 }

@@ -71,6 +71,23 @@ check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(r
   check('a host that strips the login header gets the fix, not only the diagnosis', /fix: 'To fix it: open your host/.test(S) && /data\.fix\]\.filter\(Boolean\)/.test(read('app/(dashboard)/setup/page.tsx')))
 }
 
+// ── Brand names are never altered (29 Sep: COOFANDY written as "Kofandi") ──
+{
+  const B = require('../lib/brand-spelling') as typeof import('../lib/brand-spelling')
+  const r = B.fixBrandSpelling('<h2>Kofandi Quarter Zip Pullover</h2><p>The Kofandi sweater. <a href="https://x.co/kofandi">buy</a></p>', 'COOFANDY')
+  check('a heard spelling of the brand is put back to the listing\'s, in text only', r.text.includes('<h2>COOFANDY Quarter Zip') && r.text.includes('The COOFANDY sweater') && r.text.includes('https://x.co/kofandi') && r.replaced.join() === 'Kofandi')
+  check('and in the address', B.fixBrandInSlug('kofandi-quarter-zip-pullover-review', 'COOFANDY') === 'coofandy-quarter-zip-pullover-review')
+  check('ordinary words are left alone', B.fixBrandSpelling('An Anchor, a Sharp knife, a Bird.', 'Anker').text === 'An Anchor, a Sharp knife, a Bird.'
+    && B.fixBrandSpelling('The Sharp knife', 'SHARPIE').text === 'The Sharp knife' && B.fixBrandSpelling('Bird and Club', 'Beard Club').text === 'Bird and Club')
+  check('a multi-word brand is fixed as a phrase', B.fixBrandSpelling('the Beerd Club trimmer', 'Beard Club').text === 'the Beard Club trimmer')
+  const G = read('app/api/blog/generate/route.ts')
+  check('generation takes the brand from Keepa by ASIN and applies it before the slug and again before publishing',
+    /fetchKeepaIdentity\(\[effectiveAsin\]\)/.test(G) && G.indexOf('BRAND NAMES ARE NEVER ALTERED') < G.indexOf('// Preserve the slug of any existing live WP post')
+    && /if \(officialBrand\) \{ content = byBrand\(content\); generated\.title = byBrand\(generated\.title\) \}/.test(G) && /brandFix: brandFixes\.size/.test(G))
+  const M = read('lib/multi-product.ts')
+  check('the shop list has no em dash in its words', !/in one place —/.test(M) && !/<\/strong> — <a/.test(M))
+}
+
 if (failures.length) {
   console.error(`\n❌ post-site: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
