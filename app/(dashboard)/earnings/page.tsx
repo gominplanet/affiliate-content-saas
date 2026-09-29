@@ -21,6 +21,7 @@ import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video, Package } from 'lu
 import { toast } from 'sonner'
 import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, type EarningsSyncStatus, type VideoScanStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
+import SoldCampaigns from '@/components/earnings/SoldCampaigns'
 import VideoInsights from '@/components/earnings/VideoInsights'
 import VideoProducts from '@/components/earnings/VideoProducts'
 import { readAllVideoProducts, readVideoProductsViaScout } from '@/lib/amazon-video-products-client'
@@ -654,6 +655,7 @@ export default function EarningsPage() {
             {/* Which products made the money, above the month by month audit
                 trail. The totals tell you how the year went; this is the part you
                 can do something about on Monday. */}
+            <SoldCampaigns />
             <ProductBreakdown refreshKey={dataVersion} />
 
             {/* What the video library says. Amazon records views, hearts and

@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -36,6 +36,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   facebook_reels: 'admin',
   // Clip Factory: post the whole video (up to 10 minutes) as one vertical clip.
   whole_video: 'admin',
+  // Earnings: accept Creator Connections campaigns for products already selling.
+  sold_campaigns: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {
