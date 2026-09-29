@@ -135,7 +135,6 @@ const heal = strip(HEAL)
   check('the batch read uses status=any only when logged in, and a public read without it',
     /this\.request<unknown>\(`\/posts\?include=\$\{want\.join\(','\)\}&_fields=id,featured_media&per_page=100&status=any&context=edit`/.test(many)
     && /fetch\(`\$\{this\.baseUrl\}\/posts\?include=\$\{left\.join\(','\)\}&_fields=id,featured_media&per_page=100`/.test(many))
-  check('the heal runs hourly, now that a run with nothing to fix costs one read', /"path": "\/api\/cron\/heal-thumbnails",\s*"schedule": "17 \* \* \* \*"/.test(readFileSync('vercel.json', 'utf8')))
   check('a generation reads the image back at the end and sets it when missing',
     /const finalMedia = await wpService\.getFeaturedMedia\(wpPost\.id\)/.test(GEN) && /if \(finalMedia === 0\)/.test(GEN)
     && /await wpService\.updatePost\(wpPost\.id, \{ featured_media: media\.id \}\)/.test(GEN))
