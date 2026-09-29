@@ -145,6 +145,22 @@ if (config) {
     'the default is that every branch deploys')
 }
 
+// ── no guard depends on how vercel.json is spaced ───────────────────────────
+//
+// Vercel builds from a copy of vercel.json written with no spaces
+// ("path":"/api/cron/x"). A guard matching the repo's spacing ("path": "…")
+// passes on every machine but Vercel's, and fails every deploy there: it did,
+// twice, for two hours each, and read as a Vercel problem both times.
+{
+  const offenders: string[] = []
+  for (const f of readdirSync('scripts').filter((n) => n.startsWith('test-') && n.endsWith('.ts'))) {
+    if (f === 'test-vercel-config.ts') continue
+    const src = readFileSync(`scripts/${f}`, 'utf8')
+    if (/"(path|schedule)": "\\?\/?(api|\\\*|\d|\*)/.test(src) && /vercel\.json/.test(src) && !/replace\(\/"schedule":"\/g/.test(src)) offenders.push(f)
+  }
+  check('no guard matches vercel.json by its spacing', offenders.length === 0, offenders.join(', '))
+}
+
 if (failures.length) {
   console.error(`\n❌ vercel-config: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
