@@ -114,11 +114,8 @@ export async function POST(req: Request) {
   // finished ones done and only the rest for the cron. And the catch now writes
   // a REASON: status='failed' with nothing else is a dead job that explains
   // nothing to the person looking at it.
-  // Non-English storefronts get a text-free thumbnail (the branded one bakes an
-  // English hook into the image, which reads wrong to a French/German shopper).
-  // Generate that clean variant once per video, only when this sync actually
-  // includes a non-English market and we haven't already cached one. Cheap: it's
-  // one extra image, cached on the video for every future sync.
+  // One thumbnail for every storefront: Amazon takes an English hook on the
+  // image in its non-English stores too, so no text-free copy is made.
 
   void (async () => {
     try {

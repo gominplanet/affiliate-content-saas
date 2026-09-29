@@ -451,13 +451,15 @@ export default function LaunchBoard() {
   const onYouTubeCount = items.filter((i) => !!i.video_id).length
   useEffect(() => { if (onYouTubeCount > 0) { studioTick.current(); amazonTick.current() } }, [onYouTubeCount])
   // ── WHICH COUNTRIES SELL EACH VIDEO'S PRODUCT, before launch ─────────────
-  // Asked again whenever the set of products changes. A country that sells none
-  // of them is not blocked from being ticked; it is said, so the choice is made
-  // knowing.
+  // Asked again whenever the set of products changes. The check is by ASIN,
+  // then by the same product under that country's own ASIN (barcode, then
+  // brand and model or name). A country that sells none of the batch's
+  // products is not shown as a card at all, only named in one line under the
+  // grid; a country that sells some says how many, and only those upload.
   type Verdict = 'sold' | 'out_of_stock' | 'not_sold' | 'cannot_check' | 'not_checked'
   const [avail, setAvail] = useState<{
     videos: Array<{ id: string; title: string }>
-    markets: Array<{ domain: string; byVideo: Array<{ id: string; verdict: Verdict }> }>
+    markets: Array<{ domain: string; byVideo: Array<{ id: string; verdict: Verdict; localAsin?: string | null; how?: string | null }> }>
     skipped: string | null
   } | null>(null)
   const [availLoading, setAvailLoading] = useState(false)
@@ -476,6 +478,12 @@ export default function LaunchBoard() {
       .finally(() => { if (!gone) setAvailLoading(false) })
     return () => { gone = true }
   }, [batchId, productKey])
+  /** Every video's product checked in full and not sold there. Only that
+   *  hides a country: "not checked" and "cannot check" never do. */
+  const notSoldAnywhere = (domain: string): boolean => {
+    const row = avail?.markets.find((x) => x.domain === domain)
+    return !!row && row.byVideo.length > 0 && row.byVideo.every((v) => v.verdict === 'not_sold')
+  }
   const [mainLaunchEl, setMainLaunchEl] = useState<HTMLButtonElement | null>(null)
   const [mainLaunchInView, setMainLaunchInView] = useState(false)
   useEffect(() => {
@@ -1456,7 +1464,7 @@ export default function LaunchBoard() {
             and its own dubbed audio, made by MVP, and the same thumbnail as everywhere else.
           </p>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
-            {MARKETS.map((m) => {
+            {MARKETS.filter((m) => !notSoldAnywhere(m.domain) || batch.markets.some((x) => x.domain === m.domain)).map((m) => {
               const on = batch.markets.some((x) => x.domain === m.domain)
               const state = signin[m.domain]
               return (
@@ -1502,6 +1510,9 @@ export default function LaunchBoard() {
                       const notSold = row.byVideo.filter((v) => v.verdict === 'not_sold')
                       const oos = row.byVideo.filter((v) => v.verdict === 'out_of_stock')
                       const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
+                      // Sold here under this country's own listing, found by
+                      // barcode or by brand and model or name.
+                      const ownListing = sold.filter((v) => !!v.localAsin)
                       // NOT CHECKED AND CANNOT CHECK BOTH COUNT AS UNKNOWN. A
                       // mix of sold and cannot-check used to read "Sells all"
                       // in green.
@@ -1509,20 +1520,31 @@ export default function LaunchBoard() {
                       if (cannot) {
                         return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so</span>
                       }
+                      const videos = (k: number) => (k === 1 ? 'video' : 'videos')
                       return (
                         <span className="block text-[11px]">
                           {notSold.length === 0 && unchecked.length === 0 && (
-                            <span style={{ color: '#10B981' }}>{n === 1 ? 'Sells this product' : `Sells all ${n} products`}</span>
+                            <span style={{ color: '#10B981' }}>{n === 1 ? 'Sold here' : `All ${n} videos sold here`}</span>
                           )}
-                          {notSold.length > 0 && (
-                            <span style={{ color: notSold.length === n ? '#ef4444' : '#d97706' }}>
-                              {notSold.length === n
-                                ? (n === 1 ? 'Does not sell this product' : `Sells none of the ${n} products`)
-                                : `Sells ${sold.length} of ${n}. Not sold: ${notSold.map((v) => name(v.id)).join(', ')}`}
+                          {/* Only reachable while ticked: an unticked country
+                              that sells none is not shown at all. */}
+                          {notSold.length === n && (
+                            <span style={{ color: '#ef4444' }}>Not sold here, so nothing uploads. Untick it.</span>
+                          )}
+                          {notSold.length > 0 && notSold.length < n && (
+                            <span style={{ color: '#d97706' }}>
+                              {`${sold.length} of ${n} ${videos(n)} sold here, and only those upload. Not sold: ${notSold.map((v) => name(v.id)).join(', ')}`}
                             </span>
                           )}
                           {notSold.length === 0 && unchecked.length > 0 && (
-                            <span style={muted}>{`Sells ${sold.length} of ${n}; ${unchecked.length} not checked yet`}</span>
+                            <span style={muted}>{`${sold.length} of ${n} ${videos(n)} sold here; ${unchecked.length} not checked yet`}</span>
+                          )}
+                          {ownListing.length > 0 && (
+                            <span className="block" style={muted}>
+                              {ownListing.length === sold.length && sold.length > 0
+                                ? (sold.length === 1 ? 'Under its own listing here, and MVP uploads to that one' : 'Under their own listings here, and MVP uploads to those')
+                                : `${ownListing.length} under ${ownListing.length === 1 ? 'its' : 'their'} own listing here: ${ownListing.map((v) => name(v.id)).join(', ')}`}
+                            </span>
                           )}
                           {oos.length > 0 && (
                             <span className="block" style={{ color: '#d97706' }}>Out of stock today: {oos.map((v) => name(v.id)).join(', ')}</span>
@@ -1552,6 +1574,19 @@ export default function LaunchBoard() {
               )
             })}
           </div>
+          {/* THE COUNTRIES THAT WERE HIDDEN, in one line, so a missing card
+              reads as a checked answer and not as a country MVP forgot. */}
+          {(() => {
+            const hidden = MARKETS.filter((m) => notSoldAnywhere(m.domain) && !batch.markets.some((x) => x.domain === m.domain))
+            if (!hidden.length) return null
+            const n = avail?.videos.length ?? 0
+            return (
+              <p className="text-[11.5px]" style={muted}>
+                Not sold in: {hidden.map((m) => m.country).join(', ')}.{' '}
+                {n === 1 ? 'Amazon does not sell this product there' : `Amazon sells none of these ${n} products there`}, under this ASIN or under a listing of its own (same barcode, or same brand and model or name).
+              </p>
+            )
+          })()}
           {/* WHY SOME SAY "NOT CHECKED", rather than leaving it to look like
               a verdict. */}
           {avail?.skipped && (

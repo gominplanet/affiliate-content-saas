@@ -38,6 +38,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
+import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
@@ -1435,10 +1436,15 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
     // a video whose country rows then failed to write was never tried again,
     // under a note promising it would be. Both writes are safe to repeat.
     const priority = coveragePriority({ publishedAt: publishedAt || it.publish_at || it.planned_publish_at })
+    // EACH COUNTRY'S OWN ASIN, when the countries step found the product
+    // there under a different one (lib/regional-listing, cached, no Keepa
+    // spent here). Uploaded against the US ASIN, that country would be
+    // blocked as "not sold" and only found again later by the coverage drain.
+    const local = it.asin ? await cachedLocalAsins(sb, String(it.asin), markets) : new Map<string, string>()
     const { error: gridErr } = await sb.from('storefront_coverage').upsert(
       markets.map((domain) => ({
         user_id: it.user_id, video_id: video.id, domain,
-        state: 'unknown', asin: it.asin ?? null, priority,
+        state: 'unknown', asin: local.get(domain) ?? it.asin ?? null, priority,
       })),
       { onConflict: 'user_id,video_id,domain', ignoreDuplicates: true },
     )

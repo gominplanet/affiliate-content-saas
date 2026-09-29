@@ -407,6 +407,9 @@ async function equivalents(sb: Sb): Promise<{ found: number; byName: number; non
           reason: `Sold in ${mkt.country} as ${local} (${how})`.slice(0, 200),
           updated_at: now,
         }).eq('id', r.id)
+        // Shared with Liftoff's countries step (lib/regional-listing), so a
+        // product found here is found there without paying Keepa again.
+        await sb.from('asin_market_equivalent').upsert({ source_asin: r.asin.toUpperCase(), domain, local_asin: local, how: how.startsWith('same barcode') ? 'barcode' : how.includes('model') ? 'model' : 'name', checked_at: now }, { onConflict: 'source_asin,domain' }).then(() => {}, () => {})
         found++
         if (!how.startsWith('same barcode')) byName++
         continue
@@ -422,6 +425,7 @@ async function equivalents(sb: Sb): Promise<{ found: number; byName: number; non
         reason: `Amazon does not sell this product in ${mkt.country}: ${tried} (barcode and name checked)`.slice(0, 200),
         updated_at: now,
       }).eq('id', r.id)
+      if (searched || !nameSearchTerm(src)) await sb.from('asin_market_equivalent').upsert({ source_asin: r.asin.toUpperCase(), domain, local_asin: null, how: null, checked_at: now }, { onConflict: 'source_asin,domain' }).then(() => {}, () => {})
       none++
     }
   }

@@ -8,23 +8,30 @@
 // was wrong, but nothing had said so either, until a database query did. The
 // countries step now shows it while the creator is still choosing.
 //
-// The answer comes from lib/product-availability, the same function the
-// coverage grid uses before it prepares a country, so the two cannot disagree.
-// Cache first (free), then Keepa within a small budget.
+// The answer comes from lib/regional-listing: the same ASIN first (the same
+// stock check the coverage grid uses, so the two cannot disagree), then, where
+// that says "not sold", the same product under the country's own ASIN, by
+// barcode, then by brand and model or name. Cached across creators, then Keepa
+// within a small budget. A country only reads "not sold" once all of it was
+// tried.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MARKETS } from '@/lib/markets'
 import { normalizeTier } from '@/lib/tier'
-import { availabilityKey, lookupAvailability } from '@/lib/product-availability'
+import { availabilityKey } from '@/lib/product-availability'
+import { lookupRegional, type RegionalAnswer } from '@/lib/regional-listing'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 120
 
 /** Keepa lookups one page load may pay for. Ten videos across eight
  *  Keepa countries is eighty at most, and most come from the shared cache. */
 const LOOKUP_BUDGET = 80
+/** Brand-and-name searches one page load may pay for (about ten tokens each).
+ *  What is left over is "not checked yet" and answered on the next open. */
+const SEARCH_BUDGET = 8
 
 export type ProductVerdict = 'sold' | 'out_of_stock' | 'not_sold' | 'cannot_check' | 'not_checked'
 
@@ -53,28 +60,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   let admin: any = null
   try { admin = createAdminClient() } catch { admin = null }
   const { answers, skipped } = admin
-    ? await lookupAvailability(admin, pairs, { lookupBudget: LOOKUP_BUDGET })
-    : { answers: new Map(), skipped: 'keepa_unconfigured' as const }
+    ? await lookupRegional(admin, pairs, { lookupBudget: LOOKUP_BUDGET, searchBudget: SEARCH_BUDGET })
+    : { answers: new Map<string, RegionalAnswer>(), skipped: 'keepa_unconfigured' as const }
 
   // FIVE ANSWERS, never folded into two. "Not sold" is a fact about Amazon;
   // "cannot check" (Australia has no data source) and "not checked" (no
-  // budget, no key) are facts about us, and reading either as "not sold" would
-  // tell a creator to skip a country that may well sell the product.
-  const verdict = (asin: string, domain: string): ProductVerdict => {
-    const a = answers.get(availabilityKey(asin, domain))
-    if (a === 'in_stock') return 'sold'
-    if (a === 'out_of_stock') return 'out_of_stock'
-    if (a === 'not_listed') return 'not_sold'
-    if (a === 'no_answer') return 'cannot_check'
-    return 'not_checked'
-  }
+  // budget, no key, a search still owed) are facts about us, and reading
+  // either as "not sold" would tell a creator to skip a country that may well
+  // sell the product.
+  const answer = (asin: string, domain: string): RegionalAnswer =>
+    answers.get(availabilityKey(asin, domain)) ?? { verdict: 'not_checked', localAsin: null, how: null }
   return NextResponse.json({
     ok: true,
     skipped: skipped ?? null,
     videos: items.map((i) => ({ id: i.id, title: i.title || 'Untitled' })),
     markets: MARKETS.map((m) => ({
       domain: m.domain,
-      byVideo: items.map((i) => ({ id: i.id, verdict: verdict(String(i.asin).trim().toUpperCase(), m.domain) })),
+      byVideo: items.map((i) => {
+        const a = answer(String(i.asin).trim().toUpperCase(), m.domain)
+        return { id: i.id, verdict: a.verdict as ProductVerdict, localAsin: a.localAsin, how: a.how }
+      }),
     })),
   })
 }

@@ -45,9 +45,23 @@ check('each batch row shows each country', /it\.amazon!\.map\(/.test(LB) && /a\.
 // WHICH COUNTRIES SELL THE PRODUCT, asked before launch, from the grid's own check.
 const AV = code('app/api/launch/batches/[id]/availability/route.ts')
 check('the batch asks the same availability function the grid uses',
-  /lookupAvailability\(admin, pairs/.test(AV) && /lookupAvailability\(sb, rows/.test(code('app/api/cron/coverage-drain/route.ts')))
+  /lookupRegional\(admin, pairs/.test(AV) && /lookupAvailability\(sb, norm/.test(code('lib/regional-listing.ts'))
+  && /lookupAvailability\(sb, rows/.test(code('app/api/cron/coverage-drain/route.ts')))
+const RL = code('lib/regional-listing.ts')
 check('not checked and cannot check are never read as not sold',
-  /if \(a === 'not_listed'\) return 'not_sold'/.test(AV) && /return 'not_checked'/.test(AV) && /'cannot_check'/.test(AV))
+  /a === 'not_listed' \? 'not_sold'/.test(RL) && /a === 'no_answer' \? 'cannot_check' : 'not_checked'/.test(RL)
+  && /verdict: 'not_checked'/.test(AV))
+check('a No under the US ASIN is not a No until barcode and name were tried',
+  /for \(const p of missing\) answers\.set\(key\(p\.asin, p\.domain\), \{ verdict: 'not_checked'/.test(RL)
+  && /pickEquivalent\(/.test(RL) && /pickByName\(/.test(RL))
+check('a local listing is checked for stock, never assumed', /lookupAvailability\(sb, localPairs/.test(RL))
+check('the hand-off uploads to the local listing it found',
+  /cachedLocalAsins\(sb, String\(it\.asin\), markets\)/.test(code('app/api/cron/launch-drain/route.ts'))
+  && /asin: local\.get\(domain\) \?\? it\.asin/.test(code('app/api/cron/launch-drain/route.ts')))
+check('only a country checked in full and not sold is hidden, and it is named',
+  /row\.byVideo\.every\(\(v\) => v\.verdict === 'not_sold'\)/.test(LB) && /Not sold in: \{hidden\.map/.test(LB)
+  && /!notSoldAnywhere\(m\.domain\) \|\| batch\.markets\.some/.test(LB))
+check('a mixed country says how many videos it sells', /of \$\{n\} \$\{videos\(n\)\} sold here, and only those upload/.test(LB))
 check('the countries step shows it', /\/availability`/.test(LB) && /Not sold: \$\{notSold/.test(LB))
 
 const base = { ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
