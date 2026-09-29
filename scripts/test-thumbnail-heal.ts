@@ -38,6 +38,7 @@
 //
 //   3. the heal had two sources for a replacement image and both come from a
 //      source VIDEO. A link-written post has neither, hence hero_source_url.
+import { videoIdOfFile } from '../lib/thumbnail-duplicates'
 import { readFileSync } from 'node:fs'
 
 const failures: string[] = []
@@ -121,8 +122,39 @@ const heal = strip(HEAL)
   const CRON = readFileSync('app/api/cron/heal-thumbnails/route.ts', 'utf8')
   check('the heal also checks everyone who published lately, flagged or not',
     /\.gte\('created_at', since\)/.test(CRON) && /reattachThumbnailsForOwner\(admin, ownerId, \{ limit: 10, onlyKnownMissing: true \}\)/.test(CRON))
-  check('and for them uploads only where WordPress said the image is missing',
-    /if \(opts\.onlyKnownMissing && existingMedia === undefined\) \{ checked--; continue \}/.test(heal))
+  check('every mode uploads only where WordPress said the image is missing',
+    /if \(existingMedia === undefined\) \{ checked--; continue \}/.test(heal) && !/opts\.onlyKnownMissing &&/.test(heal))
+
+  // THE FLOOD. The probe was a logged-out fetch with status=any, which
+  // WordPress refuses; every post read as unknown and was re-uploaded every
+  // six hours. One thumbnail reached 65 copies on one site.
+  check('the heal asks WordPress logged in, through the service',
+    /wpService\.getFeaturedMediaMany\(wpIds\)/.test(heal) && !/status=any/.test(heal) && !/fetch\(/.test(heal))
+  const WPS = readFileSync('services/wordpress/index.ts', 'utf8')
+  const many = WPS.slice(WPS.indexOf('async getFeaturedMediaMany'), WPS.indexOf('async postExists'))
+  check('the batch read uses status=any only when logged in, and a public read without it',
+    /this\.request<unknown>\(`\/posts\?include=\$\{want\.join\(','\)\}&_fields=id,featured_media&per_page=100&status=any&context=edit`/.test(many)
+    && /fetch\(`\$\{this\.baseUrl\}\/posts\?include=\$\{left\.join\(','\)\}&_fields=id,featured_media&per_page=100`/.test(many))
+  check('the heal runs hourly, now that a run with nothing to fix costs one read', /"path": "\/api\/cron\/heal-thumbnails",\s*"schedule": "17 \* \* \* \*"/.test(readFileSync('vercel.json', 'utf8')))
+  check('a generation reads the image back at the end and sets it when missing',
+    /const finalMedia = await wpService\.getFeaturedMedia\(wpPost\.id\)/.test(GEN) && /if \(finalMedia === 0\)/.test(GEN)
+    && /await wpService\.updatePost\(wpPost\.id, \{ featured_media: media\.id \}\)/.test(GEN))
+
+  // THE CLEANUP of what the flood left.
+  const DUP = readFileSync('lib/thumbnail-duplicates.ts', 'utf8')
+  check('a duplicate is only a file named after one of the creator\'s videos, unattached, and nobody\'s featured image',
+    /!m\.post && !used\.has\(m\.id\)/.test(DUP) && /videoIdOfFile\(m\.source_url, videoIds\)/.test(DUP))
+  check('the last copy of a thumbnail always stays', /keepNewest \? sorted\.slice\(1\)/.test(DUP))
+  check('each is checked again just before it is removed',
+    /if \(!m \|\| m\.post \|\| used\.has\(id\) \|\| !videoIdOfFile\(m\.source_url, videoIds\)\) \{ skipped\+\+; continue \}/.test(DUP))
+  const vids = new Set(['blllyaLxnWc', 'abc-12'])
+  check('file names are matched the way WordPress numbers repeats',
+    videoIdOfFile('https://x/wp-content/uploads/2026/09/blllyaLxnWc-64.jpg', vids) === 'blllyaLxnWc'
+    && videoIdOfFile('https://x/blllyaLxnWc.jpg', vids) === 'blllyaLxnWc'
+    && videoIdOfFile('https://x/blllyaLxnWc-blogthumb-3.jpg', vids) === 'blllyaLxnWc'
+    && videoIdOfFile('https://x/abc-12.jpg', vids) === 'abc-12'
+    && videoIdOfFile('https://x/header-banner.jpg', vids) === null
+    && videoIdOfFile('https://x/blllyaLxnWc-product.png', vids) === null)
 }
 
 if (failures.length) {

@@ -70,7 +70,7 @@
     },
     {
       "path": "/api/cron/heal-thumbnails",
-      "schedule": "0 */6 * * *"
+      "schedule": "17 * * * *"
     },
     {
       "path": "/api/cron/purge-shorts-sources",

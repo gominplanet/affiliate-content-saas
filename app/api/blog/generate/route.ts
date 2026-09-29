@@ -3227,6 +3227,34 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
   }
 
+  // ── THE IMAGE, CHECKED LAST, ON WORDPRESS ─────────────────────────────────
+  // Step 8.5 sets the featured image early, and a lot happens after it. Posts
+  // (autopilot's above all) still turned up live with none, and the only thing
+  // that ever put one back was the heal job. So the post is read back once the
+  // run is done: no image means set it now, from the same source 8.5 uses.
+  // Only featured_media is written, never status or date, so a scheduled or
+  // held post is not disturbed. "Could not tell" (null) is left alone.
+  if (wpPost?.id && youtubeVideoId && !thumbnailBlocked) {
+    const finalMedia = await wpService.getFeaturedMedia(wpPost.id).catch(() => null)
+    if (finalMedia === 0) {
+      console.warn('[blog-thumbnail] no featured image at the end of the run; setting it now', { ownerId, wpPostId: wpPost.id, attempted: attemptThumb })
+      try {
+        let media
+        if (customBlogThumb) media = await wpService.uploadImageFromUrl(customBlogThumb, `${youtubeVideoId}-blogthumb.jpg`)
+        else {
+          try { media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`, `${youtubeVideoId}.jpg`) }
+          catch { media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`, `${youtubeVideoId}.jpg`) }
+        }
+        await wpService.updatePost(wpPost.id, { featured_media: media.id })
+      } catch (err) {
+        thumbnailBlocked = true
+        console.error('[blog-thumbnail] end-of-run featured image failed', { ownerId, wpPostId: wpPost.id, reason: (err instanceof Error ? err.message : String(err)).slice(0, 200) })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        try { if (savedPost?.id) await (supabase as any).from('blog_posts').update({ thumbnail_blocked: true }).eq('id', savedPost.id) } catch { /* column absent pre-177 */ }
+      }
+    }
+  }
+
   return NextResponse.json({
     success: true,
     postId: savedPost?.id,

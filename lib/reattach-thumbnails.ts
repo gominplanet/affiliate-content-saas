@@ -30,9 +30,8 @@ export async function reattachThumbnailsForOwner(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   ownerId: string,
-  /** onlyKnownMissing: upload only where WordPress SAID the post has no image.
-   *  For creators checked without any flagged post (the cron's recent sweep),
-   *  a failed read must not become an upload over images that are there. */
+  /** onlyKnownMissing: kept for callers. Every mode now uploads only where
+   *  WordPress SAID the post has no image. */
   opts: { siteId?: string | null; limit?: number; onlyKnownMissing?: boolean } = {},
 ): Promise<ReattachResult> {
   const empty = (over: Partial<ReattachResult>): ReattachResult =>
@@ -70,33 +69,23 @@ export async function reattachThumbnailsForOwner(
   const { data: posts, error } = await q
   if (error) return empty({ ok: false, error: error.message })
 
-  const base = site.wordpress_url.replace(/\/+$/, '')
-
-  // Batch the "does it already have a featured image?" probe. This used to be
-  // one GET per post inside the loop — up to 40 per owner, and the cron walks
-  // 15 owners per tick, so ~600 serial round trips under a 300s cap before any
-  // real upload work. One `?include=` request per owner instead; the same
-  // idiom is already used in wordpress/posts, fix-thumbnails and
-  // backfill-video-links. Falls back to an empty map on failure, which lands
-  // on the pre-existing "couldn't read it, try the upload" path.
+  // Which posts already have a featured image, in one LOGGED-IN read per
+  // owner (wpService.getFeaturedMediaMany).
+  //
+  // THIS WAS A LOGGED-OUT FETCH WITH status=any, which WordPress refuses
+  // (400 rest_forbidden_status). Every post came back "unknown", unknown fell
+  // through to an upload, and the cron re-uploaded the thumbnail of the newest
+  // forty posts every six hours whether or not they had one: a single YouTube
+  // thumbnail was in one creator's media library 65 times, about two thousand
+  // copies in all. The same failure made the "recent posts" sweep heal
+  // nothing, because it skips unknowns, so a post that really had no image
+  // stayed that way until the flagged sweep happened to re-upload it.
+  //
+  // NOW: a post WordPress did not answer for is skipped, in every mode. Not
+  // knowing is never a reason to upload.
   const wpIds = ((posts ?? []) as Array<{ wordpress_post_id: number | null }>)
     .map(p => p.wordpress_post_id).filter((n): n is number => typeof n === 'number' && n > 0)
-  const featuredById = new Map<number, number>()
-  if (wpIds.length > 0) {
-    try {
-      const res = await fetch(
-        `${base}/wp-json/wp/v2/posts?include=${wpIds.join(',')}&_fields=id,featured_media&per_page=100&status=any`,
-        { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) },
-      )
-      if (res.ok) {
-        const rows = (await res.json()) as Array<{ id?: number; featured_media?: number }>
-        for (const r of Array.isArray(rows) ? rows : []) {
-          if (typeof r.id === 'number') featuredById.set(r.id, r.featured_media ?? 0)
-        }
-      }
-    } catch { /* fall through — loop treats a miss as "unknown, try the upload" */ }
-  }
-
+  const featuredById = wpIds.length ? await wpService.getFeaturedMediaMany(wpIds) : new Map<number, number>()
   let checked = 0, fixed = 0, alreadyOk = 0, stillBlocked = 0
   const failures: ReattachResult['failures'] = []
   const nowFixedIds: number[] = []
@@ -119,12 +108,11 @@ export async function reattachThumbnailsForOwner(
     if (!wpId || (!ytId && !customThumb && !heroSource)) continue
     checked++
     try {
-      // Already has a featured image → nothing to do. A wpId missing from the
-      // batch (post gone, or the batch request failed) falls through to the
-      // upload, exactly as the old per-post probe did when it wasn't res.ok.
+      // Already has a featured image: nothing to do. Not read (post gone, or
+      // WordPress did not answer): skipped, never uploaded over.
       const existingMedia = featuredById.get(wpId)
       if (existingMedia && existingMedia > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
-      if (opts.onlyKnownMissing && existingMedia === undefined) { checked--; continue }
+      if (existingMedia === undefined) { checked--; continue }
       let media
       if (customThumb) {
         media = await wpService.uploadImageFromUrl(customThumb, `${ytId || wpId}-blogthumb.jpg`)

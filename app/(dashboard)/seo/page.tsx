@@ -7,6 +7,7 @@
  * creator fixes the highest-impact posts. Expand a row to see exactly what's
  * missing (and, soon, one-click fixes).
  */
+import { DuplicateThumbnails } from '@/components/seo/DuplicateThumbnails'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
@@ -993,6 +994,8 @@ export default function SeoPage() {
               </div>
             )
           })()}
+
+          <DuplicateThumbnails />
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -628,6 +628,11 @@ export class WordPressService {
   /** Variant of request() that also returns selected response headers
    *  — currently just X-WP-TotalPages, used by getPublishedPostIds().
    *  Keeps the typical request() signature unchanged. */
+  /** One page of a list endpoint, logged in, with the total page count. */
+  async readPage<T>(path: string): Promise<{ data: T; totalPages: number }> {
+    return this.requestWithHeaders<T>(path)
+  }
+
   private async requestWithHeaders<T>(
     path: string,
     options: RequestInit = {},
@@ -1019,6 +1024,39 @@ export class WordPressService {
     } catch {
       return null
     }
+  }
+
+  /** featured_media for many posts in one logged-in read (up to 100).
+   *
+   *  A post missing from the map was NOT read, and must be treated as "could
+   *  not tell", never as "has no image". The heal job used to ask this with a
+   *  logged-out fetch carrying status=any, which WordPress refuses outright
+   *  (rest_forbidden_status), so every post read as unknown and got a fresh
+   *  upload every six hours: one thumbnail sat in a creator's media library 65
+   *  times. Logged in, status=any is allowed; logged out, published posts are
+   *  still readable without it, so that is the fallback. */
+  async getFeaturedMediaMany(ids: number[]): Promise<Map<number, number>> {
+    const out = new Map<number, number>()
+    const want = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 100)
+    if (!want.length) return out
+    const take = (rows: unknown) => {
+      for (const r of Array.isArray(rows) ? rows as Array<{ id?: number; featured_media?: number }> : []) {
+        if (typeof r.id === 'number' && typeof r.featured_media === 'number') out.set(r.id, r.featured_media)
+      }
+    }
+    try {
+      take(await this.request<unknown>(`/posts?include=${want.join(',')}&_fields=id,featured_media&per_page=100&status=any&context=edit`, { method: 'GET' }))
+    } catch { /* the public read below */ }
+    const left = want.filter((id) => !out.has(id))
+    if (left.length) {
+      try {
+        const res = await fetch(`${this.baseUrl}/posts?include=${left.join(',')}&_fields=id,featured_media&per_page=100`, {
+          headers: { Accept: 'application/json', 'User-Agent': WP_USER_AGENT }, signal: AbortSignal.timeout(20_000),
+        })
+        if (res.ok) take(await res.json())
+      } catch { /* left unread */ }
+    }
+    return out
   }
 
   /** Does this post still exist on this site?
