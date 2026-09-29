@@ -188,7 +188,9 @@ const heal = strip(HEAL)
     /waiting_for_video_since: null, waiting_for_video_until: null/.test(readFileSync('app/api/blog/publish-now/route.ts', 'utf8')))
   check('a waiting post is listed on screen with the day its video is due',
     /Its video is not public on YouTube until \$\{due\}/.test(readFileSync('app/api/blog/held/route.ts', 'utf8')))
-  check('the job is scheduled', /"path": "\/api\/cron\/video-hold"/.test(readFileSync('vercel.json', 'utf8')))
+  check('the job runs inside a scheduled cron, not one of its own (vercel.json cron changes have failed every deploy)',
+    /await holdAndRelease\(admin\)/.test(readFileSync('app/api/cron/reconcile-stuck-images/route.ts', 'utf8'))
+    && /"path": "\/api\/cron\/reconcile-stuck-images"/.test(readFileSync('vercel.json', 'utf8')))
 
   // THE CLEANUP of what the flood left.
   const DUP = readFileSync('lib/thumbnail-duplicates.ts', 'utf8')

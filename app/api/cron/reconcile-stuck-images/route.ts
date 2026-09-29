@@ -21,14 +21,23 @@
  * The client renders 'failed' as an actionable "Images failed" state, so this
  * clears the spinner and points the user at the re-roll.
  *
+ * ALSO: posts wait for their videos (lib/video-hold). A post live on the blog
+ * whose YouTube video is scheduled or private becomes a draft, and comes back,
+ * dated that day, when the video is live. It runs here, every ten minutes,
+ * rather than on a schedule of its own: every deploy that added or changed a
+ * cron in vercel.json failed on Vercel, and the one that put it back went
+ * through. Its own try, so a problem there never stops the images reconcile.
+ *
  * Auth: Vercel cron requests carry `Authorization: Bearer ${CRON_SECRET}`.
  */
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { holdAndRelease } from '@/lib/video-hold'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 const STUCK_MINUTES = 20
 
@@ -54,12 +63,24 @@ export async function GET(request: Request) {
     .or(`images_status_at.lt.${cutoff},images_status_at.is.null`)
     .select('id')
 
+  // Posts waiting for their videos.
+  let videoHold: unknown = null
+  try {
+    const r = await holdAndRelease(admin)
+    videoHold = r.missingColumn
+      ? { skipped: 'Posts cannot wait for their videos until migration 388 is run.' }
+      : { held: r.held, released: r.released, letGo: r.letGo, failed: r.failed }
+  } catch (e) {
+    videoHold = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
+  }
+
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message, videoHold }, { status: 500 })
   }
 
   return NextResponse.json({
     ok: true,
+    videoHold,
     reconciled: count ?? 0,
     ids: (data ?? []).map((r: { id: string }) => r.id),
     cutoff,

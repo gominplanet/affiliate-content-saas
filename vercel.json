@@ -69,10 +69,6 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cron/video-hold",
-      "schedule": "*/20 * * * *"
-    },
-    {
       "path": "/api/cron/heal-thumbnails",
       "schedule": "0 */6 * * *"
     },
