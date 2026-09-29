@@ -145,6 +145,11 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .prose a.btn-ref.pl::after{content:none}
 .upd-end{margin:0 0 28px;padding:28px clamp(20px,4vw,40px);background:var(--surface);scroll-margin-top:16px}
 .upd-end h2{font-size:20px}
+.log{margin:0 0 20px;padding:24px clamp(20px,4vw,40px);scroll-margin-top:16px}
+.log h2{font-size:18px}
+.log dl{margin:12px 0 0}
+.log dt{font:700 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin-top:12px}
+.log dd{margin:4px 0 0;font-size:14px;color:var(--muted);line-height:1.5}
 .upd .nudge{margin-top:12px;font-size:15px}
 .upd .nudge b{color:var(--ink)}
 @media (max-width:900px){.upd{margin-top:18px}}
@@ -195,6 +200,8 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .new ul{margin:0;padding-left:18px;display:grid;gap:3px}
 .new a{color:var(--accent)}
 .new .more{margin:8px 0 0;font-size:13px}
+.new .cl{margin:0 0 14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.new .cl .btn-ref{margin:0}
 /* Search, at the top of the module list */
 .gs{position:sticky;top:30px;z-index:1;background:var(--bg);padding:4px 0 8px}
 .gs input{width:100%;box-sizing:border-box;font:400 15px var(--body);color:var(--ink);background:var(--surface);
@@ -214,6 +221,17 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 @keyframes gsflash{0%,40%{background:var(--marker-soft)}100%{background:transparent}}
 ::highlight(gs){background-color:#FFE27A;color:#111}
 
+.vids{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0 26px}
+@media (max-width:640px){.vids{grid-template-columns:1fr}}
+.vid{margin:0}
+.vid .yt-f,.vid iframe{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:10px;overflow:hidden;background:#000}
+.vid .yt-f{position:relative;padding:0;cursor:pointer}
+.vid .yt-f img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92;transition:opacity .2s}
+.vid .yt-f:hover img,.vid .yt-f:focus-visible img{opacity:1}
+.vid .yt-f:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.vid .play{position:absolute;left:50%;top:50%;width:68px;height:48px;margin:-24px 0 0 -34px;border-radius:12px;background:#E62117}
+.vid .play::after{content:"";position:absolute;left:27px;top:14px;border-style:solid;border-width:10px 0 10px 17px;border-color:transparent transparent transparent #fff}
+.vid figcaption{font-size:13.5px;line-height:1.4;color:var(--muted);margin-top:8px}
 main{min-width:0}
 .mod{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:40px clamp(20px,4vw,56px);margin-bottom:28px;scroll-margin-top:16px}
 .mod-h{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:8px}
@@ -370,19 +388,20 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <div class="hero-lower">
   <div class="hero-txt">
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now, after Amazon's latest rule changes.</p>
-  <div class="meta"><span>12 modules</span><span>~95 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
+  <div class="meta"><span>12 modules</span><span>~110 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 12 modules done</span></div>
   <div class="new" id="whatsnew">
     <p class="free">Free to read. No email needed.</p>
+    <p class="cl"><a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a> <span>Your first 30 days, one page, with boxes to tick.</span></p>
     <p><b>Last updated September 29.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
     <ul>
+      <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
       <li><a href="#quick-answers">Quick answers</a> to the questions we get asked most</li>
       <li><a href="#idea-lists">Idea lists that earn</a>: build them around the season</li>
       <li><a href="#worldwide">Links for the whole world</a>: OneLink or Passport</li>
       <li><a href="#account-closed">If your account gets closed</a>, and <a href="#hiring">when to hire an editor or a VA</a></li>
-      <li><a href="#value">What works on Amazon now</a>: value over volume, and how long your videos should be</li>
     </ul>
-    <p class="more">Looking for something older? Use the search box above the module list.</p>
+    <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
   </div>
   </div>
   <figure class="hero-fig">
@@ -522,9 +541,16 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <h3>Can I use the same video on YouTube, TikTok or Instagram?</h3>
 <div class="seb">
 <p><strong>YouTube: yes, do it.</strong> We recommend every Amazon influencer post their Amazon videos straight to YouTube. It does two things. It makes a searchable video that shows up on Google and YouTube. And it protects you: if someone steals your video on Amazon, you have a dated, public upload under your own account that shows you published it first.</p>
+<p><strong>And YouTube is its own business.</strong> A lot of Amazon influencers are building great audiences there. You can grow a channel and, once you qualify for YouTube's Partner Program, get paid on your views. And brands search YouTube for creators. Put a clear way for brands to contact you in every video description, and you'll get far more brand reach just from being there. (<a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP</a> adds that brand contact line to every YouTube description it writes for you.)</p>
 <p><strong>TikTok is a different story.</strong> TikTok is vertical, and for Amazon we recommend shooting horizontal, so the same video looks a little weird there. Reframe it to vertical first. <a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP</a>'s Clip Factory (on Pro) does that for you, with a center crop or a split screen, and can post it to TikTok directly.</p>
 </div>
 <p>Wherever you post, add the channel to your <a href="#confetti">website list</a> before you put Amazon links there, and follow each platform's own rules for links and disclosure (<a href="#traffic">Module 8</a>).</p>
+<h3>Should I upload shoppable photos to Amazon?</h3>
+<div class="seb">
+<p><strong>We wouldn't focus on them.</strong> Photos have given us very little commission, if any. On our storefront, videos come first, idea lists second. Videos drive most of our commissions, if not all of them.</p>
+<p>Amazon has been known to push photos and reward them with incredible views: a hundred thousand views on a picture. But views aren't commissions. Nobody follows through, because Amazon is mostly using that content for its own promotion, and you don't get credited for it.</p>
+<p>If you have good photos, post them on your social media with your links instead, not on your storefront.</p>
+</div>
 <h3>Do I have to show my face?</h3>
 <div class="seb">
 <p><strong>No, you don't.</strong> There are a lot of very successful creators with faceless accounts, and you can absolutely make faceless videos and do well with them.</p>
@@ -1024,6 +1050,16 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p><strong>And don't make it fancy.</strong> There's no need for fancy. Shoppers want to see the product up close, and they want the information and the details. That's it.</p>
 </div>
 <p><strong>Stuck on what to say?</strong> A short script can help if you don't feel comfortable talking off the top of your head. <a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP Affiliate</a> (our software, on Pro) writes video scripts built around pain points, features and benefits. Use it as a starting point, then say it in your own words: a script read word for word sounds like a script.</p>
+<h2 id="examples">Watch how we do it</h2>
+<p>Six of our real reviews. Watch them with this module in mind: how fast we get to the product, how close the camera gets, the questions we answer, and how natural we keep it. They play right here.</p>
+<div class="vids">
+<figure class="vid"><button type="button" class="yt-f" data-id="ooWrXNDU52g" data-start="0" aria-label="Play: Domi Gazebo Unboxing: The Biggest Backyard Upgrade Yet!"><img src="https://i.ytimg.com/vi/ooWrXNDU52g/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Domi Gazebo Unboxing: The Biggest Backyard Upgrade Yet!</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="VFB5lKzRwuA" data-start="0" aria-label="Play: Is LEVEL8 Top Opening Luggage the Smarter Way to Pack for Long Trips?"><img src="https://i.ytimg.com/vi/VFB5lKzRwuA/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Is LEVEL8 Top Opening Luggage the Smarter Way to Pack for Long Trips?</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="vz3mhcd6kU8" data-start="0" aria-label="Play: PURPLE LEAF 10&#x27; X 12&#x27; Outdoor Rectangle Large Patio Umbrella"><img src="https://i.ytimg.com/vi/vz3mhcd6kU8/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>PURPLE LEAF 10&#x27; X 12&#x27; Outdoor Rectangle Large Patio Umbrella</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="kUW-WUUFsh8" data-start="0" aria-label="Play: The Ultimate Pool Companion: SMOROBOT Cleaning Robot"><img src="https://i.ytimg.com/vi/kUW-WUUFsh8/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>The Ultimate Pool Companion: SMOROBOT Cleaning Robot</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="otjURi12Blo" data-start="2" aria-label="Play: Foldable dog pool review: cooling + entertainment combined"><img src="https://i.ytimg.com/vi/otjURi12Blo/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Foldable dog pool review: cooling + entertainment combined</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="WkYQIVw50Lc" data-start="0" aria-label="Play: Top-Rated Pool Float with Cup Holder and Backrest"><img src="https://i.ytimg.com/vi/WkYQIVw50Lc/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Top-Rated Pool Float with Cup Holder and Backrest</figcaption></figure>
+</div>
 <h2>Our filming formula</h2>
 <p>Use this structure on every review until you don't need to think about it. Our videos run anywhere from about <strong>a minute to six or seven minutes</strong>, depending on the product. A quick, inexpensive product still gets at least a minute and a half. A piece of tech that needs in-depth focus gets five or six minutes. The timings below are for a short review; on a longer one it's the demo and the questions that expand, never the open.</p>
 <h3>Before you hit record (5 minutes)</h3>
@@ -2242,6 +2278,20 @@ is where Amazon Influencers compare what is working right now, and where we answ
 questions in public so everyone gets the answer.</p>
 <p><small>Built by Seb &amp; Michelle of Gominplanet. We use it every day.</small></p>
 </div></div></section>
+<section class="upd log" id="changelog" aria-labelledby="logh">
+<h2 id="logh">What changed, and when</h2>
+<p>Every update to this guide, newest first, so you can see what's different since your last visit.</p>
+<dl>
+<dt>September 29</dt>
+<dd><a href="#examples">Six of our real reviews</a>, playable in Module 3. <a href="#value">Value over volume</a> and how long videos should be. <a href="#quick-answers">Quick answers</a> for beginners, including LLCs, working from outside the US, reusing videos, faceless accounts and shoppable photos. <a href="#idea-lists">Seasonal idea lists</a>. <a href="#worldwide">OneLink and Passport</a> links. <a href="#account-closed">If your account gets closed</a>, and <a href="#hiring">when to hire help</a>.</dd>
+<dt>September 28</dt>
+<dd><a href="#disclosure">Disclosing the way the FTC asks</a>.</dd>
+<dt>September 25</dt>
+<dd>A new <a href="#live">Amazon Live</a> module. <a href="#troubleshooting">When something looks wrong</a>, with fixes for the problems we see every week. <a href="#deals-hub">The Deals Hub</a>, now that the promo code page is gone. <a href="#tracking-ids">One tracking ID per platform</a>. A search box.</dd>
+<dt>September 24</dt>
+<dd><a href="#confetti">You got the confetti. Now what?</a>, step by step with screenshots. <a href="#creator-rewards">Creator Rewards</a>, the sixth income stream.</dd>
+</dl>
+</section>
 <section class="upd upd-end" id="updates" aria-labelledby="updh">
     <h2 id="updh">This guide keeps changing, because the program does.</h2>
     <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
@@ -2480,6 +2530,20 @@ questions in public so everyone gets the answer.</p>
     r.e.el.classList.remove('gs-hit'); void r.e.el.offsetWidth; r.e.el.classList.add('gs-hit');
     var d=document.getElementById('tocd');
     if(d && window.matchMedia('(max-width:900px)').matches) d.open=false;
+  });
+})();</script>
+<script>(function(){
+  // Click to play. Nothing loads from YouTube until a reader asks for a video,
+  // so six players do not slow the page down or set cookies on arrival.
+  document.addEventListener('click',function(e){
+    var b=e.target.closest && e.target.closest('.yt-f'); if(!b) return;
+    var f=document.createElement('iframe');
+    var st=+b.dataset.start||0;
+    f.src='https://www.youtube-nocookie.com/embed/'+b.dataset.id+'?autoplay=1&rel=0'+(st?'&start='+st:'');
+    f.title=b.getAttribute('aria-label').replace(/^Play: /,'');
+    f.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen=true;
+    b.replaceWith(f);
   });
 })();</script>
 </body></html>
