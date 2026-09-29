@@ -188,12 +188,15 @@ const heal = strip(HEAL)
     /waiting_for_video_since: null, waiting_for_video_until: null/.test(readFileSync('app/api/blog/publish-now/route.ts', 'utf8')))
   check('a waiting post is listed on screen with the day its video is due',
     /Its video is not public on YouTube until \$\{due\}/.test(readFileSync('app/api/blog/held/route.ts', 'utf8')))
-  // Parsed, not matched as text. Vercel's copy of vercel.json is not spaced
-  // like the repo's, so a match on '"path": "..."' passed here and failed
-  // every deploy (test-labs-sales-live.ts hit the same thing).
+  // vercel.json is parsed, not matched as text. Vercel's copy of the file is
+  // not spaced like the repo's, so a match on '"path": "..."' passes here and
+  // fails every deploy. That, not the new cron entry, is what broke the builds
+  // (test-labs-sales-live.ts hit the same thing).
   {
     const crons = (JSON.parse(readFileSync('vercel.json', 'utf8')).crons ?? []) as Array<{ path: string }>
-    check('the job is scheduled', crons.some((c) => c.path === '/api/cron/video-hold'),
+    check('the job runs inside a scheduled cron, not one of its own',
+      /await holdAndRelease\(admin\)/.test(readFileSync('app/api/cron/reconcile-stuck-images/route.ts', 'utf8'))
+      && crons.some((c) => c.path === '/api/cron/reconcile-stuck-images'),
       `cron paths seen: ${crons.map((c) => c.path).slice(-4).join(', ')}`)
   }
 
