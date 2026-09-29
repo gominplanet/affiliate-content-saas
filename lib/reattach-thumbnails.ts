@@ -14,6 +14,7 @@
 
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { uploadVideoThumbnail } from '@/lib/video-thumbnail-upload'
 
 export interface ReattachResult {
   ok: boolean
@@ -55,7 +56,7 @@ export async function reattachThumbnailsForOwner(
     // arrives in migration 336 and PostgREST rejects the WHOLE statement when
     // one named column is missing, so naming it would turn "336 not applied
     // yet" into "the heal stops running for everybody".
-    .select('*, youtube_videos(youtube_video_id, blog_thumbnail_url)')
+    .select('*, youtube_videos(youtube_video_id, blog_thumbnail_url, thumbnail_url)')
     .eq('user_id', ownerId)
     .eq('status', 'published')
     .not('wordpress_post_id', 'is', null)
@@ -114,17 +115,15 @@ export async function reattachThumbnailsForOwner(
       if (existingMedia && existingMedia > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
       if (existingMedia === undefined) { checked--; continue }
       let media
-      if (customThumb) {
-        media = await wpService.uploadImageFromUrl(customThumb, `${ytId || wpId}-blogthumb.jpg`)
+      if (!ytId && customThumb) {
+        media = await wpService.uploadImageFromUrl(customThumb, `${wpId}-blogthumb.jpg`)
       } else if (!ytId && heroSource) {
         // A link-written post. Its product photo is the only image it ever had.
         media = await wpService.uploadImageFromUrl(heroSource, `${wpId}-product.jpg`)
       } else {
-        try {
-          media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`, `${ytId}.jpg`)
-        } catch {
-          media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`, `${ytId}.jpg`)
-        }
+        // Same order as the post writer, including MVP's own copy for a video
+        // YouTube has no public thumbnail for yet.
+        media = await uploadVideoThumbnail(wpService, { youtubeVideoId: ytId, customUrl: customThumb, storedUrl: (p.youtube_videos?.thumbnail_url as string | null) ?? null })
       }
       await wpService.updatePost(wpId, { featured_media: media.id })
       fixed++

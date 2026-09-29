@@ -18,6 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
+import { videoVisibility } from '@/lib/covered-sales'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 
 export const runtime = 'nodejs'
@@ -129,13 +130,34 @@ export async function GET(request: Request) {
       // attempted (so one non-review video can't block auto-pilot forever).
       const recent = new Set(Array.isArray(state.recentVideoIds) ? state.recentVideoIds : [])
       const [{ data: vids }, { data: bloggedRows }] = await Promise.all([
-        admin.from('youtube_videos').select('id, published_at')
+        admin.from('youtube_videos').select('id, published_at, youtube_video_id')
           .eq('user_id', userId).order('published_at', { ascending: false, nullsFirst: false }).limit(200),
         admin.from('blog_posts').select('video_id').eq('user_id', userId).not('video_id', 'is', null).limit(2000),
       ])
       const blogged = new Set((bloggedRows ?? []).map((b: any) => b.video_id as string))
-      const nextVideo = (vids ?? []).find((v: any) => !blogged.has(v.id) && !recent.has(v.id)) as { id: string } | undefined
-      if (!nextVideo) { handledUsers.add(userId); results.push({ user: userId, status: 'no_videos_left' }); continue }
+      // ONLY A VIDEO THE PUBLIC CAN WATCH. Newest first used to include a
+      // video scheduled for tomorrow or still private: the post went live
+      // embedding a video nobody could play, and YouTube serves no thumbnail
+      // for it, so the post had no featured image either (eero Pro 6E, one
+      // day early). A video whose time has not come, or that YouTube says is
+      // not public, is left for a later run, not written off: it is not added
+      // to the recent list, so it is picked the run after it goes live.
+      const nowMs = Date.now()
+      const candidates = ((vids ?? []) as Array<{ id: string; published_at: string | null; youtube_video_id: string | null }>)
+        .filter((v) => !blogged.has(v.id) && !recent.has(v.id))
+        .filter((v) => !v.published_at || new Date(v.published_at).getTime() <= nowMs)
+        .slice(0, 25)
+      const seen = await videoVisibility(process.env.YOUTUBE_API_KEY, candidates.map((v) => v.youtube_video_id || '').filter(Boolean))
+      // Unknown (no key, YouTube did not answer) falls back to the date alone.
+      const nextVideo = candidates.find((v) => {
+        const vis = v.youtube_video_id ? seen.get(v.youtube_video_id) : undefined
+        return vis === undefined || vis === 'public'
+      })
+      if (!nextVideo) {
+        handledUsers.add(userId)
+        results.push({ user: userId, status: candidates.length ? 'waiting_for_public_video' : 'no_videos_left' })
+        continue
+      }
 
       // Enqueue the SAME blog pipeline the app uses (service-auth worker runs it),
       // targeting THIS site.

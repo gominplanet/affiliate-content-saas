@@ -140,6 +140,21 @@ const heal = strip(HEAL)
     /const finalMedia = await wpService\.getFeaturedMedia\(wpPost\.id\)/.test(GEN) && /if \(finalMedia === 0\)/.test(GEN)
     && /await wpService\.updatePost\(wpPost\.id, \{ featured_media: media\.id \}\)/.test(GEN))
 
+  // A VIDEO THAT IS NOT PUBLIC YET has no YouTube thumbnail (404 on both
+  // sizes), which is how autopilot posts went live with no image.
+  const AB = readFileSync('app/api/cron/auto-blog/route.ts', 'utf8')
+  check('autopilot writes only about a video the public can watch',
+    /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(AB) && /videoVisibility\(process\.env\.YOUTUBE_API_KEY/.test(AB)
+    && /return vis === undefined \|\| vis === 'public'/.test(AB))
+  check('and a video not public yet waits, it is not written off',
+    /status: candidates\.length \? 'waiting_for_public_video' : 'no_videos_left'/.test(AB))
+  const VT = readFileSync('lib/video-thumbnail-upload.ts', 'utf8')
+  check('the thumbnail falls back to MVP\'s own copy after both YouTube sizes',
+    VT.indexOf('maxresdefault') < VT.indexOf('hqdefault') && /tries\.push\(stored\)/.test(VT))
+  check('the writer and the heal upload through the same order',
+    /uploadVideoThumbnail\(wpService, \{ youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb \}\)/.test(GEN)
+    && /uploadVideoThumbnail\(wpService, \{ youtubeVideoId: ytId/.test(readFileSync('lib/reattach-thumbnails.ts', 'utf8')))
+
   // THE CLEANUP of what the flood left.
   const DUP = readFileSync('lib/thumbnail-duplicates.ts', 'utf8')
   check('a duplicate is only a file named after one of the creator\'s videos, unattached, and nobody\'s featured image',

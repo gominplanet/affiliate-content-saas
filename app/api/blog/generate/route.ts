@@ -1,4 +1,5 @@
 import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
+import { uploadVideoThumbnail } from '@/lib/video-thumbnail-upload'
 import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
@@ -2073,6 +2074,8 @@ async function handleGenerate(request: Request) {
   // into the article body, because the post already embeds the YouTube video
   // and a duplicate image at the top would be redundant.
   const customBlogThumb = ((v as Record<string, unknown>).blog_thumbnail_url as string | null)?.trim() || null
+  // MVP's own copy, for a video YouTube has no public thumbnail for yet.
+  const storedThumb = ((v as Record<string, unknown>).thumbnail_url as string | null)?.trim() || null
   // Surfaced in the response (below) so a blocked thumbnail is VISIBLE instead
   // of vanishing. If the host rejects the media upload (WAF/security plugin
   // blocking /wp/v2/media, or the connected WP user losing the upload_files
@@ -2104,18 +2107,7 @@ async function handleGenerate(request: Request) {
     // without a date on a future post can drift post_date to "now" on some WP
     // versions).
     const setFeaturedThumb = async (): Promise<void> => {
-      let media
-      if (customBlogThumb) {
-        media = await wpService.uploadImageFromUrl(customBlogThumb, `${youtubeVideoId}-blogthumb.jpg`)
-      } else {
-        const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
-        try {
-          media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
-        } catch {
-          const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
-          media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
-        }
-      }
+      const media = await uploadVideoThumbnail(wpService, { youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb })
       await wpService.updatePost(wpPost.id, {
         title: generated.title, slug, content, excerpt: generated.excerpt,
         status: wpStatus,
@@ -3239,12 +3231,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     if (finalMedia === 0) {
       console.warn('[blog-thumbnail] no featured image at the end of the run; setting it now', { ownerId, wpPostId: wpPost.id, attempted: attemptThumb })
       try {
-        let media
-        if (customBlogThumb) media = await wpService.uploadImageFromUrl(customBlogThumb, `${youtubeVideoId}-blogthumb.jpg`)
-        else {
-          try { media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`, `${youtubeVideoId}.jpg`) }
-          catch { media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`, `${youtubeVideoId}.jpg`) }
-        }
+        const media = await uploadVideoThumbnail(wpService, { youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb })
         await wpService.updatePost(wpPost.id, { featured_media: media.id })
       } catch (err) {
         thumbnailBlocked = true
