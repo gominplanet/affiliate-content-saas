@@ -33,7 +33,8 @@ check('whole mode is Labs, on the server and on the button',
   /canUsePreview\('whole_video', tier\)/.test(PLAN) && /allowWhole=\{canUsePreview\('whole_video', tier\)\}/.test(PAGE) && /whole_video: 'admin'/.test(LABS))
 check('a clip too long for Facebook Reels does not offer Facebook', /!\(clip\?\.durationSec && clip\.durationSec > 90\)/.test(PAGE))
 check('the platform limits are said before posting', /Facebook Reels take up to 90 seconds/.test(PAGE) && /over 3 minutes as a regular video/.test(PAGE))
-check('the whole clip joins the list instead of wiping rendered clips', /prev\.filter\(c => c\.status !== 'suggested'\)/.test(PANEL))
+check('the whole clip joins the list instead of wiping rendered clips', /prev\.filter\(c => c\.status !== 'suggested' && !got\.some/.test(PANEL))
+check('pressing it again reuses the whole-video clip', /eq\('reason', 'The whole video, as you asked\.'\)/.test(PLAN) && PLAN.indexOf("eq('reason', 'The whole video") < PLAN.indexOf("start_sec: 0, end_sec: total"))
 
 // When YouTube refuses the download, the way out is on the page.
 const RENDER = readFileSync('app/api/youtube/shorts/render/route.ts', 'utf8')

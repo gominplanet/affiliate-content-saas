@@ -319,6 +319,15 @@ export async function POST(request: Request) {
       const lastCue = cues.reduce((m, c) => Math.max(m, Number(c.end) || 0), 0)
       const total = Math.round(((Number(video.duration_seconds) || 0) || lastCue) * 10) / 10
       if (!(total >= 3)) return NextResponse.json({ error: 'MVP could not tell how long this video is, so it could not make it one clip. Upload the video file once, then try again.' }, { status: 422 })
+      // Pressed again: the whole-video clip already there is the answer, not a
+      // second copy of it.
+      const { data: had } = await sb.from('youtube_shorts').select('*')
+        .eq('user_id', user.id).eq('video_id', video.id).eq('start_sec', 0).eq('reason', 'The whole video, as you asked.')
+        .order('created_at', { ascending: false }).limit(1)
+      if (had && had.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return NextResponse.json({ ok: true, shorts: (had as any[]).map(rowToShort), whole: true, video: { id: video.id as string, youtubeVideoId, title: videoTitle } })
+      }
       const { data: one, error: oneErr } = await sb.from('youtube_shorts').insert({
         user_id: user.id, video_id: video.id, youtube_video_id: youtubeVideoId,
         start_sec: 0, end_sec: total,

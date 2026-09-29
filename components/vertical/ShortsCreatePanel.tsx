@@ -119,7 +119,8 @@ export function ShortsCreatePanel({
       }
       if (data.whole) {
         // Added beside any clips already there, not in place of them.
-        setClips(prev => [...(data.shorts || []), ...prev.filter(c => c.status !== 'suggested')])
+        const got: ShortRow[] = data.shorts || []
+        setClips(prev => [...got, ...prev.filter(c => c.status !== 'suggested' && !got.some(g => g.id === c.id))])
         toast.success('The whole video is ready as one clip. Render it below.')
       } else {
         setClips(data.shorts || [])
