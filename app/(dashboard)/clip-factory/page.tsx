@@ -83,7 +83,7 @@ const DURATIONS = [
 ] as const
 
 type Stage = 'create' | 'enhance' | 'publish'
-interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string }
+interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number }
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
@@ -761,9 +761,10 @@ export default function ClipFactoryPage() {
                 videoId={selectedVideo.id}
                 youtubeVideoId={selectedVideo.youtubeVideoId}
                 videoTitle={selectedVideo.title}
+                allowWhole={canUsePreview('whole_video', tier)}
                 onUseClip={(c) => {
                   setClipSource('created')
-                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption })
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec })
                   // Seed the caption from the plan (retained on the clip too, so
                   // it survives an empty burn / Skip Enhance via fallbackCaption).
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
@@ -1145,7 +1146,7 @@ export default function ClipFactoryPage() {
               {youtubeUploadEnabled({ tier }) && (
                 <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
               )}
-              {canUsePreview('facebook_reels', tier) && (
+              {canUsePreview('facebook_reels', tier) && !(clip?.durationSec && clip.durationSec > 90) && (
                 <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb} onClick={postFacebookReel} />
               )}
               {fbReelUrl && (
@@ -1153,6 +1154,16 @@ export default function ClipFactoryPage() {
               )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
+            {/* WHAT EACH PLATFORM TAKES, said before the button rather than
+                after a refusal. Only shown for a clip long enough to meet one. */}
+            {clip?.durationSec && clip.durationSec > 90 && (
+              <p className="text-[12px] text-[#86868b] leading-snug">
+                This clip is {Math.floor(clip.durationSec / 60)}:{String(Math.round(clip.durationSec % 60)).padStart(2, '0')} long.
+                {canUsePreview('facebook_reels', tier) ? ' Facebook Reels take up to 90 seconds, so Facebook is not offered.' : ''}
+                {clip.durationSec > 180 ? ' YouTube counts anything over 3 minutes as a regular video, not a Short.' : ''}
+                {' '}TikTok takes up to 10 minutes on most accounts, and Instagram Reels up to 15.
+              </p>
+            )}
             {/* Reel COVER frame for the Instagram Reel — pick the still IG shows as
                 the cover so you never scrub for it in the IG app after posting. */}
             <button

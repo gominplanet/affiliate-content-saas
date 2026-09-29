@@ -19,13 +19,25 @@ check('the status is read back, and "still processing" is never called live',
   /fields=status/.test(LIB) && /state: 'processing'/.test(LIB) && /step: 'processing'/.test(LIB))
 check('the route is Labs and Meta-gated', /canUsePreview\('facebook_reels', tier\)/.test(ROUTE) && /metaEnabledForUser/.test(ROUTE))
 check('a refused permission tells the creator to reconnect', /Reconnect Facebook under Social Accounts/.test(ROUTE))
-check('the button shows only to who may use it', /canUsePreview\('facebook_reels', tier\) && \(/.test(PAGE))
+check('the button shows only to who may use it', /\{canUsePreview\('facebook_reels', tier\) && [^\n]*<PostPill label="Facebook Reel"/.test(PAGE) || /canUsePreview\('facebook_reels', tier\) && !\(clip\?\.durationSec/.test(PAGE))
 check('the toast says live or processing from what Facebook reported', /data\.state === 'published'/.test(PAGE))
 check('it starts admin-only', /facebook_reels: 'admin'/.test(LABS))
+
+// THE WHOLE VIDEO as one clip (Labs whole_video).
+const PLAN = readFileSync('app/api/youtube/shorts/plan/route.ts', 'utf8')
+const PANEL = readFileSync('components/vertical/ShortsCreatePanel.tsx', 'utf8')
+check('whole mode makes one clip from the first second to the last, with no AI picking',
+  /if \(body\.whole === true\)/.test(PLAN) && /start_sec: 0, end_sec: total/.test(PLAN)
+  && PLAN.indexOf('if (body.whole === true)') < PLAN.indexOf('await planShorts('))
+check('whole mode is Labs, on the server and on the button',
+  /canUsePreview\('whole_video', tier\)/.test(PLAN) && /allowWhole=\{canUsePreview\('whole_video', tier\)\}/.test(PAGE) && /whole_video: 'admin'/.test(LABS))
+check('a clip too long for Facebook Reels does not offer Facebook', /!\(clip\?\.durationSec && clip\.durationSec > 90\)/.test(PAGE))
+check('the platform limits are said before posting', /Facebook Reels take up to 90 seconds/.test(PAGE) && /over 3 minutes as a regular video/.test(PAGE))
+check('the whole clip joins the list instead of wiping rendered clips', /prev\.filter\(c => c\.status !== 'suggested'\)/.test(PANEL))
 
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ facebook-reels: a clip goes to the Page in Meta\'s three steps, and the screen says whether it is live')
+console.log('✅ facebook-reels: a clip goes to the Page in Meta\'s three steps, the screen says whether it is live, and a whole video posts as one clip')

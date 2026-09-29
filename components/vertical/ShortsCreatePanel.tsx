@@ -50,13 +50,15 @@ async function safeJson(res: Response): Promise<any> {
 }
 
 export function ShortsCreatePanel({
-  videoId, youtubeVideoId, videoTitle, onUseClip,
+  videoId, youtubeVideoId, videoTitle, onUseClip, allowWhole = false,
 }: {
+  /** Offer "Post the whole video" (Labs whole_video). */
+  allowWhole?: boolean
   videoId: string
   youtubeVideoId: string | null
   videoTitle: string
   /** Called when a clip is rendered and the creator picks it to carry forward. */
-  onUseClip: (clip: { url: string; title: string; caption: string; hashtags: string[] }) => void
+  onUseClip: (clip: { url: string; title: string; caption: string; hashtags: string[]; durationSec?: number }) => void
 }) {
   const [loading, setLoading] = useState(true)
   const [planning, setPlanning] = useState(false)
@@ -89,7 +91,7 @@ export function ShortsCreatePanel({
 
   useEffect(() => { void load() }, [load])
 
-  const findShorts = useCallback(async () => {
+  const findShorts = useCallback(async (whole = false) => {
     setPlanning(true); setError(null)
     try {
       // Pull the timestamped transcript from the creator's OWN browser via SCOUT
@@ -105,15 +107,21 @@ export function ShortsCreatePanel({
       }
       const res = await fetch('/api/youtube/shorts/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}) }),
+        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}), ...(whole ? { whole: true } : {}) }),
       })
       const data = await safeJson(res)
       if (!res.ok) {
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Could not find Shorts')
       }
-      setClips(data.shorts || [])
-      toast.success(`Found ${data.shorts?.length ?? 0} Short${data.shorts?.length === 1 ? '' : 's'}`)
+      if (data.whole) {
+        // Added beside any clips already there, not in place of them.
+        setClips(prev => [...(data.shorts || []), ...prev.filter(c => c.status !== 'suggested')])
+        toast.success('The whole video is ready as one clip. Render it below.')
+      } else {
+        setClips(data.shorts || [])
+        toast.success(`Found ${data.shorts?.length ?? 0} Short${data.shorts?.length === 1 ? '' : 's'}`)
+      }
     } catch (e) {
       setError(errText(e)); toast.error(errText(e))
     } finally {
@@ -197,15 +205,28 @@ export function ShortsCreatePanel({
           <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{videoTitle}</span> — we find the strongest
           15–30s moments and cut them for you. Subtitles are word-for-word from what you actually said.
         </p>
+        <div className="shrink-0 flex flex-wrap items-center gap-2">
+        {allowWhole && (
+          <button
+            onClick={() => findShorts(true)}
+            disabled={planning}
+            title="No cutting: the full video as one vertical clip, captioned, ready to post"
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold border disabled:opacity-60"
+            style={{ borderColor: PURPLE, color: PURPLE }}
+          >
+            <Film size={15} /> Post the whole video
+          </button>
+        )}
         <button
-          onClick={findShorts}
+          onClick={() => findShorts(false)}
           disabled={planning}
           className="shrink-0 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           style={{ backgroundColor: PURPLE }}
         >
           {planning ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-          {planning ? 'Finding moments…' : clips.length ? 'Find more Shorts' : 'Find Shorts'}
+          {planning ? 'Working…' : clips.length ? 'Find more Shorts' : 'Find Shorts'}
         </button>
+        </div>
       </div>
 
       {/* Source-video prompt — only when we can't fetch from YouTube (no id) and
@@ -339,7 +360,7 @@ export function ShortsCreatePanel({
                   </button>
                   {clip.status === 'rendered' && clip.renderedUrl && (
                     <button
-                      onClick={() => onUseClip({ url: clip.renderedUrl!, title: clip.hook || videoTitle, caption: clip.caption || '', hashtags: clip.hashtags || [] })}
+                      onClick={() => onUseClip({ url: clip.renderedUrl!, title: clip.hook || videoTitle, caption: clip.caption || '', hashtags: clip.hashtags || [], durationSec: clip.endSec - clip.startSec })}
                       className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
                       style={{ backgroundColor: '#34c759' }}
                     >

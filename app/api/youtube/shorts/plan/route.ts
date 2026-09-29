@@ -14,6 +14,7 @@
  * bounded by the per-account monthly spend ceiling (spendGate), same model the
  * YouTube metadata generator uses for "free enrichment" work.
  */
+import { canUsePreview } from '@/lib/labs-preview'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -90,6 +91,8 @@ export async function POST(request: Request) {
       /** Optional client-supplied timestamped cues (e.g. SCOUT fetched them from
        *  the browser IP when the server scraper is blocked). Trusted as-is. */
       cues?: Array<{ text?: string; offset?: number; duration?: number }>
+      /** The whole video as one clip, no moments picked (Labs whole_video). */
+      whole?: boolean
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -306,6 +309,26 @@ export async function POST(request: Request) {
         .map(r => ({ startSec: Number(r.start_sec), endSec: Number(r.end_sec) }))
         .filter(r => Number.isFinite(r.startSec) && Number.isFinite(r.endSec) && r.endSec > r.startSec)
     } catch { /* best-effort — no exclusions on read error */ }
+
+    // ── THE WHOLE VIDEO, AS ONE CLIP (Labs) ─────────────────────────────────
+    // For a creator who wants to post the full video rather than moments from
+    // it. No AI picks anything: one clip from the first second to the last,
+    // captioned from the same transcript, rendered and published like any other.
+    if (body.whole === true) {
+      if (!canUsePreview('whole_video', tier)) return NextResponse.json({ error: 'Posting the whole video is in Labs.' }, { status: 403 })
+      const lastCue = cues.reduce((m, c) => Math.max(m, Number(c.end) || 0), 0)
+      const total = Math.round(((Number(video.duration_seconds) || 0) || lastCue) * 10) / 10
+      if (!(total >= 3)) return NextResponse.json({ error: 'MVP could not tell how long this video is, so it could not make it one clip. Upload the video file once, then try again.' }, { status: 422 })
+      const { data: one, error: oneErr } = await sb.from('youtube_shorts').insert({
+        user_id: user.id, video_id: video.id, youtube_video_id: youtubeVideoId,
+        start_sec: 0, end_sec: total,
+        hook: '', caption: videoTitle, reason: 'The whole video, as you asked.', score: 0,
+        hashtags: [], subtitles: [], status: 'suggested',
+      }).select('*')
+      if (oneErr) return NextResponse.json({ error: oneErr.message }, { status: 500 })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return NextResponse.json({ ok: true, shorts: (one as any[]).map(rowToShort), whole: true, video: { id: video.id as string, youtubeVideoId, title: videoTitle } })
+    }
 
     const anthropic = createAnthropicClient()
     const clips = await planShorts(anthropic, {
