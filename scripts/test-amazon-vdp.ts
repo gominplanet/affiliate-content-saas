@@ -86,6 +86,22 @@ ${'x'.repeat(9000)}
   check('a list check that could not start says so', /Could not check your Amazon video list for new videos/.test(B))
 }
 
+// ── Share with brand finds the video in MVP's own library, not via OINK ──
+{
+  const M = read('components/content/ShareWithBrandModal.tsx')
+  check('Share with brand never tells the creator to install another extension to find a video',
+    !/OINK|Oink/.test(M))
+  check('its Find button asks the library first, and the product page only after',
+    /library-status\?asin=/.test(M) && M.indexOf('library-status?asin=') < M.indexOf('requestAmazonVideoForAsin(asin)'))
+  check('a miss says which it was: no video, or videos not read yet',
+    /are still being read/.test(M) && /has not read your Amazon video list yet/.test(M))
+  const G = read('app/api/blog/brand-recap/[postId]/route.ts')
+  check('the recap fills the Amazon video from the library when the post has none saved',
+    /libraryVideoFor\(supabase, ownerId, asinForVideo\)/.test(G) && /amazonVideoSource/.test(G))
+  const L = read('lib/amazon-video-library.ts')
+  check('the library lookup uses the same live-video rule as Brand Recap', /amazonVideoPage\(/.test(L))
+}
+
 if (failures.length) {
   console.error(`\n❌ amazon-vdp: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

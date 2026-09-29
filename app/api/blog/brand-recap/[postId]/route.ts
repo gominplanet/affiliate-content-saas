@@ -25,6 +25,7 @@ import { decodeHtmlEntities } from '@/lib/decode-entities'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { amazonProductUrlRegex } from '@/lib/asin'
+import { libraryVideoFor } from '@/lib/amazon-video-library'
 
 export const dynamic = 'force-dynamic'
 
@@ -218,11 +219,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // The creator's Amazon Influencer video (found via the extension scan,
     // matched by ASIN, stored on the post) — a REAL "live on Amazon" content
     // link. Slot it right after the product so it leads the content list.
-    const amazonVideoUrl = (post.amazon_video_url as string | null) || null
-    if (amazonVideoUrl) {
-      const at = links.findIndex(l => l.platform === 'product')
-      links.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url: amazonVideoUrl })
-    }
 
     // Brand + product NAME come from the real listing at the source link when
     // we can resolve it; the clickbait video title is only a last-resort
@@ -238,6 +234,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // the field blank — the field stays editable either way.
     const brandGuess = real?.brand || guessBrandName(titleFallback)
 
+    // THE AMAZON VIDEO COMES FROM MVP'S OWN LIBRARY FIRST. MVP already reads
+    // every Amazon video the creator has and which products each one shows
+    // (amazon_video_products, filled by the Brand Recap library read), so the
+    // video for this product is a lookup, not a trip through somebody else's
+    // extension. A link the creator saved on the post still wins; the library
+    // answer is only used when there is none, and the response says which.
+    let amazonVideoUrl = (post.amazon_video_url as string | null) || null
+    let amazonVideoSource: 'saved' | 'library' | null = amazonVideoUrl ? 'saved' : null
+    const asinForVideo = reliableAsin || real?.asin || null
+    if (!amazonVideoUrl && asinForVideo) {
+      amazonVideoUrl = await libraryVideoFor(supabase, ownerId, asinForVideo)
+      if (amazonVideoUrl) amazonVideoSource = 'library'
+    }
+    if (amazonVideoUrl) {
+      const at = links.findIndex(l => l.platform === 'product')
+      links.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url: amazonVideoUrl })
+    }
+
     const message = fillRecapMessage(settings.template, {
       brand: brandGuess,
       product: productName,
@@ -252,6 +266,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
       brandGuess,
       product: { name: productName, url: productUrl, isAmazon: isAmazonUrl(productUrl), asin: reliableAsin || real?.asin || null },
       amazonVideoUrl,
+      amazonVideoSource,
       links,
       settings,
       message,

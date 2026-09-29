@@ -6,8 +6,9 @@
  * ready-to-send recap message from the creator's template, and lets them:
  *   - Copy the message (paste into Creator Connections, an email, a DM)
  *   - Email it (opens a pre-filled draft)
- *   - Open the product page (so OINK users can message the brand on Creator
- *     Connections right from the Amazon listing)
+ *   - Add the creator's Amazon video, found in the library MVP keeps of
+ *     their Amazon videos (no other extension needed)
+ *   - Open the product page on Amazon
  *   - Polish it with AI (optional, keeps every link intact)
  *
  * Brand name is an EDITABLE, pre-filled field — never sent blind. The message
@@ -21,8 +22,6 @@ import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
 import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign, requestSendByAsin, requestCcSendDebug } from '@/lib/extension-frame'
 
-/** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
-const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
 
 interface RecapData {
   brandGuess: string
@@ -64,7 +63,6 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
   const [scanDiag, setScanDiag] = useState<string | null>(null)
-  const [oinkMissing, setOinkMissing] = useState(false)
 
   // While this modal is open, tell the content page NOT to auto-refresh on
   // visibilitychange — the auto-find opens an Amazon tab (focus leaves +
@@ -442,45 +440,35 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     return true
   }
 
-  // Find the creator's Amazon video by piggybacking on OINK: the extension
-  // opens the product page for this ASIN and reads the "Content Made" /vdp/
-  // link OINK injects there. If OINK isn't detected, recommend it.
+  // Find the creator's Amazon video. MVP's own library first: it already
+  // knows which products each of the creator's Amazon videos shows (the
+  // Brand Recap read), so this is a lookup with no tab and no other tool.
+  // Only when the library has no answer does SCOUT look at the product page,
+  // for a video uploaded since the last read. When both miss, the note says
+  // which it was (no video, or videos MVP has not read yet), not "install X".
   async function findAmazonVideo() {
     if (!data?.product.asin) return
     const asin = data.product.asin.toUpperCase()
-    setFindingVideo(true); setScanDiag(null); setOinkMissing(false)
+    setFindingVideo(true); setScanDiag(null)
     try {
-      const res = await requestAmazonVideoForAsin(asin)
-      if (!res.ok) {
-        toast.error(res.error === 'not-installed'
-          ? 'Open MVP with the SCOUT extension installed, then try again.'
-          : 'Couldn’t open Amazon — make sure you’re signed in, then try again.')
-        setShowPaste(true)
+      const lib = await fetch(`/api/amazon-videos/library-status?asin=${asin}`, { cache: 'no-store' })
+        .then(r => r.json()).catch(() => null) as { total?: number; unread?: number; video?: string | null } | null
+      if (lib?.video) {
+        if (await saveAmazonVideo(lib.video)) toast.success('Found your Amazon video in your library. Added to the recap.')
         return
       }
-      if (res.video?.vdpUrl) {
-        if (await saveAmazonVideo(res.video.vdpUrl)) toast.success('Found your Amazon video — added to the recap.')
+      const res = await requestAmazonVideoForAsin(asin).catch(() => null)
+      if (res?.ok && res.video?.vdpUrl) {
+        if (await saveAmazonVideo(res.video.vdpUrl)) toast.success('Found your Amazon video on the product page. Added to the recap.')
         return
       }
-      // No video matched on the product page — explain the most likely reason.
-      if (res.signedOut) {
-        // The background tab landed on Amazon's sign-in page, so the creator's
-        // own "Content Made" link is never shown.
-        setScanDiag('The Amazon tab opened on a sign-in screen. Sign in to Amazon in your browser, then try again — or paste the link below.')
-        setShowPaste(true)
-      } else if (res.contentMadeSeen) {
-        // Amazon's "Content Made" section was on the page but we couldn't read a
-        // usable video link — surface the manual copy path.
-        setScanDiag('Couldn’t read a video link for this product. If you’ve uploaded your Amazon video, right-click its “Content Made” link → Copy link and paste it below.')
-        setShowPaste(true)
-      } else {
-        // No creator-video signal at all → likely no video published yet for
-        // this product (OINK can also help surface the link automatically).
-        setOinkMissing(true)
-        setShowPaste(true)
-      }
-    } catch {
-      toast.error('Couldn’t scan Amazon. Paste the link below instead.')
+      const total = lib?.total ?? 0, unread = lib?.unread ?? 0
+      setScanDiag(
+        res?.signedOut ? 'Amazon showed a sign-in screen, so the product page could not be checked. Sign in to Amazon in this browser and try again, or paste the link below.'
+        : !lib ? 'MVP could not read your video library just now. Try again, or paste the link below.'
+        : total === 0 ? 'MVP has not read your Amazon video list yet. Open Brand Recap once and MVP reads it, then every product finds its video here.'
+        : unread > 0 ? `None of your Amazon videos MVP has read so far shows this product. ${unread.toLocaleString()} of ${total.toLocaleString()} are still being read, so try again later or paste the link below.`
+        : `None of your ${total.toLocaleString()} Amazon videos shows this product. If you uploaded one today, it appears after the next read, or paste the link below.`)
       setShowPaste(true)
     } finally {
       setFindingVideo(false)
@@ -560,25 +548,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                   <button
                     onClick={findAmazonVideo}
                     disabled={findingVideo}
-                    title="Open the product page and grab your Amazon video link (works with the OINK extension installed)"
+                    title="Looks up your Amazon video for this product in the library MVP keeps of your videos"
                     className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50"
                   >
                     {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
-                    {findingVideo ? 'Looking on Amazon…' : 'Find it automatically'}
+                    {findingVideo ? 'Looking…' : 'Find it automatically'}
                   </button>
 
-                  {oinkMissing && (
-                    <div className="rounded-md p-2 text-[10px] leading-snug" style={{ background: 'rgba(224,33,138,0.08)', border: '1px solid rgba(224,33,138,0.30)' }}>
-                      <p className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-detect needs the free <strong>OINK</strong> extension — it surfaces your Amazon video link right on the product page.</p>
-                      <a href={OINK_AFFILIATE_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1 font-semibold" style={{ color: '#E0218A' }}>
-                        Get OINK (free) <ExternalLink size={10} />
-                      </a>
-                    </div>
-                  )}
                   {scanDiag && <p className="text-[10px] text-[#86868b] leading-snug">{scanDiag}</p>}
 
                   <div className="border-t border-[var(--border-2,#e5e5e7)] pt-2">
-                    <p className="text-[10px] text-[#86868b] leading-snug mb-1">…or paste it: on the product page, right-click Amazon&rsquo;s <strong>&ldquo;Content Made&rdquo;</strong> link → <strong>Copy link</strong>.</p>
+                    <p className="text-[10px] text-[#86868b] leading-snug mb-1">…or paste your video&rsquo;s Amazon link. It starts with <strong>amazon.com/vdp/</strong>.</p>
                     <div className="flex items-center gap-1.5">
                       <input
                         value={pasteUrl}
@@ -651,7 +631,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
               {productUrl && (
                 <a
                   href={productUrl} target="_blank" rel="noopener noreferrer"
-                  title="Open the product page — message the brand on Creator Connections from here (e.g. with the Oink extension)"
+                  title="Open the product page on Amazon"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFC200] text-[#1d1d1f] hover:bg-[#FFD000]"
                 >
                   <ExternalLink size={13} /> {productBtnLabel}
