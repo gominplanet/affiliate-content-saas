@@ -593,8 +593,8 @@ export function minutesLeft(items: ItemRow[]): number {
   for (const i of items) {
     if (i.state === 'draft' || i.state === 'rendering') firings += 1  // the CTA burn
     if (i.state === 'draft' || i.state === 'rendering' || i.state === 'preparing') {
-      // Two images each, minus whichever is already built.
-      firings += (i.thumbnail_url ? 0 : 1) + (i.thumbnail_clean_url ? 0 : 1)
+      // One image each (the same thumbnail goes to every country).
+      firings += i.thumbnail_url ? 0 : 1
     }
   }
   return firings

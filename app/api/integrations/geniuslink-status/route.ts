@@ -1,22 +1,26 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET /api/integrations/geniuslink-status — cheap "is Geniuslink connected?"
-// check for client-side upsell nudges. No external calls, just a column read.
+// GET /api/integrations/geniuslink-status — cheap "does this creator already
+// track clicks per channel?" check for the one-time nudge in
+// lib/geniuslink-nudge. No external calls, just the integrations row.
+//
+// Returns the link style as well as the Geniuslink connection, because
+// Geniuslink is not the only way to get per-channel clicks: Passport Links
+// file every click under its channel too. Only a creator on plain tagged
+// Amazon links has nothing tracking them, and only they should be told.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { getLinkStyle } from '@/lib/link-cloak'
 
 export async function GET() {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
-  if (auth.error) return NextResponse.json({ connected: false })
+  // Unknown is not "untracked": an unreadable answer never earns a nudge.
+  if (auth.error) return NextResponse.json({ connected: false, linkStyle: null })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
-    .from('integrations')
-    .select('geniuslink_api_key,geniuslink_api_secret')
-    .eq('user_id', auth.ownerId)
-    .maybeSingle()
-  const connected = !!(data?.geniuslink_api_key && data?.geniuslink_api_secret)
-  return NextResponse.json({ connected })
+  const cfg = await getLinkStyle(supabase as any, auth.ownerId)
+  const connected = !!(cfg.geniuslinkKey && cfg.geniuslinkSecret)
+  return NextResponse.json({ connected, linkStyle: cfg.style })
 }

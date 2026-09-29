@@ -1452,8 +1452,8 @@ export default function LaunchBoard() {
       >
         <div className="flex flex-col gap-3">
           <p className="text-[12.5px]" style={muted}>
-            Chosen once for the whole batch. A country that does not speak English gets its own title,
-            its own dubbed audio and the thumbnail with no words on it, all made by MVP.
+            Chosen once for the whole batch. A country that does not speak English gets its own title
+            and its own dubbed audio, made by MVP, and the same thumbnail as everywhere else.
           </p>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
             {MARKETS.map((m) => {
@@ -1481,13 +1481,9 @@ export default function LaunchBoard() {
                   <span className="min-w-0">
                     <span className="block text-[12.5px] font-medium truncate" style={text}>{m.country}</span>
                     <span className="block text-[11px]" style={muted}>
-                      {/* WHAT THIS COUNTRY ACTUALLY RECEIVES, including which
-                          of the two thumbnails. The text-free copy is a
-                          deliberate choice, not a thumbnail that failed, and
-                          the only place it was ever said was the step above. */}
-                      {m.needsTranslation
-                        ? `${m.langName}, dubbed \u00b7 thumbnail with no words`
-                        : 'English \u00b7 thumbnail with the hook'}
+                      {/* WHAT THIS COUNTRY ACTUALLY RECEIVES. The thumbnail is
+                          the same everywhere, so only the language is said. */}
+                      {m.needsTranslation ? `${m.langName}, dubbed` : 'English'}
                     </span>
                     {/* DOES AMAZON SELL THE PRODUCT HERE, per video, from the
                         same check the storefront grid makes. Said before the

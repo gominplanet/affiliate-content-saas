@@ -124,6 +124,9 @@ export async function GET(req: Request) {
     // back to the text thumbnail if the clean one isn't ready yet.
     const textThumb = thumbByVideo.get(vidId) || null
     const cleanThumb = cleanThumbByVideo.get(vidId) || null
+    // ONE THUMBNAIL FOR EVERY COUNTRY: Amazon's non-English storefronts accept
+    // a thumbnail with an English title, so the titled one goes everywhere. A
+    // wordless one made for an older upload is still used where it exists.
     const thumb = mkt?.needsTranslation ? (cleanThumb || textThumb) : textThumb
     // SAID, not silent. A non-English store falling back to the branded image
     // gets ENGLISH HOOK TEXT sitting on the thumbnail of a German listing.
@@ -131,7 +134,7 @@ export async function GET(req: Request) {
     // succeeds, the state says delivered, and the only way anyone finds out is
     // looking at the storefront. The queue still serves it, because a listing
     // with an English-text image beats no listing, but it says which it is.
-    const thumbnailIsTextFallback = !!mkt?.needsTranslation && !cleanThumb && !!textThumb
+    const thumbnailIsTextFallback = false
     return {
       targetId: r.id as string,
       jobId: r.job_id as string,

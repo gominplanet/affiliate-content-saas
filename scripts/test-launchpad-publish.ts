@@ -170,9 +170,9 @@ const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith(
   check('the master still renders the ONE thumbnail when YouTube was skipped',
     /seedThumb \? Promise\.resolve\(null\) : buildProductThumbnail/.test(MASTER),
     'skipping YouTube must not mean skipping the storefront image')
-  check('Storefront Sync still builds the wordless one on demand',
-    /withText: false/.test(readFileSync('app/api/global-sync/start/route.ts', 'utf8')),
-    'the non-English markets are that page\'s job and still need it')
+  check('Storefront Sync no longer builds a wordless one either',
+    !/withText: false/.test(readFileSync('app/api/global-sync/start/route.ts', 'utf8')),
+    'Amazon takes an English hook in its non-English stores, so one thumbnail goes everywhere')
 }
 
 // ── it has to be possible to tell what is actually live ────────────────────

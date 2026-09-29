@@ -1165,8 +1165,9 @@ const VideoCard = memo(function VideoCardImpl({
     // hydrate from the DB on the next full load; this is the instant UI sync.
     if (postedKeys.length && currentPostId) {
       window.dispatchEvent(new CustomEvent('mvp-social-posted', { detail: { videoId: id, keys: postedKeys } }))
-      // Posted to social — if they're not on Geniuslink, nudge them once about
-      // per-channel click attribution (best-effort, never blocks).
+      // Posted to social. Only a creator on plain Amazon links (no Passport,
+      // Geniuslink or Bitly) is told once that nothing tracks clicks per
+      // channel (best-effort, never blocks).
       void nudgeGeniuslinkAfterPublish()
     }
     setPublishingAll(false)

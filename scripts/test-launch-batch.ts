@@ -645,19 +645,19 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // behaviour already; what was missing was any screen saying so, which made
   // the text-free copy look like a thumbnail that had failed.
   {
-    check('the picker says both images get made',
-      /no words/i.test(PICKER) && /hook/i.test(PICKER),
-      'the wordless copy is a deliberate choice and looked like a failure')
+    // ONE THUMBNAIL FOR EVERY COUNTRY (29 Sep): Amazon's non-English stores
+    // take a thumbnail with an English title, so the wordless copy was dropped.
+    check('the picker says one thumbnail goes everywhere',
+      /goes everywhere/.test(PICKER) && !/no words at all/.test(PICKER),
+      'a promise of a second image nobody makes any more')
     // ON THE COUNTRY ROW, next to the language. The first version grepped the
     // whole file and was satisfied by the intro paragraph above the grid, so
     // deleting the per-country label left it green.
-    check('and each country says which one it gets',
-      /m\.langName\}, dubbed[\s\S]{0,40}?thumbnail with no words/.test(BOARD)
-      && /English[\s\S]{0,20}?thumbnail with the hook/.test(BOARD),
-      'said once in an intro paragraph is said nowhere, for somebody scanning the grid')
-    check('the worker still builds the text-free copy',
-      /withText: false/.test(DRAIN),
-      'one image for every country is the failure this split exists to prevent')
+    check('and no country row promises a different thumbnail',
+      !/thumbnail with no words/.test(BOARD) && !/thumbnail with the hook/.test(BOARD))
+    check('the worker builds one thumbnail, and a video is ready with it',
+      !/withText: false/.test(DRAIN) && /if \(it\.thumbnail_url\) \{/.test(DRAIN) && /if \(haveBranded && haveDescription\) \{/.test(DRAIN),
+      'a second image per video cost a firing each for nothing')
   }
 
   // ── the room left, before the wall ───────────────────────────────────────
@@ -726,7 +726,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('and a firing cannot outlive the function',
       callMs <= capMs - 30_000 && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) return 'stop'/.test(DRAIN)
       && Number.isFinite(pool) && pool >= 1 && images <= pool * 2
-      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[\s*styledJob\(\), cleanJob\(\),\s*Promise\.race\(\[ensureAmazonTitle\(/.test(DRAIN),
+      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[\s*styledJob\(\),\s*Promise\.race\(\[ensureAmazonTitle\(/.test(DRAIN),
       `IMAGES=${images} THUMB_POOL=${pool} THUMB_CALL_MS=${callMs / 1000}s cap=${capMs / 1000}s`)
     check('the ASIN is read out of a file name, and only when there is exactly one',
       asinInFileName('Ninja Crispi - B0DDDD8WD6') === 'B0DDDD8WD6'
@@ -747,7 +747,6 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     // batch fell back to the plain builder with the look never applied.
     check('the budget is spent per image, not per video',
       /if \(!it\.thumbnail_url && mine > 0\)/.test(DRAIN)
-      && /if \(!it\.thumbnail_clean_url && mine > 0\)/.test(DRAIN)
       // RESERVED BEFORE THE CLAIM, handed back if the claim is lost.
       && /const reserved = Math\.min\(need, budget\)/.test(DRAIN)
       && inOrder(DRAIN, 'budget -= reserved', "const claim = sb.from('launch_items').update({ thumb_tries: tries + 1")
@@ -1342,11 +1341,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('nothing left to prepare says nothing',
       prepEta([it({ state: 'prepared' })]) === null,
       'a permanent "preparing" line is one nobody reads')
-    check('a draft video counts its render and both images',
-      minutesLeft([it({ state: 'draft', thumbnail_url: null, thumbnail_clean_url: null })]) === 3,
+    check('a draft video counts its render and its one image',
+      minutesLeft([it({ state: 'draft', thumbnail_url: null, thumbnail_clean_url: null })]) === 2,
       'the drain does one image a firing and fires once a minute, so this is arithmetic')
     check('an image already built is not counted again',
-      minutesLeft([it({ state: 'preparing', thumbnail_url: 'https://x/t.png', thumbnail_clean_url: null })]) === 1)
+      minutesLeft([it({ state: 'preparing', thumbnail_url: 'https://x/t.png', thumbnail_clean_url: null })]) === 0)
     check('and the words hedge, because a firing can go on a retry',
       /About/.test(prepEta([it({ state: 'draft', thumbnail_url: null })]) ?? ''),
       'a number stated as a promise is one that gets held against you')
@@ -1741,7 +1740,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     {
       const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
       check('Try again never sends a video already on YouTube back to its thumbnail',
-        inOrder(RETRY, "if (String(item.youtube_video_id || '').trim()) {", "} else if (!item.thumbnail_url || !item.thumbnail_clean_url) {")
+        inOrder(RETRY, "if (String(item.youtube_video_id || '').trim()) {", "} else if (!item.thumbnail_url) {")
         && /patch\.publish_tries = 0\n\s*if \(String\(item\.youtube_video_id/.test(RETRY)
         && /\.eq\('state', 'blocked'\)\.select\('id'\)/.test(RETRY))
     }

@@ -455,13 +455,12 @@ const START = live(read('app/api/global-sync/start/route.ts'))
     && /\{outcome\[t\.domain\]\}/.test(read('components/launchpad/StorefrontStage.tsx')),
     'held in state and never rendered is the same as not held at all')
 
-  // THE THUMBNAIL HAS THE SAME FAILURE SHAPE AS THE AUDIO. A non-English store
-  // falling back to the branded image ships English hook text on a German
-  // listing, the upload succeeds, and nothing disagrees.
-  check('the queue says when a store is getting the English-text image',
-    /thumbnailIsTextFallback/.test(QUEUE)
-    && /!!mkt\?\.needsTranslation && !cleanThumb && !!textThumb/.test(QUEUE),
-    'the silent fallback is the same class of bug as the English audio under a translated title')
+  // ONE THUMBNAIL FOR EVERY STORE. Amazon takes an English hook on the image
+  // in its non-English stores, so the branded thumbnail on a German listing is
+  // the plan, not a fallback, and the queue must not warn about it as one.
+  check('the queue no longer flags the English-text image as a fallback',
+    /const thumbnailIsTextFallback = false/.test(QUEUE),
+    'a warning on the intended result teaches the creator to ignore warnings')
   check('and the creator is told before it goes up',
     /const textFallbacks = items\.filter/.test(STAGE)
     && /ENGLISH text on it/.test(read('components/launchpad/StorefrontStage.tsx')),

@@ -10,7 +10,6 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { MARKETS, marketByDomain, localizeMetadata } from '@/lib/global-sync'
-import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { asinFromAmazonUrl } from '@/lib/asin'
 
 export const runtime = 'nodejs'
@@ -120,7 +119,6 @@ export async function POST(req: Request) {
   // Generate that clean variant once per video, only when this sync actually
   // includes a non-English market and we haven't already cached one. Cheap: it's
   // one extra image, cached on the video for every future sync.
-  const needsClean = domains.some(d => marketByDomain(d)?.needsTranslation)
 
   void (async () => {
     try {
@@ -135,23 +133,8 @@ export async function POST(req: Request) {
           .update({ title: meta.title, description: meta.description, state: 'localized', updated_at: new Date().toISOString() })
           .eq('job_id', job.id).eq('domain', domain)
       }
-      if (needsClean && asin) {
-        // Read the cached clean thumbnail defensively: the column is added by
-        // migration 306, so tolerate its absence (older DB) — a failure here
-        // just means we regenerate, and the deliver queue falls back to the
-        // text thumbnail either way.
-        let hasClean = false
-        try {
-          const { data: v } = await sb.from('youtube_videos').select('thumbnail_clean_url').eq('id', videoId).maybeSingle()
-          hasClean = !!(v?.thumbnail_clean_url)
-        } catch { /* column not present yet */ }
-        if (!hasClean) {
-          try {
-            const clean = await buildProductThumbnail(sb, { userId: user.id, tier, title: masterTitle, asin, withText: false })
-            if (clean) await sb.from('youtube_videos').update({ thumbnail_clean_url: clean }).eq('id', videoId)
-          } catch { /* non-fatal: non-English markets fall back to the text thumbnail */ }
-        }
-      }
+      // No wordless thumbnail any more: Amazon's non-English storefronts take
+      // the titled one, so every country gets the same image.
       await sb.from('global_sync_jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id)
     } catch (e) {
       const why = e instanceof Error ? e.message : 'Localizing failed.'

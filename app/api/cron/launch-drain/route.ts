@@ -446,8 +446,11 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // seconds of a firing, and a slow title writer used to spend them. It is
     // written beside the images below, or here once the images are done.
 
-    // Already has both images: ready, once it also has its description.
-    if (it.thumbnail_url && it.thumbnail_clean_url) {
+    // ONE THUMBNAIL FOR EVERY COUNTRY. Amazon's non-English storefronts take a
+    // thumbnail with an English title on it, so the second, wordless image is
+    // no longer built: it cost an image and a firing per video for nothing.
+    // Has its thumbnail: ready, once it also has its description.
+    if (it.thumbnail_url) {
       if (left() > 60_000) await ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle)
       if (haveDescription) {
         await sb.from('launch_items')
@@ -498,7 +501,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // several videos in flight, two could both pass a "budget left" check,
     // both claim, and the second get no image at all: a try spent on nothing,
     // and after six of those the row said no thumbnail could be built.
-    const need = (it.thumbnail_url ? 0 : 1) + (it.thumbnail_clean_url ? 0 : 1)
+    const need = it.thumbnail_url ? 0 : 1
     const reserved = Math.min(need, budget)
     if (reserved === 0) return 'stop'
     budget -= reserved
@@ -550,28 +553,12 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         } catch { /* the try is already counted; the next firing has another go */ }
       }
     }
-    const cleanJob = async () => {
-      if (!it.thumbnail_clean_url && mine > 0) {
-        mine--
-        try {
-          // The wordless copy for non-English storefronts. The styled route bakes
-          // a headline in by design, so the clean variant stays with the builder
-          // that can be told to write nothing at all.
-          const clean = await buildProductThumbnail(sb, {
-            userId: it.user_id, tier, title, asin, withText: false,
-            faceId: preset.face.kind === 'face' ? preset.face.faceId : null,
-            noHuman: preset.face.kind === 'none',
-          })
-          if (clean) patch.thumbnail_clean_url = clean
-        } catch { /* the try is already counted; the next firing has another go */ }
-      }
-    }
     // The Amazon title beside the images: seconds against their minutes.
     // TIME-BOXED: the title writer must never keep two finished images waiting
     // past the end of the firing. If it is slow, the next firing writes it.
     const titleBox = Math.max(0, Math.min(30_000, left() - 45_000))
     await Promise.all([
-      styledJob(), cleanJob(),
+      styledJob(),
       Promise.race([ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle), new Promise((res) => setTimeout(res, titleBox))]),
     ])
 
@@ -580,8 +567,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       if (usedPlain) plain++
     }
     const haveBranded = patch.thumbnail_url || it.thumbnail_url
-    const haveClean = patch.thumbnail_clean_url || it.thumbnail_clean_url
-    if (haveBranded && haveClean && haveDescription) {
+    if (haveBranded && haveDescription) {
       patch.state = 'prepared'
       // The fallback keeps its sentence. Clearing `reason` on the way to
       // 'prepared' would erase the one place the creator could read that this

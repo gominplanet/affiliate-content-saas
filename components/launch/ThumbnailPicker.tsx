@@ -194,11 +194,9 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
           text-free copy looking like a thumbnail that failed. */}
       <p className="text-[11.5px] mt-4 px-2.5 py-2 rounded"
         style={{ color: 'var(--text-2)', background: 'var(--surface-2)' }}>
-        Every video gets two of these. The English-speaking stores and YouTube
-        get the one with the hook written on it. Every other country gets the
-        same design with no words at all, because an English hook sitting on a
-        German listing is the same mistake as English audio under a translated
-        title.
+        Every video gets one of these, and it goes everywhere: YouTube and
+        every Amazon country. Amazon takes a thumbnail with an English hook on
+        it in its non-English stores too.
       </p>
 
       <div className="mt-4">

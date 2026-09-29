@@ -64,7 +64,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   } else if (!item.rendered_url) {
     patch.state = 'draft'; patch.render_tries = 0
     from = 'the CTA'
-  } else if (!item.thumbnail_url || !item.thumbnail_clean_url) {
+  } else if (!item.thumbnail_url) {
     patch.state = 'preparing'; patch.thumb_tries = 0
     from = 'the thumbnail'
   } else {
