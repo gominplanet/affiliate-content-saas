@@ -96,8 +96,8 @@ const heal = strip(HEAL)
 // What is missing is anything that notices the SAME site failing every run for
 // two months. jdtheot has been in that state since August.
 {
-  check('the per-run circuit breaker is still there',
-    /if \(stillBlocked >= 3 && fixed === 0 && alreadyOk === 0\) break/.test(heal),
+  check('the per-run circuit breaker is still there, per site',
+    /if \(siteBlocked >= 3 && siteFixed === 0 && siteOk === 0\) break/.test(heal),
     'removing it would hammer a site that is already refusing')
   check('and failures carry a reason', /reason: \(err instanceof Error \? err\.message/.test(heal),
     'without it, "still blocked" cannot be told apart from "credentials revoked"')
@@ -153,6 +153,16 @@ const heal = strip(HEAL)
   check('the writer and the heal upload through the same order',
     /uploadVideoThumbnail\(wpService, \{ youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb \}\)/.test(GEN)
     && /uploadVideoThumbnail\(wpService, \{ youtubeVideoId: ytId/.test(readFileSync('lib/reattach-thumbnails.ts', 'utf8')))
+
+  // EACH POST ON ITS OWN SITE. The heal took the default site's login for
+  // every post, so a second site's post was written by its number on the
+  // first site (post #1355 exists on both of one creator's sites).
+  check('the heal picks each post\'s site from its own address',
+    /const site = await credsForPost\(supabase, ownerId, p\)/.test(heal) && !/getWordPressCredentials\(/.test(heal))
+  check('the flag is kept by MVP\'s post id, not the WordPress number that repeats across sites',
+    /\.in\('id', nowFixedIds\)/.test(heal) && /\.in\('id', stillBlockedIds\)/.test(heal) && !/\.in\('wordpress_post_id'/.test(heal))
+  check('flagged posts come first, so an older one is never out of reach',
+    /base\(\)\.eq\('thumbnail_blocked', true\)/.test(heal))
 
   // THE CLEANUP of what the flood left.
   const DUP = readFileSync('lib/thumbnail-duplicates.ts', 'utf8')
