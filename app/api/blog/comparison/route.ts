@@ -10,6 +10,7 @@
  *
  * All paid tiers. Counts as ONE post against the cap (it's one blog_posts row).
  */
+import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
 import { NextResponse } from 'next/server'
 import { clickableTitleRulesForComparison } from '@/lib/clickable-titles'
 import { stripTitleYear as stripYear } from '@/lib/title-year'
@@ -241,6 +242,24 @@ export async function POST(request: Request) {
   // Stable signature of the submitted line-up (sorted) — the dedup key that
   // stops the same set of videos being published as a second post.
   const videoIdSig = [...ids].sort()
+
+  // ONLY PUBLIC VIDEOS (lib/video-public), the same hard rule as a single
+  // review. A comparison embeds every video it names, so one that is private
+  // or scheduled is a player nobody can press. Other creators' videos are
+  // asked too: YouTube answers for any video.
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: own } = await (supabase as any).from('youtube_videos').select('youtube_video_id, published_at, title')
+      .eq('user_id', ownerId).in('youtube_video_id', ids)
+    const byId = new Map(((own ?? []) as Array<{ youtube_video_id: string; published_at: string | null; title: string | null }>).map((r) => [r.youtube_video_id, r]))
+    const bad = await videosNotPublic(ids.map((id) => ({ youtubeVideoId: id, publishedAt: byId.get(id)?.published_at ?? null })))
+    if (bad.length) {
+      return NextResponse.json({
+        error: bad.map((b) => notPublicMessage(b, byId.get(b.youtubeVideoId)?.title ?? `The video ${b.youtubeVideoId}`)).join(' '),
+        code: 'video_not_public',
+      }, { status: 409 })
+    }
+  }
 
   // ── Integration + brand context ────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -143,8 +143,17 @@ const heal = strip(HEAL)
   // sizes), which is how autopilot posts went live with no image.
   const AB = readFileSync('app/api/cron/auto-blog/route.ts', 'utf8')
   check('autopilot writes only about a video the public can watch',
-    /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(AB) && /videoVisibility\(process\.env\.YOUTUBE_API_KEY/.test(AB)
-    && /return vis === undefined \|\| vis === 'public'/.test(AB))
+    /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(AB) && /await videosNotPublic\(candidates/.test(AB))
+  const GENF = readFileSync('app/api/blog/generate/route.ts', 'utf8')
+  const CMP = readFileSync('app/api/blog/comparison/route.ts', 'utf8')
+  const VP = readFileSync('lib/video-public.ts', 'utf8')
+  check('the post writer itself refuses a video that is not public, before any AI is spent',
+    /await videosNotPublic\(\[\{ youtubeVideoId: ytId/.test(GENF) && /code: 'video_not_public'/.test(GENF)
+    && GENF.indexOf('await videosNotPublic(') < GENF.indexOf('claude.generateBlogPost('))
+  check('and so does a comparison post, for every video it embeds',
+    /await videosNotPublic\(ids\.map/.test(CMP) && /code: 'video_not_public'/.test(CMP))
+  check('public means YouTube says public and the publish time has passed; unlisted is not public',
+    /if \(vis === 'public' && !future\) continue/.test(VP) && /if \(vis === undefined && !future\) continue/.test(VP) && !/vis === 'unlisted'\) continue/.test(VP))
   check('and a video not public yet waits, it is not written off',
     /status: candidates\.length \? 'waiting_for_public_video' : 'no_videos_left'/.test(AB))
   const VT = readFileSync('lib/video-thumbnail-upload.ts', 'utf8')

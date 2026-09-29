@@ -1,4 +1,5 @@
 import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
+import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
 import { uploadVideoThumbnail } from '@/lib/video-thumbnail-upload'
 import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
@@ -483,6 +484,22 @@ async function handleGenerate(request: Request) {
 
   if (videoErr || !video) {
     return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+  }
+
+  // ── ONLY FROM A VIDEO THE PUBLIC CAN WATCH (lib/video-public) ────────────
+  // A hard rule, here where every path ends: auto-pilot, the Generate button,
+  // Schedule publish and the job queue. Before any AI is spent. The one
+  // exception is a post scheduled to go live no earlier than a scheduled video
+  // does, which never shows before the video exists.
+  {
+    const vr = video as Record<string, unknown>
+    const ytId = String(vr.youtube_video_id || '')
+    const [np] = await videosNotPublic([{ youtubeVideoId: ytId, publishedAt: (vr.published_at as string | null) ?? null }])
+    const afterVideo = !!np && np.reason === 'scheduled' && !!np.goesLiveAt && !!scheduledForIso
+      && new Date(scheduledForIso).getTime() >= new Date(np.goesLiveAt).getTime()
+    if (np && !afterVideo) {
+      return NextResponse.json({ error: notPublicMessage(np, vr.title as string | null), code: 'video_not_public', goesLiveAt: np.goesLiveAt }, { status: 409 })
+    }
   }
 
   if (!brand) {

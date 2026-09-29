@@ -18,7 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
-import { videoVisibility } from '@/lib/covered-sales'
+import { videosNotPublic } from '@/lib/video-public'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 
 export const runtime = 'nodejs'
@@ -147,12 +147,11 @@ export async function GET(request: Request) {
         .filter((v) => !blogged.has(v.id) && !recent.has(v.id))
         .filter((v) => !v.published_at || new Date(v.published_at).getTime() <= nowMs)
         .slice(0, 25)
-      const seen = await videoVisibility(process.env.YOUTUBE_API_KEY, candidates.map((v) => v.youtube_video_id || '').filter(Boolean))
-      // Unknown (no key, YouTube did not answer) falls back to the date alone.
-      const nextVideo = candidates.find((v) => {
-        const vis = v.youtube_video_id ? seen.get(v.youtube_video_id) : undefined
-        return vis === undefined || vis === 'public'
-      })
+      // The same rule the post writer enforces (lib/video-public); asked here
+      // too so a run picks a video it can write instead of failing on one.
+      const blockedIds = new Set((await videosNotPublic(candidates.filter((v) => v.youtube_video_id)
+        .map((v) => ({ youtubeVideoId: v.youtube_video_id as string, publishedAt: v.published_at })))).map((n) => n.youtubeVideoId))
+      const nextVideo = candidates.find((v) => !v.youtube_video_id || !blockedIds.has(v.youtube_video_id))
       if (!nextVideo) {
         handledUsers.add(userId)
         results.push({ user: userId, status: candidates.length ? 'waiting_for_public_video' : 'no_videos_left' })
