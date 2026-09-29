@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check } from 'lucide-react'
+import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check, Trash2 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
@@ -134,6 +134,24 @@ export function ShortsCreatePanel({
   }, [videoId, youtubeVideoId])
 
 
+  // YouTube refused the download, now or on an earlier visit (the failed
+  // clip's saved reason says so): the upload box stays until a file is in.
+  const youtubeRefused = needsUpload || clips.some(c => c.status === 'failed' && /YouTube/i.test(c.renderError || ''))
+
+  // Remove a clip from the list. Posted clips stay posted on the platforms.
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const removeClip = useCallback(async (clip: ShortRow) => {
+    if (clip.status === 'rendered' && !window.confirm('Remove this rendered clip from Clip Factory? Anything already posted stays posted.')) return
+    setRemovingId(clip.id)
+    try {
+      const res = await fetch(`/api/youtube/shorts?shortId=${encodeURIComponent(clip.id)}`, { method: 'DELETE' })
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(data.error || 'The clip was not removed.')
+      setClips(prev => prev.filter(c => c.id !== clip.id))
+    } catch (e) { toast.error(errText(e)) }
+    finally { setRemovingId(null) }
+  }, [])
+
   // We can render if the creator uploaded a source OR the clip has a YouTube id
   // (we fetch just that clip's window at render time — no full download).
   const canRender = hasSource || !!youtubeVideoId
@@ -236,10 +254,10 @@ export function ShortsCreatePanel({
       {/* Source-video prompt — only when we can't fetch from YouTube (no id) and
           nothing's uploaded. With a YouTube id we transcribe from audio and cut
           each clip's window on demand, so no full upload/download is needed. */}
-      {!hasSource && (!youtubeVideoId || needsUpload) && (
+      {!hasSource && (!youtubeVideoId || youtubeRefused) && (
         <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
           <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-            {needsUpload
+            {youtubeRefused
               ? 'YouTube would not let MVP download this video. Upload the video file here once, then press Render again.'
               : 'Upload the full video once. MVP transcribes it and cuts your clips from it.'}
           </p>
@@ -249,7 +267,7 @@ export function ShortsCreatePanel({
             extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
             label="Drop the full video (the long one) here"
             helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
-            onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(needsUpload ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
+            onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(youtubeRefused ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
           />
         </div>
       )}
@@ -377,6 +395,14 @@ export function ShortsCreatePanel({
                       Use this clip <ArrowRight size={12} />
                     </button>
                   )}
+                  <button
+                    onClick={() => removeClip(clip)}
+                    disabled={rendering || removingId === clip.id}
+                    title="Remove this clip from the list"
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-medium text-[#86868b] hover:text-[#ff3b30] disabled:opacity-50"
+                  >
+                    {removingId === clip.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Remove
+                  </button>
                   {clip.status === 'failed' && clip.renderError && (
                     <span className="text-[11px] text-[#ff3b30] inline-flex items-center gap-1"><AlertCircle size={11} /> {clip.renderError}</span>
                   )}

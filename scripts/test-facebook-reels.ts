@@ -39,9 +39,14 @@ check('pressing it again reuses the whole-video clip', /eq\('reason', 'The whole
 // When YouTube refuses the download, the way out is on the page.
 const RENDER = readFileSync('app/api/youtube/shorts/render/route.ts', 'utf8')
 check('a refused download shows the upload box, even for a video from YouTube',
-  /setNeedsUpload\(true\)/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| needsUpload\)/.test(PANEL))
+  /setNeedsUpload\(true\)/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| youtubeRefused\)/.test(PANEL))
 check('no message names a button that is not on the page', !/Upload or pick a short/.test(PANEL + RENDER))
 check('the whole video is labelled, not scored 0/100', /'Whole video'/.test(PANEL) && /clip\.score > 0 \?/.test(PANEL))
+
+const SHORTS = readFileSync('app/api/youtube/shorts/route.ts', 'utf8')
+check('a clip can be removed, the creator\'s own only', /export async function DELETE/.test(SHORTS) && /\.delete\(\)\.eq\('id', shortId\)\.eq\('user_id', user\.id\)/.test(SHORTS) && /removeClip\(clip\)/.test(PANEL))
+check('the upload box survives a reload while a clip still says YouTube refused',
+  /clips\.some\(c => c\.status === 'failed' && \/YouTube\/i\.test/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| youtubeRefused\)/.test(PANEL))
 
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)

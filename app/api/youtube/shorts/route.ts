@@ -40,3 +40,22 @@ export async function GET(request: Request) {
     ingestEnabled: ingestConfigured(),
   })
 }
+
+/**
+ * DELETE /api/youtube/shorts?shortId=<uuid> — remove one clip from the list.
+ * The creator's own row only. A clip already posted stays posted: this removes
+ * it from Clip Factory, not from TikTok, Instagram or YouTube.
+ */
+export async function DELETE(request: Request) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const shortId = (new URL(request.url).searchParams.get('shortId') || '').trim()
+  if (!shortId) return NextResponse.json({ error: 'Which clip?' }, { status: 400 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).from('youtube_shorts')
+    .delete().eq('id', shortId).eq('user_id', user.id).select('id')
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!(data ?? []).length) return NextResponse.json({ error: 'That clip was not found, so nothing was removed.' }, { status: 404 })
+  return NextResponse.json({ ok: true })
+}
