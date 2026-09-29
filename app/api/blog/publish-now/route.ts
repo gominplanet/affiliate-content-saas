@@ -126,6 +126,12 @@ export async function POST(request: Request) {
       if (Object.keys(patch).length) await (supabase as any).from('blog_posts').update(patch).eq('id', post.id)
     }
 
+    // Published by hand while it waited for its video (lib/video-hold): the
+    // creator's call, so MVP stops waiting. Its own write, so a database
+    // without migration 388 publishes exactly as before.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { await (supabase as any).from('blog_posts').update({ waiting_for_video_since: null, waiting_for_video_until: null }).eq('id', post.id) } catch { /* column absent pre-388 */ }
+
     return NextResponse.json({
       ok: true,
       url: freshLink || post.wordpress_url || null,

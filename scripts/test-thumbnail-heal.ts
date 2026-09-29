@@ -152,8 +152,8 @@ const heal = strip(HEAL)
     && GENF.indexOf('await videosNotPublic(') < GENF.indexOf('claude.generateBlogPost('))
   check('and so does a comparison post, for every video it embeds',
     /await videosNotPublic\(ids\.map/.test(CMP) && /code: 'video_not_public'/.test(CMP))
-  check('public means YouTube says public and the publish time has passed; unlisted is not public',
-    /if \(vis === 'public' && !future\) continue/.test(VP) && /if \(vis === undefined && !future\) continue/.test(VP) && !/vis === 'unlisted'\) continue/.test(VP))
+  check('published means YouTube says public or unlisted (it plays) and the publish time has passed',
+    /if \(\(vis === 'public' \|\| vis === 'unlisted'\) && !future\) continue/.test(VP) && /if \(vis === undefined && !future\) continue/.test(VP))
   check('and a video not public yet waits, it is not written off',
     /status: candidates\.length \? 'waiting_for_public_video' : 'no_videos_left'/.test(AB))
   const VT = readFileSync('lib/video-thumbnail-upload.ts', 'utf8')
@@ -172,6 +172,23 @@ const heal = strip(HEAL)
     /\.in\('id', nowFixedIds\)/.test(heal) && /\.in\('id', stillBlockedIds\)/.test(heal) && !/\.in\('wordpress_post_id'/.test(heal))
   check('flagged posts come first, so an older one is never out of reach',
     /base\(\)\.eq\('thumbnail_blocked', true\)/.test(heal))
+
+  // A POST WAITS FOR ITS VIDEO (lib/video-hold).
+  const VH = readFileSync('lib/video-hold.ts', 'utf8')
+  check('only a post live now is held, and only a draft MVP itself made is published again',
+    /if \(c\.status !== 'publish'\) continue/.test(VH) && /if \(c\.status !== 'draft'\) \{ await clear\(r\.id\); out\.letGo\+\+; continue \}/.test(VH)
+    && /\.not\('waiting_for_video_since', 'is', null\)/.test(VH))
+  check('the hold is recorded before WordPress is touched, and taken off if the write fails',
+    VH.indexOf("waiting_for_video_since: new Date().toISOString()") < VH.indexOf("{ status: 'draft' }") && /catch \(e\) \{\s*await clear\(r\.id\)/.test(VH))
+  check('every write goes to the post\'s own site, checked to be the same post',
+    /credsForPost\(sb, r\.user_id, r\)/.test(VH) && /checkSamePost\(wp, r\.wordpress_post_id, r\.wordpress_url\)/.test(VH))
+  check('without migration 388 nothing is held, because nothing could ever be released',
+    /if \(waitingQ\.error\) \{[\s\S]{0,160}return out/.test(VH))
+  check('a post published by hand while it waited stops waiting',
+    /waiting_for_video_since: null, waiting_for_video_until: null/.test(readFileSync('app/api/blog/publish-now/route.ts', 'utf8')))
+  check('a waiting post is listed on screen with the day its video is due',
+    /Its video is not public on YouTube until \$\{due\}/.test(readFileSync('app/api/blog/held/route.ts', 'utf8')))
+  check('the job is scheduled', /"path": "\/api\/cron\/video-hold"/.test(readFileSync('vercel.json', 'utf8')))
 
   // THE CLEANUP of what the flood left.
   const DUP = readFileSync('lib/thumbnail-duplicates.ts', 'utf8')

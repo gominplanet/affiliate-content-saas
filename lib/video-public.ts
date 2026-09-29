@@ -9,14 +9,16 @@
 // writer itself (app/api/blog/generate, which auto-pilot, the Generate button,
 // Schedule publish and the job queue all go through) and by comparison posts.
 //
-// "Public" is what YouTube says (videos.list with the public key returns only
-// public and unlisted videos). When YouTube cannot be asked, the video's own
-// publish time decides: a time in the future is a scheduled video. Unlisted is
-// not public: nobody finds it, and a post is written to be found.
+// "Published" is what YouTube says (videos.list with the public key returns
+// only public and unlisted videos). When YouTube cannot be asked, the video's
+// own publish time decides: a time in the future is a scheduled video.
+// UNLISTED COUNTS AS PUBLISHED: it plays in the post and has a thumbnail, and
+// many creators upload their Amazon-only videos that way. What broke the
+// eero post was a video nobody could play, which is scheduled or private.
 
 import { videoVisibility } from '@/lib/covered-sales'
 
-export type NotPublic = { youtubeVideoId: string; reason: 'scheduled' | 'private' | 'unlisted'; goesLiveAt: string | null }
+export type NotPublic = { youtubeVideoId: string; reason: 'scheduled' | 'private'; goesLiveAt: string | null }
 
 export async function videosNotPublic(
   videos: Array<{ youtubeVideoId: string; publishedAt?: string | null }>,
@@ -29,11 +31,11 @@ export async function videosNotPublic(
   for (const v of list) {
     const future = !!v.publishedAt && new Date(v.publishedAt).getTime() > now
     const vis = seen.get(v.youtubeVideoId)
-    if (vis === 'public' && !future) continue
+    if ((vis === 'public' || vis === 'unlisted') && !future) continue
     if (vis === undefined && !future) continue // YouTube not asked: the date said it is out
     out.push({
       youtubeVideoId: v.youtubeVideoId,
-      reason: future ? 'scheduled' : vis === 'unlisted' ? 'unlisted' : 'private',
+      reason: future ? 'scheduled' : 'private',
       goesLiveAt: future ? v.publishedAt ?? null : null,
     })
   }
@@ -47,6 +49,5 @@ export function notPublicMessage(n: NotPublic, title?: string | null): string {
     const when = new Date(n.goesLiveAt).toUTCString().replace(/:\d\d GMT$/, ' UTC')
     return `${what} is scheduled on YouTube and goes public ${when}. MVP only writes posts from public videos, so it was not written. Generate it once the video is live.`
   }
-  if (n.reason === 'unlisted') return `${what} is unlisted on YouTube. MVP only writes posts from public videos, so it was not written. Make it public on YouTube, then generate it.`
   return `${what} is not public on YouTube (private, or scheduled). MVP only writes posts from public videos, so it was not written. Generate it once the video is live.`
 }
