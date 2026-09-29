@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -32,6 +32,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   deal_aftercare: 'labs',
   // Post updates: after 90 days, the creator adds one first-hand line to a review.
   post_refresh: 'admin',
+  // Clip Factory clips published as Reels on the creator's Facebook Page.
+  facebook_reels: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

@@ -24,7 +24,7 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
-  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown,
+  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown, Facebook,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
@@ -42,6 +42,7 @@ import {
 } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { canUsePreview } from '@/lib/labs-preview'
 
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
@@ -229,7 +230,9 @@ export default function ClipFactoryPage() {
   const [coverOffsetMs, setCoverOffsetMs] = useState<number | null>(null)
   const [coverPickerOpen, setCoverPickerOpen] = useState(false)
   const [publishingYt, setPublishingYt] = useState(false)
-  const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean }>({})
+  const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean; facebook?: boolean }>({})
+  const [publishingFb, setPublishingFb] = useState(false)
+  const [fbReelUrl, setFbReelUrl] = useState<string | null>(null)
   // The uploaded YouTube video id, so we can link the creator straight to it
   // (a Short can take a few minutes to process before it's visible).
   const [ytVideoId, setYtVideoId] = useState<string | null>(null)
@@ -629,8 +632,29 @@ export default function ClipFactoryPage() {
     finally { setPublishingYt(false) }
   }, [publishUrl, publishCaption, clip])
 
+  // Facebook Reel on the creator's Page (Labs). The answer says whether it is
+  // live or still processing, from what Facebook reported back.
+  const postFacebookReel = useCallback(async () => {
+    if (!publishUrl) return
+    setPublishingFb(true)
+    try {
+      const res = await fetch('/api/clip-factory/facebook-reel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: publishUrl, description: publishCaption }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
+      setPosted(p => ({ ...p, facebook: true }))
+      setFbReelUrl(data.url || null)
+      toast.success(data.state === 'published'
+        ? `Reel is live on ${data.page || 'your Page'}.`
+        : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
+    } catch (e) { toast.error(errText(e)) }
+    finally { setPublishingFb(false) }
+  }, [publishUrl, publishCaption])
+
   const restart = useCallback(() => {
-    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setCoverOffsetMs(null); setStage('create')
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setCoverOffsetMs(null); setStage('create')
   }, [])
 
   // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
@@ -1120,6 +1144,12 @@ export default function ClipFactoryPage() {
                   upload scope and we flip NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED on. */}
               {youtubeUploadEnabled({ tier }) && (
                 <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
+              )}
+              {canUsePreview('facebook_reels', tier) && (
+                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb} onClick={postFacebookReel} />
+              )}
+              {fbReelUrl && (
+                <a href={fbReelUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-[#1877F2] underline-offset-2 hover:underline">View Reel</a>
               )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
