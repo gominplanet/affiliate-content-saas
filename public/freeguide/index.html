@@ -214,6 +214,17 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 @keyframes gsflash{0%,40%{background:var(--marker-soft)}100%{background:transparent}}
 ::highlight(gs){background-color:#FFE27A;color:#111}
 
+.vids{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0 26px}
+@media (max-width:640px){.vids{grid-template-columns:1fr}}
+.vid{margin:0}
+.vid .yt-f,.vid iframe{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:10px;overflow:hidden;background:#000}
+.vid .yt-f{position:relative;padding:0;cursor:pointer}
+.vid .yt-f img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92;transition:opacity .2s}
+.vid .yt-f:hover img,.vid .yt-f:focus-visible img{opacity:1}
+.vid .yt-f:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.vid .play{position:absolute;left:50%;top:50%;width:68px;height:48px;margin:-24px 0 0 -34px;border-radius:12px;background:#E62117}
+.vid .play::after{content:"";position:absolute;left:27px;top:14px;border-style:solid;border-width:10px 0 10px 17px;border-color:transparent transparent transparent #fff}
+.vid figcaption{font-size:13.5px;line-height:1.4;color:var(--muted);margin-top:8px}
 main{min-width:0}
 .mod{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:40px clamp(20px,4vw,56px);margin-bottom:28px;scroll-margin-top:16px}
 .mod-h{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:8px}
@@ -376,11 +387,11 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
     <p class="free">Free to read. No email needed.</p>
     <p><b>Last updated September 29.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
     <ul>
+      <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
       <li><a href="#quick-answers">Quick answers</a> to the questions we get asked most</li>
       <li><a href="#idea-lists">Idea lists that earn</a>: build them around the season</li>
       <li><a href="#worldwide">Links for the whole world</a>: OneLink or Passport</li>
       <li><a href="#account-closed">If your account gets closed</a>, and <a href="#hiring">when to hire an editor or a VA</a></li>
-      <li><a href="#value">What works on Amazon now</a>: value over volume, and how long your videos should be</li>
     </ul>
     <p class="more">Looking for something older? Use the search box above the module list.</p>
   </div>
@@ -1025,6 +1036,16 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p><strong>And don't make it fancy.</strong> There's no need for fancy. Shoppers want to see the product up close, and they want the information and the details. That's it.</p>
 </div>
 <p><strong>Stuck on what to say?</strong> A short script can help if you don't feel comfortable talking off the top of your head. <a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP Affiliate</a> (our software, on Pro) writes video scripts built around pain points, features and benefits. Use it as a starting point, then say it in your own words: a script read word for word sounds like a script.</p>
+<h2 id="examples">Watch how we do it</h2>
+<p>Six of our real reviews. Watch them with this module in mind: how fast we get to the product, how close the camera gets, the questions we answer, and how natural we keep it. They play right here.</p>
+<div class="vids">
+<figure class="vid"><button type="button" class="yt-f" data-id="ooWrXNDU52g" data-start="0" aria-label="Play: Domi Gazebo Unboxing: The Biggest Backyard Upgrade Yet!"><img src="https://i.ytimg.com/vi/ooWrXNDU52g/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Domi Gazebo Unboxing: The Biggest Backyard Upgrade Yet!</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="VFB5lKzRwuA" data-start="0" aria-label="Play: Is LEVEL8 Top Opening Luggage the Smarter Way to Pack for Long Trips?"><img src="https://i.ytimg.com/vi/VFB5lKzRwuA/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Is LEVEL8 Top Opening Luggage the Smarter Way to Pack for Long Trips?</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="vz3mhcd6kU8" data-start="0" aria-label="Play: PURPLE LEAF 10&#x27; X 12&#x27; Outdoor Rectangle Large Patio Umbrella"><img src="https://i.ytimg.com/vi/vz3mhcd6kU8/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>PURPLE LEAF 10&#x27; X 12&#x27; Outdoor Rectangle Large Patio Umbrella</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="kUW-WUUFsh8" data-start="0" aria-label="Play: The Ultimate Pool Companion: SMOROBOT Cleaning Robot"><img src="https://i.ytimg.com/vi/kUW-WUUFsh8/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>The Ultimate Pool Companion: SMOROBOT Cleaning Robot</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="otjURi12Blo" data-start="2" aria-label="Play: Foldable dog pool review: cooling + entertainment combined"><img src="https://i.ytimg.com/vi/otjURi12Blo/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Foldable dog pool review: cooling + entertainment combined</figcaption></figure>
+<figure class="vid"><button type="button" class="yt-f" data-id="WkYQIVw50Lc" data-start="0" aria-label="Play: Top-Rated Pool Float with Cup Holder and Backrest"><img src="https://i.ytimg.com/vi/WkYQIVw50Lc/hqdefault.jpg" width="480" height="360" loading="lazy" decoding="async" alt=""><span class="play" aria-hidden="true"></span></button><figcaption>Top-Rated Pool Float with Cup Holder and Backrest</figcaption></figure>
+</div>
 <h2>Our filming formula</h2>
 <p>Use this structure on every review until you don't need to think about it. Our videos run anywhere from about <strong>a minute to six or seven minutes</strong>, depending on the product. A quick, inexpensive product still gets at least a minute and a half. A piece of tech that needs in-depth focus gets five or six minutes. The timings below are for a short review; on a longer one it's the demo and the questions that expand, never the open.</p>
 <h3>Before you hit record (5 minutes)</h3>
@@ -2481,6 +2502,20 @@ questions in public so everyone gets the answer.</p>
     r.e.el.classList.remove('gs-hit'); void r.e.el.offsetWidth; r.e.el.classList.add('gs-hit');
     var d=document.getElementById('tocd');
     if(d && window.matchMedia('(max-width:900px)').matches) d.open=false;
+  });
+})();</script>
+<script>(function(){
+  // Click to play. Nothing loads from YouTube until a reader asks for a video,
+  // so six players do not slow the page down or set cookies on arrival.
+  document.addEventListener('click',function(e){
+    var b=e.target.closest && e.target.closest('.yt-f'); if(!b) return;
+    var f=document.createElement('iframe');
+    var st=+b.dataset.start||0;
+    f.src='https://www.youtube-nocookie.com/embed/'+b.dataset.id+'?autoplay=1&rel=0'+(st?'&start='+st:'');
+    f.title=b.getAttribute('aria-label').replace(/^Play: /,'');
+    f.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen=true;
+    b.replaceWith(f);
   });
 })();</script>
 </body></html>
