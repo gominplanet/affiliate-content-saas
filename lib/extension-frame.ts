@@ -1104,6 +1104,26 @@ export async function requestVdpReads(ids: string[]): Promise<{ ok: boolean; res
   return { ok: false, error: resp.error || 'needs-update' }
 }
 
+/** One product's answer from a live Amazon store, read by SCOUT with fetch
+ *  and no tab (1.21.21+). `localAsin` is the same product under that store's
+ *  own ASIN, found by brand and model or name and confirmed on its page. */
+export interface StoreCheckAnswer { asin: string; status: 'found' | 'not-listed' | 'unknown'; searched?: boolean; localAsin?: string | null; how?: string | null; detail?: string | null }
+
+/** Liftoff's countries step, for a store no server can check (Australia).
+ *  `error`: 'not-installed', 'needs-update', 'intl-permission-needed' (the
+ *  popup's International Amazon switch is off) or 'timeout'. */
+export async function requestStoreCheck(domain: string, items: Array<{ asin: string; brand?: string | null; title?: string | null; model?: string | null }>): Promise<{ ok: boolean; results?: StoreCheckAnswer[]; blocked?: boolean; error?: string }> {
+  const st = await getScoutStatus()
+  if (!st.installed) return { ok: false, error: 'not-installed' }
+  if (_cmpVersion(st.version, '1.21.21') < 0) return { ok: false, error: 'needs-update' }
+  const resp = await sendToExtension<{ ok?: boolean; results?: StoreCheckAnswer[]; blocked?: boolean; error?: string }>(
+    { type: 'MVP_AMZ_STORE_CHECK', domain, items }, 175000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok && Array.isArray(resp.results)) return { ok: true, results: resp.results, blocked: !!resp.blocked }
+  return { ok: false, error: resp.error || 'check-failed' }
+}
+
 /** Product details SCOUT scraped off the Amazon product page (in the user's
  *  own browser / residential IP — the request Amazon doesn't block). Used as a
  *  fallback when the server-side scrape is blocked. */

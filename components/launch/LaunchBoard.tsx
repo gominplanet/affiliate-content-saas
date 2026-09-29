@@ -29,7 +29,7 @@ import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
-import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
+import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
@@ -463,19 +463,57 @@ export default function LaunchBoard() {
     skipped: string | null
   } | null>(null)
   const [availLoading, setAvailLoading] = useState(false)
+  // SCOUT'S LIVE-STORE CHECK, per country no server can answer (Australia):
+  // what it is doing, or why it could not, so "cannot be checked" is never
+  // shown when the real reason is a switch the creator can turn on.
+  type StoreCheckState = 'checking' | 'done' | 'not-installed' | 'needs-update' | 'intl-permission-needed' | 'blocked' | 'failed'
+  const [storeCheck, setStoreCheck] = useState<Record<string, StoreCheckState>>({})
   const productKey = items.map((i) => (i.asin || '').toUpperCase()).filter(Boolean).sort().join(',')
   useEffect(() => {
     if (!batchId || !productKey) { setAvail(null); return }
     let gone = false
+    const read = async () => {
+      const r = await fetch(`/api/launch/batches/${batchId}/availability`)
+      const j = await r.json().catch(() => null)
+      if (!gone && j?.ok) setAvail({ videos: j.videos ?? [], markets: j.markets ?? [], skipped: j.skipped ?? null })
+      return j
+    }
     // Cleared first, so a failed answer for this batch can never leave the
     // last batch's countries showing.
     setAvail(null)
+    setStoreCheck({})
     setAvailLoading(true)
-    fetch(`/api/launch/batches/${batchId}/availability`)
-      .then((r) => r.json())
-      .then((j) => { if (!gone && j?.ok) setAvail({ videos: j.videos ?? [], markets: j.markets ?? [], skipped: j.skipped ?? null }) })
-      .catch(() => { /* the step still works; it just says nothing about availability */ })
-      .finally(() => { if (!gone) setAvailLoading(false) })
+    void (async () => {
+      try {
+        const j = await read()
+        // Then the stores only SCOUT can read, in the background with no tab.
+        // Each is asked once per set of products; its answer is kept for every
+        // creator, so the next open is instant.
+        const scoutItems = (j?.scout?.items ?? []) as Array<{ asin: string; brand?: string | null; title?: string | null; model?: string | null }>
+        const domains = ((j?.scout?.domains ?? []) as string[]).filter((d) =>
+          (j?.markets ?? []).some((m: { domain: string; byVideo: Array<{ verdict: string }> }) => m.domain === d && m.byVideo.some((v) => v.verdict === 'cannot_check')))
+        if (!scoutItems.length || !domains.length) return
+        let recorded = false
+        for (const d of domains) {
+          if (gone) return
+          setStoreCheck((s) => ({ ...s, [d]: 'checking' }))
+          const res = await requestStoreCheck(d, scoutItems).catch(() => ({ ok: false, error: 'failed' } as { ok: boolean; results?: never[]; blocked?: boolean; error?: string }))
+          if (!res.ok || !res.results) {
+            const e = res.error
+            setStoreCheck((s) => ({ ...s, [d]: e === 'not-installed' || e === 'needs-update' || e === 'intl-permission-needed' ? e : 'failed' }))
+            continue
+          }
+          const post = await fetch(`/api/launch/batches/${batchId}/availability`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: d, results: res.results }),
+          }).then((r) => r.ok).catch(() => false)
+          recorded = recorded || post
+          setStoreCheck((s) => ({ ...s, [d]: res.blocked ? 'blocked' : post ? 'done' : 'failed' }))
+        }
+        if (recorded && !gone) await read()
+      } catch { /* the step still works; it just says nothing about availability */ }
+      finally { if (!gone) setAvailLoading(false) }
+    })()
     return () => { gone = true }
   }, [batchId, productKey])
   /** Every video's product checked in full and not sold there. Only that
@@ -1518,7 +1556,15 @@ export default function LaunchBoard() {
                       // in green.
                       const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked' || v.verdict === 'cannot_check')
                       if (cannot) {
-                        return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so</span>
+                        // Why, in the words of what the creator can do about it.
+                        const sc = storeCheck[m.domain]
+                        const why = sc === 'checking' ? `SCOUT is checking the ${m.country} store…`
+                          : sc === 'intl-permission-needed' ? `Turn on International Amazon in the SCOUT popup, then reopen this step, so SCOUT can check the ${m.country} store`
+                          : sc === 'needs-update' ? `Update SCOUT to check the ${m.country} store ahead of time`
+                          : sc === 'not-installed' ? `Install SCOUT to check the ${m.country} store ahead of time`
+                          : sc === 'blocked' ? 'Amazon asked SCOUT for a robot check. Reopen this step later to check again'
+                          : 'Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so'
+                        return <span className="block text-[11px]" style={sc === 'checking' ? muted : sc && sc !== 'failed' && sc !== 'done' ? { color: '#d97706' } : muted}>{why}</span>
                       }
                       const videos = (k: number) => (k === 1 ? 'video' : 'videos')
                       return (

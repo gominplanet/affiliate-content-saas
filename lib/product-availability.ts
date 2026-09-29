@@ -11,10 +11,12 @@
 // worse than one that said nothing.
 //
 // THE ORDER, cheapest first:
-//   1. Countries no server can answer (Australia has no Keepa domain): settled
-//      as 'no_answer', which never blocks.
-//   2. The shared cache (passport_asin_market), across every creator, fresh for
-//      STOCK_CACHE_DAYS. Free.
+//   1. The shared cache (passport_asin_market), across every creator, fresh for
+//      STOCK_CACHE_DAYS. Free. For Australia this holds what SCOUT read from
+//      the live store in a creator's own browser (Liftoff's countries step,
+//      the Launchpad geo check), since no server can answer it.
+//   2. Countries no server can answer and the cache did not (Australia has no
+//      Keepa domain): settled as 'no_answer', which never blocks.
 //   3. Keepa, paid, within the caller's budget, one call per country for up to
 //      a hundred ASINs, written back to the cache for everybody.
 // A pair nobody could answer is simply absent from the map. That is not a
@@ -45,19 +47,17 @@ export async function lookupAvailability(
   const answers = new Map<string, StockAnswer>()
   let spent = 0
 
-  // 1. Markets no server can answer.
-  for (const r of pairs) if (marketByDomain(r.domain)?.keepa == null) answers.set(key(r.asin, r.domain), 'no_answer')
-  const askable = pairs.filter((r) => marketByDomain(r.domain)?.keepa != null)
-
-  // 2. The shared cache, across every creator.
+  // 1. The shared cache, across every creator, for every market: Australia's
+  //    answers are SCOUT's, read from the live store.
+  const known = pairs.filter((r) => !!marketByDomain(r.domain))
   const fresh = new Date(Date.now() - STOCK_CACHE_DAYS * 86_400_000).toISOString()
-  const wantedAsins = [...new Set(askable.map((r) => r.asin.toUpperCase()))]
+  const wantedAsins = [...new Set(known.map((r) => r.asin.toUpperCase()))]
   if (wantedAsins.length > 0) {
     try {
       const { data: cached } = await sb.from('passport_asin_market')
         .select('asin,marketplace,available,in_stock')
         .in('asin', wantedAsins).gte('checked_at', fresh)
-      const domains = [...new Set(askable.map((r) => r.domain))]
+      const domains = [...new Set(known.map((r) => r.domain))]
       for (const c of (cached ?? [])) {
         const mkt = domains.find((d) => marketByDomain(d)?.host.toLowerCase() === String(c.marketplace).toLowerCase())
         if (!mkt) continue
@@ -70,8 +70,13 @@ export async function lookupAvailability(
     } catch { /* no cache → everything below is a miss, which is correct */ }
   }
 
+  // 2. Markets no server can answer, that the cache did not.
+  for (const r of known) {
+    if (marketByDomain(r.domain)?.keepa == null && !answers.has(key(r.asin, r.domain))) answers.set(key(r.asin, r.domain), 'no_answer')
+  }
+
   // 3. What is left is paid for, within budget, in the order given.
-  const misses = askable.filter((r) => !answers.has(key(r.asin, r.domain)))
+  const misses = known.filter((r) => marketByDomain(r.domain)?.keepa != null && !answers.has(key(r.asin, r.domain)))
   if (misses.length === 0) return { answers, spent }
   if (!keepaConfigured()) return { answers, spent, skipped: 'keepa_unconfigured' }
   const tok = await fetchKeepaTokenStatus()

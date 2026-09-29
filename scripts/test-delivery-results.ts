@@ -52,7 +52,7 @@ check('not checked and cannot check are never read as not sold',
   /a === 'not_listed' \? 'not_sold'/.test(RL) && /a === 'no_answer' \? 'cannot_check' : 'not_checked'/.test(RL)
   && /verdict: 'not_checked'/.test(AV))
 check('a No under the US ASIN is not a No until barcode and name were tried',
-  /for \(const p of missing\) answers\.set\(key\(p\.asin, p\.domain\), \{ verdict: 'not_checked'/.test(RL)
+  /verdict: noServer \? 'cannot_check' : 'not_checked'/.test(RL)
   && /pickEquivalent\(/.test(RL) && /pickByName\(/.test(RL))
 check('a local listing is checked for stock, never assumed', /lookupAvailability\(sb, localPairs/.test(RL))
 check('the hand-off uploads to the local listing it found',
@@ -62,6 +62,25 @@ check('only a country checked in full and not sold is hidden, and it is named',
   /row\.byVideo\.every\(\(v\) => v\.verdict === 'not_sold'\)/.test(LB) && /Not sold in: \{hidden\.map/.test(LB)
   && /!notSoldAnywhere\(m\.domain\) \|\| batch\.markets\.some/.test(LB))
 check('a mixed country says how many videos it sells', /of \$\{n\} \$\{videos\(n\)\} sold here, and only those upload/.test(LB))
+
+// AUSTRALIA, from the live store through SCOUT: no Keepa there.
+const BG = readFileSync(join(root, 'extension/background.js'), 'utf8')
+const storeFn = BG.slice(BG.indexOf('async function checkStoreProducts'), BG.indexOf('// ── Amazon video lookups: ONE background tab'))
+check('SCOUT checks a store by fetch and opens no tab',
+  storeFn.length > 0 && /fetch\(`https:\/\/www\.\$\{host\}\/dp\//.test(BG) && !/chrome\.tabs\.create/.test(storeFn))
+check('a robot check stops the run and is never read as not sold',
+  /if \(own\.status === 'blocked'\) \{ blocked = true; results\.push\(\{ asin, status: 'unknown'/.test(storeFn))
+check('SCOUT confirms a local listing on its own page before naming it',
+  /const local = await _storeDp\(host, best\.asin\)/.test(storeFn) && /if \(local\.status === 'found'\)/.test(storeFn))
+check('the message is wired', /msg\.type === 'MVP_AMZ_STORE_CHECK'/.test(BG) && /type: 'MVP_AMZ_STORE_CHECK'/.test(code('lib/extension-frame.ts')))
+const PA = code('lib/product-availability.ts')
+check('the shared cache answers Australia before it is called unanswerable',
+  PA.indexOf("from('passport_asin_market')") < PA.indexOf("answers.set(key(r.asin, r.domain), 'no_answer')"))
+check('only definite SCOUT answers are kept', /if \(r\.status !== 'not-listed'\) continue/.test(RL) && /recordStoreCheck\(admin, mkt\.domain, results\)/.test(AV))
+check('the POST takes answers only for a country no server can check, and only for this batch',
+  /mkt\.keepa != null\) return NextResponse\.json/.test(AV) && /mine\.has\(/.test(AV))
+check('the countries step says why Australia is unchecked when it is a switch to turn on',
+  /Turn on International Amazon in the SCOUT popup/.test(LB) && /requestStoreCheck\(d, scoutItems\)/.test(LB))
 check('the countries step shows it', /\/availability`/.test(LB) && /Not sold: \$\{notSold/.test(LB))
 
 const base = { ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }

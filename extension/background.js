@@ -3944,6 +3944,114 @@ async function readVdpPages(ids) {
   return { ok: true, results, stoppedBlocked: blockedRun >= 3 }
 }
 
+// ── A live store's answer, by fetch: no tab at all (MVP_AMZ_STORE_CHECK) ────
+// Liftoff asks, before it shows the country cards, whether each product is
+// sold in each Amazon country. Keepa answers most of them on MVP's server,
+// but it has no Australia, so SCOUT asks the real store from the creator's own
+// connection, the way OINK and Viral Vue do, with fetch, so nothing opens on
+// screen. For each product: its own /dp page first; if that store does not
+// list it, a search there by brand and model or name, and the best match's
+// /dp page to confirm it. A robot check stops the run and says so rather than
+// reading as "not sold".
+function _storeDecode(s) {
+  return String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim()
+}
+function _storeBlocked(html) {
+  return /validateCaptcha|Type the characters you see|Enter the characters you see below|api-services-support@amazon|To discuss automated access/i.test(String(html || ''))
+}
+async function _storeDp(host, asin) {
+  try {
+    const res = await fetch(`https://www.${host}/dp/${asin}`, { credentials: 'include', signal: AbortSignal.timeout(20000) })
+    if (res.status === 404 || res.status === 410) return { status: 'not-listed' }
+    if (res.status === 503 || res.status === 429) return { status: 'blocked' }
+    if (!res.ok) return { status: 'unknown', detail: 'HTTP ' + res.status }
+    const html = await res.text()
+    if (_storeBlocked(html)) return { status: 'blocked' }
+    const t = /id="productTitle"[^>]*>([\s\S]*?)<\/span>/i.exec(html)
+    if (t && _storeDecode(t[1])) return { status: 'found', title: _storeDecode(t[1]).slice(0, 200) }
+    if (/dogs-of-amazon|couldn'?t find that page|looking for something\?/i.test(html)) return { status: 'not-listed' }
+    return { status: 'unknown', detail: 'no title on the page' }
+  } catch (e) { return { status: 'unknown', detail: (e && e.message) || 'fetch failed' } }
+}
+async function _storeSearch(host, term) {
+  try {
+    const res = await fetch(`https://www.${host}/s?k=${encodeURIComponent(term)}`, { credentials: 'include', signal: AbortSignal.timeout(20000) })
+    if (res.status === 503 || res.status === 429) return { blocked: true, products: [] }
+    if (!res.ok) return { products: null }
+    const html = await res.text()
+    if (_storeBlocked(html)) return { blocked: true, products: [] }
+    const out = []
+    const seen = new Set()
+    const tagRe = /<div\b[^>]*data-component-type="s-search-result"[^>]*>/g
+    const starts = []
+    let m
+    while ((m = tagRe.exec(html)) !== null) starts.push({ at: m.index, tag: m[0] })
+    for (let i = 0; i < starts.length && out.length < 20; i++) {
+      const a = /data-asin="([A-Z0-9]{10})"/.exec(starts[i].tag)
+      if (!a || seen.has(a[1])) continue
+      const chunk = html.slice(starts[i].at, i + 1 < starts.length ? starts[i + 1].at : starts[i].at + 20000)
+      const h = /<h2\b[^>]*aria-label="([^"]+)"/.exec(chunk) || /<h2\b[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/.exec(chunk)
+      const title = h ? _storeDecode(h[1]) : ''
+      if (!title) continue
+      seen.add(a[1])
+      out.push({ asin: a[1], title: title.slice(0, 200) })
+    }
+    return { products: out }
+  } catch (e) { return { products: null } }
+}
+async function checkStoreProducts(domain, items) {
+  const host = String(domain || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+  if (!host || !/^amazon\./.test(host)) return { ok: false, error: 'bad-domain' }
+  if (host !== 'amazon.com') {
+    let granted = false
+    try { granted = await chrome.permissions.contains({ origins: [`https://*.${host}/*`] }) } catch (e) {}
+    if (!granted) return { ok: false, error: 'intl-permission-needed' }
+  }
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const key = (s) => norm(s).replace(/\s/g, '')
+  const pace = () => _sleep(600 + Math.floor(Math.random() * 700))
+  const results = []
+  let blocked = false
+  for (const it of (Array.isArray(items) ? items : []).slice(0, 20)) {
+    const asin = String(it && it.asin || '').toUpperCase()
+    if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+    if (blocked) { results.push({ asin, status: 'unknown', detail: 'stopped after a robot check' }); continue }
+    const own = await _storeDp(host, asin)
+    await pace()
+    if (own.status === 'blocked') { blocked = true; results.push({ asin, status: 'unknown', detail: 'robot check' }); continue }
+    if (own.status !== 'not-listed') { results.push({ asin, status: own.status, detail: own.detail || null }); continue }
+    // Not under this ASIN. The same product under the store's own, found by
+    // brand and model number, or brand and a closely matching name.
+    const brand = String(it.brand || '').trim()
+    const model = String(it.model || '').trim()
+    const title = String(it.title || '').trim()
+    if (!brand || !title) { results.push({ asin, status: 'not-listed', searched: false }); continue }
+    const head = norm(title).split(' ').filter((w) => w.length >= 3).slice(0, 6).join(' ')
+    const term = model.length >= 3 ? `${brand} ${model}` : (norm(head).includes(norm(brand)) ? head : `${brand} ${head}`)
+    const found = await _storeSearch(host, term)
+    await pace()
+    if (found.blocked) { blocked = true; results.push({ asin, status: 'unknown', detail: 'robot check' }); continue }
+    if (!found.products) { results.push({ asin, status: 'unknown', detail: 'search did not load' }); continue }
+    const brandTok = norm(brand).split(' ').filter((w) => w.length >= 2)
+    const wantModel = key(model)
+    let best = null
+    for (const p of found.products) {
+      if (p.asin === asin) continue
+      if (!brandTok.every((b) => norm(p.title).includes(b))) continue
+      if (wantModel.length >= 3 && key(p.title).includes(wantModel)) { best = { asin: p.asin, how: 'model', score: 2 }; break }
+      const score = _asinMatchScore(title, brand, p.title)
+      if (score >= 0.6 && (!best || score > best.score)) best = { asin: p.asin, how: 'name', score }
+    }
+    if (!best) { results.push({ asin, status: 'not-listed', searched: true }); continue }
+    const local = await _storeDp(host, best.asin)
+    await pace()
+    if (local.status === 'blocked') { blocked = true; results.push({ asin, status: 'unknown', detail: 'robot check' }); continue }
+    if (local.status === 'found') results.push({ asin, status: 'not-listed', searched: true, localAsin: best.asin, how: best.how, localTitle: local.title || null })
+    else results.push({ asin, status: 'not-listed', searched: true })
+  }
+  return { ok: true, results, blocked }
+}
+
 // ── Amazon video lookups: ONE background tab, reused ────────────────────────
 // Brand recap looks up every product, 174 of them for one creator, and each
 // used to open a FOREGROUND tab and then switch back: a tab flashing up every
@@ -10936,6 +11044,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // fallback when Amazon robot-checks MVP's server (see readVdpPages).
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 170000)
     readVdpPages(Array.isArray(msg.ids) ? msg.ids : [])
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
+  }
+  if (msg.type === 'MVP_AMZ_STORE_CHECK') {
+    // Liftoff's countries step: is each product sold in this Amazon store, and
+    // under which ASIN? By fetch, no tab (see checkStoreProducts).
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 170000)
+    checkStoreProducts(msg.domain, msg.items)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true

@@ -21,7 +21,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { MARKETS } from '@/lib/markets'
 import { normalizeTier } from '@/lib/tier'
 import { availabilityKey } from '@/lib/product-availability'
-import { lookupRegional, type RegionalAnswer } from '@/lib/regional-listing'
+import { lookupRegional, productIdentities, recordStoreCheck, type RegionalAnswer, type StoreCheckResult } from '@/lib/regional-listing'
+import { marketByDomain } from '@/lib/markets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -70,9 +71,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // sell the product.
   const answer = (asin: string, domain: string): RegionalAnswer =>
     answers.get(availabilityKey(asin, domain)) ?? { verdict: 'not_checked', localAsin: null, how: null }
+  // WHO EACH PRODUCT IS, for the countries only SCOUT can check (Australia):
+  // it searches the live store by brand and model or name when the ASIN is
+  // not listed there. Asked only when such a country is still unanswered.
+  const scoutAsins = [...new Set(items.flatMap((i) => {
+    const a = String(i.asin).trim().toUpperCase()
+    return MARKETS.some((m) => m.keepa == null && answer(a, m.domain).verdict === 'cannot_check') ? [a] : []
+  }))]
+  const identity = scoutAsins.length ? await productIdentities(scoutAsins).catch(() => ({})) : {}
   return NextResponse.json({
     ok: true,
     skipped: skipped ?? null,
+    scout: {
+      domains: MARKETS.filter((m) => m.keepa == null).map((m) => m.domain),
+      items: scoutAsins.map((a) => ({ asin: a, ...((identity as Record<string, object>)[a] ?? {}) })),
+    },
     videos: items.map((i) => ({ id: i.id, title: i.title || 'Untitled' })),
     markets: MARKETS.map((m) => ({
       domain: m.domain,
@@ -82,4 +95,36 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       }),
     })),
   })
+}
+
+/**
+ * POST { domain, results } — what SCOUT read from a live store (Australia),
+ * recorded in the shared caches so the next GET answers from it. Only for a
+ * country no server can check, and only this batch's own products.
+ */
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
+    return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
+  }
+  const body = await req.json().catch(() => ({})) as { domain?: string; results?: StoreCheckResult[] }
+  const mkt = marketByDomain(String(body.domain || ''))
+  if (!mkt || mkt.keepa != null) return NextResponse.json({ error: 'Only a country MVP cannot check itself takes SCOUT answers.' }, { status: 400 })
+  const { data: batch } = await sb.from('launch_batches').select('id').eq('id', id).eq('user_id', user.id).maybeSingle()
+  if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+  const { data: rows } = await sb.from('launch_items').select('asin').eq('batch_id', id)
+  const mine = new Set(((rows ?? []) as Array<{ asin: string | null }>).map((r) => String(r.asin || '').trim().toUpperCase()).filter(Boolean))
+  const results = (Array.isArray(body.results) ? body.results : []).filter((r) => mine.has(String(r?.asin || '').trim().toUpperCase()))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let admin: any = null
+  try { admin = createAdminClient() } catch { admin = null }
+  if (!admin) return NextResponse.json({ ok: false, error: 'The shared cache is not reachable, so nothing was kept.' }, { status: 500 })
+  const kept = await recordStoreCheck(admin, mkt.domain, results)
+  return NextResponse.json({ ok: true, kept })
 }

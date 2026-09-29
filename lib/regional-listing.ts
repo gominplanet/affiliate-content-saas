@@ -18,6 +18,11 @@
 // that is opened ten times pays for them once. Without the table it still
 // answers; it just asks Keepa again next time, within the same budget.
 //
+// AUSTRALIA has no Keepa, so steps 1 to 3 there are SCOUT's: it reads the
+// live store from the creator's own browser (MVP_AMZ_STORE_CHECK) and the
+// answers land in the same two caches (recordStoreCheck). Until it has, the
+// country is "cannot check", never "not sold".
+//
 // THREE KINDS OF "NO", KEPT APART. Not sold (everything was tried), not
 // checked yet (budget or Keepa ran out before step 3 finished) and cannot be
 // checked (Australia, which Keepa does not cover) are different facts, and
@@ -97,18 +102,23 @@ export async function lookupRegional(
     a === 'in_stock' ? 'sold' : a === 'out_of_stock' ? 'out_of_stock' : a === 'not_listed' ? 'not_sold' : a === 'no_answer' ? 'cannot_check' : 'not_checked'
   for (const p of norm) answers.set(key(p.asin, p.domain), { verdict: fromStock(first.answers.get(key(p.asin, p.domain))), localAsin: null, how: null })
 
-  // 2 and 3 only for "not sold under this ASIN" in a country Keepa covers.
-  const missing = norm.filter((p) => answers.get(key(p.asin, p.domain))?.verdict === 'not_sold' && marketByDomain(p.domain)?.keepa != null)
+  // 2 and 3 only for "not sold under this ASIN".
+  const missing = norm.filter((p) => answers.get(key(p.asin, p.domain))?.verdict === 'not_sold')
   if (!missing.length) return { answers, skipped }
 
   // Until steps 2 and 3 have answered, a No under the US ASIN is not a No.
-  for (const p of missing) answers.set(key(p.asin, p.domain), { verdict: 'not_checked', localAsin: null, how: null })
+  // Where no server can search (Australia) it is "cannot check", which is
+  // what sends SCOUT to search the live store.
+  for (const p of missing) {
+    const noServer = marketByDomain(p.domain)?.keepa == null
+    answers.set(key(p.asin, p.domain), { verdict: noServer ? 'cannot_check' : 'not_checked', localAsin: null, how: null })
+  }
 
   const cached = await readCache(sb, missing)
   const locals = new Map<string, { local: string | null; how: string | null }>()
   for (const p of missing) { const c = cached.get(key(p.asin, p.domain)); if (c) locals.set(key(p.asin, p.domain), c) }
 
-  const todo = missing.filter((p) => !locals.has(key(p.asin, p.domain)))
+  const todo = missing.filter((p) => !locals.has(key(p.asin, p.domain)) && marketByDomain(p.domain)?.keepa != null)
   if (todo.length) {
     const tok = keepaConfigured() ? await fetchKeepaTokenStatus() : null
     if (!keepaConfigured()) skipped = 'keepa_unconfigured'
@@ -171,4 +181,53 @@ export async function cachedLocalAsins(sb: Sb, asin: string, domains: string[]):
   const c = await readCache(sb, domains.map((d) => ({ asin, domain: d })))
   for (const d of domains) { const l = c.get(availabilityKey(asin, d))?.local; if (l) out.set(d, l) }
   return out
+}
+
+/** Who each product is (brand, model, name), for SCOUT's live-store search.
+ *  One Keepa call for up to a hundred ASINs; empty when Keepa is not set up. */
+export async function productIdentities(asins: string[]): Promise<Record<string, { brand: string | null; title: string | null; model: string | null }>> {
+  const out: Record<string, { brand: string | null; title: string | null; model: string | null }> = {}
+  if (!asins.length || !keepaConfigured()) return out
+  const ids = await fetchKeepaIdentity([...new Set(asins.map(up))])
+  for (const [a, v] of ids) out[a] = { brand: v.brand, title: v.title, model: v.model }
+  return out
+}
+
+export type StoreCheckResult = { asin: string; status: 'found' | 'not-listed' | 'unknown'; searched?: boolean; localAsin?: string | null; how?: string | null }
+
+/**
+ * What SCOUT read from a live store, into the same caches Keepa's answers
+ * live in, so every screen and every creator reads it the same way. Only
+ * definite answers are kept: "unknown" (a robot check, a page that did not
+ * load) is dropped and asked again next time.
+ */
+export async function recordStoreCheck(sb: Sb, domain: string, results: StoreCheckResult[]): Promise<number> {
+  const mkt = marketByDomain(domain)
+  if (!mkt) return 0
+  const host = mkt.host.toLowerCase()
+  const now = new Date().toISOString()
+  const stock: Array<Record<string, unknown>> = []
+  const equiv: Array<{ source_asin: string; domain: string; local_asin: string | null; how: string | null }> = []
+  for (const r of results) {
+    const asin = up(r.asin)
+    if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+    if (r.status === 'found') { stock.push({ asin, marketplace: host, available: true, in_stock: null, checked_at: now }); continue }
+    if (r.status !== 'not-listed') continue
+    stock.push({ asin, marketplace: host, available: false, in_stock: false, checked_at: now })
+    const local = r.localAsin && /^[A-Z0-9]{10}$/i.test(r.localAsin) ? up(r.localAsin) : null
+    if (local) {
+      // SCOUT opened the local listing's own page before naming it.
+      stock.push({ asin: local, marketplace: host, available: true, in_stock: null, checked_at: now })
+      equiv.push({ source_asin: asin, domain: mkt.domain, local_asin: local, how: r.how === 'model' ? 'model' : 'name' })
+    } else {
+      // Searched with nothing matching, or nothing to search by (no brand or
+      // name known): asking again would get the same answer.
+      equiv.push({ source_asin: asin, domain: mkt.domain, local_asin: null, how: null })
+    }
+  }
+  if (stock.length) {
+    try { await sb.from('passport_asin_market').upsert(stock, { onConflict: 'asin,marketplace' }) } catch { /* best-effort */ }
+  }
+  await writeCache(sb, equiv)
+  return stock.length
 }
