@@ -3,7 +3,8 @@
 //
 // Review posts due a first-hand update (lib/post-refresh.ts). After 90 days
 // MVP asks how the product has held up; the creator's line goes into the post
-// in their words, and only then does WordPress change. LABS while tested.
+// in their words, and only then does WordPress change. A one-line bar,
+// closed by default, so it never pushes the generator down the page.
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -38,6 +39,13 @@ export function PostUpdates() {
   const [needsMigration, setNeedsMigration] = useState(false)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const [index, setIndex] = useState(0)
+  const [showRecent, setShowRecent] = useState(false)
+  // Closed unless this browser opened it last time. Storage can be blocked
+  // (private windows, previews), so every read and write is guarded.
+  const [open, setOpen] = useState(false)
+  useEffect(() => { try { setOpen(localStorage.getItem('mvp.postUpdates.open') === '1') } catch { /* stays closed */ } }, [])
+  const toggle = (v: boolean) => { setOpen(v); try { localStorage.setItem('mvp.postUpdates.open', v ? '1' : '0') } catch { /* not remembered */ } }
 
   const load = useCallback(async () => {
     try {
@@ -71,69 +79,93 @@ export function PostUpdates() {
   if (!allowed) return null
   if (needsMigration) {
     return (
-      <div className="rounded-xl border p-4 mb-6 text-[13px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text-soft)' }}>
+      <div className="rounded-xl border px-4 py-2.5 mb-4 text-[12.5px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text-soft)' }}>
         Post updates need migration 384 before they can show which reviews are due.
       </div>
     )
   }
   if (!due.length && !recent.length) return null
 
+  const current = due.length ? due[Math.min(index, due.length - 1)] : null
   return (
-    <div className="rounded-xl border p-4 mb-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      {due.length > 0 && (
-        <>
-          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>
-            {dueCount} review{dueCount !== 1 ? 's are' : ' is'} due an update
-          </div>
-          <p className="text-[12.5px] mt-1 mb-3" style={{ color: 'var(--text-soft)' }}>
-            One line on how the product has held up since you reviewed it. It goes into the post in your words, labelled with how long after the review it was written. Readers trust it and search engines count it as a real update, which a reworded post is not.
-          </p>
-          <div className="flex flex-col gap-3">
-            {due.map((d) => (
-              <div key={d.id} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
+    <div className="rounded-xl border mb-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      {/* ONE LINE WHEN CLOSED. The panel sat above the generator and pushed it
+          a screen down with a stack of reviews; closed by default, it is a
+          single bar, and the choice is remembered in this browser. */}
+      <button type="button" onClick={() => toggle(!open)} aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+          {dueCount > 0 ? `${dueCount} review${dueCount !== 1 ? 's are' : ' is'} due an update` : 'Post updates'}
+        </span>
+        <span className="text-[12px] hidden sm:inline truncate" style={{ color: 'var(--text-soft)' }}>
+          {dueCount > 0 ? 'One line from you on how the product held up keeps each one current.' : `${recent.length} updated in the last 60 days.`}
+        </span>
+        <span className="ml-auto text-[12px] font-medium shrink-0" style={{ color: 'var(--accent)' }}>{open ? 'Hide' : dueCount > 0 ? 'Update them' : 'Show'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t" style={{ borderColor: 'var(--border)' }}>
+          {current && (
+            <>
+              <p className="text-[12px] mt-3 mb-2" style={{ color: 'var(--text-soft)' }}>
+                Your line goes into the post in your words, labelled with how long after the review it was written. Readers trust it, and search engines count it as a real update, which a reworded post is not.
+              </p>
+              {/* One review at a time, not a stack of them. */}
+              <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-baseline justify-between gap-2">
-                  {d.url
-                    ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{d.title || 'Untitled post'}</a>
-                    : <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{d.title || 'Untitled post'}</span>}
-                  <span className="text-[12px] shrink-0" style={{ color: 'var(--text-soft)' }}>{d.since}</span>
+                  {current.url
+                    ? <a href={current.url} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{current.title || 'Untitled post'}</a>
+                    : <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{current.title || 'Untitled post'}</span>}
+                  <span className="text-[12px] shrink-0 tabular-nums" style={{ color: 'var(--text-soft)' }}>{current.since} · {Math.min(index, due.length - 1) + 1} of {dueCount}</span>
                 </div>
                 <textarea
-                  value={notes[d.id] || ''}
-                  onChange={(e) => setNotes((n) => ({ ...n, [d.id]: e.target.value }))}
+                  value={notes[current.id] || ''}
+                  onChange={(e) => setNotes((n) => ({ ...n, [current.id]: e.target.value }))}
                   maxLength={700} rows={2}
                   placeholder="Still using it? What has changed, worn, or surprised you?"
                   className="mt-2 w-full rounded-lg border px-3 py-2 text-[13px]"
                   style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)', color: 'var(--text)' }}
                 />
-                <div className="flex gap-2 mt-2">
-                  <button onClick={() => act(d, 'update')} disabled={busy === d.id || (notes[d.id] || '').trim().length < 15}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button onClick={() => act(current, 'update')} disabled={busy === current.id || (notes[current.id] || '').trim().length < 15}
                     className="inline-flex items-center h-8 px-3 rounded-lg text-[12.5px] font-medium text-white disabled:opacity-50"
                     style={{ background: 'var(--accent)' }}>
-                    {busy === d.id ? 'Updating…' : 'Add to post'}
+                    {busy === current.id ? 'Updating…' : 'Add to post'}
                   </button>
-                  <button onClick={() => act(d, 'snooze')} disabled={busy === d.id}
+                  <button onClick={() => act(current, 'snooze')} disabled={busy === current.id}
                     className="inline-flex items-center h-8 px-3 rounded-lg border text-[12.5px] font-medium disabled:opacity-50"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
                     Nothing new yet
                   </button>
+                  {due.length > 1 && (
+                    <button onClick={() => setIndex((i) => (i + 1) % due.length)} disabled={busy === current.id}
+                      className="inline-flex items-center h-8 px-3 rounded-lg text-[12.5px] font-medium disabled:opacity-50 ml-auto"
+                      style={{ color: 'var(--text-soft)' }}>
+                      Skip for now →
+                    </button>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
-      {recent.length > 0 && (
-        <div className={due.length ? 'mt-4' : ''}>
-          <div className="text-[12.5px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Updated in the last 60 days</div>
-          <ul className="text-[12.5px] flex flex-col gap-1" style={{ color: 'var(--text-soft)' }}>
-            {recent.map((r) => (
-              <li key={r.id}>
-                {r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{r.title || 'Untitled post'}</a> : (r.title || 'Untitled post')}
-                {r.note ? <>: “{r.note.length > 120 ? `${r.note.slice(0, 120)}…` : r.note}”</> : null}
-                {r.impact ? <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{impactText(r.impact)}</div> : null}
-              </li>
-            ))}
-          </ul>
+            </>
+          )}
+          {recent.length > 0 && (
+            <div className="mt-3">
+              <button type="button" onClick={() => setShowRecent((v) => !v)} className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>
+                {showRecent ? '▾' : '▸'} Updated in the last 60 days ({recent.length})
+              </button>
+              {showRecent && (
+                <ul className="text-[12.5px] flex flex-col gap-1 mt-1" style={{ color: 'var(--text-soft)' }}>
+                  {recent.map((r) => (
+                    <li key={r.id}>
+                      {r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{r.title || 'Untitled post'}</a> : (r.title || 'Untitled post')}
+                      {r.note ? <>: “{r.note.length > 120 ? `${r.note.slice(0, 120)}…` : r.note}”</> : null}
+                      {r.impact ? <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{impactText(r.impact)}</div> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

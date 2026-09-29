@@ -24,6 +24,9 @@ function editLink(h: Held): string | null {
 export function HeldPosts() {
   const [held, setHeld] = useState<Held[]>([])
   const [busy, setBusy] = useState<string | null>(null)
+  // Three at most until asked, so a run of held drafts never pushes the
+  // generator down the page.
+  const [all, setAll] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -58,7 +61,7 @@ export function HeldPosts() {
         These were saved as drafts on your site instead of going live. Each says why: a link that is for a different product than the video, or an auto-pilot post with nothing first-hand in it or that reads as machine-written. Fix what it names, then publish. They stay drafts until you do.
       </p>
       <div className="flex flex-col gap-2">
-        {held.map((h) => {
+        {(all ? held : held.slice(0, 3)).map((h) => {
           const edit = editLink(h)
           return (
             <div key={h.id} className="rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center gap-2" style={{ borderColor: 'var(--border)' }}>
@@ -83,6 +86,11 @@ export function HeldPosts() {
             </div>
           )
         })}
+        {held.length > 3 && (
+          <button type="button" onClick={() => setAll((v) => !v)} className="self-start text-[12.5px] font-medium" style={{ color: 'var(--accent, #6d28d9)' }}>
+            {all ? 'Show fewer' : `Show all ${held.length}`}
+          </button>
+        )}
       </div>
     </div>
   )

@@ -145,6 +145,14 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the panel says each state in its own words', ['waiting', 'no-search-console', 'other-site', 'unavailable', 'measured'].every((k) => read('components/content/PostUpdates.tsx').includes(`case '${k}'`)))
 }
 
+// ── The panels above the generator stay small (29 Sep) ──
+{
+  const U = read('components/content/PostUpdates.tsx')
+  check('post updates are one bar, closed unless opened, one review at a time',
+    /useState\(false\)[\s\S]{0,200}localStorage\.getItem\('mvp\.postUpdates\.open'\) === '1'/.test(U) && /\{open && \(/.test(U) && /due\[Math\.min\(index, due\.length - 1\)\]/.test(U) && !/due\.map\(/.test(U))
+  check('held drafts show three until asked', /\(all \? held : held\.slice\(0, 3\)\)\.map/.test(read('components/content/HeldPosts.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ blog-quality: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
