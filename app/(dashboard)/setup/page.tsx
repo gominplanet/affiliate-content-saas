@@ -791,7 +791,9 @@ function Step4({
       const raw = await res.text()
       let data: Record<string, string> = {}
       try { data = JSON.parse(raw) } catch { throw new Error(`Server returned unexpected response: ${raw.slice(0, 300)}`) }
-      if (!res.ok) throw new Error(data.error || 'Setup failed')
+      // The fix travels with the error, so the wizard never ends on "this is
+      // common" with nothing to do about it.
+      if (!res.ok) throw new Error([data.error || 'Setup failed', data.fix].filter(Boolean).join('\n\n'))
       onNext(connectedUrl)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed. Check your connection token.')
@@ -854,7 +856,7 @@ function Step4({
       </div>
 
       {error && (
-        <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>
+        <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2 whitespace-pre-line">{error}</p>
       )}
 
       <div className="flex items-center gap-3">

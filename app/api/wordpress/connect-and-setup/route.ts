@@ -4,7 +4,7 @@ import { generateHomePage } from '@/lib/wordpress-home-template'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
-import { maybeEncrypt } from '@/lib/secrets'
+import { maybeEncrypt, maybeDecrypt } from '@/lib/secrets'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -105,7 +105,12 @@ export async function POST(request: Request) {
       }
       resolvedUrl = intRow.wordpress_url
       resolvedUsername = intRow.wordpress_username
-      resolvedAppPw = intRow.wordpress_app_password
+      // DECRYPTED. The password is stored encrypted (/connect-token saves it
+      // with maybeEncrypt), and this read used it as it came: every token
+      // setup sent the ciphertext as its password, WordPress refused it, and
+      // the refusal read as "your hosting strips the Authorization header",
+      // a dead end on any host.
+      resolvedAppPw = maybeDecrypt(intRow.wordpress_app_password) ?? ''
     }
 
     const appPwInput = (resolvedAppPw || '').trim()
@@ -142,8 +147,9 @@ export async function POST(request: Request) {
       // by the host before WordPress could read it — common on Hostinger / some Apache setups.
       if (errBody.includes('rest_not_logged_in')) {
         return NextResponse.json({
-          error: 'Your hosting strips the Authorization header before WordPress sees it (common on Hostinger).',
+          error: 'Your hosting removes the login header before WordPress sees it (common on Hostinger and other LiteSpeed hosts), so MVP could not finish setting up your site.',
           hint: 'auth_header_stripped',
+          fix: 'To fix it: open your host\'s File Manager (on Hostinger: hPanel, File Manager, public_html) and open the file .htaccess. Directly below the line "# BEGIN WordPress", add these two lines:\n\nRewriteEngine On\nRewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n\nSave the file, then press Launch again with the same token.',
         }, { status: 400 })
       }
       return NextResponse.json({

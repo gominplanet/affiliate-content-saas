@@ -63,6 +63,14 @@ check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(r
   check('a held generation says so on the Content page', /Saved as a draft, not published\./.test(read('components/content/GenerateButton.tsx')) && /Draft, not published/.test(read('components/content/GenerateButton.tsx')))
 }
 
+// ── WordPress setup reads the saved password decrypted (29 Sep: a creator's
+//    token setup stopped at "your hosting strips the Authorization header") ──
+{
+  const S = read('app/api/wordpress/connect-and-setup/route.ts')
+  check('the token setup decrypts the stored password before logging in', /resolvedAppPw = maybeDecrypt\(intRow\.wordpress_app_password\)/.test(S) && !/resolvedAppPw = intRow\.wordpress_app_password/.test(S))
+  check('a host that strips the login header gets the fix, not only the diagnosis', /fix: 'To fix it: open your host/.test(S) && /data\.fix\]\.filter\(Boolean\)/.test(read('app/(dashboard)/setup/page.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ post-site: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
