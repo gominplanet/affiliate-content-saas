@@ -88,6 +88,8 @@ check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(r
   check('the shop list has no em dash in its words', !/in one place —/.test(M) && !/<\/strong> — <a/.test(M))
 }
 
+check('a post whose address was renamed in WordPress is still recognised (old-slug redirect followed)', /if \(expectedUrl && await redirectsTo\(expectedUrl, who\)\) return \{ ok: true/.test(read('lib/post-site.ts')))
+
 if (failures.length) {
   console.error(`\n❌ post-site: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

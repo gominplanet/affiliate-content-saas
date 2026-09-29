@@ -65,12 +65,17 @@ export function samePost(expectedUrl: string | null | undefined, wp: { slug: str
 
 /** Right before a write: is post #id on this site the post at expectedUrl? */
 export async function checkSamePost(wp: WordPressService, id: number, expectedUrl: string | null | undefined):
-  Promise<{ ok: true } | { ok: false; error: string }> {
+  Promise<{ ok: true; renamedTo?: string | null } | { ok: false; error: string }> {
   const who = await wp.getPostIdentity(id)
   if (!who.ok) {
     return { ok: false, error: who.status === 404 ? `Post #${id} is not on that site any more, so nothing was changed.` : `WordPress would not say which post #${id} is (${who.reason}), so nothing was changed.` }
   }
   if (!samePost(expectedUrl, who)) {
+    // A RENAMED ADDRESS IS STILL THE SAME POST. WordPress keeps the old slug
+    // and redirects it to the new one, so the address on file is followed
+    // before the post is called a different one: a creator who fixes a slug
+    // in WordPress must not be locked out of their own post.
+    if (expectedUrl && await redirectsTo(expectedUrl, who)) return { ok: true, renamedTo: who.link || null }
     return { ok: false, error: `Post #${id} on that site is ${who.link || who.slug}, not ${expectedUrl}. MVP had this post filed under the wrong site, so nothing was changed.` }
   }
   return { ok: true }
@@ -96,4 +101,13 @@ export function sameTitle(a: string, b: string): boolean {
     .replace(/&#8211;|&#8212;|&ndash;|&mdash;|[–—]/g, '-').replace(/&amp;/g, '&').replace(/<[^>]+>/g, '')
     .replace(/\s+/g, ' ').trim().toLowerCase()
   return n(a) === n(b)
+}
+
+/** Does the address on file now land on this post (WordPress's old-slug
+ *  redirect)? A failed fetch is a no. */
+async function redirectsTo(url: string, wp: { slug: string; link: string }): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0)' } })
+    return samePost(res.url, wp)
+  } catch { return false }
 }
