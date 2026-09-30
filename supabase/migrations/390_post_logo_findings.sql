@@ -28,3 +28,5 @@ alter table public.post_logo_findings enable row level security;
 drop policy if exists "own logo findings" on public.post_logo_findings;
 create policy "own logo findings" on public.post_logo_findings
   for select using (auth.uid() = user_id);
+
+notify pgrst, 'reload schema';
