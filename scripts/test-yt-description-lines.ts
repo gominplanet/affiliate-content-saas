@@ -191,6 +191,19 @@ const VALUES = { shop: 'AMAZON', link: 'https://mvpl.ink/x7k', site: 'https://re
       .includes('blog.com'))
 }
 
+// ── THE MEDIA KIT AND THE LINK HUB REACH THE DESCRIPTION ─────────────────────
+// A creator with a media kit and a Linktree in Brand Profile got neither in his
+// descriptions: both fields fed only the pitch email.
+{
+  const R = readFileSync('app/api/youtube/generate-metadata/route.ts', 'utf8')
+  check('the collaborations line falls back to the media kit before the blog',
+    /const collabUrl = String\(\(brand\?\.collab_url as string\) \|\| ''\)\.trim\(\) \|\| mediaKitUrl/.test(R))
+  check('a link hub gets its own line, once', /descParts\.push\(`----------`, LINES\.linkHub\)/.test(R)
+    && /!sameUrl\(linkHubUrl, websiteUrl\) && !sameUrl\(linkHubUrl, collabUrl\)/.test(R))
+  const L = descriptionLines(null, { hub: 'https://linktr.ee/x' })
+  check('the link hub line fills its address', L.linkHub === '🔗 All my links: https://linktr.ee/x', L.linkHub)
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

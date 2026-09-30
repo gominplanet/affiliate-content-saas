@@ -39,6 +39,7 @@ export const LINE_KEYS = [
   'collabBoth',
   'collabBothEmailFirst',
   'collabNoLink',
+  'linkHub',
   'signOff',
 ] as const
 
@@ -59,6 +60,9 @@ export const DEFAULT_LINES: Record<LineKey, string> = {
   collabBoth: "Let's Work Together! Check my WEBSITE for collaborations: {collab} or email me: {email}",
   collabBothEmailFirst: "Let's Work Together! Email me for collaborations: {email} or check my WEBSITE: {collab}",
   collabNoLink: "Let's Work Together! Brand collaborations welcome — reach me through the website linked above.",
+  // New, and only printed for a creator who filled in Linktree / link hub in
+  // Brand Profile: that field used to reach the pitch email and nothing else.
+  linkHub: '🔗 All my links: {hub}',
   signOff: 'Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)',
 }
 
@@ -76,6 +80,7 @@ export const LINE_META: Record<LineKey, { label: string; help: string; tokens: s
   collabBoth: { label: 'Collaboration line (site + email)', help: 'Used when you have BOTH a collaborations URL and a contact email, and the URL is not already printed above. Brands get two ways to reach you.', tokens: ['{collab}', '{email}'] },
   collabBothEmailFirst: { label: 'Collaboration line (email first)', help: 'The same two routes, ordered the other way. Used when Brand Outreach Contact is set to email.', tokens: ['{email}', '{collab}'] },
   collabNoLink: { label: 'Collaboration line (no repeat)', help: 'Used when your site is already linked above, so the address is not printed twice.', tokens: [] },
+  linkHub: { label: 'Link hub line', help: 'Your Linktree or link hub from Brand Profile. Only shown when you have set one.', tokens: ['{hub}'] },
   signOff: { label: 'Sign-off', help: 'The thank-you and subscribe line.', tokens: [] },
 }
 
@@ -113,7 +118,7 @@ export function resolveLine(key: LineKey, overrides: LineOverrides | null | unde
 /** Fill the tokens. Unknown tokens are left alone rather than blanked, so a
  *  creator seeing "{shopp}" in their description can spot their own typo
  *  instead of finding a silent gap. */
-export function fillTokens(line: string, values: { shop?: string; link?: string; site?: string; email?: string; collab?: string }): string {
+export function fillTokens(line: string, values: { shop?: string; link?: string; site?: string; email?: string; collab?: string; hub?: string }): string {
   return line
     .replace(/\{shop\}/g, values.shop ?? '')
     .replace(/\{link\}/g, values.link ?? '')
@@ -123,6 +128,7 @@ export function fillTokens(line: string, values: { shop?: string; link?: string;
     // separate collaborations URL sees exactly what they saw before.
     .replace(/\{collab\}/g, values.collab ?? values.site ?? '')
     .replace(/\{email\}/g, values.email ?? '')
+    .replace(/\{hub\}/g, values.hub ?? '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
 }
@@ -130,7 +136,7 @@ export function fillTokens(line: string, values: { shop?: string; link?: string;
 /** One call for the route: every line, resolved and filled. */
 export function descriptionLines(
   overrides: LineOverrides | null | undefined,
-  values: { shop?: string; link?: string; site?: string; email?: string; collab?: string },
+  values: { shop?: string; link?: string; site?: string; email?: string; collab?: string; hub?: string },
 ): Record<LineKey, string> {
   const out = {} as Record<LineKey, string>
   for (const key of LINE_KEYS) out[key] = fillTokens(resolveLine(key, overrides), values)

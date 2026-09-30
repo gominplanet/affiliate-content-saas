@@ -1112,7 +1112,7 @@ export default function BrandPage() {
                   placeholder="linktr.ee/yourname"
                   className="input-field"
                 />
-                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A single hub of all your channels. Pre-fills the Collaborations pitch email.</p>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A single hub of all your channels. Gets its own line in your YouTube descriptions, and pre-fills the Collaborations pitch email.</p>
               </div>
               {/* Media kit URL — added 2026-06-05 alongside the Oink
                   recommendation. Brands almost always ask for one
@@ -1131,7 +1131,7 @@ export default function BrandPage() {
                   className="input-field"
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                  The quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
+                  The quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. It is also the link in the &quot;Let&apos;s Work Together&quot; line of your YouTube descriptions, unless you set a Brand collaborations URL below. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
                 </p>
               </div>
 

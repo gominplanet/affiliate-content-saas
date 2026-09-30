@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { descriptionLines } from '@/lib/yt-description-lines'
-import { footerBlocks } from '@/lib/yt-description-footer'
+import { footerBlocks, sameUrl } from '@/lib/yt-description-footer'
 import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -706,7 +706,14 @@ export async function POST(request: Request) {
     // Where brands should go to work with this creator, when that is NOT the
     // blog. Empty means "same as the blog", which is the common case and the
     // behaviour before the field existed.
-    const collabUrl = (brand?.collab_url as string) || ''
+    // THE MEDIA KIT IS A COLLABORATIONS PAGE. A creator who filled in a media
+    // kit and no separate collaborations URL used to get the blog in the
+    // "Let's Work Together" line; brands looking to work with them want the
+    // kit. Order: collaborations URL, then media kit, then the blog.
+    const mediaKitUrl = String((brand?.media_kit_url as string) || '').trim()
+    const collabUrl = String((brand?.collab_url as string) || '').trim() || mediaKitUrl
+    // Linktree / link hub: printed as its own line (below).
+    const linkHubUrl = String((brand?.linktree_url as string) || '').trim()
     const contactEmail = (brand?.contact_email as string) || ''
     const contactPreference: 'website' | 'email' =
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
@@ -1399,6 +1406,7 @@ export async function POST(request: Request) {
       site: websiteUrl || '',
       collab: collabUrl || websiteUrl || '',
       email: contactEmail || '',
+      hub: linkHubUrl,
     }
     const LINES = descriptionLines(lineOverrides, lineValues)
 
@@ -1481,6 +1489,14 @@ export async function POST(request: Request) {
       descParts.push(`----------`, footer.blogLine)
     }
     if (collabLine) descParts.push(`----------`, collabLine)
+    // THE LINK HUB, once. Not when it is the same address as the blog or the
+    // collaborations link already printed, nor when the creator's own block
+    // already carries it.
+    if (linkHubUrl && /^https?:\/\//i.test(linkHubUrl)
+      && !sameUrl(linkHubUrl, websiteUrl) && !sameUrl(linkHubUrl, collabUrl)
+      && !(customBlock || '').toLowerCase().includes(linkHubUrl.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, ''))) {
+      descParts.push(`----------`, LINES.linkHub)
+    }
     if (comparison) {
       descParts.push(`----------`, `Product ASINs: ${comparison.map((c) => c.asin).join(', ')}`, `----------`, `About these products:`, contentResult.productDescription)
     } else if (isProduct) {
