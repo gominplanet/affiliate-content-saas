@@ -146,7 +146,10 @@ export function dealPhase(meta: { endedAt?: unknown; revivedAt?: unknown } | nul
  * in the past and would show the box ended again. Pure.
  */
 export function reviveShortcodes(content: string, sale: { pct: number | null; endsAt: string | null }): { html: string; changed: boolean } {
-  const badge = sale.pct != null && sale.pct > 0 ? `${Math.round(sale.pct)}% OFF` : 'DEAL'
+  // NO PERCENTAGE ON THE CHIP. Amazon allows a discount on a page only while
+  // it lasts, and this is checked hours apart, not the moment it ends.
+  void sale.pct
+  const badge = 'ON SALE'
   let changed = false
   const html = String(content || '').replace(/\[(mvp_deal_banner|mvp_deal_cta)\b([^\]]*)\]/gi, (_all, name: string, attrs: string) => {
     let a = attrs
@@ -171,6 +174,7 @@ export function firstProductHref(content: string): string | null {
 
 /** The intro while the product is on sale again. Pure. */
 export function saleAgainExcerpt(pct: number | null, productName: string): string {
-  const lead = pct != null && pct > 0 ? `On sale again: about ${Math.round(pct)}% off right now.` : 'On sale again right now.'
+  void pct
+  const lead = 'On sale again right now.'
   return `${lead} ${lastingExcerpt(productName)}`
 }

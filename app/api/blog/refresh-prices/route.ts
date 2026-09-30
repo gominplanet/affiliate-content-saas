@@ -43,7 +43,11 @@ export async function GET() {
 
   const bc = (brand as { blog_customizations?: Record<string, unknown> } | null)?.blog_customizations ?? {}
   const postMeta = (bc as Record<string, Record<string, unknown>>)?.postMeta ?? {}
-  const includePrice = postMeta?.schemaIncludePrice !== false
+  // NOW A CLEAN-UP. The price is never kept in the review data any more
+  // (Amazon allows one only from its own API with a time stamp), so this
+  // takes it OUT of posts that still carry one, whatever the old setting said.
+  void postMeta
+  const includePrice = true
 
   if (!includePrice) {
     return new Response(JSON.stringify({ skipped: true }), {
@@ -131,14 +135,8 @@ export async function GET() {
         emit({ done, total, current: item.title })
 
         try {
-          // 1. Fetch current Amazon price (no AI cost — plain HTTP scrape)
-          const product = await fetchAmazonProduct(item.asin)
-          const rawPrice = product?.price ?? product?.priceSale ?? null
-          const numericPrice = parsePrice(rawPrice)
-          if (numericPrice == null) {
-            done++
-            continue // product has no price (out of stock / varies) — skip
-          }
+          // 1. Nothing is fetched from Amazon: the price is removed, not
+          //    refreshed.
 
           // 2. Read existing mvp_jsonld from WP so we can patch in-place
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,16 +158,19 @@ export async function GET() {
             continue
           }
 
-          // 3. Patch the price on the Product node's offers
+          // 3. Take the price off the Product node's offer; keep the offer
+          //    itself (where to buy, availability).
           let patched = false
           for (const node of graph['@graph'] ?? []) {
             if (node['@type'] === 'Product' && node.offers) {
               const offer = node.offers as Record<string, unknown>
-              offer.price = numericPrice
-              offer.priceCurrency = 'USD'
-              offer.priceValidUntil = priceValidUntil
-              if (!offer['@type']) offer['@type'] = 'Offer'
-              patched = true
+              if ('price' in offer || 'priceCurrency' in offer || 'priceValidUntil' in offer) {
+                delete offer.price
+                delete offer.priceCurrency
+                delete offer.priceValidUntil
+                if (!offer['@type']) offer['@type'] = 'Offer'
+                patched = true
+              }
             }
           }
 

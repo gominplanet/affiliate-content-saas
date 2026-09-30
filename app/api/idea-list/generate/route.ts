@@ -13,6 +13,7 @@
 //      add a CTA to the FULL list on Amazon, publish to WordPress.
 //
 // Paid tiers; counts against the monthly generation limit.
+import { containsPriceClaim } from '@/lib/product-signals-brief'
 import { NextResponse } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
 import { createServerClient } from '@/lib/supabase/server'
@@ -39,7 +40,6 @@ export const maxDuration = 300
 
 const DISCLOSURE = 'As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links, and I may earn a commission at no extra cost to you.'
 const esc = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const dollars = (cents: number | null) => (cents == null ? null : `$${(cents / 100).toFixed(2)}`)
 
 interface InItem { asin: string; title?: string | null; image?: string | null }
 
@@ -132,7 +132,9 @@ export async function POST(request: Request) {
     const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "best picks" listicle. The guide's theme is: "${angle}".
 
 ${isManual ? 'PRODUCTS (already chosen by the creator)' : 'CANDIDATE PRODUCTS — choose the line-up from THESE ONLY'}. "[CC]" marks a product the creator earns a campaign bounty on:
-${candidatePool.map((p, i) => `${i + 1}. [ASIN ${p.asin}]${p.hasCampaign ? ' [CC]' : ''} ${p.title}${p.priceCents ? ` — ${dollars(p.priceCents)}` : ''}${p.rating ? ` — ${p.rating}★ (${p.reviews || 0} reviews)` : ''}`).join('\n')}
+${candidatePool.map((p, i) => `${i + 1}. [ASIN ${p.asin}]${p.hasCampaign ? ' [CC]' : ''} ${p.title}${p.rating ? ` — ${p.rating}★ (${p.reviews || 0} reviews)` : ''}`).join('\n')}
+
+NEVER write a price, a dollar amount, a percentage, a star rating or a review count in any text you return: the post is not updated after it publishes, and readers click through for today's price and reviews.
 
 ${selectRules}
 
@@ -181,13 +183,15 @@ HARD BAN — generic filler that could describe ANY product. Never write "punche
     const cardsHtml = picks.map((p, i) => {
       const pr: { heading?: string; superlative?: string; blurb?: string } = proseByAsin.get(p.asin) || {}
       const url = linkByAsin.get(p.asin) || `https://www.amazon.com/dp/${p.asin}`
-      const price = dollars(p.priceCents)
-      const meta = [price, p.rating ? `${p.rating}★${p.reviews ? ` (${p.reviews.toLocaleString()})` : ''}` : null].filter(Boolean).join(' · ')
+      // NO PRICE OR STAR LINE. Amazon allows a price (and its ratings) on a
+      // page only from its own API with a time stamp; this card printed both
+      // from Keepa into a post that is never updated.
+      const meta = ''
       return `<div class="mvp-pick" style="margin:0 0 2rem;padding:1.25rem;border:1px solid #e5e5e5;border-radius:14px;">
 <h2 style="margin:0 0 .35rem;">${i + 1}. ${esc(pr.heading || p.title)}</h2>
 ${pr.superlative ? `<p style="margin:0 0 .75rem;font-weight:600;color:#7C3AED;">${esc(pr.superlative)}</p>` : ''}
 ${p.image ? `<p style="margin:0 0 .75rem;"><a href="${esc(url)}" target="_blank" rel="nofollow sponsored noopener"><img src="${esc(p.image)}" alt="${esc(p.title)}" style="max-width:280px;height:auto;border-radius:10px;" /></a></p>` : ''}
-<p style="margin:0 0 .5rem;">${esc(pr.blurb || p.title)}</p>
+<p style="margin:0 0 .5rem;">${esc(pr.blurb && !containsPriceClaim(pr.blurb) ? pr.blurb : p.title)}</p>
 ${meta ? `<p style="margin:0 0 .85rem;color:#555;">${esc(meta)}</p>` : ''}
 <p style="margin:0;"><a href="${esc(url)}" target="_blank" rel="nofollow sponsored noopener" style="display:inline-block;background:#ff9900;color:#111;font-weight:700;padding:.6rem 1.15rem;border-radius:8px;text-decoration:none;">Shop ${esc((pr.heading || p.title).split(' ').slice(0, 3).join(' '))} on Amazon →</a></p>
 </div>`

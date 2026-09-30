@@ -6,6 +6,7 @@
 // orchestrates per-user publishing; this lib holds the reusable pieces so the
 // logic is testable and the cron stays thin.
 
+import { containsPriceClaim } from '@/lib/product-signals-brief'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
@@ -216,11 +217,13 @@ export async function generateDigestContent(opts: {
     console.log('[weekly-digest] depth trim', { picked: opts.deals.length, covered: depth.count, wordsEach: depth.wordsEach })
   }
 
+  // NO PRICE REACHES THE WRITER. Amazon allows a price on a page only when it
+  // comes from its own API with a time stamp, and a roundup is never updated
+  // after it publishes, so the post says "a deal" and links to today's price.
+  // The price history's shape (e.g. "lowest in 90 days") stays: no number.
   const dealLines = deals.map((d, i) => {
-    const price = money(d.price_now_cents)
-    const ctx = d.lowest_label ? ` Price context: ${d.lowest_label}.` : ''
-    const disc = d.discount_pct != null ? ` ~${d.discount_pct}% off.` : ''
-    return `${i + 1}. [${d.asin}] ${d.title}${price ? ` — now ${price}.` : ''}${disc}${ctx}`
+    const ctx = d.lowest_label && !containsPriceClaim(d.lowest_label) ? ` Price context: ${d.lowest_label}.` : ''
+    return `${i + 1}. [${d.asin}] ${d.title}.${ctx}`
   }).join('\n')
 
   let model: DigestModelOut = { intro: '', blurbs: {}, outro: '' }
@@ -245,7 +248,7 @@ Rules:
 - "title": a ROUNDUP title for the WHOLE set, naming the shared category, never a single product or brand. Good examples: "This Week's Best Kitchen Deals", "Weekly Home & Tech Deals", "This Week's Top Pet Finds". Under 55 characters. Title Case. NEVER put a year or date in the title. No single product names, no provider names, no clickbait, no dashes.
 - "theme": 1 to 3 plain lowercase words naming the product category these share, for the URL and site category (e.g. "kitchen", "home office", "pet supplies", "tech"). If they are a genuine mix, use "deals".
 - "intro": 2 sentences. Answer-first — say this is your hand-picked roundup of genuine price drops worth a look. First person.
-- "blurbs": one entry per ASIN above, AT LEAST ${depth.minWordsEach} words each. Three things, in this order: what the thing actually is, why THIS price is worth acting on now, and who it suits (and who it does not). Two sentences is not enough to carry any of those. Do not pad to reach the length: if a deal has nothing behind it beyond the discount, say that plainly and keep it short. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
+- "blurbs": one entry per ASIN above, AT LEAST ${depth.minWordsEach} words each. Three things, in this order: what the thing actually is, why this deal is worth a look now, and who it suits (and who it does not). NEVER state a price, a dollar amount, a percentage or a saving: the reader clicks through for today's price. Two sentences is not enough to carry any of those. Do not pad to reach the length: if a deal has nothing behind it beyond the discount, say that plainly and keep it short. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
 - "outro": 1 sentence close, a light nudge to grab them before prices bounce back.
 - Plain text values (no HTML). No em-dashes or en-dashes anywhere. No "honest", "moreover", "furthermore", "game-changer".` }],
     })
@@ -300,16 +303,16 @@ Rules:
   const outro = scrubBanned(model.outro || `Prices like these don't tend to stick around, so grab what you want before they climb back up.`)
 
   const sections = deals.map((d) => {
-    const blurb = scrubBanned(model.blurbs?.[d.asin] || `${d.title} is at a genuinely strong price right now.`)
-    const price = money(d.price_now_cents)
-    const was = money(d.price_was_cents)
-    const priceLine = price
-      ? `<p><strong>${price}</strong>${was && (d.price_was_cents ?? 0) > (d.price_now_cents ?? 0) ? ` <span style="text-decoration:line-through;color:#888">${was}</span>` : ''}${d.discount_pct != null ? ` · about ${d.discount_pct}% off` : ''}</p>`
-      : ''
+    // A blurb that states a price anyway is replaced, not published.
+    const written = scrubBanned(model.blurbs?.[d.asin] || '')
+    const blurb = written && !containsPriceClaim(written) ? written : `${d.title} is on a deal right now. Check today's price before you buy.`
+    // NO PRICE LINE. It printed the price, the struck-through old price and
+    // "about N% off" into a post nobody updates (see dealLines above).
+    const priceLine = ''
     const img = d.image_url
       ? `<figure class="mvp-deal-image"><img src="${esc(d.image_url)}" alt="${esc(d.title).slice(0, 120)}" loading="lazy" /></figure>`
       : ''
-    return `<h2>${esc(d.title).slice(0, 120)}</h2>\n${img}\n${priceLine}\n<p>${esc(blurb)}</p>\n<p><a href="${esc(d.affiliateUrl)}" rel="nofollow sponsored">See the deal on ${esc(retailer)}</a></p>`
+    return `<h2>${esc(d.title).slice(0, 120)}</h2>\n${img}\n${priceLine}\n<p>${esc(blurb)}</p>\n<p><a href="${esc(d.affiliateUrl)}" rel="nofollow sponsored">Check today's price on ${esc(retailer)}</a></p>`
   }).join('\n\n')
 
   const html = `<p>${esc(intro)}</p>\n\n${sections}\n\n<p>${esc(outro)}</p>`

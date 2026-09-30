@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: false,
         error: refused
-          ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Get a new one in PartnerBoost under Account, Token manage, and paste it into External Integrations.`
+          ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). In PartnerBoost open Settings, Token Manage, copy the "All Channels" API token, and paste it into External Integrations.`
           : `PartnerBoost did not answer (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Try again in a few minutes.`,
       }, { status: 502 })
     }

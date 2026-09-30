@@ -915,26 +915,14 @@ export default function CustomizePage() {
           </div>
         </Section>
 
-        {/* Product price in schema */}
+        {/* Product price in schema: removed. Amazon allows a price on a page only
+            from its own API with a time stamp, and this one was read off
+            amazon.com and refreshed by hand, so it is never included now. */}
         <Section
           title="Product price in schema"
-          description="When enabled, MVP records the current Amazon price in your posts' structured data with a 7-day expiry — helping Google qualify your posts for Merchant Listing rich results (price badge, availability). Disable if you'd rather keep prices out of your schema entirely."
+          description="MVP no longer puts a price in your posts' structured data. Amazon only allows a price that comes from its own API with a time stamp, and a price copied from the product page breaks that rule the moment it changes. Your posts still carry the product, its availability and where to buy it."
         >
-          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
-            <div>
-              <p className="text-sm font-medium text-[var(--text)]">Include price in product schema</p>
-              <p className="text-xs text-[var(--text-3)]">Captured at generation time with a 7-day validity window. Use &quot;Refresh all prices&quot; on the SEO page to update existing posts.</p>
-            </div>
-            <button
-              onClick={() => setData(d => ({ ...d, postMeta: { ...d.postMeta, schemaIncludePrice: !d.postMeta.schemaIncludePrice } }))}
-              className="text-[var(--text-3)]"
-              aria-label="Toggle product price in schema"
-            >
-              {data.postMeta.schemaIncludePrice
-                ? <ToggleRight size={28} className="text-[#7C3AED]" />
-                : <ToggleLeft size={28} />}
-            </button>
-          </div>
+          <p className="text-xs text-[var(--text-3)]">Nothing to set here.</p>
         </Section>
 
         {/* Mid-article newsletter form */}

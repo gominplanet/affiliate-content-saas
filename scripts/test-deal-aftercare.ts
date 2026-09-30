@@ -85,14 +85,16 @@ check('a post moves deal, lasting, revived, lasting by its timestamps',
   && dealPhase({ endedAt: '2026-08-01', revivedAt: '2026-09-01' }) === 'revived' && dealPhase({ endedAt: '2026-09-10', revivedAt: '2026-09-01' }) === 'lasting')
 const endedBody = '[mvp_deal_banner end_date="2026-07-08" badge="27% OFF" url="https://amazon.com/dp/X" ended="1"]<p>x</p>[mvp_deal_cta url="https://amazon.com/dp/X" ended="1"]'
 const back = reviveShortcodes(endedBody, { pct: 31.6, endsAt: null })
-check('bringing it back drops the ended flag and the OLD end date, and shows the new discount',
-  back.changed && !/ended=/.test(back.html) && !/2026-07-08/.test(back.html) && (back.html.match(/badge="32% OFF"/g) || []).length === 2, back.html)
+// NO PERCENTAGE ON THE CHIP: Amazon allows a discount only while it lasts,
+// and this is checked hours apart.
+check('bringing it back drops the ended flag and the OLD end date, and shows ON SALE with no percentage',
+  back.changed && !/ended=/.test(back.html) && !/2026-07-08/.test(back.html) && (back.html.match(/badge="ON SALE"/g) || []).length === 2 && !/%/.test(back.html), back.html)
 const light = reviveShortcodes(endedBody, { pct: null, endsAt: '2026-10-01T18:00:00Z' })
-check('a lightning deal counts down on the box, with a plain DEAL chip when the discount is not known',
-  /\[mvp_deal_banner[^\]]*end_date="2026-10-01T18:00:00Z"/.test(light.html) && !/\[mvp_deal_cta[^\]]*end_date/.test(light.html) && /badge="DEAL"/.test(light.html))
+check('a lightning deal counts down on the box, with the same ON SALE chip',
+  /\[mvp_deal_banner[^\]]*end_date="2026-10-01T18:00:00Z"/.test(light.html) && !/\[mvp_deal_cta[^\]]*end_date/.test(light.html) && /badge="ON SALE"/.test(light.html))
 check('and when that sale ends the boxes go back to ended', (markShortcodesEnded(back.html).html.match(/ended="1"/g) || []).length === 2)
 const again = saleAgainExcerpt(31.6, 'LEVOIT Tower Fan')
-check('the on-sale-again intro gives the discount and stays free of dashes and a year', /^On sale again: about 32% off right now\./.test(again) && !/[\u2013\u2014]/.test(again) && !/\b20\d\d\b/.test(again))
+check('the on-sale-again intro gives no percentage and stays free of dashes and a year', /^On sale again right now\./.test(again) && !/%/.test(again) && !/[\u2013\u2014]/.test(again) && !/\b20\d\d\b/.test(again))
 check('a post with no deal box gets one pointing at its own product link', firstProductHref('<a href="https://www.amazon.com/dp/X?tag=t">x</a>') === 'https://www.amazon.com/dp/X?tag=t' && firstProductHref('<a href="https://blog.example/x">x</a>') === null)
 
 const SRV2 = read('lib/deal-aftercare-server.ts')

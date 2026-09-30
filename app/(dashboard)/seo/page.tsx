@@ -773,11 +773,11 @@ export default function SeoPage() {
                   disabled={!!refreshPriceProgress}
                   className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                   style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
-                  title="Re-fetch current Amazon prices and update all posts' product schema"
+                  title="Take the Amazon price out of every post's product data. Amazon only allows a price that comes from its own API with a time stamp."
                 >
                   {refreshPriceProgress
                     ? <><Loader2 size={13} className="animate-spin" /> {refreshPriceProgress.total > 0 ? `${refreshPriceProgress.done}/${refreshPriceProgress.total}` : 'Scanning…'}</>
-                    : <><DollarSign size={13} /> Refresh prices</>}
+                    : <><DollarSign size={13} /> Remove prices from posts</>}
                 </button>
                 <button
                   onClick={resyncUrls}

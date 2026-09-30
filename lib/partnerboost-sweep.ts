@@ -132,7 +132,7 @@ export async function syncUserCache(
   if (!brandListOk && brandListError) {
     const refused = /token|publisher does not exist|user not exist/i.test(brandListError)
     throw new Error(refused
-      ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Get a new one in PartnerBoost under Account, Token manage, and paste it into External Integrations. Your saved catalog is kept until then.`
+      ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). In PartnerBoost open Settings, Token Manage, copy the "All Channels" API token, and paste it into External Integrations. Your saved catalog is kept until then.`
       : `PartnerBoost did not answer the brand list (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept; MVP tries again every half hour.`)
   }
   const runStart = new Date().toISOString()

@@ -1318,9 +1318,11 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
   // Feed the DISCOUNT (a percentage / relative framing) but NOT exact dollar
   // amounts — exact prices go stale the moment the price moves and make an old
   // post read wrong. The writer is told to stay relative below.
+  // THE NUMBER IS NOT PASSED ON: the writer only learns that a real discount
+  // exists, so it cannot print one (see the price rule in the prompt).
   const dealLine = p.savingsLine
-    ? `The discount: ${p.savingsLine}. Frame this in RELATIVE terms only ("about X% off today", "a genuine price drop right now"). Do NOT state any exact dollar price.`
-    : 'No explicit discount figure — write this as a "great price right now / good time to buy" piece in relative terms. Do NOT state any exact dollar price.'
+    ? 'There is a real discount on the listing right now. Frame it in RELATIVE terms only ("a genuine price drop right now", "well below its usual price"). Do NOT state any price, dollar amount or percentage.'
+    : 'No explicit discount figure. Write this as a "great price right now / good time to buy" piece in relative terms. Do NOT state any price, dollar amount or percentage.'
 
   // A showcase post links to the creator's own TikTok Shop. Anything the writer
   // knows about Amazon pricing is about a different store, so it is banned
@@ -1393,7 +1395,7 @@ VOICE / STYLE
 - Never use "honest" or any variant. Never: moreover, furthermore, additionally, in conclusion, to summarize, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
 - HARD BAN on source-citing language. NEVER say: "based on the listing", "the listing says/claims/describes/shows/notes/is clearly aimed", "looking at the listing", "per the listing", "according to the spec sheet", "based on the spec sheet", "from the listing", "Amazon's listing", "the product page says". Just state product facts directly, the way a magazine editor would. If you catch yourself reaching for one of these phrases, REWRITE the sentence to lead with the product itself.
 - NEVER name any price-tracking data provider, tool, or third-party service — no "Keepa", "CamelCamelCamel", "price tracker", "our data", or similar. The price numbers are simply the product's own price history / what it's been selling for; present them as fact with confident language and no attribution.
-- NEVER state an exact dollar price anywhere ($49.99, "$83", "under $100", etc.). Exact prices go stale the moment the price changes and make the post read wrong later. Speak ONLY in relative + percentage terms: "a great price right now", "about 50% off today", "well below its usual price", "near the lowest it's been". Percentages are fine; specific dollar amounts are banned.
+- NEVER state a price, a dollar amount or a percentage anywhere ($49.99, "$83", "under $100", "50% off", etc.). Amazon allows a price only from its own API with a time stamp, and a discount only while it lasts; this post is not updated when either changes. Speak ONLY in relative terms: "a great price right now", "well below its usual price", "near the lowest it's been", "on a deal today".
 - Vary sentence openings. Don't start three paragraphs in a row the same way.
 - NEVER invent specs, prices, dates, or features. Only state what's actually known.
 - Output: VALID HTML only. No markdown fences. Open with <p>. Close with </p>. Use <h2>, <ul>, <li>, <a>, <p>, <strong>, <em>. Nothing else.`
@@ -1576,12 +1578,15 @@ function buildExcerpt(opts: {
   // raw scraped string. Run scrubEmDashes so the excerpt + WP title
   // honour the em-dash ban end-to-end.
   const cleanTitle = scrubEmDashes(opts.product.title || 'this product')
-  const lead = opts.savingsLine
-    ? `${opts.savingsLine} on ${cleanTitle}.`
-    : `Price-watch alert on ${cleanTitle}.`
+  // NO AMOUNTS. The excerpt shows on archive pages and every social share and
+  // is never rewritten while the deal runs, so "Save $47 (~32%)" outlived the
+  // price it described. Amazon allows a price only from its own API with a
+  // time stamp, and a discount only while the promotion lasts.
+  void opts.savingsLine
+  const lead = `Deal alert on ${cleanTitle}.`
   const tail = opts.occasionLong !== 'limited-time deal'
     ? ` ${opts.occasionLong} pick.`
-    : ' Limited-time pricing worth catching.'
+    : ' Check today\'s price before it changes.'
   return (lead + tail).slice(0, 250)
 }
 
@@ -1709,28 +1714,28 @@ async function refreshDealPrice(
   const fallbackUrl = `https://www.amazon.com/dp/${product.asin}`
   const ctaHref = promoUrl || fallbackUrl
 
-  const patchPrompt = `You are updating an existing deal-post article with REFRESHED pricing data. Update ONLY the price-related sentences — leave every other paragraph identical (same words, same order, same image tags, same headings, same anchor structure).
+  // NO PRICE IS WRITTEN INTO THE POST, refreshed or not. Amazon allows a price
+  // on a page only from its own API with a time stamp, and this pass used to
+  // tell the writer to "state the new prices directly". It now takes amounts
+  // OUT and says whether the deal is still on.
+  const patchPrompt = `You are updating an existing deal-post article. Update ONLY the price-related sentences so that NO price, dollar amount, percentage, saving or "was X now Y" remains anywhere — leave every other paragraph identical (same words, same order, same image tags, same headings, same anchor structure).
 
 CURRENT (stale) ARTICLE:
 \`\`\`html
 ${articleBody}
 \`\`\`
 
-NEW PRICING DATA (use these numbers, ignore whatever is in the article today):
-- Current sale price: ${product.priceSale ?? product.price ?? 'unknown'}
-- Strike-through "was" price: ${product.priceWas ?? 'unknown'}
-- Savings line: ${newSavingsLine ?? 'no explicit discount detected on the listing right now'}
-- Discount percent: ${product.discountPct != null ? product.discountPct + '%' : 'unknown'}
+DEAL STATUS (for wording only, never quote a number from it):
+- Still discounted right now: ${newSavingsLine || product.dealBadge ? 'yes' : 'not that we can see'}
 - Amazon deal badge text on the listing: ${product.dealBadge ?? 'none'}
 - Deal end date: ${dealEndsAt ?? 'not specified'}
 - CTA href to use on every anchor: ${ctaHref}
 - Promo code (use in CTA copy if present): ${promoCode || 'none'}
 
 WHAT TO UPDATE:
-- ANY sentence that mentions a dollar amount, percent off, savings, "was X now Y", or price comparison.
-- The "Deal at a glance" h2 section paragraph — rewrite to reflect the new prices + savings + (if known) end date.
-- The opening hook if it cites a savings number.
-- The closing CTA paragraph if it cites a number.
+- ANY sentence that mentions a dollar amount, percent off, savings, "was X now Y", or price comparison: rewrite it with no number at all ("it is on a deal right now", "check today's price on Amazon").
+- The "Deal at a glance" h2 section paragraph: rewrite to say whether the deal is still on and (if known) when it ends, with no price or percentage.
+- The opening hook and the closing CTA paragraph if they cite a number.
 - Every <a href="..."> in the article — update to ${ctaHref}.
 
 WHAT TO PRESERVE (do not touch):
@@ -1743,7 +1748,7 @@ WHAT TO PRESERVE (do not touch):
 
 VOICE RULES (still apply):
 - First person. Confident product knowledge.
-- NEVER say "based on the listing", "the listing says/shows/claims/describes/is clearly", "looking at the listing", "per the listing", "according to the spec sheet". Just state the new prices directly.
+- NEVER say "based on the listing", "the listing says/shows/claims/describes/is clearly", "looking at the listing", "per the listing", "according to the spec sheet". NEVER state a price, a dollar amount or a percentage.
 - ABSOLUTE BAN on em-dashes (—) and en-dashes (–). Use commas, periods, or parentheses.
 - No "honest" or any variant. No moreover, furthermore, additionally, in conclusion, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
 

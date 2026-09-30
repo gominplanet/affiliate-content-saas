@@ -296,7 +296,8 @@ export async function reviveDealPost(sb: Sb, ownerId: string, postId: string, op
     // the article already sends people.
     const href = firstProductHref(html)
     if (href) {
-      const badge = pct != null && pct > 0 ? `${Math.round(pct)}% OFF` : 'DEAL'
+      // No percentage on the chip (see lib/deal-aftercare restoreDealBoxes).
+      const badge = 'ON SALE'
       html = `[mvp_deal_banner badge="${badge}" url="${href}"${endsAt ? ` end_date="${endsAt}"` : ''}]\n\n${html}`
       boxes = 'added'
     }

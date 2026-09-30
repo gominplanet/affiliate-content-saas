@@ -357,13 +357,15 @@ CORE PRINCIPLES (do not violate):
 
 5. NO HEALTH OR MEDICAL CLAIMS, in any form, including as a question. Never say or imply that a product treats, cures, prevents, relieves, boosts or supports any condition, symptom or body function. "Cut My Stress in Half", "Boost Your Energy", "Supports Testosterone" and "Can This Fix Insomnia?" are ALL forbidden. Write about the product, what it is, how it is made, what using it is like, how it compares. Never about what it does to a body.
 
+6. NO PRICES. Never put a price, a dollar amount, a percentage off or a saving in a title, description, tag or comment. Amazon allows a price only from its own data with a time stamp, and a title or description is not updated when the price changes. Say "budget", "premium", "on sale" instead.
+
 ALLOWED ANGLES (mix across the 5, never use the same angle twice). Every example below is deliberately free of body claims, match that:
 - Specific-result hook: lead with a real number from the analysis ("I Ran This Blender For 30 Days. Here Is What Broke")
-- Counter-intuitive setup: contradict an assumption ("This $30 Kettle Replaced My $200 Espresso Setup")
+- Counter-intuitive setup: contradict an assumption ("This Budget Kettle Replaced My Espresso Setup")
 - Surprised-curiosity: a thing the creator didn't expect ("I Was Wrong About Cast Iron Until I Tried This One")
 - Direct-benefit headline: state the payoff plainly, about the PRODUCT ("The One Feature That Made Me Keep This Vacuum")
 - Comparative / vs: contrast with an alternative ("Ninja vs Vitamix: Which One Survived My Kitchen?")
-- Question grounded in the product: ("Is A $400 Pan Actually Any Different?")
+- Question grounded in the product: ("Is A Premium Pan Actually Any Different?")
 - Story snapshot: ("The Week I Switched Coffee Grinders And Noticed The Difference")
 - Skeptic-to-believer arc: ("I Didn't Buy The Hype About This Mattress. Then Week 3 Happened.")
 
@@ -1231,7 +1233,6 @@ export async function POST(request: Request) {
           `COMPARISON VIDEO: this video compares ${comparison.length} products, in this order. Name them, compare them, and treat them as equals. NEVER say one is the winner, the best or the one to buy unless WHAT ACTUALLY HAPPENS IN THIS VIDEO says the creator picked it. Titles should be comparison titles that name at least two of the products ("Brand A vs Brand B").`,
           ...comparison.map((c, i) => [
             `PRODUCT ${i + 1}${c.label ? ` (${c.label})` : ''}: ${c.title}`,
-            c.price ? `Price: ${c.price}` : '',
             c.rating ? `Rating: ${c.rating}/5` : '',
             c.bullets.length ? `Features:\n${c.bullets.slice(0, 4).map(b => `- ${b.slice(0, 180)}`).join('\n')}` : '',
           ].filter(Boolean).join('\n')),
@@ -1241,7 +1242,6 @@ export async function POST(request: Request) {
       ? [
           briefBlock,
           product.title ? `Product: ${product.title}` : '',
-          product.price ? `Price: ${product.price}` : '',
           product.rating ? `Rating: ${product.rating}/5` : '',
           product.bullets.length ? `Features:\n${product.bullets.map(b => `- ${b}`).join('\n')}` : '',
           product.description ? `Description: ${product.description}` : '',

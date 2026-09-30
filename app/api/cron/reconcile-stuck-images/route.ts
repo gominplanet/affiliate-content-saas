@@ -35,6 +35,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { holdAndRelease } from '@/lib/video-hold'
 import { fixProvenanceLines } from '@/lib/provenance-fix'
+import { sweepPublishedPrices } from '@/lib/published-price-sweep'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -84,14 +85,24 @@ export async function GET(request: Request) {
     provenance = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }
 
+  // Prices and discounts printed on older posts (lib/published-price-sweep),
+  // a few a run until none are left. Amazon policy 2(b).
+  let prices: unknown = null
+  try {
+    prices = await sweepPublishedPrices(admin)
+  } catch (e) {
+    prices = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
+  }
+
   if (error) {
-    return NextResponse.json({ error: error.message, videoHold, provenance }, { status: 500 })
+    return NextResponse.json({ error: error.message, videoHold, provenance, prices }, { status: 500 })
   }
 
   return NextResponse.json({
     ok: true,
     videoHold,
     provenance,
+    prices,
     reconciled: count ?? 0,
     ids: (data ?? []).map((r: { id: string }) => r.id),
     cutoff,

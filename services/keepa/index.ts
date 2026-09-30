@@ -1128,8 +1128,10 @@ export function buildPriceSnapshotHtml(a: DealAssessment): string {
 
   const headline = a.quality === 'excellent'
     ? 'This is the lowest price we&rsquo;ve tracked'
+    // NO PERCENTAGE: the block is not updated when the price moves, and
+    // Amazon allows a discount on a page only while it lasts.
     : a.pctBelowAvg90 != null && a.pctBelowAvg90 >= 5
-      ? `About ${a.pctBelowAvg90}% below its usual price`
+      ? 'Well below its usual price'
       : a.quality === 'genuine'
         ? 'Well below its usual price'
         : 'A little under its usual price'

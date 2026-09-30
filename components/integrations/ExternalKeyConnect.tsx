@@ -28,7 +28,7 @@ const META: Record<Provider, { name: string; icon: ReactNode; where: string; das
   partnerboost: {
     name: 'PartnerBoost',
     icon: <Store size={16} />,
-    where: 'PartnerBoost → Tools → API token',
+    where: 'PartnerBoost → Settings → Token Manage → All Channels API token',
     dash: 'https://app.partnerboost.com/',
     blurb: 'Paste your PartnerBoost API token to connect your account. Stored encrypted server-side — we only ever show the last 4 digits.',
   },

@@ -2494,7 +2494,12 @@ async function handleGenerate(request: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const bc = brand as Record<string, any>
         const blogCustom = (bc?.blog_customizations ?? {}) as Record<string, any>
-        const includePrice = blogCustom?.postMeta?.schemaIncludePrice !== false
+        // NEVER A PRICE IN THE REVIEW DATA. It was read off amazon.com and
+        // shown in Google results and the site's /products.json, refreshed
+        // only by hand. Amazon allows a price only from its own API with a
+        // time stamp. The setting is kept and ignored.
+        void blogCustom
+        const includePrice = false
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const b = brand as Record<string, any>
         const vrow = v as Record<string, unknown>
