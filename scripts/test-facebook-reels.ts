@@ -68,6 +68,9 @@ check('SCOUT fetches it in the creator\'s Studio session and never hands the dow
   /msg\.type === 'MVP_STUDIO_VIDEO_FILE'/.test(BGJ) && /get_creator_videos/.test(BGJ) && /delete r\.dl/.test(BGJ))
 check('the button says what went wrong in words', /YouTube Studio did not offer a download for this video/.test(PANEL) && /Update SCOUT to 1\.21\.22/.test(PANEL))
 
+check('Clip Factory lists only videos that are out, and counts the scheduled ones',
+  /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(PAGE) && /setScheduledCount\(all\.length - live\.length\)/.test(PAGE) && /scheduled video\{scheduledCount === 1/.test(PAGE))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
