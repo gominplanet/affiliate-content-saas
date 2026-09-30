@@ -55,6 +55,14 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
       !!fixed && fixed.html.indexOf('mvp-provenance') > fixed.html.indexOf('</iframe>') && (fixed.html.match(/class="mvp-provenance"/g) ?? []).length === 1)
     check('a post that is already right is left alone', !!fixed && fixProvenanceHtml(fixed.html, 'Seb') === null)
     const named = `<p>A</p>\n${vid}\n<p class="mvp-provenance" style="font-size:13px;color:#6b6b70">How this review was made: from Caleb&#8217;s own video of the product, with the details from the listing and the maker&#8217;s specifications.</p>`
+    {
+      const { scrubDisclosureTestingClaims } = require('../lib/post-provenance') as typeof import('../lib/post-provenance')
+      const box = '<!-- wp:group {"style":{"color":{"background":"#fffbe6"}}} --><div><p>Affiliate links here. How this page was made: researched from the listing. We have not tested this product ourselves.</p></div><!-- /wp:group --><p>We have not tested this product ourselves.</p>'
+      const out = scrubDisclosureTestingClaims(box)
+      check('on a video review the creator\'s disclosure loses its "not tested" sentences and keeps the rest; nothing outside the box changes',
+        /Affiliate links here\./.test(out) && !/How this page was made/.test(out) && (out.match(/not tested/g) ?? []).length === 1
+        && /if \(src === 'video' \|\| src === 'own-video'\) content = scrubDisclosureTestingClaims\(content\)/.test(read('app/api/blog/generate/route.ts')))
+    }
     check('a line that names the creator is rewritten in the first person',
       !!fixProvenanceHtml(named, 'Caleb') && !/Caleb/.test(fixProvenanceHtml(named, 'Caleb')!.html) && /my own video review/.test(fixProvenanceHtml(named, 'Caleb')!.html))
     check('a new review from a video gets the line under the video; a research post keeps it at the top',
@@ -142,7 +150,7 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('a one-word note is refused', /note\.length < 15/.test(A))
   check('only reviews and comparisons are asked, and only after the wait', /REFRESH_TYPES = \['review', 'comparison'\]/.test(A) && /lte\('published_at', cutoff\)/.test(A))
   check('a missing migration is said, not shown as nothing due', /needsMigration: 384/.test(A))
-  check('it is Labs while tested', /canUsePreview\('post_refresh'/.test(A) && /post_refresh: 'admin'/.test(read('lib/labs-preview.ts')))
+  check('it is Labs while tested', /canUsePreview\('post_refresh'/.test(A) && /post_refresh: 'labs'/.test(read('lib/labs-preview.ts')))
   check('the Content page shows it', /<PostUpdates \/>/.test(read('app/(dashboard)/content/page.tsx')))
 }
 

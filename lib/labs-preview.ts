@@ -20,7 +20,7 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Co-Pilot comparison videos: 2 to 4 products in one video. Open to Pro.
   comparison: 'labs',
   // Co-Pilot Short mode: Shorts get Short-shaped metadata (links in Shorts are not clickable).
-  shorts_mode: 'admin',
+  shorts_mode: 'labs',
   // Pinned comments (Co-Pilot, Liftoff, older videos): graduated out of Labs
   // to Pro 2026-09. The page is Create > Pinned Comments.
   first_comment: 'labs',
@@ -31,16 +31,17 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // place. Graduated out of Labs to Pro 2026-09, in Create beside Deals Hub.
   deal_aftercare: 'labs',
   // Post updates: after 90 days, the creator adds one first-hand line to a review.
-  post_refresh: 'admin',
+  post_refresh: 'labs',
   // Clip Factory clips published as Reels on the creator's Facebook Page.
-  facebook_reels: 'admin',
+  facebook_reels: 'labs',
   // Clip Factory: post the whole video (up to 10 minutes) as one vertical clip.
-  whole_video: 'admin',
+  whole_video: 'labs',
   // Earnings: accept Creator Connections campaigns for products already selling.
-  sold_campaigns: 'admin',
+  sold_campaigns: 'labs',
   // Liftoff in two parts: YouTube first (no countries), then Amazon when
   // YouTube is done, started with its own button.
-  liftoff_split: 'admin',
+  // All six above opened to Pro 2026-09-30 (Seb: "pro should get it all").
+  liftoff_split: 'labs',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

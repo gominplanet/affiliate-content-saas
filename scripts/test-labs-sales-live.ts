@@ -403,7 +403,7 @@ await saleEndedGuards()
   check('with no product and no transcript, Co-Pilot stops and asks instead of guessing from the title',
     /if \(!isProduct && !videoTranscript\.trim\(\) && !skipAsinCheck\)/.test(M) && inOrderCheck(M, 'needsProduct: true', 'await distillVideoBrief(')
     && /needsProduct \? 'Generate without a product' : 'Generate anyway'/.test(P))
-  check('Short mode is admin only while testing', !canUsePreview('shorts_mode', 'pro') && canUsePreview('shorts_mode', 'admin'))
+  check('Short mode is open to Pro and admin', canUsePreview('shorts_mode', 'pro') && canUsePreview('shorts_mode', 'admin'))
 }
 
 // ── bulk: several products, one at a time, progress on screen ─────────────

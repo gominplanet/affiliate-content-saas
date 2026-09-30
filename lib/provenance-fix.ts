@@ -22,7 +22,7 @@
 
 import { createWordPressService } from '@/services/wordpress'
 import { credsForPost, checkSamePost } from '@/lib/post-site'
-import { withProvenanceNote } from '@/lib/post-provenance'
+import { withProvenanceNote, scrubDisclosureTestingClaims } from '@/lib/post-provenance'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -52,17 +52,22 @@ const BARE = /(?:<!-- wp:paragraph[^>]*-->\s*)?<p[^>]*>\s*How this review was ma
  *  otherwise. */
 export function fixProvenanceHtml(html: string, author: string | null): { html: string; removedCopies: number } | null {
   if (!html) return null
-  const found = [...(html.match(BLOCK) ?? []), ...(html.match(BARE) ?? [])]
-  if (found.length === 0) return null
+  const original = html
+  // Every post here is from the creator's own video, so a "not tested"
+  // sentence in their disclosure box goes too.
+  const scrubbed = scrubDisclosureTestingClaims(html)
+  const found = [...(scrubbed.match(BLOCK) ?? []), ...(scrubbed.match(BARE) ?? [])]
+  if (found.length === 0) return scrubbed === html ? null : { html: scrubbed, removedCopies: 0 }
   const needs = found.length > 1 || found.some((b) => NOT_TESTED.test(b) || EMBEDDED_BELOW.test(b) || OLD_VIDEO_WORDING.test(b))
-  if (!needs) return null
+  if (!needs) return scrubbed === html ? null : { html: scrubbed, removedCopies: 0 }
+  html = scrubbed
   const source = found.some((b) => /happened on camera/i.test(b)) ? 'video' : 'own-video'
   let taken = 0
   const cut = () => { taken++; return '' }
   let out = html.replace(BLOCK, cut)
   out = out.replace(BARE, cut).replace(/\n{3,}/g, '\n\n')
   out = withProvenanceNote(out, source, author)
-  return out === html ? null : { html: out, removedCopies: Math.max(0, taken - 1) }
+  return out === original ? null : { html: out, removedCopies: Math.max(0, taken - 1) }
 }
 
 export type ProvenanceFixReport = { fixed: number; checked: number; failed: Array<{ postId: string; reason: string }> }

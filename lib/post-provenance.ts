@@ -97,3 +97,28 @@ export function stripHashtagBlock(html: string): string {
   if (!html) return html
   return html.replace(/\s*<div class="gr-tags">[\s\S]*?<\/div>/gi, '')
 }
+
+/**
+ * A CREATOR'S OWN DISCLOSURE, WITHOUT A "NOT TESTED" CLAIM, ON A VIDEO REVIEW.
+ *
+ * The disclosure box prints the creator's Brand Profile text word for word.
+ * Some wrote a research-only sentence into it ("How this page was made:
+ * researched from the product listing... We have not tested this product
+ * ourselves."), which then sat on every post, including reviews built from
+ * their own video, where it is false. Only those sentences go, only inside
+ * the disclosure box; the affiliate disclosure itself is left exactly as
+ * written. Callers use this on video reviews only.
+ */
+export function scrubDisclosureTestingClaims(html: string): string {
+  if (!html) return html
+  const start = html.indexOf('#fffbe6')
+  if (start === -1) return html
+  const end = html.indexOf('<!-- /wp:group -->', start)
+  const stop = end === -1 ? html.indexOf('</div>', start) : end
+  if (stop === -1) return html
+  const box = html.slice(start, stop)
+  const clean = box
+    .replace(/\s*How this (?:page|review|post) was made:[^.<]*\.?/gi, '')
+    .replace(/\s*We have not (?:personally )?tested (?:this|these) products?(?: ourselves| myself)?\.?/gi, '')
+  return clean === box ? html : html.slice(0, start) + clean + html.slice(stop)
+}

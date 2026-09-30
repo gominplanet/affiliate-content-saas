@@ -44,7 +44,7 @@ check('a video held private for paid promotion is not "done": it has no time yet
   !youtubePartDone('launched', [onYT, held]).done && youtubePartDone('launched', [onYT, held]).waiting === 1)
 check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1 }))
 
-check('it starts admin only', canUsePreview('liftoff_split', 'admin') && !canUsePreview('liftoff_split', 'pro'))
+check('it is open to Pro and admin, and not below', canUsePreview('liftoff_split', 'admin') && canUsePreview('liftoff_split', 'pro') && !canUsePreview('liftoff_split', 'trial'))
 
 // ── the wiring ─────────────────────────────────────────────────────────────
 const LIB = read('lib/launch-batch.ts')

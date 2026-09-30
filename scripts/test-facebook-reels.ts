@@ -21,7 +21,7 @@ check('the route is Labs and Meta-gated', /canUsePreview\('facebook_reels', tier
 check('a refused permission tells the creator to reconnect', /Reconnect Facebook under Social Accounts/.test(ROUTE))
 check('the button shows only to who may use it', /\{canUsePreview\('facebook_reels', tier\) && [^\n]*<PostPill label="Facebook Reel"/.test(PAGE) || /canUsePreview\('facebook_reels', tier\) && !\(clip\?\.durationSec/.test(PAGE))
 check('the toast says live or processing from what Facebook reported', /data\.state === 'published'/.test(PAGE))
-check('it starts admin-only', /facebook_reels: 'admin'/.test(LABS))
+check('it is open to Pro', /facebook_reels: 'labs'/.test(LABS))
 
 // THE WHOLE VIDEO as one clip (Labs whole_video).
 const PLAN = readFileSync('app/api/youtube/shorts/plan/route.ts', 'utf8')
@@ -30,7 +30,7 @@ check('whole mode makes one clip from the first second to the last, with no AI p
   /if \(body\.whole === true\)/.test(PLAN) && /start_sec: 0, end_sec: total/.test(PLAN)
   && PLAN.indexOf('if (body.whole === true)') < PLAN.indexOf('await planShorts('))
 check('whole mode is Labs, on the server and on the button',
-  /canUsePreview\('whole_video', tier\)/.test(PLAN) && /allowWhole=\{canUsePreview\('whole_video', tier\)\}/.test(PAGE) && /whole_video: 'admin'/.test(LABS))
+  /canUsePreview\('whole_video', tier\)/.test(PLAN) && /allowWhole=\{canUsePreview\('whole_video', tier\)\}/.test(PAGE) && /whole_video: 'labs'/.test(LABS))
 check('a clip too long for Facebook Reels does not offer Facebook', /!\(clip\?\.durationSec && clip\.durationSec > 90\)/.test(PAGE))
 check('the platform limits are said before posting', /Facebook Reels take up to 90 seconds/.test(PAGE) && /over 3 minutes as a regular video/.test(PAGE))
 check('the whole clip joins the list instead of wiping rendered clips', /prev\.filter\(c => c\.status !== 'suggested' && !got\.some/.test(PANEL))

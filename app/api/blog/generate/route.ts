@@ -5,7 +5,7 @@ import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
 import { findAiTells, AI_TELL_HOLD_AT } from '@/lib/ai-tells'
-import { stripHashtagBlock, withProvenanceNote } from '@/lib/post-provenance'
+import { stripHashtagBlock, withProvenanceNote, scrubDisclosureTestingClaims } from '@/lib/post-provenance'
 import type { ExperienceSource } from '@/lib/experience-source'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { checkSamePost, slugOfUrl, titleFitsSlug } from '@/lib/post-site'
@@ -1937,6 +1937,12 @@ async function handleGenerate(request: Request) {
   // HOW IT WAS MADE, SAID ON THE POST; NO HASHTAG BLOCK (lib/post-provenance).
   content = stripHashtagBlock(content)
   content = withProvenanceNote(content, (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null, authorName)
+  // On a review from the creator's own video, their disclosure may not claim
+  // it was never tested (lib/post-provenance scrubDisclosureTestingClaims).
+  {
+    const src = (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null
+    if (src === 'video' || src === 'own-video') content = scrubDisclosureTestingClaims(content)
+  }
 
   // EVERY AFFILIATE LINK CARRIES rel="sponsored" BEFORE IT IS PUBLISHED.
   //
