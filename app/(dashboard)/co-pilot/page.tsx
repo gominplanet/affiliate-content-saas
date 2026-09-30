@@ -660,9 +660,12 @@ function FirstCommentsToPin() {
   )
 }
 
-function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null }: {
+function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null, studioChannelId = null }: {
   video: DraftVideo
   userTier: Tier
+  /** The channel Co-Pilot is showing (UC...), so SCOUT opens Studio under it
+   *  rather than under whichever channel Studio was last on. */
+  studioChannelId?: string | null
   /** Why the playlist list is empty, when it is: still loading, could not be
    *  read (and why), or the channel has none. Null when playlists loaded. */
   playlistsNote?: string | null
@@ -1723,6 +1726,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         amazonUrl: productLinkFor(effectiveAsin) ?? undefined,
         productTitle: product?.title ?? undefined,
         endScreen: finishDoEndScreen,
+        channelId: studioChannelId || undefined,
         // The creator's own toggle, whichever way it points.
         notifySubscribers: proSettings.notifySubscribers === true,
         visibility: draftVisibility(publishAt, proSettings.privacyStatus),
@@ -4871,6 +4875,7 @@ export default function StudioPage() {
                 {visibleDrafts.map(video => (
                   <VideoStudioCard
                     key={video.youtubeVideoId}
+                    studioChannelId={selectedChannelId ?? channels.find((c) => c.isDefault)?.channelId ?? null}
                     video={video}
                     userTier={userTier}
                     isShort={shortsMap[video.youtubeVideoId] ?? null}

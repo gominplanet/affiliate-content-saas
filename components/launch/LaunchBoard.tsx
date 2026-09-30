@@ -237,6 +237,9 @@ interface Batch {
   daily_slots: string[]; start_on: string | null; timezone: string
   /** False: Amazon only. Absent (before migration 369) reads as true. */
   send_to_youtube?: boolean
+  /** The YouTube channel confirmed for this batch (UC...). Studio is opened
+   *  under it, so SCOUT never lands on another channel's error page. */
+  youtube_channel_id?: string | null
   /** Liftoff in two parts (Labs): no countries before launch; Amazon is part
    *  2, started with its own button once YouTube is done. */
   amazon_later?: boolean
@@ -950,7 +953,7 @@ export default function LaunchBoard() {
     setStudioBusy(it.id)
     try {
       // THE SAME REQUEST THE BACKGROUND TAB SENDS (lib/studio-finish).
-      const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs))
+      const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs, false, batch?.youtube_channel_id))
       // SCOUT NEVER STARTED: nothing to keep. Storing it used to mark the
       // video as done-with for the automatic pass, on every later visit too.
       lastStudioError.current = fin.error ?? null
@@ -974,11 +977,22 @@ export default function LaunchBoard() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studioFinish: run }),
       })
+      const j = await r.json().catch(() => ({}))
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}))
         toast.error(j?.error || 'SCOUT finished, but its report could not be kept.')
-      } else if (batchId) {
-        await load(batchId)
+      } else {
+        // WHAT HAPPENED TO THE SCHEDULE, from YouTube's own read: a video held
+        // for paid promotion is scheduled the moment Studio has it.
+        const rel = j?.release as { state: string; at?: string; why?: string } | null
+        const name = it.title || `Video ${it.position + 1}`
+        if (rel?.state === 'scheduled' && rel.at) {
+          toast.success(`${name}: paid promotion confirmed by YouTube, so it is now scheduled for ${new Intl.DateTimeFormat('en-GB', { timeZone: batch?.timezone || undefined, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(rel.at))}.`, { duration: 10000 })
+        } else if (rel?.state === 'late') {
+          toast.error(`${name}: paid promotion is on now, but its time has passed, so it was not scheduled. Give it a new time and press Launch these too.`, { duration: 14000 })
+        } else if (rel?.state === 'waiting' && rel.why === 'not-yet') {
+          toast(`${name}: YouTube does not read paid promotion as Yes yet, so it stays private. MVP checks again every ten minutes and schedules it then.`, { duration: 12000 })
+        }
+        if (batchId) await load(batchId)
       }
       return run
     } finally {
@@ -2226,7 +2240,7 @@ export default function LaunchBoard() {
             ) : !yt.done ? (
               <p className="text-[12.5px] inline-flex items-center gap-1.5" style={muted}>
                 <Loader2 size={12} className="animate-spin" />
-                Opens when YouTube is done. {yt.onYouTube} of {items.length} on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up` : ''}.
+                Opens when YouTube is done. {yt.onYouTube} of {items.length} scheduled or public on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up or waiting for paid promotion to be confirmed` : ''}.
               </p>
             ) : (<>
               <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(16,185,129,0.08)' }}>

@@ -42,6 +42,7 @@ import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { missedWhen, releaseHeld, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -796,20 +797,6 @@ async function ownerTier(sb: Sb, userId: string): Promise<string | null> {
   const t = (data?.tier as string | undefined) ?? null
   tierCache.set(userId, t)
   return t
-}
-
-function missedWhen(iso: string, timezone: string | null): string {
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return 'the time you picked'
-  try {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: timezone || 'UTC', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(d)
-  } catch {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'UTC', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(d) + ' UTC'
-  }
 }
 
 async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; failed: number }> {
@@ -1687,7 +1674,7 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
     .select('id,user_id,batch_id,youtube_video_id,planned_publish_at')
     .eq('state', 'blocked')
     .not('youtube_video_id', 'is', null)
-    .like('reason', 'Kept private. YouTube did not confirm paid promotion%')
+    .like('reason', `${HELD_FOR_PAID_PROMOTION}%`)
     .lt('updated_at', tenAgo)
     .order('updated_at', { ascending: true }).limit(25)
   const items = rows ?? []
@@ -1705,49 +1692,16 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
   let scheduled = 0, waiting = 0, late = 0
   for (const it of items) {
     if (left() < 20_000) break
-    const videoId = String(it.youtube_video_id)
-    const zone = zoneByBatch.get(it.batch_id) ?? null
     try {
-      const token = await getChannelOAuthToken(sb, it.user_id, read.map.get(it.batch_id) ?? null)
-      if (!token) { await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id); waiting++; continue }
-      const yt = new YouTubeOAuthService(token)
-      const rb = await yt.readDisclosures(videoId)
-      if (rb?.paidPromotion !== true) {
-        // Still No. To the back of the line; looked at again in ten minutes.
-        await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
-        waiting++
-        continue
-      }
-      const planned = String(it.planned_publish_at || '')
-      const at = Date.parse(planned)
-      if (!Number.isFinite(at) || at < Date.now() + 5 * 60_000) {
-        await sb.from('launch_items').update({
-          reason: `Kept private. Paid promotion is on now, but its time${Number.isFinite(at) ? `, ${missedWhen(planned, zone)},` : ''} has passed, so it was not scheduled. Give it a new time and press Launch these too.`,
-          updated_at: stamp(),
-        }).eq('id', it.id)
-        late++
-        continue
-      }
-      await yt.updateVideoStatus(videoId, {
-        publishAt: planned,
-        notifySubscribers: notifyByBatch.get(it.batch_id) === true,
-        madeForKids: false,
-        embeddable: true,
-        containsSyntheticMedia: false,
+      // The same step saving a Studio run takes at once (lib/launch-release).
+      const r = await releaseHeld(sb, it, {
+        channelId: read.map.get(it.batch_id) ?? null,
+        notify: notifyByBatch.get(it.batch_id) === true,
+        zone: zoneByBatch.get(it.batch_id) ?? null,
       })
-      await sb.from('launch_items').update({
-        state: 'scheduled', publish_at: planned, reason: null, updated_at: stamp(),
-      }).eq('id', it.id)
-      // The disclosure record, now that it reads Yes. Separate, so a database
-      // without migration 368 loses this and nothing else.
-      await sb.from('launch_items').update({
-        api_disclosures: {
-          at: stamp(), asked: true, paidPromotion: true,
-          aiUseNo: rb.containsSyntheticMedia === false, embeddable: rb.embeddable, madeForKids: rb.madeForKids,
-          error: null, via: 'studio',
-        },
-      }).eq('id', it.id)
-      scheduled++
+      if (r.state === 'scheduled') scheduled++
+      else if (r.state === 'late') late++
+      else waiting++
     } catch (e) {
       // A check that could not run is not a verdict: the row waits and says why.
       console.warn('[launch-drain] held video check failed', { item: it.id, said: e instanceof Error ? e.message : String(e) })

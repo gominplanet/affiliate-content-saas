@@ -185,6 +185,10 @@ export function ctaTopLeft(
  * loads before migration 369 is run. `available: false` means the choice
  * cannot be saved yet, and the batch goes to YouTube as it always did.
  */
+/** The reason a video held private for paid promotion carries, the one the
+ *  uploader writes and the one lib/launch-release looks for. */
+export const HELD_FOR_PAID_PROMOTION = 'Kept private. YouTube did not confirm paid promotion'
+
 /**
  * Mark the batch for Liftoff in two parts when its owner has it (Labs).
  *
@@ -206,10 +210,15 @@ export async function withAmazonLater<B extends BatchRow>(
  * result and never the plan. A video that could not go does not hold part 2
  * back; it is counted and named instead.
  */
-export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number } {
+export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null; reason?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number } {
   const launched = batchState === 'launching' || batchState === 'launched'
-  const onYouTube = items.filter((i) => !!i.youtube_video_id).length
-  const failed = items.filter((i) => !i.youtube_video_id && i.state === 'blocked').length
+  // SCHEDULED OR PUBLIC, not merely uploaded. A video held private for paid
+  // promotion is uploaded and not scheduled, and calling that "on YouTube"
+  // would say YouTube is done over a video with no time.
+  const onYouTube = items.filter((i) => !!i.youtube_video_id && (i.state === 'scheduled' || i.state === 'published')).length
+  const held = items.filter((i) => i.state === 'blocked' && !!i.youtube_video_id && String(i.reason || '').startsWith(HELD_FOR_PAID_PROMOTION)).length
+  // Could not go, or needs the creator (a missed time): named, and not held for.
+  const failed = items.filter((i) => i.state === 'blocked').length - held
   const waiting = items.length - onYouTube - failed
   return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting }
 }

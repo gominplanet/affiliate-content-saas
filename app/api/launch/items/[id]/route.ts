@@ -15,6 +15,8 @@ import { normalizeAsinInput, asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { normalizeSlots, todayIn } from '@/lib/launch-schedule'
 import { readStudioRun } from '@/lib/studio-finish'
+import { releaseHeld, HELD_FOR_PAID_PROMOTION, type ReleaseResult } from '@/lib/launch-release'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { parseFacePick } from '@/lib/thumbnail-preset'
 
 export const runtime = 'nodejs'
@@ -63,7 +65,34 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
-    return NextResponse.json({ ok: true })
+    // ── HELD FOR PAID PROMOTION? SCHEDULE IT NOW ─────────────────────────
+    // The Studio pass is what sets paid promotion, so this is the moment to
+    // look. YouTube's own read decides (lib/launch-release), not SCOUT's
+    // report; a video still reading No waits for the ten-minute check.
+    let release: ReleaseResult | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: held } = await (supabase as any).from('launch_items')
+        .select('id,user_id,batch_id,youtube_video_id,planned_publish_at,state,reason')
+        .eq('id', id).eq('user_id', user.id).maybeSingle()
+      if (held && held.state === 'blocked' && held.youtube_video_id && String(held.reason || '').startsWith(HELD_FOR_PAID_PROMOTION)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: b } = await (supabase as any).from('launch_batches')
+          .select('notify_subscribers,timezone').eq('id', held.batch_id).eq('user_id', user.id).maybeSingle()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: ch, error: chErr } = await (supabase as any).from('launch_batches')
+          .select('youtube_channel_id').eq('id', held.batch_id).eq('user_id', user.id).maybeSingle()
+        release = await releaseHeld(createAdminClient(), held, {
+          channelId: chErr ? null : (ch?.youtube_channel_id ?? null),
+          notify: b?.notify_subscribers === true,
+          zone: b?.timezone ?? null,
+        })
+      }
+    } catch (e) {
+      // Not a failure of the save: the ten-minute check tries again.
+      console.warn('[launch/items] release after Studio failed', { id, said: e instanceof Error ? e.message : String(e) })
+    }
+    return NextResponse.json({ ok: true, release })
   }
 
   // ── THE AMAZON TITLE, ON ITS OWN WRITE (migration 370) ────────────────────

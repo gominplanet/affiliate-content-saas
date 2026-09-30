@@ -232,6 +232,19 @@ check('the manifest and the app registry agree on the version',
   check('no screen offers product tagging', !/'tagProduct', 'Tag each/.test(readFileSync('components/launch/LaunchBoard.tsx', 'utf8')))
 }
 
+// ── STUDIO OPENS UNDER THE VIDEO'S OWN CHANNEL ───────────────────────────────
+// A bare studio.youtube.com/video/<id>/endscreens resolves under whichever
+// channel Studio was last on, and for a creator with several channels Studio
+// answers "Oops, something went wrong": Liftoff's end screen step stopped
+// there. Every caller passes the owning channel.
+{
+  const SF = readFileSync('lib/studio-finish.ts', 'utf8')
+  check('the Liftoff request carries the channel', /channelId: channelId \|\| undefined,/.test(SF))
+  check('the Liftoff page passes the batch channel', /liftoffStudioRequest\(it, studioOpts, notifySubs, false, batch\?\.youtube_channel_id\)/.test(readFileSync('components/launch/LaunchBoard.tsx', 'utf8')))
+  check('the background tab passes the batch channel', /liftoffStudioRequest\(it, opts, notify, true, d\.batch\?\.youtube_channel_id \?\? null\)/.test(readFileSync('components/launch/LiftoffRunner.tsx', 'utf8')))
+  check('Co-Pilot passes the channel it is showing', /channelId: studioChannelId \|\| undefined,/.test(readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

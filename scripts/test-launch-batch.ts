@@ -1793,9 +1793,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('paid promotion is not "set" through the API, which accepts the call and changes nothing',
     !/yt\.setPaidPromotion\(/.test(DRAIN) && (DRAIN.match(/YouTube only takes paid promotion in Studio/g) ?? []).length === 2)
   check('a video held for paid promotion is scheduled at its planned time once Studio has it',
-    /async function heldForDisclosure\(/.test(DRAIN) && /\.like\('reason', 'Kept private\. YouTube did not confirm paid promotion%'\)/.test(DRAIN)
-    && /if \(rb\?\.paidPromotion !== true\) \{/.test(DRAIN) && /publishAt: planned,/.test(DRAIN) && /state: 'scheduled', publish_at: planned, reason: null/.test(DRAIN)
-    && /await heldForDisclosure\(sb, left\)/.test(DRAIN) && /has passed, so it was not scheduled\. Give it a new time/.test(DRAIN))
+    // The step itself lives in lib/launch-release, shared with saving a Studio
+    // run, which asks at once instead of waiting for the ten-minute check.
+    /async function heldForDisclosure\(/.test(DRAIN) && /\.like\('reason', `\$\{HELD_FOR_PAID_PROMOTION\}%`\)/.test(DRAIN)
+    && /await releaseHeld\(sb, it,/.test(DRAIN) && /await heldForDisclosure\(sb, left\)/.test(DRAIN)
+    && /if \(rb\?\.paidPromotion !== true\) \{/.test(read('lib/launch-release.ts')) && /publishAt: planned,/.test(read('lib/launch-release.ts'))
+    && /state: 'scheduled', publish_at: planned, reason: null/.test(read('lib/launch-release.ts'))
+    && /has passed, so it was not scheduled\. Give it a new time/.test(read('lib/launch-release.ts'))
+    && /release = await releaseHeld\(createAdminClient\(\), held,/.test(read('app/api/launch/items/[id]/route.ts')))
   check('AI use: No is sent on the upload and on every status call',
     /containsSyntheticMedia: false/.test(DRAIN) && /\.\.\.keep,/.test(DRAIN),
     'a status PUT that leaves a field out erases it')

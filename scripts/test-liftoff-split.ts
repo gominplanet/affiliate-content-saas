@@ -39,6 +39,9 @@ check('not done before launch', !youtubePartDone('draft', [onYT]).done)
 check('not done while a video is still going up', !youtubePartDone('launched', [onYT, going]).done)
 check('done once every video is on YouTube or could not go', youtubePartDone('launched', [onYT, failed]).done)
 check('a batch where nothing reached YouTube is not "done"', !youtubePartDone('launched', [failed]).done)
+const held = item({ id: 'd', state: 'blocked', youtube_video_id: 'vid00000002', reason: 'Kept private. YouTube did not confirm paid promotion on it, so it is not scheduled yet.' } as Partial<ItemRow>)
+check('a video held private for paid promotion is not "done": it has no time yet',
+  !youtubePartDone('launched', [onYT, held]).done && youtubePartDone('launched', [onYT, held]).waiting === 1)
 check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1 }))
 
 check('it starts admin only', canUsePreview('liftoff_split', 'admin') && !canUsePreview('liftoff_split', 'pro'))

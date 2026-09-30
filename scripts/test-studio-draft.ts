@@ -199,7 +199,7 @@ check('and only sets it through the API once the disclosure read back',
 const LB = code(read('components/launch/LaunchBoard.tsx'))
 const SF = code(read('lib/studio-finish.ts'))
 check('Liftoff sends the batch toggle to Studio',
-  /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
+  /liftoffStudioRequest\(it, studioOpts, notifySubs, false, batch\?\.youtube_channel_id\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
 check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin, new Date\(\), liveRuns\[it\.id\] \?\? it\.studio_finish\)/.test(LB) && /studioFinish: run/.test(LB))
 check('a Liftoff draft is only ever given its own time',
   /mode: 'schedule', publishAt: it\.publish_at/.test(SF))

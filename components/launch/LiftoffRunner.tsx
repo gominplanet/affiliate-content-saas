@@ -77,7 +77,7 @@ export default function LiftoffRunner() {
               // yet (or one that timed out, with tries left).
               if (!it.youtube_video_id || liftoffPending([it], [], pend).studio === 0) continue
               say(`Studio: ${it.title || `video ${it.position + 1}`}`)
-              const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, opts, notify, true))
+              const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, opts, notify, true, d.batch?.youtube_channel_id ?? null))
               // SCOUT never started, or is busy with another video: nothing
               // was done, so nothing is kept, and it comes round again.
               if (fin.error === 'not-installed' || fin.error === 'busy') { more = true; continue }
