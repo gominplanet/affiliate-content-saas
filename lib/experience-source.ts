@@ -36,7 +36,7 @@
 //   none         nobody touched it. The post is an assessment, not a review,
 //                and the output is scrubbed rather than trusted.
 
-export type ExperienceSource = 'video' | 'creator-note' | 'owner' | 'none'
+export type ExperienceSource = 'video' | 'own-video' | 'creator-note' | 'owner' | 'none'
 
 export interface ExperienceInput {
   /** The video transcript, when this post came from one. */
@@ -52,6 +52,12 @@ export interface ExperienceInput {
    *  genuine owner they have not used their own product, which is MVP
    *  inventing a limitation they do not have. */
   owned?: boolean
+  /** The post is built from the creator's OWN video, which is embedded in it,
+   *  whether or not its words could be read. Without a transcript there is no
+   *  record of what they said, but they did film it: telling readers "we have
+   *  not tested this product ourselves" under their own video is false, and a
+   *  creator read exactly that on every post. */
+  fromOwnVideo?: boolean
 }
 
 export interface ExperienceRule {
@@ -117,6 +123,21 @@ First person is allowed here, and ONLY for what those notes cover. They are
 shorter than a transcript, so the first-hand part of this post is shorter too.
 Use it where it counts and let the rest of the post be assessment rather than
 recollection. Do not extend a single observation into weeks of testing.`,
+    }
+  }
+
+  if (input.fromOwnVideo === true) {
+    return {
+      source: 'own-video',
+      mayClaimFirsthand: true,
+      mustScrub: false,
+      prompt: `EXPERIENCE: you filmed this. Your video is embedded in the post, but its words were not available to you here.
+
+First person is allowed: you have this product and you filmed it. What you do not
+have is a record of what you said or noticed on camera, so keep the personal
+material general and true (that you have it, use it and show it in the video).
+Do not invent a specific moment, a test, a duration or a problem: the reader can
+watch the video, and anything you make up would not be in it.`,
     }
   }
 

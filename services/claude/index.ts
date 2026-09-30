@@ -2241,7 +2241,9 @@ ${t}`,
     // See lib/product-signals-brief.ts for why that conversion is not optional.
     // What this post may claim the writer did, and whether the output has to be
     // scrubbed rather than trusted. See lib/experience-source.ts.
-    const experience = resolveExperience({ transcript: video.transcript, creatorNote: video.creatorNote })
+    // Always the creator's own video on this path: with no transcript it is
+    // still theirs, and the post says so rather than "not tested".
+    const experience = resolveExperience({ transcript: video.transcript, creatorNote: video.creatorNote, fromOwnVideo: true })
     const experienceBlock = `\n${experience.prompt}\n`
 
     const signalBrief = buildSignalBrief(video.keepaFacts ?? {}, { fetchedAt: video.keepaFetchedAt ?? null })

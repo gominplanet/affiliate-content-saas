@@ -35,6 +35,12 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the hashtag block is gone and nothing else is', !/gr-tags/.test(out) && /<p>End<\/p>/.test(out))
   check('a research post says it was not tested; a video post says it happened on camera',
     /We have not tested this product ourselves/.test(provenanceText('none')) && /happened on camera/.test(provenanceText('video', 'Seb')) && /Seb's own video/.test(provenanceText('video', 'Seb')))
+  // A post from the creator's own video whose words could not be read is
+  // still theirs: a creator read "We have not tested this product ourselves"
+  // under her own embedded video on every post.
+  check('a post from the creator\'s own video never says it was not tested, even without a transcript',
+    !/not tested/i.test(provenanceText('own-video', 'Seb')) && /Seb's own video/.test(provenanceText('own-video', 'Seb'))
+    && /fromOwnVideo: true/.test(read('services/claude/index.ts')))
   check('a comparison says how many products come from the creator\'s own videos', /2 of the 3 products/.test(comparisonProvenanceText(2, 3, 'Seb')))
   const W = read('services/claude/index.ts')
   check('the writer is told not to write hashtags', /\[8\] NO HASHTAG BLOCK/.test(W) && !/10 hashtags researched/.test(W))

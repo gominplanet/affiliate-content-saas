@@ -22,6 +22,7 @@ export function provenanceText(source: ExperienceSource | null | undefined, auth
   const own = who === 'I' ? 'my own' : `${who}'s own`
   switch (source) {
     case 'video': return `How this review was made: written from ${own} video of the product, embedded below. Everything personal in it happened on camera.`
+    case 'own-video': return `How this review was made: from ${own} video of the product, embedded below, with the details from the listing and the maker's specifications.`
     case 'creator-note': return `How this review was made: written from ${own} notes after using the product.`
     case 'owner': return `How this review was made: ${who === 'I' ? 'I own' : `${who} owns`} this product; the details come from the listing and the maker's specifications.`
     default: return 'How this review was made: researched from the product listing, its specifications and the questions buyers ask. We have not tested this product ourselves.'
