@@ -73,6 +73,10 @@ check('Clip Factory lists only videos that are out, and counts the scheduled one
 
 check('Find Shorts without captions shows the way in, not just names it', /if \(data\.needsUpload\) setNeedsUpload\(true\)/.test(PANEL))
 
+check('Enhance offers Facebook, Labs-gated, with link-in-description badges and no in-app shop',
+  /canUsePreview\('facebook_reels', tier\) && \(\s*<button onClick=\{\(\) => applyDestMode\('facebook', 'bio'\)\}/.test(PAGE)
+  && /const FACEBOOK_BADGE_IDS = \['link-in-desc-2'/.test(PAGE) && /Facebook Reels have no in-app shop/.test(PAGE))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

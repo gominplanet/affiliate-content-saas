@@ -87,6 +87,10 @@ interface WorkingClip { url: string; title: string; hashtags?: string[]; caption
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
+/** Facebook Reels' recommended badges: the gallery's link-in-description and
+ *  shop-below designs (there is no Facebook in-app shop to point at). */
+const FACEBOOK_BADGE_IDS = ['link-in-desc-2', 'link-in-desc-1', 'link-in-desc-3', 'shop-below-burst', 'shop-below-bold']
+
 function fmtDuration(sec: number | null): string {
   if (!sec || sec <= 0) return ''
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60)
@@ -202,7 +206,11 @@ export default function ClipFactoryPage() {
   const [stickerTab, setStickerTab] = useState<'recommended' | 'gallery' | 'mine' | 'make'>('recommended')
   // Where the clip is going + how the viewer buys — drives the recommended
   // badges and the "make your own" generation style.
-  const [destination, setDestination] = useState<CtaDestination>('tiktok')
+  // Facebook is a page-level destination: Reels have no in-app shop and there
+  // is no Facebook badge artwork, so its recommended badges are the gallery's
+  // "Link in the description" and "Shop below" designs, and its buy path is
+  // always the link in the description.
+  const [destination, setDestination] = useState<CtaDestination | 'facebook'>('tiktok')
   const [mode, setMode] = useState<CtaMode>('shop')
   const [stickerId, setStickerId] = useState<string>(PLATFORM_BADGES[0]?.id ?? CTA_STICKERS[0]?.id ?? '')
   // A custom (AI-generated / saved) box URL. When set, it wins over stickerId.
@@ -512,7 +520,11 @@ export default function ClipFactoryPage() {
     try {
       const res = await fetch('/api/instagram/burn/generate-sticker', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag, destination, mode }),
+        body: JSON.stringify(destination === 'facebook'
+          // No Facebook badge style: a link-in-description badge in the
+          // Instagram link style, worded for Facebook.
+          ? { tag: tag || 'LINK IN THE DESCRIPTION', destination: 'instagram', mode: 'bio' }
+          : { tag, destination, mode }),
       })
       const data = await res.json()
       if (!res.ok || !data.ok) {
@@ -539,13 +551,20 @@ export default function ClipFactoryPage() {
   // Switch destination/mode, jump to the Recommended tab, and pre-select the
   // first matching platform badge so the pick is never left pointing at a badge
   // from the other platform.
-  const applyDestMode = (d: CtaDestination, m: CtaMode) => {
+  const applyDestMode = (d: CtaDestination | 'facebook', m: CtaMode) => {
+    if (d === 'facebook') {
+      setDestination('facebook'); setMode('bio'); setStickerTab('recommended')
+      setStickerId(FACEBOOK_BADGE_IDS[0]); setCustomStickerUrl(null)
+      return
+    }
     setDestination(d); setMode(m); setStickerTab('recommended')
     const first = PLATFORM_BADGES.find(b => b.destination === d && b.mode === m)
     if (first) { setStickerId(first.id); setCustomStickerUrl(null) }
   }
   const recommendedBadges = useMemo(
-    () => PLATFORM_BADGES.filter(b => b.destination === destination && b.mode === mode),
+    () => destination === 'facebook'
+      ? FACEBOOK_BADGE_IDS.map(id => CTA_STICKERS.find(s => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s)
+      : PLATFORM_BADGES.filter(b => b.destination === destination && b.mode === mode),
     [destination, mode],
   )
   // The older hand-made badges (no destination tag) live under Gallery now.
@@ -956,8 +975,14 @@ export default function ClipFactoryPage() {
                       <div className="flex gap-1.5">
                         <button onClick={() => applyDestMode('tiktok', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'tiktok' ? PILL_SEL : PILL_IDLE}`}><Music2 size={12} /> TikTok</button>
                         <button onClick={() => applyDestMode('instagram', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'instagram' ? PILL_SEL : PILL_IDLE}`}><Instagram size={12} /> Instagram</button>
+                        {canUsePreview('facebook_reels', tier) && (
+                          <button onClick={() => applyDestMode('facebook', 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'facebook' ? PILL_SEL : PILL_IDLE}`}><Facebook size={12} /> Facebook</button>
+                        )}
                       </div>
                     </div>
+                    {destination === 'facebook' ? (
+                      <p className="text-[11px] text-[#86868b] leading-snug">Facebook Reels have no in-app shop, so the badge points viewers to the link in your description.</p>
+                    ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Buy via</span>
                       <div className="flex gap-1.5">
@@ -965,6 +990,7 @@ export default function ClipFactoryPage() {
                         <button onClick={() => applyDestMode(destination, 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'bio' ? PILL_SEL : PILL_IDLE}`} title="No in-app shop — badge says Link in bio"><Link2 size={12} /> Link in bio</button>
                       </div>
                     </div>
+                    )}
                   </div>
 
                   {/* Source tabs */}
@@ -1033,7 +1059,7 @@ export default function ClipFactoryPage() {
                   {stickerTab === 'make' && (
                     <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-3">
                       <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                        Design a <span className="font-semibold text-[#7C3AED]">{destination === 'tiktok' ? 'TikTok' : 'Instagram'} · {mode === 'shop' ? 'in-app shop' : 'link in bio'}</span> badge.
+                        Design a <span className="font-semibold text-[#7C3AED]">{destination === 'tiktok' ? 'TikTok' : destination === 'facebook' ? 'Facebook' : 'Instagram'} · {destination === 'facebook' ? 'link in description' : mode === 'shop' ? 'in-app shop' : 'link in bio'}</span> badge.
                       </p>
                       <p className="text-[11px] text-[#86868b] mb-2">Type your words, or leave it blank for &ldquo;{mode === 'shop' ? 'SHOP NOW' : 'LINK IN BIO'}&rdquo;. It comes out in that platform&apos;s style with the right {mode === 'shop' ? 'downward shop arrow' : 'link-in-bio message'}.</p>
                       <div className="flex gap-2">
