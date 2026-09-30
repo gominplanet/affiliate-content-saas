@@ -282,11 +282,28 @@ export default function DashboardShellV2({
     try { localStorage.setItem('mvp_shell_collapsed', collapsed ? '1' : '0') } catch { /* ignore */ }
   }, [collapsed])
 
-  // The Admin section is a long list of tools most sessions never touch, so keep
-  // it COLLAPSED by default and let the admin expand it on demand (choice
-  // persisted). It force-opens while you're actually on an /admin page so the
-  // active tool stays visible.
-  const [adminOpen, setAdminOpen] = useState(false)
+  // EVERY SECTION FOLDS. Each named section (Set up, Create, Research, Admin…)
+  // is just its header until clicked open, so the menu is a short list of
+  // sections rather than a long scroll of features. Unset, a section is open
+  // only while it holds the page you are on; once you open or close one, that
+  // choice is kept (this browser). My features never folds: it is the list you
+  // pinned to be one click away.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mvp_nav_sections') || '{}') as Record<string, boolean>
+      // The Admin fold predates this and kept its own key.
+      if (saved.Admin === undefined && localStorage.getItem('mvp_admin_nav_open') === '1') saved.Admin = true
+      setOpenSections(saved)
+    } catch { /* ignore */ }
+  }, [])
+  const toggleSection = (label: string, open: boolean) => {
+    setOpenSections((prev) => {
+      const next = { ...prev, [label]: open }
+      try { localStorage.setItem('mvp_nav_sections', JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
   // MY FEATURES: the pages this creator starred, pinned at the top of the sidebar.
   const { favorites, toggle: toggleFavorite, savedTo: favoritesSavedTo } = useNavFavorites()
   const [editingFavorites, setEditingFavorites] = useState(false)
@@ -299,12 +316,6 @@ export default function DashboardShellV2({
     const { full } = toggleFavorite(href)
     setFavoritesNote(full ? `My features holds ${MAX_NAV_FAVORITES}. Take one out to add ${label}.` : null)
   }
-  useEffect(() => {
-    try { if (localStorage.getItem('mvp_admin_nav_open') === '1') setAdminOpen(true) } catch { /* ignore */ }
-  }, [])
-  useEffect(() => {
-    try { localStorage.setItem('mvp_admin_nav_open', adminOpen ? '1' : '0') } catch { /* ignore */ }
-  }, [adminOpen])
 
   const isAdmin = tier === 'admin'
 
@@ -1008,7 +1019,7 @@ export default function DashboardShellV2({
         )}
 
         {/* Nav groups */}
-        <nav className="flex-1 px-2 flex flex-col gap-5 overflow-y-auto pb-3">
+        <nav className="flex-1 px-2 flex flex-col gap-3 overflow-y-auto pb-3">
           {groupsWithFavorites.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
             const isFavorites = group.label === 'My features'
@@ -1055,11 +1066,11 @@ export default function DashboardShellV2({
                   borderColor: hexToRgba(headerAccent, isDark ? 0.30 : 0.22),
                 }
               : undefined
-            // Admin group collapses to just its header when not in use (long,
-            // rarely-touched tool list). Other groups always render their items.
-            const isAdminGroup = group.label === 'Admin'
-            const collapsibleSection = isAdminGroup && !collapsed
-            const sectionOpen = !collapsibleSection || adminOpen || pathname.startsWith('/admin')
+            // Every named section folds to its header (see openSections). The
+            // icon-only rail and My features always show their items.
+            const collapsibleSection = !collapsed && !!group.label && !isFavorites
+            const holdsActive = visibleItems.some((it) => isActive(it.href)) || (group.label === 'Admin' && pathname.startsWith('/admin'))
+            const sectionOpen = !collapsibleSection || (openSections[group.label] ?? holdsActive)
             return (
               <Fragment key={group.label || 'dashboard'}>
               <div
@@ -1070,17 +1081,26 @@ export default function DashboardShellV2({
                   collapsibleSection ? (
                     <button
                       type="button"
-                      onClick={() => setAdminOpen((o) => !o)}
-                      className="w-full px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+                      onClick={() => toggleSection(group.label, !sectionOpen)}
+                      className={cn('w-full px-2.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5 hover:opacity-80 transition-opacity', sectionOpen && 'mb-1.5')}
                       style={{ color: headerAccent || 'var(--text-faint)' }}
                       aria-expanded={sectionOpen}
-                      title={sectionOpen ? 'Collapse admin tools' : 'Expand admin tools'}
+                      title={sectionOpen ? `Close ${group.label}` : `Open ${group.label}`}
                     >
                       {headerIcon}
                       {group.label}
+                      {lockPill && (
+                        <span
+                          className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                          title={`Included on ${lockPill.replace('+', ' and up')} plans`}
+                          style={{ background: hexToRgba(headerAccent || '#7C3AED', isDark ? 0.22 : 0.14), color: headerAccent || 'var(--text-faint)' }}
+                        >
+                          {lockPill}
+                        </span>
+                      )}
                       <ChevronDown
                         size={12}
-                        className="ml-auto transition-transform"
+                        className={cn(lockPill ? 'ml-1' : 'ml-auto', 'transition-transform')}
                         style={{ transform: sectionOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                       />
                     </button>

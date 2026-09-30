@@ -206,9 +206,12 @@ const DUB_ROUTE = live(read('app/api/global-sync/dub/route.ts'))
     /redeploy ingest-service/.test(API)
     && /deploys separately from the app/.test(API),
     'a Vercel deploy does not rebuild it, which is not guessable from the failure')
-  check('and only the genuine block mentions cookies',
-    (API.match(/cookies/g) ?? []).length === 1,
-    'the cookie remedy belongs to one cause; on any other it is a wrong instruction')
+  // Not even the genuine block sends Seb to cookies any more: he refreshed them
+  // twice and said no a third time. The Studio fetch and kept originals are
+  // the ways round a block, so no message points at cookies at all.
+  check('no cause tells the operator to refresh cookies',
+    (API.match(/cookies/g) ?? []).length === 0,
+    'refreshing cookies is not a remedy MVP offers')
 
   const LIB = live(read('lib/youtube-ingest.ts'))
   check('the 404 case is confirmed against health, not assumed',
