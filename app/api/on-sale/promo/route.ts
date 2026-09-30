@@ -79,13 +79,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'This one is not on sale any more, so there is nothing true to promote. Check again later.', ended: true }, { status: 409 })
   }
 
-  const videos = covered.sources.filter((s) => s.kind === 'video')
+  // ONLY CHANNELS STILL CONNECTED. Videos synced from a channel the creator
+  // has since left stay in MVP, and the most viewed one led: a creator who
+  // moved to a new channel was sent to the old one's Posts page ("This
+  // Community isn't available") and offered a comment on a channel she no
+  // longer uses. Her main channel first, then her other connected ones. A
+  // creator with no channel rows at all (the older single-channel setup)
+  // keeps every video.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: chanRows } = await (admin as any).from('youtube_channels').select('channel_id,is_default').eq('user_id', user.id)
+  const connected = new Set(((chanRows ?? []) as Array<{ channel_id: string }>).map((c) => c.channel_id))
+  const mainChannel = ((chanRows ?? []) as Array<{ channel_id: string; is_default: boolean | null }>).find((c) => c.is_default)?.channel_id ?? null
+  const channelRank = (ch: string | null | undefined) => (!ch ? 0 : ch === mainChannel ? 2 : connected.has(ch) ? 1 : 0)
+  const allVideos = covered.sources.filter((s) => s.kind === 'video')
+  const videos = connected.size === 0 ? allVideos : allVideos.filter((v) => connected.has(String(v.channelId || '')))
   // THE VIDEO THE COMMENT GOES ON IS A PUBLIC ONE. A comment on a private or
   // scheduled video is read by nobody. The most viewed public video leads;
   // with none public, the writing still leans on their best video's words,
   // but there is no video to comment on or link to, and the page says why.
   const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, videos.map((v) => v.youtubeVideoId || ''))
-  const byViews = [...videos].sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
+  const byViews = [...videos].sort((a, b) => (channelRank(b.channelId) - channelRank(a.channelId)) || ((b.views ?? 0) - (a.views ?? 0)))
   // NOT A SHORT: links in a Short's comments are not clickable, so the
   // comment goes on the most viewed public video that is not one.
   const publicIds = byViews.map((v) => v.youtubeVideoId || '').filter((id) => vis.get(id) === 'public')
@@ -126,14 +139,12 @@ export async function POST(req: Request) {
   } catch { /* the plain tagged link */ }
 
 
-  // THE CHANNEL THE COMMUNITY POST GOES ON: the lead video's, else the
-  // creator's default channel, so "Copy and open YouTube" lands on theirs.
-  let communityChannelId: string | null = /^UC[\w-]{22}$/.test(String(lead?.channelId || '')) ? String(lead?.channelId) : null
-  if (!communityChannelId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: ch } = await (admin as any).from('youtube_channels').select('channel_id').eq('user_id', user.id).eq('is_default', true).maybeSingle()
-    if (/^UC[\w-]{22}$/.test(String(ch?.channel_id || ''))) communityChannelId = String(ch.channel_id)
-  }
+  // THE CHANNEL THE COMMUNITY POST GOES ON: the lead video's when that
+  // channel is still connected, else the creator's main channel, so "Copy and
+  // open YouTube" lands on a channel they still post from.
+  const leadCh = String(lead?.channelId || '')
+  let communityChannelId: string | null = /^UC[\w-]{22}$/.test(leadCh) && (connected.size === 0 || connected.has(leadCh)) ? leadCh : null
+  if (!communityChannelId && /^UC[\w-]{22}$/.test(String(mainChannel || ''))) communityChannelId = String(mainChannel)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await (admin as any).from('brand_profiles')

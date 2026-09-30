@@ -428,6 +428,20 @@ check('no user-facing "On sale now" is left',
   !['components/labs/OnSale.tsx', 'components/usage/YourUsage.tsx', 'components/co-pilot/ComparisonProducts.tsx', 'app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']
     .some((f) => /'On sale now|"On sale now|>On sale now|from On sale now|so On sale now/.test(read(f).replace(/^\s*(\/\/|\*).*$/gm, ''))))
 
+// ── ENCORE STAYS ON CHANNELS THE CREATOR STILL HAS ─────────────────────────
+// A creator who moved channels was sent to the old channel's Posts page
+// ("This Community isn't available"). The lead video comes only from a
+// connected channel, the main one first, and the Community post goes to the
+// lead's channel only while it is connected, else to the main channel.
+{
+  const PRX = read('app/api/on-sale/promo/route.ts')
+  check('Encore leads only with videos on connected channels, main channel first',
+    /allVideos\.filter\(\(v\) => connected\.has\(String\(v\.channelId \|\| ''\)\)\)/.test(PRX)
+    && /channelRank\(b\.channelId\) - channelRank\(a\.channelId\)/.test(PRX))
+  check('the Community post never opens a channel that is no longer connected',
+    /\(connected\.size === 0 \|\| connected\.has\(leadCh\)\) \? leadCh : null/.test(PRX) && /communityChannelId = String\(mainChannel\)/.test(PRX))
+}
+
 if (failures.length) {
   console.error(`\n❌ labs-sales-live: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
