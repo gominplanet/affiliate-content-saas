@@ -27,7 +27,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { scheduleItems, datesBeforeToday, cadenceLabel } from '@/lib/launch-schedule'
-import { withOwnSchedules, withYouTubeChoice, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { withOwnSchedules, withYouTubeChoice, withAmazonLater, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -50,7 +50,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!raw) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
   // YouTube and Amazon, or Amazon only (migration 369; absent reads as both).
-  const { batch } = await withYouTubeChoice(sb, raw as BatchRow)
+  const { batch: chosen } = await withYouTubeChoice(sb, raw as BatchRow)
+  // Liftoff in two parts (Labs): part 1 asks for no countries.
+  const batch = await withAmazonLater(sb, user.id, chosen)
   const amazonOnly = batch.send_to_youtube === false
 
   // ── A LAUNCHED BATCH CAN STILL LAUNCH ITS LATECOMERS ─────────────────────
@@ -80,6 +82,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // creator cannot be told ready by one screen and refused by this route.
   const blocker = await launchReadiness(sb, user.id, batch as BatchRow, items)
   if (blocker) return NextResponse.json({ error: blocker }, { status: 409 })
+
+  // PART 1 IS YOUTUBE ONLY. Countries picked on this batch before it was in
+  // two parts are cleared at the first launch, where the step that showed them
+  // no longer exists: left in place, every upload would start the Amazon work
+  // alongside YouTube, which is what the split is for. Part 2 asks again.
+  if (batch.amazon_later && !late && batch.markets.length > 0) {
+    await sb.from('launch_batches').update({ markets: [] }).eq('id', id).eq('user_id', user.id)
+    batch.markets = []
+  }
 
   // ── ASKED AGAIN AT THE BUTTON ─────────────────────────────────────────────
   // The channel was confirmed when the creator pressed "Yes, upload here",
@@ -270,6 +281,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     // creator is about to walk away from the screen.
     note: (batch.markets ?? []).length > 0
       ? 'YouTube is handled from here. Amazon goes through SCOUT in your Chrome, signed in as you: from the Liftoff page, or from a background tab SCOUT opens while Chrome is open.'
-      : 'YouTube is handled from here. No Amazon countries were picked, so nothing goes to a storefront.',
+      : batch.amazon_later
+        ? 'YouTube is handled from here. Amazon is part 2: once YouTube is done, pick the countries and press Start Amazon.'
+        : 'YouTube is handled from here. No Amazon countries were picked, so nothing goes to a storefront.',
   })
 }

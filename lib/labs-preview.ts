@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -38,6 +38,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   whole_video: 'admin',
   // Earnings: accept Creator Connections campaigns for products already selling.
   sold_campaigns: 'admin',
+  // Liftoff in two parts: YouTube first (no countries), then Amazon when
+  // YouTube is done, started with its own button.
+  liftoff_split: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

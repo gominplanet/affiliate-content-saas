@@ -905,8 +905,15 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // THE SAME EXCEPTION for the Amazon-only choice (migration 369), loaded by
   // withYouTubeChoice in both routes for the same reason.
   const choiceLoaded = /withYouTubeChoice\(sb,/.test(read('app/api/launch/batches/[id]/route.ts')) && /withYouTubeChoice\(sb,/.test(LAUNCH)
+  // AND FOR LIFTOFF IN TWO PARTS: amazon_later is not a column but the owner's
+  // Labs access, set by withAmazonLater in both routes. Exempt only while both
+  // call it, so the page and the launch route agree on whether countries are
+  // still owed.
+  const laterLoaded = /withAmazonLater\(sb, user\.id,/.test(read('app/api/launch/batches/[id]/route.ts')) && /withAmazonLater\(sb, user\.id,/.test(LAUNCH)
+  check('both routes mark a two-part Liftoff', laterLoaded, 'a route that skips it would ask for countries the other does not')
   for (const f of wantBatch) {
     if (f === 'send_to_youtube' && choiceLoaded) continue
+    if (f === 'amazon_later' && laterLoaded) continue
     check(`every route fetches batch.${f}`, batchCols.has(f),
       'a field the rules read and no route fetches is undefined, which reads as "not answered"')
   }

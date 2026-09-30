@@ -1370,7 +1370,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
  * firing until it lands. It still never fails the publish: the video is on
  * YouTube by now, and throwing would send it round the upload loop.
  */
-type HandOver = { ok: true } | { ok: false; skipped: 'no-markets' } | { ok: false; error: string }
+type HandOver = { ok: true } | { ok: false; error: string }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: string | null, publishedAt?: string | null): Promise<HandOver> {
@@ -1378,7 +1378,10 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
     const { data: batch } = await sb.from('launch_batches')
       .select('markets').eq('id', it.batch_id).maybeSingle()
     const markets: string[] = (batch?.markets ?? []).filter((d: string) => !!marketByDomain(d))
-    if (markets.length === 0) return { ok: false, skipped: 'no-markets' }
+    // NO COUNTRIES IS NOT NOTHING TO DO. Liftoff part 1 (and a YouTube only
+    // batch) still records the video, its clean original and its Amazon
+    // title, so part 2 has everything it needs when Start Amazon is pressed.
+    // Only the country rows wait (below).
 
     // THE CHANNEL'S NAME, borrowed from any row we already hold for the same
     // channel. The upload call returns the channel id but not its title, and
@@ -1436,6 +1439,7 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       await sb.from('youtube_videos').update({ amazon_title: amazonTitle }).eq('id', video.id)
     }
 
+    if (markets.length > 0) {
     // THE COUNTRIES FIRST, THEN THE LINK. The link (video_id) used to be
     // written first, and the retry pass only picks rows with no video_id, so
     // a video whose country rows then failed to write was never tried again,
@@ -1454,6 +1458,7 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       { onConflict: 'user_id,video_id,domain', ignoreDuplicates: true },
     )
     if (gridErr) return { ok: false, error: gridErr.message }
+    }
 
     const { error: linkErr } = await sb.from('launch_items')
       .update({ video_id: video.id }).eq('id', it.id)

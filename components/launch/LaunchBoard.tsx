@@ -27,7 +27,7 @@ import ChannelCheck from '@/components/launch/ChannelCheck'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, youtubePartDone, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
@@ -237,6 +237,9 @@ interface Batch {
   daily_slots: string[]; start_on: string | null; timezone: string
   /** False: Amazon only. Absent (before migration 369) reads as true. */
   send_to_youtube?: boolean
+  /** Liftoff in two parts (Labs): no countries before launch; Amazon is part
+   *  2, started with its own button once YouTube is done. */
+  amazon_later?: boolean
 }
 
 const TONE: Record<string, string> = {
@@ -366,6 +369,10 @@ export default function LaunchBoard() {
   const [amazonBusy, setAmazonBusy] = useState(false)
   const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
   const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
+  // LIFTOFF PART 2: the countries ticked but not started yet, held here until
+  // Start Amazon, so nothing about Amazon happens on a tick.
+  const [amazonPick, setAmazonPick] = useState<string[]>([])
+  const [amazonStarting, setAmazonStarting] = useState(false)
   // ── AND THE STUDIO STEPS, BY THEMSELVES, FIRST ─────────────────────────
   // Paid promotion, AI use, the notify box, monetization: YouTube's API sets
   // none of them, and a batch only did them when somebody found and pressed
@@ -1237,6 +1244,41 @@ export default function LaunchBoard() {
     } finally { setBusy(null) }
   }
 
+  // ── Liftoff part 2: Start Amazon ─────────────────────────────────────────
+  // The server makes a row per video per country, exactly as a launch with
+  // countries would have; the product check, translation, dub and SCOUT
+  // upload then run as they always do. What did not start is named.
+  async function startAmazon(domains: string[]) {
+    if (!batchId || domains.length === 0) return
+    setAmazonStarting(true)
+    try {
+      const r = await fetch(`/api/launch/batches/${batchId}/amazon`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markets: domains }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j?.ok) { toast.error(j?.error || 'Amazon could not be started.', { duration: 12000 }); return }
+      const started = (j.started ?? []) as string[]
+      const noOriginal = (j.noOriginal ?? []) as string[]
+      const notYet = (j.notYet ?? []) as string[]
+      const countries = `${domains.length} ${domains.length === 1 ? 'country' : 'countries'}`
+      if (started.length > 0) {
+        toast.success(`Amazon started: ${started.length} ${started.length === 1 ? 'video' : 'videos'} in ${countries}. MVP checks each product there, translates and dubs, and SCOUT uploads each one as it is ready.`, { duration: 10000 })
+      }
+      if (noOriginal.length > 0) {
+        toast.error(`Not started, because MVP no longer has the original file without your CTA: ${noOriginal.join(', ')}. Amazon is never sent the CTA copy.`, { duration: 18000 })
+      }
+      if (notYet.length > 0) {
+        toast(`${notYet.join(', ')}: on YouTube but not recorded yet. ${notYet.length === 1 ? 'It joins' : 'They join'} Amazon within a minute, with these countries.`, { duration: 12000 })
+      }
+      if (started.length === 0 && noOriginal.length === 0 && notYet.length === 0) toast.error('The countries are saved, but no video in this batch is on YouTube to send.')
+      setAmazonPick([])
+      setAmazonAuto('on')
+      if (bgPref && scoutReady) void applyBg(true, 1)
+      await load(batchId)
+    } finally { setAmazonStarting(false) }
+  }
+
   // ── render ────────────────────────────────────────────────────────────────
   if (loading) {
     return <p className="text-[13px] inline-flex items-center gap-2" style={muted}><Loader2 size={14} className="animate-spin" /> Loading…</p>
@@ -1291,6 +1333,173 @@ export default function LaunchBoard() {
   const scheduleLocked = batch.state === 'launching' || batch.state === 'launched'
   // YouTube and Amazon, unless the creator chose Amazon only (migration 369).
   const youtubeOn = batch.send_to_youtube !== false
+  // Part 1 of a two-part Liftoff says nothing about Amazon until part 2 starts.
+  const amazonOn = !batch.amazon_later || batch.markets.length > 0
+
+  // ── THE COUNTRY CARDS, shared by the countries step and Liftoff part 2 ───
+  // One grid, so availability, the hidden "not sold here" countries, the room
+  // left today and the sign-in check read the same in both places. Part 2
+  // holds its ticks until Start Amazon; the step saves each one.
+  function countryGrid(opts: { selected: string[]; onToggle: (domain: string) => void; disabled: boolean; intro: string }) {
+    if (!batch) return null
+    return (
+        <div className="flex flex-col gap-3">
+          <p className="text-[12.5px]" style={muted}>{opts.intro}</p>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
+            {MARKETS.filter((m) => !notSoldAnywhere(m.domain) || opts.selected.includes(m.domain)).map((m) => {
+              const on = opts.selected.includes(m.domain)
+              const state = signin[m.domain]
+              return (
+                <button
+                  key={m.domain} type="button" disabled={opts.disabled}
+                  onClick={() => opts.onToggle(m.domain)}
+                  className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left disabled:opacity-60"
+                  style={{
+                    borderColor: on ? '#0EA5A4' : 'var(--border)',
+                    background: on ? 'rgba(14,165,164,0.07)' : 'transparent',
+                  }}
+                >
+                  <span className="shrink-0 rounded flex items-center justify-center"
+                    style={{ width: 16, height: 16, border: `1.5px solid ${on ? '#0EA5A4' : 'var(--border)'}`, background: on ? '#0EA5A4' : 'transparent' }}>
+                    {on && <Check size={11} color="#fff" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-medium truncate" style={text}>{m.country}</span>
+                    <span className="block text-[11px]" style={muted}>
+                      {/* WHAT THIS COUNTRY ACTUALLY RECEIVES. The thumbnail is
+                          the same everywhere, so only the language is said. */}
+                      {m.needsTranslation ? `${m.langName}, dubbed` : 'English'}
+                    </span>
+                    {/* DOES AMAZON SELL THE PRODUCT HERE, per video, from the
+                        same check the storefront grid makes. Said before the
+                        tick, because the other way round a creator launched
+                        to seven countries and six could not take one video. */}
+                    {(() => {
+                      const row = avail?.markets.find((x) => x.domain === m.domain)
+                      if (!row || row.byVideo.length === 0) {
+                        return availLoading && productKey
+                          ? <span className="block text-[11px]" style={muted}>Checking which products are sold here…</span>
+                          : null
+                      }
+                      const name = (id: string) => avail!.videos.find((v) => v.id === id)?.title ?? 'a video'
+                      const n = row.byVideo.length
+                      const sold = row.byVideo.filter((v) => v.verdict === 'sold' || v.verdict === 'out_of_stock')
+                      const notSold = row.byVideo.filter((v) => v.verdict === 'not_sold')
+                      const oos = row.byVideo.filter((v) => v.verdict === 'out_of_stock')
+                      const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
+                      // Sold here under this country's own listing, found by
+                      // barcode or by brand and model or name.
+                      const ownListing = sold.filter((v) => !!v.localAsin)
+                      // NOT CHECKED AND CANNOT CHECK BOTH COUNT AS UNKNOWN. A
+                      // mix of sold and cannot-check used to read "Sells all"
+                      // in green.
+                      const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked' || v.verdict === 'cannot_check')
+                      if (cannot) {
+                        // Why, in the words of what the creator can do about it.
+                        const sc = storeCheck[m.domain]
+                        const why = sc === 'checking' ? `SCOUT is checking the ${m.country} store…`
+                          : sc === 'intl-permission-needed' ? `Turn on International Amazon in the SCOUT popup, then reopen this step, so SCOUT can check the ${m.country} store`
+                          : sc === 'needs-update' ? `Update SCOUT to check the ${m.country} store ahead of time`
+                          : sc === 'not-installed' ? `Install SCOUT to check the ${m.country} store ahead of time`
+                          : sc === 'blocked' ? 'Amazon asked SCOUT for a robot check. Reopen this step later to check again'
+                          : 'Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so'
+                        return <span className="block text-[11px]" style={sc === 'checking' ? muted : sc && sc !== 'failed' && sc !== 'done' ? { color: '#d97706' } : muted}>{why}</span>
+                      }
+                      const videos = (k: number) => (k === 1 ? 'video' : 'videos')
+                      return (
+                        <span className="block text-[11px]">
+                          {notSold.length === 0 && unchecked.length === 0 && (
+                            <span style={{ color: '#10B981' }}>{n === 1 ? 'Sold here' : `All ${n} videos sold here`}</span>
+                          )}
+                          {/* Only reachable while ticked: an unticked country
+                              that sells none is not shown at all. */}
+                          {notSold.length === n && (
+                            <span style={{ color: '#ef4444' }}>Not sold here, so nothing uploads. Untick it.</span>
+                          )}
+                          {notSold.length > 0 && notSold.length < n && (
+                            <span style={{ color: '#d97706' }}>
+                              {`${sold.length} of ${n} ${videos(n)} sold here, and only those upload. Not sold: ${notSold.map((v) => name(v.id)).join(', ')}`}
+                            </span>
+                          )}
+                          {notSold.length === 0 && unchecked.length > 0 && (
+                            <span style={muted}>{`${sold.length} of ${n} ${videos(n)} sold here; ${unchecked.length} not checked yet`}</span>
+                          )}
+                          {ownListing.length > 0 && (
+                            <span className="block" style={muted}>
+                              {ownListing.length === sold.length && sold.length > 0
+                                ? (sold.length === 1 ? 'Under its own listing here, and MVP uploads to that one' : 'Under their own listings here, and MVP uploads to those')
+                                : `${ownListing.length} under ${ownListing.length === 1 ? 'its' : 'their'} own listing here: ${ownListing.map((v) => name(v.id)).join(', ')}`}
+                            </span>
+                          )}
+                          {oos.length > 0 && (
+                            <span className="block" style={{ color: '#d97706' }}>Out of stock today: {oos.map((v) => name(v.id)).join(', ')}</span>
+                          )}
+                        </span>
+                      )
+                    })()}
+                    {/* ROOM LEFT TODAY, before the wall rather than at it.
+                        Amazon takes twenty a day on the US store and ten
+                        everywhere else, and a number that stops moving with no
+                        explanation reads as something broken. */}
+                    {on && room[m.domain] !== undefined && (
+                      <span className="block text-[11px]"
+                        style={{ color: room[m.domain] === 0 ? '#d97706' : 'var(--text-2)' }}>
+                        {room[m.domain] === 0
+                          ? 'full for today, the rest go tomorrow'
+                          : `${room[m.domain]} more today`}
+                      </span>
+                    )}
+                  </span>
+                  {/* THE FACT, not the tick. Being signed in is something SCOUT
+                      reports; ticking is a decision. A screen that conflates
+                      them promises listings in a country nobody can reach. */}
+                  {state === 'ready' && <Check size={13} style={{ color: '#10B981' }} />}
+                  {state && state !== 'ready' && <AlertTriangle size={13} style={{ color: '#d97706' }} />}
+                </button>
+              )
+            })}
+          </div>
+          {/* THE COUNTRIES THAT WERE HIDDEN, in one line, so a missing card
+              reads as a checked answer and not as a country MVP forgot. */}
+          {(() => {
+            const hidden = MARKETS.filter((m) => notSoldAnywhere(m.domain) && !opts.selected.includes(m.domain))
+            if (!hidden.length) return null
+            const n = avail?.videos.length ?? 0
+            return (
+              <p className="text-[11.5px]" style={muted}>
+                Not sold in: {hidden.map((m) => m.country).join(', ')}.{' '}
+                {n === 1 ? 'Amazon does not sell this product there' : `Amazon sells none of these ${n} products there`}, under this ASIN or under a listing of its own (same barcode, or same brand and model or name).
+              </p>
+            )
+          })()}
+          {/* WHY SOME SAY "NOT CHECKED", rather than leaving it to look like
+              a verdict. */}
+          {avail?.skipped && (
+            <p className="text-[11.5px]" style={{ color: '#d97706' }}>
+              {avail.skipped === 'low_tokens'
+                ? 'The product lookup service is busy right now, so some countries are not checked yet. Reopen this step in a few minutes.'
+                : 'The product lookup service is not available right now, so some countries are not checked. That is not the same as not sold.'}
+            </p>
+          )}
+          {opts.selected.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => void checkSignin(opts.selected)}
+                disabled={busy === 'signin'}
+                className="inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-lg border disabled:opacity-50"
+                style={{ borderColor: 'var(--border)', ...text }}
+              >
+                {busy === 'signin' ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
+                Check I am signed in
+              </button>
+              <span className="text-[11.5px]" style={muted}>
+                MVP uploads through your own Amazon Creator account, so you need to be signed in to each.
+              </span>
+            </div>
+          )}
+        </div>
+    )
+  }
 
   const stateWord = (st: string) =>
     st === 'launched' ? 'Launched' : st === 'launching' ? 'Going out' : st === 'ready' ? 'Ready' : 'Being set up'
@@ -1490,180 +1699,26 @@ export default function LaunchBoard() {
         />
       </StepCard>
 
-      {/* ── 4. countries ───────────────────────────────────────────────────── */}
-      <StepCard
+      {/* ── 4. countries (not in Liftoff part 1: Amazon is part 2) ───────── */}
+      {!batch.amazon_later && <StepCard
         n={4} title={step('countries')?.title ?? 'Pick your Amazon countries'}
         detail={step('countries')?.detail ?? ''} done={!!step('countries')?.done}
         current={!!step('countries')?.current} open={open === 'countries'} onToggle={() => toggle('countries')}
       >
-        <div className="flex flex-col gap-3">
-          <p className="text-[12.5px]" style={muted}>
-            Chosen once for the whole batch. A country that does not speak English gets its own title
-            and its own dubbed audio, made by MVP, and the same thumbnail as everywhere else.
-          </p>
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
-            {MARKETS.filter((m) => !notSoldAnywhere(m.domain) || batch.markets.some((x) => x.domain === m.domain)).map((m) => {
-              const on = batch.markets.some((x) => x.domain === m.domain)
-              const state = signin[m.domain]
-              return (
-                <button
-                  key={m.domain} type="button" disabled={busy === 'batch'}
-                  onClick={() => {
-                    const next = on
-                      ? batch.markets.filter((x) => x.domain !== m.domain).map((x) => x.domain)
-                      : [...batch.markets.map((x) => x.domain), m.domain]
-                    void patchBatch({ markets: next })
-                  }}
-                  className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left disabled:opacity-60"
-                  style={{
-                    borderColor: on ? '#0EA5A4' : 'var(--border)',
-                    background: on ? 'rgba(14,165,164,0.07)' : 'transparent',
-                  }}
-                >
-                  <span className="shrink-0 rounded flex items-center justify-center"
-                    style={{ width: 16, height: 16, border: `1.5px solid ${on ? '#0EA5A4' : 'var(--border)'}`, background: on ? '#0EA5A4' : 'transparent' }}>
-                    {on && <Check size={11} color="#fff" />}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[12.5px] font-medium truncate" style={text}>{m.country}</span>
-                    <span className="block text-[11px]" style={muted}>
-                      {/* WHAT THIS COUNTRY ACTUALLY RECEIVES. The thumbnail is
-                          the same everywhere, so only the language is said. */}
-                      {m.needsTranslation ? `${m.langName}, dubbed` : 'English'}
-                    </span>
-                    {/* DOES AMAZON SELL THE PRODUCT HERE, per video, from the
-                        same check the storefront grid makes. Said before the
-                        tick, because the other way round a creator launched
-                        to seven countries and six could not take one video. */}
-                    {(() => {
-                      const row = avail?.markets.find((x) => x.domain === m.domain)
-                      if (!row || row.byVideo.length === 0) {
-                        return availLoading && productKey
-                          ? <span className="block text-[11px]" style={muted}>Checking which products are sold here…</span>
-                          : null
-                      }
-                      const name = (id: string) => avail!.videos.find((v) => v.id === id)?.title ?? 'a video'
-                      const n = row.byVideo.length
-                      const sold = row.byVideo.filter((v) => v.verdict === 'sold' || v.verdict === 'out_of_stock')
-                      const notSold = row.byVideo.filter((v) => v.verdict === 'not_sold')
-                      const oos = row.byVideo.filter((v) => v.verdict === 'out_of_stock')
-                      const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
-                      // Sold here under this country's own listing, found by
-                      // barcode or by brand and model or name.
-                      const ownListing = sold.filter((v) => !!v.localAsin)
-                      // NOT CHECKED AND CANNOT CHECK BOTH COUNT AS UNKNOWN. A
-                      // mix of sold and cannot-check used to read "Sells all"
-                      // in green.
-                      const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked' || v.verdict === 'cannot_check')
-                      if (cannot) {
-                        // Why, in the words of what the creator can do about it.
-                        const sc = storeCheck[m.domain]
-                        const why = sc === 'checking' ? `SCOUT is checking the ${m.country} store…`
-                          : sc === 'intl-permission-needed' ? `Turn on International Amazon in the SCOUT popup, then reopen this step, so SCOUT can check the ${m.country} store`
-                          : sc === 'needs-update' ? `Update SCOUT to check the ${m.country} store ahead of time`
-                          : sc === 'not-installed' ? `Install SCOUT to check the ${m.country} store ahead of time`
-                          : sc === 'blocked' ? 'Amazon asked SCOUT for a robot check. Reopen this step later to check again'
-                          : 'Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so'
-                        return <span className="block text-[11px]" style={sc === 'checking' ? muted : sc && sc !== 'failed' && sc !== 'done' ? { color: '#d97706' } : muted}>{why}</span>
-                      }
-                      const videos = (k: number) => (k === 1 ? 'video' : 'videos')
-                      return (
-                        <span className="block text-[11px]">
-                          {notSold.length === 0 && unchecked.length === 0 && (
-                            <span style={{ color: '#10B981' }}>{n === 1 ? 'Sold here' : `All ${n} videos sold here`}</span>
-                          )}
-                          {/* Only reachable while ticked: an unticked country
-                              that sells none is not shown at all. */}
-                          {notSold.length === n && (
-                            <span style={{ color: '#ef4444' }}>Not sold here, so nothing uploads. Untick it.</span>
-                          )}
-                          {notSold.length > 0 && notSold.length < n && (
-                            <span style={{ color: '#d97706' }}>
-                              {`${sold.length} of ${n} ${videos(n)} sold here, and only those upload. Not sold: ${notSold.map((v) => name(v.id)).join(', ')}`}
-                            </span>
-                          )}
-                          {notSold.length === 0 && unchecked.length > 0 && (
-                            <span style={muted}>{`${sold.length} of ${n} ${videos(n)} sold here; ${unchecked.length} not checked yet`}</span>
-                          )}
-                          {ownListing.length > 0 && (
-                            <span className="block" style={muted}>
-                              {ownListing.length === sold.length && sold.length > 0
-                                ? (sold.length === 1 ? 'Under its own listing here, and MVP uploads to that one' : 'Under their own listings here, and MVP uploads to those')
-                                : `${ownListing.length} under ${ownListing.length === 1 ? 'its' : 'their'} own listing here: ${ownListing.map((v) => name(v.id)).join(', ')}`}
-                            </span>
-                          )}
-                          {oos.length > 0 && (
-                            <span className="block" style={{ color: '#d97706' }}>Out of stock today: {oos.map((v) => name(v.id)).join(', ')}</span>
-                          )}
-                        </span>
-                      )
-                    })()}
-                    {/* ROOM LEFT TODAY, before the wall rather than at it.
-                        Amazon takes twenty a day on the US store and ten
-                        everywhere else, and a number that stops moving with no
-                        explanation reads as something broken. */}
-                    {on && room[m.domain] !== undefined && (
-                      <span className="block text-[11px]"
-                        style={{ color: room[m.domain] === 0 ? '#d97706' : 'var(--text-2)' }}>
-                        {room[m.domain] === 0
-                          ? 'full for today, the rest go tomorrow'
-                          : `${room[m.domain]} more today`}
-                      </span>
-                    )}
-                  </span>
-                  {/* THE FACT, not the tick. Being signed in is something SCOUT
-                      reports; ticking is a decision. A screen that conflates
-                      them promises listings in a country nobody can reach. */}
-                  {state === 'ready' && <Check size={13} style={{ color: '#10B981' }} />}
-                  {state && state !== 'ready' && <AlertTriangle size={13} style={{ color: '#d97706' }} />}
-                </button>
-              )
-            })}
-          </div>
-          {/* THE COUNTRIES THAT WERE HIDDEN, in one line, so a missing card
-              reads as a checked answer and not as a country MVP forgot. */}
-          {(() => {
-            const hidden = MARKETS.filter((m) => notSoldAnywhere(m.domain) && !batch.markets.some((x) => x.domain === m.domain))
-            if (!hidden.length) return null
-            const n = avail?.videos.length ?? 0
-            return (
-              <p className="text-[11.5px]" style={muted}>
-                Not sold in: {hidden.map((m) => m.country).join(', ')}.{' '}
-                {n === 1 ? 'Amazon does not sell this product there' : `Amazon sells none of these ${n} products there`}, under this ASIN or under a listing of its own (same barcode, or same brand and model or name).
-              </p>
-            )
-          })()}
-          {/* WHY SOME SAY "NOT CHECKED", rather than leaving it to look like
-              a verdict. */}
-          {avail?.skipped && (
-            <p className="text-[11.5px]" style={{ color: '#d97706' }}>
-              {avail.skipped === 'low_tokens'
-                ? 'The product lookup service is busy right now, so some countries are not checked yet. Reopen this step in a few minutes.'
-                : 'The product lookup service is not available right now, so some countries are not checked. That is not the same as not sold.'}
-            </p>
-          )}
-          {batch.markets.length > 0 && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={() => void checkSignin(batch.markets.map((m) => m.domain))}
-                disabled={busy === 'signin'}
-                className="inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-lg border disabled:opacity-50"
-                style={{ borderColor: 'var(--border)', ...text }}
-              >
-                {busy === 'signin' ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
-                Check I am signed in
-              </button>
-              <span className="text-[11.5px]" style={muted}>
-                MVP uploads through your own Amazon Creator account, so you need to be signed in to each.
-              </span>
-            </div>
-          )}
-        </div>
-      </StepCard>
+        {countryGrid({
+          selected: batch.markets.map((m) => m.domain),
+          onToggle: (d) => {
+            const cur = batch.markets.map((m) => m.domain)
+            void patchBatch({ markets: cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d] })
+          },
+          disabled: busy === 'batch',
+          intro: 'Chosen once for the whole batch. A country that does not speak English gets its own title and its own dubbed audio, made by MVP, and the same thumbnail as everywhere else.',
+        })}
+      </StepCard>}
 
       {/* ── 5. products, the only per-video step ───────────────────────────── */}
       <StepCard
-        n={5} title={step('products')?.title ?? 'Set each product'}
+        n={batch.amazon_later ? 4 : 5} title={step('products')?.title ?? 'Set each product'}
         detail={step('products')?.detail ?? ''} done={!!step('products')?.done}
         current={!!step('products')?.current} open={open === 'products'} onToggle={() => toggle('products')}
       >
@@ -1675,6 +1730,7 @@ export default function LaunchBoard() {
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
           {items.map((it, i) => (
             <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
+              hideAmazon={!!batch.amazon_later && batch.markets.length === 0}
               onMove={moveItem} first={i === 0} last={i === items.length - 1}
               faces={faces} faceAvailable={faceAvailable} />
           ))}
@@ -1683,7 +1739,7 @@ export default function LaunchBoard() {
 
       {/* ── 5. cadence and launch ──────────────────────────────────────────── */}
       <StepCard
-        n={6} title={step('schedule')?.title ?? 'Schedule your YouTube posts'}
+        n={batch.amazon_later ? 5 : 6} title={step('schedule')?.title ?? 'Schedule your YouTube posts'}
         detail={step('schedule')?.detail ?? ''} done={!!step('schedule')?.done}
         current={!!step('schedule')?.current} open={open === 'schedule'} onToggle={() => toggle('schedule')}
       >
@@ -1696,7 +1752,9 @@ export default function LaunchBoard() {
             <p className="text-[12.5px] font-medium mb-2" style={text}>Where do these videos go?</p>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
               {([
-                [true, 'YouTube and Amazon', 'Scheduled on YouTube at your times, then to every Amazon country you picked.'],
+                [true, batch.amazon_later ? 'YouTube, then Amazon' : 'YouTube and Amazon', batch.amazon_later
+                  ? 'Scheduled on YouTube at your times. Amazon is part 2: once YouTube is done you pick the countries and press Start Amazon.'
+                  : 'Scheduled on YouTube at your times, then to every Amazon country you picked.'],
                 [false, 'Amazon only', 'Skip YouTube. Each video goes to your Amazon storefronts as soon as it is ready.'],
               ] as Array<[boolean, string, string]>).map(([v, label, hint]) => {
                 const on = youtubeOn === v
@@ -2073,20 +2131,20 @@ export default function LaunchBoard() {
                 the ad rating, product tag, end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
               </p>
             </div>}
-            <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
+            {amazonOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while Chrome is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
                 Not on the YouTube schedule. Once a video is launched and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
                 Amazon has no way for MVP to upload from its servers, so SCOUT does it in your Chrome, signed in as you: on this page while it is open, and in a pinned background tab when it is closed (the switch below).
                 Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
-            </div>
+            </div>}
           </div>
 
           {/* THE REASON BEFORE THE PRESS. This button used to be live whatever
               the batch was doing, and told you only afterwards, in a toast,
               that there was nothing for it to send. */}
-          <div className="mt-3 flex items-center gap-3 flex-wrap">
+          {amazonOn && <div className="mt-3 flex items-center gap-3 flex-wrap">
             <button
               onClick={() => { setAmazonAuto('on'); void uploadToAmazon() }}
               disabled={amazonBusy || !!studioBusy || !!out.amazonBlocker || batch.markets.length === 0}
@@ -2099,7 +2157,7 @@ export default function LaunchBoard() {
               {out.amazonBlocker
                 ?? `${batch.markets.map((m) => m.country).join(', ')}. SCOUT uses your own signed-in Creator account, so keep this tab open while it runs.`}
             </span>
-          </div>
+          </div>}
           {/* ── KEEP GOING WHEN THIS PAGE IS CLOSED ─────────────────────────── */}
           {scoutReady && (
             <div className="mt-3 flex items-start justify-between gap-3 rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
@@ -2134,7 +2192,7 @@ export default function LaunchBoard() {
           )}
           {/* WHAT THE AUTOMATIC SEND IS DOING, in its own words, so "on" and
               "stopped" and "nothing ready yet" never look the same. */}
-          <p className="mt-2 text-[11.5px]" style={amazonNote?.error || amazonAuto === 'stopped' || scoutReady === false ? { color: '#d97706' } : muted}>
+          {amazonOn && <p className="mt-2 text-[11.5px]" style={amazonNote?.error || amazonAuto === 'stopped' || scoutReady === false ? { color: '#d97706' } : muted}>
             {scoutReady === false
               ? 'SCOUT is not installed in this browser, so Amazon cannot go by itself. Install SCOUT, then reload this page.'
               : amazonAuto === 'stopped'
@@ -2142,8 +2200,88 @@ export default function LaunchBoard() {
                 : amazonNote
                   ? `Automatic, checked at ${amazonNote.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${amazonNote.lines.join(' ')} Checks again every two minutes.`
                   : 'Automatic: checks every two minutes while this page is open.'}
-          </p>
+          </p>}
         </div>
+        )
+      })()}
+
+      {/* ── LIFTOFF PART 2: AMAZON ────────────────────────────────────────────
+          Its own section, locked until YouTube is done, then started with its
+          own button. Part 1 never asked for countries, so nothing about Amazon
+          ran alongside the YouTube work. */}
+      {batch.amazon_later && youtubeOn && (() => {
+        const yt = youtubePartDone(batch.state, items)
+        const startedDomains = batch.markets.map((m) => m.domain)
+        const whenAt = (iso: string) =>
+          new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+        return (
+          <div className="rounded-2xl border p-4 flex flex-col gap-3" style={{ borderColor: yt.done ? '#FF9900' : 'var(--border)', background: 'var(--surface)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,153,0,0.14)', color: '#C2410C' }}>Part 2</span>
+              <p className="text-[14px] font-semibold" style={text}>Amazon</p>
+            </div>
+            {!scheduleLocked ? (
+              <p className="text-[12.5px]" style={muted}>
+                Opens once part 1 is done. Launch your videos to YouTube first: nothing about Amazon is asked or done until then.
+              </p>
+            ) : !yt.done ? (
+              <p className="text-[12.5px] inline-flex items-center gap-1.5" style={muted}>
+                <Loader2 size={12} className="animate-spin" />
+                Opens when YouTube is done. {yt.onYouTube} of {items.length} on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up` : ''}.
+              </p>
+            ) : (<>
+              <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(16,185,129,0.08)' }}>
+                <p className="text-[13.5px] font-semibold flex items-center gap-1.5" style={{ color: '#10B981' }}>
+                  <Check size={14} /> YouTube is done.
+                </p>
+                <p className="text-[12px] mt-0.5" style={muted}>
+                  {yt.onYouTube} {yt.onYouTube === 1 ? 'video is' : 'videos are'} on YouTube
+                  {yt.failed > 0 ? `, and ${yt.failed} could not go (the board below says why)` : ''}. Now Amazon.
+                </p>
+                <ul className="mt-1.5 flex flex-col gap-0.5">
+                  {items.filter((i) => !!i.youtube_video_id).map((i) => (
+                    <li key={i.id} className="text-[12px] flex items-center gap-2 min-w-0">
+                      <a href={`https://www.youtube.com/watch?v=${i.youtube_video_id}`} target="_blank" rel="noreferrer" className="truncate underline-offset-2 hover:underline" style={text}>
+                        {i.title || `Video ${i.position + 1}`}
+                      </a>
+                      <span className="shrink-0" style={muted}>
+                        {i.state === 'published' ? 'public' : i.publish_at ? `public ${whenAt(String(i.publish_at))}` : 'on YouTube'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <p className="text-[12.5px]" style={muted}>
+                {startedDomains.length > 0
+                  ? `Amazon started for ${batch.markets.map((m) => m.country).join(', ')}. Each video goes to each country once its product is checked there and its translation and dub are done; the board below shows each one. To add countries, tick them and press Start again.`
+                  : 'Pick the countries, then press Start Amazon. Amazon gets your original video without the CTA, and the same thumbnail as YouTube.'}
+              </p>
+              {countryGrid({
+                selected: [...startedDomains, ...amazonPick],
+                onToggle: (d) => {
+                  if (startedDomains.includes(d)) { toast('Amazon is already started for that country.'); return }
+                  setAmazonPick((p) => (p.includes(d) ? p.filter((x) => x !== d) : [...p, d]))
+                },
+                disabled: amazonStarting,
+                intro: 'A country that does not speak English gets its own title and its own dubbed audio, made by MVP. Countries that sell none of these products are left out.',
+              })}
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => void startAmazon(amazonPick)}
+                  disabled={amazonStarting || amazonPick.length === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
+                  style={{ background: 'linear-gradient(135deg,#FF9900,#F97316)' }}>
+                  {amazonStarting ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+                  {amazonStarting ? 'Starting…' : amazonPick.length === 0
+                    ? (startedDomains.length ? 'Tick a country to add' : 'Tick your countries')
+                    : `Start Amazon (${amazonPick.length} ${amazonPick.length === 1 ? 'country' : 'countries'})`}
+                </button>
+                {scoutReady === false && (
+                  <span className="text-[11.5px]" style={{ color: '#d97706' }}>SCOUT is not installed in this browser. MVP prepares everything, but the uploads need SCOUT.</span>
+                )}
+              </div>
+            </>)}
+          </div>
         )
       })()}
 
@@ -2465,8 +2603,10 @@ function progressNote(it: Item): string {
 }
 
 function ItemRowEditor({
-  item, busy, onSave, onMove, first, last, faces, faceAvailable,
+  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false,
 }: {
+  /** Liftoff part 1: nothing about Amazon on the row. */
+  hideAmazon?: boolean
   item: Item
   busy: boolean
   onSave: (id: string, body: Record<string, unknown>) => Promise<void>
@@ -2679,7 +2819,7 @@ function ItemRowEditor({
       </div>
 
       {/* ── the Amazon title, short and in the storefront's voice ────────── */}
-      <div className="flex items-start gap-2">
+      {!hideAmazon && <div className="flex items-start gap-2">
         <span className="w-5" />
         <label className="flex-1 min-w-0">
           <span className="block mb-1" style={lab}>Title for Amazon</span>
@@ -2718,7 +2858,7 @@ function ItemRowEditor({
             </span>
           )}
         </label>
-      </div>
+      </div>}
 
       {/* ── this video's own face ─────────────────────────────────────────── */}
       {faceAvailable && (

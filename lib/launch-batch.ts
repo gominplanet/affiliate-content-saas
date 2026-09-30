@@ -18,6 +18,7 @@
 // research, the translation, every dub, and YouTube itself) runs without them.
 // So the promise is: set it up, press Launch, leave the tab open, walk away.
 
+import { canUsePreview } from '@/lib/labs-preview'
 import { normalizeSlots, cadenceLabel, hasOwnSchedule } from '@/lib/launch-schedule'
 import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 
@@ -137,6 +138,11 @@ export interface BatchRow {
    *  batch (migration 372). Null: not confirmed. Undefined: the column does
    *  not exist yet. */
   youtube_channel_id?: string | null
+  /** LIFTOFF IN TWO PARTS (Labs liftoff_split). Not a column: derived from
+   *  the owner's access by withAmazonLater. True means countries are not asked
+   *  for before launch; Amazon is part 2, started once YouTube is done. Never
+   *  true for an Amazon only batch, where Amazon is the whole job. */
+  amazon_later?: boolean
 }
 
 /**
@@ -179,6 +185,35 @@ export function ctaTopLeft(
  * loads before migration 369 is run. `available: false` means the choice
  * cannot be saved yet, and the batch goes to YouTube as it always did.
  */
+/**
+ * Mark the batch for Liftoff in two parts when its owner has it (Labs).
+ *
+ * Read wherever the steps or the launch check are computed, so the page and
+ * the launch route cannot disagree about whether countries are still owed.
+ */
+export async function withAmazonLater<B extends BatchRow>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, userId: string, batch: B,
+): Promise<B> {
+  const { data } = await sb.from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+  const on = canUsePreview('liftoff_split', data?.tier) && batch.send_to_youtube !== false
+  return { ...batch, amazon_later: on }
+}
+
+/**
+ * Is part 1 finished: has every video that can go reached YouTube (scheduled
+ * or public)? Counted from the rows, so the "YouTube is done" screen is the
+ * result and never the plan. A video that could not go does not hold part 2
+ * back; it is counted and named instead.
+ */
+export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number } {
+  const launched = batchState === 'launching' || batchState === 'launched'
+  const onYouTube = items.filter((i) => !!i.youtube_video_id).length
+  const failed = items.filter((i) => !i.youtube_video_id && i.state === 'blocked').length
+  const waiting = items.length - onYouTube - failed
+  return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting }
+}
+
 export async function withYouTubeChoice<B extends BatchRow>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, batch: B,
@@ -451,8 +486,11 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
     },
   ]
 
-  const firstOpen = steps.findIndex((s) => !s.done)
-  return steps.map((s, i) => ({ ...s, current: i === firstOpen }))
+  // PART 1 ASKS NOTHING ABOUT AMAZON. The countries are chosen in part 2,
+  // once YouTube is done.
+  const shown = batch.amazon_later ? steps.filter((s) => s.id !== 'countries') : steps
+  const firstOpen = shown.findIndex((s) => !s.done)
+  return shown.map((s, i) => ({ ...s, current: i === firstOpen }))
 }
 
 /** Can this batch be launched, and if not, the first reason why.
@@ -569,7 +607,8 @@ export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
   else if (own > 0) out.push(`${own} on YouTube at their own date and time, the rest ${cadenceLabel(slots).toLowerCase()}${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
   else out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
 
-  if (batch.markets.length === 0) out.push('No Amazon storefronts, so this is YouTube only.')
+  if (batch.amazon_later && batch.markets.length === 0) out.push('Amazon comes after, in part 2: once YouTube is done you pick the countries and press Start Amazon.')
+  else if (batch.markets.length === 0) out.push('No Amazon storefronts, so this is YouTube only.')
   else {
     out.push(`${batch.markets.length} Amazon ${batch.markets.length === 1 ? 'storefront' : 'storefronts'}, each one as soon as its translation and dub are done, not on the YouTube schedule.`)
   }

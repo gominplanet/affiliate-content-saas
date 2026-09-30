@@ -17,7 +17,7 @@ import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
 import { normalizeStudioOptions, readStudioRun } from '@/lib/studio-finish'
-import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, withYouTubeChoice, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, withYouTubeChoice, withAmazonLater, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
@@ -160,7 +160,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }))
 
   // YOUTUBE OR AMAZON ONLY (migration 369), read on its own like the rest.
-  const { batch: b, available: youtubeChoiceAvailable } = await withYouTubeChoice(sb, batch as BatchRow)
+  const { batch: chosen, available: youtubeChoiceAvailable } = await withYouTubeChoice(sb, batch as BatchRow)
+  // Liftoff in two parts (Labs): the steps and the page follow it.
+  const b = await withAmazonLater(sb, user.id, chosen)
   return NextResponse.json({
     ok: true,
     batch: {

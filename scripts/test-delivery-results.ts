@@ -60,7 +60,7 @@ check('the hand-off uploads to the local listing it found',
   && /asin: local\.get\(domain\) \?\? it\.asin/.test(code('app/api/cron/launch-drain/route.ts')))
 check('only a country checked in full and not sold is hidden, and it is named',
   /row\.byVideo\.every\(\(v\) => v\.verdict === 'not_sold'\)/.test(LB) && /Not sold in: \{hidden\.map/.test(LB)
-  && /!notSoldAnywhere\(m\.domain\) \|\| batch\.markets\.some/.test(LB))
+  && /!notSoldAnywhere\(m\.domain\) \|\| opts\.selected\.includes\(m\.domain\)/.test(LB))
 check('a mixed country says how many videos it sells', /of \$\{n\} \$\{videos\(n\)\} sold here, and only those upload/.test(LB))
 
 // AUSTRALIA, from the live store through SCOUT: no Keepa there.
