@@ -74,6 +74,26 @@ check('part 1 shows no Amazon panel, button or row box', /const amazonOn = !batc
   && /\{amazonOn && <div className="mt-3 flex items-center gap-3 flex-wrap">/.test(BOARD) && /hideAmazon=\{!!batch\.amazon_later && batch\.markets\.length === 0\}/.test(BOARD))
 check('one country grid for both parts', (BOARD.match(/countryGrid\(\{/g) ?? []).length === 2)
 
+// ── GLOBAL SYNC WAITS FOR PART 2 ────────────────────────────────────────────
+// Global Sync enrols the whole catalogue in the countries ticked on its page.
+// A Liftoff video is left out of that, matched by its video row and by its
+// YouTube id, so its only countries are the ones its batch names: none in
+// part 1, the ones picked at Start Amazon in part 2.
+const COVER = read('app/api/cron/coverage-drain/route.ts')
+const enrol = COVER.slice(COVER.indexOf('async function enrol'), COVER.indexOf('async function products'))
+check('Global Sync never enrols a Liftoff video on its own',
+  /from\('launch_items'\)\.select\('video_id'\)/.test(enrol) && /from\('launch_items'\)\.select\('youtube_video_id'\)/.test(enrol)
+  && /const videos = all\.filter\(\(v\) => !liftoff\.has\(v\.id\)\)/.test(enrol))
+// And nothing else makes country rows: the three writers are Global Sync's
+// enrol, the hand-over (only with countries) and Start Amazon.
+{
+  const { execSync } = require('node:child_process') as typeof import('node:child_process')
+  const hits = execSync(`grep -rln "from('storefront_coverage')" app lib || true`, { encoding: 'utf8' }).split('\n').filter(Boolean)
+  const writers = hits.filter((f) => /from\('storefront_coverage'\)\s*\.(upsert|insert)\(|storefront_coverage'\)\s*\n\s*\.(upsert|insert)\(/.test(read(f)))
+  check(`only the three known places create Amazon rows (found: ${writers.sort().join(', ')})`,
+    JSON.stringify(writers.sort()) === JSON.stringify(['app/api/cron/coverage-drain/route.ts', 'app/api/cron/launch-drain/route.ts', 'app/api/launch/batches/[id]/amazon/route.ts']))
+}
+
 if (failures.length) {
   console.error(`\n❌ liftoff-split: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
