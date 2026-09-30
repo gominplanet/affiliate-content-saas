@@ -20,8 +20,6 @@ export interface StudioOptions {
   monetize: boolean
   /** Ad suitability: None of the above, then Submit rating. */
   adRating: boolean
-  /** Tag the video's product, when there is one and the channel can. */
-  tagProduct: boolean
   /** End screen imported from the channel's latest video. */
   endScreen: boolean
 }
@@ -33,7 +31,6 @@ export const DEFAULT_STUDIO_OPTIONS: StudioOptions = {
   disclosures: true,
   monetize: true,
   adRating: true,
-  tagProduct: true,
   endScreen: true,
 }
 
@@ -46,7 +43,6 @@ export function normalizeStudioOptions(raw: unknown): StudioOptions {
     disclosures: pick('disclosures'),
     monetize: pick('monetize'),
     adRating: pick('adRating'),
-    tagProduct: pick('tagProduct'),
     endScreen: pick('endScreen'),
   }
 }
@@ -259,7 +255,9 @@ export function liftoffStudioRequest(
     details: opts.disclosures,
     monetize: opts.monetize,
     selfCert: opts.monetize && opts.adRating,
-    tagProduct: opts.tagProduct && !!link,
+    // NEVER TAGGED BY MVP. Product tags are the creator's to add by hand in
+    // Studio; SCOUT only tags when asked, and MVP no longer asks.
+    tagProduct: false,
     productUrl: link ?? undefined,
     amazonUrl: link ?? undefined,
     endScreen: opts.endScreen,

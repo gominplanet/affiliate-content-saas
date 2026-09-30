@@ -690,7 +690,6 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   const finishDoDetails = true
   const finishDoMonetize = true
   const finishDoAdRating = true
-  const finishDoTag = true
   const finishDoEndScreen = true
   const anyFinishStep = true
   // What YouTube reported about paid promotion and AI use after the push,
@@ -1228,9 +1227,6 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     if (override) return asinFromAmazonUrl(override) || cardAsin || null
     return cardAsin || null
   })()
-  /** A link SCOUT can paste into Studio's Tag products search. */
-  const hasProductLink = !!(productUrl.trim() || productLinkFor(effectiveAsin))
-
   /**
    * Remember the thumbnail against the PRODUCT, so posting the same ASIN to
    * Facebook next week can offer it back (lib/product-image-memory).
@@ -1721,7 +1717,8 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         details: finishDoDetails,
         monetize: finishDoMonetize,
         selfCert: finishDoMonetize && finishDoAdRating,
-        tagProduct: finishDoTag && !!link,
+        // Product tags are left to the creator, by hand in Studio.
+        tagProduct: false,
         productUrl: link ?? undefined,
         amazonUrl: productLinkFor(effectiveAsin) ?? undefined,
         productTitle: product?.title ?? undefined,
@@ -2678,7 +2675,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
           {shortMode && (
             <div className="mb-2 rounded-lg border border-[#ff3b30]/20 bg-[#ff3b30]/[0.04] px-2.5 py-1.5 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
               <b>This is a Short.</b> YouTube does not make links clickable in a Short&apos;s description or comments, so Co-Pilot writes a short
-              title and description that send viewers to your full review, and no pinned comment link. The product tag SCOUT adds in Studio is the link that works on a Short.
+              title and description that send viewers to your full review, and no pinned comment link. A product tag, which you add yourself in Studio, is the link that works on a Short.
               {shortResult && (
                 <span className="block mt-0.5 text-[#86868b]">
                   {shortResult.fullReviewUrl ? `Full review linked: ${shortResult.fullReviewUrl}. Also set it as the Short's Related video in YouTube Studio or the app, which is clickable.` : 'MVP found no other video of yours for this product, so there is no full review to point to.'}
@@ -3797,12 +3794,12 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                     </span>
                     {extensionInstalled === true ? (
                       <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed">
-                        Then SCOUT does the rest in Studio in your own browser, and reads each one back: <strong>monetization On</strong>, the <strong>ad suitability rating</strong>, the <strong>product tag</strong>{hasProductLink ? '' : ' (when a product is found)'} and the <strong>end screen</strong> from your latest video.
+                        Then SCOUT does the rest in Studio in your own browser, and reads each one back: <strong>monetization On</strong>, the <strong>ad suitability rating</strong> and the <strong>end screen</strong> from your latest video. Product tags are yours to add in Studio.
                         {' '}Then {proSettings.scheduleMode !== 'now' ? 'the schedule you picked' : proSettings.privacyStatus === 'draft' ? 'it stays a draft, as you chose' : `it is set to ${proSettings.privacyStatus}`}. Notify subscribers: {proSettings.notifySubscribers ? 'Yes' : 'No'}.
                       </span>
                     ) : (
                       <span className="text-[11px] text-[#ff9500] leading-relaxed">
-                        Monetization, the ad rating, the product tag and the end screen need SCOUT, which is not installed in this browser.{' '}
+                        Monetization, the ad rating and the end screen need SCOUT, which is not installed in this browser.{' '}
                         <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Add SCOUT to Chrome</a> and MVP does them for you on the next push.
                       </span>
                     )}
@@ -3897,7 +3894,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                         )}
                         {isPro && extensionInstalled !== true && (
                           <p className="text-[11px] text-[#ff9500] mt-1 leading-relaxed">
-                            Monetization, the ad rating, the product tag and the end screen were not set: SCOUT is not installed in this browser.{' '}
+                            Monetization, the ad rating and the end screen were not set: SCOUT is not installed in this browser.{' '}
                             <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Add SCOUT to Chrome</a>, then push again.
                           </p>
                         )}

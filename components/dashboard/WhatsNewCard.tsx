@@ -67,7 +67,7 @@ const UPDATES: Update[] = [
     badge: 'IMPROVED',
     tone: '#C2410C',
     title: 'Co-Pilot finishes the job in YouTube Studio',
-    desc: 'With SCOUT, Co-Pilot now sets the product tag, monetization and the paid promotion disclosure in Studio the way you would by hand, and tells you what Studio kept. Notify subscribers is a real switch, off by default. Videos that already went live leave the Needs metadata list.',
+    desc: 'With SCOUT, Co-Pilot now sets monetization and the paid promotion disclosure in Studio the way you would by hand, and tells you what Studio kept. Notify subscribers is a real switch, off by default. Videos that already went live leave the Needs metadata list.',
     href: '/co-pilot',
   },
   {

@@ -1922,7 +1922,6 @@ export default function LaunchBoard() {
                   ['disclosures', 'Paid promotion: Yes, and AI use: No', 'Untick if these videos are AI generated or altered.'],
                   ['monetize', 'Monetization: On', 'Skipped on a channel without it.'],
                   ['adRating', 'Ad suitability: None of the above, then Submit rating', 'YouTube checks this rating, so only tick it when it is true.'],
-                  ['tagProduct', 'Tag each video\u2019s product', 'Only the exact match for its Amazon link, never a similar product.'],
                   ['endScreen', 'End screen imported from your latest video', ''],
                 ] as Array<[keyof StudioOptions, string, string]>).map(([k, label, hint]) => {
                   const off = k === 'adRating' && !studioOpts.monetize
@@ -2128,7 +2127,7 @@ export default function LaunchBoard() {
               <p className="text-[11.5px] mt-1" style={muted}>
                 Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
                 and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
-                the ad rating, product tag, end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
+                the ad rating, the end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
               </p>
             </div>}
             {amazonOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>

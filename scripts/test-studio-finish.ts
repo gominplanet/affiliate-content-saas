@@ -218,6 +218,20 @@ check('the manifest and the app registry agree on the version',
     && /const openers = \[inner\]/.test(kitMon))
 }
 
+// ── MVP NEVER TAGS PRODUCTS ──────────────────────────────────────────────────
+// Seb's rule: product tags are the creator's to add by hand in Studio. SCOUT
+// keeps the step (it runs only when asked), and nothing in MVP asks: every
+// Studio request says tagProduct false, and no screen offers it.
+{
+  const { execSync } = require('node:child_process') as typeof import('node:child_process')
+  const files = execSync(`grep -rln "tagProduct" app components lib || true`, { encoding: 'utf8' }).split('\n').filter(Boolean)
+  const asking = files.filter((f) => f !== 'lib/extension-frame.ts'
+    && [...readFileSync(f, 'utf8').matchAll(/tagProduct:\s*([^,}\n]+)/g)].some((m) => m[1].trim() !== 'false'))
+  check('no Studio request asks SCOUT to tag a product', asking.length === 0, asking.join(', '))
+  check('the Studio options have no tag setting', !/tagProduct/.test(readFileSync('lib/studio-finish.ts', 'utf8').split('export function liftoffStudioRequest')[0]))
+  check('no screen offers product tagging', !/'tagProduct', 'Tag each/.test(readFileSync('components/launch/LaunchBoard.tsx', 'utf8')))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)
