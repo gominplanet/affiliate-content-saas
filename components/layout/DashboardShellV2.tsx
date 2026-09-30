@@ -22,6 +22,7 @@
 // commit once we're confident.
 'use client'
 
+import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
 import { previewOpenToPro } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -1430,6 +1431,8 @@ export default function DashboardShellV2({
         <main className="flex-1 overflow-y-auto w-full">
           {/* Silent daily self-heal for stale post URLs after a permalink change. */}
           <PermalinkAutoHeal />
+          {/* Sold-product campaigns, accepted once a day through SCOUT. */}
+          <SoldCampaignsDaily />
           {/* Action-needed announcement popup (admin-managed, variant 'modal'). */}
           <AnnouncementModal />
           <ReconnectCheckup />

@@ -1246,3 +1246,64 @@ function keepaCodesOf(p: any): string[] {
   const list = ([] as unknown[]).concat(p?.upcList ?? [], p?.eanList ?? [], p?.gtinList ?? [])
   return [...new Set(list.map((c) => String(c || '').trim()).filter((c) => /^\d{8,14}$/.test(c)))]
 }
+
+/** A product's variation family: its parent listing and its siblings (other
+ *  colours, sizes, styles), with its own colour or size when Keepa says. */
+export interface KeepaFamily { asin: string; parentAsin: string | null; siblings: string[]; attrs: string | null }
+
+const ASIN_RE = /^[A-Z0-9]{10}$/
+
+/** Read one Keepa product object's family. Pure. Keepa gives the parent as
+ *  `parentAsin`, and the variations as `variations` ({asin, attributes}) or,
+ *  on older objects, `variationCSV`. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function keepaFamilyOf(p: any): KeepaFamily | null {
+  const asin = String(p?.asin || '').toUpperCase()
+  if (!ASIN_RE.test(asin)) return null
+  const parentRaw = String(p?.parentAsin || '').toUpperCase()
+  const parentAsin = ASIN_RE.test(parentRaw) && parentRaw !== asin ? parentRaw : null
+  const sib = new Set<string>()
+  let attrs: string | null = null
+  if (Array.isArray(p?.variations)) {
+    for (const v of p.variations) {
+      const a = String(v?.asin || '').toUpperCase()
+      if (!ASIN_RE.test(a)) continue
+      if (a === asin) {
+        const parts = (Array.isArray(v?.attributes) ? v.attributes : [])
+          .map((x: { dimension?: unknown; value?: unknown }) => String(x?.value || '').trim()).filter(Boolean)
+        if (parts.length) attrs = parts.join(', ').slice(0, 120)
+      } else sib.add(a)
+    }
+  }
+  if (typeof p?.variationCSV === 'string') {
+    for (const a of p.variationCSV.split(',').map((x: string) => x.trim().toUpperCase())) if (ASIN_RE.test(a) && a !== asin) sib.add(a)
+  }
+  if (parentAsin) sib.delete(parentAsin)
+  return { asin, parentAsin, siblings: [...sib].slice(0, 400), attrs }
+}
+
+/** Families for up to 100 ASINs a call (1 token each). Never throws: an ASIN
+ *  missing from the result was not looked at, which is not "has no family". */
+export async function fetchKeepaFamilies(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<{ families: Map<string, KeepaFamily>; tokensLeft: number | null }> {
+  const families = new Map<string, KeepaFamily>()
+  let tokensLeft: number | null = null
+  const key = process.env.KEEPA_API_KEY
+  const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => ASIN_RE.test(a)))]
+  if (!key || !valid.length) return { families, tokensLeft }
+  for (let i = 0; i < valid.length; i += 100) {
+    const batch = valid.slice(i, i + 100)
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${batch.join(',')}&stats=0&history=0`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      if (!res.ok) continue
+      const data = await res.json() as { products?: unknown[]; tokensLeft?: number }
+      if (typeof data.tokensLeft === 'number') tokensLeft = data.tokensLeft
+      for (const raw of (Array.isArray(data.products) ? data.products : [])) {
+        const f = keepaFamilyOf(raw)
+        if (f) families.set(f.asin, f)
+      }
+      if (tokensLeft != null && tokensLeft < 200) break
+    } catch { /* skip this batch */ }
+  }
+  return { families, tokensLeft }
+}
