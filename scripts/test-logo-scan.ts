@@ -116,7 +116,7 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('an unreadable one is NOT swept under a clean result',
     /could not be opened/i.test(mixed.headline), mixed.headline)
   check('and the clean claim is scoped to what was opened',
-    /in the 2 thumbnails we could open/i.test(mixed.headline), mixed.headline)
+    /in the 2 pictures we could open/i.test(mixed.headline), mixed.headline)
   check('and it does not read as an all clear',
     !/no store logos on any of them/i.test(mixed.headline), mixed.headline)
 
@@ -129,10 +129,10 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   const hit = summariseLogoScan([f('found'), f('clean'), f('unreadable')])
   check('a find leads, whatever else is in the batch', /have a store's logo|has a store's logo/i.test(hit.headline), hit.headline)
-  check('one find is singular', /1 thumbnail has a store's logo/i.test(summariseLogoScan([f('found')]).headline))
+  check('one find is singular', /1 picture has a store's logo/i.test(summariseLogoScan([f('found')]).headline))
 
   const empty = summariseLogoScan([])
-  check('an empty batch is its own answer', /no thumbnails to check/i.test(empty.headline), empty.headline)
+  check('an empty batch is its own answer', /no pictures to check/i.test(empty.headline), empty.headline)
   check('and is not a clean bill of health', !/no store logos on any/i.test(empty.headline), empty.headline)
 }
 

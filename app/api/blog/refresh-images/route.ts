@@ -18,7 +18,9 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { normalizeTier, allowedBlogImages, tierHas } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
-import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { NO_BRAND_IMAGE_CLAUSE, isRetailerSiteImage } from '@/lib/image-guard'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { forgetLogoScan } from '@/lib/post-logo-sweep'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
@@ -186,7 +188,10 @@ export async function POST(request: Request) {
   }
 
   // Strip the existing body images so we don't duplicate, then regenerate.
+  // And any picture that is an Amazon site graphic rather than a product photo
+  // (its logo, from a blocked page), wherever it sits in the post.
   const stripped = (post.content as string).replace(/<!-- wp:image[\s\S]*?<!-- \/wp:image -->\s*/g, '')
+    .replace(/<img\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>/gi, (tag, src: string) => (isRetailerSiteImage(src) ? '' : tag))
   const words = stripped.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length
 
   // ── User-supplied in-article photos ───────────────────────────────────────
@@ -232,6 +237,8 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: userImagesStatus }).eq('id', post.id) } catch { /* non-fatal */ }
     }
+    // New pictures: the Logo check looks at this post again.
+    await forgetLogoScan(createAdminClient(), post.id)
     return NextResponse.json({
       ok: true,
       count: uploaded.length,
@@ -483,6 +490,9 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: imagesStatus }).eq('id', post.id) } catch { /* non-fatal */ }
   }
+
+  // New pictures: the Logo check looks at this post again.
+  await forgetLogoScan(createAdminClient(), post.id)
 
   return NextResponse.json({
     ok: true,

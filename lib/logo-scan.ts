@@ -40,7 +40,7 @@ export interface LogoFinding {
  * a product thumbnail. The line that matters is RETAILER versus MANUFACTURER,
  * and it has to be drawn in the prompt rather than in the reading of the answer.
  */
-export const LOGO_SCAN_PROMPT = `Look at this image, which is a YouTube-style thumbnail for a product review.
+export const LOGO_SCAN_PROMPT = `Look at this image, which was published with a product review: a thumbnail, or a picture inside the article.
 
 Answer ONE question: does it show the logo, wordmark or brand symbol of a RETAILER or MARKETPLACE?
 
@@ -121,17 +121,17 @@ export function summariseLogoScan(findings: LogoFinding[]): LogoScanSummary {
 
   let headline: string
   if (findings.length === 0) {
-    headline = 'No thumbnails to check.'
+    headline = 'No pictures to check.'
   } else if (found > 0) {
     headline = found === 1
-      ? `1 thumbnail has a store's logo on it. It is listed below.`
-      : `${found} thumbnails have a store's logo on them. They are listed below.`
+      ? `1 picture has a store's logo on it. It is listed below.`
+      : `${found} pictures have a store's logo on them. They are listed below.`
   } else if (unreadable > 0) {
     headline = clean > 0
-      ? `No store logos in the ${clean} thumbnails we could open. ${unreadable} could not be opened, so those remain unchecked.`
-      : `None of the ${unreadable} thumbnails could be opened, so nothing was actually checked.`
+      ? `No store logos in the ${clean} pictures we could open. ${unreadable} could not be opened, so those remain unchecked.`
+      : `None of the ${unreadable} pictures could be opened, so nothing was actually checked.`
   } else {
-    headline = `Checked ${clean} ${clean === 1 ? 'thumbnail' : 'thumbnails'}. No store logos on any of them.`
+    headline = `Checked ${clean} ${clean === 1 ? 'picture' : 'pictures'}. No store logos on any of them.`
   }
 
   return { found, clean, unreadable, headline }
