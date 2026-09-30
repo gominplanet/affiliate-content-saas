@@ -33,13 +33,13 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the provenance line sits right after the disclosure', out.indexOf('mvp-provenance') > out.indexOf('Disclosure') && out.indexOf('mvp-provenance') < out.indexOf('Body'))
   check('it is added once', withProvenanceNote(out, 'none').split('mvp-provenance').length === out.split('mvp-provenance').length)
   check('the hashtag block is gone and nothing else is', !/gr-tags/.test(out) && /<p>End<\/p>/.test(out))
-  check('a research post says it was not tested; a video post says it happened on camera',
-    /We have not tested this product ourselves/.test(provenanceText('none')) && /happened on camera/.test(provenanceText('video', 'Seb')) && /Seb's own video/.test(provenanceText('video', 'Seb')))
+  check('a research post says it was not tested; a video post says it is the creator\'s own review, in the first person, with no name',
+    /We have not tested this product ourselves/.test(provenanceText('none')) && /my own video review/.test(provenanceText('video', 'Seb')) && !/Seb/.test(provenanceText('video', 'Seb')))
   // A post from the creator's own video whose words could not be read is
   // still theirs: a creator read "We have not tested this product ourselves"
   // under her own embedded video on every post.
   check('a post from the creator\'s own video never says it was not tested, even without a transcript',
-    !/not tested/i.test(provenanceText('own-video', 'Seb')) && /Seb's own video/.test(provenanceText('own-video', 'Seb'))
+    !/not tested/i.test(provenanceText('own-video', 'Seb')) && /my own video review/.test(provenanceText('own-video', 'Seb'))
     && /fromOwnVideo: true/.test(read('services/claude/index.ts')))
   {
     // AND THE POSTS ALREADY LIVE are corrected (lib/provenance-fix): the wrong
@@ -50,10 +50,13 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
     const twice = `${withProvenanceNote('<p>Top</p>', 'none', 'Seb')}\n${bad}`
     const fixed = fixProvenanceHtml(twice, 'Seb')
     check('a live post from the creator\'s video loses the "not tested" line and its duplicates, and keeps the rest',
-      !!fixed && !/not tested/i.test(fixed.html) && fixed.removedCopies === 1 && /<p>Body<\/p>/.test(fixed.html) && /<p>End<\/p>/.test(fixed.html) && fixed.html.includes("Seb's own video"))
+      !!fixed && !/not tested/i.test(fixed.html) && fixed.removedCopies === 1 && /<p>Body<\/p>/.test(fixed.html) && /<p>End<\/p>/.test(fixed.html) && fixed.html.includes('my own video review') && !fixed.html.includes('Seb'))
     check('the corrected line sits under the video, once',
       !!fixed && fixed.html.indexOf('mvp-provenance') > fixed.html.indexOf('</iframe>') && (fixed.html.match(/class="mvp-provenance"/g) ?? []).length === 1)
     check('a post that is already right is left alone', !!fixed && fixProvenanceHtml(fixed.html, 'Seb') === null)
+    const named = `<p>A</p>\n${vid}\n<p class="mvp-provenance" style="font-size:13px;color:#6b6b70">How this review was made: from Caleb&#8217;s own video of the product, with the details from the listing and the maker&#8217;s specifications.</p>`
+    check('a line that names the creator is rewritten in the first person',
+      !!fixProvenanceHtml(named, 'Caleb') && !/Caleb/.test(fixProvenanceHtml(named, 'Caleb')!.html) && /my own video review/.test(fixProvenanceHtml(named, 'Caleb')!.html))
     check('a new review from a video gets the line under the video; a research post keeps it at the top',
       withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('mvp-provenance') > withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('</iframe>')
       && withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('mvp-provenance') < withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('</iframe>'))

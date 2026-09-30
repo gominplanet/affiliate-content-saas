@@ -17,22 +17,28 @@ import type { ExperienceSource } from '@/lib/experience-source'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+/** ALWAYS IN THE FIRST PERSON. The line used to name the creator from Brand
+ *  Profile ("from Caleb's own video"), which read like a third party writing
+ *  about them, and named whoever the account said, right or wrong. `author` is
+ *  kept so callers need not change, and is not used. */
 export function provenanceText(source: ExperienceSource | null | undefined, author?: string | null): string {
-  const who = (author || '').trim() || 'I'
-  const own = who === 'I' ? 'my own' : `${who}'s own`
+  void author
   switch (source) {
-    case 'video': return `How this review was made: written from ${own} video of the product. Everything personal in it happened on camera.`
-    case 'own-video': return `How this review was made: from ${own} video of the product, with the details from the listing and the maker's specifications.`
-    case 'creator-note': return `How this review was made: written from ${own} notes after using the product.`
-    case 'owner': return `How this review was made: ${who === 'I' ? 'I own' : `${who} owns`} this product; the details come from the listing and the maker's specifications.`
+    case 'video':
+    case 'own-video': return VIDEO_LINE
+    case 'creator-note': return 'How this review was made: written from my own notes after using this product.'
+    case 'owner': return 'How this review was made: I own this product; the details come from the listing and the maker\'s specifications.'
     default: return 'How this review was made: researched from the product listing, its specifications and the questions buyers ask. We have not tested this product ourselves.'
   }
 }
 
+/** The line on a review made from the creator's own video. */
+export const VIDEO_LINE = 'How this review was made: written from my own video review of this product. Every opinion here is my own, from using it myself.'
+
 /** The line for a comparison or buying guide, which covers several products. */
 export function comparisonProvenanceText(ownVideos: number, total: number, author?: string | null): string {
-  const who = (author || '').trim()
-  const own = who ? `${who}'s own` : 'my own'
+  void author
+  const own = 'my own'
   if (total > 0 && ownVideos === total) return `How this comparison was made: written from ${own} videos of each product.`
   if (ownVideos > 0) return `How this comparison was made: ${ownVideos} of the ${total} products come from ${own} videos; the rest from their listings, specifications and other creators' public videos, credited where used.`
   return 'How this comparison was made: researched from the product listings, their specifications and public videos, credited where used. We have not tested these products ourselves.'

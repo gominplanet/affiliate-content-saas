@@ -34,6 +34,9 @@ export const FIX_PER_RUN = 20
 // "embedded below"; it now sits under it as a caption. A line still saying
 // "embedded below" is one that has not been moved yet.
 const EMBEDDED_BELOW = /embedded below/i
+// AND IN THE FIRST PERSON. Every earlier video wording said "own video of the
+// product" (with the creator's name, or "my"); the current one does not.
+const OLD_VIDEO_WORDING = /own video of the product/i
 
 const NOT_TESTED = /not tested (?:this|these) products? ourselves/i
 // A provenance paragraph, with its block markers when it has them.
@@ -51,7 +54,7 @@ export function fixProvenanceHtml(html: string, author: string | null): { html: 
   if (!html) return null
   const found = [...(html.match(BLOCK) ?? []), ...(html.match(BARE) ?? [])]
   if (found.length === 0) return null
-  const needs = found.length > 1 || found.some((b) => NOT_TESTED.test(b) || EMBEDDED_BELOW.test(b))
+  const needs = found.length > 1 || found.some((b) => NOT_TESTED.test(b) || EMBEDDED_BELOW.test(b) || OLD_VIDEO_WORDING.test(b))
   if (!needs) return null
   const source = found.some((b) => /happened on camera/i.test(b)) ? 'video' : 'own-video'
   let taken = 0
@@ -73,9 +76,9 @@ export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<Pro
     .not('video_id', 'is', null).not('wordpress_post_id', 'is', null)
     .ilike('content', needle)
     .order('updated_at', { ascending: true }).limit(max)
-  const [a, b] = await Promise.all([pick('%not tested this product ourselves%'), pick('%embedded below%')])
+  const [a, b, c] = await Promise.all([pick('%not tested this product ourselves%'), pick('%embedded below%'), pick('%own video of the product%')])
   const byId = new Map<string, Row & { updated_at: string }>()
-  for (const r of [...(a.data ?? []), ...(b.data ?? [])] as Array<Row & { updated_at: string }>) byId.set(r.id, r)
+  for (const r of [...(a.data ?? []), ...(b.data ?? []), ...(c.data ?? [])] as Array<Row & { updated_at: string }>) byId.set(r.id, r)
   const posts = [...byId.values()].sort((x, y) => String(x.updated_at).localeCompare(String(y.updated_at))).slice(0, max)
   const authors = new Map<string, string | null>()
   const touch = (id: string) => sb.from('blog_posts').update({ updated_at: new Date().toISOString() }).eq('id', id)
