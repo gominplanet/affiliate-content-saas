@@ -248,11 +248,6 @@ export function liftoffStudioRequest(
   opts: StudioOptions,
   notifySubscribers: boolean,
   background = false,
-  /** The channel that owns the video (the batch's confirmed channel). Without
-   *  it SCOUT opens Studio under whichever channel Studio was last on, and for
-   *  a creator with more than one channel Studio answers "Oops, something went
-   *  wrong" on the video's pages. */
-  channelId?: string | null,
 ): import('./extension-frame').StudioFinishOpts {
   const link = productLinkFor(it.asin)
   const future = !!it.publish_at && new Date(it.publish_at).getTime() > Date.now() + 5 * 60_000
@@ -266,7 +261,10 @@ export function liftoffStudioRequest(
     productUrl: link ?? undefined,
     amazonUrl: link ?? undefined,
     endScreen: opts.endScreen,
-    channelId: channelId || undefined,
+    // NO CHANNEL. Given one, SCOUT opens a channel-scoped address
+    // (studio.youtube.com/channel/<UC>/video/<id>/edit), and Studio answers it
+    // with "Oops, something went wrong" even for the video's own channel: it
+    // broke every step, not only the end screen. The plain address works.
     notifySubscribers,
     visibility: it.state === 'scheduled' && future && it.publish_at
       ? { mode: 'schedule', publishAt: it.publish_at }

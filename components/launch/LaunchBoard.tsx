@@ -237,9 +237,6 @@ interface Batch {
   daily_slots: string[]; start_on: string | null; timezone: string
   /** False: Amazon only. Absent (before migration 369) reads as true. */
   send_to_youtube?: boolean
-  /** The YouTube channel confirmed for this batch (UC...). Studio is opened
-   *  under it, so SCOUT never lands on another channel's error page. */
-  youtube_channel_id?: string | null
   /** Liftoff in two parts (Labs): no countries before launch; Amazon is part
    *  2, started with its own button once YouTube is done. */
   amazon_later?: boolean
@@ -953,7 +950,7 @@ export default function LaunchBoard() {
     setStudioBusy(it.id)
     try {
       // THE SAME REQUEST THE BACKGROUND TAB SENDS (lib/studio-finish).
-      const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs, false, batch?.youtube_channel_id))
+      const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs))
       // SCOUT NEVER STARTED: nothing to keep. Storing it used to mark the
       // video as done-with for the automatic pass, on every later visit too.
       lastStudioError.current = fin.error ?? null

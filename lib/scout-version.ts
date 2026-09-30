@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.22'
+export const SCOUT_LATEST_VERSION = '1.21.23'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Clip Factory gets your own video from YouTube Studio in your browser, so clips render without MVP downloading from YouTube.'
+  'The end screen is added from the video\'s Details page, where Studio keeps it now; the old end screen page only showed an error.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

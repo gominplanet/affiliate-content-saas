@@ -232,17 +232,37 @@ check('the manifest and the app registry agree on the version',
   check('no screen offers product tagging', !/'tagProduct', 'Tag each/.test(readFileSync('components/launch/LaunchBoard.tsx', 'utf8')))
 }
 
-// ── STUDIO OPENS UNDER THE VIDEO'S OWN CHANNEL ───────────────────────────────
-// A bare studio.youtube.com/video/<id>/endscreens resolves under whichever
-// channel Studio was last on, and for a creator with several channels Studio
-// answers "Oops, something went wrong": Liftoff's end screen step stopped
-// there. Every caller passes the owning channel.
+// ── NO CHANNEL-SCOPED STUDIO ADDRESSES ────────────────────────────────────────
+// Given a channel, SCOUT opens studio.youtube.com/channel/<UC>/video/<id>/...,
+// and Studio answers that with "Oops, something went wrong" even for the
+// video's own channel. It was tried and broke every step. No request sends one.
 {
-  const SF = readFileSync('lib/studio-finish.ts', 'utf8')
-  check('the Liftoff request carries the channel', /channelId: channelId \|\| undefined,/.test(SF))
-  check('the Liftoff page passes the batch channel', /liftoffStudioRequest\(it, studioOpts, notifySubs, false, batch\?\.youtube_channel_id\)/.test(readFileSync('components/launch/LaunchBoard.tsx', 'utf8')))
-  check('the background tab passes the batch channel', /liftoffStudioRequest\(it, opts, notify, true, d\.batch\?\.youtube_channel_id \?\? null\)/.test(readFileSync('components/launch/LiftoffRunner.tsx', 'utf8')))
-  check('Co-Pilot passes the channel it is showing', /channelId: studioChannelId \|\| undefined,/.test(readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')))
+  const { execSync } = require('node:child_process') as typeof import('node:child_process')
+  const files = execSync(`grep -rln "requestStudioFinish\\|liftoffStudioRequest" app components lib || true`, { encoding: 'utf8' }).split('\n').filter(Boolean)
+  // What each call hands SCOUT: the object literal after requestStudioFinish(
+  // and the one liftoffStudioRequest returns.
+  const bodies = (f: string) => {
+    const src = readFileSync(f, 'utf8')
+    const out = [...src.matchAll(/requestStudioFinish\([^,]+,\s*\{([\s\S]*?)\n\s*\}\)/g)].map((m) => m[1])
+    if (f === 'lib/studio-finish.ts') out.push((src.split('export function liftoffStudioRequest')[1] ?? '').split('\n}\n')[0])
+    return out
+  }
+  const sending = files.filter((f) => f !== 'lib/extension-frame.ts' && bodies(f).some((b) => /\bchannelId\s*[:,}]/.test(b)))
+  check('no Studio request sends a channel (Studio refuses channel-scoped video pages)', sending.length === 0, sending.join(', '))
+}
+
+// ── THE END SCREEN FROM THE DETAILS PAGE ─────────────────────────────────────
+// Studio's /endscreens address answers "Oops, something went wrong" now; the
+// end screen is a row with a pencil on the video's Details page. SCOUT opens
+// it there, and falls back to the old page only when that row is missing.
+{
+  const run = BG.slice(BG.indexOf('if (want.endScreen) {'), BG.indexOf('ONE STEP WORKING IS NOT "IT WORKED"'))
+  check('SCOUT opens the end screen from the Details page first',
+    /await goto\('edit', true\)/.test(run) && /studioDraftExec\(tabId, 'endscreen', \{ detailsRow: true, videoId \}\)/.test(run)
+    && /if \(!es\.ok && es\.fallback\)/.test(run))
+  const kit = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.endscreen = ') + 9000)
+  check('the Details-page path presses the End screen row and reuses the editor steps',
+    /if \(o\.detailsRow\) \{/.test(kit) && /\/\^end screen\$\/i\.test\(deepText\(el\)\)/.test(kit) && /if \(await waitFor\(editorOpen, 25000, 500\)\) return await inEditor\(\)/.test(kit))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

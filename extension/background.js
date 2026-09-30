@@ -9564,7 +9564,7 @@ K.steps.monetization = async (out, o) => {
     // upload dialog first and stopped on its absence, so every Liftoff video
     // (never a draft) reported "The draft window closed" before the editor
     // was even looked for.
-    const dlg = o.page ? document.body : mainDialog()
+    const dlg = (o.page || o.detailsRow) ? document.body : mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const importBtn = () => findBtn(/^import from video$/i, dlg, { enabled: true })
     const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen')
@@ -9621,6 +9621,36 @@ K.steps.monetization = async (out, o) => {
         : closed ? 'End screen imported from your latest video (Studio closed the editor on Save)'
         : 'Pressed Save in the end-screen editor, but it stayed open, so the end screen was not saved'
       if (!out.ok) out.debug.buttons = buttonSample(document)
+      return out
+    }
+    // ── FROM THE DETAILS PAGE ─────────────────────────────────────────────
+    // Studio moved the end screen onto the video's Details page, a row in the
+    // right column with a pencil. Its old address (/endscreens) now answers
+    // "Oops, something went wrong", which is where every run stopped. So the
+    // editor is opened the way a creator opens it: the End screen row's own
+    // button, the smallest one around the label.
+    if (o.detailsRow) {
+      const label = await waitFor(() => all(document).find((el) => visible(el) && /^end screen$/i.test(deepText(el))) || null, 20000, 500)
+      if (!label) {
+        out.detail = 'The Details page had no End screen row'
+        out.fallback = true
+        out.debug.buttons = buttonSample(document)
+        return out
+      }
+      let target = null
+      let e = label
+      for (let i = 0; i < 6 && e && !target; i++) {
+        if (isBtn(e)) { target = e; break }
+        const inside = all(e).find((x) => x !== label && isBtn(x) && visible(x))
+        if (inside) { target = inside; break }
+        e = up(e)
+      }
+      out.debug.rowTarget = target ? ((target.tagName || '').toLowerCase() + ':' + (attrLabel(target) || deepText(target) || '').slice(0, 40)) : 'label'
+      click(target || label)
+      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      out.detail = 'Pressed End screen on the Details page, but the editor did not open'
+      out.debug.buttons = buttonSample(document)
+      out.debug.url = location.href.slice(0, 160)
       return out
     }
     if (o.page) {
@@ -10149,9 +10179,18 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       }
     }
     if (want.endScreen) {
-      await goto('endscreens', true)
+      // FROM THE DETAILS PAGE, where Studio keeps the end screen now. The old
+      // /endscreens address is tried only when the Details page has no End
+      // screen row at all.
+      await goto('edit', true)
       await sleep(2000)
-      steps.push(await studioDraftExec(tabId, 'endscreen', { page: true, videoId }))
+      let es = await studioDraftExec(tabId, 'endscreen', { detailsRow: true, videoId })
+      if (!es.ok && es.fallback) {
+        await goto('endscreens', true)
+        await sleep(2000)
+        es = await studioDraftExec(tabId, 'endscreen', { page: true, videoId })
+      }
+      steps.push(es)
     }
     // ONE STEP WORKING IS NOT "IT WORKED".
     // This used to be steps.some(), so a run where details failed and end

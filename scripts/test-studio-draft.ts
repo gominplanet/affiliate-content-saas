@@ -199,7 +199,7 @@ check('and only sets it through the API once the disclosure read back',
 const LB = code(read('components/launch/LaunchBoard.tsx'))
 const SF = code(read('lib/studio-finish.ts'))
 check('Liftoff sends the batch toggle to Studio',
-  /liftoffStudioRequest\(it, studioOpts, notifySubs, false, batch\?\.youtube_channel_id\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
+  /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
 check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin, new Date\(\), liveRuns\[it\.id\] \?\? it\.studio_finish\)/.test(LB) && /studioFinish: run/.test(LB))
 check('a Liftoff draft is only ever given its own time',
   /mode: 'schedule', publishAt: it\.publish_at/.test(SF))
@@ -235,7 +235,7 @@ const SQL = read('supabase/migrations/367_launch_youtube_options.sql')
   // ── Liftoff's videos in Studio: what the stored runs showed failing ──
   const SF = read('lib/studio-finish.ts')
   check('the end screen step on a video\'s own page does not look for a draft window first',
-    /K\.steps\.endscreen = async \(out, o\) => \{[\s\S]{0,600}?const dlg = o\.page \? document\.body : mainDialog\(\)/.test(BG_RAW))
+    /K\.steps\.endscreen = async \(out, o\) => \{[\s\S]{0,600}?const dlg = \(o\.page \|\| o\.detailsRow\) \? document\.body : mainDialog\(\)/.test(BG_RAW))
   check('the product search counts wherever Studio opens it, not only in a new window',
     /const searchIn = \(d\) =>/.test(BG_RAW) && /dialogsNow\(\)\.filter\(\(x\) => x !== fresh\)/.test(BG_RAW) && /out\.debug\.dialogs = /.test(BG_RAW))
   check('paid promotion is answered, saved and read back a second time when Studio did not keep it',
