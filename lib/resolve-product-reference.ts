@@ -28,6 +28,7 @@
 // traceable in Vercel logs — same diagnostic we built into refresh-images
 // when debugging the wax-warmer article.
 
+import { isRetailerSiteImage } from '@/lib/image-guard'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { resolveFinalUrl, firstProductUrl } from '@/lib/product-link'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -106,6 +107,21 @@ export interface ResolveProductReferenceResult {
  * automatically applies to every caller.
  */
 export async function resolveProductReference(
+  input: ResolveProductReferenceInput,
+): Promise<ResolveProductReferenceResult> {
+  const r = await resolveProductReferenceInner(input)
+  // THE LAST CHECK, whichever step answered: a retailer's own site image (the
+  // Amazon logo a blocked page carries) is not the product, and no reference
+  // is better than that one. An uploaded photo is the creator's own and kept.
+  if (r.source === 'uploaded' || !isRetailerSiteImage(r.productImageUrl)) {
+    return { ...r, gallery: r.gallery.filter((u) => !isRetailerSiteImage(u)) }
+  }
+  const gallery = r.gallery.filter((u) => !isRetailerSiteImage(u))
+  console.warn(`${input.traceTag ?? '[resolve-product]'} dropped a retailer site image as the product`, { url: r.productImageUrl })
+  return { ...r, productImageUrl: gallery[0] ?? null, gallery, source: gallery[0] ? r.source : 'none' }
+}
+
+async function resolveProductReferenceInner(
   input: ResolveProductReferenceInput,
 ): Promise<ResolveProductReferenceResult> {
   const tag = input.traceTag ?? '[resolve-product]'

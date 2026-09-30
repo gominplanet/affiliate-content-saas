@@ -49,3 +49,24 @@ export function stripDesignBrands(input: string | null | undefined): string {
   s = s.replace(/\s+(?:on|at|from|the|a|an|this|your|to|of|with|in)$/i, '').trim()
   return s
 }
+
+/**
+ * A RETAILER'S OWN SITE IMAGE IS NEVER A PRODUCT PHOTO.
+ *
+ * When Amazon answers with a blocked or stripped page, its share image
+ * (og:image) is the Amazon logo, and it was taken as "the product": an article
+ * went out with two in-article images, the logo itself and an AI render of the
+ * logo. On Amazon's image servers a product photo lives under /images/I/ (or
+ * the older /images/P/); the logo, the nav sprites and every other site
+ * graphic live elsewhere (/images/G/, /images/S/). So from those hosts only
+ * the product paths count. Any other host is not judged here.
+ */
+export function isRetailerSiteImage(url: string | null | undefined): boolean {
+  const u = String(url || '').trim()
+  if (!u) return false
+  let host = '', path = ''
+  try { const x = new URL(u); host = x.hostname.toLowerCase(); path = x.pathname } catch { return false }
+  const amazonImages = /(^|\.)media-amazon\.com$|(^|\.)ssl-images-amazon\.com$|(^|\.)images-amazon\.com$/.test(host)
+  if (!amazonImages) return false
+  return !/\/images\/[IP]\//.test(path)
+}

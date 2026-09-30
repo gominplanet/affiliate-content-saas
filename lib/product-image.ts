@@ -8,6 +8,7 @@
 // use Claude vision to look across all gallery images and pick the single,
 // isolated studio shot of the real product.
 
+import { isRetailerSiteImage } from '@/lib/image-guard'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 
@@ -27,7 +28,8 @@ export async function pickProductReferenceImage(
   title: string,
   ctx?: { userId?: string; tier?: string | null },
 ): Promise<string | null> {
-  const imgs = (images || []).filter(Boolean).slice(0, 7)
+  // A retailer's own site image (its logo, a nav sprite) is never a candidate.
+  const imgs = (images || []).filter((u) => !!u && !isRetailerSiteImage(u)).slice(0, 7)
   if (imgs.length <= 1) return imgs[0] ?? null
 
   try {

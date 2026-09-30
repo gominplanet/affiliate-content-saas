@@ -213,6 +213,26 @@ const check = (name: string, cond: boolean, detail?: string) => {
   }
 }
 
+// ── AMAZON'S LOGO IS NEVER THE PRODUCT PHOTO ────────────────────────────────
+// A blocked Amazon page's og:image is the Amazon logo, and an article went out
+// with two in-article images made from it: the logo, and an AI render of it.
+{
+  const { isRetailerSiteImage } = require('../lib/image-guard') as typeof import('../lib/image-guard')
+  check('the Amazon logo and site sprites are site images, never a product',
+    isRetailerSiteImage('https://m.media-amazon.com/images/G/01/social_share/amazon_logo._CB633266945_.png')
+    && isRetailerSiteImage('https://images-na.ssl-images-amazon.com/images/G/01/gno/sprites/nav-sprite.png'))
+  check('a real product photo passes, and other sites are not judged',
+    !isRetailerSiteImage('https://m.media-amazon.com/images/I/71abcXYZ._AC_SL1500_.jpg')
+    && !isRetailerSiteImage('https://images-na.ssl-images-amazon.com/images/P/B0ABC12345.01.L.jpg')
+    && !isRetailerSiteImage('https://example.com/images/G/logo.png'))
+  const rd = (f: string) => require('node:fs').readFileSync(f, 'utf8') as string
+  check('the Amazon page reader, the gallery picker and the shared resolver all drop them',
+    /productOnly\(html\.match\(\/<meta\[\^>\]\+property="og:image"/.test(rd('services/amazon/index.ts'))
+    && /\.filter\(\(u\) => !isRetailerSiteImage\(u\)\)/.test(rd('services/amazon/index.ts'))
+    && /filter\(\(u\) => !!u && !isRetailerSiteImage\(u\)\)/.test(rd('lib/product-image.ts'))
+    && /const r = await resolveProductReferenceInner\(input\)/.test(rd('lib/resolve-product-reference.ts')))
+}
+
 if (failures.length) {
   console.error(`\n❌ no-retailer-logos: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

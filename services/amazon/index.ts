@@ -1,3 +1,4 @@
+import { isRetailerSiteImage } from '@/lib/image-guard'
 import { asinPathRegex } from '@/lib/asin'
 export interface AmazonProduct {
   asin: string
@@ -221,18 +222,21 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   //   2. og:image meta — Amazon sets this to the main product image
   //   3. first "hiRes" in the gallery JSON
   //   4. legacy "large" fallback
+  // NEVER A SITE IMAGE (lib/image-guard isRetailerSiteImage): on a blocked
+  // page og:image is the Amazon logo, and it went out as "the product".
+  const productOnly = (u: string | undefined) => (u && !isRetailerSiteImage(u) ? u : undefined)
   const imageUrl =
-    html.match(/id="landingImage"[^>]*\bdata-old-hires="(https:\/\/[^"]+)"/)?.[1] ||
-    html.match(/\bdata-old-hires="(https:\/\/[^"]+)"[^>]*id="landingImage"/)?.[1] ||
-    html.match(/<meta[^>]+property="og:image"[^>]+content="(https:\/\/[^"]+)"/)?.[1] ||
-    html.match(/<meta[^>]+content="(https:\/\/[^"]+)"[^>]+property="og:image"/)?.[1] ||
-    html.match(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1] ||
-    html.match(/"large"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1] ||
+    productOnly(html.match(/id="landingImage"[^>]*\bdata-old-hires="(https:\/\/[^"]+)"/)?.[1]) ||
+    productOnly(html.match(/\bdata-old-hires="(https:\/\/[^"]+)"[^>]*id="landingImage"/)?.[1]) ||
+    productOnly(html.match(/<meta[^>]+property="og:image"[^>]+content="(https:\/\/[^"]+)"/)?.[1]) ||
+    productOnly(html.match(/<meta[^>]+content="(https:\/\/[^"]+)"[^>]+property="og:image"/)?.[1]) ||
+    productOnly(html.match(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1]) ||
+    productOnly(html.match(/"large"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1]) ||
     null
 
   // Full gallery (hi-res) so callers can vision-pick the cleanest product
   // shot — the main image is often a multi-panel lifestyle collage.
-  const galleryImages = Array.from(html.matchAll(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/g)).map(m => m[1])
+  const galleryImages = Array.from(html.matchAll(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/g)).map(m => m[1]).filter((u) => !isRetailerSiteImage(u))
   const images = Array.from(new Set([imageUrl, ...galleryImages].filter((u): u is string => !!u))).slice(0, 8)
 
   // Bot-block detector: if NONE of the product fields were parseable
