@@ -83,7 +83,9 @@ const DURATIONS = [
 ] as const
 
 type Stage = 'create' | 'enhance' | 'publish'
-interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number }
+// sourceVideoId: the youtube_videos row the clip came from, when MVP knows it.
+// The Facebook Reel description reads its blog post and product from there.
+interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number; sourceVideoId?: string }
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
@@ -243,6 +245,11 @@ export default function ClipFactoryPage() {
   const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean; facebook?: boolean }>({})
   const [publishingFb, setPublishingFb] = useState(false)
   const [fbReelUrl, setFbReelUrl] = useState<string | null>(null)
+  // The Reel's description, built by the server and shown before posting:
+  // what posts is exactly this text, and whether it carries a product link is
+  // said on screen rather than discovered on Facebook.
+  const [fbDraft, setFbDraft] = useState<{ text: string; productLink: string | null; productSource: string | null; linkNote: string | null; contentLink: string | null } | null>(null)
+  const [fbPreparing, setFbPreparing] = useState(false)
   // The uploaded YouTube video id, so we can link the creator straight to it
   // (a Short can take a few minutes to process before it's visible).
   const [ytVideoId, setYtVideoId] = useState<string | null>(null)
@@ -396,7 +403,7 @@ export default function ClipFactoryPage() {
       if (productUrl) setProduct(productUrl)
       setClipSource('existing')
       setOnramp('short')
-      setClip({ url: videoUrl, title })
+      setClip({ url: videoUrl, title, sourceVideoId: id })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
     finally { setFetchingShortId(null) }
@@ -661,29 +668,51 @@ export default function ClipFactoryPage() {
     finally { setPublishingYt(false) }
   }, [publishUrl, publishCaption, clip])
 
-  // Facebook Reel on the creator's Page (Labs). The answer says whether it is
-  // live or still processing, from what Facebook reported back.
-  const postFacebookReel = useCallback(async () => {
+  // Facebook Reel on the creator's Page (Labs). First the description is built
+  // (product link in the creator's link style, the full review, disclosure)
+  // and shown; the post then sends exactly that text.
+  const prepareFacebookReel = useCallback(async () => {
     if (!publishUrl) return
+    setFbPreparing(true)
+    try {
+      const res = await fetch('/api/clip-factory/facebook-reel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dryRun: true, videoUrl: publishUrl, description: publishCaption,
+          sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not build the Reel description.')
+      setFbDraft({ text: data.caption || publishCaption, productLink: data.productLink ?? null, productSource: data.productSource ?? null, linkNote: data.linkNote ?? null, contentLink: data.contentLink ?? null })
+    } catch (e) { toast.error(errText(e)) }
+    finally { setFbPreparing(false) }
+  }, [publishUrl, publishCaption, clip, product, productName])
+
+  // The answer says whether it is live or still processing, from what
+  // Facebook reported back.
+  const postFacebookReel = useCallback(async () => {
+    if (!publishUrl || !fbDraft) return
     setPublishingFb(true)
     try {
       const res = await fetch('/api/clip-factory/facebook-reel', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: publishUrl, description: publishCaption }),
+        body: JSON.stringify({ videoUrl: publishUrl, description: fbDraft.text }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
       setPosted(p => ({ ...p, facebook: true }))
       setFbReelUrl(data.url || null)
+      setFbDraft(null)
       toast.success(data.state === 'published'
         ? `Reel is live on ${data.page || 'your Page'}.`
         : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingFb(false) }
-  }, [publishUrl, publishCaption])
+  }, [publishUrl, fbDraft])
 
   const restart = useCallback(() => {
-    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setCoverOffsetMs(null); setStage('create')
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setFbDraft(null); setCoverOffsetMs(null); setStage('create')
   }, [])
 
   // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
@@ -793,7 +822,7 @@ export default function ClipFactoryPage() {
                 allowWhole={canUsePreview('whole_video', tier)}
                 onUseClip={(c) => {
                   setClipSource('created')
-                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec })
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec, sourceVideoId: selectedVideo.id })
                   // Seed the caption from the plan (retained on the clip too, so
                   // it survives an empty burn / Skip Enhance via fallbackCaption).
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
@@ -1188,13 +1217,40 @@ export default function ClipFactoryPage() {
                 <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
               )}
               {canUsePreview('facebook_reels', tier) && !(clip?.durationSec && clip.durationSec > 90) && (
-                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb} onClick={postFacebookReel} />
+                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb || fbPreparing} onClick={prepareFacebookReel} />
               )}
               {fbReelUrl && (
                 <a href={fbReelUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-[#1877F2] underline-offset-2 hover:underline">View Reel</a>
               )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
+            {fbDraft && !posted.facebook && (
+              <div className="rounded-xl border border-[#1877F2]/30 p-3 flex flex-col gap-2">
+                <p className="text-[12.5px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Reel description</p>
+                {fbDraft.productLink ? (
+                  <p className="text-[12px] text-[#10B981] leading-snug break-all">
+                    Product link included ({fbDraft.productSource === 'blog-post' ? 'from the blog post for this video' : fbDraft.productSource === 'video-asin' ? 'from the product on this video' : 'from the product you added in Enhance'}): {fbDraft.productLink}
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-[#ff9500] leading-snug">
+                    No product link found for this clip. {clip?.sourceVideoId ? 'Its video has no published blog post with a product link and no product saved.' : 'MVP does not know which video this clip came from.'} Go back to Enhance and paste the product&apos;s Amazon link or ASIN, or type the link into the text below.
+                  </p>
+                )}
+                {fbDraft.linkNote && <p className="text-[12px] text-[#ff9500] leading-snug">{fbDraft.linkNote}</p>}
+                <textarea
+                  value={fbDraft.text}
+                  onChange={(e) => setFbDraft(d => (d ? { ...d, text: e.target.value } : d))}
+                  rows={8}
+                  className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent p-2 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                />
+                <div className="flex gap-2">
+                  <button onClick={postFacebookReel} disabled={publishingFb || !fbDraft.text.trim()} className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white bg-[#1877F2] disabled:opacity-50">
+                    {publishingFb ? 'Posting…' : 'Post Reel'}
+                  </button>
+                  <button onClick={() => setFbDraft(null)} disabled={publishingFb} className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15">Cancel</button>
+                </div>
+              </div>
+            )}
             {/* WHAT EACH PLATFORM TAKES, said before the button rather than
                 after a refusal. Only shown for a clip long enough to meet one. */}
             {clip?.durationSec && clip.durationSec > 90 && (

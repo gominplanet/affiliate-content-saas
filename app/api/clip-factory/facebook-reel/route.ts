@@ -2,7 +2,13 @@
 //
 // POST /api/clip-factory/facebook-reel — publish a Clip Factory clip as a
 // Reel on the creator's Facebook Page (lib/facebook-reels).
-//   body: { videoUrl, description, socialAccountId? }
+//   body: { videoUrl, description, socialAccountId?, dryRun?, sourceVideoId?,
+//           product?, productName? }
+//
+// dryRun builds the description (lib/reel-caption: product link in the
+// creator's link style, the full review, the disclosure) and returns it with
+// what was found, so the page shows it before anything posts. The real post
+// then sends exactly the text the creator saw, edits included.
 //
 // LABS, admin only while it is tested (lib/labs-preview facebook_reels).
 
@@ -14,6 +20,7 @@ import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
 import { publishPageReel } from '@/lib/facebook-reels'
+import { buildReelCaption } from '@/lib/reel-caption'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -24,7 +31,10 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
-  const body = await req.json().catch(() => ({})) as { videoUrl?: string; description?: string; socialAccountId?: string }
+  const body = await req.json().catch(() => ({})) as {
+    videoUrl?: string; description?: string; socialAccountId?: string
+    dryRun?: boolean; sourceVideoId?: string; product?: string; productName?: string
+  }
   const videoUrl = String(body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'The clip has no web address to hand Facebook.' }, { status: 400 })
 
@@ -47,7 +57,19 @@ export async function POST(req: Request) {
   })
   if (!page) return NextResponse.json({ error: 'No Facebook Page is connected. Connect one under Social Accounts.' }, { status: 400 })
 
-  const r = await publishPageReel({ pageId: page.externalId, token: page.accessToken, videoUrl, description: String(body.description || '') })
+  if (body.dryRun === true) {
+    const built = await buildReelCaption(supabase, user.id, {
+      writeUp: String(body.description || ''), sourceVideoId: body.sourceVideoId,
+      product: body.product, productName: body.productName,
+    })
+    return NextResponse.json({ ok: true, page: page.displayName, ...built })
+  }
+
+  // A Reel with no words at all is the post this route exists to stop.
+  const description = String(body.description || '').trim()
+  if (!description) return NextResponse.json({ error: 'The Reel has no description. Add one before posting.' }, { status: 400 })
+
+  const r = await publishPageReel({ pageId: page.externalId, token: page.accessToken, videoUrl, description })
   if (!r.ok) {
     // A permission Meta has not granted this connection reads as one.
     const perm = /permission|\(#200\)|\(#10\)|not authorized/i.test(r.error)
@@ -56,5 +78,5 @@ export async function POST(req: Request) {
       error: perm ? `Facebook refused: ${r.error} Reconnect Facebook under Social Accounts so the Page grants Reels publishing, then try again.` : `Facebook did not post the Reel: ${r.error}`,
     }, { status: 502 })
   }
-  return NextResponse.json({ ok: true, page: page.displayName, state: r.state, url: r.url, videoId: r.videoId })
+  return NextResponse.json({ ok: true, page: page.displayName, state: r.state, url: r.url, videoId: r.videoId, description })
 }

@@ -77,6 +77,20 @@ check('Enhance offers Facebook, Labs-gated, with link-in-description badges and 
   /canUsePreview\('facebook_reels', tier\) && \(\s*<button onClick=\{\(\) => applyDestMode\('facebook', 'bio'\)\}/.test(PAGE)
   && /const FACEBOOK_BADGE_IDS = \['link-in-desc-2'/.test(PAGE) && /Facebook Reels have no in-app shop/.test(PAGE))
 
+// THE DESCRIPTION. The first Reel went out as its hook alone, no link.
+const REEL = readFileSync('lib/reel-caption.ts', 'utf8')
+check('the Reel description is built on the server from the source video, its blog post and product',
+  /buildReelCaption\(supabase, user\.id/.test(ROUTE) && /\.eq\('video_id', video\.id\)/.test(REEL)
+  && /resolvePostAffiliateLink\(post/.test(REEL) && /amazonDestination\(asin, tag\)/.test(REEL))
+check('the product link is always in a Reel, in the creator\'s link style, with the disclosure',
+  /product: true, content/.test(REEL) && /ensureAffiliateShareLink\(/.test(REEL) && /resolveCloakedLinkDetailed\(/.test(REEL) && /effectiveDisclosure\(/.test(REEL))
+check('the page previews the description, says when no product link was found, and posts exactly that text',
+  /dryRun: true/.test(PAGE) && /No product link found for this clip/.test(PAGE) && /description: fbDraft\.text/.test(PAGE)
+  && /onClick=\{prepareFacebookReel\}/.test(PAGE))
+check('the clip remembers its source video on both ways in',
+  /sourceVideoId: selectedVideo\.id/.test(PAGE) && /sourceVideoId: id \}/.test(PAGE))
+check('an empty description is refused rather than posted', /The Reel has no description/.test(ROUTE))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

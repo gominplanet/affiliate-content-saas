@@ -30,13 +30,20 @@ export function isoSeconds(iso: string | null | undefined): number | null {
   return (Number(m[1] || 0) * 3600) + (Number(m[2] || 0) * 60) + Number(m[3] || 0)
 }
 
-/** The rule, from one video's API answer. Pure. */
-export function shortFromDetails(input: { durationIso?: string | null; width?: number | null; height?: number | null }): boolean | null {
+/** The rule, from one video's API answer. Pure.
+ *
+ *  ROTATION COUNTS. YouTube reports the frame as stored plus a rotation flag;
+ *  a phone video stored 1080x1920 and turned a quarter plays 1920x1080. The
+ *  stored size alone called such a video a Short. */
+export function shortFromDetails(input: { durationIso?: string | null; width?: number | null; height?: number | null; rotation?: string | null }): boolean | null {
   const secs = isoSeconds(input.durationIso)
   if (secs === null) return null
   if (secs > SHORT_MAX_SECONDS) return false
   if (!input.width || !input.height) return null
-  return input.height >= input.width
+  const turned = input.rotation === 'clockwise' || input.rotation === 'counterClockwise'
+  const w = turned ? input.height : input.width
+  const h = turned ? input.width : input.height
+  return h >= w
 }
 
 /** youtube.com/shorts/<id>: a Short answers, a regular video is redirected. */
@@ -76,26 +83,45 @@ export async function detectShorts(ids: string[], accessToken?: string | null, o
         url.searchParams.set('id', batch.join(','))
         url.searchParams.set('maxResults', '50')
         const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) })
-        if (!res.ok) continue
-        const data = await res.json() as { items?: Array<{ id?: string; contentDetails?: { duration?: string }; fileDetails?: { videoStreams?: Array<{ widthPixels?: number; heightPixels?: number }> } }> }
+        if (!res.ok) {
+          // THE FRAME SIZE CAN BE REFUSED (fileDetails is owner-only, and a
+          // login for another channel is not the owner). The length is not:
+          // over three minutes is a regular video whatever its shape.
+          const u2 = new URL(url.toString()); u2.searchParams.set('part', 'contentDetails')
+          const r2 = await fetch(u2.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null)
+          if (r2?.ok) {
+            const d2 = await r2.json() as { items?: Array<{ id?: string; contentDetails?: { duration?: string } }> }
+            for (const v of d2.items ?? []) {
+              if (!v.id) continue
+              seenByApi.add(v.id)
+              const secs = isoSeconds(v.contentDetails?.duration)
+              if (secs !== null && secs > SHORT_MAX_SECONDS) out.set(v.id, false)
+            }
+          }
+          continue
+        }
+        const data = await res.json() as { items?: Array<{ id?: string; contentDetails?: { duration?: string }; fileDetails?: { videoStreams?: Array<{ widthPixels?: number; heightPixels?: number; rotation?: string }> } }> }
         for (const v of data.items ?? []) {
           if (!v.id) continue
           seenByApi.add(v.id)
           const stream = v.fileDetails?.videoStreams?.[0]
-          out.set(v.id, shortFromDetails({ durationIso: v.contentDetails?.duration, width: stream?.widthPixels, height: stream?.heightPixels }))
+          out.set(v.id, shortFromDetails({ durationIso: v.contentDetails?.duration, width: stream?.widthPixels, height: stream?.heightPixels, rotation: stream?.rotation }))
         }
       } catch { /* the probe below fills in */ }
     }
   }
+  // THE PUBLIC PAGE CANNOT JUDGE A PRIVATE VIDEO. youtube.com/shorts/<id>
+  // answers for a private or unavailable video too ("video unavailable"),
+  // which read as "a Short", so the creator's own drafts (trustProbeNo false)
+  // were called Shorts whenever the API had not answered. For drafts the
+  // probe is not asked at all: unknown stays unknown.
+  if (opts?.trustProbeNo === false) return out
   const unknown = unique.filter((id) => out.get(id) === null && !seenByApi.has(id))
   // A few at a time: this is youtube.com, not an API with a quota.
   for (let i = 0; i < unknown.length; i += 10) {
     const part = unknown.slice(i, i + 10)
     const got = await Promise.all(part.map((id) => probeShort(id)))
-    // A "no" from the public page only counts for public videos: a private
-    // draft the API could not read cannot be judged from outside, so for the
-    // creator's own drafts (trustProbeNo false) only a "yes" is taken.
-    part.forEach((id, k) => { if (got[k] === true || (got[k] === false && opts?.trustProbeNo !== false)) out.set(id, got[k]) })
+    part.forEach((id, k) => { if (got[k] !== null) out.set(id, got[k]) })
   }
   return out
 }
