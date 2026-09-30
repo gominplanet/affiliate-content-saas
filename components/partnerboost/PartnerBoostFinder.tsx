@@ -233,7 +233,11 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
         {/* Catalog sync status — the button lives in the controls row above. */}
         <div className="mt-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
           {syncInfo && syncInfo.count > 0
-            ? <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>
+            ? (syncInfo.syncedAt && Date.now() - new Date(syncInfo.syncedAt).getTime() > 2 * 86_400_000
+              // STALE IS SAID, not shown as "instant". The half-hourly refresh
+              // failing used to leave a month-old catalogue looking current.
+              ? <span style={{ color: '#d97706' }}>{syncInfo.count.toLocaleString()} products cached, last refreshed {timeAgo(syncInfo.syncedAt)}. The automatic refresh has not succeeded since then, so commissions and deals may be out of date. Press Sync to see why.</span>
+              : <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>)
             : 'Not synced yet — your first scan runs live (slower). Sync once for instant scans.'}
         </div>
       </div>

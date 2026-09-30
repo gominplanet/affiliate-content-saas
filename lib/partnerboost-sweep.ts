@@ -33,7 +33,7 @@ type SweepBrand = {
 /** Sweep every JOINED brand's products across the networks, in a pool. */
 export async function sweepJoinedProducts(
   token: string, opts: SweepOptions = {},
-): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean }> {
+): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null }> {
   const concurrency = opts.concurrency ?? 12
   const deadlineMs = opts.deadlineMs ?? 250_000
   const focus = (opts.focus || '').trim().toLowerCase()
@@ -41,11 +41,17 @@ export async function sweepJoinedProducts(
   // 1. Joined brands across the networks (paginated), optionally brand-gated.
   let joinedTotal = 0
   const brands: SweepBrand[] = []
+  // WHETHER PARTNERBOOST ANSWERED AT ALL, and if not, what it said. A refused
+  // token used to look exactly like a catalogue with nothing in it: 0 brands,
+  // 0 products, "ok". The cache then froze for a month with nothing saying so.
+  let brandListOk = false
+  let brandListError: string | null = null
   for (const network of NETWORKS) {
     for (let page = 1; page <= MAX_BRAND_PAGES; page++) {
       let res
       try { res = await listPartnerBoostBrands(token, { brandType: network, relationship: 'Joined', page, limit: BRAND_LIMIT }) }
-      catch { break }
+      catch (e) { if (!brandListError) brandListError = e instanceof Error ? e.message : String(e); break }
+      brandListOk = true
       for (const b of res.brands) {
         joinedTotal++
         const commissionPct = parseCommissionPct(b.commRate)
@@ -103,7 +109,7 @@ export async function sweepJoinedProducts(
     }
   }))
 
-  return { raw, joinedTotal, brandsSwept, timedOut }
+  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError }
 }
 
 /**
@@ -116,12 +122,19 @@ export async function syncUserCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
 ): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean }> {
-  const { raw, joinedTotal, brandsSwept, timedOut } = await sweepJoinedProducts(token, {
+  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError } = await sweepJoinedProducts(token, {
     concurrency: 12,
     deadlineMs: opts.deadlineMs ?? 260_000,
     // Cache everything worth keeping — drop only zero-commission brands.
     brandGate: (b) => (b.commissionPct ?? 0) >= 1 || (b.flatPayout ?? 0) >= 1,
   })
+  // PARTNERBOOST SAID NO: a failure, in its own words, never a sync of 0.
+  if (!brandListOk && brandListError) {
+    const refused = /token|publisher does not exist|user not exist/i.test(brandListError)
+    throw new Error(refused
+      ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Get a new one in PartnerBoost under Account, Token manage, and paste it into External Integrations. Your saved catalog is kept until then.`
+      : `PartnerBoost did not answer the brand list (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept; MVP tries again every half hour.`)
+  }
   const runStart = new Date().toISOString()
   const bestByKey = new Map<string, ReturnType<typeof scorePb>>()
   for (const c of raw) {

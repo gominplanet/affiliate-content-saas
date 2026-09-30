@@ -89,10 +89,20 @@ export async function POST(request: NextRequest) {
     }
 
     // ── LIVE path — nothing synced yet; sweep the joined brands now ───────────
-    const { raw, joinedTotal, brandsSwept } = await sweepJoinedProducts(token, {
+    const { raw, joinedTotal, brandsSwept, brandListOk, brandListError } = await sweepJoinedProducts(token, {
       focus, concurrency: 12, deadlineMs: 250_000,
       brandGate: (b) => brandPassesPb(b, rules),
     })
+    // PartnerBoost refusing is not "no products": said in its own words.
+    if (!brandListOk && brandListError) {
+      const refused = /token|publisher does not exist|user not exist/i.test(brandListError)
+      return NextResponse.json({
+        ok: false,
+        error: refused
+          ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Get a new one in PartnerBoost under Account, Token manage, and paste it into External Integrations.`
+          : `PartnerBoost did not answer (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Try again in a few minutes.`,
+      }, { status: 502 })
+    }
     const bestByKey = new Map<string, ScoredPbMatch>()
     for (const c of raw) {
       if (!c.key) continue
