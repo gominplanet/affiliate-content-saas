@@ -115,6 +115,9 @@ export function ShortsCreatePanel({
       const data = await safeJson(res)
       if (!res.ok) {
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        // No captions and no file: show the way in (Get it from YouTube
+        // Studio, or drop the file), which used to be named but not shown.
+        if (data.needsUpload) setNeedsUpload(true)
         throw new Error(data.error || 'Could not find Shorts')
       }
       if (data.whole) {
@@ -167,7 +170,7 @@ export function ShortsCreatePanel({
       const atj = await safeJson(at)
       if (!at.ok || !atj.ok) throw new Error(atj.error || 'The file did not attach.')
       setHasSource(true); setNeedsUpload(false); setFromStudio('done')
-      toast.success('Your video is in, from YouTube Studio. Press Render again.')
+      toast.success('Your video is in, from YouTube Studio. Press Find Shorts or Render again.')
     } catch (e) {
       setFromStudio('idle'); setStudioError(errText(e))
     }
@@ -293,7 +296,7 @@ export function ShortsCreatePanel({
         <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
           <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
             {youtubeRefused
-              ? 'YouTube would not let MVP download this video. Upload the video file here once, then press Render again.'
+              ? 'MVP needs this video\'s file, and YouTube will not let MVP download it. Bring it in here once, then press the button again.'
               : 'Upload the full video once. MVP transcribes it and cuts your clips from it.'}
           </p>
           {youtubeVideoId && (

@@ -266,7 +266,7 @@ export async function POST(request: Request) {
       const canUpload = !/^https:\/\//i.test(sourceUrl)
       return NextResponse.json({
         error: canUpload
-          ? "We couldn't read this video's captions from YouTube. Upload the full video below and we'll transcribe it ourselves to find your Shorts — works every time."
+          ? "YouTube would not give MVP this video's captions. Bring the video in with Get it from YouTube Studio, or drop the file in the box, and MVP transcribes it itself."
           : "We couldn't transcribe this video. Make sure it has clear speech and try again in a moment.",
         noTranscript: true,
         needsUpload: canUpload,

@@ -71,6 +71,8 @@ check('the button says what went wrong in words', /YouTube Studio did not offer 
 check('Clip Factory lists only videos that are out, and counts the scheduled ones',
   /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(PAGE) && /setScheduledCount\(all\.length - live\.length\)/.test(PAGE) && /scheduled video\{scheduledCount === 1/.test(PAGE))
 
+check('Find Shorts without captions shows the way in, not just names it', /if \(data\.needsUpload\) setNeedsUpload\(true\)/.test(PANEL))
+
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
