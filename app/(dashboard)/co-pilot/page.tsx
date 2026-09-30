@@ -660,9 +660,12 @@ function FirstCommentsToPin() {
   )
 }
 
-function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null }: {
+function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null }: {
   video: DraftVideo
   userTier: Tier
+  /** Why the playlist list is empty, when it is: still loading, could not be
+   *  read (and why), or the channel has none. Null when playlists loaded. */
+  playlistsNote?: string | null
   /** SHORT MODE (Labs): true when YouTube says this video is a Short, null when unknown. */
   isShort?: boolean | null
   playlists: Array<{ id: string; title: string }>
@@ -886,7 +889,16 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
   const canCompare = canUsePreview('comparison', userTier)
   // SHORT MODE (Labs): when YouTube says this video is a Short, or the
   // creator says so (their word wins, either way, for this card).
-  const [shortOverride, setShortOverride] = useState<boolean | null>(null)
+  // Remembered per video in this browser: a tap that is forgotten on reload
+  // puts the wrong label back, and the metadata is written for it again.
+  const shortKey = `mvp-short-override:${video.youtubeVideoId}`
+  const [shortOverride, setShortOverrideState] = useState<boolean | null>(() => {
+    try { const v = typeof window !== 'undefined' ? window.localStorage.getItem(shortKey) : null; return v === '1' ? true : v === '0' ? false : null } catch { return null }
+  })
+  const setShortOverride = (v: boolean) => {
+    setShortOverrideState(v)
+    try { window.localStorage.setItem(shortKey, v ? '1' : '0') } catch { /* private window: this visit only */ }
+  }
   const canShort = canUsePreview('shorts_mode', userTier)
   const shortMode = canShort && (shortOverride ?? isShort) === true
   const [shortResult, setShortResult] = useState<{ fullReviewUrl: string | null } | null>(null)
@@ -3686,6 +3698,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
                           <option key={p.id} value={p.id}>{p.title}</option>
                         ))}
                       </select>
+                      {playlists.length === 0 && playlistsNote && (
+                        <span className="text-[11px] text-[#ff9500] leading-snug">{playlistsNote}</span>
+                      )}
                     </label>
 
                     {/* Visibility */}
@@ -4173,6 +4188,9 @@ export default function StudioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts, userTier])
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
+  // Why the list is empty, said under the picker. An empty list used to look
+  // exactly like a channel with no playlists, whatever had gone wrong.
+  const [playlistsNote, setPlaylistsNote] = useState<string | null>(null)
   // Admin-only: read back the YouTube Studio save requests SCOUT captured, to
   // learn the real InnerTube disclosure/monetization/tag-product request shapes.
   const [ytRecipes, setYtRecipes] = useState<YtSaveRecipe[] | null>(null)
@@ -4215,6 +4233,27 @@ export default function StudioPage() {
   // has more than one channel connected.
   const [channels, setChannels] = useState<Array<{ channelId: string; channelTitle: string; isDefault: boolean }>>([])
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
+  // PLAYLISTS OF THE CHANNEL BEING SHOWN, through that channel's own login.
+  // Read through the account-level login they were another channel's list, or
+  // nothing, and a failure was swallowed into an empty picker.
+  useEffect(() => {
+    if (userTier !== 'pro' && userTier !== 'admin') return
+    let alive = true
+    setPlaylists([]); setPlaylistsNote('Loading your playlists…')
+    fetch(`/api/youtube/playlists?channel=${encodeURIComponent(selectedChannelId || 'default')}`)
+      .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
+      .then(({ ok, d }) => {
+        if (!alive) return
+        if (!ok || !Array.isArray(d?.playlists)) {
+          setPlaylistsNote(`Could not load your playlists: ${d?.error || 'YouTube did not answer'}. If this keeps happening, reconnect YouTube under Settings.`)
+          return
+        }
+        setPlaylists(d.playlists)
+        setPlaylistsNote(d.playlists.length ? null : 'YouTube says this channel has no playlists yet. Create one in YouTube Studio and reload.')
+      })
+      .catch(() => { if (alive) setPlaylistsNote('Could not reach MVP to load your playlists. Reload the page to try again.') })
+    return () => { alive = false }
+  }, [userTier, selectedChannelId])
   // Bumped on every "Refresh from YouTube" so the planning calendar re-pulls
   // fresh too (it fetches /api/youtube/calendar keyed off this nonce).
   const [calRefreshNonce, setCalRefreshNonce] = useState(0)
@@ -4293,13 +4332,6 @@ export default function StudioPage() {
         // from /api/passport (tier-correct) rather than the typed select, since the
         // column isn't in the generated types yet.
         fetch('/api/passport').then(r => r.ok ? r.json() : null).then(d => { if (d?.ok) setPassportEnabled(!!d.enabled) }).catch(() => {})
-        // Fetch playlists for Pro/admin so the batch-apply panel can populate
-        if (tier === 'pro' || tier === 'admin') {
-          fetch('/api/youtube/playlists')
-            .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d?.playlists) setPlaylists(d.playlists) })
-            .catch(() => {})
-        }
       }
     }
 
@@ -4846,6 +4878,7 @@ export default function StudioPage() {
                     userTier={userTier}
                     isShort={shortsMap[video.youtubeVideoId] ?? null}
                     playlists={playlists}
+                    playlistsNote={playlistsNote}
                     onApplied={(videoId) => {
                       // Optimistic in-place reclassify: mark just this video
                       // shipped so it leaves the to-do tab WITHOUT a re-fetch.
