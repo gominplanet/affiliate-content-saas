@@ -200,6 +200,7 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .new ul{margin:0;padding-left:18px;display:grid;gap:3px}
 .new a{color:var(--accent)}
 .new .more{margin:8px 0 0;font-size:13px}
+.mod-h .rt{margin:8px 0 0;font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .new .cl{margin:0 0 14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
 .new .cl .btn-ref{margin:0}
 /* Search, at the top of the module list */
@@ -388,18 +389,18 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <div class="hero-lower">
   <div class="hero-txt">
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now, after Amazon's latest rule changes.</p>
-  <div class="meta"><span>12 modules</span><span>~110 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
+  <div class="meta"><span>12 modules</span><span>~115 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 12 modules done</span></div>
   <div class="new" id="whatsnew">
     <p class="free">Free to read. No email needed.</p>
     <p class="cl"><a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a> <span>Your first 30 days, one page, with boxes to tick.</span></p>
-    <p><b>Last updated September 29.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
+    <p><b>Last updated September 30.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
     <ul>
+      <li><a href="#tagging">Tagging</a>, titles that win the row, more rejection reasons, and reading times on every module</li>
       <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
       <li><a href="#quick-answers">Quick answers</a> to the questions we get asked most</li>
       <li><a href="#idea-lists">Idea lists that earn</a>: build them around the season</li>
       <li><a href="#worldwide">Links for the whole world</a>: OneLink or Passport</li>
-      <li><a href="#account-closed">If your account gets closed</a>, and <a href="#hiring">when to hire an editor or a VA</a></li>
     </ul>
     <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
   </div>
@@ -413,25 +414,25 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </header>
 <div class="layout">
 <nav class="toc" aria-label="Guide modules">
-  <details id="tocd" open><summary>Search and guide modules</summary><div class="gs" role="search"><label class="hp" for="gsq">Search the guide</label><input id="gsq" type="search" placeholder="Search the guide" autocomplete="off" spellcheck="false"><p class="gs-n" id="gsn" aria-live="polite" hidden></p><ol class="gs-r" id="gsr" hidden></ol></div><ol id="toclist"><li><a href="#start" data-id="start"><span class="k">Module 0</span><span class="t">Start here</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#money" data-id="money"><span class="k">Module 1</span><span class="t">How the money actually works</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#approved" data-id="approved"><span class="k">Module 2</span><span class="t">Getting approved and unlocked</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#videos" data-id="videos"><span class="k">Module 3</span><span class="t">Videos that get approved and sell</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#products" data-id="products"><span class="k">Module 4</span><span class="t">Picking products that pay</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#sourcing" data-id="sourcing"><span class="k">Module 5</span><span class="t">Getting products without getting burned</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#cc" data-id="cc"><span class="k">Module 6</span><span class="t">Creator Connections done right</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#deals" data-id="deals"><span class="k">Module 7</span><span class="t">Paid brand deals and UGC</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#traffic" data-id="traffic"><span class="k">Module 8</span><span class="t">Offsite traffic and the calendar</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#live" data-id="live"><span class="k">Module 9</span><span class="t">Amazon Live</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#business" data-id="business"><span class="k">Module 10</span><span class="t">Run it like a business</span><span class="tick" aria-hidden="true"></span></a></li>
-<li><a href="#plan" data-id="plan"><span class="k">The plan</span><span class="t">Your first 90 days</span><span class="tick" aria-hidden="true"></span></a></li>
+  <details id="tocd" open><summary>Search and guide modules</summary><div class="gs" role="search"><label class="hp" for="gsq">Search the guide</label><input id="gsq" type="search" placeholder="Search the guide" autocomplete="off" spellcheck="false"><p class="gs-n" id="gsn" aria-live="polite" hidden></p><ol class="gs-r" id="gsr" hidden></ol></div><ol id="toclist"><li><a href="#start" data-id="start"><span class="k">Module 0 · 9 min</span><span class="t">Start here</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#money" data-id="money"><span class="k">Module 1 · 8 min</span><span class="t">How the money actually works</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#approved" data-id="approved"><span class="k">Module 2 · 10 min</span><span class="t">Getting approved and unlocked</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#videos" data-id="videos"><span class="k">Module 3 · 13 min</span><span class="t">Videos that get approved and sell</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#products" data-id="products"><span class="k">Module 4 · 10 min</span><span class="t">Picking products that pay</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#sourcing" data-id="sourcing"><span class="k">Module 5 · 5 min</span><span class="t">Getting products without getting burned</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#cc" data-id="cc"><span class="k">Module 6 · 7 min</span><span class="t">Creator Connections done right</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#deals" data-id="deals"><span class="k">Module 7 · 11 min</span><span class="t">Paid brand deals and UGC</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#traffic" data-id="traffic"><span class="k">Module 8 · 15 min</span><span class="t">Offsite traffic and the calendar</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#live" data-id="live"><span class="k">Module 9 · 6 min</span><span class="t">Amazon Live</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#business" data-id="business"><span class="k">Module 10 · 12 min</span><span class="t">Run it like a business</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#plan" data-id="plan"><span class="k">The plan · 5 min</span><span class="t">Your first 90 days</span><span class="tick" aria-hidden="true"></span></a></li>
 <li><a href="#sources" data-id="sources"><span class="k">Appendix</span><span class="t">Sources</span><span class="tick" aria-hidden="true"></span></a></li>
 <li><a href="#mvp" data-id="mvp"><span class="k">Next step</span><span class="t">The tool we built for this</span><span class="tick" aria-hidden="true"></span></a></li></ol></details>
 </nav>
 <main>
 <section class="mod" id="start">
 <header class="mod-h"><p class="kicker">Module 0</p><h2>Start here</h2>
-<p class="sum">Who we are, what this guide is, and what it isn&#x27;t.</p></header>
+<p class="sum">Who we are, what this guide is, and what it isn&#x27;t.</p><p class="rt">9 min read</p></header>
 <div class="prose"><p>This is the guide we wish existed when Amazon invited us into the Influencer Program. It's free, and it's built from two things: what Michelle and I have actually done to turn this into a multiple six-figure business, and everything that changed in 2025 and 2026 (and a lot changed).</p>
 <p>You won't find "passive income" promises here. The Amazon Influencer Program is a real business. It can pay very well, it takes real work, and Amazon changes the rules often. If someone tells you it's easy money, they're usually selling you a course that costs $997.</p>
 <div class="seb">
@@ -568,7 +569,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-start" data-id="start"> Mark this module done</label></section><section class="mod" id="money">
 <header class="mod-h"><p class="kicker">Module 1</p><h2>How the money actually works</h2>
-<p class="sum">The six ways you get paid, the real per-video math, and what the latest rule changes did.</p></header>
+<p class="sum">The six ways you get paid, the real per-video math, and what the latest rule changes did.</p><p class="rt">8 min read</p></header>
 <div class="prose"><p>Most beginners can't explain where their money comes from. That's why they can't fix it when it stops. Learn this module and you'll understand this business better than most of the people posting in those Facebook groups.</p>
 <h2>The six income streams</h2>
 <div class="tbl"><table>
@@ -771,7 +772,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-money" data-id="money"> Mark this module done</label></section><section class="mod" id="approved">
 <header class="mod-h"><p class="kicker">Module 2</p><h2>Getting approved and unlocked</h2>
-<p class="sum">Associates vs Influencer, applying, the onsite review, and exactly what to do after the confetti.</p></header>
+<p class="sum">Associates vs Influencer, applying, the onsite review, and exactly what to do after the confetti.</p><p class="rt">10 min read</p></header>
 <div class="prose"><p>"I got approved, now what?" is the most common question in every beginner group. Let's clear it up.</p>
 <h2>Associates vs Influencer: what's the difference?</h2>
 <ul>
@@ -786,6 +787,9 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <li><strong>Follower minimum:</strong> Amazon doesn't publish one. They look at content quality, engagement, and follower count together. Creators get approved with small but real audiences; engagement matters more than size.</li>
 <li><strong>Timing:</strong> some platforms get a decision almost instantly; others take days or weeks.</li>
 <li><strong>Rejected?</strong> Amazon says you can reapply. Fix what's weak first: post consistently for a few weeks, make sure your content looks like product/lifestyle content, and apply with your strongest account.</li>
+<li><strong>Or try a different platform.</strong> Rejected with Instagram? Apply with your YouTube or Facebook account instead. Plenty of creators get in on their second choice.</li>
+<li><strong>Never buy followers.</strong> Fake followers wreck your engagement rate, and engagement is what Amazon is looking at.</li>
+<li><strong>Apply with the Amazon account you actually shop with.</strong> Your order history is part of who you are as a reviewer.</li>
 </ul>
 <h2>The part everyone misses: two store IDs</h2>
 <p>When you're approved you get <strong>two</strong> IDs:</p>
@@ -920,7 +924,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-approved" data-id="approved"> Mark this module done</label></section><section class="mod" id="videos">
 <header class="mod-h"><p class="kicker">Module 3</p><h2>Videos that get approved and sell</h2>
-<p class="sum">The rules, the rejection reasons, our filming formula step by step, and the gear we actually use.</p></header>
+<p class="sum">The rules, the rejection reasons, our filming formula step by step, and the gear we actually use.</p><p class="rt">13 min read</p></header>
 <div class="prose"><p>You don't need a studio. Michelle and I came from video production, and we'll still tell you: a clean video with good light and clear audio beats a cinematic one with muddy sound. Amazon shoppers want to see the product working, and they want to hear a real person explain it.</p>
 <p>Before you film anything, read Amazon's own rules once, start to finish: the <a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Associates Program Policies</a> and the video guidelines inside <a href="https://www.amazon.com/amazon-associates-influencer-university/b?ie=UTF8&amp;node=48482381011" target="_blank" rel="noopener">Creator University</a>. Ten minutes of reading saves you weeks of rejections.</p>
 <h2>What gets videos rejected</h2>
@@ -980,6 +984,18 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <tr>
 <td>Poor audio or dark footage</td>
 <td>Fix your light and your mic (see gear below).</td>
+</tr>
+<tr>
+<td>Another platform's watermark or logo (a TikTok download is an instant fail)</td>
+<td>Export a clean copy from your own editor. Never upload a video saved from another app.</td>
+</tr>
+<tr>
+<td>Heavy on-screen text or captions formatted for social media</td>
+<td>Keep text to a minimum. Let the demo do the talking.</td>
+</tr>
+<tr>
+<td>Only the box, or only you talking</td>
+<td>Get it out of the packaging and show it working.</td>
 </tr>
 </tbody>
 </table></div>
@@ -1114,6 +1130,14 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <li><strong>Grab 3–5 still frames or photos</strong> while the set is up. You'll want them for thumbnails, idea lists, and social.</li>
 <li><strong>Run it against the rejection table</strong> before you upload.</li>
 </ul>
+<h2 id="tagging">Tagging: where your video shows up</h2>
+<p>The product you tag decides which product pages your video can appear on, and which sales you get credit for. It's not paperwork.</p>
+<ul>
+<li><strong>Tag the exact product you filmed.</strong> Search by name or paste the ASIN (the 10-character code in the product's Amazon link). If it comes in colors or sizes, tag the one in your hands: onsite only pays on that exact variant.</li>
+<li><strong>Comparison video? Tag every product in it.</strong> Your video can then appear, and earn, on each of their pages.</li>
+<li><strong>Never tag a popular product that isn't in your video</strong> to borrow its traffic. It gets rejected, and shoppers who feel tricked don't buy.</li>
+<li><strong>Watch your tags over time.</strong> If a seller switches to a new ASIN, retag the video (see <a href="#troubleshooting">when something looks wrong</a>).</li>
+</ul>
 <h2>Show your face, shoot horizontal</h2>
 <div class="seb">
 <p><strong>We show our faces in 99.9% of our videos, and you should too.</strong> It creates a human connection, and in sales that matters a lot. We're not just reviewing products here, we're selling them. A real face explaining a product sells it.</p>
@@ -1169,6 +1193,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p><em>Links marked "paid link" are our affiliate links and take you to the product on Amazon. As an Amazon Associate we earn from qualifying purchases, at no extra cost to you.</em></p>
 <h2>Titles and thumbnails</h2>
 <ul>
+<li><strong>Win the row on the product page.</strong> Your title sits next to other creators' videos, and the shopper picks one. A formula that works: the question a buyer has, plus your promise to answer it. "Does it survive frozen fruit?" "Watch this before buying the bigger size." Keep it under about 60 characters so it doesn't get cut off.</li>
 <li><strong>Say what the product is and the angle:</strong> "Cordless Stick Vacuum for Pet Hair: 30 Days in a Small Apartment" beats "Amazing vacuum!!!"</li>
 <li><strong>Never put "honest" in your title.</strong> We hate it, and audiences hate it too. Every review on the internet calls itself honest, so the word means nothing, and it quietly suggests your other reviews weren't. Show it with the cons in your video instead of claiming it in the title.</li>
 <li><strong>Thumbnail, at first:</strong> clear product shot, good light, no clutter. 1280×720 is a safe size. Upload your own instead of letting Amazon pick a frame.</li>
@@ -1186,7 +1211,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-videos" data-id="videos"> Mark this module done</label></section><section class="mod" id="products">
 <header class="mod-h"><p class="kicker">Module 4</p><h2>Picking products that pay</h2>
-<p class="sum">Why &quot;film your house&quot; stalls out, how to screen a product in two minutes, and how to invest without going broke.</p></header>
+<p class="sum">Why &quot;film your house&quot; stalls out, how to screen a product in two minutes, and how to invest without going broke.</p><p class="rt">10 min read</p></header>
 <div class="prose"><p>This module is where the money is. A mediocre video on a great product will beat a great video on a product that can't pay you. Every time.</p>
 <h2>Why "film everything in your house" stalls</h2>
 <p>Filming what you own is how everyone starts, and it's fine for your first 30–50 videos. But your house is full of products that are cheap, in low-paying categories, discontinued, or already buried under 80 other videos. So you plateau. That's the $100-a-month wall people keep posting about.</p>
@@ -1292,7 +1317,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-products" data-id="products"> Mark this module done</label></section><section class="mod" id="sourcing">
 <header class="mod-h"><p class="kicker">Module 5</p><h2>Getting products without getting burned</h2>
-<p class="sum">Owned, bought, sampled, gifted, or sent by a brand. Where our products come from each week, and why buy-and-return will end your account.</p></header>
+<p class="sum">Owned, bought, sampled, gifted, or sent by a brand. Where our products come from each week, and why buy-and-return will end your account.</p><p class="rt">5 min read</p></header>
 <div class="prose"><p>There are five ways products end up in front of your camera. Each one has a catch.</p>
 <h2>1. What you already own</h2>
 <p>Start here. Check your Amazon order history too: anything still listed is fair game, and so is stuff you bought elsewhere if the same product is sold on Amazon. It's free and it's how you learn. The catch is the one in Module 4: most of what's already in your house won't pay much.</p>
@@ -1373,7 +1398,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-sourcing" data-id="sourcing"> Mark this module done</label></section><section class="mod" id="cc">
 <header class="mod-h"><p class="kicker">Module 6</p><h2>Creator Connections done right</h2>
-<p class="sum">How CC works, how the bonus stacks, what Amazon is changing right now, and why delivering is your edge.</p></header>
+<p class="sum">How CC works, how the bonus stacks, what Amazon is changing right now, and why delivering is your edge.</p><p class="rt">7 min read</p></header>
 <div class="prose"><p>Creator Connections (CC) is where a lot of the real money is now, especially after the latest rule changes squeezed base rates. It's also where a lot of creators are quietly ruining their reputation.</p>
 <div class="seb">
 <p><strong>How CC clicked for us.</strong> CC started around the end of 2023, and it made it very easy for us to talk to brands we'd never been in contact with before. The first day I was on it, there were only about 400 campaigns. You could go through all of them by hand.</p>
@@ -1459,7 +1484,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-cc" data-id="cc"> Mark this module done</label></section><section class="mod" id="deals">
 <header class="mod-h"><p class="kicker">Module 7</p><h2>Paid brand deals and UGC</h2>
-<p class="sum">When brands start messaging you: what to charge, usage rights, pitching, and scams.</p></header>
+<p class="sum">When brands start messaging you: what to charge, usage rights, pitching, and scams.</p><p class="rt">11 min read</p></header>
 <div class="prose"><p>Your Amazon catalog is a portfolio. Once you have a few hundred solid videos, brands start reaching out, and some of them will pay. This is how you stop depending 100% on Amazon's commission table.</p>
 <div class="seb">
 <p>Brands got interested in us <em>because</em> of our growing catalog. The more we posted, the more collaborations came in, and the less we had to buy products ourselves. Through the summer of 2026 we pushed hard on direct paid brand deals, and they've held steady since, even through the Creator Connections changes in September. That's the point of them: it's a real income stream you negotiate yourself, not a bonus Amazon can reprice.</p>
@@ -1657,7 +1682,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-deals" data-id="deals"> Mark this module done</label></section><section class="mod" id="traffic">
 <header class="mod-h"><p class="kicker">Module 8</p><h2>Offsite traffic and the calendar</h2>
-<p class="sum">Where your links are allowed, what works on each platform right now, and how to plan around Q4.</p></header>
+<p class="sum">Where your links are allowed, what works on each platform right now, and how to plan around Q4.</p><p class="rt">15 min read</p></header>
 <div class="prose"><p>Onsite videos depend on Amazon showing them. Offsite traffic is the part you control: people who click <em>your</em> links. It also pays standard rates, which are higher than onsite rates.</p>
 <h2>Platform by platform</h2>
 <p><strong>YouTube: the big one right now.</strong> In late August 2026, Amazon joined YouTube Shopping's affiliate program in the US, so creators can tag Amazon products directly in long videos, Shorts, and lives. YouTube reports that product tags get far more clicks than description links. You need YouTube Shopping Affiliate eligibility (YouTube lowered it to 500 subscribers in 2026, with Partner Program membership) and an Amazon Influencer or Associates account linked. <span class="verify">Check your dashboard</span> Your Amazon review videos are ready-made YouTube content. Repurpose them: it also gives you a dated, public copy under your own account, which is your proof you published first if someone steals a video.</p>
@@ -1896,7 +1921,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-traffic" data-id="traffic"> Mark this module done</label></section><section class="mod" id="live">
 <header class="mod-h"><p class="kicker">Module 9</p><h2>Amazon Live</h2>
-<p class="sum">Live shopping on Amazon: what it's like now, how we run a stream, the three creator levels, and selling lives to brands.</p></header>
+<p class="sum">Live shopping on Amazon: what it's like now, how we run a stream, the three creator levels, and selling lives to brands.</p><p class="rt">6 min read</p></header>
 <div class="prose"><p>Amazon Live lets you stream on Amazon while shoppers watch on their phones or computers. You can go live from your phone, or from a computer with streaming software.</p>
 <p><strong>How it works on screen:</strong> a product carousel sits right there while you're talking. You can line up to 39 products, switch from one to the next by hand as you talk about it, and feature the one you're showing. Viewers click it and buy without ever leaving your stream. <span class="verify">Check your dashboard</span></p>
 <div class="seb">
@@ -1974,7 +1999,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-live" data-id="live"> Mark this module done</label></section><section class="mod" id="business">
 <header class="mod-h"><p class="kicker">Module 10</p><h2>Run it like a business</h2>
-<p class="sum">Workflow, volume, getting paid, what to do when something looks wrong, protecting your account, and not burning out.</p></header>
+<p class="sum">Workflow, volume, getting paid, what to do when something looks wrong, protecting your account, and not burning out.</p><p class="rt">12 min read</p></header>
 <div class="prose"><p>The creators who last treat this like a business from month one. The ones who burn out treat it like a lottery ticket.</p>
 <h2>Workflow: batch everything</h2>
 <ul>
@@ -2022,6 +2047,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ul>
 <h2>Taxes and structure: talk to a professional</h2>
 <p>Taxes depend on where you live and how you're set up, and they're personal. We're not going to give tax advice.</p>
+<p><strong>One fact worth knowing in the US:</strong> Amazon sends you a 1099 once you're paid $2,000 or more in a year. That threshold used to be $600, and it now rises with inflation. The income is taxable either way, with or without a form, so keep a simple record of every payout from day one.</p>
 <div class="seb">
 <p>We set up a company to run the business and its bank accounts through. What's right for you depends on where you live and how much you're making. Sit down with a CPA early, not when your first big month lands.</p>
 </div>
@@ -2128,7 +2154,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ol>
 </div></div><label class="done"><input type="checkbox" id="done-business" data-id="business"> Mark this module done</label></section><section class="mod" id="plan">
 <header class="mod-h"><p class="kicker">The plan</p><h2>Your first 90 days</h2>
-<p class="sum">Everything above, in order, week by week.</p></header>
+<p class="sum">Everything above, in order, week by week.</p><p class="rt">5 min read</p></header>
 <div class="prose"><p>Print this, or keep it open. The weeks are a guide; move faster or slower depending on your hours.</p>
 <div class="seb">
 <p><strong>Got a full-time job? Read this first.</strong> The plan below assumes you can give this 10 to 15 hours a week. Most people starting out can't, and we'd rather you run a realistic plan than quit a good one.</p>
@@ -2282,6 +2308,8 @@ questions in public so everyone gets the answer.</p>
 <h2 id="logh">What changed, and when</h2>
 <p>Every update to this guide, newest first, so you can see what's different since your last visit.</p>
 <dl>
+<dt>September 30</dt>
+<dd><a href="#tagging">Tagging</a>: where your video shows up. A title formula for the product page. Three more rejection reasons (other platforms' watermarks, heavy on-screen text, box-only videos). More on applying if you're rejected. The US 1099 threshold. A reading time on every module, and the <a href="/freeguide/checklist.html">one-page checklist</a>.</dd>
 <dt>September 29</dt>
 <dd><a href="#examples">Six of our real reviews</a>, playable in Module 3. <a href="#value">Value over volume</a> and how long videos should be. <a href="#quick-answers">Quick answers</a> for beginners, including LLCs, working from outside the US, reusing videos, faceless accounts and shoppable photos. <a href="#idea-lists">Seasonal idea lists</a>. <a href="#worldwide">OneLink and Passport</a> links. <a href="#account-closed">If your account gets closed</a>, and <a href="#hiring">when to hire help</a>.</dd>
 <dt>September 28</dt>
