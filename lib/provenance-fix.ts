@@ -22,13 +22,18 @@
 
 import { createWordPressService } from '@/services/wordpress'
 import { credsForPost, checkSamePost } from '@/lib/post-site'
-import { provenanceText } from '@/lib/post-provenance'
+import { withProvenanceNote } from '@/lib/post-provenance'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
 
 /** Posts corrected per run. Small: this edits other people's live posts. */
-export const FIX_PER_RUN = 12
+export const FIX_PER_RUN = 20
+
+// AND MOVED UNDER THE VIDEO. The line used to sit above the video and say
+// "embedded below"; it now sits under it as a caption. A line still saying
+// "embedded below" is one that has not been moved yet.
+const EMBEDDED_BELOW = /embedded below/i
 
 const NOT_TESTED = /not tested (?:this|these) products? ourselves/i
 // A provenance paragraph, with its block markers when it has them.
@@ -36,39 +41,42 @@ const BLOCK = /(?:<!-- wp:paragraph \{[^}]*"className":"mvp-provenance"[^]*?-->\
 // The same line written before it had a class (older posts).
 const BARE = /(?:<!-- wp:paragraph[^>]*-->\s*)?<p[^>]*>\s*How this review was made:[^<]*?not tested this product ourselves\.?\s*<\/p>(?:\s*<!-- \/wp:paragraph -->)?/g
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-/** The corrected post, or null when there is nothing to correct. Pure. */
-export function fixProvenanceHtml(html: string, line: string): { html: string; removedCopies: number } | null {
-  if (!html || !NOT_TESTED.test(html)) return null
+/** The corrected post, or null when there is nothing to correct. Pure.
+ *
+ *  Every provenance line in the post comes out (the wrong "not tested" one,
+ *  an old one above the video, duplicates), and ONE goes back under the
+ *  video: the on-camera wording when the post had it, the own-video wording
+ *  otherwise. */
+export function fixProvenanceHtml(html: string, author: string | null): { html: string; removedCopies: number } | null {
+  if (!html) return null
   const found = [...(html.match(BLOCK) ?? []), ...(html.match(BARE) ?? [])]
-  const wrong = found.filter((b) => NOT_TESTED.test(b))
-  if (wrong.length === 0) return null
-  const block = `<!-- wp:paragraph {"className":"mvp-provenance","style":{"typography":{"fontSize":"13px"}}} -->\n<p class="mvp-provenance" style="font-size:13px;color:#6b6b70">${esc(line)}</p>\n<!-- /wp:paragraph -->`
-  let first = true
-  let removed = 0
-  const swap = (m: string) => {
-    if (first) { first = false; return block }
-    removed++
-    return ''
-  }
-  // Every provenance line in the post: the first becomes the right one, the
-  // rest (duplicates, whichever wording) go.
-  let out = html.replace(BLOCK, swap)
-  out = out.replace(BARE, swap)
-  return { html: out.replace(/\n{3,}/g, '\n\n'), removedCopies: removed }
+  if (found.length === 0) return null
+  const needs = found.length > 1 || found.some((b) => NOT_TESTED.test(b) || EMBEDDED_BELOW.test(b))
+  if (!needs) return null
+  const source = found.some((b) => /happened on camera/i.test(b)) ? 'video' : 'own-video'
+  let taken = 0
+  const cut = () => { taken++; return '' }
+  let out = html.replace(BLOCK, cut)
+  out = out.replace(BARE, cut).replace(/\n{3,}/g, '\n\n')
+  out = withProvenanceNote(out, source, author)
+  return out === html ? null : { html: out, removedCopies: Math.max(0, taken - 1) }
 }
 
 export type ProvenanceFixReport = { fixed: number; checked: number; failed: Array<{ postId: string; reason: string }> }
 
 export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<ProvenanceFixReport> {
   const out: ProvenanceFixReport = { fixed: 0, checked: 0, failed: [] }
-  const { data: rows } = await sb.from('blog_posts')
-    .select('id,user_id,content,wordpress_post_id,wordpress_url,wordpress_site_id')
+  type Row = { id: string; user_id: string; content: string | null; wordpress_post_id: number; wordpress_url: string | null; wordpress_site_id: string | null }
+  // Two questions, merged: the wrong line, and the line not moved yet.
+  const pick = (needle: string) => sb.from('blog_posts')
+    .select('id,user_id,content,wordpress_post_id,wordpress_url,wordpress_site_id,updated_at')
     .not('video_id', 'is', null).not('wordpress_post_id', 'is', null)
-    .ilike('content', '%not tested this product ourselves%')
+    .ilike('content', needle)
     .order('updated_at', { ascending: true }).limit(max)
-  const posts = (rows ?? []) as Array<{ id: string; user_id: string; content: string | null; wordpress_post_id: number; wordpress_url: string | null; wordpress_site_id: string | null }>
+  const [a, b] = await Promise.all([pick('%not tested this product ourselves%'), pick('%embedded below%')])
+  const byId = new Map<string, Row & { updated_at: string }>()
+  for (const r of [...(a.data ?? []), ...(b.data ?? [])] as Array<Row & { updated_at: string }>) byId.set(r.id, r)
+  const posts = [...byId.values()].sort((x, y) => String(x.updated_at).localeCompare(String(y.updated_at))).slice(0, max)
   const authors = new Map<string, string | null>()
   const touch = (id: string) => sb.from('blog_posts').update({ updated_at: new Date().toISOString() }).eq('id', id)
 
@@ -79,7 +87,7 @@ export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<Pro
         const { data: b } = await sb.from('brand_profiles').select('author_name').eq('user_id', p.user_id).maybeSingle()
         authors.set(p.user_id, (b?.author_name as string | null) ?? null)
       }
-      const line = provenanceText('own-video', authors.get(p.user_id))
+      const author = authors.get(p.user_id) ?? null
       const site = await credsForPost(sb, p.user_id, p)
       if (!site) { out.failed.push({ postId: p.id, reason: 'no site credentials' }); await touch(p.id); continue }
       const wp = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
@@ -88,9 +96,9 @@ export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<Pro
       const raw = await wp.readRawPost(p.wordpress_post_id)
       // Our copy is corrected either way, so the post leaves the queue; the
       // live one only when it could be read.
-      const ours = fixProvenanceHtml(String(p.content || ''), line)
+      const ours = fixProvenanceHtml(String(p.content || ''), author)
       if (!raw.ok) { out.failed.push({ postId: p.id, reason: raw.reason }); await touch(p.id); continue }
-      const live = fixProvenanceHtml(raw.content, line)
+      const live = fixProvenanceHtml(raw.content, author)
       if (live) await wp.updatePost(p.wordpress_post_id, { content: live.html })
       await sb.from('blog_posts').update({ content: ours ? ours.html : p.content, updated_at: new Date().toISOString() }).eq('id', p.id)
       out.fixed++

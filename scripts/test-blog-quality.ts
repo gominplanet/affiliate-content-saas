@@ -45,13 +45,18 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
     // AND THE POSTS ALREADY LIVE are corrected (lib/provenance-fix): the wrong
     // line becomes the own-video line, duplicates go, nothing else changes.
     const { fixProvenanceHtml } = require('../lib/provenance-fix') as typeof import('../lib/provenance-fix')
-    const line = provenanceText('own-video', 'Seb')
-    const bad = withProvenanceNote('<p>Body</p>', 'none', 'Seb')
-    const twice = `${bad}\n${bad.replace('<p>Body</p>', '<p>End</p>')}`
-    const fixed = fixProvenanceHtml(twice, line)
+    const vid = '<!-- wp:html -->\n<div class="gr-video-wrap"><div class="gr-video-label">Watch</div><div class="gr-video-container"><iframe src="x"></iframe></div>\n</div>\n<!-- /wp:html -->'
+    const bad = `${withProvenanceNote('<p>Body</p>', 'none', 'Seb')}\n${vid}\n<p>End</p>`
+    const twice = `${withProvenanceNote('<p>Top</p>', 'none', 'Seb')}\n${bad}`
+    const fixed = fixProvenanceHtml(twice, 'Seb')
     check('a live post from the creator\'s video loses the "not tested" line and its duplicates, and keeps the rest',
       !!fixed && !/not tested/i.test(fixed.html) && fixed.removedCopies === 1 && /<p>Body<\/p>/.test(fixed.html) && /<p>End<\/p>/.test(fixed.html) && fixed.html.includes("Seb's own video"))
-    check('a post that is already right is left alone', fixProvenanceHtml(withProvenanceNote('<p>x</p>', 'own-video', 'Seb'), line) === null)
+    check('the corrected line sits under the video, once',
+      !!fixed && fixed.html.indexOf('mvp-provenance') > fixed.html.indexOf('</iframe>') && (fixed.html.match(/class="mvp-provenance"/g) ?? []).length === 1)
+    check('a post that is already right is left alone', !!fixed && fixProvenanceHtml(fixed.html, 'Seb') === null)
+    check('a new review from a video gets the line under the video; a research post keeps it at the top',
+      withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('mvp-provenance') > withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('</iframe>')
+      && withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('mvp-provenance') < withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('</iframe>'))
     check('the correction runs on its own until none are left',
       /await fixProvenanceLines\(admin\)/.test(read('app/api/cron/reconcile-stuck-images/route.ts'))
       && /\.not\('video_id', 'is', null\)/.test(read('lib/provenance-fix.ts')) && /checkSamePost\(wp,/.test(read('lib/provenance-fix.ts')))

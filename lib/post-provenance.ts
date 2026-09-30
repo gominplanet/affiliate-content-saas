@@ -21,8 +21,8 @@ export function provenanceText(source: ExperienceSource | null | undefined, auth
   const who = (author || '').trim() || 'I'
   const own = who === 'I' ? 'my own' : `${who}'s own`
   switch (source) {
-    case 'video': return `How this review was made: written from ${own} video of the product, embedded below. Everything personal in it happened on camera.`
-    case 'own-video': return `How this review was made: from ${own} video of the product, embedded below, with the details from the listing and the maker's specifications.`
+    case 'video': return `How this review was made: written from ${own} video of the product. Everything personal in it happened on camera.`
+    case 'own-video': return `How this review was made: from ${own} video of the product, with the details from the listing and the maker's specifications.`
     case 'creator-note': return `How this review was made: written from ${own} notes after using the product.`
     case 'owner': return `How this review was made: ${who === 'I' ? 'I own' : `${who} owns`} this product; the details come from the listing and the maker's specifications.`
     default: return 'How this review was made: researched from the product listing, its specifications and the questions buyers ask. We have not tested this product ourselves.'
@@ -38,9 +38,39 @@ export function comparisonProvenanceText(ownVideos: number, total: number, autho
   return 'How this comparison was made: researched from the product listings, their specifications and public videos, credited where used. We have not tested these products ourselves.'
 }
 
+/** Where the video embed ends, or -1: after the iframe, its container and
+ *  the wrapper. */
+function videoEnd(html: string): number {
+  const start = html.indexOf('class="gr-video-wrap"')
+  if (start === -1) return -1
+  const iframe = html.indexOf('</iframe>', start)
+  if (iframe === -1) return -1
+  const first = html.indexOf('</div>', iframe)
+  const second = first === -1 ? -1 : html.indexOf('</div>', first + 6)
+  return second === -1 ? -1 : second + '</div>'.length
+}
+
 export function withProvenanceNote(html: string, source: ExperienceSource | null | undefined, author?: string | null, text?: string): string {
   if (!html || html.includes('class="mvp-provenance"')) return html
-  const block = `<!-- wp:paragraph {"className":"mvp-provenance","style":{"typography":{"fontSize":"13px"}}} -->\n<p class="mvp-provenance" style="font-size:13px;color:#6b6b70">${esc(text || provenanceText(source, author))}</p>\n<!-- /wp:paragraph -->\n`
+  const line = esc(text || provenanceText(source, author))
+  const para = `<p class="mvp-provenance" style="font-size:13px;color:#6b6b70">${line}</p>`
+  const block = `<!-- wp:paragraph {"className":"mvp-provenance","style":{"typography":{"fontSize":"13px"}}} -->\n${para}\n<!-- /wp:paragraph -->\n`
+  // A REVIEW FROM THE CREATOR'S OWN VIDEO says it right under that video,
+  // where it reads as a caption rather than a notice above the fold. Inside
+  // the video's HTML block when the block carries on past it (the verdict box
+  // often shares it), as its own paragraph when the block ends there.
+  if (source === 'video' || source === 'own-video') {
+    const at = videoEnd(html)
+    if (at !== -1) {
+      const rest = html.slice(at)
+      const close = rest.match(/^\s*<!-- \/wp:html -->/)
+      if (close) {
+        const after = at + close[0].length
+        return `${html.slice(0, after)}\n${block}${html.slice(after)}`
+      }
+      return `${html.slice(0, at)}\n${para}\n${html.slice(at)}`
+    }
+  }
   // Right after the disclosure block, so the two facts about the post sit
   // together near the top; else after the opening answer; else first.
   const disc = html.indexOf('#fffbe6')
