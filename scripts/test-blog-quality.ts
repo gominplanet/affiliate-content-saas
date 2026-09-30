@@ -41,6 +41,21 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('a post from the creator\'s own video never says it was not tested, even without a transcript',
     !/not tested/i.test(provenanceText('own-video', 'Seb')) && /Seb's own video/.test(provenanceText('own-video', 'Seb'))
     && /fromOwnVideo: true/.test(read('services/claude/index.ts')))
+  {
+    // AND THE POSTS ALREADY LIVE are corrected (lib/provenance-fix): the wrong
+    // line becomes the own-video line, duplicates go, nothing else changes.
+    const { fixProvenanceHtml } = require('../lib/provenance-fix') as typeof import('../lib/provenance-fix')
+    const line = provenanceText('own-video', 'Seb')
+    const bad = withProvenanceNote('<p>Body</p>', 'none', 'Seb')
+    const twice = `${bad}\n${bad.replace('<p>Body</p>', '<p>End</p>')}`
+    const fixed = fixProvenanceHtml(twice, line)
+    check('a live post from the creator\'s video loses the "not tested" line and its duplicates, and keeps the rest',
+      !!fixed && !/not tested/i.test(fixed.html) && fixed.removedCopies === 1 && /<p>Body<\/p>/.test(fixed.html) && /<p>End<\/p>/.test(fixed.html) && fixed.html.includes("Seb's own video"))
+    check('a post that is already right is left alone', fixProvenanceHtml(withProvenanceNote('<p>x</p>', 'own-video', 'Seb'), line) === null)
+    check('the correction runs on its own until none are left',
+      /await fixProvenanceLines\(admin\)/.test(read('app/api/cron/reconcile-stuck-images/route.ts'))
+      && /\.not\('video_id', 'is', null\)/.test(read('lib/provenance-fix.ts')) && /checkSamePost\(wp,/.test(read('lib/provenance-fix.ts')))
+  }
   check('a comparison says how many products come from the creator\'s own videos', /2 of the 3 products/.test(comparisonProvenanceText(2, 3, 'Seb')))
   const W = read('services/claude/index.ts')
   check('the writer is told not to write hashtags', /\[8\] NO HASHTAG BLOCK/.test(W) && !/10 hashtags researched/.test(W))

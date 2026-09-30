@@ -34,6 +34,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { holdAndRelease } from '@/lib/video-hold'
+import { fixProvenanceLines } from '@/lib/provenance-fix'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,13 +75,23 @@ export async function GET(request: Request) {
     videoHold = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }
 
+  // Posts from a creator's own video that still say "we have not tested this
+  // product ourselves" (lib/provenance-fix), a few a run until none are left.
+  let provenance: unknown = null
+  try {
+    provenance = await fixProvenanceLines(admin)
+  } catch (e) {
+    provenance = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
+  }
+
   if (error) {
-    return NextResponse.json({ error: error.message, videoHold }, { status: 500 })
+    return NextResponse.json({ error: error.message, videoHold, provenance }, { status: 500 })
   }
 
   return NextResponse.json({
     ok: true,
     videoHold,
+    provenance,
     reconciled: count ?? 0,
     ids: (data ?? []).map((r: { id: string }) => r.id),
     cutoff,
