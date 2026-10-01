@@ -93,7 +93,7 @@ export function effectiveDisclosure(base: string, affiliateLink: string | null, 
  * MVP recommends, their posts said "Get it here" next to a short link. So the
  * caller passes what it KNOWS. It always knows: it started from an ASIN.
  */
-function productCtaLine(link: string, amazonDestination: boolean): string {
+export function productCtaLine(link: string, amazonDestination: boolean): string {
   return (amazonDestination || isAmazonLink(link))
     ? `🛒 Grab it on Amazon 👉 ${link}`
     : `🛒 Get it here 👉 ${link}`

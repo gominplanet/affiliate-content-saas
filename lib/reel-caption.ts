@@ -59,15 +59,35 @@ export function facebookWriteUp(text: string): string {
     .trim()
 }
 
-export async function buildReelCaption(sb: Sb, userId: string, input: {
-  writeUp: string
+/** Everything a clip's description can carry, resolved once per platform:
+ *  the product link (in the creator's link style, minted for that platform),
+ *  the full review, the link hub, and the disclosure. */
+export type ClipLinks = {
+  productLink: string | null
+  productSource: ReelLinkSource | null
+  linkNote: string | null
+  /** The product link lands on Amazon, however it is wrapped. */
+  amazon: boolean
+  blogUrl: string | null
+  videoUrl: string | null
+  /** The creator's Linktree or link hub from Brand Profile. */
+  linkHub: string | null
+  disclosure: string
+  /** The source video's title, for writing a title or tags. */
+  videoTitle: string | null
+}
+
+export async function resolveClipLinks(sb: Sb, userId: string, input: {
   sourceVideoId?: string | null
   product?: string | null
   productName?: string | null
-}): Promise<ReelCaption> {
+  /** Where the link will be posted, for the link style and attribution. */
+  channel?: 'facebook' | 'youtube' | 'tiktok' | 'instagram'
+}): Promise<ClipLinks> {
+  const channel = input.channel ?? 'facebook'
   const [{ data: intRow }, { data: brand }] = await Promise.all([
     sb.from('integrations').select('amazon_associates_tag,social_link_modes,geniuslink_api_key,geniuslink_api_secret').eq('user_id', userId).maybeSingle(),
-    sb.from('brand_profiles').select('affiliate_disclaimer').eq('user_id', userId).maybeSingle(),
+    sb.from('brand_profiles').select('affiliate_disclaimer,linktree_url').eq('user_id', userId).maybeSingle(),
   ])
   const integration = decryptIntegrationRow(intRow)
   const tag = (integration?.amazon_associates_tag as string | null) ?? null
@@ -101,7 +121,7 @@ export async function buildReelCaption(sb: Sb, userId: string, input: {
         postId: post.id, link, title: post.title ?? title, userId,
         apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
         siteId: post.wordpress_site_id ?? null, siteUrl: post.wordpress_url ?? null,
-        source: 'facebook',
+        source: channel,
       }).catch(() => link)
       productSource = 'blog-post'
     }
@@ -116,7 +136,7 @@ export async function buildReelCaption(sb: Sb, userId: string, input: {
     const asin = typedAsin || (typedUrl ? null : videoAsin)
     const dest = asin ? amazonDestination(asin, tag) : typedUrl
     if (dest) {
-      const r = await resolveCloakedLinkDetailed({ supabase: sb, userId, destination: dest, asin, channel: 'facebook', source: 'facebook', label: title, config: cfg })
+      const r = await resolveCloakedLinkDetailed({ supabase: sb, userId, destination: dest, asin, channel, source: channel, label: title, config: cfg })
       productLink = r.url || dest
       linkNote = cloakFallbackNote(r)
       amazon = !!asin || isAmazonLink(dest)
@@ -124,16 +144,30 @@ export async function buildReelCaption(sb: Sb, userId: string, input: {
     }
   }
 
+  const blogUrl = post ? (blogShareUrl(post) || post.wordpress_url) : null
+  const videoUrl = youtubeWatchUrl(video?.youtube_video_id)
+  const disclosure = effectiveDisclosure(((brand?.affiliate_disclaimer as string) || DEFAULT_DISCLAIMER), productLink, !!tag && amazon)
+  const linkHub = String((brand?.linktree_url as string) || '').trim() || null
+  return { productLink, productSource, linkNote, amazon, blogUrl, videoUrl, linkHub, disclosure, videoTitle: (video?.title as string) || null }
+}
+
+export async function buildReelCaption(sb: Sb, userId: string, input: {
+  writeUp: string
+  sourceVideoId?: string | null
+  product?: string | null
+  productName?: string | null
+}): Promise<ReelCaption> {
+  const { data: intRow } = await sb.from('integrations').select('social_link_modes').eq('user_id', userId).maybeSingle()
+  const links = await resolveClipLinks(sb, userId, { ...input, channel: 'facebook' })
+  const { productLink, productSource, linkNote, amazon, blogUrl, videoUrl, disclosure } = links
+
   // ── the full review ───────────────────────────────────────────────────────
   // The creator's Facebook setting picks blog or video; unset, a Reel points
   // at the long video it was cut from, which is what a viewer who liked the
   // clip wants next.
-  const stored = parseLinkPrefs(integration?.social_link_modes).facebook
+  const stored = parseLinkPrefs(decryptIntegrationRow(intRow)?.social_link_modes).facebook
   const content: ContentLink = stored?.content ?? 'video'
-  const blogUrl = post ? (blogShareUrl(post) || post.wordpress_url) : null
-  const videoUrl = youtubeWatchUrl(video?.youtube_video_id)
 
-  const disclosure = effectiveDisclosure(((brand?.affiliate_disclaimer as string) || DEFAULT_DISCLAIMER), productLink, !!tag && amazon)
   const caption = composeCaption({
     product: true, content, writeUp: facebookWriteUp(input.writeUp),
     blogUrl, videoUrl, affiliateLink: productLink, disclosure,

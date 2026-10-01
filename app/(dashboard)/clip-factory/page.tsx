@@ -16,6 +16,8 @@
 // them; graduates once proven (flip the nav gate). Every stage reuses the
 // existing API routes — no new engines.
 
+import PublishPanel, { type PublishKit, type PublishChoice } from '@/components/clip-factory/PublishPanel'
+import type { ClipPlatform } from '@/lib/clip-description'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipFactoryGuide } from '@/components/guide/tool-guides'
 import dynamic from 'next/dynamic'
@@ -248,8 +250,15 @@ export default function ClipFactoryPage() {
   // The Reel's description, built by the server and shown before posting:
   // what posts is exactly this text, and whether it carries a product link is
   // said on screen rather than discovered on Facebook.
-  const [fbDraft, setFbDraft] = useState<{ text: string; productLink: string | null; productSource: string | null; linkNote: string | null; contentLink: string | null } | null>(null)
-  const [fbPreparing, setFbPreparing] = useState(false)
+  // THE PUBLISH PANEL. A pill opens it for its platform; it asks what goes in
+  // the description (components/clip-factory/PublishPanel) and posts, or hands
+  // the text to the TikTok or Instagram window. One kit per platform, fetched
+  // when the pill is first pressed and dropped when the clip or product changes.
+  const [panel, setPanel] = useState<ClipPlatform | null>(null)
+  const [kits, setKits] = useState<Partial<Record<ClipPlatform, PublishKit>>>({})
+  const [kitError, setKitError] = useState<string | null>(null)
+  const [ttCaption, setTtCaption] = useState<string | null>(null)
+  const [igCaption, setIgCaption] = useState<string | null>(null)
   // The uploaded YouTube video id, so we can link the creator straight to it
   // (a Short can take a few minutes to process before it's visible).
   const [ytVideoId, setYtVideoId] = useState<string | null>(null)
@@ -637,17 +646,18 @@ export default function ClipFactoryPage() {
   // wipe it to empty — that's what left Publish caption-less).
   const skipEnhance = useCallback(() => { setBurnedUrl(null); setComposedCaption(fallbackCaption); setStage('publish') }, [fallbackCaption])
 
-  const postYouTube = useCallback(async () => {
+  const postYouTube = useCallback(async (choice: PublishChoice) => {
     if (!publishUrl) return
     setPublishingYt(true)
     try {
+      // Exactly what the panel showed: its title, description and tags.
       const res = await fetch('/api/youtube/upload-short', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoUrl: publishUrl,
-          title: buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []),
-          description: publishCaption,
-          tags: buildYouTubeTags(clip?.hashtags || [], clip?.title || ''),
+          title: choice.title || buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []),
+          description: choice.text,
+          tags: choice.tags ?? buildYouTubeTags(clip?.hashtags || [], clip?.title || ''),
         }),
       })
       const data = await res.json()
@@ -662,57 +672,65 @@ export default function ClipFactoryPage() {
         throw new Error(data.error || 'YouTube upload failed')
       }
       setPosted(p => ({ ...p, youtube: true }))
+      setPanel(null)
       if (data.videoId) setYtVideoId(data.videoId as string)
       toast.success('Uploaded to YouTube — it may take a few minutes to process')
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingYt(false) }
-  }, [publishUrl, publishCaption, clip])
+  }, [publishUrl, clip])
 
-  // Facebook Reel on the creator's Page (Labs). First the description is built
-  // (product link in the creator's link style, the full review, disclosure)
-  // and shown; the post then sends exactly that text.
-  const prepareFacebookReel = useCallback(async () => {
-    if (!publishUrl) return
-    setFbPreparing(true)
+  // Open a platform's panel, fetching what its description can carry.
+  const openPanel = useCallback(async (p: ClipPlatform) => {
+    setPanel(p); setKitError(null)
+    if (kits[p]) return
     try {
-      const res = await fetch('/api/clip-factory/facebook-reel', {
+      const res = await fetch('/api/clip-factory/publish-kit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dryRun: true, videoUrl: publishUrl, description: publishCaption,
-          sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
+          platform: p, sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
+          title: clip?.title, hashtags: clip?.hashtags || [], writeUp: publishCaption,
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not build the Reel description.')
-      setFbDraft({ text: data.caption || publishCaption, productLink: data.productLink ?? null, productSource: data.productSource ?? null, linkNote: data.linkNote ?? null, contentLink: data.contentLink ?? null })
-    } catch (e) { toast.error(errText(e)) }
-    finally { setFbPreparing(false) }
-  }, [publishUrl, publishCaption, clip, product, productName])
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not find the links for this clip.')
+      setKits(k => ({ ...k, [p]: data as PublishKit }))
+    } catch (e) { setKitError(`${errText(e)} You can still write the description yourself.`); setKits(k => ({ ...k, [p]: { productLink: null, productSource: null, linkNote: null, amazon: false, blogUrl: null, videoUrl: null, linkHub: null, disclosure: '', youtube: null } })) }
+  }, [kits, clip, product, productName, publishCaption])
+  // A different clip or product means different links.
+  useEffect(() => { setKits({}); setPanel(null) }, [clip, product, productName])
 
-  // The answer says whether it is live or still processing, from what
-  // Facebook reported back.
-  const postFacebookReel = useCallback(async () => {
-    if (!publishUrl || !fbDraft) return
+  // Facebook Reel on the creator's Page (Labs): posts exactly the panel's text.
+  // The answer says whether it is live or still processing, from what Facebook
+  // reported back.
+  const postFacebookReel = useCallback(async (text: string) => {
+    if (!publishUrl || !text.trim()) return
     setPublishingFb(true)
     try {
       const res = await fetch('/api/clip-factory/facebook-reel', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: publishUrl, description: fbDraft.text }),
+        body: JSON.stringify({ videoUrl: publishUrl, description: text }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
       setPosted(p => ({ ...p, facebook: true }))
       setFbReelUrl(data.url || null)
-      setFbDraft(null)
+      setPanel(null)
       toast.success(data.state === 'published'
         ? `Reel is live on ${data.page || 'your Page'}.`
         : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingFb(false) }
-  }, [publishUrl, fbDraft])
+  }, [publishUrl])
+
+  const confirmPanel = useCallback((c: PublishChoice) => {
+    if (panel === 'youtube') void postYouTube(c)
+    else if (panel === 'facebook') void postFacebookReel(c.text)
+    else if (panel === 'tiktok') { setTtCaption(c.text); setPanel(null); setTtOpen(true) }
+    else if (panel === 'instagram') { setIgCaption(c.text); setPanel(null); setIgOpen(true) }
+  }, [panel, postYouTube, postFacebookReel])
 
   const restart = useCallback(() => {
-    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setFbDraft(null); setCoverOffsetMs(null); setStage('create')
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setPanel(null); setKits({}); setTtCaption(null); setIgCaption(null); setCoverOffsetMs(null); setStage('create')
   }, [])
 
   // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
@@ -1208,48 +1226,46 @@ export default function ClipFactoryPage() {
             <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
               {burnedUrl ? 'Overlay burned. Publish your finished clip:' : 'Publishing the clip as is (no overlay):'}
             </p>
+            {/* REEL COVER FIRST: it is chosen before posting, and Instagram
+                uses it as the Reel's cover, so it sits above the pills. */}
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => setCoverPickerOpen(true)}
+                className="inline-flex items-center gap-1.5 self-start rounded-full px-3 py-1.5 text-[13px] font-medium border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
+                title="Choose the still frame Instagram shows as your Reel cover"
+              >
+                <ImageIcon size={13} /> {coverOffsetMs != null ? `Reel cover · ${(coverOffsetMs / 1000).toFixed(1)}s` : 'Choose Reel cover'}
+              </button>
+              <p className="text-[11.5px] text-[#86868b]">{coverOffsetMs != null ? 'Instagram uses this frame as the cover.' : 'Pick it before posting to Instagram, or Instagram uses the first frame.'}</p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
-              <PostPill label="TikTok" color="#FE2C55" icon={<Music2 size={13} />} posted={!!posted.tiktok} onClick={() => setTtOpen(true)} />
-              <PostPill label="Instagram" color="#E1306C" icon={<Instagram size={13} />} posted={!!posted.instagram} onClick={() => setIgOpen(true)} />
+              <PostPill label="TikTok" color="#FE2C55" icon={<Music2 size={13} />} posted={!!posted.tiktok} onClick={() => void openPanel('tiktok')} />
+              <PostPill label="Instagram" color="#E1306C" icon={<Instagram size={13} />} posted={!!posted.instagram} onClick={() => void openPanel('instagram')} />
               {/* YouTube Shorts publishing — admin-only until Google verifies the
                   upload scope and we flip NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED on. */}
               {youtubeUploadEnabled({ tier }) && (
-                <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
+                <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={() => void openPanel('youtube')} />
               )}
               {canUsePreview('facebook_reels', tier) && !(clip?.durationSec && clip.durationSec > 90) && (
-                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb || fbPreparing} onClick={prepareFacebookReel} />
+                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb} onClick={() => void openPanel('facebook')} />
               )}
               {fbReelUrl && (
                 <a href={fbReelUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-[#1877F2] underline-offset-2 hover:underline">View Reel</a>
               )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
-            {fbDraft && !posted.facebook && (
-              <div className="rounded-xl border border-[#1877F2]/30 p-3 flex flex-col gap-2">
-                <p className="text-[12.5px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Reel description</p>
-                {fbDraft.productLink ? (
-                  <p className="text-[12px] text-[#10B981] leading-snug break-all">
-                    Product link included ({fbDraft.productSource === 'blog-post' ? 'from the blog post for this video' : fbDraft.productSource === 'video-asin' ? 'from the product on this video' : 'from the product you added in Enhance'}): {fbDraft.productLink}
-                  </p>
-                ) : (
-                  <p className="text-[12px] text-[#ff9500] leading-snug">
-                    No product link found for this clip. {clip?.sourceVideoId ? 'Its video has no published blog post with a product link and no product saved.' : 'MVP does not know which video this clip came from.'} Go back to Enhance and paste the product&apos;s Amazon link or ASIN, or type the link into the text below.
-                  </p>
-                )}
-                {fbDraft.linkNote && <p className="text-[12px] text-[#ff9500] leading-snug">{fbDraft.linkNote}</p>}
-                <textarea
-                  value={fbDraft.text}
-                  onChange={(e) => setFbDraft(d => (d ? { ...d, text: e.target.value } : d))}
-                  rows={8}
-                  className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent p-2 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                />
-                <div className="flex gap-2">
-                  <button onClick={postFacebookReel} disabled={publishingFb || !fbDraft.text.trim()} className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white bg-[#1877F2] disabled:opacity-50">
-                    {publishingFb ? 'Posting…' : 'Post Reel'}
-                  </button>
-                  <button onClick={() => setFbDraft(null)} disabled={publishingFb} className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15">Cancel</button>
-                </div>
-              </div>
+            {panel && (
+              <PublishPanel
+                platform={panel}
+                color={panel === 'tiktok' ? '#FE2C55' : panel === 'instagram' ? '#E1306C' : panel === 'youtube' ? '#FF0000' : '#1877F2'}
+                kit={kits[panel] ?? null}
+                kitError={kitError}
+                writeUp={publishCaption}
+                hashtags={clip?.hashtags || []}
+                busy={panel === 'youtube' ? publishingYt : panel === 'facebook' ? publishingFb : false}
+                onConfirm={confirmPanel}
+                onCancel={() => setPanel(null)}
+              />
             )}
             {/* WHAT EACH PLATFORM TAKES, said before the button rather than
                 after a refusal. Only shown for a clip long enough to meet one. */}
@@ -1261,15 +1277,6 @@ export default function ClipFactoryPage() {
                 {' '}TikTok takes up to 10 minutes on most accounts, and Instagram Reels up to 15.
               </p>
             )}
-            {/* Reel COVER frame for the Instagram Reel — pick the still IG shows as
-                the cover so you never scrub for it in the IG app after posting. */}
-            <button
-              onClick={() => setCoverPickerOpen(true)}
-              className="inline-flex items-center gap-1.5 self-start rounded-full px-3 py-1.5 text-[13px] font-medium border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
-              title="Choose the still frame Instagram shows as your Reel cover"
-            >
-              <ImageIcon size={13} /> {coverOffsetMs != null ? `Reel cover · ${(coverOffsetMs / 1000).toFixed(1)}s` : 'Choose Reel cover'}
-            </button>
             {ytVideoId && (
               <div className="rounded-lg border border-[#FF0000]/25 bg-[#FF0000]/5 p-3 text-[12px] text-[#4b4b4f] dark:text-[#d2d2d7]">
                 <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Uploaded to YouTube. A Short can take a few minutes to process before it shows publicly.</p>
@@ -1279,25 +1286,6 @@ export default function ClipFactoryPage() {
                 </div>
               </div>
             )}
-            {composedCaption && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-1.5">Suggested caption</p>
-                <textarea readOnly value={composedCaption} rows={5} className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]" />
-              </div>
-            )}
-            {(() => {
-              const tags = buildYouTubeTags(clip?.hashtags || [], clip?.title || '')
-              return tags.length > 0 ? (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-1.5">YouTube tags (added automatically)</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {tags.map(t => (
-                      <span key={t} className="text-[11px] rounded-full px-2.5 py-1 border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]">{t}</span>
-                    ))}
-                  </div>
-                </div>
-              ) : null
-            })()}
             <div className="flex items-center gap-3 pt-1">
               <button onClick={() => setStage('enhance')} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b]"><ArrowLeft size={14} /> Back to Enhance</button>
               <button onClick={restart} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Start another</button>
@@ -1316,7 +1304,7 @@ export default function ClipFactoryPage() {
       {ttOpen && publishUrl && (
         <TikTokDirectModal
           burnedVideoUrl={publishUrl}
-          initialCaption={publishCaption}
+          initialCaption={ttCaption ?? publishCaption}
           tier={tier}
           sourceYoutubeVideoId={selectedVideo?.youtubeVideoId ?? ytVideoId ?? undefined}
           product={product.trim() || undefined}
@@ -1328,7 +1316,7 @@ export default function ClipFactoryPage() {
       {igOpen && publishUrl && (
         <InstagramBurnedModal
           burnedVideoUrl={publishUrl}
-          initialCaption={publishCaption}
+          initialCaption={igCaption ?? publishCaption}
           defaultDmLink={product.trim()}
           product={product.trim() || undefined}
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}

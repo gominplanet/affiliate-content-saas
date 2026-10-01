@@ -84,9 +84,12 @@ check('the Reel description is built on the server from the source video, its bl
   && /resolvePostAffiliateLink\(post/.test(REEL) && /amazonDestination\(asin, tag\)/.test(REEL))
 check('the product link is always in a Reel, in the creator\'s link style, with the disclosure',
   /product: true, content/.test(REEL) && /ensureAffiliateShareLink\(/.test(REEL) && /resolveCloakedLinkDetailed\(/.test(REEL) && /effectiveDisclosure\(/.test(REEL))
-check('the page previews the description, says when no product link was found, and posts exactly that text',
-  /dryRun: true/.test(PAGE) && /No product link found for this clip/.test(PAGE) && /description: fbDraft\.text/.test(PAGE)
-  && /onClick=\{prepareFacebookReel\}/.test(PAGE))
+// Since 2026-10-01 the Facebook pill opens the shared publish panel
+// (components/clip-factory/PublishPanel), which shows the description and
+// says when no product link was found.
+check('the page shows the description first, says when no product link was found, and posts exactly that text',
+  /openPanel\('facebook'\)/.test(PAGE) && /postFacebookReel\(c\.text\)/.test(PAGE) && /body: JSON\.stringify\(\{ videoUrl: publishUrl, description: text \}\)/.test(PAGE)
+  && /No product link found/.test(readFileSync('lib/clip-description.ts', 'utf8')))
 check('the clip remembers its source video on both ways in',
   /sourceVideoId: selectedVideo\.id/.test(PAGE) && /sourceVideoId: id \}/.test(PAGE))
 check('an empty description is refused rather than posted', /The Reel has no description/.test(ROUTE))
