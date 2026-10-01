@@ -9,7 +9,7 @@
 //   3. Real stat tiles: videos tracked, posts published, platforms
 //      connected, posts this period.
 //   4. Functional widgets preserved: NewsBanner, WpUpdateBanner,
-//      AmazonSitesReminder, ReferralBanner, SetupChecklist, ChannelStats.
+//      AmazonSitesReminder, ReferralBanner, ChannelStats.
 //      They render with their existing styling INSIDE the new chrome —
 //      they're banners/widgets, not the focal hero, so a separate
 //      restyling pass is acceptable.
@@ -23,7 +23,6 @@
 import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
-import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
@@ -48,8 +47,8 @@ import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
 import {
-  PlaySquare, ArrowRight, FileText, Layers, Gauge,
-  Facebook, Sparkles,
+  PlaySquare, FileText, Layers, Gauge,
+  Facebook,
   Scale, ArrowUpRight, BadgePercent, Eye, Clock,
   Youtube, Link2, BookOpen, Send, Mail,
 } from 'lucide-react'
@@ -357,7 +356,7 @@ export default async function DashboardPage() {
             Action-first: what to do next to earn more. Cheap to-do cards
             (rendered only when there's something to act on) + the two
             live cards (SEO ranking + link clicks) that lazy-load. Hidden
-            for brand-new users — the welcome card is their focus. */}
+            for brand-new users: the first-post checklist is their focus. */}
         {!isNewUser && (
           <>
             {/* Recommended tools — green panel. Revenue-converting partner links,
@@ -402,38 +401,6 @@ export default async function DashboardPage() {
         {/* "What's new" — its trigger pill now lives in the hero pills row
             (next to Tutorials); the modal is portaled to <body>. */}
 
-        {/* New-user welcome card. Restyled to use the V2 surface tokens
-            so it sits cohesively inside the new dark/light shell. */}
-        {isNewUser && (
-          <section
-            className="rounded-2xl border p-6"
-            style={{
-              backgroundColor: 'rgba(124, 58, 237, 0.08)',
-              borderColor: 'rgba(124, 58, 237, 0.25)',
-            }}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-xl bg-[#7C3AED] flex items-center justify-center flex-shrink-0">
-                <Sparkles size={18} className="text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-                  Welcome, let&apos;s ship your first review
-                </h2>
-                <p className="text-[13px] mb-5" style={{ color: 'var(--text-soft)' }}>
-                  Three quick steps and you&apos;re live on YouTube + your site. About 5 minutes end to end.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <WelcomeStep number={1} href="/brand" title="Build your Brand Profile" desc="Tone, niche, writing sample. Every review writes in your voice." />
-                  <WelcomeStep number={2} href="/setup" title="Connect YouTube + your site" desc="One-time OAuth. We auto-install your theme + plugin." />
-                  <WelcomeStep number={3} href="/content" title="Generate from a YouTube draft" desc="Pick an ASIN draft. We ship the rest." />
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <SetupChecklist />
         <ChannelStats />
 
       </div>
@@ -507,71 +474,5 @@ function StatTile({ icon, label, value, sublabel }: { icon: React.ReactNode; lab
         </p>
       )}
     </div>
-  )
-}
-
-function WelcomeStep({ number, href, title, desc }: { number: number; href: string; title: string; desc: string }) {
-  return (
-    <Link
-      href={href}
-      className="group flex items-center gap-2.5 p-3.5 rounded-xl border transition-colors"
-      style={{
-        backgroundColor: 'var(--surface)',
-        borderColor: 'var(--border)',
-      }}
-    >
-      <div className="w-6 h-6 rounded-full bg-[#7C3AED] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-        {number}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[12px] font-semibold truncate" style={{ color: 'var(--text)' }}>{title}</p>
-        <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{desc}</p>
-      </div>
-      <ArrowRight size={13} className="ml-auto group-hover:text-[#7C3AED] transition-colors flex-shrink-0" style={{ color: 'var(--text-faint)' }} />
-    </Link>
-  )
-}
-
-function VideoCard({ title, thumbnail, publishedAt, isVertical }: { title: string; thumbnail: string | null; publishedAt: string; isVertical: boolean }) {
-  const date = new Date(publishedAt)
-  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
-  const ago = days === 0 ? 'today' : days === 1 ? '1d ago' : `${days}d ago`
-  return (
-    <Link
-      href="/content"
-      className="group block rounded-2xl overflow-hidden border transition-all duration-200 hover:-translate-y-0.5"
-      style={{
-        backgroundColor: 'var(--surface)',
-        borderColor: 'var(--border)',
-        boxShadow: 'var(--card-shadow)',
-      }}
-    >
-      <div className="aspect-video relative overflow-hidden" style={{ backgroundColor: 'var(--surface-bright)' }}>
-        {thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbnail} alt={title} className="w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <PlaySquare size={28} className="opacity-40" style={{ color: 'var(--text-soft)' }} />
-          </div>
-        )}
-        {isVertical && (
-          <div
-            className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider text-white"
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-          >
-            Shorts
-          </div>
-        )}
-      </div>
-      <div className="p-4">
-        <p className="text-[13px] font-semibold leading-snug line-clamp-2 mb-2" style={{ color: 'var(--text)' }}>{title}</p>
-        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          <Clock size={11} />
-          <span>{ago}</span>
-          <Eye size={11} className="ml-auto opacity-0 group-hover:opacity-60 transition-opacity" />
-        </div>
-      </div>
-    </Link>
   )
 }

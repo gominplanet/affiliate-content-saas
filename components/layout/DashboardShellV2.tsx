@@ -43,7 +43,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -250,6 +250,7 @@ export default function DashboardShellV2({
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
+  useEffect(() => { setMobileOpen(false) }, [pathname])
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
@@ -273,6 +274,20 @@ export default function DashboardShellV2({
 
   // Persist collapsed state across navigations.
   const [collapsed, setCollapsed] = useState(false)
+  // PHONES: below md the sidebar is a drawer, opened from the menu button in
+  // the top bar and closed by a tap outside or by moving to another page. On a
+  // phone it always shows full width, whatever the desktop collapse state.
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+  const railCollapsed = collapsed && !isNarrow
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => setIsNarrow(mq.matches)
+    on()
+    mq.addEventListener?.('change', on)
+    return () => mq.removeEventListener?.('change', on)
+  }, [])
   useEffect(() => {
     try {
       const saved = localStorage.getItem('mvp_shell_collapsed')
@@ -948,8 +963,11 @@ export default function DashboardShellV2({
       className="min-h-screen font-[Inter,system-ui,sans-serif] flex"
     >
       {/* ── Sidebar ───────────────────────────────────────────────────── */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+      )}
       <aside
-        className={`${collapsed ? 'w-[68px]' : 'w-[232px]'} flex-shrink-0 border-r flex flex-col transition-[width] duration-200 sticky top-0 h-screen`}
+        className={`${railCollapsed ? 'md:w-[68px]' : 'md:w-[232px]'} w-[264px] flex-shrink-0 border-r flex flex-col transition-[width,transform] duration-200 fixed md:sticky top-0 left-0 z-40 h-screen ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
         style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
       >
         {/* Brand + collapse toggle. Each tier shows its own square badge — the
@@ -957,25 +975,26 @@ export default function DashboardShellV2({
             in for BOTH the mark and the title. The purple "M" + title branch is
             a fallback for any tier whose art is missing. */}
         {brandBadge ? (
-          <div className={`relative ${collapsed ? 'px-3 pt-4 pb-2' : 'px-4 pt-4 pb-3'}`}>
+          <div className={`relative ${railCollapsed ? 'px-3 pt-4 pb-2' : 'px-4 pt-4 pb-3'}`}>
             <Link href="/dashboard" className="block" title={`MVP Affiliate ${brandBadge.label}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={brandBadge.src}
                 alt={`MVP Affiliate ${brandBadge.label}`}
-                width={collapsed ? 40 : 112}
-                height={collapsed ? 40 : 112}
+                width={railCollapsed ? 40 : 112}
+                height={railCollapsed ? 40 : 112}
                 draggable={false}
-                className={`${collapsed ? 'w-10 h-10' : 'w-28 h-28'} mx-auto select-none`}
+                className={`${railCollapsed ? 'w-10 h-10' : 'w-28 h-28'} mx-auto select-none`}
               />
             </Link>
-            {!collapsed && (
+            {!railCollapsed && (
               <button
-                onClick={() => setCollapsed(true)}
+                onClick={() => (isNarrow ? setMobileOpen(false) : setCollapsed(true))}
                 className="absolute top-3 right-3 opacity-40 hover:opacity-90 transition-opacity"
-                title="Collapse sidebar"
+                title={isNarrow ? 'Close the menu' : 'Collapse sidebar'}
+                aria-label={isNarrow ? 'Close the menu' : 'Collapse sidebar'}
               >
-                <ChevronsLeft size={14} />
+                {isNarrow ? <X size={18} /> : <ChevronsLeft size={14} />}
               </button>
             )}
           </div>
@@ -983,15 +1002,15 @@ export default function DashboardShellV2({
           <div className="px-4 pt-5 pb-4 flex items-center justify-between">
             <Link href="/dashboard" className="flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-bold text-white text-[14px]">M</span>
-              {!collapsed && (
+              {!railCollapsed && (
                 <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
                   MVP Affiliate
                 </span>
               )}
             </Link>
-            {!collapsed && (
-              <button onClick={() => setCollapsed(true)} className="opacity-40 hover:opacity-90 transition-opacity" title="Collapse sidebar">
-                <ChevronsLeft size={14} />
+            {!railCollapsed && (
+              <button onClick={() => (isNarrow ? setMobileOpen(false) : setCollapsed(true))} className="opacity-40 hover:opacity-90 transition-opacity" title={isNarrow ? 'Close the menu' : 'Collapse sidebar'} aria-label={isNarrow ? 'Close the menu' : 'Collapse sidebar'}>
+                {isNarrow ? <X size={18} /> : <ChevronsLeft size={14} />}
               </button>
             )}
           </div>
@@ -1002,22 +1021,22 @@ export default function DashboardShellV2({
             (top plan) or admin (staff, nothing to buy). Follows the previewed
             tier when an admin uses "View as tier". */}
         {canUpgradeTier(badgeTier) && (
-          <div className={`${collapsed ? 'px-2' : 'px-4'} -mt-1 mb-2 flex justify-center`}>
+          <div className={`${railCollapsed ? 'px-2' : 'px-4'} -mt-1 mb-2 flex justify-center`}>
             <Link
               href="/billing"
               title="Upgrade your plan"
               className={`inline-flex items-center justify-center gap-1 rounded-full font-semibold transition-opacity hover:opacity-80 ${
-                collapsed ? 'p-1.5' : 'px-2.5 py-1 text-[11px]'
+                railCollapsed ? 'p-1.5' : 'px-2.5 py-1 text-[11px]'
               }`}
               style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.10)' }}
             >
-              <Sparkles size={collapsed ? 15 : 12} />
-              {!collapsed && 'Upgrade'}
+              <Sparkles size={railCollapsed ? 15 : 12} />
+              {!railCollapsed && 'Upgrade'}
             </Link>
           </div>
         )}
 
-        {collapsed && (
+        {railCollapsed && (
           <button onClick={() => setCollapsed(false)} className="mx-auto mb-3 opacity-40 hover:opacity-90 transition-opacity" title="Expand sidebar">
             <ChevronsRight size={14} />
           </button>
@@ -1030,7 +1049,7 @@ export default function DashboardShellV2({
             const isFavorites = group.label === 'My features'
             // An empty My features says how to fill it, once, until dismissed.
             if (isFavorites && visibleItems.length === 0) {
-              if (collapsed || favoritesHintHidden) return null
+              if (railCollapsed || favoritesHintHidden) return null
               return (
                 <div key="my-features-hint" className="rounded-xl border border-dashed px-3 py-2.5 text-[12px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
                   <p className="flex items-center gap-1.5 font-semibold text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: isDark ? '#F472B6' : '#BE185D' }}>
@@ -1063,7 +1082,7 @@ export default function DashboardShellV2({
               !!group.label &&
               group.label !== 'Account' &&
               group.label !== 'Admin' &&
-              !collapsed &&
+              !railCollapsed &&
               !!headerAccent
             const cardStyle = isCard && headerAccent
               ? {
@@ -1073,7 +1092,7 @@ export default function DashboardShellV2({
               : undefined
             // Every named section folds to its header (see openSections). The
             // icon-only rail and My features always show their items.
-            const collapsibleSection = !collapsed && !!group.label && !isFavorites
+            const collapsibleSection = !railCollapsed && !!group.label && !isFavorites
             const holdsActive = visibleItems.some((it) => isActive(it.href)) || (group.label === 'Admin' && pathname.startsWith('/admin'))
             const sectionOpen = !collapsibleSection || (openSections[group.label] ?? holdsActive)
             return (
@@ -1082,7 +1101,7 @@ export default function DashboardShellV2({
                 className={cn(isCard && 'rounded-xl border p-2')}
                 style={cardStyle}
               >
-                {!collapsed && group.label && (
+                {!railCollapsed && group.label && (
                   collapsibleSection ? (
                     <button
                       type="button"
@@ -1142,7 +1161,7 @@ export default function DashboardShellV2({
                   <div className="flex flex-col gap-0.5">
                     {visibleItems.map((item, idx) => (
                       <Fragment key={item.href + item.label}>
-                        {!collapsed && item.subheading && (
+                        {!railCollapsed && item.subheading && (
                           <p
                             className={cn('px-2.5 pb-0.5 text-[9.5px] uppercase tracking-[0.12em] font-semibold', idx > 0 && 'pt-2')}
                             style={{ color: 'var(--text-faint)' }}
@@ -1154,12 +1173,12 @@ export default function DashboardShellV2({
                           <NavItem
                             item={item}
                             active={isActive(item.href)}
-                            collapsed={collapsed}
+                            collapsed={railCollapsed}
                           />
                           {/* THE STAR: pins a feature to My features, or takes it
                               out. Shown on hover, and always while editing, so
                               the menu stays calm the rest of the time. */}
-                          {!collapsed && !item.external && (() => {
+                          {!railCollapsed && !item.external && (() => {
                             const starred = favorites.includes(item.href)
                             return (
                               <button
@@ -1183,7 +1202,7 @@ export default function DashboardShellV2({
                     ))}
                   </div>
                 )}
-                {isFavorites && !collapsed && (favoritesNote || favoritesSavedTo === 'device') && (
+                {isFavorites && !railCollapsed && (favoritesNote || favoritesSavedTo === 'device') && (
                   <p className="px-2.5 pt-1 text-[10.5px]" style={{ color: '#D97706' }}>
                     {favoritesNote || 'Saved on this browser only for now, so it will not show on your other devices.'}
                   </p>
@@ -1203,7 +1222,7 @@ export default function DashboardShellV2({
           {/* Admin View-as dropdown — same lib/view-as.ts wiring as the
               legacy sidebar. Only renders when the real DB tier is admin
               (gated server-side via the `tier` prop). */}
-          {isAdmin && !collapsed && (
+          {isAdmin && !railCollapsed && (
             <div className="px-2.5">
               <p className="mb-1.5 text-[10px] uppercase tracking-[0.15em] font-medium" style={{ color: 'var(--text-faint)' }}>
                 Admin · view as
@@ -1244,13 +1263,13 @@ export default function DashboardShellV2({
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
           <div
-            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg group ${collapsed ? 'justify-center' : ''}`}
+            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg group ${railCollapsed ? 'justify-center' : ''}`}
             style={{ backgroundColor: 'transparent' }}
           >
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center text-[13px] font-semibold text-white flex-shrink-0">
               {userInitial}
             </div>
-            {!collapsed && (
+            {!railCollapsed && (
               <>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>
@@ -1277,7 +1296,7 @@ export default function DashboardShellV2({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
         <div
-          className="border-b px-8 py-3 flex items-center gap-3 backdrop-blur-md sticky top-0 z-10"
+          className="border-b px-3 sm:px-5 md:px-8 py-3 flex items-center gap-2 sm:gap-3 backdrop-blur-md sticky top-0 z-20"
           style={{
             borderColor: 'var(--border)',
             backgroundColor: isDark ? 'rgba(14,14,17,0.85)' : 'rgba(250,250,248,0.85)',
@@ -1290,13 +1309,21 @@ export default function DashboardShellV2({
           {/* The site chip is a WordPress switcher. Amazon Influencers have no
               WP site (sites: 0), so it would render "No WordPress yet" linking to
               a walled-off /setup — a confusing dead-end. Hide it for Amazon. */}
-          {!amazonView && <SiteSwitcherChip currentHostname={wpHostname} />}
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="md:hidden p-2 -ml-1 rounded-lg flex-shrink-0"
+            style={{ color: 'var(--text)' }}
+            aria-label="Open the menu"
+          >
+            <Menu size={18} />
+          </button>
+          {!amazonView && <div className="hidden sm:block min-w-0"><SiteSwitcherChip currentHostname={wpHostname} /></div>}
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
-          <TopbarSearch isAdmin={isAdmin} />
+          <div className="min-w-0 flex-1 md:flex-none"><TopbarSearch isAdmin={isAdmin} /></div>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Get / Update SCOUT — a load-unpacked extension never auto-
                 updates, so the latest zip is reachable here next to the WP
                 theme-update button. Renders nothing when SCOUT is current. */}
@@ -1329,7 +1356,7 @@ export default function DashboardShellV2({
                   href={wpSiteUrl.replace(/\/+$/, '')}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-2 rounded-lg border text-[12px] font-medium hidden lg:inline-flex items-center gap-1.5 transition-colors"
                   style={{
                     backgroundColor: 'var(--surface)',
                     borderColor: 'var(--border)',
@@ -1345,7 +1372,7 @@ export default function DashboardShellV2({
                   href={`${wpSiteUrl.replace(/\/+$/, '')}/wp-admin`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-2 rounded-lg border text-[12px] font-medium hidden lg:inline-flex items-center gap-1.5 transition-colors"
                   style={{
                     backgroundColor: 'var(--surface)',
                     borderColor: 'var(--border)',
@@ -1360,7 +1387,7 @@ export default function DashboardShellV2({
                 {/* Clear Cache — one click purges the site's page cache
                     (LiteSpeed/SG/Cloudflare) so brand + theme changes go live
                     immediately. Sits next to Visit Blog / WP Admin. */}
-                <PurgeCacheTopbarButton />
+                <span className="hidden lg:contents"><PurgeCacheTopbarButton /></span>
               </>
             )}
 
@@ -1382,7 +1409,7 @@ export default function DashboardShellV2({
                 ? `${openTickets} open support ticket${openTickets === 1 ? '' : 's'} waiting`
                 : 'Open a support ticket'}
             >
-              <LifeBuoy size={12} /> Support{ticketAlert ? ` (${openTickets})` : ''}
+              <LifeBuoy size={12} /> <span className="hidden sm:inline">Support</span>{ticketAlert ? ` (${openTickets})` : ''}
             </Link>
 
             {/* Theme toggle */}

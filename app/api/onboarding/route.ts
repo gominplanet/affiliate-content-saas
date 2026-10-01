@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server'
 import { parseOnboardingPath } from '@/lib/onboarding-path'
 import { createServerClient } from '@/lib/supabase/server'
 
-const MAX_STEP = 7
+const MAX_STEP = 8
 
 /**
  * GET /api/onboarding — live completion snapshot for the funnel. Polled by the

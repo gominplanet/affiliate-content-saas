@@ -19,6 +19,8 @@
  * /api/onboarding. Styled with explicit dark colors because top-level routes
  * don't inherit the dashboard's dark CSS tokens.
  */
+import { isExtensionAvailable } from '@/lib/extension-frame'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -27,6 +29,7 @@ import {
   Check, Wrench, Youtube, Link2, Palette, Sparkles, Brush, UserSquare,
   ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper, Lock, Play,
   LifeBuoy, X,
+  Puzzle,
 } from 'lucide-react'
 
 // ── Replace with your real YouTube video ID (e.g. "dQw4w9WgXcQ") ────────────
@@ -58,6 +61,8 @@ interface Status {
   brandStarted: boolean
   voiceStarted: boolean
   faceReady: boolean
+  /** Checked in this browser (SCOUT answers the page), not stored. */
+  scoutInstalled?: boolean
 }
 
 interface StepDef {
@@ -82,12 +87,16 @@ const STEPS: StepDef[] = [
   { n: 1, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected, required: true },
   // WordPress is OPTIONAL to finish onboarding. A creator can explore the whole
   // app first; we ask for WordPress when they publish their first post.
-  { n: 2, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected },
-  { n: 3, key: 'aff', title: 'Affiliate Links', icon: <Link2 size={16} />, done: (s) => s.affiliateConnected },
-  { n: 4, key: 'brand', title: 'Brand Profile', icon: <Palette size={16} />, done: (s) => s.brandStarted },
-  { n: 5, key: 'voice', title: 'Voice Training', icon: <Sparkles size={16} />, done: (s) => s.voiceStarted },
-  { n: 6, key: 'customize', title: 'Customize Blog', icon: <Brush size={16} />, done: () => false, manual: true },
-  { n: 7, key: 'face', title: 'Face Models', icon: <UserSquare size={16} />, done: (s) => s.faceReady },
+  // SCOUT, right after YouTube (Seb, 2026-10-02): MVP needs it for Amazon
+  // uploads, Studio settings, pinned comments and Creator Connections, so it
+  // is asked for early and checked live, not left to be found later.
+  { n: 2, key: 'scout', title: 'Install SCOUT', icon: <Puzzle size={16} />, done: (s) => !!s.scoutInstalled },
+  { n: 3, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected },
+  { n: 4, key: 'aff', title: 'Affiliate Links', icon: <Link2 size={16} />, done: (s) => s.affiliateConnected },
+  { n: 5, key: 'brand', title: 'Brand Profile', icon: <Palette size={16} />, done: (s) => s.brandStarted },
+  { n: 6, key: 'voice', title: 'Voice Training', icon: <Sparkles size={16} />, done: (s) => s.voiceStarted },
+  { n: 7, key: 'customize', title: 'Customize Blog', icon: <Brush size={16} />, done: () => false, manual: true },
+  { n: 8, key: 'face', title: 'Face Models', icon: <UserSquare size={16} />, done: (s) => s.faceReady },
 ]
 
 const ACCENT = '#7C3AED'
@@ -445,6 +454,7 @@ export default function OnboardingFunnel({
 function StepBody({ stepKey, status, onConnected, youtubeRequired }: { stepKey: string; status: Status; onConnected: () => void; youtubeRequired: boolean }) {
   switch (stepKey) {
     case 'intro': return <IntroVideoStep />
+    case 'scout': return <ScoutStep />
     case 'wp': return <WordPressStep connected={status.wpConnected} onConnected={onConnected} />
     case 'yt': return <YouTubeStep connected={status.ytConnected} required={youtubeRequired} />
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
@@ -457,6 +467,36 @@ function StepBody({ stepKey, status, onConnected, youtubeRequired }: { stepKey: 
       href="/photobooth" cta="Open Face Models" done={status.faceReady} />
     default: return null
   }
+}
+
+/* SCOUT: why MVP needs it, the one-click install, and a live check. */
+function ScoutStep() {
+  const [state, setState] = useState<'checking' | 'yes' | 'no'>('checking')
+  const check = useCallback(async () => {
+    setState('checking')
+    try { setState((await isExtensionAvailable()) ? 'yes' : 'no') } catch { setState('no') }
+  }, [])
+  useEffect(() => { void check() }, [check])
+  return (
+    <>
+      <StepHeading
+        title="Install SCOUT, MVP's Chrome extension"
+        blurb="MVP needs SCOUT to work properly. It does the parts that only your own signed-in browser can: uploading videos to your Amazon storefront, ticking paid promotion and the end screen in YouTube Studio, pinning your comments, and joining and messaging Creator Connections brands. It only acts when MVP asks it to."
+      />
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4 flex flex-col gap-3">
+        {state === 'checking' && <p className="text-sm text-[#a1a1a6] inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Checking this browser for SCOUT…</p>}
+        {state === 'yes' && <p className="text-sm text-[#34c759] inline-flex items-center gap-2"><Check size={16} /> SCOUT is installed in this browser.</p>}
+        {state === 'no' && <p className="text-sm text-[#ff9f0a]">SCOUT is not installed in this browser yet. Install it from the Chrome Web Store, then check again.</p>}
+        <div className="flex flex-wrap items-center gap-3">
+          <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
+            Add SCOUT to Chrome
+          </a>
+          <button onClick={() => void check()} className="text-sm text-[#a1a1a6] hover:text-white transition-colors">Check again</button>
+        </div>
+        <p className="text-xs text-[#8e8e93]">SCOUT runs in Chrome on a computer. On a phone, set up the rest now and install SCOUT on your computer later.</p>
+      </div>
+    </>
+  )
 }
 
 function StepHeading({ title, blurb }: { title: string; blurb: string }) {
@@ -1089,8 +1129,8 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
   return (
     <>
       <StepHeading
-        title="Set up affiliate link routing"
-        blurb="This is how your product links earn commissions. If you use Geniuslink, paste your API key + secret and we’ll create the two link groups MVP needs. No Geniuslink? Just add your Amazon Associates tag instead — that works too."
+        title="Set up your affiliate links"
+        blurb="This is how your product links earn. Add your Amazon Associates tag. We recommend Passport, MVP's own short links that send every shopper to their own country's Amazon store with your tag. Already use Geniuslink? It is supported too."
       />
       {done && (
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
@@ -1099,8 +1139,18 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
       )}
 
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-        <p className="font-semibold text-sm mb-1">Geniuslink (recommended)</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">Find these in your Geniuslink dashboard under API access. We’ll auto-create your two link groups when you verify.</p>
+        <p className="font-semibold text-sm mb-1">Your Amazon Associates tag</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">Your tracking ID (e.g. <span className="text-[#c7c7cc]">yourtag-20</span>). Every Amazon link MVP makes carries it.</p>
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="yourtag-20" className={inputCls} />
+      </div>
+
+      <div className="rounded-xl border border-[#7C3AED]/40 bg-[#7C3AED]/[0.06] p-5 mb-4">
+        <p className="font-semibold text-sm mb-1">Passport Links (recommended, built into MVP)</p>
+        <p className="text-sm text-[#a1a1a6]">MVP&apos;s own short links (mvpl.ink). One link sends each shopper to their own country&apos;s Amazon store with your tag for that country, and shows you which channel each click came from. Nothing to sign up for: on a plan that includes Passport, switch it on in Brand Profile under Affiliate Link Routing and MVP uses it for your links from then on.</p>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
+        <p className="font-semibold text-sm mb-1">Already use Geniuslink? (optional)</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">MVP supports Geniuslink and Bitly too. Paste your Geniuslink API key and secret (Geniuslink dashboard, API access) and MVP creates the two link groups it needs.</p>
         <div className="flex flex-col gap-2">
           <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="Geniuslink API key" className={inputCls} />
           <input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Geniuslink API secret" type="password" className={inputCls} />
@@ -1113,12 +1163,6 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
             Don’t have Geniuslink? Sign up →
           </a>
         </div>
-      </div>
-
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-        <p className="font-semibold text-sm mb-1">Or use your Amazon Associates tag</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">Your storefront tracking ID (e.g. <span className="text-[#c7c7cc]">yourtag-20</span>). Used when Geniuslink isn’t set.</p>
-        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="yourtag-20" className={inputCls} />
       </div>
 
       <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60" style={{ background: 'rgba(255,255,255,0.1)' }}>

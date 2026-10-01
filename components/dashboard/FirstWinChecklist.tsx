@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Circle, ArrowRight, X } from 'lucide-react'
+import { isExtensionAvailable } from '@/lib/extension-frame'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 /**
  * First-win onboarding checklist. Unlike the manual external-accounts list, this
@@ -25,19 +27,25 @@ interface Props {
   socialConnected: boolean
 }
 
-interface Step { id: string; label: string; desc: string; href: string; cta: string; done: boolean }
+interface Step { id: string; label: string; desc: string; href: string; cta: string; done: boolean; external?: boolean }
 
 export default function FirstWinChecklist(p: Props) {
   const [dismissed, setDismissed] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  // SCOUT is checked in this browser, live: it is the one step MVP cannot see
+  // from the server. Unknown until the check answers, and never shown as done
+  // on a guess.
+  const [scout, setScout] = useState<boolean | null>(null)
 
   useEffect(() => {
     try { if (localStorage.getItem(STORAGE_KEY) === '1') setDismissed(true) } catch { /* private mode */ }
     setHydrated(true)
+    isExtensionAvailable().then((ok) => setScout(!!ok)).catch(() => setScout(false))
   }, [])
 
   const steps: Step[] = [
-    { id: 'brand', label: 'Set up your Brand Profile', desc: 'Your name, logo and colours — used across every post and page.', href: '/brand', cta: 'Set up brand', done: p.brandReady },
+    { id: 'brand', label: 'Set up your Brand Profile', desc: 'Your name, logo and colours, used across every post and page.', href: '/brand', cta: 'Set up brand', done: p.brandReady },
+    { id: 'scout', label: 'Install the SCOUT extension', desc: scout === null ? 'Checking this browser for SCOUT\u2026' : 'SCOUT is how MVP reads Amazon for you: products, Creator Connections campaigns and your Amazon uploads. MVP needs it. Install it in Chrome on a computer, then come back to this page.', href: SCOUT_STORE_LISTING_URL, cta: 'Install SCOUT', done: scout === true, external: true },
     { id: 'source', label: 'Connect YouTube or your blog', desc: 'Connect a YouTube channel to turn videos into content, and your WordPress blog to publish.', href: p.youtubeConnected ? '/wordpress' : '/connect-youtube', cta: 'Connect', done: p.youtubeConnected || p.wpConnected },
     { id: 'content', label: 'Create your first post', desc: 'Turn a video or any product link into a full review, thumbnail and pins.', href: '/content', cta: 'Create a post', done: p.hasContent },
     { id: 'social', label: 'Connect a social account', desc: 'Push your posts to Instagram, Facebook, Pinterest and more.', href: '/connect-socials', cta: 'Connect socials', done: p.socialConnected },
@@ -87,14 +95,21 @@ export default function FirstWinChecklist(p: Props) {
               <p className={`text-sm font-medium ${s.done ? 'text-[#86868b] dark:text-[#8e8e93] line-through' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>{s.label}</p>
               {!s.done && <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">{s.desc}</p>}
             </div>
-            {!s.done && (
+            {!s.done && !(s.id === 'scout' && scout === null) && (s.external ? (
+              <a
+                href={s.href} target="_blank" rel="noopener noreferrer"
+                className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${s.id === next?.id ? 'text-white bg-[#7C3AED] hover:opacity-90' : 'text-[#7C3AED] hover:underline'}`}
+              >
+                {s.cta} {s.id === next?.id && <ArrowRight size={12} />}
+              </a>
+            ) : (
               <Link
                 href={s.href}
                 className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${s.id === next?.id ? 'text-white bg-[#7C3AED] hover:opacity-90' : 'text-[#7C3AED] hover:underline'}`}
               >
                 {s.cta} {s.id === next?.id && <ArrowRight size={12} />}
               </Link>
-            )}
+            ))}
           </div>
         ))}
       </div>
