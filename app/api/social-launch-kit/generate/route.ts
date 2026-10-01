@@ -82,6 +82,14 @@ export async function POST(request: Request) {
     ? `\n- "boards": exactly ${spec.boards} starter boards, each an object {"name","description"}. Board names are short and searchable; each description is 1-2 keyword-rich sentences (this is how Pinterest ranks them).`
     : ''
 
+  const rulesAsk = spec.rules
+    ? `\n- "rules": exactly ${spec.rules} short group rules, each an object {"title","description"}. Cover: deals and links are posted by the admins only, be kind, no spam or selling, and that links may be affiliate links.`
+    : ''
+  const questionsAsk = spec.questions
+    ? `\n- "questions": exactly ${spec.questions} membership questions for people asking to join (what they shop for, how they found the group, and whether they agree to the rules).`
+    : ''
+  const firstPostLine = spec.firstPostAsk || 'a warm, on-voice first post introducing the page (2-4 sentences)'
+
   const system = `You set up a creator's ${spec.label} profile so it looks professional and gets discovered. You write in THEIR voice, grounded in their real brand — never generic, never invented. ${BANNED_RULE}
 Return ONLY a single JSON object. No prose, no markdown fences.`
 
@@ -96,7 +104,7 @@ TASK — produce a ${spec.label} launch kit as a JSON object with these keys:
 - "bioLong": a fuller about/description, <= ${spec.bioLongMax} characters, saying who they help and what they post. 1-2 relevant emoji are fine.
 - "category": the single best ${spec.label} category for this creator.
 - "keywords": 6-10 search keywords/interests to add so ${spec.label} surfaces them.
-- "firstPost": a warm, on-voice first post introducing the page (2-4 sentences).${boardsAsk}
+- "firstPost": ${firstPostLine}.${boardsAsk}${rulesAsk}${questionsAsk}
 Everything must be specific to THIS brand and niche.`
 
   let raw = ''
@@ -152,6 +160,15 @@ Everything must be specific to THIS brand and niche.`
       .filter(bd => bd.name)
       .slice(0, spec.boards)
   }
+
+  if (spec.rules && Array.isArray(parsed.rules)) {
+    kit.rules = (parsed.rules as unknown[])
+      .map(x => (x ?? {}) as Record<string, unknown>)
+      .map(x => ({ title: str(x.title), description: str(x.description) }))
+      .filter(r => r.title)
+      .slice(0, spec.rules)
+  }
+  if (spec.questions) kit.questions = arr(parsed.questions).slice(0, spec.questions)
 
   // Save this platform's copy for the ACTIVE site so it persists. Manual upsert
   // (uniqueness now spans site_id via a coalesce index that onConflict can't

@@ -65,6 +65,7 @@ export async function POST(request: Request) {
   if (!spec) return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
   const kind: 'banner' | 'avatar' = body.kind === 'avatar' ? 'avatar' : 'banner'
   if (kind === 'banner' && !spec.banner) return NextResponse.json({ error: 'This platform has no cover image.' }, { status: 400 })
+  if (kind === 'avatar' && !spec.avatar) return NextResponse.json({ error: 'This platform has no profile picture.' }, { status: 400 })
 
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (intRow?.tier as Tier) ?? 'trial'
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
   const tone = (Array.isArray(b.tone) ? b.tone : []).filter(Boolean).map(String).join(', ')
 
   const customRef = (body.referenceImage || '').trim()
-  const target = kind === 'banner' ? spec.banner! : spec.avatar
+  const target = kind === 'banner' ? spec.banner! : spec.avatar!
   const hasLogo = !!(logoUrl || customRef)
 
   // Compact brand context (for accuracy) + a short, punchy cover headline.

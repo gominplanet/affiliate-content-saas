@@ -48,6 +48,17 @@ check('the post is copied before SCOUT is asked',
   && UI.indexOf('navigator.clipboard.writeText(groupCopy) } catch') < UI.indexOf('requestFacebookGroupPrefill(g.url'))
 check('success and failure look different', /st\.filled \? 'text-emerald/.test(UI))
 
+// THE LAUNCH KIT MAKES THE GROUP THAT SCOUT FILLS. Its last step is what
+// connects the two: the Group link goes into Brand Profile, where Fill with
+// SCOUT reads it, and onto the Associates website list before any link.
+const LK = read('lib/social-launch-kit.ts')
+check('the Launch Kit offers a Facebook Group', /facebook_group: \{/.test(LK) && /LAUNCH_PLATFORMS\.facebook_group/.test(LK))
+check('and its last step connects it to SCOUT and Amazon', /Brand Profile under Facebook Groups so Fill with SCOUT/.test(LK) && /Associates website list/.test(LK))
+const GEN = read('app/api/social-launch-kit/generate/route.ts')
+check('the kit writes group rules and membership questions', /"rules": exactly/.test(GEN) && /"questions": exactly/.test(GEN))
+const PG = read('app/(dashboard)/social-launch-kit/page.tsx')
+check('a platform with no profile picture shows no avatar slot', /\{spec\.avatar && \(/.test(PG))
+
 if (failures.length) {
   console.error(`\n❌ fb-group-fill: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
