@@ -69,7 +69,7 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
       withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('mvp-provenance') > withProvenanceNote(`<p>A</p>\n${vid}`, 'own-video', 'Seb').indexOf('</iframe>')
       && withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('mvp-provenance') < withProvenanceNote(`<p>A</p>\n${vid}`, 'none', 'Seb').indexOf('</iframe>'))
     check('the correction runs on its own until none are left',
-      /await fixProvenanceLines\(admin\)/.test(read('app/api/cron/reconcile-stuck-images/route.ts'))
+      /await fixProvenanceLines\(admin, undefined, share\(130\)\)/.test(read('app/api/cron/reconcile-stuck-images/route.ts'))
       && /\.not\('video_id', 'is', null\)/.test(read('lib/provenance-fix.ts')) && /checkSamePost\(wp,/.test(read('lib/provenance-fix.ts')))
   }
   check('a comparison says how many products come from the creator\'s own videos', /2 of the 3 products/.test(comparisonProvenanceText(2, 3, 'Seb')))

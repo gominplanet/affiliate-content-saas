@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import {
-  CLIP_PLATFORM_RULES, composeClipDescription, unavailableReasons,
+  CLIP_PLATFORM_RULES, CLIP_TEXT_LIMIT, composeClipDescription, unavailableReasons,
   type ClipInclude, type ClipPlatform,
 } from '@/lib/clip-description'
 
@@ -48,6 +48,9 @@ export default function PublishPanel(props: {
   writeUp: string
   hashtags: string[]
   busy: boolean
+  /** Already posted to this platform from this clip: posting again makes a second post. */
+  alreadyPosted?: boolean
+  onRetry: () => void
   onConfirm: (c: PublishChoice) => void
   onCancel: () => void
 }) {
@@ -76,11 +79,19 @@ export default function PublishPanel(props: {
   // choice rebuilds it only when they ask, so their edits are never lost.
   useEffect(() => { if (!edited) setText(composed) }, [composed, edited])
 
+  // What YouTube takes: a phrase of 2 to 40 characters, no angle brackets or
+  // quotes, all of them under 500 characters together.
+  const tagTotal = tags.reduce((n, t) => n + t.length + 1, 0)
   const addTag = () => {
-    const v = tagDraft.replace(/^#+/, '').trim().toLowerCase()
-    if (v && !tags.includes(v) && tags.length < 15) setTags([...tags, v])
+    const v = tagDraft.replace(/^#+/, '').replace(/[<>"]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+    if (v.length >= 2 && v.length <= 40 && !tags.includes(v) && tags.length < 15 && tagTotal + v.length + 1 <= 480) setTags([...tags, v])
     setTagDraft('')
   }
+  const limit = CLIP_TEXT_LIMIT[platform]
+  const tooLong = text.length > limit
+  // No disclosure means the post must not go: the links request failed and
+  // nothing is known about this clip, which is not the same as nothing found.
+  const blocked = !kit?.disclosure
   const confirmLabel = platform === 'youtube' ? 'Post Short' : platform === 'facebook' ? 'Post Reel' : `Continue to ${rules.label}`
 
   return (
@@ -93,7 +104,12 @@ export default function PublishPanel(props: {
       {!kit && !props.kitError && (
         <p className="text-[12.5px] text-[#86868b] inline-flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Finding the product link and your links…</p>
       )}
-      {props.kitError && <p className="text-[12.5px] text-[#ff3b30]">{props.kitError}</p>}
+      {props.kitError && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[12.5px] text-[#ff3b30]">{props.kitError} Nothing can post until MVP has your disclosure and links.</p>
+          <button onClick={props.onRetry} className="text-[12.5px] font-semibold hover:underline" style={{ color: props.color }}>Try again</button>
+        </div>
+      )}
 
       {kit && (<>
         <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] leading-snug">{rules.linkNote}</p>
@@ -116,7 +132,7 @@ export default function PublishPanel(props: {
             return (
               <label key={o.key} title={why} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] ${why ? 'opacity-50' : 'cursor-pointer'}`}
                 style={{ borderColor: on ? props.color : 'rgba(0,0,0,0.12)', color: on ? props.color : undefined }}>
-                <input type="checkbox" checked={on} disabled={!!why} onChange={(e) => { setInclude((p) => ({ ...p, [o.key]: e.target.checked })); setEdited(false) }} />
+                <input type="checkbox" checked={on} disabled={!!why} onChange={(e) => setInclude((p) => ({ ...p, [o.key]: e.target.checked }))} />
                 {o.label}
               </label>
             )
@@ -130,22 +146,29 @@ export default function PublishPanel(props: {
         )}
         {kit.linkNote && include.productLink && <p className="text-[12px] text-[#ff9500] leading-snug">{kit.linkNote}</p>}
         {include.review && missing.review && <p className="text-[12px] text-[#86868b] leading-snug">{missing.review}</p>}
-        <p className="text-[12px] text-[#86868b] leading-snug">Your disclosure is always included: the FTC and Amazon require it wherever there is an affiliate link or a link in bio.</p>
+        {kit.disclosure
+          ? <p className="text-[12px] text-[#86868b] leading-snug">Your disclosure is always included: the FTC and Amazon require it wherever there is an affiliate link or a link in bio.</p>
+          : <p className="text-[12px] text-[#ff3b30] leading-snug">No disclosure could be loaded, so this cannot post. Try again.</p>}
 
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7]">Description, exactly as it posts</span>
           <textarea value={text} rows={8} onChange={(e) => { setText(e.target.value); setEdited(true) }}
             className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent p-2 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7]" />
-          {edited && (
-            <button onClick={() => setEdited(false)} className="self-start text-[12px] font-medium hover:underline" style={{ color: props.color }}>
-              Rebuild from the choices (drops your edits)
-            </button>
-          )}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {edited ? (
+              <span className="text-[12px] text-[#86868b]">
+                Your edits are kept, so the choices above no longer change the text.{' '}
+                <button onClick={() => setEdited(false)} className="font-medium hover:underline" style={{ color: props.color }}>Rebuild from the choices (drops your edits)</button>
+              </span>
+            ) : <span />}
+            <span className={`text-[11.5px] ${tooLong ? 'text-[#ff3b30] font-semibold' : 'text-[#86868b]'}`}>{text.length}/{limit}{tooLong ? ': too long, the end (your disclosure) would be cut' : ''}</span>
+          </div>
+          {platform === 'youtube' && <p className="text-[11.5px] text-[#86868b]">YouTube also gets #Shorts at the end, so it files the clip as a Short.</p>}
         </div>
 
         {platform === 'youtube' && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7]">Tags ({tags.length}/15)</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7]">Tags ({tags.length}/15, {tagTotal}/500 characters)</span>
             <p className="text-[12px] text-[#86868b] leading-snug">Tags help YouTube with spellings and related searches; the title and the first lines of the description matter more.</p>
             <div className="flex flex-wrap gap-1.5">
               {tags.map((t) => (
@@ -161,12 +184,15 @@ export default function PublishPanel(props: {
           </div>
         )}
 
+        {props.alreadyPosted && (
+          <p className="text-[12px] text-[#ff9500] leading-snug">Already posted to {rules.label} from this clip. Posting again makes a second post.</p>
+        )}
         <div className="flex gap-2">
           <button
             onClick={() => props.onConfirm({ text: text.trim(), ...(platform === 'youtube' ? { title: title.trim(), tags } : {}) })}
-            disabled={props.busy || !text.trim() || (platform === 'youtube' && !title.trim())}
+            disabled={props.busy || blocked || tooLong || !text.trim() || (platform === 'youtube' && !title.trim())}
             className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: props.color }}>
-            {props.busy ? 'Posting…' : confirmLabel}
+            {props.busy ? 'Posting…' : props.alreadyPosted ? `${confirmLabel} again` : confirmLabel}
           </button>
           <button onClick={props.onCancel} disabled={props.busy} className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15">Cancel</button>
         </div>

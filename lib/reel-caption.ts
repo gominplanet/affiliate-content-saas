@@ -33,6 +33,7 @@ import { amazonDestination } from '@/lib/post-destination'
 import { normalizeAsinInput } from '@/lib/asin'
 import { parseLinkPrefs, composeCaption, effectiveDisclosure, youtubeWatchUrl, isAmazonLink, type ContentLink } from '@/lib/social-link-mode'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { landsOnAmazon } from '@/lib/amazon-destination'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -124,6 +125,7 @@ export async function resolveClipLinks(sb: Sb, userId: string, input: {
         source: channel,
       }).catch(() => link)
       productSource = 'blog-post'
+      if (!amazon && productLink) amazon = await landsOnAmazon(userId, productLink)
     }
   }
 
@@ -139,7 +141,7 @@ export async function resolveClipLinks(sb: Sb, userId: string, input: {
       const r = await resolveCloakedLinkDetailed({ supabase: sb, userId, destination: dest, asin, channel, source: channel, label: title, config: cfg })
       productLink = r.url || dest
       linkNote = cloakFallbackNote(r)
-      amazon = !!asin || isAmazonLink(dest)
+      amazon = !!asin || isAmazonLink(dest) || (typedUrl ? await landsOnAmazon(userId, typedUrl) : false)
       productSource = (typedAsin || typedUrl) ? 'enhance-product' : 'video-asin'
     }
   }

@@ -67,6 +67,19 @@ export async function POST(request: Request) {
     }
 
     const results = await Promise.allSettled(tasks)
+    // THE TITLE AND DESCRIPTION ARE THE PUSH. If YouTube refused them, the
+    // answer says so: it used to be ok:true, and the page marked the video
+    // applied and queued its first comment while nothing had changed.
+    if (results[0]?.status === 'rejected') {
+      const why = results[0].reason instanceof Error ? results[0].reason.message : String(results[0].reason)
+      const quota = /quotaExceeded|dailyLimitExceeded|quota/i.test(why)
+      return NextResponse.json({
+        ok: false, quotaExceeded: quota,
+        error: quota
+          ? 'YouTube\u2019s daily upload quota is used up, so nothing changed. It resets at midnight Pacific time.'
+          : `YouTube did not accept the title and description, so nothing changed: ${why.slice(0, 200)}`,
+      }, { status: quota ? 429 : 502 })
+    }
     const thumbResult = results[1]
     const thumbWarning = thumbResult?.status === 'rejected'
       ? (thumbResult.reason instanceof Error ? thumbResult.reason.message : 'Thumbnail upload failed')

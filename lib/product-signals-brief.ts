@@ -93,6 +93,9 @@ export function containsPriceClaim(text: string): boolean {
   if (/\b(USD|GBP|EUR|CAD|AUD)\b/i.test(s)) return true
   if (/\b\d+[.,]\d{2}\b/.test(s)) return true
   if (/\b\d+(\.\d+)?\s*%\s*(off|discount|cheaper|less|below|lower)\b/i.test(s)) return true
+  // "save 30%", "30 percent off", "up to 40% off"
+  if (/\b\d+(\.\d+)?\s*(%|percent)\s*(off|discount|cheaper|less|below|lower|savings?)\b/i.test(s)) return true
+  if (/\bsave\s+(up\s+to\s+)?\d+(\.\d+)?\s*(%|percent)/i.test(s)) return true
   if (/\b(dollars?|cents?|quid|euros?)\b/i.test(s)) return true
   return false
 }

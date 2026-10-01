@@ -51,6 +51,13 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient()
+  // ONE BUDGET FOR EVERY STEP, inside the 300 seconds this function gets. Each
+  // sweep used to take its own time from when it started (two had none), so
+  // one unreachable site could run the clock out before the later sweeps ran,
+  // every ten minutes, for good. Each step gets a share, and stops between
+  // posts when its share is spent.
+  const started = Date.now()
+  const share = (endAtSec: number) => started + endAtSec * 1000
   // Millisecond-free ISO so the value has no internal '.' that PostgREST's
   // dot-delimited .or() parser could mis-split.
   const cutoff = new Date(Date.now() - STUCK_MINUTES * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
@@ -68,7 +75,7 @@ export async function GET(request: Request) {
   // Posts waiting for their videos.
   let videoHold: unknown = null
   try {
-    const r = await holdAndRelease(admin)
+    const r = await holdAndRelease(admin, share(60))
     videoHold = r.missingColumn
       ? { skipped: 'Posts cannot wait for their videos until migration 388 is run.' }
       : { held: r.held, released: r.released, letGo: r.letGo, failed: r.failed }
@@ -80,7 +87,7 @@ export async function GET(request: Request) {
   // product ourselves" (lib/provenance-fix), a few a run until none are left.
   let provenance: unknown = null
   try {
-    provenance = await fixProvenanceLines(admin)
+    provenance = await fixProvenanceLines(admin, undefined, share(130))
   } catch (e) {
     provenance = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }
@@ -89,7 +96,7 @@ export async function GET(request: Request) {
   // a few a run until none are left. Amazon policy 2(b).
   let prices: unknown = null
   try {
-    prices = await sweepPublishedPrices(admin)
+    prices = await sweepPublishedPrices(admin, undefined, share(200))
   } catch (e) {
     prices = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }
@@ -97,7 +104,7 @@ export async function GET(request: Request) {
   // And the price in every post's review data (JSON-LD), every account.
   let schemaPrices: unknown = null
   try {
-    schemaPrices = await sweepSchemaPrices(admin)
+    schemaPrices = await sweepSchemaPrices(admin, undefined, share(260))
   } catch (e) {
     schemaPrices = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }

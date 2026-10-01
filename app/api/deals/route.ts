@@ -1375,13 +1375,13 @@ DEAL ENVELOPE
 - ${endLine}
 - ${occasionLine}
 - Badge text on thumbnail: ${p.badgeLabel} (don't put this exact string in the body, the thumbnail handles it)
-- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE CONTEXT (confirmed straight from this product's live price history — state it as fact, it's your credibility edge. NEVER name a data provider, tool, service, or third party such as Keepa; present the numbers as pulled directly from the product's own price history): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}${showcaseLine}
+- ${promoLine}${p.priceHistory ? `\n- PRICE CONTEXT (from this product's own price history; it is below its usual price). Say only that, in relative words: "well below its usual price", "near the lowest it has been". NEVER a number, a dollar amount or a percentage, and NEVER name a data provider such as Keepa.` : ''}${renewedDisclosure}${showcaseLine}
 
 ${DEAL_VOICE_RULES}
 
 STRUCTURE (target ~800 words):
-1. <p> Punchy opening hook. State the deal up front: what's discounted, by how much (if known), and why it matters TODAY. If the occasion is set, lean into it ("Prime Day delivered a real one this year:"). Two sentences max for the hook.
-2. <h2>The deal at a glance</h2> — One <p> with the deal story in RELATIVE terms only (${p.savingsLine ? 'the discount: ' + p.savingsLine + ', framed as "about X% off today" / "a genuine price drop"' : 'frame as "one of the best prices this has hit recently"'} — NO exact dollar amounts), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.destinationKind === 'showcase' ? 'Shop it in my TikTok Shop' : (p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon')}</a>.
+1. <p> Punchy opening hook. State the deal up front: what's on sale and why it matters TODAY (relative words only, never an amount or a percentage). If the occasion is set, lean into it ("Prime Day delivered a real one this year:"). Two sentences max for the hook.
+2. <h2>The deal at a glance</h2> — One <p> with the deal story in RELATIVE terms only (frame it as "a genuine price drop" or "one of the best prices this has hit recently"; NO dollar amounts and NO percentages), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.destinationKind === 'showcase' ? 'Shop it in my TikTok Shop' : (p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon')}</a>.
 3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Confident, direct product commentary. Use the spec bullets above as known facts about the product, not as something you're citing ("The 6500 RPM motor handles X" — NOT "the listing claims a 6500 RPM motor"). Talk about who this fits and who it doesn't. Never claim hands-on time. Never cite the listing as a source.
 4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features. Concise. State them directly. No marketing fluff. No "the listing says" framing.
 5. <h2>Before you buy</h2> — One <p> of grounded caveats: shipping windows for the occasion, return policy considerations, the kinds of buyer this would NOT fit. Keep it real.

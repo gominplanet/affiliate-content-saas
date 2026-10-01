@@ -83,9 +83,10 @@ export async function sweepPublishedPrices(sb: Sb, max = PRICE_FIX_PER_RUN, dead
       const live = stripPublishedPrices(raw.content)
       if (live) patch.content = live
       if (p.post_type === 'deal') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ex = await (wp as any).getCustomEndpoint(`/wp/v2/posts/${p.wordpress_post_id}?context=edit&_fields=excerpt`).catch(() => null) as { excerpt?: { raw?: string } } | null
-        const cleaned = cleanDealExcerpt(String(ex?.excerpt?.raw ?? ''))
+        // A failed read is a failure, never "this excerpt had no price".
+        const ex = await wp.readPostFields(p.wordpress_post_id, ['excerpt'])
+        if (!ex.ok) { out.failed.push({ postId: p.id, reason: ex.reason }); await touch(p.id); continue }
+        const cleaned = cleanDealExcerpt(String((ex.data.excerpt as { raw?: string } | undefined)?.raw ?? ''))
         if (cleaned) patch.excerpt = cleaned
       }
       if (Object.keys(patch).length) await wp.updatePost(p.wordpress_post_id, patch)
@@ -141,9 +142,12 @@ export async function sweepSchemaPrices(sb: Sb, max = SCHEMA_FIX_PER_RUN, deadli
   const { data, error } = await sb.from('blog_posts')
     .select('id,user_id,wordpress_post_id,wordpress_url,wordpress_site_id,updated_at')
     .is('schema_price_checked_at', null).not('wordpress_post_id', 'is', null)
-    .order('created_at', { ascending: false }).limit(max)
+    .order('updated_at', { ascending: true }).limit(max)
   if (error) return { ...out, error: /schema_price_checked_at/.test(String(error.message)) ? 'Migration 392 has not been run.' : String(error.message) }
   const mark = (id: string) => sb.from('blog_posts').update({ schema_price_checked_at: new Date().toISOString() }).eq('id', id)
+  // An unread post goes to the back of the line (updated_at), so a few
+  // unreachable sites cannot hold the front of the queue.
+  const touch = (id: string) => sb.from('blog_posts').update({ updated_at: new Date().toISOString() }).eq('id', id)
 
   for (const p of (data ?? []) as Array<{ id: string; user_id: string; wordpress_post_id: number; wordpress_url: string | null; wordpress_site_id: string | null }>) {
     if (Date.now() > deadline) break
@@ -156,10 +160,21 @@ export async function sweepSchemaPrices(sb: Sb, max = SCHEMA_FIX_PER_RUN, deadli
       const wp = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
       const same = await checkSamePost(wp, p.wordpress_post_id, p.wordpress_url)
       if (!same.ok) { out.failed.push({ postId: p.id, reason: same.error }); await mark(p.id); continue }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const meta = await (wp as any).getCustomEndpoint(`/wp/v2/posts/${p.wordpress_post_id}?context=edit&_fields=meta`).catch(() => null) as { meta?: { mvp_jsonld?: string } } | null
-      const cleaned = stripSchemaPrice(meta?.meta?.mvp_jsonld)
-      if (cleaned) { await wp.updatePost(p.wordpress_post_id, { meta: { mvp_jsonld: cleaned } }); out.fixed++ }
+      // A failed read is reported and the post is NOT marked: it is tried
+      // again on a later run. Marking it was how every post came to read as
+      // "had no price" while nothing had been read at all.
+      const read = await wp.readPostFields(p.wordpress_post_id, ['meta'])
+      if (!read.ok) { out.failed.push({ postId: p.id, reason: read.reason }); await touch(p.id); continue }
+      const cleaned = stripSchemaPrice((read.data.meta as { mvp_jsonld?: string } | undefined)?.mvp_jsonld)
+      if (cleaned) {
+        await wp.updatePost(p.wordpress_post_id, { meta: { mvp_jsonld: cleaned } })
+        // Read back: a site whose plugin does not register the field ignores
+        // the write silently, and that is not a fix.
+        const after = await wp.readPostFields(p.wordpress_post_id, ['meta'])
+        const still = after.ok ? stripSchemaPrice((after.data.meta as { mvp_jsonld?: string } | undefined)?.mvp_jsonld) : 'unknown'
+        if (still) { out.failed.push({ postId: p.id, reason: after.ok ? 'WordPress kept the price: the site\u2019s MVP plugin may be out of date.' : 'Could not read the post back after the write.' }); await mark(p.id); continue }
+        out.fixed++
+      }
       await mark(p.id)
     } catch (e) {
       // Marked and reported, so one broken post cannot hold the queue; the

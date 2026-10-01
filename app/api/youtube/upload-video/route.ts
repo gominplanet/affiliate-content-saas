@@ -160,6 +160,11 @@ async function handleUpload(request: Request) {
     const msg = (e instanceof Error && e.message) ? e.message
       : (typeof e === 'string' && e) ? e
       : (() => { try { return JSON.stringify(e) } catch { return '' } })() || 'YouTube upload failed.'
+    // Quota is a 403 too, and reconnecting does not fix it: it is said as
+    // quota, so the page never loops through Google's permission screen.
+    if (/quotaExceeded|dailyLimitExceeded|exceeded your quota|uploadLimitExceeded/i.test(msg)) {
+      return NextResponse.json({ error: 'YouTube\u2019s daily upload limit is used up, so nothing was uploaded. It resets at midnight Pacific time.', quotaExceeded: true }, { status: 429 })
+    }
     const reconnectRequired = /403|insufficient|insufficientPermissions|scope/i.test(msg)
     return NextResponse.json({
       error: reconnectRequired ? 'Reconnect YouTube to grant upload permission, then try again.' : `YouTube upload failed: ${msg}`,

@@ -21,8 +21,8 @@ check('SCOUT is only ever handed US uploads, whatever is queued', /q = q\.eq\('d
 const DRAIN = r('app/api/cron/coverage-drain/route.ts')
 check('other countries are closed with the reason said, before anything else runs',
   /async function retireAbroad/.test(DRAIN) && /reason: UPLOAD_ONLY_REASON/.test(DRAIN) && /detail: UPLOAD_ONLY_REASON/.test(DRAIN)
-  && DRAIN.indexOf('const retired = await retireAbroad(sb)') < DRAIN.indexOf('const enrolled = await enrol(sb)')
-  && DRAIN.indexOf('const retired = await retireAbroad(sb)') < DRAIN.indexOf('const audio = await dubs(sb)'))
+  && DRAIN.indexOf('await retireAbroad(sb)') < DRAIN.indexOf('const enrolled = await enrol(sb)')
+  && DRAIN.indexOf('await retireAbroad(sb)') < DRAIN.indexOf('const audio = await dubs(sb)'))
 check('what already happened is left as it was', /not\('state', 'in', '\(uploaded,live,blocked\)'\)/.test(DRAIN) && /is\('delivered_at', null\)/.test(DRAIN))
 check('the back catalogue is enrolled for the US store only', /\.eq\('enabled', true\)\.eq\('domain', UPLOAD_MARKET\)/.test(DRAIN))
 check('nothing is translated for another country', /\.eq\('domain', UPLOAD_MARKET\)/.test(r('app/api/cron/drain-global-sync/route.ts')))

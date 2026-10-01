@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { landsOnAmazon } from '@/lib/amazon-destination'
 import { postProductAsin } from '@/lib/post-product-link'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -195,7 +196,7 @@ Return ONLY the post text.`,
     // goes to Amazon, and Associates policy 6(w) asks that it does. Three words
     // fit; a policy strike does not.
     const cardIsProduct = pref.product && !!affiliateLink && url === affiliateLink
-    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null }) || await landsOnAmazon(user.id, affiliateLink)
     const lead = cardIsProduct && amazonDestination ? 'On Amazon: ' : ''
     const finalText = `${postText}${pref.product && affiliateLink ? ' #ad' : ''}\n\n${lead}${url}`
 

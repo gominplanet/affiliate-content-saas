@@ -47,7 +47,7 @@ export type HoldReport = {
   missingColumn?: boolean
 }
 
-export async function holdAndRelease(sb: Sb): Promise<HoldReport> {
+export async function holdAndRelease(sb: Sb, deadline = Date.now() + 90_000): Promise<HoldReport> {
   const out: HoldReport = { held: [], released: [], letGo: 0, failed: [] }
 
   // ── the posts waiting, and the published ones that might need to ──────────
@@ -96,6 +96,7 @@ export async function holdAndRelease(sb: Sb): Promise<HoldReport> {
 
   // ── release: the video is live now ────────────────────────────────────────
   for (const r of waiting) {
+    if (Date.now() > deadline) break
     const n = notPublic.get(r.youtube_videos?.youtube_video_id || '')
     if (n) {
       // Still waiting: keep the due time current for the screen.
@@ -120,6 +121,7 @@ export async function holdAndRelease(sb: Sb): Promise<HoldReport> {
 
   // ── hold: live on the blog, video not playable ────────────────────────────
   for (const r of live.values()) {
+    if (Date.now() > deadline) break
     const n = notPublic.get(r.youtube_videos?.youtube_video_id || '')
     if (!n) continue
     try {

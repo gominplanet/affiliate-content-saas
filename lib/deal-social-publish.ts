@@ -70,8 +70,10 @@ interface PublishOpts {
  *  can buy without reading), then the caption, then the disclosure — all capped
  *  to the platform's limit. */
 function composeText(base: string, platform: QuickPostPlatform, link: string, disclaimer: string, retailer = 'Amazon'): string {
-  if (platform === 'twitter') return capSocialText(base, SOCIAL_LIMITS.twitter, ` #ad`, `🛒 ${link}\n\n`)
-  if (platform === 'bluesky') return capSocialText(base, SOCIAL_LIMITS.bluesky, `\n#ad`, `🛒 ${link}\n\n`)
+  // The retailer is named beside the link on every platform (Amazon policy
+  // 6(w)): the link is a short or cloaked one that cannot say it.
+  if (platform === 'twitter') return capSocialText(base, SOCIAL_LIMITS.twitter, ` #ad`, `🛒 On ${retailer}: ${link}\n\n`)
+  if (platform === 'bluesky') return capSocialText(base, SOCIAL_LIMITS.bluesky, `\n#ad`, `🛒 On ${retailer}: ${link}\n\n`)
   const limit = (SOCIAL_LIMITS as Record<string, number>)[platform] ?? 1000
   return capSocialText(base, limit, `\n\n${disclaimer}`, `🛒 Grab it on ${retailer} 👉 ${link}\n\n`)
 }

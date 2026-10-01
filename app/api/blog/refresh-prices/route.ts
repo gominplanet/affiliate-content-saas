@@ -139,12 +139,11 @@ export async function GET() {
           //    refreshed.
 
           // 2. Read existing mvp_jsonld from WP so we can patch in-place
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const wpPost = await (wpService as any).getCustomEndpoint(
-            `/wp/v2/posts/${item.wpPostId}?context=edit&_fields=meta`
-          ) as { meta?: { mvp_jsonld?: string } } | null
-
-          const existingJsonStr = wpPost?.meta?.mvp_jsonld
+          // Through the REST API (it used to fetch the site's front end at
+          // /wp/v2/..., which is not the API, so nothing was ever read).
+          const read = await wpService.readPostFields(item.wpPostId, ['meta'])
+          if (!read.ok) { done++; continue }
+          const existingJsonStr = (read.data.meta as { mvp_jsonld?: string } | undefined)?.mvp_jsonld
           if (!existingJsonStr) {
             done++
             continue // no schema on this post yet — skip

@@ -32,6 +32,10 @@ export type ClipInclude = {
   hashtags: boolean
 }
 
+/** The most each platform takes in a description. Past it the post is refused
+ *  or cut, and a cut lands on the disclosure, which is last. */
+export const CLIP_TEXT_LIMIT: Record<ClipPlatform, number> = { facebook: 2000, tiktok: 2200, instagram: 2200, youtube: 4800 }
+
 export const CLIP_PLATFORM_RULES: Record<ClipPlatform, { label: string; linksClickable: boolean; linkNote: string; defaults: ClipInclude; bioLine: string }> = {
   facebook: {
     label: 'Facebook Reel', linksClickable: true,
@@ -91,7 +95,12 @@ export function composeClipDescription(opts: {
 }): string {
   const rules = CLIP_PLATFORM_RULES[opts.platform]
   const lines: string[] = []
-  const writeUp = stripHashtags(opts.writeUp)
+  // On a Facebook Page the link is right there, so "link in bio" (Instagram's
+  // phrasing) reads as "link above".
+  const raw = stripHashtags(opts.writeUp)
+  const writeUp = opts.platform === 'facebook'
+    ? raw.replace(/\b(l)ink\s+in\s+(?:my\s+)?bio\b/gi, (_m, l: string) => `${l === 'L' ? 'L' : 'l'}ink above`)
+    : raw
   if (writeUp) lines.push(writeUp)
   const links: string[] = []
   if (opts.include.productLink && opts.productLink) links.push(productCtaLine(opts.productLink, opts.amazon))

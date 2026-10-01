@@ -12,6 +12,7 @@
  * Gated to Pro tier. Trial / Creator get 403.
  */
 
+import { capSocialText } from '@/lib/social-cap'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
@@ -167,12 +168,14 @@ Return ONLY the post text.`,
     //
     // Applied BEFORE the length cap so the disclaimer is inside the budget
     // rather than being appended past it and truncated away.
-    captionText = ensureDisclaimer(
-      scrubBanned(stripLinkPlaceholders(captionText)),
-      AFFILIATE_DISCLAIMER_DEFAULT,
-    )
-    if (captionText.length > CAPTION_BUDGET) {
-      captionText = captionText.slice(0, CAPTION_BUDGET - 1).replace(/\s+\S*$/, '') + '…'
+    // The body is cut, never the disclosure: it was appended and then the
+    // whole text was cut from the end, which removed it from a long caption.
+    {
+      const withDisc = ensureDisclaimer(scrubBanned(stripLinkPlaceholders(captionText)), AFFILIATE_DISCLAIMER_DEFAULT)
+      if (withDisc.length > CAPTION_BUDGET) {
+        const body = scrubBanned(stripLinkPlaceholders(captionText))
+        captionText = capSocialText(body, CAPTION_BUDGET, `\n\n${AFFILIATE_DISCLAIMER_DEFAULT}`)
+      } else captionText = withDisc
     }
 
     // Build the final caption with a properly-escaped "Read the full review →"

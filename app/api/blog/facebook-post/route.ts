@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
@@ -197,7 +198,7 @@ Return ONLY the post text, nothing else.`,
     // months-old code outranked the creator's own live link in the post body.
     const postLinkStyle = (await getLinkStyle(supabase, user.id)).style
     let affiliateLink = resolvePostAffiliateLink(post, { linkStyle: postLinkStyle })
-    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null }) || await landsOnAmazon(user.id, affiliateLink)
     // Cloak the product CTA link at post time per the creator's chosen Link style
     // (Geniuslink → correct per-site group + persisted code; Bitly → shorten;
     // Direct/Passport → unchanged). Best-effort; falls back to the tagged link.

@@ -1,3 +1,4 @@
+import { isSellableTier } from '@/lib/tier'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
@@ -46,7 +47,9 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     )
   }
-  if (!tier || !PAID_TIERS.includes(tier)) {
+  // And only a plan MVP still sells (Creator and Studio are frozen), the same
+  // rule checkout uses, so this route cannot create a new legacy subscriber.
+  if (!tier || !PAID_TIERS.includes(tier) || !isSellableTier(tier)) {
     return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 })
   }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]

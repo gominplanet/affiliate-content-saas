@@ -46,6 +46,12 @@ export const maxDuration = 60
 //     Google's chooser, common with Brand Accounts).
 function explainYouTubeError(raw: string): string {
   const m = String(raw || '')
+  // QUOTA FIRST: YouTube answers quota with a 403 too, and the 403 advice
+  // below (reconnect the channel) fixes nothing for it. The words keep
+  // "quotaExceeded" so the page's quota check still sees it.
+  if (/quotaExceeded|dailyLimitExceeded|exceeded your quota/i.test(m)) {
+    return 'quotaExceeded: YouTube\u2019s daily upload quota is used up, so this did not change on YouTube. It resets at midnight Pacific time; push again after that.'
+  }
   if (/thumbnail can'?t be set|custom thumbnail|set.*thumbnail.*(forbidden|authoriz)/i.test(m)) {
     return 'Thumbnail not applied: YouTube only allows custom thumbnails on a verified channel. Verify this channel at youtube.com/verify (phone verification), then re-publish. Your title, description and tags are not affected by this.'
   }
@@ -131,12 +137,13 @@ export async function POST(request: NextRequest) {
     // 1. Snippet update (title / description / tags) + thumbnail in parallel.
     //    Same path the existing /api/youtube/update-metadata uses.
     const tasks: Array<Promise<void>> = []
-    if (body.title && body.description && body.tags) {
+    const metadataSent = !!(body.title && body.description && body.tags)
+    if (metadataSent) {
       tasks.push(
         yt.updateVideoMetadata(body.videoId, {
-          title: body.title,
-          description: body.description,
-          tags: body.tags,
+          title: body.title as string,
+          description: body.description as string,
+          tags: body.tags as string[],
         }),
       )
     }
@@ -229,6 +236,10 @@ export async function POST(request: NextRequest) {
     ])
 
     const warnings: string[] = []
+    // Did YouTube take the title, description and tags. The bundle is an
+    // allSettled, so it is always "fulfilled"; the answer is inside it.
+    const bundle = results[0].status === 'fulfilled' ? (results[0] as PromiseFulfilledResult<PromiseSettledResult<void>[]>).value : null
+    const metadataOk = !metadataSent || (bundle?.[0]?.status === 'fulfilled')
     // Drill into the metadata/thumbnail bundle for any individual failure.
     if (results[0].status === 'fulfilled') {
       for (const r of (results[0] as PromiseFulfilledResult<PromiseSettledResult<void>[]>).value) {
@@ -261,7 +272,7 @@ export async function POST(request: NextRequest) {
     // users who never sync, the INSERT silently failed and the
     // "Pushed via Co-Pilot" tab always showed 0. The dedicated table has
     // only the fields we need.
-    if (results[0].status === 'fulfilled') {
+    if (metadataSent && metadataOk) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
@@ -285,7 +296,9 @@ export async function POST(request: NextRequest) {
     // it can't show green when every write 403'd on quota. quotaHit lets the UI
     // render a friendly "quota's used up, try after it resets" message instead of
     // the raw 403 JSON.
-    const statusOk = results[1].status === 'fulfilled'
+    // A push whose title and description YouTube refused is not applied,
+    // whatever the status call did: the page shows green only on statusOk.
+    const statusOk = results[1].status === 'fulfilled' && metadataOk
     const quotaHit = warnings.some((w) => /quotaExceeded|exceeded your/i.test(w))
 
     // Remember the approved thumbnail against the PRODUCT, so posting the same
@@ -305,7 +318,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      ok: warnings.length === 0 && !heldBack, warnings, statusOk, quotaHit, productImageSaved,
+      ok: warnings.length === 0 && !heldBack, warnings, statusOk, metadataOk, quotaHit, productImageSaved,
       // What YouTube reports after the push, and whether the time was held.
       disclosures, heldBack,
     })

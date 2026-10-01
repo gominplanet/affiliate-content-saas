@@ -90,11 +90,21 @@ async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; m
   // Ten minutes of grace: the Liftoff hand-over makes the cells a moment before
   // it records the video on its own row, and a cell in that moment is Liftoff.
   const graceAgo = new Date(Date.now() - 10 * 60_000).toISOString()
-  const { data: lf } = await sb.from('launch_items').select('video_id').not('video_id', 'is', null).limit(20000)
-  const liftoff = new Set(((lf ?? []) as Array<{ video_id: string }>).map((r) => r.video_id))
   let syncCells = 0, syncTargets = 0
   const { data: open } = await sb.from('storefront_coverage').select('id,video_id')
     .not('state', 'in', '(uploaded,live,blocked)').lt('created_at', graceAgo).limit(1000)
+  // Which of these videos are Liftoff's: asked about these videos only, not
+  // read off the whole launch table (which, past its limit, dropped Liftoff
+  // videos and would have closed their cells).
+  const liftoff = new Set<string>()
+  const isLiftoff = async (videoIds: string[]) => {
+    const ask = [...new Set(videoIds)].filter((v) => v && !liftoff.has(v))
+    for (let i = 0; i < ask.length; i += 200) {
+      const { data: lf } = await sb.from('launch_items').select('video_id').in('video_id', ask.slice(i, i + 200))
+      for (const r of (lf ?? []) as Array<{ video_id: string }>) liftoff.add(r.video_id)
+    }
+  }
+  await isLiftoff(((open ?? []) as Array<{ video_id: string }>).map((c) => c.video_id))
   const closeIds = ((open ?? []) as Array<{ id: string; video_id: string }>).filter((c) => !liftoff.has(c.video_id)).map((c) => c.id)
   for (let i = 0; i < closeIds.length; i += 200) {
     const { data: done } = await sb.from('storefront_coverage')
@@ -109,6 +119,7 @@ async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; m
     const { data: jobs } = await sb.from('global_sync_jobs').select('id,video_id').in('id', jobIds.slice(i, i + 200))
     for (const j of (jobs ?? []) as Array<{ id: string; video_id: string | null }>) jobVideo.set(j.id, j.video_id)
   }
+  await isLiftoff([...jobVideo.values()].filter((v): v is string => !!v))
   const failIds = ((waiting ?? []) as Array<{ id: string; job_id: string }>)
     .filter((t) => { const v = jobVideo.get(t.job_id); return !v || !liftoff.has(v) }).map((t) => t.id)
   for (let i = 0; i < failIds.length; i += 200) {
@@ -406,6 +417,10 @@ const NAME_SEARCHES = 4
  * run is left alone to retry, never written as "no listing".
  */
 async function equivalents(sb: Sb): Promise<{ found: number; byName: number; none: number; unread: number; skipped?: string }> {
+  // OFF: uploads go to the US store only, and a US cell comes from the US
+  // ASIN, so there is no other listing to find. Left running, this spent the
+  // shared Keepa tokens on countries already switched off.
+  if (SYNC_RETIRED) return { found: 0, byName: 0, none: 0, unread: 0, skipped: 'us_only' }
   const { data: cells } = await sb.from('storefront_coverage')
     .select('id,domain,asin').eq('state', 'blocked').eq('stock', 'not_listed')
     .like('reason', 'Amazon does not sell this product in %')
@@ -932,8 +947,10 @@ export async function GET(request: Request) {
   // RECONCILE FIRST. A listing that went live is not news that should wait
   // behind a channel enrolment on a catalogue of three thousand.
   const reconciled = await reconcile(sb)
-  // Before anything can translate, dub or queue another country.
-  const retired = await retireAbroad(sb)
+  // Before anything can translate, dub or queue another country. Every ten
+  // minutes, not every minute: once the backlog is closed it finds nothing,
+  // and its reads are not free.
+  const retired = new Date().getUTCMinutes() % 10 === 0 ? await retireAbroad(sb) : null
   const enrolled = await enrol(sb)
   const product = await products(sb)
   // EXISTENCE BEFORE THE DUB. checks() starts the localizing that prepare()

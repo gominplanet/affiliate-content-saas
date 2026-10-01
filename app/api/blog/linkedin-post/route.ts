@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -183,7 +184,7 @@ Return ONLY the post text, no extra commentary.`,
     // months-old code outranked the creator's own live link in the post body.
     const postLinkStyle = (await getLinkStyle(supabase, user.id)).style
     let affiliateLink = resolvePostAffiliateLink(post, { linkStyle: postLinkStyle })
-    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null }) || await landsOnAmazon(user.id, affiliateLink)
     // Cloak the product CTA link per the creator's chosen Link style (best-effort).
     if (affiliateLink) {
       affiliateLink = await ensureAffiliateShareLink(supabase, {

@@ -17,6 +17,7 @@
  * racing for the same row → one wins, the other sees an empty result.
  */
 
+import { landsOnAmazon } from '@/lib/amazon-destination'
 import { blogPinLink } from '@/lib/pin-product-link'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -573,7 +574,7 @@ async function publishOne(
   // Decided BEFORE the cloak below: a wrapped link cannot say where it lands,
   // and Amazon policy 6(w) needs the CTA beside it to make that clear.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schedAmazonDestination = isAmazonLink(schedAffiliateLink) || !!postProductAsin(post as any)
+  const schedAmazonDestination = isAmazonLink(schedAffiliateLink) || !!postProductAsin(post as any) || await landsOnAmazon(row.user_id, schedAffiliateLink)
   // "If a user has a Geniuslink, MVP always uses it." A post generated during a
   // brief Geniuslink outage has no code, so this resolves to the raw Amazon
   // tagged link. When the creator has Geniuslink connected, build one now (in

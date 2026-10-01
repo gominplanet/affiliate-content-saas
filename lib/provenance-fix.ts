@@ -72,7 +72,7 @@ export function fixProvenanceHtml(html: string, author: string | null): { html: 
 
 export type ProvenanceFixReport = { fixed: number; checked: number; failed: Array<{ postId: string; reason: string }> }
 
-export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<ProvenanceFixReport> {
+export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN, deadline = Date.now() + 90_000): Promise<ProvenanceFixReport> {
   const out: ProvenanceFixReport = { fixed: 0, checked: 0, failed: [] }
   type Row = { id: string; user_id: string; content: string | null; wordpress_post_id: number; wordpress_url: string | null; wordpress_site_id: string | null }
   // Two questions, merged: the wrong line, and the line not moved yet.
@@ -89,6 +89,7 @@ export async function fixProvenanceLines(sb: Sb, max = FIX_PER_RUN): Promise<Pro
   const touch = (id: string) => sb.from('blog_posts').update({ updated_at: new Date().toISOString() }).eq('id', id)
 
   for (const p of posts) {
+    if (Date.now() > deadline) break
     out.checked++
     try {
       if (!authors.has(p.user_id)) {

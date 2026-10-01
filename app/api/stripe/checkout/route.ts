@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -267,8 +268,10 @@ export async function POST(request: NextRequest) {
         // warns, and the webhook grants the tier the moment payment succeeds
         // (invoice.payment_succeeded). Downgrades and non-upgrades always have
         // chargeCleared true, so their tier flip is unchanged.
+        // With the server key: plan and billing fields are server-managed
+        // (migration 393 stops a signed-in session from writing them).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('integrations')
+        await (createAdminClient() as any).from('integrations')
           .update(chargeCleared ? { tier } : { subscription_status: 'past_due' })
           .eq('user_id', user.id)
 

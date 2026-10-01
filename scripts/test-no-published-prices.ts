@@ -64,8 +64,13 @@ check('Deal check block: no percentage below the usual price', !/`About \$\{a\.p
   check('review data: price, currency and expiry go; the offer and availability stay',
     !!cleanLd && !/59\.99|priceCurrency|priceValidUntil/.test(cleanLd) && /InStock/.test(cleanLd) && /"Offer"/.test(cleanLd))
   check('review data without a price is left alone', stripSchemaPrice(JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer' } }] })) === null)
-  check('every account, in the background', /schemaPrices = await sweepSchemaPrices\(admin\)/.test(r('app/api/cron/reconcile-stuck-images/route.ts')))
-  check('the sweep runs every ten minutes, on its own, and reports', /prices = await sweepPublishedPrices\(admin\)/.test(CRON) && /\n    prices,\n/.test(CRON))
+  check('the sweeps read WordPress through its REST API, and a failed read is never marked done',
+    !/getCustomEndpoint/.test(r('lib/published-price-sweep.ts')) && /readPostFields\(p\.wordpress_post_id, \['meta'\]\)/.test(r('lib/published-price-sweep.ts'))
+    && /if \(!read\.ok\) \{ out\.failed\.push\(\{ postId: p\.id, reason: read\.reason \}\); await touch\(p\.id\); continue \}/.test(r('lib/published-price-sweep.ts'))
+    && !/getCustomEndpoint/.test(r('app/api/blog/refresh-prices/route.ts')))
+  check('one shared time budget across the ten-minute sweeps', /const share = \(endAtSec: number\) => started \+ endAtSec \* 1000/.test(r('app/api/cron/reconcile-stuck-images/route.ts')))
+  check('every account, in the background', /schemaPrices = await sweepSchemaPrices\(admin, undefined, share\(260\)\)/.test(r('app/api/cron/reconcile-stuck-images/route.ts')))
+  check('the sweep runs every ten minutes, on its own, and reports', /prices = await sweepPublishedPrices\(admin, undefined, share\(200\)\)/.test(CRON) && /\n    prices,\n/.test(CRON))
 }
 
 if (failures.length) {

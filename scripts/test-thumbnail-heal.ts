@@ -195,7 +195,7 @@ const heal = strip(HEAL)
   {
     const crons = (JSON.parse(readFileSync('vercel.json', 'utf8')).crons ?? []) as Array<{ path: string }>
     check('the job runs inside a scheduled cron, not one of its own',
-      /await holdAndRelease\(admin\)/.test(readFileSync('app/api/cron/reconcile-stuck-images/route.ts', 'utf8'))
+      /await holdAndRelease\(admin, share\(60\)\)/.test(readFileSync('app/api/cron/reconcile-stuck-images/route.ts', 'utf8'))
       && crons.some((c) => c.path === '/api/cron/reconcile-stuck-images'),
       `cron paths seen: ${crons.map((c) => c.path).slice(-4).join(', ')}`)
   }

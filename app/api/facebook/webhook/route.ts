@@ -96,7 +96,8 @@ export async function POST(req: Request) {
   // events, anything) so we can definitively see whether Meta is reaching us
   // and whether the signature matches. Bounded to JSON bodies. Remove once
   // comment→DM is confirmed live.
-  if (body && typeof body === 'object') {
+  // Only a signed request is logged: anyone on the internet can POST here.
+  if (sigOk && body && typeof body === 'object') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const shape = Array.isArray(body.entry)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

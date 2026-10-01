@@ -355,7 +355,7 @@ export async function POST(request: NextRequest) {
       id: string
       created?: number
       customer: string
-      items: { data: { price: { id: string; unit_amount?: number | null } }[] }
+      items: { data: { price: { id: string; unit_amount?: number | null }; current_period_start?: number; current_period_end?: number }[] }
       status: string
       cancel_at_period_end?: boolean
       current_period_start?: number
@@ -379,15 +379,21 @@ export async function POST(request: NextRequest) {
     if (tier) {
       // Catch a paid tier granted from a too-cheap price (e.g. Pro on $49).
       void alertIfTierPriceTooCheap(stripe, tier, priceId, sub.items.data[0]?.price?.unit_amount, sub.customer)
+      // Stripe moved the period onto the subscription ITEM in newer API
+      // versions (the SDK here is pinned to one of them); older event payloads
+      // still carry it on the subscription. Read both, item first, so the
+      // quota window is the real billing period on either.
+      const periodStart = sub.items.data[0]?.current_period_start ?? sub.current_period_start
+      const periodEnd = sub.items.data[0]?.current_period_end ?? sub.current_period_end
       const baseFields = {
         stripe_customer_id: sub.customer,
         stripe_subscription_id: sub.id,
         subscription_status: sub.cancel_at_period_end ? 'canceling' : sub.status,
-        subscription_period_start: sub.current_period_start
-          ? new Date(sub.current_period_start * 1000).toISOString()
+        subscription_period_start: periodStart
+          ? new Date(periodStart * 1000).toISOString()
           : null,
-        subscription_period_end: sub.current_period_end
-          ? new Date(sub.current_period_end * 1000).toISOString()
+        subscription_period_end: periodEnd
+          ? new Date(periodEnd * 1000).toISOString()
           : null,
       }
 
@@ -483,7 +489,7 @@ export async function POST(request: NextRequest) {
   // UI stops warning. Only touches rows we actually marked past_due; leaves a
   // 'canceling' or already-active status alone.
   if (event.type === 'invoice.payment_succeeded') {
-    const invoice = event.data.object as { customer: string; subscription?: string | null }
+    const invoice = event.data.object as { customer: string; subscription?: string | null; parent?: { subscription_details?: { subscription?: string | null } | null } | null }
     const { error } = await admin.from('integrations')
       .update({ subscription_status: 'active' })
       .eq('stripe_customer_id', invoice.customer)
@@ -496,7 +502,8 @@ export async function POST(request: NextRequest) {
     // the row's CURRENT subscription so a replayed invoice for an old
     // subscription can't overwrite a newer plan. Reads the real price → tier,
     // so it can never grant more than what's paid.
-    const subId = invoice.subscription || null
+    // Newer API versions moved it to parent.subscription_details.
+    const subId = invoice.subscription || invoice.parent?.subscription_details?.subscription || null
     if (subId) {
       let paidTier: Tier | undefined
       try {

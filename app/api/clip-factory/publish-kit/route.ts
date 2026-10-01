@@ -19,6 +19,8 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
 import type { ClipPlatform } from '@/lib/clip-description'
+import { normalizeTier } from '@/lib/tier'
+import { scrubTitle } from '@/lib/scrub'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -48,6 +50,12 @@ export async function POST(req: Request) {
     platform?: ClipPlatform; sourceVideoId?: string; product?: string; productName?: string
     title?: string; hashtags?: string[]; writeUp?: string
   }
+  // Clip Factory publishing is Pro, as the uploads it leads to are.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = normalizeTier(intRow?.tier)
+  if (tier !== 'pro' && tier !== 'admin') return NextResponse.json({ error: 'Publishing from Clip Factory is a Pro feature.', tierRequired: 'pro' }, { status: 403 })
+
   const platform: ClipPlatform = ['tiktok', 'instagram', 'youtube', 'facebook'].includes(String(body.platform)) ? body.platform as ClipPlatform : 'tiktok'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,10 +91,12 @@ Rules:
 Reply with strict JSON only: {"title": "...", "tags": ["...", "..."]}`,
         }],
       })
-      recordAnthropicUsage(msg, { userId: user.id, tier: null, feature: 'clip_youtube_metadata', model: MODEL })
+      recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'clip_youtube_metadata', model: MODEL })
       const text = ((msg.content?.[0] as { text?: string } | undefined)?.text ?? '').trim()
-      const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)) as { title?: unknown; tags?: unknown }
-      const title = String(parsed.title || '').replace(/#\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 100)
+      let parsed: { title?: unknown; tags?: unknown } = {}
+      try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)) } catch { parsed = {} }
+      // scrubTitle: no year and the house rules, as every generated title.
+      const title = scrubTitle(String(parsed.title || '').replace(/#\S+/g, '').replace(/\s+/g, ' ').trim()).slice(0, 100)
       const tags = cleanTags(parsed.tags)
       youtube = title && tags.length >= 5
         ? { title, tags, note: null }

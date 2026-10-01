@@ -256,7 +256,11 @@ export default function ClipFactoryPage() {
   // when the pill is first pressed and dropped when the clip or product changes.
   const [panel, setPanel] = useState<ClipPlatform | null>(null)
   const [kits, setKits] = useState<Partial<Record<ClipPlatform, PublishKit>>>({})
-  const [kitError, setKitError] = useState<string | null>(null)
+  // Per platform, so a slow failure on one never shows inside another's panel.
+  const [kitErrors, setKitErrors] = useState<Partial<Record<ClipPlatform, string>>>({})
+  // Bumped whenever the clip or product changes, so a links answer for the old
+  // ones is thrown away instead of filed under the new.
+  const kitEpoch = useRef(0)
   const [ttCaption, setTtCaption] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
   // The uploaded YouTube video id, so we can link the creator straight to it
@@ -276,6 +280,12 @@ export default function ClipFactoryPage() {
     return [clip.caption || clip.title || '', tags].filter(Boolean).join('\n\n').trim()
   }, [clip])
   const publishCaption = composedCaption || fallbackCaption
+  // Every hashtag the clip has: its own and those the Enhance caption wrote
+  // (an uploaded Short has only the latter). #ad is the disclosure's job.
+  const panelHashtags = useMemo(() => {
+    const fromCaption = (publishCaption.match(/(^|\s)#([\p{L}\p{N}_]+)/gu) ?? []).map((h) => h.trim().replace(/^#/, ''))
+    return [...(clip?.hashtags || []).map((h) => h.replace(/^#/, '')), ...fromCaption].filter((h) => !/^ad$/i.test(h))
+  }, [clip, publishCaption])
 
   // Load gate + long videos on mount.
   useEffect(() => {
@@ -672,32 +682,40 @@ export default function ClipFactoryPage() {
         throw new Error(data.error || 'YouTube upload failed')
       }
       setPosted(p => ({ ...p, youtube: true }))
-      setPanel(null)
+      setPanel(cur => (cur === 'youtube' ? null : cur))
       if (data.videoId) setYtVideoId(data.videoId as string)
-      toast.success('Uploaded to YouTube — it may take a few minutes to process')
+      toast.success('Uploaded to YouTube. It may take a few minutes to process.')
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingYt(false) }
   }, [publishUrl, clip])
 
   // Open a platform's panel, fetching what its description can carry.
-  const openPanel = useCallback(async (p: ClipPlatform) => {
-    setPanel(p); setKitError(null)
-    if (kits[p]) return
+  const openPanel = useCallback(async (p: ClipPlatform, retry = false) => {
+    setPanel(p)
+    if (kits[p] && !retry) return
+    setKitErrors(e => ({ ...e, [p]: undefined }))
+    const epoch = kitEpoch.current
     try {
       const res = await fetch('/api/clip-factory/publish-kit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           platform: p, sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
-          title: clip?.title, hashtags: clip?.hashtags || [], writeUp: publishCaption,
+          title: clip?.title, hashtags: panelHashtags, writeUp: publishCaption,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || 'Could not find the links for this clip.')
+      if (epoch !== kitEpoch.current) return
       setKits(k => ({ ...k, [p]: data as PublishKit }))
-    } catch (e) { setKitError(`${errText(e)} You can still write the description yourself.`); setKits(k => ({ ...k, [p]: { productLink: null, productSource: null, linkNote: null, amazon: false, blogUrl: null, videoUrl: null, linkHub: null, disclosure: '', youtube: null } })) }
-  }, [kits, clip, product, productName, publishCaption])
+    } catch (e) {
+      // NOT filed as an empty answer: that read as "no product link" and "no
+      // disclosure" and stuck. The panel says it failed and offers a retry.
+      if (epoch !== kitEpoch.current) return
+      setKitErrors(er => ({ ...er, [p]: errText(e) }))
+    }
+  }, [kits, clip, product, productName, publishCaption, panelHashtags])
   // A different clip or product means different links.
-  useEffect(() => { setKits({}); setPanel(null) }, [clip, product, productName])
+  useEffect(() => { kitEpoch.current++; setKits({}); setKitErrors({}); setPanel(null) }, [clip, product, productName])
 
   // Facebook Reel on the creator's Page (Labs): posts exactly the panel's text.
   // The answer says whether it is live or still processing, from what Facebook
@@ -714,7 +732,7 @@ export default function ClipFactoryPage() {
       if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
       setPosted(p => ({ ...p, facebook: true }))
       setFbReelUrl(data.url || null)
-      setPanel(null)
+      setPanel(cur => (cur === 'facebook' ? null : cur))
       toast.success(data.state === 'published'
         ? `Reel is live on ${data.page || 'your Page'}.`
         : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
@@ -1259,9 +1277,11 @@ export default function ClipFactoryPage() {
                 platform={panel}
                 color={panel === 'tiktok' ? '#FE2C55' : panel === 'instagram' ? '#E1306C' : panel === 'youtube' ? '#FF0000' : '#1877F2'}
                 kit={kits[panel] ?? null}
-                kitError={kitError}
+                kitError={kitErrors[panel] ?? null}
                 writeUp={publishCaption}
-                hashtags={clip?.hashtags || []}
+                hashtags={panelHashtags}
+                alreadyPosted={!!posted[panel]}
+                onRetry={() => void openPanel(panel, true)}
                 busy={panel === 'youtube' ? publishingYt : panel === 'facebook' ? publishingFb : false}
                 onConfirm={confirmPanel}
                 onCancel={() => setPanel(null)}

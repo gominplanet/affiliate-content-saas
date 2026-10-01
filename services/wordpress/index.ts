@@ -1205,6 +1205,23 @@ export class WordPressService {
     }
   }
 
+  /** Chosen fields of a post in edit context (e.g. 'meta', 'excerpt'), through
+   *  the REST API with the same retry as every read. A failed read is said,
+   *  never returned as an empty post: the sweeps that edit live posts must not
+   *  mark a post done because nothing could be read. Never throws. */
+  async readPostFields(id: number, fields: string[]): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; status: number | null; reason: string }> {
+    try {
+      const r = await this.request<Record<string, unknown>>(
+        `/posts/${id}?context=edit&_fields=id,${fields.join(',')}`, { method: 'GET' }, { nonceOnReadRefusal: true })
+      if (!r || typeof r !== 'object' || r.id == null) return { ok: false, status: null, reason: 'WordPress did not return the post.' }
+      return { ok: true, data: r }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const m = /^WordPress (\d{3}):/.exec(msg)
+      return { ok: false, status: m ? Number(m[1]) : null, reason: msg.slice(0, 300) }
+    }
+  }
+
   /** Which post this number is on this site: its slug and address. For
    *  checking, before a write, that the number still names the post MVP
    *  means (lib/post-site checkSamePost). Never throws. */
