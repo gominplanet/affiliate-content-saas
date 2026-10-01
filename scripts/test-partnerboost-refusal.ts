@@ -33,7 +33,8 @@ check('a PartnerBoost token is verified before it is saved', /verifyPartnerBoost
 check('a good token clears the 12 hour sync back-off', /pb_sync_failed:\$\{g\.userId\}/.test(SAVE))
 check('a refused GET is retried as POST JSON', /code !== 1000 && first\?\.status\?\.code !== 1001\) return first/.test(SVC) && /method: 'POST'/.test(SVC))
 check('an unreadable saved key is not replaced by the env key', /saved key could not be decrypted[\s\S]{0,40}return null/.test(KEYS))
-check('product feeds that fail are counted, retried when the connection drops, and said apart', /productErrors\+\+/.test(SW) && /productDropped\+\+/.test(SW) && /attempt < 3/.test(SW) && /connection to PartnerBoost dropped/.test(UI) && /PartnerBoost refused the products of/.test(UI))
+check('product feeds that fail are counted, retried when the connection drops, and said apart', /productErrors\+\+/.test(SW) && /productDropped\+\+/.test(SW) && /attempt < 5/.test(SW) && /connection to PartnerBoost dropped/.test(UI) && /PartnerBoost refused the products of/.test(UI))
+check('"Too many request" pauses every worker and is retried, not counted as a refusal', /isThrottle\(msg\)\) \{[\s\S]{0,200}pauseUntil = Math\.max/.test(SW) && /MIN_GAP_MS = 250/.test(SW) && /asked MVP to slow down/.test(UI))
 check('a sync with unreadable brands never purges their saved products', /purgeSafe = rows\.length > 0 && !timedOut && productErrors === 0/.test(SW))
 check('no screen sends people to an "All Channels" token any more', !/copy the "All Channels"|All-Channels API token|Token Manage → All Channels/.test(SW + FI + readFileSync('components/integrations/ExternalKeyConnect.tsx', 'utf8') + readFileSync('app/(dashboard)/partnerboost/page.tsx', 'utf8')))
 

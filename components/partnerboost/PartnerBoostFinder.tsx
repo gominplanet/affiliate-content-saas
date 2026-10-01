@@ -87,12 +87,14 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
       // inside the count.
       if (j.productErrors) {
         const dropped = Number(j.productDropped) || 0
-        const refused = j.productErrors - dropped
+        const throttled = Number(j.productThrottled) || 0
+        const refused = j.productErrors - dropped - throttled
         const parts = [
+          throttled ? `PartnerBoost asked MVP to slow down and ${throttled} brand${throttled === 1 ? ' was' : 's were'} not reached in time` : '',
           dropped ? `the connection to PartnerBoost dropped for ${dropped} brand${dropped === 1 ? '' : 's'} even after retrying` : '',
           refused ? `PartnerBoost refused the products of ${refused} brand${refused === 1 ? '' : 's'} (${String(j.productError || '').replace(/^PartnerBoost:\s*/, '')})` : '',
         ].filter(Boolean).join(', and ')
-        setError(`Not complete: ${parts}. Their saved products were kept. Sync again to fetch them.`)
+        setError(`Not complete: ${parts}. Their saved products were kept. Sync again in a few minutes to fetch them; the automatic sync also catches up every half hour.`)
       }
       setMatches(null); setSeen(new Set()); setLastKey('') // next scan reads the fresh cache
     } catch { setError('Network error during sync.') }
