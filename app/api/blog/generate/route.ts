@@ -3075,7 +3075,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
               // NEVER A STORE LOGO: a picture showing one is dropped, not placed. Checked
               // BEFORE the upscale, which can make the hero too large to check.
               {
-                const logo = await checkNewPicture({ url: falUrl }, { userId: user.id, tier: tier2 ?? null, feature: 'new_picture_logo_check' })
+                const logo = await checkNewPicture({ url: falUrl }, { userId: user.id, tier: tier2 ?? null, feature: 'new_picture_logo_check' }, { title: productTitleForPrompts })
                 if (!logo.ok) {
                   if (!firstImgError) firstImgError = `store logo in picture ${i + 1} (${logo.marks.join(', ')}), dropped`
                   console.warn(`[blog-images] item ${i} showed a store logo, dropped:`, logo.marks)

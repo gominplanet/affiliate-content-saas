@@ -200,7 +200,8 @@ const p = parseTikTokProduct(HTML, URL)
   const ROUTE = readFileSync('app/api/labs/tiktok-shop/resolve/route.ts', 'utf8')
   const rcode = ROUTE.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
 
-  check('the route is Labs gated', /canSeeNav\('labs', tier\)/.test(rcode),
+  // Labs is admin only (Seb, 2026-10-02), so the route is too.
+  check('the route is Labs gated', /if \(tier !== 'admin'\) \{ \/\/ Labs: admin only/.test(rcode),
     'a Pro-only nav entry with an open route is not gated at all')
   check('the PASTED url is what gets saved', /share_url: pasted/.test(rcode),
     'the _t and u_code parameters are what credit the sale; a normalized link strips them')
@@ -235,8 +236,8 @@ const p = parseTikTokProduct(HTML, URL)
     'a toast is gone before they have gone back to TikTok for another link')
 
   const NAV = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
-  check('it sits in Labs and is Pro-gated',
-    /href: '\/tiktok-shop'[\s\S]{0,140}?gate: isPro/.test(NAV))
+  check('it sits in Labs and is admin-gated',
+    /href: '\/tiktok-shop'[\s\S]{0,140}?gate: isAdmin/.test(NAV))
   const labsAt = NAV.indexOf("label: 'Labs'")
   const itemAt = NAV.indexOf("href: '/tiktok-shop'")
   check('and the nav entry is inside the Labs group', labsAt > -1 && itemAt > labsAt,

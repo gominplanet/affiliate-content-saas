@@ -4,22 +4,19 @@
  */
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
 import { canUsePreview } from '@/lib/labs-preview'
 import EndedDeals from '@/components/deal/EndedDeals'
 
 export default function EndedDealsPage() {
   const tier = useEffectiveTier()
-  const router = useRouter()
 
-  useEffect(() => {
-    if (tier !== null && !canUsePreview('deal_aftercare', tier)) router.replace('/dashboard')
-  }, [tier, router])
 
   if (tier !== null && canUsePreview('deal_aftercare', tier)) return <EndedDeals />
+  // Not on this plan: say so and how to get it, never a silent bounce.
+  if (tier !== null) return <ProUpgradePanel feature="Ended Deals" body="Ended Deals turns deal posts whose sale is over into lasting reviews in place, and brings them back when the product is on sale again." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

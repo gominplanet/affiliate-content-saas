@@ -5,22 +5,19 @@
  */
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
 import { canUsePreview } from '@/lib/labs-preview'
 import BrandRecap from '@/components/brand-recap/BrandRecap'
 
 export default function BrandRecapPage() {
   const tier = useEffectiveTier()
-  const router = useRouter()
 
-  useEffect(() => {
-    if (tier !== null && !canUsePreview('brand_recap', tier)) router.replace('/dashboard')
-  }, [tier, router])
 
   if (tier !== null && canUsePreview('brand_recap', tier)) return <BrandRecap />
+  // Not on this plan: say so and how to get it, never a silent bounce.
+  if (tier !== null) return <ProUpgradePanel feature="Brand Recap" body="Brand Recap gathers every link you published for a Creator Connections brand into one message you can send them." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

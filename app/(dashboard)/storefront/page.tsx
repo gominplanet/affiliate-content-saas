@@ -17,14 +17,14 @@ export default function StorefrontPage() {
   const gateTier = useEffectiveTier()
   const router = useRouter()
 
-  // Trial has no Storefront — send them to the dashboard. Every paid tier stays.
+  // In Labs, so admin only (Labs is invisible to everyone else).
   useEffect(() => {
-    if (gateTier === 'trial') {
+    if (gateTier !== null && gateTier !== 'admin') {
       router.replace('/dashboard')
     }
   }, [gateTier, router])
 
-  if (gateTier !== null && gateTier !== 'trial') return <AmazonBrainstorm />
+  if (gateTier === 'admin') return <AmazonBrainstorm />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

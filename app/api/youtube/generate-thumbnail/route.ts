@@ -885,8 +885,10 @@ export async function POST(request: Request) {
   } catch { /* unreadable body is the handler's problem, not ours */ }
 
   const memo: ImageMemo = { db: null, userId: null, asin: null }
+  let productTitle: string | null = null
+  try { productTitle = String((await request.clone().json() as { productTitle?: string }).productTitle || '') || null } catch { /* none */ }
   const res0 = await generateThumbnail(request, memo)
-  const res = await withoutStoreLogos(res0, memo.userId)
+  const res = await withoutStoreLogos(res0, memo.userId, productTitle)
 
   // YouTube Co-Pilot defers: this route returns the TEXT-FREE base image and
   // the browser bakes the headline on afterwards (addTextOverlay). Saving here
@@ -920,13 +922,13 @@ export async function POST(request: Request) {
  * out. When none is left, the answer is a 422 that says what was found and to
  * generate again, never a thumbnail with Amazon's logo on it.
  */
-async function withoutStoreLogos(res: Response, userId: string | null): Promise<Response> {
+async function withoutStoreLogos(res: Response, userId: string | null, productTitle: string | null = null): Promise<Response> {
   if (res.status !== 200 || !userId) return res
   let body: Record<string, unknown>
   try { body = await res.clone().json() as Record<string, unknown> } catch { return res }
   const urls = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls : [body.thumbnailUrl]).filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
   if (!urls.length) return res
-  const verdicts = await Promise.all(urls.map((u) => checkNewPicture({ url: u }, { userId, tier: null, feature: 'new_picture_logo_check' })))
+  const verdicts = await Promise.all(urls.map((u) => checkNewPicture({ url: u }, { userId, tier: null, feature: 'new_picture_logo_check' }, { title: productTitle })))
   const keepIdx = urls.map((_, i) => i).filter((i) => verdicts[i].ok)
   // Said, not hidden: how many could not be checked at all.
   const unchecked = verdicts.filter((v) => v.ok && !v.checked).length

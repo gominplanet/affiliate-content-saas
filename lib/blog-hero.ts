@@ -136,7 +136,7 @@ export async function rebuildPostHero(opts: {
     }
     // NEVER A STORE LOGO (lib/post-logo-sweep checkNewPicture): thrown away,
     // and the current thumb is kept.
-    const logo = await checkNewPicture({ base64: hero.data, mediaType: hero.mediaType }, { userId: opts.userId, tier: opts.tier ?? null, feature: 'new_picture_logo_check' })
+    const logo = await checkNewPicture({ base64: hero.data, mediaType: hero.mediaType }, { userId: opts.userId, tier: opts.tier ?? null, feature: 'new_picture_logo_check' }, { title: ref.productTitle || opts.fallbackTitle })
     if (!logo.ok) {
       console.warn(`${tag} hero had a store logo (${logo.marks.join(', ')}) — thrown away, keeping the current thumb`)
       return { ok: false, reason: 'store_logo', message: `the picture showed ${logo.marks.join(', ')}, so it was not used` }

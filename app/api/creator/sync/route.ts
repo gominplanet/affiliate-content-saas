@@ -9,7 +9,6 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
-import { canSeeNav } from '@/lib/feature-access'
 import {
   providerFor, apifyConfigured, socialcrawlConfigured, startApifyRun,
   fetchTikTokPosts, extractTikTokBrands, type SyncSource,
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: intRow } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canSeeNav('labs', normalizeTier(intRow?.tier))) {
+  if (normalizeTier(intRow?.tier) !== 'admin') { // Labs: admin only
     return NextResponse.json({ error: 'Brand Radar is a Pro feature.' }, { status: 403 })
   }
 

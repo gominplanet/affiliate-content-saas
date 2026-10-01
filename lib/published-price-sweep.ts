@@ -110,13 +110,15 @@ export async function sweepPublishedPrices(sb: Sb, max = PRICE_FIX_PER_RUN, dead
 // Every published post's review data (the mvp_jsonld meta MVP writes, which
 // Google and the site's products feed read) used to carry the Amazon price.
 // New posts have none. This takes it out of the rest, on every account, in the
-// background: the offer stays (where to buy, availability), only price,
-// priceCurrency and priceValidUntil go. Words like "on sale" are not touched.
+// background: the whole offer block goes (Seb, 2026-10-02), and the buy address
+// stays as Product.url. Words like "on sale" are not touched.
 // Each post is marked when looked at (migration 392), so it is read once.
 
 export const SCHEMA_FIX_PER_RUN = 20
 
-/** The review data without a price, or null when it has none. Pure. */
+/** The review data without its offer block (price, currency, availability and
+ *  all), or null when it has none. The product keeps the buy address as
+ *  Product.url. Pure. */
 export function stripSchemaPrice(json: string | null | undefined): string | null {
   if (!json) return null
   let graph: { '@graph'?: Array<Record<string, unknown>> } & Record<string, unknown>
@@ -124,13 +126,12 @@ export function stripSchemaPrice(json: string | null | undefined): string | null
   let changed = false
   const nodes = Array.isArray(graph['@graph']) ? graph['@graph'] : [graph]
   for (const node of nodes) {
-    const offers = node?.offers
-    for (const offer of (Array.isArray(offers) ? offers : offers ? [offers] : []) as Array<Record<string, unknown>>) {
-      for (const k of ['price', 'priceCurrency', 'priceValidUntil', 'lowPrice', 'highPrice']) {
-        if (k in offer) { delete offer[k]; changed = true }
-      }
-      if (offer.priceSpecification) { delete offer.priceSpecification; changed = true }
-    }
+    if (!node || !('offers' in node)) continue
+    const offers = node.offers
+    const first = (Array.isArray(offers) ? offers[0] : offers) as Record<string, unknown> | undefined
+    if (!node.url && typeof first?.url === 'string') node.url = first.url
+    delete node.offers
+    changed = true
   }
   return changed ? JSON.stringify(graph) : null
 }

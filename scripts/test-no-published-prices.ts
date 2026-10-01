@@ -30,8 +30,8 @@ check('deals: the writer and the refresh are never given a number and never stat
 
 const GEN = r('app/api/blog/generate/route.ts')
 check('review data (JSON-LD) never carries a price', /const includePrice = false/.test(GEN))
-check('the old price button now removes prices from posts',
-  /delete offer\.price/.test(r('app/api/blog/refresh-prices/route.ts')) && !/offer\.price = numericPrice/.test(r('app/api/blog/refresh-prices/route.ts')))
+check('the old price button now removes the offer block from posts',
+  /stripSchemaPrice\(existingJsonStr\)/.test(r('app/api/blog/refresh-prices/route.ts')) && !/offer\.price = numericPrice/.test(r('app/api/blog/refresh-prices/route.ts')))
 
 const YT = r('app/api/youtube/generate-metadata/route.ts')
 check('YouTube: never given a price, told never to write one, and no example title has one',
@@ -59,11 +59,12 @@ check('Deal check block: no percentage below the usual price', !/`About \$\{a\.p
   const CRON = r('app/api/cron/reconcile-stuck-images/route.ts')
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { stripSchemaPrice } = require('../lib/published-price-sweep') as typeof import('../lib/published-price-sweep')
-  const ld = JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer', price: 59.99, priceCurrency: 'USD', priceValidUntil: '2026-10-08', availability: 'InStock', url: 'x' } }] })
+  const ld = JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer', price: 59.99, priceCurrency: 'USD', availability: 'InStock', url: 'https://amzn.to/x' } }] })
   const cleanLd = stripSchemaPrice(ld)
-  check('review data: price, currency and expiry go; the offer and availability stay',
-    !!cleanLd && !/59\.99|priceCurrency|priceValidUntil/.test(cleanLd) && /InStock/.test(cleanLd) && /"Offer"/.test(cleanLd))
-  check('review data without a price is left alone', stripSchemaPrice(JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer' } }] })) === null)
+  check('review data: the whole offer block goes, and the buy address stays as the product url',
+    !!cleanLd && !/offers|59\.99|priceCurrency/.test(cleanLd) && /"url":"https:\/\/amzn\.to\/x"/.test(cleanLd))
+  check('new posts get no offer block at all', !/product\.offers = offer/.test(r('lib/seo-schema.ts')))
+  check('review data without an offer is left alone', stripSchemaPrice(JSON.stringify({ '@graph': [{ '@type': 'Product', name: 'x' }] })) === null)
   check('the sweeps read WordPress through its REST API, and a failed read is never marked done',
     !/getCustomEndpoint/.test(r('lib/published-price-sweep.ts')) && /readPostFields\(p\.wordpress_post_id, \['meta'\]\)/.test(r('lib/published-price-sweep.ts'))
     && /if \(!read\.ok\) \{ out\.failed\.push\(\{ postId: p\.id, reason: read\.reason \}\); await touch\(p\.id\); continue \}/.test(r('lib/published-price-sweep.ts'))

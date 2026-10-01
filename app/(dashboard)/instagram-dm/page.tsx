@@ -11,6 +11,8 @@
 // approves the messaging permissions (Phase 2). See project_ig_comment_to_dm.
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { InstagramDmGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -31,7 +33,16 @@ interface Campaign {
   created_at: string
 }
 
+// In Labs, so admin only: everyone else is sent to the dashboard.
 export default function InstagramDmPage() {
+  const tier = useEffectiveTier()
+  const router = useRouter()
+  useEffect(() => { if (tier !== null && tier !== 'admin') router.replace('/dashboard') }, [tier, router])
+  if (tier !== 'admin') return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
+  return <InstagramDm />
+}
+
+function InstagramDm() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [enabled, setEnabled] = useState(false)

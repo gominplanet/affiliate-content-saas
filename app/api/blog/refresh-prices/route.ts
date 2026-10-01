@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
-import { parsePrice } from '@/lib/seo-schema'
+import { stripSchemaPrice } from '@/lib/published-price-sweep'
 
 export const maxDuration = 300
 
@@ -157,22 +157,10 @@ export async function GET() {
             continue
           }
 
-          // 3. Take the price off the Product node's offer; keep the offer
-          //    itself (where to buy, availability).
-          let patched = false
-          for (const node of graph['@graph'] ?? []) {
-            if (node['@type'] === 'Product' && node.offers) {
-              const offer = node.offers as Record<string, unknown>
-              if ('price' in offer || 'priceCurrency' in offer || 'priceValidUntil' in offer) {
-                delete offer.price
-                delete offer.priceCurrency
-                delete offer.priceValidUntil
-                if (!offer['@type']) offer['@type'] = 'Offer'
-                patched = true
-              }
-            }
-          }
-
+          // 3. Take the whole offer block off (lib/published-price-sweep).
+          const stripped = stripSchemaPrice(existingJsonStr)
+          const patched = !!stripped
+          if (stripped) graph = JSON.parse(stripped)
           if (!patched) {
             done++
             continue

@@ -165,9 +165,23 @@ export async function sweepPostLogos(sb: Sb, anthropic: Anthropic, opts: { maxIm
 
 export type NewPictureVerdict = { ok: true; checked: boolean; reason?: string } | { ok: false; marks: string[] }
 
+/** Is this product made by Amazon (an Echo, a Kindle, Amazon Basics...)? Then
+ *  its own Amazon logo on the product or its box is the maker's mark, which
+ *  is allowed (Seb, 2026-10-02). Pure. */
+export function isAmazonMadeProduct(product: { title?: string | null; brand?: string | null } | null | undefined): boolean {
+  const t = `${product?.brand ?? ''} ${product?.title ?? ''}`
+  return /\b(amazon basics|amazonbasics|amazon essentials|amazon echo|echo (dot|show|pop|studio|hub|auto|buds|frames)|kindle|fire tv|fire tablet|fire hd|alexa|blink|eero|ring (video|doorbell|stick up|spotlight|floodlight|indoor|outdoor|alarm|camera))\b/i.test(t)
+    || /^\s*amazon\b/i.test(String(product?.brand ?? ''))
+}
+
+const AMAZON_MADE_NOTE = `
+
+THIS PRODUCT IS MADE BY AMAZON. Its own Amazon logo, smile or name printed ON THE PRODUCT OR ITS PACKAGING is the maker's mark and does NOT count. Still count Amazon used as a store: a Prime badge, "Amazon's Choice", "Best Seller", a shopping cart or a "Buy on Amazon" style mark.`
+
 export async function checkNewPicture(
   input: { url: string } | { base64: string; mediaType: string },
   usage: { userId: string; tier: string | null; feature: string },
+  product?: { title?: string | null; brand?: string | null } | null,
 ): Promise<NewPictureVerdict> {
   try {
     if ('url' in input && isRetailerSiteImage(input.url)) return { ok: false, marks: [AMAZON_SITE_GRAPHIC] }
@@ -187,7 +201,7 @@ export async function checkNewPicture(
     // the SDK default (10 minutes, 2 retries) could outlast them.
     const msg = await anthropic.messages.create({
       model: LOGO_SCAN_MODEL, max_tokens: 200,
-      messages: [{ role: 'user', content: [block, { type: 'text', text: LOGO_SCAN_PROMPT }] }],
+      messages: [{ role: 'user', content: [block, { type: 'text', text: LOGO_SCAN_PROMPT + (isAmazonMadeProduct(product) ? AMAZON_MADE_NOTE : '') }] }],
     }, { timeout: 15_000, maxRetries: 0 })
     recordAnthropicUsage(msg, { userId: usage.userId, tier: usage.tier, feature: usage.feature, model: LOGO_SCAN_MODEL })
     const f = readLogoReply(((msg.content?.[0] as { text?: string } | undefined)?.text ?? '').trim())

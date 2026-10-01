@@ -9,7 +9,6 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import { canSeeNav } from '@/lib/feature-access'
 import TikTokShop from '@/components/labs/TikTokShop'
 
 export default function TikTokShopPage() {
@@ -17,10 +16,10 @@ export default function TikTokShopPage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (tier !== null && !canSeeNav('labs', tier)) router.replace('/dashboard')
+    if (tier !== null && tier !== 'admin') router.replace('/dashboard')
   }, [tier, router])
 
-  if (tier !== null && canSeeNav('labs', tier)) return <TikTokShop />
+  if (tier !== null && tier === 'admin') return <TikTokShop />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

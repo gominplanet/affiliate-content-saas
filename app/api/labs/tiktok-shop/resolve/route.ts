@@ -33,7 +33,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
-import { canSeeNav } from '@/lib/feature-access'
 import { fetchWithTimeout, DEFAULT_TIMEOUT_MS } from '@/lib/fetch-timeout'
 import {
   parseTikTokProduct, tiktokProductIdFromUrl, TIKTOK_PRODUCT_HINT,
@@ -59,7 +58,7 @@ async function gate() {
   if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intg?.tier)
-  if (!canSeeNav('labs', tier)) {
+  if (tier !== 'admin') { // Labs: admin only
     return { error: NextResponse.json({ error: 'TikTok Shop is a Labs feature, available on Pro.', code: 'tier_not_allowed' }, { status: 403 }) }
   }
   return { supabase, user }

@@ -310,26 +310,12 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
     if (input.product.imageUrl) product.image = [input.product.imageUrl]
     if (input.product.brand) product.brand = { '@type': 'Brand', name: input.product.brand }
 
-    // Offer: where to buy + availability — the fields AI shopping agents weight
-    // most when surfacing a product. The buy-URL + availability are always
-    // accurate for an affiliate review; `price` is emitted ONLY when a CURRENT
-    // one is supplied (a stale price hurts agent trust more than no price).
+    // NO OFFER BLOCK (Seb, 2026-10-02). An Offer without a price makes Google
+    // report "missing field price" and can cost the review its stars, and MVP
+    // may not print a price (Amazon allows one only from its own API with a
+    // time stamp). The product keeps its buy address as Product.url.
     const buyUrl = (input.product.url || '').trim()
     if (buyUrl) product.url = buyUrl
-    const offerPrice = parsePrice(input.product.price)
-    if (buyUrl || offerPrice != null) {
-      const offer: Node = {
-        '@type': 'Offer',
-        availability: input.product.availability || 'https://schema.org/InStock',
-      }
-      if (buyUrl) offer.url = buyUrl
-      if (offerPrice != null) {
-        offer.price = offerPrice
-        offer.priceCurrency = input.product.priceCurrency || 'USD'
-        if (input.product.priceValidUntil) offer.priceValidUntil = input.product.priceValidUntil
-      }
-      product.offers = offer
-    }
 
     // Only emit a Review when there's a real rating, and link it from the
     // Product (product.review → @id). Per Google, a Review reached via its

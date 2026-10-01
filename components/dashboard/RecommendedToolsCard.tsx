@@ -11,11 +11,12 @@ import { ExternalLink } from 'lucide-react'
 
 type Link = { href: string; label: string; desc: string; highlight?: string }
 
-// TOOLS = software the creator runs day to day (link wrapping, storefront ops,
-// auto-syncing). Order is intentional: Oink first (highest converter).
+// TOOLS = software the creator runs day to day. Oink is THE recommended tool
+// (Seb, 2026-10-02: "the only recommended tool MVP recommends is Oink").
+// Cha-Ching was removed: it sells the same YouTube-to-storefront sync that
+// Liftoff does.
 const TOOLS: Link[] = [
   { href: 'https://geni.us/2y5sBo', label: 'Oink', desc: 'Manage Amazon Creator Connections, earnings & storefronts', highlight: '#E0218A' },
-  { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
 ]
 
 // PROGRAMS = affiliate/collab networks the creator joins to earn (brand deals,

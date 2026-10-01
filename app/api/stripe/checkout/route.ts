@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { couponToApply } from '@/lib/coupon-guard'
 import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   const stripe = getStripe()
+  const approvedCoupon = await couponToApply(stripe, couponId, 'checkout')
 
   // Meta match-quality signals. `_fbp` is the pixel's browser id and `_fbc`
   // encodes the ad click that brought them here. Server-side Purchase events
@@ -342,8 +344,10 @@ export async function POST(request: NextRequest) {
     // affiliate link and the campaign has the incentive enabled),
     // auto-apply that coupon. Otherwise show the "Add promotion code"
     // field for manual entry — same UX everyone else gets.
-    ...(couponId
-      ? { discounts: [{ coupon: couponId }] }
+    // Only an approved or mild coupon (lib/coupon-guard): the id comes from
+    // the browser, and any id on the account would otherwise be honoured.
+    ...(approvedCoupon
+      ? { discounts: [{ coupon: approvedCoupon }] }
       : { allow_promotion_codes: true }),
     // Rewardful affiliate attribution — the referral UUID lives in
     // client_reference_id, which Rewardful's Stripe webhook reads to

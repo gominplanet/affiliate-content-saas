@@ -51,7 +51,12 @@ async function main() {
     /checkNewPicture\(\{ base64: hero\.data/.test(r('lib/blog-hero.ts'))
     && /checkNewPicture\(\{ url: falUrl \}/.test(r('app/api/blog/generate/route.ts'))
     && /checkNewPicture\(\{ url \}/.test(r('app/api/blog/refresh-images/route.ts'))
-    && /const res = await withoutStoreLogos\(res0, memo\.userId\)/.test(r('app/api/youtube/generate-thumbnail/route.ts')))
+    && /const res = await withoutStoreLogos\(res0, memo\.userId, productTitle\)/.test(r('app/api/youtube/generate-thumbnail/route.ts')))
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { isAmazonMadeProduct } = require('../lib/post-logo-sweep') as typeof import('../lib/post-logo-sweep')
+  check('Amazon\u2019s own products may show their own Amazon logo; nothing else may',
+    isAmazonMadeProduct({ title: 'Echo Dot (5th Gen) smart speaker' }) && isAmazonMadeProduct({ title: 'Kindle Paperwhite' }) && isAmazonMadeProduct({ brand: 'Amazon Basics' })
+    && !isAmazonMadeProduct({ title: 'LEVOIT Tower Fan' }) && !isAmazonMadeProduct({ title: 'Ring light for streaming' }) && !isAmazonMadeProduct(null))
   check('a thumbnail that only came back with logos says so, never ships one', /code: 'store_logo' \}, \{ status: 422 \}/.test(r('app/api/youtube/generate-thumbnail/route.ts')))
 
   const REFRESH = r('app/api/blog/refresh-images/route.ts')

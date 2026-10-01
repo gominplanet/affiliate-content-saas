@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
+import { couponToApply } from '@/lib/coupon-guard'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const stripe = getStripe()
+  const approvedCoupon = await couponToApply(stripe, couponId, 'paid signup')
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
@@ -146,7 +148,8 @@ export async function POST(request: NextRequest) {
     subscription_data: { metadata: { user_id: userId, tier } },
     // Rewardful coupon (double-sided incentive) and manual promo codes are
     // mutually exclusive on a Checkout session — pick one.
-    ...(couponId ? { discounts: [{ coupon: couponId }] } : { allow_promotion_codes: true }),
+    // Only an approved or mild coupon (lib/coupon-guard).
+    ...(approvedCoupon ? { discounts: [{ coupon: approvedCoupon }] } : { allow_promotion_codes: true }),
     // Rewardful affiliate attribution.
     ...(referral ? { client_reference_id: referral } : {}),
     success_url: `${appUrl}/billing?upgraded=1`,

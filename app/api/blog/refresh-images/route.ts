@@ -397,7 +397,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       }
       if (!url) return null
       // NEVER A STORE LOGO: a picture showing one is dropped, not placed.
-      const logo = await checkNewPicture({ url }, { userId: user.id, tier: tier ?? null, feature: 'new_picture_logo_check' })
+      const logo = await checkNewPicture({ url }, { userId: user.id, tier: tier ?? null, feature: 'new_picture_logo_check' }, { title: productTitle })
       if (!logo.ok) { console.warn(`[refresh-images] item ${i} showed a store logo, dropped:`, logo.marks); return null }
       // Try WP media upload first; if it throws (Hostinger / WAF blocking the
       // multipart POST to /wp-json/wp/v2/media is the common case), embed the

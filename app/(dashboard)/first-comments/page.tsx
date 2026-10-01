@@ -4,22 +4,19 @@
  */
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
 import { canUsePreview } from '@/lib/labs-preview'
 import OlderVideos from '@/components/first-comments/OlderVideos'
 
 export default function FirstCommentsPage() {
   const tier = useEffectiveTier()
-  const router = useRouter()
 
-  useEffect(() => {
-    if (tier !== null && !canUsePreview('first_comment', tier)) router.replace('/dashboard')
-  }, [tier, router])
 
   if (tier !== null && canUsePreview('first_comment', tier)) return <OlderVideos />
+  // Not on this plan: say so and how to get it, never a silent bounce.
+  if (tier !== null) return <ProUpgradePanel feature="Pinned Comments" body="Pinned Comments posts and pins a first comment with your product link on every video, new and old, and keeps it up to date." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

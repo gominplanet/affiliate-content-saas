@@ -653,7 +653,10 @@ export default function DashboardShellV2({
     // affiliate revenue the business does not depend on. The partner pages that
     // earn the same commissions still exist in the product (/levanta,
     // /partnerboost, /wayward), so nothing is lost except the outbound nav.
-    // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on
+    // LABS: ADMIN ONLY (Seb, 2026-10-02: "make Labs invisible to everyone
+    // except me"). Every item here is gated isAdmin, and each page and route
+    // refuses non-admins on its own. A feature leaves Labs to reach Pro.
+    // (History:) experimental tools, NOT promoted on
     // landing/pricing until they graduate out. Retired 2026-07-08 (Social Launch
     // Kit graduated to SET UP), re-opened 2026-07-11 for Instagram Auto-DM
     // (Phase 1; dormant until Meta approves the messaging permissions).
@@ -681,25 +684,25 @@ export default function DashboardShellV2({
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
-        { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPro },
+        { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isAdmin },
         // Admin only while in Labs (lib/labs-preview earnings).
-        { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: previewOpenToPro('earnings') ? isPro : isAdmin },
+        { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: isAdmin },
         // Storefront Stats (/analytics) retired 2026-08 — the SCOUT-synced AMZ
         // Storefront dashboard (/brainstorm) is the real per-product earnings
         // view now, so the Geniuslink-clicks Labs page was dropped to kill the
         // name clash and the empty state for storefront-only creators.
-        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
+        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isAdmin },
         // Brand Radar — server-side storefront + TikTok ingestion (Apify /
         // SocialCrawl) → the brands a creator has worked with. Ships dark until a
         // provider token is set; Pro/admin-only while it's experimental.
-        { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isPro },
+        { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isAdmin },
         // TikTok Shop — add a TikTok Shop product by pasting its link, so the
         // publishing engine can write about it and point the link back at it.
         // In LABS while the composer side is built: today it reads and lists
         // products, it does not yet make a post from one. A showcase cannot be
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
-        { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
+        { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isAdmin, badge: 'New' },
         // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
         // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
