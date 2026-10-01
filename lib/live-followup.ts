@@ -18,6 +18,17 @@ export type LiveMoment = {
   hook: string
   clipUrl?: string | null
   clipError?: string | null
+  /** Where the 9:16 window sits across the frame: 0 left edge, 1 right edge. */
+  cropX?: number | null
+  /** 'auto' when MVP found the speaker, 'manual' when the creator set it,
+   *  'centre' when no speaker could be found and the middle was used. */
+  framing?: 'auto' | 'manual' | 'centre' | null
+  layout?: 'center' | 'split' | null
+  frameUrl?: string | null
+  /** Width of the source frame over its height, for drawing the window. */
+  frameAspect?: number | null
+  /** Why the framing fell back to the middle, when it did. */
+  frameNote?: string | null
 }
 
 export type LiveProduct = { asin: string; title: string; plannedMin?: number | null }
@@ -110,6 +121,21 @@ export function shortTitle(t: string): string {
   const s = String(t || '').replace(/\s+/g, ' ').trim()
   const cut = s.split(/[,|(]/)[0].trim()
   return (cut.length >= 12 ? cut : s).slice(0, 70)
+}
+
+/** How wide the 9:16 window is, as a share of a frame of this aspect. Pure. */
+export function windowShare(aspect: number | null | undefined): number {
+  const a = Number(aspect) > 0 ? Number(aspect) : 16 / 9
+  return Math.min(1, (9 / 16) / a)
+}
+
+/** The crop position that puts a face at `faceX` (0 to 1 across the frame)
+ *  in the middle of the 9:16 window, kept inside the frame. Pure. */
+export function cropXForFace(faceX: number, aspect: number | null | undefined): number {
+  const w = windowShare(aspect)
+  if (w >= 1 || !Number.isFinite(faceX)) return 0.5
+  const x = (faceX - w / 2) / (1 - w)
+  return Math.round(Math.min(1, Math.max(0, x)) * 1000) / 1000
 }
 
 export function fmtClock(sec: number): string {

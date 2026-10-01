@@ -91,15 +91,58 @@ export async function matchMoments(products: LiveProduct[], cues: TranscriptCue[
   }
 }
 
-/** One vertical clip, cut straight from the stream with burned captions. */
-export async function renderLiveClip(streamUrl: string, startSec: number, endSec: number, words: Array<{ startSec: number; endSec: number; text: string }>, userId: string)
+/** One still from the stream, for framing a clip. */
+export async function liveFrame(streamUrl: string, atSec: number, userId: string): Promise<{ ok: true; url: string; aspect: number | null } | Fail> {
+  const base = ingestBase()
+  if (!base) return { ok: false, error: 'The video service is not set up (YOUTUBE_INGEST_URL).' }
+  try {
+    const res = await fetch(`${base}/frame`, { method: 'POST', headers: ingestHeaders(), body: JSON.stringify({ url: streamUrl, atSec, userId }), signal: AbortSignal.timeout(75_000) })
+    if (res.status === 404) return { ok: false, error: 'The video service has not been updated with framing yet. Redeploy it and try again.' }
+    if (!res.ok) return { ok: false, error: `No frame could be read: ${await errorOf(res)}` }
+    const j = await res.json() as { url?: string; width?: number | null; height?: number | null }
+    if (!j.url) return { ok: false, error: 'The video service returned no frame.' }
+    return { ok: true, url: j.url, aspect: j.width && j.height ? j.width / j.height : null }
+  } catch (e) {
+    return { ok: false, error: `Could not reach the video service: ${String(e).slice(0, 160)}` }
+  }
+}
+
+/** Where the speaker's face is across the frame (0 left, 1 right), read by
+ *  Claude from one still. Null when nobody clear is on screen. */
+export async function findSpeaker(frameUrl: string, userId: string, tier: string | null): Promise<{ ok: true; faceX: number | null; people: number } | Fail> {
+  try {
+    const img = await fetch(frameUrl, { signal: AbortSignal.timeout(20_000) })
+    if (!img.ok) return { ok: false, error: `The frame could not be loaded (${img.status}).` }
+    const data = Buffer.from(await img.arrayBuffer()).toString('base64')
+    const model = 'claude-haiku-4-5-20251001'
+    const msg = await createAnthropicClient().messages.create({
+      model, max_tokens: 200,
+      system: 'You locate the person presenting in a livestream frame. Return STRICT JSON only: {"faceX": number, "people": number}. faceX is the horizontal centre of the face of the person presenting or speaking, from 0 (left edge) to 1 (right edge). If two people present side by side with equal weight, give the point between their faces. If no face is visible, faceX is null. people is how many people are visible.',
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } },
+        { type: 'text', text: 'Where is the presenter? JSON only.' },
+      ] }],
+    })
+    recordAnthropicUsage(msg, { userId, tier, feature: 'live_followup_frame', model })
+    const raw = (msg.content[0] as { type: string; text?: string }).text || ''
+    const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { faceX?: unknown; people?: unknown }
+    const fx = j.faceX == null ? null : Number(j.faceX)
+    return { ok: true, faceX: fx != null && Number.isFinite(fx) && fx >= 0 && fx <= 1 ? fx : null, people: Number(j.people) || 0 }
+  } catch (e) {
+    return { ok: false, error: `Finding the speaker failed: ${String(e instanceof Error ? e.message : e).slice(0, 160)}` }
+  }
+}
+
+/** One vertical clip, cut straight from the stream with burned captions,
+ *  the 9:16 window at `cropX` across the frame (centre when unset). */
+export async function renderLiveClip(streamUrl: string, startSec: number, endSec: number, words: Array<{ startSec: number; endSec: number; text: string }>, userId: string, framing: { cropX?: number | null; layout?: 'center' | 'split' | null } = {})
   : Promise<{ ok: true; url: string } | Fail> {
   const base = ingestBase()
   if (!base) return { ok: false, error: 'The video service is not set up (YOUTUBE_INGEST_URL).' }
   try {
     const res = await fetch(`${base}/render-short`, {
       method: 'POST', headers: ingestHeaders(),
-      body: JSON.stringify({ videoUrl: streamUrl, stream: true, startSec, endSec, words, userId }),
+      body: JSON.stringify({ videoUrl: streamUrl, stream: true, startSec, endSec, words, userId, reframe: framing.layout === 'split' ? 'split' : 'center', ...(framing.cropX != null ? { cropX: framing.cropX } : {}) }),
       signal: AbortSignal.timeout(280_000),
     })
     if (!res.ok) return { ok: false, error: `The clip could not be cut: ${await errorOf(res)}` }

@@ -7,7 +7,7 @@
 // timing, the roundup text, the Labs gate, and that nothing in the follow-up
 // posts anywhere by itself (the clips open in Clip Factory as drafts).
 import { readFileSync } from 'node:fs'
-import { pickStream, clampMoment, wordsInWindow, parseMoments, composeRoundup, CLIP_MAX_SEC, CLIP_MIN_SEC } from '../lib/live-followup'
+import { pickStream, clampMoment, wordsInWindow, parseMoments, composeRoundup, CLIP_MAX_SEC, CLIP_MIN_SEC, cropXForFace, windowShare } from '../lib/live-followup'
 import { canUsePreview } from '../lib/labs-preview'
 import { parseLiveReplayHtml, broadcastIdOf, vttToWordCues } from '../lib/amazon-live-page'
 
@@ -87,6 +87,16 @@ const route2 = r('app/api/live/followup/route.ts')
 check('the server reads the replay page before asking SCOUT', /const page = await readReplayPage\(replayUrl\)/.test(route2) && /tryScout: !body\.read/.test(route2))
 check('Amazon\'s captions skip transcription when present', /vttToWordCues\(await r\.text\(\)\)/.test(route2) && /state: 'transcribed'/.test(route2))
 check('a product nobody could name is listed, not dropped', /no product name found/.test(route2))
+
+// FRAMING: the 9:16 window sits on the speaker, inside the frame.
+check('a 16:9 frame shows about a third of its width in 9:16', Math.abs(windowShare(16 / 9) - 0.3164) < 0.001)
+check('a face in the middle keeps the centre crop', cropXForFace(0.5, 16 / 9) === 0.5)
+check('a face on the left moves the window left, never past the edge', cropXForFace(0.3, 16 / 9) < 0.5 && cropXForFace(0.05, 16 / 9) === 0 && cropXForFace(0.98, 16 / 9) === 1)
+check('the face lands in the middle of the window', (() => { const x = cropXForFace(0.3, 16 / 9); const w = windowShare(16 / 9); return Math.abs(x * (1 - w) + w / 2 - 0.3) < 0.002 })())
+const route3 = r('app/api/live/followup/route.ts')
+check('a clip is framed on the speaker unless the creator set it', /action === 'frame' \|\| action === 'clip'/.test(route3) && /cropXForFace\(faceX, f\.aspect\)/.test(route3) && /framing: 'manual'/.test(route3))
+check('no speaker found is said, and the middle is used', /framing: faceX == null \? 'centre' : 'auto'/.test(route3) && /No face was clear/.test(route3))
+check('the crop position reaches the video service', /cropX: framing\.cropX/.test(r('lib/live-followup-server.ts')) && /cropAt\(cropX\)/.test(r('ingest-service/server.js')))
 
 if (failures.length) {
   console.error(`\n❌ live-followup: ${failures.length} failure(s)\n`)

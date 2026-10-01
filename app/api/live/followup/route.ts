@@ -8,7 +8,9 @@
 // POST { action: 'create', replayUrl, planId?, read }      read = what SCOUT found
 // POST { action: 'transcribe', id }    pull the audio and transcribe it
 // POST { action: 'match', id }         find each product's moment
-// POST { action: 'clip', id, asin }    cut that product's clip
+// POST { action: 'frame', id, asin }   a still from the moment, and where the speaker is
+// POST { action: 'clip', id, asin, cropX?, layout? }   cut that product's clip,
+//                                      framed on the speaker (or where the creator set)
 // POST { action: 'roundup', id }       the "everything I showed" post, as text
 // POST { action: 'delete', id }
 //
@@ -20,8 +22,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { pickStream, wordsInWindow, composeRoundup, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
-import { streamAudio, transcribeLive, matchMoments, renderLiveClip } from '@/lib/live-followup-server'
+import { pickStream, wordsInWindow, composeRoundup, cropXForFace, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
+import { streamAudio, transcribeLive, matchMoments, renderLiveClip, liveFrame, findSpeaker } from '@/lib/live-followup-server'
 import { resolveClipLinks } from '@/lib/reel-caption'
 import { broadcastIdOf, parseLiveReplayHtml, vttToWordCues, type LiveReplayPage } from '@/lib/amazon-live-page'
 import { fetchAmazonProduct } from '@/services/amazon'
@@ -148,14 +150,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ followup })
   }
 
-  if (action === 'clip') {
+  // FRAMING. One still from the moment, and where the speaker is in it, so
+  // the 9:16 window sits on them instead of the middle of the frame.
+  const uid = g.userId as string
+  const tier = g.tier
+  async function autoFrame(mo: LiveMoment): Promise<LiveMoment> {
+    const at = mo.startSec + Math.min(20, (mo.endSec - mo.startSec) * 0.3)
+    const f = await liveFrame(row.stream_url, at, uid)
+    if (!f.ok) return { ...mo, cropX: mo.cropX ?? 0.5, framing: 'centre', frameNote: f.error }
+    const sp = await findSpeaker(f.url, uid, tier)
+    const faceX = sp.ok ? sp.faceX : null
+    return {
+      ...mo, frameUrl: f.url, frameAspect: f.aspect,
+      cropX: faceX == null ? 0.5 : cropXForFace(faceX, f.aspect),
+      framing: faceX == null ? 'centre' : 'auto',
+      layout: mo.layout ?? 'center',
+      frameNote: sp.ok ? (faceX == null ? 'No face was clear in this frame, so the middle is used.' : null) : sp.error,
+    }
+  }
+
+  if (action === 'frame' || action === 'clip') {
     const asin = String(body.asin || '').toUpperCase()
     const moments = (Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]
     const i = moments.findIndex((x) => x.asin === asin)
     if (i < 0) return NextResponse.json({ error: 'That product has no moment in this replay.' }, { status: 404 })
-    const mo = moments[i]
+    let mo = moments[i]
+    // The creator's own framing wins; otherwise MVP finds the speaker once.
+    const x = Number(body.cropX)
+    if (Number.isFinite(x) && x >= 0 && x <= 1) mo = { ...mo, cropX: Math.round(x * 1000) / 1000, framing: 'manual' }
+    if (body.layout === 'split' || body.layout === 'center') mo = { ...mo, layout: body.layout }
+    if (action === 'frame' || mo.cropX == null || body.refind === true) {
+      const keepManual = mo.framing === 'manual' && action === 'clip' && body.refind !== true
+      const framed = await autoFrame(mo)
+      mo = keepManual ? { ...framed, cropX: mo.cropX, framing: 'manual' } : framed
+    }
+    if (action === 'frame') {
+      moments[i] = mo
+      return NextResponse.json({ followup: await save({ moments }) })
+    }
     const words = wordsInWindow((Array.isArray(row.cues) ? row.cues : []) as TranscriptCue[], mo.startSec, mo.endSec)
-    const r = await renderLiveClip(row.stream_url, mo.startSec, mo.endSec, words, g.userId)
+    const r = await renderLiveClip(row.stream_url, mo.startSec, mo.endSec, words, g.userId, { cropX: mo.cropX, layout: mo.layout })
     moments[i] = { ...mo, clipUrl: r.ok ? r.url : (mo.clipUrl ?? null), clipError: r.ok ? null : r.error }
     const followup = await save({ moments })
     return r.ok ? NextResponse.json({ followup, clipUrl: r.url }) : NextResponse.json({ error: r.error, followup }, { status: 502 })

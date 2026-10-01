@@ -56,4 +56,17 @@ ok('every filtergraph balances [ and ]', () => {
   }
 })
 
+console.log('reframeChain — crop position')
+ok('no cropX keeps the exact centre crop, unchanged', () => {
+  assert.ok(reframeChain('[0:v]', 'center', 720, 1280, null).endsWith('crop=720:1280[vout]'))
+})
+ok('cropX moves the window across the frame (0 left, 1 right)', () => {
+  assert.ok(reframeChain('[0:v]', 'center', 720, 1280, null, 0.3).includes('crop=720:1280:(iw-ow)*0.3:(ih-oh)/2[vout]'))
+  assert.ok(reframeChain('[0:v]', 'split', 720, 1280, null, 0).includes(':(iw-ow)*0:(ih-oh)/2[stop]'))
+})
+ok('a cropX outside 0 to 1 is ignored', () => {
+  const { cropAt } = require('./render-filters')
+  assert.strictEqual(cropAt(1.5), ''); assert.strictEqual(cropAt('x'), ''); assert.strictEqual(cropAt(undefined), '')
+})
+
 console.log(`\n✓ All reframe-filter tests passed (${pass}).`)
