@@ -1595,7 +1595,7 @@ export async function POST(request: Request) {
         const { data: updated, error: updErr } = await (supabase as any)
           .from('youtube_videos')
           .update({
-            generated_title: titleResult.best,
+            generated_title: scrubTitle(titleResult.best),
             generated_description: description,
             generated_pinned_comment: engagementResult.pinnedComment,
             generated_tags: seoData.tags,
@@ -1709,7 +1709,7 @@ export async function POST(request: Request) {
         description: scrubBanned(description),
         tags: (seoData.tags || []).map((t: string) => scrubBanned(t)),
         pinnedComment: scrubBanned(engagementResult.pinnedComment),
-        title_alternatives: (titleResult.alternatives || []).map((t: string) => scrubBanned(t)),
+        title_alternatives: (titleResult.alternatives || []).map((t: string) => scrubTitle(t)),
         title_scores: titleScores,
       },
     })

@@ -104,7 +104,18 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
       .eq('user_id', row.user_id).eq('youtube_video_id', row.youtube_video_id).maybeSingle()
     const owner = String(vid?.channel_id || row.channel_id || '')
     const connected = owner ? (await listYouTubeChannels(sb, row.user_id).catch(() => [])).some((c) => c.channelId === owner && c.hasOAuth) : false
+    // AND ITS LOGIN IS THAT CHANNEL. A Brand Account picked wrongly at
+    // Google's chooser is "connected" while seeing nothing of the channel's
+    // private or scheduled videos; deleting then wiped a real video.
+    let ownerConfirmed = false
     if (connected) {
+      try {
+        const tok = await getChannelOAuthToken(sb, row.user_id, owner)
+        const mine = tok ? await new YouTubeOAuthService(tok).getMyChannel() : null
+        ownerConfirmed = !!mine && mine.id === owner
+      } catch { ownerConfirmed = false }
+    }
+    if (connected && ownerConfirmed) {
       await sb.from('video_first_comments').delete().eq('id', row.id)
       if (vid?.id) await sb.from('youtube_videos').delete().eq('id', vid.id).eq('user_id', row.user_id)
       return { state: 'gone' }

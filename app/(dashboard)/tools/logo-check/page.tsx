@@ -102,7 +102,7 @@ export default function LogoCheckPage() {
       const res = await fetch('/api/blog/refresh-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wordpressPostId }),
+        body: JSON.stringify({ wordpressPostId, postId }),
       })
       const j = await res.json().catch(() => ({})) as { error?: string; count?: number }
       if (!res.ok) {

@@ -24,7 +24,7 @@ import { forgetLogoScan, checkNewPicture } from '@/lib/post-logo-sweep'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { imagesStatusOf } from '@/lib/images-status'
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const reqBody = (await request.json()) as { wordpressPostId?: number; capturedFrames?: string[]; userImageUrls?: string[] }
+  const reqBody = (await request.json()) as { wordpressPostId?: number; postId?: string; capturedFrames?: string[]; userImageUrls?: string[] }
   const { wordpressPostId, capturedFrames } = reqBody
   if (!wordpressPostId) return NextResponse.json({ error: 'wordpressPostId required' }, { status: 400 })
   // User-supplied in-article photos (up to 3). When present, we place THESE and
@@ -48,13 +48,21 @@ export async function POST(request: Request) {
     ? reqBody.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
     : []
 
+  // THE POST BY ITS OWN ROW when the caller knows it. WordPress numbers repeat
+  // across a creator's sites, so two posts can share one; that used to error
+  // as "not found", or worse, pick a row whose site was not this post's.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: post } = await supabase
+  let q = (supabase as any)
     .from('blog_posts')
-    .select('id,video_id,title,slug,content,image_prompts,wordpress_site_id')
+    .select('id,video_id,title,slug,content,image_prompts,wordpress_site_id,wordpress_url')
     .eq('user_id', user.id)
     .eq('wordpress_post_id', wordpressPostId)
-    .maybeSingle()
+  if (reqBody.postId) q = q.eq('id', reqBody.postId)
+  const { data: postRows } = await q.limit(2)
+  if ((postRows ?? []).length > 1) {
+    return NextResponse.json({ error: 'Two of your posts on different sites share this WordPress number, so MVP cannot tell which one to change. Replace the pictures from the post\u2019s own row.' }, { status: 409 })
+  }
+  const post = (postRows ?? [])[0] as { id: string; video_id: string | null; title: string | null; slug: string | null; content: string | null; image_prompts: unknown; wordpress_site_id: string | null; wordpress_url: string | null } | undefined
   if (!post?.content) return NextResponse.json({ error: 'Post not found, or it has no stored content to update.' }, { status: 404 })
 
   // We STILL need the integrations row for tier + amazon_associates_tag —
@@ -88,19 +96,22 @@ export async function POST(request: Request) {
   const spendBlocked = await spendGate(user.id, tier)
   if (spendBlocked) return spendBlocked
 
-  const site = await getWordPressCredentials(
-    supabase,
-    user.id,
-    (post as { wordpress_site_id?: string | null }).wordpress_site_id,
-  )
+  // The site this post's own address is on (lib/post-site credsForPost), not
+  // its saved site id alone: a post filed under the wrong site id had its whole
+  // body written onto another blog's post with the same number.
+  const site = await credsForPost(supabase, user.id, post)
   if (!site) {
-    return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
+    return NextResponse.json({ error: 'The site this post is on is not connected, so nothing was changed.' }, { status: 400 })
   }
   // Pass the proxy secret (4th arg) so the updatePost write takes the header-safe
   // proxy path — without it, proxy-only hosts (header-stripping WAF/LiteSpeed)
   // fail the write AFTER the images were generated and billed. Matches every
   // other write route.
   const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token ?? undefined)
+  // And that number on that site is still this post, BEFORE anything is
+  // generated or billed.
+  const same = await checkSamePost(wpService, wordpressPostId, post.wordpress_url)
+  if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
 
   // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
   let productTitle = (post.title as string) || ''

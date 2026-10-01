@@ -12,6 +12,7 @@
  *
  * Tier: Pro-only.
  */
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { maybeDecrypt } from '@/lib/secrets'
@@ -270,6 +271,14 @@ Return ONLY the caption text + hashtags.`,
           lines.splice(firstTagIdx, 0, '', linkLine, '')
           feedCaption = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
           if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
+        }
+        // THE DISCLOSURE, as every other platform carries it: a "link in bio"
+        // that goes to an affiliate link is an affiliate post (FTC). The body
+        // is cut to fit, never the disclosure.
+        const withDisc = ensureDisclaimer(feedCaption, AFFILIATE_DISCLAIMER_DEFAULT)
+        if (withDisc !== feedCaption) {
+          const tail = `\n\n${AFFILIATE_DISCLAIMER_DEFAULT}`
+          feedCaption = (feedCaption.length + tail.length > 2200 ? feedCaption.slice(0, 2200 - tail.length - 1).replace(/\s+\S*$/, '') + '…' : feedCaption) + tail
         }
       }
     }

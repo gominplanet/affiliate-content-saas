@@ -3072,6 +3072,16 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_textonly', model: 'fal-flux-pro-v1.1', images: 1 })
               }
               if (!falUrl) return null
+              // NEVER A STORE LOGO: a picture showing one is dropped, not placed. Checked
+              // BEFORE the upscale, which can make the hero too large to check.
+              {
+                const logo = await checkNewPicture({ url: falUrl }, { userId: user.id, tier: tier2 ?? null, feature: 'new_picture_logo_check' })
+                if (!logo.ok) {
+                  if (!firstImgError) firstImgError = `store logo in picture ${i + 1} (${logo.marks.join(', ')}), dropped`
+                  console.warn(`[blog-images] item ${i} showed a store logo, dropped:`, logo.marks)
+                  return null
+                }
+              }
               // HERO ONLY (i === 0): 4x super-resolution for a crisp lead image.
               // AuraSR is cheap (~$0.012) and runs once per post; the rest of
               // the in-body images stay at base resolution to bound cost.
@@ -3097,15 +3107,6 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
               // posts endpoint is open), fall back to the fal storage URL
               // directly — the image still renders in the article via <img>,
               // it's just hosted on fal.media instead of the user's wp-uploads.
-              // NEVER A STORE LOGO: a picture showing one is dropped, not placed.
-              {
-                const logo = await checkNewPicture({ url: falUrl }, { userId: user.id, tier: tier2 ?? null, feature: 'new_picture_logo_check' })
-                if (!logo.ok) {
-                  if (!firstImgError) firstImgError = `store logo in picture ${i + 1} (${logo.marks.join(', ')}), dropped`
-                  console.warn(`[blog-images] item ${i} showed a store logo, dropped:`, logo.marks)
-                  return null
-                }
-              }
               let mediaUrl: string | null = null
               try {
                 const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)

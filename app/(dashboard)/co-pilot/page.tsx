@@ -1826,6 +1826,12 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   // ── Shared thumbnail result handler ─────────────────────────────────────────
   async function applyThumbnailResult(data: Record<string, unknown>) {
     const hook = (data.overlayHook as string) || ''
+    // Said, not silent: a picture thrown away for a store logo, or one the
+    // logo check could not look at.
+    const dropped = Number(data.droppedForStoreLogo) || 0
+    if (dropped > 0) toast.warning(`${dropped} thumbnail${dropped === 1 ? ' was' : 's were'} thrown away for showing a store logo${Array.isArray(data.droppedMarks) && data.droppedMarks.length ? ` (${(data.droppedMarks as string[]).join(', ')})` : ''}. The rest are below.`, { duration: 9000 })
+    const unchecked = Number(data.logoUnchecked) || 0
+    if (unchecked > 0) toast(`The store-logo check could not look at ${unchecked} thumbnail${unchecked === 1 ? '' : 's'}. Check ${unchecked === 1 ? 'it' : 'them'} by eye before you use ${unchecked === 1 ? 'it' : 'them'}.`, { duration: 9000 })
     setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
     setThumbnailDebug((data.faceDebug as string | null) ?? null)
     // Server may return one or many. Backwards-compat: single thumbnailUrl

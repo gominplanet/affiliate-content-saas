@@ -119,8 +119,8 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   const L = read('lib/first-comments.ts')
   check('every connected channel is asked before a video is called missing',
     /const others = \(await listYouTubeChannels\(sb, row\.user_id\)/.test(L) && /if \(seen\) \{ yt = other; status = seen;/.test(L))
-  check('a video its own connected channel cannot see is forgotten, and only then',
-    /if \(connected\) \{\s*await sb\.from\('video_first_comments'\)\.delete\(\)/.test(L) && /from\('youtube_videos'\)\.delete\(\)/.test(L) && /return \{ state: 'gone' \}/.test(L))
+  check('a video its own connected channel cannot see is forgotten, and only once its login is confirmed to be that channel',
+    /if \(connected && ownerConfirmed\) \{\s*await sb\.from\('video_first_comments'\)\.delete\(\)/.test(L) && /ownerConfirmed = !!mine && mine\.id === owner/.test(L) && /from\('youtube_videos'\)\.delete\(\)/.test(L) && /return \{ state: 'gone' \}/.test(L))
   check('comments written off by the old single-login check get one more look',
     /\.like\('last_error', 'The saved login cannot see this video%'\)/.test(read('app/api/cron/first-comments/route.ts')))
   const CP = read('app/(dashboard)/co-pilot/page.tsx')

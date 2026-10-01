@@ -62,14 +62,17 @@ export function postImageUrls(html: string | null | undefined): string[] {
 type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string } }
 
 /** Fetch a picture as an image block for the vision check, or why it could not be. */
-export async function imageBlock(url: string): Promise<{ ok: true; block: ImageBlock } | { ok: false; reason: string }> {
+/** Anthropic takes images up to 5MB; an upscaled hero can be larger. */
+const CHECK_IMAGE_BYTES = 4_500_000
+
+export async function imageBlock(url: string, maxBytes = MAX_IMAGE_BYTES): Promise<{ ok: true; block: ImageBlock } | { ok: false; reason: string }> {
   try {
     const res = await fetchWithTimeout(url, { timeoutMs: 20_000, headers: { 'User-Agent': 'Mozilla/5.0' } })
     if (!res.ok) return { ok: false, reason: `the image could not be fetched (${res.status})` }
     const ct = (res.headers.get('content-type') || '').toLowerCase()
     if (!/^image\//.test(ct)) return { ok: false, reason: `that URL returned ${ct || 'no content type'} rather than an image` }
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength > MAX_IMAGE_BYTES) return { ok: false, reason: 'the image is too large to check' }
+    if (buf.byteLength > maxBytes) return { ok: false, reason: 'the image is too large to check' }
     const media_type = ct.includes('png') ? 'image/png' : ct.includes('webp') ? 'image/webp' : ct.includes('gif') ? 'image/gif' : 'image/jpeg'
     return { ok: true, block: { type: 'image', source: { type: 'base64', media_type, data: buf.toString('base64') } } }
   } catch (e) {
@@ -173,17 +176,19 @@ export async function checkNewPicture(
     const anthropic = createAnthropicClient()
     let block: ImageBlock | null = null
     if ('url' in input) {
-      const img = await imageBlock(input.url)
+      const img = await imageBlock(input.url, CHECK_IMAGE_BYTES)
       if (!img.ok) { console.warn('[new-picture-check] not checked:', img.reason); return { ok: true, checked: false, reason: img.reason } }
       block = img.block
     } else {
       const mt = /png/.test(input.mediaType) ? 'image/png' : /webp/.test(input.mediaType) ? 'image/webp' : 'image/jpeg'
       block = { type: 'image', source: { type: 'base64', media_type: mt, data: input.base64 } }
     }
+    // Bounded: this runs inside image pipelines with their own time limits, and
+    // the SDK default (10 minutes, 2 retries) could outlast them.
     const msg = await anthropic.messages.create({
       model: LOGO_SCAN_MODEL, max_tokens: 200,
       messages: [{ role: 'user', content: [block, { type: 'text', text: LOGO_SCAN_PROMPT }] }],
-    })
+    }, { timeout: 15_000, maxRetries: 0 })
     recordAnthropicUsage(msg, { userId: usage.userId, tier: usage.tier, feature: usage.feature, model: LOGO_SCAN_MODEL })
     const f = readLogoReply(((msg.content?.[0] as { text?: string } | undefined)?.text ?? '').trim())
     if (f.verdict === 'found') return { ok: false, marks: f.marks }

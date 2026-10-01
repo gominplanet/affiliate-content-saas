@@ -927,13 +927,30 @@ async function withoutStoreLogos(res: Response, userId: string | null): Promise<
   const urls = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls : [body.thumbnailUrl]).filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
   if (!urls.length) return res
   const verdicts = await Promise.all(urls.map((u) => checkNewPicture({ url: u }, { userId, tier: null, feature: 'new_picture_logo_check' })))
-  const keep = urls.filter((_, i) => verdicts[i].ok)
-  if (keep.length === urls.length) return res
+  const keepIdx = urls.map((_, i) => i).filter((i) => verdicts[i].ok)
+  // Said, not hidden: how many could not be checked at all.
+  const unchecked = verdicts.filter((v) => v.ok && !v.checked).length
+  if (keepIdx.length === urls.length) {
+    if (!unchecked) return res
+    return NextResponse.json({ ...body, logoUnchecked: unchecked }, { status: 200 })
+  }
   const marks = [...new Set(verdicts.flatMap((v) => (v.ok ? [] : v.marks)))]
-  if (!keep.length) {
+  if (!keepIdx.length) {
     return NextResponse.json({ error: `The thumbnail came back with a store logo on it (${marks.join(', ')}), so MVP threw it away. Generate again.`, code: 'store_logo' }, { status: 422 })
   }
-  return NextResponse.json({ ...body, thumbnailUrl: keep[0], thumbnailUrls: keep, droppedForStoreLogo: urls.length - keep.length }, { status: 200 })
+  // Everything that is per picture follows the pictures kept, by index, so a
+  // headline or score never belongs to a picture that was thrown away.
+  const pick = <T,>(arr: unknown): T[] | undefined => (Array.isArray(arr) && arr.length === urls.length ? keepIdx.map((i) => arr[i] as T) : undefined)
+  const hooks = pick<string>(body.overlayHooks)
+  const scores = pick<unknown>(body.thumbnailScores)
+  return NextResponse.json({
+    ...body,
+    thumbnailUrl: urls[keepIdx[0]], thumbnailUrls: keepIdx.map((i) => urls[i]),
+    ...(hooks ? { overlayHooks: hooks, overlayHook: hooks[0] } : {}),
+    ...(scores ? { thumbnailScores: scores } : {}),
+    droppedForStoreLogo: urls.length - keepIdx.length, droppedMarks: marks,
+    ...(unchecked ? { logoUnchecked: unchecked } : {}),
+  }, { status: 200 })
 }
 
 // ── Main route ────────────────────────────────────────────────────────────────

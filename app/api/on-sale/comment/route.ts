@@ -7,6 +7,7 @@
 // comment goes out through that video's channel login, so a comment can never
 // land on somebody else's video or come from the wrong channel.
 
+import { containsPriceClaim } from '@/lib/product-signals-brief'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -43,6 +44,17 @@ export async function POST(req: Request) {
   const lastingBodyPart = lasting.split(PRICE_LINE_LEAD)[0] ?? ''
   if (!/^[A-Z0-9]{10}$/.test(asin) || !lasting || !lasting.includes(PRICE_LINE_LEAD) || !lasting.endsWith(DISCLOSURE) || SALE_WORDING.test(lastingBodyPart)) {
     return NextResponse.json({ error: 'The version for after the sale is missing, so MVP could not take the sale out later. Press Write it again. Nothing was posted.' }, { status: 400 })
+  }
+  // THE SALE VERSION KEEPS THE RULES TOO, edited or not: the link line, the
+  // disclosure at the end, and no price or percentage (MVP has no live price
+  // to stand behind).
+  // The writer's part only: the link line below it is code, and a link's own
+  // characters must not read as a price.
+  const saleBody = text.split(PRICE_LINE_LEAD)[0] ?? ''
+  if (!text.includes(PRICE_LINE_LEAD) || !text.endsWith(DISCLOSURE) || containsPriceClaim(saleBody)) {
+    return NextResponse.json({ error: containsPriceClaim(saleBody)
+      ? 'The comment states a price or a percentage. Amazon allows that only from its own live data, so take it out and post again. Nothing was posted.'
+      : 'The comment lost its link line or its disclosure in editing. Press Write it again, or put them back. Nothing was posted.' }, { status: 400 })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: vid } = await (supabase as any).from('youtube_videos')
