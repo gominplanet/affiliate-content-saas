@@ -88,11 +88,20 @@ check('the product link is always in a Reel, in the creator\'s link style, with 
 // (components/clip-factory/PublishPanel), which shows the description and
 // says when no product link was found.
 check('the page shows the description first, says when no product link was found, and posts exactly that text',
-  /openPanel\('facebook'\)/.test(PAGE) && /postFacebookReel\(c\.text\)/.test(PAGE) && /body: JSON\.stringify\(\{ videoUrl: publishUrl, description: text \}\)/.test(PAGE)
+  /openPanel\('facebook'\)/.test(PAGE) && /postFacebookReel\(c\.text\)/.test(PAGE) && /body: JSON\.stringify\(\{ videoUrl: publishUrl, description: text,/.test(PAGE)
   && /No product link found/.test(readFileSync('lib/clip-description.ts', 'utf8')))
 check('the clip remembers its source video on both ways in',
   /sourceVideoId: selectedVideo\.id/.test(PAGE) && /sourceVideoId: id \}/.test(PAGE))
 check('an empty description is refused rather than posted', /The Reel has no description/.test(ROUTE))
+
+// WHERE IT GOES: the Page is named (and picked when there are several) before
+// posting, and after posting the Reel can be shared into the creator's Groups
+// with SCOUT, the Reel's link first so the Group shows the playable Reel.
+const DEST = readFileSync('components/clip-factory/ReelDestinations.tsx', 'utf8')
+check('the Reel route lists the Pages and the saved Groups', /export async function GET\(\)/.test(ROUTE) && /facebook_groups/.test(ROUTE))
+check('the picked Page is the one posted to', /socialAccountId: fbPageId/.test(PAGE))
+check('the panel names the Page before posting', /<ReelPagePicker/.test(PAGE) && /Posts as a Reel on/.test(DEST))
+check('a posted Reel can be shared to Groups, link first, and the creator presses Post', /<ShareReelToGroups/.test(PAGE) && /\[p\.reelUrl, p\.text\.trim\(\)\]/.test(DEST) && /requestFacebookGroupPrefill\(g\.url, post, null\)/.test(DEST))
 
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)

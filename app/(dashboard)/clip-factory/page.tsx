@@ -17,6 +17,7 @@
 // existing API routes — no new engines.
 
 import PublishPanel, { type PublishKit, type PublishChoice } from '@/components/clip-factory/PublishPanel'
+import { ReelPagePicker, ShareReelToGroups, type ReelPage, type ReelGroup } from '@/components/clip-factory/ReelDestinations'
 import type { ClipPlatform } from '@/lib/clip-description'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipFactoryGuide } from '@/components/guide/tool-guides'
@@ -247,6 +248,14 @@ export default function ClipFactoryPage() {
   const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean; facebook?: boolean }>({})
   const [publishingFb, setPublishingFb] = useState(false)
   const [fbReelUrl, setFbReelUrl] = useState<string | null>(null)
+  // Where a Reel goes: the Page (picked when there are several) and, after it
+  // is up, the creator's Groups through SCOUT. Loaded once, when the Facebook
+  // pill is first opened.
+  const [fbPages, setFbPages] = useState<ReelPage[] | null>(null)
+  const [fbGroups, setFbGroups] = useState<ReelGroup[] | null>(null)
+  const [fbDestError, setFbDestError] = useState<string | null>(null)
+  const [fbPageId, setFbPageId] = useState('')
+  const [fbReelText, setFbReelText] = useState('')
   // The Reel's description, built by the server and shown before posting:
   // what posts is exactly this text, and whether it carries a product link is
   // said on screen rather than discovered on Facebook.
@@ -746,19 +755,31 @@ export default function ClipFactoryPage() {
     try {
       const res = await fetch('/api/clip-factory/facebook-reel', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: publishUrl, description: text }),
+        body: JSON.stringify({ videoUrl: publishUrl, description: text, ...(fbPageId ? { socialAccountId: fbPageId } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
       setPosted(p => ({ ...p, facebook: true }))
       setFbReelUrl(data.url || null)
+      setFbReelText(String(data.description || text))
       setPanel(cur => (cur === 'facebook' ? null : cur))
       toast.success(data.state === 'published'
         ? `Reel is live on ${data.page || 'your Page'}.`
         : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingFb(false) }
-  }, [publishUrl])
+  }, [publishUrl, fbPageId])
+
+  // The Pages and Groups, read once when the Facebook pill is first opened.
+  useEffect(() => {
+    if (panel !== 'facebook' || fbPages !== null || fbDestError) return
+    fetch('/api/clip-factory/facebook-reel', { cache: 'no-store' }).then((r) => r.json()).then((j) => {
+      if (j.error) { setFbDestError(j.error); return }
+      const pages = (j.pages ?? []) as ReelPage[]
+      setFbPages(pages); setFbGroups((j.groups ?? []) as ReelGroup[])
+      setFbPageId((pages.find((x) => x.isDefault) ?? pages[0])?.id ?? '')
+    }).catch((e) => setFbDestError(String(e)))
+  }, [panel, fbPages, fbDestError])
 
   const confirmPanel = useCallback((c: PublishChoice) => {
     if (panel === 'youtube') void postYouTube(c)
@@ -1292,6 +1313,8 @@ export default function ClipFactoryPage() {
               )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
+            {panel === 'facebook' && <ReelPagePicker pages={fbPages} value={fbPageId} onChange={setFbPageId} error={fbDestError} />}
+            {fbReelUrl && <ShareReelToGroups reelUrl={fbReelUrl} text={fbReelText} groups={fbGroups} />}
             {panel && (
               <PublishPanel
                 platform={panel}

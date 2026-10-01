@@ -25,6 +25,34 @@ import { buildReelCaption } from '@/lib/reel-caption'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+// GET: where a Reel can go. The Pages this account can post to (the one used
+// when none is picked comes first, marked default), and the Facebook Groups
+// saved in Brand Profile, which a Reel can be shared into with SCOUT after it
+// is up on the Page (Meta lets no app post into a Group).
+export async function GET() {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const [{ data: intRow }, { data: rows }, { data: brand }] = await Promise.all([
+    sb.from('integrations').select('facebook_page_id,facebook_page_access_token,facebook_page_name,tier').eq('user_id', user.id).maybeSingle(),
+    sb.from('social_accounts').select('id,display_name,is_default').eq('user_id', user.id).eq('platform', 'facebook').order('is_default', { ascending: false }),
+    sb.from('brand_profiles').select('facebook_groups').eq('user_id', user.id).maybeSingle(),
+  ])
+  const integration = decryptIntegrationRow(intRow)
+  const [def] = await resolveSocialAccounts(supabase, user.id, 'facebook', {
+    socialAccountIds: [], allowSelection: false, limit: socialAccountCap(normalizeTier(integration?.tier)),
+    legacy: { externalId: integration?.facebook_page_id, accessToken: integration?.facebook_page_access_token, displayName: integration?.facebook_page_name },
+  })
+  const pages = ((rows ?? []) as Array<{ id: string; display_name: string | null; is_default: boolean }>).map((r) => ({ id: r.id, name: r.display_name || 'Facebook Page', isDefault: !!r.is_default }))
+  if (!pages.length && def) pages.push({ id: '', name: def.displayName || 'your Facebook Page', isDefault: true })
+  const groups = (Array.isArray(brand?.facebook_groups) ? brand.facebook_groups : [])
+    .filter((g: { url?: string }) => typeof g?.url === 'string' && /facebook\.com\/groups\//i.test(g.url))
+    .map((g: { name?: string; url: string }) => ({ name: String(g.name || 'Facebook Group'), url: g.url }))
+  return NextResponse.json({ pages, groups, defaultPage: def?.displayName ?? null })
+}
+
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
