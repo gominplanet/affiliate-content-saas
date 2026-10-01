@@ -13,6 +13,7 @@ import { requestLiveReplay } from '@/lib/extension-frame'
 import { fmtClock, shortTitle, type LiveMoment } from '@/lib/live-followup'
 
 type Followup = {
+  audio_url?: string | null
   id: string; plan_id: string | null; replay_url: string; title: string | null; stream_url: string | null
   page_asins: string[]; duration_sec: number | null; moments: LiveMoment[]; missing: Array<{ asin: string; title: string }>
   state: 'read' | 'transcribed' | 'matched'; error: string | null; created_at: string
@@ -43,6 +44,7 @@ export default function LiveFollowup() {
   const [url, setUrl] = useState('')
   const [planId, setPlanId] = useState('')
   const [reading, setReading] = useState(false)
+  const [usingScout, setUsingScout] = useState(false)
   const [readError, setReadError] = useState<string | null>(null)
   const [current, setCurrent] = useState<Followup | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -72,13 +74,19 @@ export default function LiveFollowup() {
   async function readReplay() {
     setReading(true); setReadError(null)
     try {
-      const read = await requestLiveReplay(url.trim())
-      if (!read.ok) { setReadError(SCOUT_ERRORS[read.error || ''] || `SCOUT could not read the replay (${read.error || 'unknown'}).`); return }
-      const { ok, j } = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null, read })
-      if (!ok) { setReadError(j.error || 'Could not save it.'); return }
-      setCurrent(j.followup); setUrl(''); loadList()
-      toast.success(`SCOUT found the video and ${read.asins?.length ?? 0} products on the page`)
-    } finally { setReading(false) }
+      // MVP reads the replay page itself first. SCOUT only when that fails.
+      let res = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null })
+      if (!res.ok && res.j.tryScout) {
+        setUsingScout(true)
+        const read = await requestLiveReplay(url.trim())
+        if (!read.ok) { setReadError(`${res.j.error} SCOUT could not read it either: ${SCOUT_ERRORS[read.error || ''] || read.error || 'unknown'}`); return }
+        res = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null, read })
+      }
+      if (!res.ok) { setReadError(res.j.error || 'Could not save it.'); return }
+      setCurrent(res.j.followup); setUrl(''); loadList()
+      const n = res.j.followup?.page_asins?.length ?? 0
+      toast.success(`Found the replay and ${n} product${n === 1 ? '' : 's'} you showed${res.j.captions === 'amazon' ? `, with Amazon's captions (${res.j.words} words), so no transcription is needed` : ''}`)
+    } finally { setReading(false); setUsingScout(false) }
   }
 
   async function step(action: 'transcribe' | 'match', label: string) {
@@ -149,9 +157,9 @@ export default function LiveFollowup() {
         </label>
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={readReplay} disabled={reading || !/amazon\.com\/live\//i.test(url)} className={`${btn} text-white bg-[#7C3AED]`}>
-            {reading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />} {reading ? 'SCOUT is reading the replay…' : 'Read the replay with SCOUT'}
+            {reading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />} {reading ? (usingScout ? 'SCOUT is reading the replay…' : 'Reading the replay…') : 'Read the replay'}
           </button>
-          {reading && <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>A tab opens for a few seconds while the video starts, then closes.</span>}
+          {reading && usingScout && <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>A tab opens for a few seconds while the video starts, then closes.</span>}
         </div>
         {readError && <p className="text-[12.5px] text-[#ff3b30]">{readError}</p>}
       </section>
@@ -168,11 +176,14 @@ export default function LiveFollowup() {
             <button onClick={() => remove(current.id)} aria-label="Delete" title="Delete" className="p-1.5" style={{ color: 'var(--text-faint)' }}><Trash2 size={15} /></button>
           </div>
           {current.error && <p className="text-[12.5px] text-[#ff3b30]">Last step failed: {current.error}</p>}
+          {current.state !== 'read' && !current.audio_url && (
+            <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Using Amazon&apos;s own captions for this replay, so no transcription was needed.</p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button onClick={() => step('transcribe', 'Transcribing')} disabled={!!busy} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               {busy === 'transcribe' && <Loader2 size={13} className="animate-spin" />}
-              {current.state === 'read' ? '1. Transcribe the replay' : 'Transcribe again'}
+              {current.state === 'read' ? '1. Transcribe the replay' : current.audio_url ? 'Transcribe again' : 'Transcribe with Whisper instead'}
             </button>
             <button onClick={() => step('match', 'Finding the products')} disabled={!!busy || current.state === 'read'} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               {busy === 'match' && <Loader2 size={13} className="animate-spin" />}

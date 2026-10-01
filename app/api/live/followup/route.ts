@@ -23,13 +23,15 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { pickStream, wordsInWindow, composeRoundup, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
 import { streamAudio, transcribeLive, matchMoments, renderLiveClip } from '@/lib/live-followup-server'
 import { resolveClipLinks } from '@/lib/reel-caption'
+import { broadcastIdOf, parseLiveReplayHtml, vttToWordCues, type LiveReplayPage } from '@/lib/amazon-live-page'
+import { fetchAmazonProduct } from '@/services/amazon'
 import type { TranscriptCue } from '@/lib/shorts-types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const COLS = 'id,plan_id,replay_url,title,stream_url,page_asins,duration_sec,moments,missing,state,error,created_at,updated_at'
+const COLS = 'id,plan_id,replay_url,title,stream_url,page_asins,duration_sec,audio_url,moments,missing,state,error,created_at,updated_at'
 const missingTable = (m?: string) => /live_followups/.test(m || '') && /does not exist|could not find/i.test(m || '')
 
 async function gate() {
@@ -70,18 +72,40 @@ export async function POST(req: NextRequest) {
   if (action === 'create') {
     const replayUrl = String(body.replayUrl || '').trim()
     if (!/^https:\/\/(www\.)?amazon\.com\/live\//i.test(replayUrl)) return NextResponse.json({ error: 'Paste the replay link from amazon.com/live.' }, { status: 400 })
-    const read = (body.read || {}) as { streams?: unknown; asins?: unknown; title?: unknown; durationSec?: unknown }
-    const streams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter((s) => /^https:\/\//i.test(s)).slice(0, 20)
-    const stream = pickStream(streams)
-    if (!stream) return NextResponse.json({ error: 'SCOUT found no video stream on that page.' }, { status: 422 })
     const planId = typeof body.planId === 'string' && body.planId ? body.planId : null
+    // 1. The replay page itself: its data names the stream, Amazon's captions
+    //    and the products shown, with no login (lib/amazon-live-page).
+    const page = await readReplayPage(replayUrl)
+    // 2. What SCOUT read in the browser, when the page could not be read here.
+    const read = (body.read || {}) as { streams?: unknown; asins?: unknown; title?: unknown; durationSec?: unknown }
+    const scoutStreams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter((x) => /^https:\/\//i.test(x)).slice(0, 20)
+    const stream = page.ok && page.data.streamUrl ? page.data.streamUrl : pickStream(scoutStreams)
+    if (!stream) {
+      return NextResponse.json({
+        error: page.ok ? 'The replay page names no video for this Live. Is the replay finished processing on Amazon?' : `MVP could not read the replay page (${page.error}).`,
+        tryScout: !body.read,
+      }, { status: 422 })
+    }
+    const asins = page.ok && page.data.asins.length ? page.data.asins
+      : (Array.isArray(read.asins) ? read.asins : []).map(String).filter((a) => /^[A-Z0-9]{10}$/.test(a)).slice(0, 60)
+    // Amazon's own captions, when the replay has them: exact, free and
+    // instant, so the transcription step is not needed.
+    let cues: Array<{ start: number; end: number; text: string }> = []
+    if (page.ok && page.data.captionUrl) {
+      try {
+        const r = await fetch(page.data.captionUrl, { signal: AbortSignal.timeout(15_000) })
+        if (r.ok) cues = vttToWordCues(await r.text())
+      } catch { /* the transcription step remains */ }
+    }
     const { data, error } = await admin.from('live_followups').insert({
-      user_id: g.userId, plan_id: planId, replay_url: replayUrl, title: String(read.title || '').slice(0, 200) || null,
-      stream_url: stream, streams, page_asins: (Array.isArray(read.asins) ? read.asins : []).map(String).filter((a) => /^[A-Z0-9]{10}$/.test(a)).slice(0, 60),
-      duration_sec: Number.isFinite(Number(read.durationSec)) ? Math.round(Number(read.durationSec)) : null, state: 'read',
+      user_id: g.userId, plan_id: planId, replay_url: replayUrl,
+      title: ((page.ok && page.data.title) || String(read.title || '')).slice(0, 200) || null,
+      stream_url: stream, streams: page.ok && page.data.streamUrl ? [page.data.streamUrl] : scoutStreams, page_asins: asins,
+      duration_sec: (page.ok && page.data.durationSec) || (Number.isFinite(Number(read.durationSec)) ? Math.round(Number(read.durationSec)) : null),
+      ...(cues.length ? { cues, state: 'transcribed' } : { state: 'read' }),
     }).select(COLS).single()
     if (error) return NextResponse.json({ error: missingTable(error.message) ? 'Migration 394 has not been run.' : error.message }, { status: 500 })
-    return NextResponse.json({ followup: data })
+    return NextResponse.json({ followup: data, source: page.ok ? 'page' : 'scout', captions: cues.length ? 'amazon' : null, words: cues.length })
   }
 
   const id = String(body.id || '')
@@ -114,10 +138,13 @@ export async function POST(req: NextRequest) {
   if (action === 'match') {
     const cues = (Array.isArray(row.cues) ? row.cues : []) as TranscriptCue[]
     if (!cues.length) return NextResponse.json({ error: 'Transcribe the replay first.' }, { status: 409 })
-    const products = await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])
+    const { products, unnamed } = await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])
     const m = await matchMoments(products, cues, row.duration_sec ?? null, g.userId, g.tier)
     if (!m.ok) return fail(m.error)
-    const followup = await save({ moments: m.moments, missing: m.missing, state: 'matched', error: null })
+    // A product shown that MVP could not name cannot be looked for in speech:
+    // it is listed with the ones not found, never dropped without a word.
+    const missing = [...m.missing, ...unnamed.map((asin) => ({ asin, title: `${asin} (no product name found)` }))]
+    const followup = await save({ moments: m.moments, missing, state: 'matched', error: null })
     return NextResponse.json({ followup })
   }
 
@@ -138,7 +165,7 @@ export async function POST(req: NextRequest) {
     const moments = (Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]
     const products: Array<{ asin: string; title: string }> = moments.length
       ? moments.map((m) => ({ asin: m.asin, title: m.title }))
-      : (await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])).map((p) => ({ asin: p.asin, title: p.title }))
+      : (await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])).products.map((p) => ({ asin: p.asin, title: p.title }))
     if (!products.length) return NextResponse.json({ error: 'No products to list yet.' }, { status: 409 })
     let disclosure = ''
     const items: Array<{ title: string; link: string | null }> = []
@@ -154,32 +181,62 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
 }
 
-/** What to look for: the show plan's products in order, then anything else
- *  the replay page listed, named from the creator's storefront where known. */
+/** What to look for: the products the replay page lists, in the order shown,
+ *  then any in the show plan the page did not list. Each is named from the
+ *  plan, the creator's storefront, videos and campaigns, then Amazon's page.
+ *  Products no source could name come back as `unnamed`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function productsFor(admin: any, userId: string, planId: string | null, pageAsins: string[]): Promise<LiveProduct[]> {
-  const out: LiveProduct[] = []
-  const seen = new Set<string>()
+async function productsFor(admin: any, userId: string, planId: string | null, pageAsins: string[]): Promise<{ products: LiveProduct[]; unnamed: string[] }> {
+  const plan = new Map<string, { title: string; plannedMin: number | null }>()
   if (planId) {
     const { data } = await admin.from('live_plans').select('plan').eq('id', planId).eq('user_id', userId).maybeSingle()
-    const segs = Array.isArray(data?.plan?.segments) ? data.plan.segments : []
-    for (const s of segs as Array<{ asin?: string; title?: string; startMin?: number }>) {
+    for (const s of (Array.isArray(data?.plan?.segments) ? data.plan.segments : []) as Array<{ asin?: string; title?: string; startMin?: number }>) {
       const asin = String(s.asin || '').toUpperCase()
-      if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) continue
-      seen.add(asin)
-      out.push({ asin, title: String(s.title || asin), plannedMin: Number.isFinite(Number(s.startMin)) ? Number(s.startMin) : null })
+      if (/^[A-Z0-9]{10}$/.test(asin) && !plan.has(asin)) plan.set(asin, { title: String(s.title || ''), plannedMin: Number.isFinite(Number(s.startMin)) ? Number(s.startMin) : null })
     }
   }
-  const extra = pageAsins.filter((a) => !seen.has(a))
-  if (extra.length) {
-    const { data } = await admin.from('storefront_catalog').select('asin,title').eq('user_id', userId).in('asin', extra)
-    const titles = new Map(((data ?? []) as Array<{ asin: string; title: string | null }>).map((r) => [r.asin, r.title]))
-    // A product the page listed but the storefront cannot name cannot be
-    // found in speech either, so it is left out rather than guessed at.
-    for (const a of extra) {
-      const t = titles.get(a)
-      if (t) out.push({ asin: a, title: t })
-    }
+  const order = [...new Set([...pageAsins.map((a) => a.toUpperCase()), ...plan.keys()])]
+  const names = new Map<string, string>()
+  for (const [a, p] of plan) if (p.title) names.set(a, p.title)
+  const need = () => order.filter((a) => !names.get(a))
+  const fill = (rows: Array<{ asin: string | null; title: string | null }> | null | undefined) => {
+    for (const r of rows ?? []) { const a = String(r.asin || '').toUpperCase(); if (a && r.title && !names.get(a)) names.set(a, String(r.title)) }
   }
-  return out
+  if (need().length) fill((await admin.from('storefront_catalog').select('asin,title').eq('user_id', userId).in('asin', need())).data)
+  if (need().length) fill((await admin.from('youtube_videos').select('asin,title').eq('user_id', userId).in('asin', need())).data)
+  if (need().length) fill(((await admin.from('campaigns').select('asin,product_title').eq('user_id', userId).in('asin', need())).data ?? []).map((r: { asin: string; product_title: string | null }) => ({ asin: r.asin, title: r.product_title })))
+  // Amazon's own product page, for what is still unnamed (a few at a time).
+  const rest = need().slice(0, 30)
+  for (let i = 0; i < rest.length; i += 6) {
+    await Promise.all(rest.slice(i, i + 6).map(async (a) => {
+      const p = await Promise.race([fetchAmazonProduct(a).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 9000))])
+      if (p?.title) names.set(a, p.title)
+    }))
+  }
+  const products: LiveProduct[] = []
+  const unnamed: string[] = []
+  for (const a of order) {
+    const t = names.get(a)
+    if (t) products.push({ asin: a, title: t, plannedMin: plan.get(a)?.plannedMin ?? null })
+    else unnamed.push(a)
+  }
+  return { products, unnamed }
+}
+
+/** The replay page, read here. Amazon serves it without a login. */
+async function readReplayPage(url: string): Promise<{ ok: true; data: LiveReplayPage } | { ok: false; error: string }> {
+  const id = broadcastIdOf(url)
+  if (!id) return { ok: false, error: 'that is not a broadcast link' }
+  try {
+    const r = await fetch(`https://www.amazon.com/live/broadcast/${id}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36', Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
+      signal: AbortSignal.timeout(20_000), cache: 'no-store',
+    })
+    if (!r.ok) return { ok: false, error: `Amazon answered ${r.status}` }
+    const html = await r.text()
+    if (/captcha|robot check/i.test(html.slice(0, 20000)) && !/VideoObject/.test(html)) return { ok: false, error: 'Amazon showed a robot check' }
+    return { ok: true, data: parseLiveReplayHtml(html, id) }
+  } catch (e) {
+    return { ok: false, error: String(e instanceof Error ? e.message : e).slice(0, 120) }
+  }
 }

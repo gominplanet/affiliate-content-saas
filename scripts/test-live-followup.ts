@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { pickStream, clampMoment, wordsInWindow, parseMoments, composeRoundup, CLIP_MAX_SEC, CLIP_MIN_SEC } from '../lib/live-followup'
 import { canUsePreview } from '../lib/labs-preview'
+import { parseLiveReplayHtml, broadcastIdOf, vttToWordCues } from '../lib/amazon-live-page'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -62,6 +63,30 @@ check('MVP asks for SCOUT 1.22.1 before using it', /_cmpVersion\(st\.version, '1
 
 const cf = r('app/(dashboard)/clip-factory/page.tsx')
 check('Clip Factory only takes a hand-over clip from MVP storage', /liveClip/.test(cf) && /storage\/v1\/object\/public\//.test(cf))
+
+// THE REPLAY PAGE: the stream, Amazon's captions and the products shown are
+// read from the page's own data (the player hides its stream from the page).
+const BID = '29fd644a-515e-4b0c-bf99-843f287df62b'
+const OTHER = '11111111-2222-3333-4444-555555555555'
+const fixture = [
+  '<title>Watch Weekend Shopping on Amazon Live</title>',
+  '<script type="application/ld+json">{"@type":"VideoObject","name":"Watch Weekend Shopping on Amazon Live","contentUrl":"https://d1.cloudfront.net/' + BID + '_7Rt/hls/byte-range-multivariant.m3u8","duration":"PT54M28S"}</script>',
+  '<div data-state="{&#034;broadcast&#034;:{&#034;carouselItems&#034;:[{&#034;type&#034;:&#034;PRODUCT&#034;,&#034;id&#034;:&#034;x1&#034;,&#034;asin&#034;:&#034;B0FK5MBDJZ&#034;},{&#034;type&#034;:&#034;PRODUCT&#034;,&#034;id&#034;:&#034;x2&#034;,&#034;asin&#034;:&#034;B0DPZVKV7V&#034;}],',
+  '&#034;broadcastVariants&#034;:[{&#034;playbackUrl&#034;:&#034;https:\\/\\/d1.cloudfront.net\\/' + BID + '_7Rt\\/hls\\/byte-range-multivariant.m3u8&#034;,&#034;captionUrl&#034;:&#034;https:\\/\\/d9.cloudfront.net\\/' + BID + '_trimmed.vtt&#034;}],&#034;id&#034;:&#034;' + BID + '&#034;}}"></div>',
+  '<div data-x="{&#034;carouselItems&#034;:[{&#034;type&#034;:&#034;PRODUCT&#034;,&#034;asin&#034;:&#034;B000OTHER1&#034;}],&#034;id&#034;:&#034;' + OTHER + '&#034;}"></div>',
+].join('\n')
+const page = parseLiveReplayHtml(fixture, BID)
+check('the broadcast id comes from the link', broadcastIdOf(`https://www.amazon.com/live/broadcast/${BID}?ref_=x`) === BID)
+check('the stream is the page\'s contentUrl for this Live', page.streamUrl === `https://d1.cloudfront.net/${BID}_7Rt/hls/byte-range-multivariant.m3u8`)
+check('Amazon\'s captions for that same stream are found', page.captionUrl === `https://d9.cloudfront.net/${BID}_trimmed.vtt`)
+check('the products are this Live\'s, in order, not another Live\'s', page.asins.join(',') === 'B0FK5MBDJZ,B0DPZVKV7V')
+check('title and length come from the page', page.title === 'Weekend Shopping' && page.durationSec === 3268)
+const vttWords = vttToWordCues('WEBVTT\n\n1\n00:00:07.878 --> 00:00:11.678\nI was not going\n\n2\n01:00:00.000 --> 01:00:01.000\n<c>Hi</c> there\n')
+check('captions become timed words', vttWords.length === 6 && vttWords[0].text === 'I' && vttWords[1].start === 8.828 && vttWords[4].start === 3600 && vttWords[4].text === 'Hi')
+const route2 = r('app/api/live/followup/route.ts')
+check('the server reads the replay page before asking SCOUT', /const page = await readReplayPage\(replayUrl\)/.test(route2) && /tryScout: !body\.read/.test(route2))
+check('Amazon\'s captions skip transcription when present', /vttToWordCues\(await r\.text\(\)\)/.test(route2) && /state: 'transcribed'/.test(route2))
+check('a product nobody could name is listed, not dropped', /no product name found/.test(route2))
 
 if (failures.length) {
   console.error(`\n❌ live-followup: ${failures.length} failure(s)\n`)
