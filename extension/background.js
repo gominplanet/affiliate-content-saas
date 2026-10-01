@@ -11347,6 +11347,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_FB_GROUP_POST_STATUS') {
+    // MVP asks whether the Group post it filled has gone up yet, and where.
+    readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))
+    return true // async
+  }
   if (msg.type === 'MVP_YT_PIN_COMMENT') {
     // MVP posted a sale comment and asks SCOUT to pin it, in the creator's
     // own signed-in YouTube. The answer says whether the pinned badge was seen.
@@ -12245,8 +12250,13 @@ async function prefillFacebookGroup({ groupUrl, text, media }) {
       const dataUrl = await fbImageDataUrl(media.url)
       hero = dataUrl ? { kind: 'thumbnail', dataUrl } : { kind: 'thumbnail', failed: true }
     }
+    // The listener goes in BEFORE the fill, so the moment the creator presses
+    // Post, Facebook's own answer (which carries the new post's address) is
+    // already being watched for. See watchGroupPost.
+    try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [true] }) } catch (e) {}
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
+    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body))
     return out
   } catch (e) {
     return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
@@ -12363,4 +12373,190 @@ async function fillGroupComposerInPage(text, hero) {
     }
   }
   return { ok: true, filled: true, steps: steps.join('; '), media: mediaNote || undefined }
+}
+
+// SEEING THE GROUP POST GO UP.
+//
+// After a fill, MVP offers to share the Group post on the creator's Page, and
+// the Page post should link to THAT post, not just the Group. Facebook only
+// gives the post an address once the creator presses Post, so SCOUT watches
+// the tab for it, three ways, best first:
+//   1. Facebook's own "story created" answer, read by a listener put in the
+//      page before the fill (installGroupPostHook). It carries the new URL.
+//   2. The tab itself landing on the post's address.
+//   3. The new post appearing in the Group feed, matched on a line of its
+//      text, with its timestamp link read for the address.
+// It still never clicks anything that posts. The answer says which way found
+// it, and "posted, address unknown" and "never saw it" are their own states,
+// so MVP never offers a Page post linking to a guess.
+const FB_GROUP_POST_RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+const fbGroupWatches = new Map()
+
+// A line of the post that is unlikely to be in any older post: the longest
+// line that is not a link. The first line is the product CTA, which every
+// post shares, so it is a poor fingerprint.
+function groupSnippet(text) {
+  const lines = String(text || '').split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l && !/https?:\/\//.test(l))
+  lines.sort((a, b) => b.length - a.length)
+  return (lines[0] || '').slice(0, 40)
+}
+
+// Runs in the page's MAIN world so it can see Facebook's own requests.
+function installGroupPostHook(markOld) {
+  if (markOld) {
+    window.__scoutGroupPost = null
+    window.__scoutGroupCreated = false
+    try { document.querySelectorAll('[role="article"], [aria-posinset]').forEach((a) => a.setAttribute('data-scout-old', '1')) } catch (e) {}
+  }
+  if (window.__scoutGroupHook) return 'ready'
+  window.__scoutGroupHook = true
+  const RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  const NAME = /StoryCreate|ComposerStory|CreatePost|GroupPost/i
+  const describe = (body) => {
+    try {
+      if (typeof body === 'string') return body
+      if (body instanceof URLSearchParams) return body.toString()
+      if (body instanceof FormData) return String(body.get('fb_api_req_friendly_name') || '')
+    } catch (e) {}
+    return ''
+  }
+  const look = (reqBody, txt) => {
+    if (window.__scoutGroupPost || !txt) return
+    if (!NAME.test(describe(reqBody))) return
+    window.__scoutGroupCreated = true
+    const flat = String(txt).replace(/\\\//g, '/').replace(/\\u002F/gi, '/')
+    const m = flat.match(RE)
+    if (m) { window.__scoutGroupPost = { url: m[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'facebook' }; return }
+    // No URL in the answer: build it from the post id and this Group.
+    const id = (flat.match(/"post_id"\s*:\s*"(\d{6,})"/) || [])[1]
+    const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
+    if (id && slug) window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }
+  }
+  try {
+    const X = XMLHttpRequest.prototype
+    const send = X.send
+    X.send = function (body) {
+      try { if (NAME.test(describe(body))) this.addEventListener('load', () => { try { look(body, this.responseText) } catch (e) {} }) } catch (e) {}
+      return send.apply(this, arguments)
+    }
+  } catch (e) {}
+  try {
+    const f = window.fetch
+    window.fetch = function (input, init) {
+      const p = f.apply(this, arguments)
+      try {
+        const b = init && init.body
+        if (NAME.test(describe(b))) p.then((r) => r.clone().text()).then((t) => look(b, t)).catch(() => {})
+      } catch (e) {}
+      return p
+    }
+  } catch (e) {}
+  return 'installed'
+}
+
+// Runs in the page's MAIN world, once every couple of seconds while watching.
+function readGroupPostState(snippet) {
+  const visible = (el) => !!el && el.getClientRects().length > 0
+  const out = {
+    hook: !!window.__scoutGroupHook,
+    net: window.__scoutGroupPost || null,
+    created: !!window.__scoutGroupCreated,
+    dialog: Array.from(document.querySelectorAll('[role="dialog"] [contenteditable="true"]')).some(visible),
+    seen: false,
+    feedUrl: null,
+  }
+  if (out.net || !snippet) return out
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ')
+  const arts = Array.from(document.querySelectorAll('[role="article"], [aria-posinset]'))
+    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0)
+  if (!arts.length) return out
+  out.seen = true
+  const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[href]'))) {
+      const m = String(l.href || '').match(RE)
+      if (m) { out.feedUrl = 'https://www.facebook.com' + m[0] + '/'; return out }
+    }
+  }
+  // Facebook fills in the timestamp link's real address on hover. Hover only
+  // the timestamp, never anything else.
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[role="link"]'))) {
+      const t = (l.innerText || '').trim()
+      if (l.dataset.scoutHover || !(l.getAttribute('href') === '#' || /^(\d+\s?[smhdw]|just now|now)$/i.test(t))) continue
+      l.dataset.scoutHover = '1'
+      try { l.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); l.dispatchEvent(new FocusEvent('focus')) } catch (e) {}
+    }
+  }
+  return out
+}
+
+async function saveGroupWatch(id, st) {
+  const v = { ...st, updatedAt: Date.now() }
+  fbGroupWatches.set(id, v)
+  try { await chrome.storage.session.set({ ['fbw_' + id]: v }) } catch (e) {}
+}
+
+async function readGroupWatch(id) {
+  if (!id) return { state: 'unknown' }
+  const live = fbGroupWatches.get(id)
+  if (live) return live
+  let st = null
+  try { const o = await chrome.storage.session.get('fbw_' + id); st = o['fbw_' + id] || null } catch (e) {}
+  if (!st) return { state: 'unknown' }
+  // Chrome restarted SCOUT mid-watch: the watch is gone, so say so rather than
+  // leave MVP waiting on a "watching" that will never change.
+  if (st.state === 'watching') return { state: 'lost' }
+  return st
+}
+
+function watchGroupPost(tabId, snippet) {
+  const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const ka = startKeepAlive()
+  void (async () => {
+    const started = Date.now()
+    let dialogGoneAt = 0
+    let seenAt = 0
+    try {
+      await saveGroupWatch(id, { state: 'watching' })
+      while (Date.now() - started < 15 * 60 * 1000) {
+        await sleep(2000)
+        let tab = null
+        try { tab = await chrome.tabs.get(tabId) } catch (e) {}
+        if (!tab) return await saveGroupWatch(id, { state: 'closed' })
+        const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
+        if (onPost) return await saveGroupWatch(id, { state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
+        let r = null
+        try {
+          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet] })
+          r = res && res[0] && res[0].result
+        } catch (e) {}
+        if (!r) continue
+        // The page reloaded and took the listener with it: put it back, but
+        // without marking posts old, since the new one may already be there.
+        if (!r.hook) { try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [false] }) } catch (e) {} }
+        const url = (r.net && r.net.url) || r.feedUrl
+        if (url) return await saveGroupWatch(id, { state: 'posted', url, via: r.net ? r.net.via : 'feed' })
+        if (r.seen || r.created) {
+          if (!seenAt) seenAt = Date.now()
+          // Give the timestamp link a moment to fill in before giving up on it.
+          if (Date.now() - seenAt > 20000) return await saveGroupWatch(id, { state: 'posted_no_link' })
+        }
+        if (!r.dialog) {
+          if (!dialogGoneAt) dialogGoneAt = Date.now()
+          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await saveGroupWatch(id, { state: 'not_seen' })
+        } else {
+          dialogGoneAt = 0
+        }
+        await saveGroupWatch(id, { state: 'watching' })
+      }
+      await saveGroupWatch(id, { state: 'timeout' })
+    } catch (e) {
+      await saveGroupWatch(id, { state: 'lost' })
+    } finally {
+      stopKeepAlive(ka)
+    }
+  })()
+  return id
 }

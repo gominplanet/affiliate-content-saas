@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -953,7 +953,7 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
-export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string }
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean }
 export type FacebookGroupMedia = { kind: 'thumbnail' | 'video'; url: string } | null
 
 /**
@@ -981,7 +981,25 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   if (res && res.filled && media && !canMedia) {
     return { ...res, media: `Your SCOUT (${status.version}) can't attach the ${media.kind === 'video' ? 'video card' : 'thumbnail'} yet; it needs ${SCOUT_FB_GROUP_MEDIA_MIN_VERSION}. Add it yourself for now.` }
   }
-  return res || { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+  // canWatch says whether this SCOUT will report the post going up, so an
+  // older one shows "paste the link" instead of a wait that never ends.
+  const canWatch = scoutAtLeast(status.version, SCOUT_FB_GROUP_WATCH_MIN_VERSION) && !!res?.watchId
+  return res ? { ...res, canWatch } : { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+}
+
+/** Where the Group post SCOUT filled stands, after the creator presses Post.
+ *  posted: `url` is the post's own address. posted_no_link: SCOUT saw it go
+ *  up but could not read its address. not_seen / closed / timeout / lost /
+ *  unknown: SCOUT has no address, and says why. */
+export interface FacebookGroupPostStatus {
+  state: 'watching' | 'posted' | 'posted_no_link' | 'not_seen' | 'closed' | 'timeout' | 'lost' | 'unknown'
+  url?: string
+  via?: string
+}
+
+export async function getFacebookGroupPostStatus(watchId: string): Promise<FacebookGroupPostStatus> {
+  const res = await sendToExtension<FacebookGroupPostStatus>({ type: 'MVP_FB_GROUP_POST_STATUS', watchId }, 8_000)
+  return res && res.state ? res : { state: 'unknown' }
 }
 
 export async function requestPinComment(youtubeVideoId: string, commentId: string): Promise<PinCommentResult> {
