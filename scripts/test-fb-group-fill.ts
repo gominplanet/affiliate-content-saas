@@ -26,7 +26,12 @@ check('it never clicks a Post button',
   !/aria-label=?\\?["']?Post|innerText\s*===?\s*['"]Post|\btext\(\)\s*===?\s*['"]Post/i.test(FILL)
   && (FILL.match(/\.click\(\)/g) || []).length === 1,
   'the only click allowed is the one that opens "Write something"')
-check('filled is only claimed after the text is seen in the box', /if \(took\(\)\) \{ steps\.push\('text: pasted'\); return \{ ok: true, filled: true/.test(FILL))
+check('filled is only claimed after the text is seen in the box',
+  FILL.indexOf("if (!how) return fail(") > 0 && FILL.indexOf("if (!how) return fail(") < FILL.indexOf('return { ok: true, filled: true'))
+check('what happened to the hero is said, attached or not',
+  /mediaNote = attached \? 'The thumbnail is attached\.' : 'The thumbnail did not attach/.test(FILL)
+  && /'video card: ' \+ \(hasYouTubeCard\(\) \? 'kept' : 'replaced'\)/.test(FILL)
+  && /could not download the thumbnail/.test(FILL))
 check('the tab is left open for the creator to press Post', !/prefillFacebookGroup[\s\S]{0,2500}chrome\.tabs\.remove/.test(BG.slice(BG.indexOf('async function prefillFacebookGroup('), fillStart)))
 check('MVP can ask for it', /msg\.type === 'MVP_FB_GROUP_PREFILL'/.test(BG))
 check('only facebook.com/groups links are opened', /\/\^\\\/groups\\\/\[\^\/\]\+\//.test(BG) || /pathname\)\) return null/.test(BG))
@@ -47,6 +52,8 @@ check('the post is copied before SCOUT is asked',
   UI.indexOf('navigator.clipboard.writeText(groupCopy) } catch') >= 0
   && UI.indexOf('navigator.clipboard.writeText(groupCopy) } catch') < UI.indexOf('requestFacebookGroupPrefill(g.url'))
 check('success and failure look different', /st\.filled \? 'text-emerald/.test(UI))
+check('the Group gets the same composed post as the Page', /const composed = finalText && generatedText/.test(UI) && /finalText\.replace\(generatedText\.trim\(\), text\.trim\(\)\)/.test(UI))
+check('an older SCOUT that cannot attach the hero says so', /SCOUT_FB_GROUP_MEDIA_MIN_VERSION/.test(EF) && /can't attach the/.test(EF))
 
 // THE LAUNCH KIT MAKES THE GROUP THAT SCOUT FILLS. Its last step is what
 // connects the two: the Group link goes into Brand Profile, where Fill with

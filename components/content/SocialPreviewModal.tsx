@@ -141,8 +141,21 @@ export function SocialPreviewModal({
 
   // Assembled copy-paste block for manual Group sharing: the (edited) post
   // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
-  const groupCopy = [text.trim(), (serverHashtags || shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
-    .filter(Boolean).join('\n\n')
+  // THE SAME POST AS THE PAGE. When the server composed the full caption
+  // (product link + disclosure on top, the write-up, then the blog line, per
+  // the creator's Link settings), the Group gets exactly that, with the
+  // creator's edits to the write-up swapped in. Only when there is no composed
+  // caption does it fall back to the plain text + link + disclaimer block.
+  const [generatedText, setGeneratedText] = useState('')
+  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+  const [heroVideoUrl, setHeroVideoUrl] = useState<string | null>(null)
+  const hashtagLine = (serverHashtags || shareHashtags || '').trim()
+  const composed = finalText && generatedText && finalText.includes(generatedText.trim())
+    ? finalText.replace(generatedText.trim(), text.trim())
+    : ''
+  const groupCopy = composed
+    ? [composed, hashtagLine].filter(Boolean).join('\n\n')
+    : [text.trim(), hashtagLine, (shareUrl || '').trim(), (shareDisclaimer || '').trim()].filter(Boolean).join('\n\n')
 
   // ── Fill with SCOUT: one click per Group ─────────────────────────────────
   // SCOUT opens the Group in the creator's own Facebook and fills this post
@@ -155,12 +168,20 @@ export function SocialPreviewModal({
     try { await navigator.clipboard.writeText(groupCopy) } catch { /* the message below still says what to do */ }
     setGroupFill((m) => ({ ...m, [i]: { state: 'working' } }))
     const { requestFacebookGroupPrefill } = await import('@/lib/extension-frame')
-    const res = await requestFacebookGroupPrefill(g.url, groupCopy)
+    // The same hero as the Page post: the thumbnail attached, or the playable
+    // YouTube card. Only sent when it exists, so SCOUT never waits for nothing.
+    const media = mediaChoice === 'video' && heroVideoUrl
+      ? { kind: 'video' as const, url: heroVideoUrl }
+      : heroImageUrl ? { kind: 'thumbnail' as const, url: heroImageUrl } : null
+    const res = await requestFacebookGroupPrefill(g.url, groupCopy, media)
     const label = g.name?.trim() || 'your Group'
+    // Say what happened to the hero too, so "filled, but the image did not
+    // attach" never reads the same as "filled, with the image".
+    const mediaNote = res.media ? ` ${res.media}` : ''
     setGroupFill((m) => ({
       ...m,
       [i]: res.filled
-        ? { state: 'done', filled: true, message: `SCOUT filled the post in ${label}. Check it in the Facebook tab and press Post.`, steps: res.steps }
+        ? { state: 'done', filled: true, message: `SCOUT filled the post in ${label}.${mediaNote} Check it in the Facebook tab and press Post.`, steps: res.steps }
         : { state: 'done', filled: false, message: res.error || 'SCOUT could not fill it. The post is copied: paste it in the Group yourself.', steps: res.steps },
     }))
   }
@@ -176,7 +197,10 @@ export function SocialPreviewModal({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
       setText(data.text || '')
+      setGeneratedText(data.text || '')
       setFinalText(data.finalText || data.text || '')
+      setHeroImageUrl(typeof data.imageUrl === 'string' ? data.imageUrl : null)
+      setHeroVideoUrl(typeof data.videoUrl === 'string' ? data.videoUrl : null)
       if (typeof data.hashtags === 'string' && data.hashtags.trim()) setServerHashtags(data.hashtags.trim())
       if (typeof data.affiliateAvailable === 'boolean') setAffiliateAvailable(data.affiliateAvailable)
       if (typeof data.videoAvailable === 'boolean') {
@@ -358,7 +382,8 @@ export function SocialPreviewModal({
                   changes is the picture and where a tap on it lands. */}
               {isFacebook && (
                 <div className="mb-4 rounded-xl border border-gray-200 dark:border-white/10 p-3">
-                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">What Facebook shows</p>
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">What Facebook shows</p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mb-2">Used for your Page post, and for Groups when you use Fill with SCOUT.</p>
                   <label className="flex items-start gap-2 text-xs cursor-pointer mb-2">
                     <input
                       type="radio"

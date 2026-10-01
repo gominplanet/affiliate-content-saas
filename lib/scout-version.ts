@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.22.1'
+export const SCOUT_LATEST_VERSION = '1.23.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Reads an Amazon Live replay page for Live follow-up (the video stream and the products shown), and fills a post into your Facebook Group.'
+  'Group posts SCOUT fills now carry the same hero as your Page post: the thumbnail attached, or the playable YouTube card.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -60,6 +60,10 @@ export const SCOUT_PIN_MIN_VERSION = '1.21.16'
 
 /** The oldest SCOUT that can fill a post into a Facebook Group. */
 export const SCOUT_FB_GROUP_MIN_VERSION = '1.22.0'
+
+/** The oldest SCOUT that can attach the hero (thumbnail or video card) to a
+ *  Group post it fills. */
+export const SCOUT_FB_GROUP_MEDIA_MIN_VERSION = '1.23.0'
 
 /** True when the installed SCOUT is at least `min`. False when unknown. */
 export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {

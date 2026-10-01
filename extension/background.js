@@ -11342,7 +11342,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Fill a post into the creator's Facebook Group and leave it for them to
     // press Post. See prefillFacebookGroup.
     const timeout = setTimeout(() => sendResponse({ ok: false, filled: false, error: 'SCOUT took too long. If the Group opened, the post is copied: paste it in.' }), 240000)
-    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text })
+    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text, media: msg.media })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -12194,7 +12194,26 @@ function askFacebookAccess() {
   })
 }
 
-async function prefillFacebookGroup({ groupUrl, text }) {
+// The thumbnail is fetched here, not in the Facebook page, so the page script
+// gets a data URL it can turn into a file without any cross-site request.
+async function fbImageDataUrl(url) {
+  try {
+    const u = new URL(String(url || ''))
+    if (u.protocol !== 'https:') return null
+    const res = await fetch(u.toString())
+    if (!res.ok) return null
+    const blob = await res.blob()
+    if (!/^image\//.test(blob.type) || blob.size > 15 * 1024 * 1024) return null
+    return await new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(typeof r.result === 'string' ? r.result : null)
+      r.onerror = () => resolve(null)
+      r.readAsDataURL(blob)
+    })
+  } catch (e) { return null }
+}
+
+async function prefillFacebookGroup({ groupUrl, text, media }) {
   const url = fbGroupUrl(groupUrl)
   if (!url) return { ok: false, filled: false, error: 'That Group link does not look like a Facebook Group (facebook.com/groups/…). Check it in Brand Profile.' }
   const body = String(text || '').trim().slice(0, 8000)
@@ -12217,7 +12236,16 @@ async function prefillFacebookGroup({ groupUrl, text }) {
       if (t && t.status === 'complete') break
       await sleep(400)
     }
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body] })
+    // The hero: the thumbnail as an attached photo, or the YouTube link Facebook
+    // turns into a playable card. Anything else is ignored.
+    let hero = null
+    if (media && media.kind === 'video' && /^https:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]{11}/.test(String(media.url || ''))) {
+      hero = { kind: 'video', url: String(media.url) }
+    } else if (media && media.kind === 'thumbnail' && media.url) {
+      const dataUrl = await fbImageDataUrl(media.url)
+      hero = dataUrl ? { kind: 'thumbnail', dataUrl } : { kind: 'thumbnail', failed: true }
+    }
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
     return out
   } catch (e) {
@@ -12227,7 +12255,7 @@ async function prefillFacebookGroup({ groupUrl, text }) {
 }
 
 // Runs in the Facebook Group page. Self-contained: executeScript serializes it.
-async function fillGroupComposerInPage(text) {
+async function fillGroupComposerInPage(text, hero) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const steps = []
   const fail = (error) => ({ ok: false, filled: false, error, steps: steps.join('; ') })
@@ -12262,17 +12290,77 @@ async function fillGroupComposerInPage(text) {
   steps.push('box: open')
   box.focus()
   await sleep(200)
+  const dialog = box.closest('[role="dialog"]') || document
+  const pasteText = (t) => {
+    try {
+      const dt = new DataTransfer()
+      dt.setData('text/plain', t)
+      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    } catch (e) {}
+  }
+  const hasYouTubeCard = () => !!dialog.querySelector('a[href*="youtube.com"], a[href*="youtu.be"], img[src*="ytimg.com"]')
+  let mediaNote = ''
+
+  // VIDEO FIRST. Facebook builds the card from the first link it sees in the
+  // box and keeps it after that text is gone, so the YouTube link goes in
+  // alone, the card appears, then the box is cleared and the post goes in.
+  if (hero && hero.kind === 'video') {
+    pasteText(hero.url)
+    let card = false
+    for (let i = 0; i < 20 && !card; i++) { await sleep(400); card = hasYouTubeCard() }
+    try { box.focus(); document.execCommand('selectAll', false); document.execCommand('delete', false) } catch (e) {}
+    await sleep(300)
+    steps.push(card ? 'video card: built' : 'video card: not built')
+    if (!card) mediaNote = 'Facebook did not build the video card, so it will show a card for the first link instead. Paste the YouTube link at the top if you want the video.'
+  }
+
   const head = text.replace(/\s+/g, ' ').trim().slice(0, 24)
   const took = () => (box.innerText || '').replace(/\s+/g, ' ').indexOf(head) >= 0
-  try {
-    const dt = new DataTransfer()
-    dt.setData('text/plain', text)
-    box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-  } catch (e) {}
+  pasteText(text)
   await sleep(600)
-  if (took()) { steps.push('text: pasted'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  try { document.execCommand('insertText', false, text) } catch (e) {}
-  await sleep(600)
-  if (took()) { steps.push('text: typed'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  let how = ''
+  if (took()) how = 'pasted'
+  else {
+    try { document.execCommand('insertText', false, text) } catch (e) {}
+    await sleep(600)
+    if (took()) how = 'typed'
+  }
+  if (!how) return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  steps.push('text: ' + how)
+
+  if (hero && hero.kind === 'video' && !mediaNote) {
+    await sleep(800)
+    mediaNote = hasYouTubeCard() ? 'The playable video card is on it.' : 'Facebook swapped the video card for another link\'s card. Remove that card and paste the YouTube link at the top if you want the video.'
+    steps.push('video card: ' + (hasYouTubeCard() ? 'kept' : 'replaced'))
+  }
+
+  // THUMBNAIL AFTER THE TEXT. An attached photo replaces any link card, so it
+  // goes last; the links in the text stay clickable.
+  if (hero && hero.kind === 'thumbnail') {
+    if (hero.failed || !hero.dataUrl) {
+      mediaNote = 'SCOUT could not download the thumbnail, so none is attached. Add it yourself if you want it.'
+      steps.push('thumbnail: download failed')
+    } else {
+      const before = dialog.querySelectorAll('img').length
+      try {
+        const bin = atob(hero.dataUrl.split(',')[1] || '')
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const type = (hero.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/jpeg'
+        const file = new File([bytes], 'thumbnail.' + (type.split('/')[1] || 'jpg'), { type })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        box.focus()
+        box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      } catch (e) {}
+      let attached = false
+      for (let i = 0; i < 25 && !attached; i++) {
+        await sleep(400)
+        attached = Array.from(dialog.querySelectorAll('img')).some((im) => /^blob:|^data:/.test(im.src || '')) || dialog.querySelectorAll('img').length > before
+      }
+      mediaNote = attached ? 'The thumbnail is attached.' : 'The thumbnail did not attach, so add it yourself if you want it.'
+      steps.push('thumbnail: ' + (attached ? 'attached' : 'not attached'))
+    }
+  }
+  return { ok: true, filled: true, steps: steps.join('; '), media: mediaNote || undefined }
 }

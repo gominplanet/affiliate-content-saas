@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -953,7 +953,8 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
-export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string }
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string }
+export type FacebookGroupMedia = { kind: 'thumbnail' | 'video'; url: string } | null
 
 /**
  * Ask SCOUT to open one of the creator's Facebook Groups and fill MVP's post
@@ -965,7 +966,7 @@ export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; erro
  * in the box, so the page can tell "ready, press Post" apart from every kind
  * of "it did not go in", and say which.
  */
-export async function requestFacebookGroupPrefill(groupUrl: string, text: string): Promise<FacebookGroupPrefillResult> {
+export async function requestFacebookGroupPrefill(groupUrl: string, text: string, media: FacebookGroupMedia = null): Promise<FacebookGroupPrefillResult> {
   const status = await getScoutStatus()
   if (!status.installed) {
     return { ok: false, filled: false, error: 'SCOUT is not installed or not switched on in this browser, so nothing was filled. The post is copied: paste it in the Group yourself.' }
@@ -973,7 +974,13 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   if (!scoutAtLeast(status.version, SCOUT_FB_GROUP_MIN_VERSION)) {
     return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and filling Group posts needs ${SCOUT_FB_GROUP_MIN_VERSION}. Chrome updates it by itself soon. Until then the post is copied: paste it in the Group yourself.` }
   }
-  const res = await sendToExtension<FacebookGroupPrefillResult>({ type: 'MVP_FB_GROUP_PREFILL', groupUrl, text }, 245_000)
+  // An older SCOUT fills the text but cannot attach the hero, and says nothing
+  // about it. Said here instead, so "no image" is never a silent difference.
+  const canMedia = scoutAtLeast(status.version, SCOUT_FB_GROUP_MEDIA_MIN_VERSION)
+  const res = await sendToExtension<FacebookGroupPrefillResult>({ type: 'MVP_FB_GROUP_PREFILL', groupUrl, text, media: canMedia ? media : null }, 245_000)
+  if (res && res.filled && media && !canMedia) {
+    return { ...res, media: `Your SCOUT (${status.version}) can't attach the ${media.kind === 'video' ? 'video card' : 'thumbnail'} yet; it needs ${SCOUT_FB_GROUP_MEDIA_MIN_VERSION}. Add it yourself for now.` }
+  }
   return res || { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
 }
 
