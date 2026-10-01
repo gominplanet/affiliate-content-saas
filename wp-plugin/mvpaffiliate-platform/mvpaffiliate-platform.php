@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.99
+ * Version: 1.1.0
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -147,6 +147,27 @@ add_filter('allowed_redirect_hosts', function ($hosts) {
     $hosts[] = 'mvpaffiliate.io';
     $hosts[] = 'www.mvpaffiliate.io';
     return $hosts;
+});
+
+// ─── No pingbacks to affiliate links (v1.1.0) ────────────────────────────────
+// On every publish or update WordPress visits each link in the post to offer a
+// pingback. Amazon never accepts one, so WordPress never marks the link done
+// and visits it again on the next update. MVP updates posts often, so a site
+// "clicked" its own Passport and Amazon links thousands of times a week, which
+// read as real clicks in MVP (User-Agent "WordPress/x; site") and sends Amazon
+// server traffic on the creator's tag. Affiliate links are taken out of the
+// list before any ping is sent; links to real blogs still get their pingbacks.
+add_action('pre_ping', function (&$links) {
+    if (!is_array($links)) { return; }
+    $links = array_values(array_filter($links, function ($url) {
+        $host = strtolower((string) wp_parse_url((string) $url, PHP_URL_HOST));
+        $path = (string) wp_parse_url((string) $url, PHP_URL_PATH);
+        if ($host === '') { return true; }
+        if (preg_match('/(^|\.)mvpl\.ink$/', $host)) { return false; }
+        if (preg_match('/(^|\.)mvpaffiliate\.io$/', $host) && strpos($path, '/go/') === 0) { return false; }
+        if (preg_match('/(^|\.)(amazon\.[a-z.]+|amzn\.to|amzn\.eu|a\.co|geni\.us|bit\.ly)$/', $host)) { return false; }
+        return true;
+    }));
 });
 
 // ─── SEO: keep thin, auto-generated archives OUT of Google's index ───────────

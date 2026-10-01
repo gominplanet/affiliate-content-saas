@@ -166,6 +166,17 @@ export function parseUserAgent(ua: string | null | undefined): { device: string 
     'python-requests', 'python-urllib', 'aiohttp', 'httpx', 'scrapy',
     'curl/', 'wget', 'libwww', 'go-http-client', 'okhttp', 'axios', 'node-fetch',
     'java/', 'apache-httpclient', 'postmanruntime', 'insomnia', 'guzzle', 'restsharp',
+    // a WordPress site fetching the link itself (pingbacks, link checkers):
+    // "WordPress/7.1; https://site.com". Thousands a week on a busy site.
+    '^wordpress/', 'wp-cron', 'jetpack',
+    // link scanners seen in the click log
+    'google-safety', 'lightpanda', 'skywatch', 'linkring', 'piiksi',
+    // a client that names itself with a bare runtime or a single word
+    '^node$', '^google$',
+    // self-declared tools carry their own home page: "(compatible; X/1.0; +https://...)"
+    '\\+https?://',
+    // browsers that have not existed for twenty years
+    'msie [1-6]\\.', 'windows 9[58]',
   ].join('|'), 'i')
   if (BOT.test(s)) return { device: null, browser: 'Bot', os: null }
 
