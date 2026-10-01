@@ -19,7 +19,7 @@ import { acceptSoldMatch, stopsTheRun, DAILY_RESULT_KEY, type SoldMatchRow as Ma
 const money = (c: number) => (c / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 
 export default function SoldCampaigns() {
-  const [data, setData] = useState<{ matches: Match[]; soldProducts: number; synced: boolean; days: number; auto?: boolean; autoAt?: string | null } | null>(null)
+  const [data, setData] = useState<{ matches: Match[]; soldProducts: number; synced: boolean; days: number; auto?: boolean; autoAt?: string | null; families?: { asked: number; known: number; lookedUp: number; error: string | null } | null } | null>(null)
   const [auto, setAuto] = useState(true)
   const [daily, setDaily] = useState<DailyResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +101,16 @@ export default function SoldCampaigns() {
           </div>
         )}
       </div>
+      {/* Whether colour and size matching could run, said: a product with no
+          family on file only matches exactly, and that is not the same as
+          having no other colours. */}
+      {data.families && (
+        <p className={`mt-2 text-[12px] ${data.families.error ? 'text-[#ff3b30]' : 'text-[#86868b]'}`}>
+          Colour and size matching: known for {data.families.known} of the {data.families.asked} products you sold
+          {data.families.lookedUp ? ` (${data.families.lookedUp} looked up just now)` : ''}.
+          {data.families.error ? ` The rest only match exactly for now: ${data.families.error}.` : data.families.known < data.families.asked ? ' The rest are looked up in the background and only match exactly until then.' : ''}
+        </p>
+      )}
       <label className="mt-3 flex items-start gap-2 text-[12.5px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer">
         <input type="checkbox" checked={auto} onChange={(e) => void switchAuto(e.target.checked)} className="mt-0.5" />
         <span>

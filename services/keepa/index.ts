@@ -1284,26 +1284,29 @@ export function keepaFamilyOf(p: any): KeepaFamily | null {
 
 /** Families for up to 100 ASINs a call (1 token each). Never throws: an ASIN
  *  missing from the result was not looked at, which is not "has no family". */
-export async function fetchKeepaFamilies(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<{ families: Map<string, KeepaFamily>; tokensLeft: number | null }> {
+export async function fetchKeepaFamilies(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<{ families: Map<string, KeepaFamily>; tokensLeft: number | null; error: string | null }> {
   const families = new Map<string, KeepaFamily>()
   let tokensLeft: number | null = null
+  // The first refusal, said: a family nobody could look up is not "no family".
+  let error: string | null = null
   const key = process.env.KEEPA_API_KEY
   const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => ASIN_RE.test(a)))]
-  if (!key || !valid.length) return { families, tokensLeft }
+  if (!key) return { families, tokensLeft, error: 'no Keepa key on the server' }
+  if (!valid.length) return { families, tokensLeft, error }
   for (let i = 0; i < valid.length; i += 100) {
     const batch = valid.slice(i, i + 100)
     const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${batch.join(',')}&stats=0&history=0`
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
-      if (!res.ok) continue
-      const data = await res.json() as { products?: unknown[]; tokensLeft?: number }
+      const data = await res.json().catch(() => ({})) as { products?: unknown[]; tokensLeft?: number; error?: { message?: string } }
       if (typeof data.tokensLeft === 'number') tokensLeft = data.tokensLeft
+      if (!res.ok) { error = error ?? `Keepa answered ${res.status}${data.error?.message ? `: ${data.error.message}` : ''}${tokensLeft != null ? ` (${tokensLeft} tokens left)` : ''}`; break }
       for (const raw of (Array.isArray(data.products) ? data.products : [])) {
         const f = keepaFamilyOf(raw)
         if (f) families.set(f.asin, f)
       }
-      if (tokensLeft != null && tokensLeft < 200) break
-    } catch { /* skip this batch */ }
+      if (tokensLeft != null && tokensLeft < 200) { error = error ?? `stopped to leave Keepa tokens for everything else (${tokensLeft} left)`; break }
+    } catch (e) { error = error ?? `Keepa did not answer (${e instanceof Error ? e.message : String(e)})`.slice(0, 200) }
   }
-  return { families, tokensLeft }
+  return { families, tokensLeft, error }
 }

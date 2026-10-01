@@ -34,6 +34,11 @@ check('it respects the switch and the 20 hour gap across browsers', /if \(!j\.au
 check('it is capped, and stops at a failure that fails them all', /slice\(0, DAILY_MAX\)/.test(DAILY) && /if \(stopsTheRun\(o\.note\)\) \{ result\.stopped = o\.note; break \}/.test(DAILY))
 check('it says what it did, failures apart from successes', /toast\.warning\(msg/.test(DAILY) && /toast\.error\(`Today's Creator Connections campaigns were not accepted/.test(DAILY))
 check('the card shows the last daily result and the switch', /Daily run on \{daily\.day\}/.test(UI) && /Accept new matches every day\./.test(UI))
+check('a family that could not be looked up or saved is said, not taken for none',
+  /error: keepaError/.test(readFileSync('lib/asin-family.ts', 'utf8')) && /could not save families/.test(readFileSync('lib/asin-family.ts', 'utf8'))
+  && /Keepa answered \$\{res\.status\}/.test(readFileSync('services/keepa/index.ts', 'utf8')) && /Colour and size matching: known for/.test(UI))
+check('families are filled in the background, best sellers first, above a Keepa floor',
+  /"\/api\/cron\/asin-families"/.test(readFileSync('vercel.json', 'utf8')) && /MIN_TOKENS/.test(readFileSync('app/api/cron/asin-families/route.ts', 'utf8')))
 check('off only when switched off: null is on', /sold_campaigns_auto !== false/.test(ROUTE))
 check('one at a time, and it can be stopped', /for \(const m of list\)/.test(UI) && /if \(stop\.current\) break/.test(UI))
 check('a failed accept says why on its own row', /o\?\.state === 'failed' && <div/.test(UI))

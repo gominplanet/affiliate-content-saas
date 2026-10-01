@@ -20,7 +20,7 @@
 // is read in the order of what is worth most.
 
 import { ccRequestUrl } from '@/lib/cc-urls'
-import { familiesFor, familyMembers, type Family } from '@/lib/asin-family'
+import { familiesFor, familyMembers, type Family, type FamilyReport } from '@/lib/asin-family'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -46,7 +46,7 @@ export type SoldMatch = {
   detailsUrl: string
 }
 
-export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?: number; familySb?: Sb; maxLookups?: number } = {}): Promise<{ matches: SoldMatch[]; soldProducts: number; synced: boolean; familiesKnown: number }> {
+export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?: number; familySb?: Sb; maxLookups?: number } = {}): Promise<{ matches: SoldMatch[]; soldProducts: number; synced: boolean; familiesKnown: number; families: FamilyReport | null }> {
   const days = opts.days ?? 90
   const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
@@ -70,7 +70,7 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
   }
   if (!sold.size) {
     const { count } = await sb.from('amazon_earnings_products').select('asin', { count: 'exact', head: true }).eq('user_id', ownerId)
-    return { matches: [], soldProducts: 0, synced: (count ?? 0) > 0, familiesKnown: 0 }
+    return { matches: [], soldProducts: 0, synced: (count ?? 0) > 0, familiesKnown: 0, families: null }
   }
 
   // Campaigns already accepted, from both places MVP records them.
@@ -84,7 +84,7 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
 
   // Families, best earners first so a Keepa limit falls on the least sold.
   const asins = [...sold.keys()].sort((x, y) => sold.get(y)!.earningsCents - sold.get(x)!.earningsCents)
-  const { families } = await familiesFor(opts.familySb ?? sb, asins, { maxLookups: opts.maxLookups })
+  const { families, report } = await familiesFor(opts.familySb ?? sb, asins, { maxLookups: opts.maxLookups })
   // Every product that counts as a sold one, pointing back at the sold ASINs.
   const bySibling = new Map<string, Set<string>>()
   const byParent = new Map<string, Set<string>>()
@@ -149,5 +149,5 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
     })
   }
   const matches = [...found.values()].sort((x, y) => y.earningsCents - x.earningsCents || y.commissionPct - x.commissionPct)
-  return { matches, soldProducts: sold.size, synced: true, familiesKnown: [...families.values()].filter((f) => f.parentAsin || f.siblings.length).length }
+  return { matches, soldProducts: sold.size, synced: true, familiesKnown: [...families.values()].filter((f) => f.parentAsin || f.siblings.length).length, families: report }
 }
