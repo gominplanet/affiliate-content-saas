@@ -5,15 +5,25 @@
 // the credits to the ledger on completion (from the real purchased price, never
 // client-supplied amounts). Pro-only.
 //   body: { block: '50' | '150' | '500' }  ->  { url }
+//
+// NO LONGER SOLD (2026-10-01, Seb: "stop selling the dub credits"). Dubbing is
+// retired: Amazon uploads go to the US store only (lib/markets UPLOAD_MARKET).
+// Every request is refused with the reason, so no checkout can be created. The
+// webhook still credits a purchase that was already in flight.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, CREDIT_BLOCKS, creditBlockPriceId, isValidPriceId } from '@/lib/stripe'
 import { normalizeTier } from '@/lib/tier'
 
+const CREDITS_RETIRED = true
+
 export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (CREDITS_RETIRED) {
+    return NextResponse.json({ error: 'Dub credits are no longer sold: MVP uploads to the US Amazon store only now, so there is nothing to dub.', code: 'retired' }, { status: 410 })
+  }
 
   const { block } = await request.json().catch(() => ({})) as { block?: string }
   const key = String(block || '').trim()

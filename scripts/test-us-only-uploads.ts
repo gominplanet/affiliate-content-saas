@@ -31,6 +31,8 @@ check('dubbing answers that it is retired, never silently', /status: 410/.test(r
 const MK = r('app/api/coverage/markets/route.ts')
 check('Storefront Sync lists and ticks the US store only', /MARKETS\.filter\(\(m\) => isUploadMarket\(m\.domain\)\)/.test(MK) && /enabled && !isUploadMarket\(domain\)/.test(MK))
 check('Liftoff is the US store only too', /LIFTOFF_AMAZON_MARKET = 'amazon\.com'/.test(r('lib/launch-batch.ts')))
+check('dub credits are no longer sold: checkout refuses before Stripe is called',
+  (() => { const c = r('app/api/stripe/credits-checkout/route.ts'); return /const CREDITS_RETIRED = true/.test(c) && c.indexOf('if (CREDITS_RETIRED)') > 0 && c.indexOf('if (CREDITS_RETIRED)') < c.indexOf('stripe.checkout.sessions.create') })())
 for (const [f, re] of [
   ['app/features/page.tsx', /every Amazon storefront|dubs the video|audio dubbed/],
   ['app/(dashboard)/liftoff/page.tsx', /translates, dubs/],
