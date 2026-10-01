@@ -7,6 +7,8 @@
 // not check instead of looking like a clean bill of health.
 import { readFileSync } from 'node:fs'
 import { rankToday, gatherToday, type TodayItem } from '../lib/today-list'
+import { weekWindow } from '../lib/week-window'
+import { gatherWeek } from '../lib/week-recap'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -43,11 +45,26 @@ async function main() {
   check('the dashboard shows Today to Pro', /\{isPro && <TodayList \/>\}/.test(dash))
   check('the panels Today links to keep their anchors', /id="price-alerts"/.test(dash) && /id="cc-digest"/.test(dash))
 
+  // THE WEEK RECAP: last full Monday to Monday, and a failed read is not a zero.
+  const w = weekWindow(new Date(Date.UTC(2030, 0, 9, 15)))  // a Wednesday
+  check('the recap covers the last full week, Monday to Monday',
+    w.start.toISOString() === '2029-12-31T00:00:00.000Z' && w.end.toISOString() === '2030-01-07T00:00:00.000Z' && w.key === '2029-12-31')
+  const m = weekWindow(new Date(Date.UTC(2030, 0, 7, 0, 5)))  // just after Monday midnight
+  check('on Monday the new recap is the week that just ended', m.key === '2029-12-31')
+  check('back=1 is the week before', weekWindow(new Date(Date.UTC(2030, 0, 9)), 1).key === '2029-12-24')
+  const wr = await gatherWeek(brokenSb, 'u1', w, weekWindow(new Date(Date.UTC(2030, 0, 9)), 1))
+  check('a recap source that fails is null and named, never 0',
+    wr.videos === null && wr.amazonVideos === null && wr.clicks === null && wr.unread.includes('YouTube videos'))
+  const page = r('app/(dashboard)/recap/page.tsx')
+  check('the recap page shows a missing number as missing', /Could not be read/.test(page) && /value == null \? '\?'/.test(page))
+  check('opening the recap stops the top bar flashing', /localStorage\.setItem\(RECAP_SEEN_KEY/.test(page))
+  check('the top bar carries the recap button', /<RecapTopbarButton \/>/.test(r('components/layout/DashboardShellV2.tsx')))
+
   if (failures.length) {
     console.error(`\n❌ today-list: ${failures.length} failure(s)\n`)
     for (const f of failures) console.error(`   • ${f}`)
     process.exit(1)
   }
-  console.log('✅ today-list: ranked, Pro only, and a failed read is named rather than hidden')
+  console.log('✅ today-list: ranked, Pro only, and a failed read is named rather than hidden; the week recap covers the last full week and never shows a failed read as zero')
 }
 main()

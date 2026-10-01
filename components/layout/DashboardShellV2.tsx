@@ -55,6 +55,7 @@ import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
 import TopbarSearch from './TopbarSearch'
 import WpConnectionDoctorButton from './WpConnectionDoctorButton'
+import RecapTopbarButton from './RecapTopbarButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
@@ -1324,6 +1325,8 @@ export default function DashboardShellV2({
           <div className="min-w-0 flex-1 md:flex-none"><TopbarSearch isAdmin={isAdmin} /></div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Week recap: flashes until this week's recap is opened. */}
+            <RecapTopbarButton />
             {/* Get / Update SCOUT — a load-unpacked extension never auto-
                 updates, so the latest zip is reachable here next to the WP
                 theme-update button. Renders nothing when SCOUT is current. */}
