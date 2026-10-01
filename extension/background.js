@@ -11338,6 +11338,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_FB_GROUP_PREFILL') {
+    // Fill a post into the creator's Facebook Group and leave it for them to
+    // press Post. See prefillFacebookGroup.
+    const timeout = setTimeout(() => sendResponse({ ok: false, filled: false, error: 'SCOUT took too long. If the Group opened, the post is copied: paste it in.' }), 240000)
+    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_YT_PIN_COMMENT') {
     // MVP posted a sale comment and asks SCOUT to pin it, in the creator's
     // own signed-in YouTube. The answer says whether the pinned badge was seen.
@@ -12133,4 +12142,137 @@ async function sendBrandMessage(detailsUrl, message, callerTabId) {
     // could itself flicker the user's tab. Just close our hidden tab.
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
   }
+}
+
+// ── Facebook Group: fill a post, never press Post ─────────────────────────
+//
+// Meta does not let any app post into a Group, so MVP cannot. What SCOUT can
+// do is what the creator would: open the Group in their own signed-in
+// Facebook, open "Write something", and put MVP's text in the box. The
+// creator reads it and presses Post. SCOUT never clicks Post, by design: a
+// person pressing the button is the difference between a helper and an
+// automated poster, and an automated poster is what gets accounts restricted.
+//
+// Facebook access is an OPTIONAL permission, asked for on first use from
+// fb-allow.html, so this release does not disable SCOUT for everyone who
+// never uses it while Chrome waits for them to accept a new permission.
+//
+// IT SAYS HOW FAR IT GOT. The answer carries `steps`, so "SCOUT could not
+// fill it" names the step: not signed in, no composer, box not found, text
+// did not take.
+const FB_ORIGINS = ['https://*.facebook.com/*']
+
+function fbGroupUrl(raw) {
+  try {
+    const u = new URL(String(raw || '').trim())
+    if (!/^(www\.|web\.|m\.)?facebook\.com$/i.test(u.hostname)) return null
+    if (!/^\/groups\/[^/]+/.test(u.pathname)) return null
+    const slug = u.pathname.split('/')[2]
+    return `https://www.facebook.com/groups/${slug}/`
+  } catch (e) { return null }
+}
+
+function askFacebookAccess() {
+  return new Promise((resolve) => {
+    let done = false
+    let winId = null
+    const finish = (granted) => {
+      if (done) return
+      done = true
+      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
+      try { chrome.windows.onRemoved.removeListener(onClosed) } catch (e) {}
+      resolve(!!granted)
+    }
+    const onMsg = (m) => { if (m && m.type === 'SCOUT_FB_ALLOW_RESULT') finish(m.granted) }
+    const onClosed = (id) => { if (id === winId) setTimeout(() => finish(false), 300) }
+    chrome.runtime.onMessage.addListener(onMsg)
+    chrome.windows.onRemoved.addListener(onClosed)
+    chrome.windows.create({ url: chrome.runtime.getURL('fb-allow.html'), type: 'popup', width: 480, height: 340, focused: true })
+      .then((w) => { winId = w && w.id })
+      .catch(() => finish(false))
+    setTimeout(() => finish(false), 180000)
+  })
+}
+
+async function prefillFacebookGroup({ groupUrl, text }) {
+  const url = fbGroupUrl(groupUrl)
+  if (!url) return { ok: false, filled: false, error: 'That Group link does not look like a Facebook Group (facebook.com/groups/…). Check it in Brand Profile.' }
+  const body = String(text || '').trim().slice(0, 8000)
+  if (!body) return { ok: false, filled: false, error: 'There was no post text to fill.' }
+  let has = false
+  try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
+  if (!has) {
+    const granted = await askFacebookAccess()
+    if (!granted) return { ok: false, filled: false, error: 'SCOUT was not allowed on Facebook, so nothing was filled. The post is copied: paste it in the Group yourself, or try again and click Allow.' }
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url, active: true })
+    tabId = tab.id
+    const end = Date.now() + 25000
+    while (Date.now() < end) {
+      let t = null
+      try { t = await chrome.tabs.get(tabId) } catch (e) {}
+      if (t && t.status === 'complete') break
+      await sleep(400)
+    }
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body] })
+    const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
+    return out
+  } catch (e) {
+    return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
+  }
+  // The tab stays open on purpose: the creator presses Post there.
+}
+
+// Runs in the Facebook Group page. Self-contained: executeScript serializes it.
+async function fillGroupComposerInPage(text) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const steps = []
+  const fail = (error) => ({ ok: false, filled: false, error, steps: steps.join('; ') })
+  const visible = (el) => !!el && el.getClientRects().length > 0
+  if (/\/login|checkpoint/.test(location.pathname) || document.querySelector('form[action*="login"] input[name="pass"]')) {
+    return fail('Facebook is not signed in in this browser. Sign in, then try again.')
+  }
+  steps.push('page: ' + location.pathname)
+  const WRITE = /^(write something|create a public post|create post|what's on your mind|escribe algo|écrivez quelque chose|écris quelque chose|schreib etwas|scrivi qualcosa|escreva algo)/i
+  const findTrigger = () => {
+    const els = Array.from(document.querySelectorAll('[role="button"], [role="textbox"]'))
+    return els.find((el) => visible(el) && !el.closest('[role="dialog"]') && WRITE.test((el.innerText || el.getAttribute('aria-label') || el.getAttribute('aria-placeholder') || '').trim())) || null
+  }
+  const findBox = () => {
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(visible)
+    for (const d of dialogs.reverse()) {
+      const box = d.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]')
+      if (box && visible(box)) return box
+    }
+    return null
+  }
+  let box = findBox()
+  if (!box) {
+    let trigger = null
+    for (let i = 0; i < 30 && !trigger; i++) { trigger = findTrigger(); if (!trigger) await sleep(500) }
+    if (!trigger) return fail('SCOUT could not find the "Write something" box in this Group. Are you a member who can post here? The post is copied: paste it in yourself.')
+    steps.push('composer: found')
+    trigger.click()
+    for (let i = 0; i < 24 && !box; i++) { await sleep(500); box = findBox() }
+    if (!box) return fail('The post box did not open. The post is copied: click "Write something" and paste it.')
+  }
+  steps.push('box: open')
+  box.focus()
+  await sleep(200)
+  const head = text.replace(/\s+/g, ' ').trim().slice(0, 24)
+  const took = () => (box.innerText || '').replace(/\s+/g, ' ').indexOf(head) >= 0
+  try {
+    const dt = new DataTransfer()
+    dt.setData('text/plain', text)
+    box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+  } catch (e) {}
+  await sleep(600)
+  if (took()) { steps.push('text: pasted'); return { ok: true, filled: true, steps: steps.join('; ') } }
+  try { document.execCommand('insertText', false, text) } catch (e) {}
+  await sleep(600)
+  if (took()) { steps.push('text: typed'); return { ok: true, filled: true, steps: steps.join('; ') } }
+  return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
 }

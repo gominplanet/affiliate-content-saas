@@ -13,6 +13,8 @@
  * chrome://extensions).
  */
 
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION } from '@/lib/scout-version'
+
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
 /** The published Chrome Web Store extension ID (assigned by Google). SCOUT is
@@ -951,6 +953,30 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string }
+
+/**
+ * Ask SCOUT to open one of the creator's Facebook Groups and fill MVP's post
+ * into its "Write something" box. SCOUT never presses Post: the creator does.
+ * Meta lets no app post into a Group, so this is as far as any tool can go
+ * without becoming an automated poster.
+ *
+ * Resolves, never throws. `filled` is only true when SCOUT saw the text land
+ * in the box, so the page can tell "ready, press Post" apart from every kind
+ * of "it did not go in", and say which.
+ */
+export async function requestFacebookGroupPrefill(groupUrl: string, text: string): Promise<FacebookGroupPrefillResult> {
+  const status = await getScoutStatus()
+  if (!status.installed) {
+    return { ok: false, filled: false, error: 'SCOUT is not installed or not switched on in this browser, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+  }
+  if (!scoutAtLeast(status.version, SCOUT_FB_GROUP_MIN_VERSION)) {
+    return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and filling Group posts needs ${SCOUT_FB_GROUP_MIN_VERSION}. Chrome updates it by itself soon. Until then the post is copied: paste it in the Group yourself.` }
+  }
+  const res = await sendToExtension<FacebookGroupPrefillResult>({ type: 'MVP_FB_GROUP_PREFILL', groupUrl, text }, 245_000)
+  return res || { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+}
+
 export async function requestPinComment(youtubeVideoId: string, commentId: string): Promise<PinCommentResult> {
   const res = await sendToExtension<PinCommentResult>({ type: 'MVP_YT_PIN_COMMENT', youtubeVideoId, commentId }, 95_000)
   return res || { ok: false, error: 'SCOUT did not answer. Is it installed and up to date?' }
@@ -1120,7 +1146,7 @@ export async function requestStudioVideoFile(videoId: string, uploadUrl: string,
   return { ok: !!resp.ok, bytes: resp.bytes, error: resp.error }
 }
 
-/** What SCOUT read from an Amazon Live replay page (1.21.24+): the stream
+/** What SCOUT read from an Amazon Live replay page (1.22.1+): the stream
  *  addresses the player loaded, the products on the page, and the length. */
 export type LiveReplayRead = {
   ok: boolean; streams?: string[]; asins?: string[]; title?: string; durationSec?: number | null; url?: string; error?: string
@@ -1128,7 +1154,7 @@ export type LiveReplayRead = {
 export async function requestLiveReplay(url: string): Promise<LiveReplayRead> {
   const st = await getScoutStatus()
   if (!st.installed) return { ok: false, error: 'not-installed' }
-  if (_cmpVersion(st.version, '1.21.24') < 0) return { ok: false, error: 'needs-update' }
+  if (_cmpVersion(st.version, '1.22.1') < 0) return { ok: false, error: 'needs-update' }
   const resp = await sendToExtension<LiveReplayRead>({ type: 'MVP_AMZ_LIVE_REPLAY', url }, 95000)
   if (!resp) return { ok: false, error: 'timeout' }
   return resp

@@ -58,7 +58,7 @@ const bg = r('extension/background.js')
 check('SCOUT answers MVP_AMZ_LIVE_REPLAY', /msg\.type === 'MVP_AMZ_LIVE_REPLAY'/.test(bg) && /function readLiveReplay/.test(bg))
 check('SCOUT only opens amazon.com/live pages for it', /not-a-live-page/.test(bg))
 const frame = r('lib/extension-frame.ts')
-check('MVP asks for SCOUT 1.21.24 before using it', /_cmpVersion\(st\.version, '1\.21\.24'\) < 0/.test(frame))
+check('MVP asks for SCOUT 1.22.1 before using it', /_cmpVersion\(st\.version, '1\.22\.1'\) < 0/.test(frame))
 
 const cf = r('app/(dashboard)/clip-factory/page.tsx')
 check('Clip Factory only takes a hand-over clip from MVP storage', /liveClip/.test(cf) && /storage\/v1\/object\/public\//.test(cf))
