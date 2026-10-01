@@ -11342,9 +11342,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Fill a post into the creator's Facebook Group and leave it for them to
     // press Post. See prefillFacebookGroup.
     const timeout = setTimeout(() => sendResponse({ ok: false, filled: false, error: 'SCOUT took too long. If the Group opened, the post is copied: paste it in.' }), 240000)
-    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text })
+    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text, media: msg.media })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
+  if (msg.type === 'MVP_FB_GROUP_POST_STATUS') {
+    // MVP asks whether the Group post it filled has gone up yet, and where.
+    readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))
     return true // async
   }
   if (msg.type === 'MVP_YT_PIN_COMMENT') {
@@ -12194,7 +12199,26 @@ function askFacebookAccess() {
   })
 }
 
-async function prefillFacebookGroup({ groupUrl, text }) {
+// The thumbnail is fetched here, not in the Facebook page, so the page script
+// gets a data URL it can turn into a file without any cross-site request.
+async function fbImageDataUrl(url) {
+  try {
+    const u = new URL(String(url || ''))
+    if (u.protocol !== 'https:') return null
+    const res = await fetch(u.toString())
+    if (!res.ok) return null
+    const blob = await res.blob()
+    if (!/^image\//.test(blob.type) || blob.size > 15 * 1024 * 1024) return null
+    return await new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(typeof r.result === 'string' ? r.result : null)
+      r.onerror = () => resolve(null)
+      r.readAsDataURL(blob)
+    })
+  } catch (e) { return null }
+}
+
+async function prefillFacebookGroup({ groupUrl, text, media }) {
   const url = fbGroupUrl(groupUrl)
   if (!url) return { ok: false, filled: false, error: 'That Group link does not look like a Facebook Group (facebook.com/groups/…). Check it in Brand Profile.' }
   const body = String(text || '').trim().slice(0, 8000)
@@ -12217,8 +12241,22 @@ async function prefillFacebookGroup({ groupUrl, text }) {
       if (t && t.status === 'complete') break
       await sleep(400)
     }
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body] })
+    // The hero: the thumbnail as an attached photo, or the YouTube link Facebook
+    // turns into a playable card. Anything else is ignored.
+    let hero = null
+    if (media && media.kind === 'video' && /^https:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]{11}/.test(String(media.url || ''))) {
+      hero = { kind: 'video', url: String(media.url) }
+    } else if (media && media.kind === 'thumbnail' && media.url) {
+      const dataUrl = await fbImageDataUrl(media.url)
+      hero = dataUrl ? { kind: 'thumbnail', dataUrl } : { kind: 'thumbnail', failed: true }
+    }
+    // The listener goes in BEFORE the fill, so the moment the creator presses
+    // Post, Facebook's own answer (which carries the new post's address) is
+    // already being watched for. See watchGroupPost.
+    try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [true] }) } catch (e) {}
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
+    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body))
     return out
   } catch (e) {
     return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
@@ -12227,7 +12265,7 @@ async function prefillFacebookGroup({ groupUrl, text }) {
 }
 
 // Runs in the Facebook Group page. Self-contained: executeScript serializes it.
-async function fillGroupComposerInPage(text) {
+async function fillGroupComposerInPage(text, hero) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const steps = []
   const fail = (error) => ({ ok: false, filled: false, error, steps: steps.join('; ') })
@@ -12262,17 +12300,263 @@ async function fillGroupComposerInPage(text) {
   steps.push('box: open')
   box.focus()
   await sleep(200)
+  const dialog = box.closest('[role="dialog"]') || document
+  const pasteText = (t) => {
+    try {
+      const dt = new DataTransfer()
+      dt.setData('text/plain', t)
+      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    } catch (e) {}
+  }
+  const hasYouTubeCard = () => !!dialog.querySelector('a[href*="youtube.com"], a[href*="youtu.be"], img[src*="ytimg.com"]')
+  let mediaNote = ''
+
+  // VIDEO FIRST. Facebook builds the card from the first link it sees in the
+  // box and keeps it after that text is gone, so the YouTube link goes in
+  // alone, the card appears, then the box is cleared and the post goes in.
+  if (hero && hero.kind === 'video') {
+    pasteText(hero.url)
+    let card = false
+    for (let i = 0; i < 20 && !card; i++) { await sleep(400); card = hasYouTubeCard() }
+    try { box.focus(); document.execCommand('selectAll', false); document.execCommand('delete', false) } catch (e) {}
+    await sleep(300)
+    steps.push(card ? 'video card: built' : 'video card: not built')
+    if (!card) mediaNote = 'Facebook did not build the video card, so it will show a card for the first link instead. Paste the YouTube link at the top if you want the video.'
+  }
+
   const head = text.replace(/\s+/g, ' ').trim().slice(0, 24)
   const took = () => (box.innerText || '').replace(/\s+/g, ' ').indexOf(head) >= 0
+  pasteText(text)
+  await sleep(600)
+  let how = ''
+  if (took()) how = 'pasted'
+  else {
+    try { document.execCommand('insertText', false, text) } catch (e) {}
+    await sleep(600)
+    if (took()) how = 'typed'
+  }
+  if (!how) return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  steps.push('text: ' + how)
+
+  if (hero && hero.kind === 'video' && !mediaNote) {
+    await sleep(800)
+    mediaNote = hasYouTubeCard() ? 'The playable video card is on it.' : 'Facebook swapped the video card for another link\'s card. Remove that card and paste the YouTube link at the top if you want the video.'
+    steps.push('video card: ' + (hasYouTubeCard() ? 'kept' : 'replaced'))
+  }
+
+  // THUMBNAIL AFTER THE TEXT. An attached photo replaces any link card, so it
+  // goes last; the links in the text stay clickable.
+  if (hero && hero.kind === 'thumbnail') {
+    if (hero.failed || !hero.dataUrl) {
+      mediaNote = 'SCOUT could not download the thumbnail, so none is attached. Add it yourself if you want it.'
+      steps.push('thumbnail: download failed')
+    } else {
+      const before = dialog.querySelectorAll('img').length
+      try {
+        const bin = atob(hero.dataUrl.split(',')[1] || '')
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const type = (hero.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/jpeg'
+        const file = new File([bytes], 'thumbnail.' + (type.split('/')[1] || 'jpg'), { type })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        box.focus()
+        box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      } catch (e) {}
+      let attached = false
+      for (let i = 0; i < 25 && !attached; i++) {
+        await sleep(400)
+        attached = Array.from(dialog.querySelectorAll('img')).some((im) => /^blob:|^data:/.test(im.src || '')) || dialog.querySelectorAll('img').length > before
+      }
+      mediaNote = attached ? 'The thumbnail is attached.' : 'The thumbnail did not attach, so add it yourself if you want it.'
+      steps.push('thumbnail: ' + (attached ? 'attached' : 'not attached'))
+    }
+  }
+  return { ok: true, filled: true, steps: steps.join('; '), media: mediaNote || undefined }
+}
+
+// SEEING THE GROUP POST GO UP.
+//
+// After a fill, MVP offers to share the Group post on the creator's Page, and
+// the Page post should link to THAT post, not just the Group. Facebook only
+// gives the post an address once the creator presses Post, so SCOUT watches
+// the tab for it, three ways, best first:
+//   1. Facebook's own "story created" answer, read by a listener put in the
+//      page before the fill (installGroupPostHook). It carries the new URL.
+//   2. The tab itself landing on the post's address.
+//   3. The new post appearing in the Group feed, matched on a line of its
+//      text, with its timestamp link read for the address.
+// It still never clicks anything that posts. The answer says which way found
+// it, and "posted, address unknown" and "never saw it" are their own states,
+// so MVP never offers a Page post linking to a guess.
+const FB_GROUP_POST_RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+const fbGroupWatches = new Map()
+
+// A line of the post that is unlikely to be in any older post: the longest
+// line that is not a link. The first line is the product CTA, which every
+// post shares, so it is a poor fingerprint.
+function groupSnippet(text) {
+  const lines = String(text || '').split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l && !/https?:\/\//.test(l))
+  lines.sort((a, b) => b.length - a.length)
+  return (lines[0] || '').slice(0, 40)
+}
+
+// Runs in the page's MAIN world so it can see Facebook's own requests.
+function installGroupPostHook(markOld) {
+  if (markOld) {
+    window.__scoutGroupPost = null
+    window.__scoutGroupCreated = false
+    try { document.querySelectorAll('[role="article"], [aria-posinset]').forEach((a) => a.setAttribute('data-scout-old', '1')) } catch (e) {}
+  }
+  if (window.__scoutGroupHook) return 'ready'
+  window.__scoutGroupHook = true
+  const RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  const NAME = /StoryCreate|ComposerStory|CreatePost|GroupPost/i
+  const describe = (body) => {
+    try {
+      if (typeof body === 'string') return body
+      if (body instanceof URLSearchParams) return body.toString()
+      if (body instanceof FormData) return String(body.get('fb_api_req_friendly_name') || '')
+    } catch (e) {}
+    return ''
+  }
+  const look = (reqBody, txt) => {
+    if (window.__scoutGroupPost || !txt) return
+    if (!NAME.test(describe(reqBody))) return
+    window.__scoutGroupCreated = true
+    const flat = String(txt).replace(/\\\//g, '/').replace(/\\u002F/gi, '/')
+    const m = flat.match(RE)
+    if (m) { window.__scoutGroupPost = { url: m[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'facebook' }; return }
+    // No URL in the answer: build it from the post id and this Group.
+    const id = (flat.match(/"post_id"\s*:\s*"(\d{6,})"/) || [])[1]
+    const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
+    if (id && slug) window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }
+  }
   try {
-    const dt = new DataTransfer()
-    dt.setData('text/plain', text)
-    box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    const X = XMLHttpRequest.prototype
+    const send = X.send
+    X.send = function (body) {
+      try { if (NAME.test(describe(body))) this.addEventListener('load', () => { try { look(body, this.responseText) } catch (e) {} }) } catch (e) {}
+      return send.apply(this, arguments)
+    }
   } catch (e) {}
-  await sleep(600)
-  if (took()) { steps.push('text: pasted'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  try { document.execCommand('insertText', false, text) } catch (e) {}
-  await sleep(600)
-  if (took()) { steps.push('text: typed'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  try {
+    const f = window.fetch
+    window.fetch = function (input, init) {
+      const p = f.apply(this, arguments)
+      try {
+        const b = init && init.body
+        if (NAME.test(describe(b))) p.then((r) => r.clone().text()).then((t) => look(b, t)).catch(() => {})
+      } catch (e) {}
+      return p
+    }
+  } catch (e) {}
+  return 'installed'
+}
+
+// Runs in the page's MAIN world, once every couple of seconds while watching.
+function readGroupPostState(snippet) {
+  const visible = (el) => !!el && el.getClientRects().length > 0
+  const out = {
+    hook: !!window.__scoutGroupHook,
+    net: window.__scoutGroupPost || null,
+    created: !!window.__scoutGroupCreated,
+    dialog: Array.from(document.querySelectorAll('[role="dialog"] [contenteditable="true"]')).some(visible),
+    seen: false,
+    feedUrl: null,
+  }
+  if (out.net || !snippet) return out
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ')
+  const arts = Array.from(document.querySelectorAll('[role="article"], [aria-posinset]'))
+    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0)
+  if (!arts.length) return out
+  out.seen = true
+  const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[href]'))) {
+      const m = String(l.href || '').match(RE)
+      if (m) { out.feedUrl = 'https://www.facebook.com' + m[0] + '/'; return out }
+    }
+  }
+  // Facebook fills in the timestamp link's real address on hover. Hover only
+  // the timestamp, never anything else.
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[role="link"]'))) {
+      const t = (l.innerText || '').trim()
+      if (l.dataset.scoutHover || !(l.getAttribute('href') === '#' || /^(\d+\s?[smhdw]|just now|now)$/i.test(t))) continue
+      l.dataset.scoutHover = '1'
+      try { l.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); l.dispatchEvent(new FocusEvent('focus')) } catch (e) {}
+    }
+  }
+  return out
+}
+
+async function saveGroupWatch(id, st) {
+  const v = { ...st, updatedAt: Date.now() }
+  fbGroupWatches.set(id, v)
+  try { await chrome.storage.session.set({ ['fbw_' + id]: v }) } catch (e) {}
+}
+
+async function readGroupWatch(id) {
+  if (!id) return { state: 'unknown' }
+  const live = fbGroupWatches.get(id)
+  if (live) return live
+  let st = null
+  try { const o = await chrome.storage.session.get('fbw_' + id); st = o['fbw_' + id] || null } catch (e) {}
+  if (!st) return { state: 'unknown' }
+  // Chrome restarted SCOUT mid-watch: the watch is gone, so say so rather than
+  // leave MVP waiting on a "watching" that will never change.
+  if (st.state === 'watching') return { state: 'lost' }
+  return st
+}
+
+function watchGroupPost(tabId, snippet) {
+  const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const ka = startKeepAlive()
+  void (async () => {
+    const started = Date.now()
+    let dialogGoneAt = 0
+    let seenAt = 0
+    try {
+      await saveGroupWatch(id, { state: 'watching' })
+      while (Date.now() - started < 15 * 60 * 1000) {
+        await sleep(2000)
+        let tab = null
+        try { tab = await chrome.tabs.get(tabId) } catch (e) {}
+        if (!tab) return await saveGroupWatch(id, { state: 'closed' })
+        const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
+        if (onPost) return await saveGroupWatch(id, { state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
+        let r = null
+        try {
+          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet] })
+          r = res && res[0] && res[0].result
+        } catch (e) {}
+        if (!r) continue
+        // The page reloaded and took the listener with it: put it back, but
+        // without marking posts old, since the new one may already be there.
+        if (!r.hook) { try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [false] }) } catch (e) {} }
+        const url = (r.net && r.net.url) || r.feedUrl
+        if (url) return await saveGroupWatch(id, { state: 'posted', url, via: r.net ? r.net.via : 'feed' })
+        if (r.seen || r.created) {
+          if (!seenAt) seenAt = Date.now()
+          // Give the timestamp link a moment to fill in before giving up on it.
+          if (Date.now() - seenAt > 20000) return await saveGroupWatch(id, { state: 'posted_no_link' })
+        }
+        if (!r.dialog) {
+          if (!dialogGoneAt) dialogGoneAt = Date.now()
+          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await saveGroupWatch(id, { state: 'not_seen' })
+        } else {
+          dialogGoneAt = 0
+        }
+        await saveGroupWatch(id, { state: 'watching' })
+      }
+      await saveGroupWatch(id, { state: 'timeout' })
+    } catch (e) {
+      await saveGroupWatch(id, { state: 'lost' })
+    } finally {
+      stopKeepAlive(ka)
+    }
+  })()
+  return id
 }

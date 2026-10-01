@@ -3,11 +3,11 @@
 // Social Launch Kit — shared platform specs for the "stand up a social presence
 // in 5 minutes" feature. The generate API uses the character limits to size the
 // copy; the page uses the image dimensions, deep links, and step-by-step guide.
-// Covers Facebook Page, Pinterest, X (Twitter), Threads, Bluesky and LinkedIn
+// Covers Facebook Page, Facebook Group, Pinterest, X (Twitter), Threads, Bluesky and LinkedIn
 // (generate + guide — the user does the final clicks; MVP hands them every field
 // and asset ready to paste).
 
-export type LaunchPlatform = 'facebook' | 'pinterest' | 'twitter' | 'threads' | 'bluesky' | 'linkedin'
+export type LaunchPlatform = 'facebook' | 'facebook_group' | 'pinterest' | 'twitter' | 'threads' | 'bluesky' | 'linkedin'
 
 export interface LaunchImageSpec { w: number; h: number; label: string; aspect: string }
 export interface LaunchStep { title: string; detail: string }
@@ -22,9 +22,21 @@ export interface PlatformSpec {
   bioShortMax: number   // tagline / intro line
   bioLongMax: number    // about / description
   banner?: LaunchImageSpec
-  avatar: LaunchImageSpec
+  /** Absent for a platform with no profile picture (a Facebook Group has a
+   *  cover photo and nothing else). */
+  avatar?: LaunchImageSpec
   /** Pinterest only: how many starter boards to propose. */
   boards?: number
+  /** Facebook Group only: how many group rules and membership questions. */
+  rules?: number
+  questions?: number
+  /** What the username ideas are called and how they're shown, when they
+   *  aren't @handles (a Group's custom web address). */
+  handleLabel?: string
+  handlePrefix?: string
+  /** What the starter post is for, when it isn't a plain introduction. */
+  firstPostAsk?: string
+  firstPostLabel?: string
   steps: LaunchStep[]
 }
 
@@ -49,6 +61,34 @@ export const LAUNCH_PLATFORMS: Record<LaunchPlatform, PlatformSpec> = {
       { title: 'Add your cover photo', detail: 'Upload the cover banner MVP made. Phones crop the edges, so the key part stays centered.' },
       { title: 'Fill in the bio and about', detail: 'Paste the short bio into "Bio" and the longer version into "About". Add your website or storefront link.' },
       { title: 'Publish your first post', detail: 'Paste the starter post so the Page is not empty on day one. Then connect it in MVP’s Connect Socials to auto-post from here.' },
+    ],
+  },
+  facebook_group: {
+    id: 'facebook_group',
+    label: 'Facebook Group',
+    blurb: 'Your own deals Group: members who chose to join get your daily deals and links. No link limit has been reported for Groups (unlike Pages), and SCOUT can fill your posts in for you to press Post.',
+    createUrl: 'https://www.facebook.com/groups/create/',
+    createLabel: 'Create your Facebook Group',
+    nameMax: 75,
+    bioShortMax: 120,   // a one-line summary for invites and the pinned post
+    bioLongMax: 600,    // the Group's "About" description
+    // Facebook recommends 1640×856 for a Group cover; phones crop the sides.
+    banner: { w: 1640, h: 856, label: 'Cover photo', aspect: '1.91:1' },
+    rules: 4,
+    questions: 3,
+    handleLabel: 'Custom web address ideas',
+    handlePrefix: 'facebook.com/groups/',
+    firstPostLabel: 'Welcome post (pin it)',
+    firstPostAsk: 'a welcome post to pin at the top of the Group (4-6 short lines): what the Group is for, when deals go up, how members can request a product, and on its own last line exactly: "As an Amazon Associate I earn from qualifying purchases."',
+    steps: [
+      { title: 'Create the Group', detail: 'Open the create link below while logged into your personal Facebook. Paste the Group name. For privacy we suggest Public: anyone can read it, only members can post, and Amazon can see where your links are.' },
+      { title: 'Add your cover photo', detail: 'Upload the cover MVP made. Phones crop the sides, so the key part stays centred.' },
+      { title: 'Write the description', detail: 'Open the Group\'s About section and paste the description MVP wrote.' },
+      { title: 'Set a custom web address', detail: 'In the Group settings, pick one of the web address ideas so your Group link is short and easy to share.' },
+      { title: 'Add the rules', detail: 'Go to Admin tools, then Group rules, and add each rule MVP wrote.' },
+      { title: 'Add membership questions', detail: 'In Admin tools, add the membership questions. They keep bots out and tell you what your members shop for.' },
+      { title: 'Post and pin the welcome post', detail: 'Post the welcome post, then pin it (feature it) so every new member sees it first.' },
+      { title: 'Connect it to MVP and Amazon', detail: 'Copy your Group\'s link. Paste it into MVP\'s Brand Profile under Facebook Groups so Fill with SCOUT can post to it, and add it to your Amazon Associates website list before you post your first link there.' },
     ],
   },
   pinterest: {
@@ -159,6 +199,7 @@ export const LAUNCH_PLATFORMS: Record<LaunchPlatform, PlatformSpec> = {
 
 export const LAUNCH_PLATFORM_LIST: PlatformSpec[] = [
   LAUNCH_PLATFORMS.facebook,
+  LAUNCH_PLATFORMS.facebook_group,
   LAUNCH_PLATFORMS.pinterest,
   LAUNCH_PLATFORMS.twitter,
   LAUNCH_PLATFORMS.threads,
@@ -176,4 +217,7 @@ export interface SocialKit {
   keywords: string[]
   firstPost: string
   boards?: { name: string; description: string }[]
+  /** Facebook Group only. */
+  rules?: { title: string; description: string }[]
+  questions?: string[]
 }

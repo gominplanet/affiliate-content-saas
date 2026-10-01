@@ -262,7 +262,9 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
       // videoAvailable drives the thumbnail/video choice in the preview modal.
       // Offering "post the video" on a post that has none is how a creator picks
       // it, gets a thumbnail, and never learns why.
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl })
+      // imageUrl + videoUrl let Fill with SCOUT give a Group post the same
+      // hero the Page post gets (the thumbnail, or the playable YouTube card).
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl, imageUrl: imageUrl || null, videoUrl: videoUrl || null })
     }
 
     // ── 8. Post to Facebook — fan out to each selected Page ───────────────────

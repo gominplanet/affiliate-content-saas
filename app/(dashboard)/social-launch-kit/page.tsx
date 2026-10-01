@@ -21,7 +21,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 const EMOJI: Record<LaunchPlatform, string> = {
-  facebook: '📘', pinterest: '📌', twitter: '🐦', threads: '🧵', bluesky: '🦋', linkedin: '💼',
+  facebook: '📘', facebook_group: '👥', pinterest: '📌', twitter: '🐦', threads: '🧵', bluesky: '🦋', linkedin: '💼',
 }
 
 /** Walkthrough shown beside the page title. */
@@ -147,7 +147,7 @@ export default function SocialLaunchKitPage() {
       <FeatureLockedCard
         icon={<Rocket size={28} strokeWidth={1.8} />}
         feature="Social Launch Kit"
-        description="Stand up a whole social presence in about five minutes. Pick a platform — Facebook, Pinterest, X, Threads, Bluesky, LinkedIn — and MVP hands you the name, @handle, bios, category, keywords and first post, plus an on-brand banner and avatar, all ready to paste."
+        description="Stand up a whole social presence in about five minutes. Pick a platform (a Facebook Page or Group, Pinterest, X, Threads, Bluesky or LinkedIn) and MVP hands you the name, @handle, bios, category, keywords and first post, plus an on-brand banner and avatar, all ready to paste."
         bullets={[
           'Ready-to-paste name, @handle, bios, category and keywords per platform',
           'On-brand banner + avatar generated from your Brand Profile',
@@ -165,7 +165,7 @@ export default function SocialLaunchKitPage() {
       <PageHero
         guide={<SocialLaunchKitGuide />}
         title="Social Launch Kit"
-        subtitle="No time to figure out Facebook, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup, ready to paste."
+        subtitle="No time to figure out a Facebook Page or Group, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything: name, bio, banner, avatar, and a step-by-step setup, ready to paste."
         media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID} title="Social Launch Kit walkthrough" /> : undefined}
       />
 
@@ -277,10 +277,10 @@ function PlatformCard({
 
           {/* Handles */}
           {kit.handles.length > 0 && (
-            <Field label="Username ideas">
+            <Field label={spec.handleLabel || 'Username ideas'}>
               <div className="flex flex-wrap gap-1.5">
                 {kit.handles.map((h, i) => (
-                  <CopyChip key={i} text={`@${h}`} copyText={h} ck={`${spec.id}-handle-${i}`} copied={copied} onCopy={onCopy} />
+                  <CopyChip key={i} text={spec.handlePrefix ? `${spec.handlePrefix}${h}` : `@${h}`} copyText={h} ck={`${spec.id}-handle-${i}`} copied={copied} onCopy={onCopy} />
                 ))}
               </div>
             </Field>
@@ -314,9 +314,38 @@ function PlatformCard({
           </div>
 
           {/* First post */}
-          <Field label="First post">
+          <Field label={spec.firstPostLabel || 'First post'}>
             <CopyBox text={kit.firstPost} ck={`${spec.id}-first`} copied={copied} onCopy={onCopy} />
           </Field>
+
+          {/* Facebook Group: rules + membership questions */}
+          {kit.rules && kit.rules.length > 0 && (
+            <Field label="Group rules">
+              <div className="flex flex-col gap-2">
+                {kit.rules.map((r, i) => (
+                  <div key={i} className="rounded-lg p-2.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{r.title}</span>
+                      <CopyMini text={`${r.title}\n${r.description}`} ck={`${spec.id}-rule-${i}`} copied={copied} onCopy={onCopy} />
+                    </div>
+                    <p className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>{r.description}</p>
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
+          {kit.questions && kit.questions.length > 0 && (
+            <Field label="Membership questions">
+              <div className="flex flex-col gap-1.5">
+                {kit.questions.map((q, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <span className="text-[12px]" style={{ color: 'var(--text)' }}>{q}</span>
+                    <CopyMini text={q} ck={`${spec.id}-q-${i}`} copied={copied} onCopy={onCopy} />
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
 
           {/* Pinterest boards */}
           {kit.boards && kit.boards.length > 0 && (
@@ -347,12 +376,14 @@ function PlatformCard({
                   onPickRef={(f) => onPickRef('banner', f)} onClearRef={() => onClearRef('banner')}
                   filename={`${spec.id}-cover.png`} />
               )}
-              <ImageSlot label={`${spec.avatar.label} · ${spec.avatar.w}×${spec.avatar.h}`}
-                imgKey={`${spec.id}:avatar`} images={images} busyImg={busyImg} isAdmin={isAdmin} round
-                refDataUrl={refImages[`${spec.id}:avatar`]}
-                onGenerate={() => onGenerateImage('avatar')} onDownload={onDownload}
-                onPickRef={(f) => onPickRef('avatar', f)} onClearRef={() => onClearRef('avatar')}
-                filename={`${spec.id}-avatar.png`} />
+              {spec.avatar && (
+                <ImageSlot label={`${spec.avatar.label} · ${spec.avatar.w}×${spec.avatar.h}`}
+                  imgKey={`${spec.id}:avatar`} images={images} busyImg={busyImg} isAdmin={isAdmin} round
+                  refDataUrl={refImages[`${spec.id}:avatar`]}
+                  onGenerate={() => onGenerateImage('avatar')} onDownload={onDownload}
+                  onPickRef={(f) => onPickRef('avatar', f)} onClearRef={() => onClearRef('avatar')}
+                  filename={`${spec.id}-avatar.png`} />
+              )}
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
               These are built from your logo + banner in <a href="/brand" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> — add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.

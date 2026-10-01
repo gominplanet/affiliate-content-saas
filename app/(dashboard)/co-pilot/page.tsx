@@ -3709,17 +3709,26 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                     {/* Visibility */}
                     <label className="flex flex-col gap-1 text-xs">
                       <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">Visibility</span>
-                      <select
-                        value={proSettings.privacyStatus}
-                        onChange={e => setProSettings(s => ({ ...s, privacyStatus: e.target.value as ProPublishSettings['privacyStatus'] }))}
-                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                        disabled={proSettings.scheduleMode !== 'now'}
-                      >
-                        <option value="draft">Save as draft (don&apos;t publish)</option>
-                        <option value="public">Public</option>
-                        <option value="unlisted">Unlisted</option>
-                        <option value="private">Private</option>
-                      </select>
+                      {/* A schedule decides visibility by itself: private until
+                          the time, then public. A disabled dropdown still read
+                          "Save as draft" here, which said the opposite of what
+                          YouTube would do, so it is replaced by what happens. */}
+                      {proSettings.scheduleMode === 'now' ? (
+                        <select
+                          value={proSettings.privacyStatus}
+                          onChange={e => setProSettings(s => ({ ...s, privacyStatus: e.target.value as ProPublishSettings['privacyStatus'] }))}
+                          className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        >
+                          <option value="draft">Save as draft (don&apos;t publish)</option>
+                          <option value="public">Public</option>
+                          <option value="unlisted">Unlisted</option>
+                          <option value="private">Private</option>
+                        </select>
+                      ) : (
+                        <span className="px-2 py-1.5 rounded-lg border border-dashed border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          Set by the schedule: private now, public at the scheduled time
+                        </span>
+                      )}
                     </label>
 
                     {/* Schedule — reachable straight from the default draft state.
