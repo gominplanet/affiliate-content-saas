@@ -1,3 +1,4 @@
+import { checkNewPicture } from '@/lib/post-logo-sweep'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -884,7 +885,8 @@ export async function POST(request: Request) {
   } catch { /* unreadable body is the handler's problem, not ours */ }
 
   const memo: ImageMemo = { db: null, userId: null, asin: null }
-  const res = await generateThumbnail(request, memo)
+  const res0 = await generateThumbnail(request, memo)
+  const res = await withoutStoreLogos(res0, memo.userId)
 
   // YouTube Co-Pilot defers: this route returns the TEXT-FREE base image and
   // the browser bakes the headline on afterwards (addTextOverlay). Saving here
@@ -910,6 +912,28 @@ export async function POST(request: Request) {
   // filed under, or null — a screen that says "saved" for a write that did not
   // happen is the failure this repo keeps re-finding.
   return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+/**
+ * NEVER A STORE LOGO ON A THUMBNAIL (lib/post-logo-sweep checkNewPicture).
+ * Every picture in the answer is checked; one showing a store's logo is taken
+ * out. When none is left, the answer is a 422 that says what was found and to
+ * generate again, never a thumbnail with Amazon's logo on it.
+ */
+async function withoutStoreLogos(res: Response, userId: string | null): Promise<Response> {
+  if (res.status !== 200 || !userId) return res
+  let body: Record<string, unknown>
+  try { body = await res.clone().json() as Record<string, unknown> } catch { return res }
+  const urls = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls : [body.thumbnailUrl]).filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
+  if (!urls.length) return res
+  const verdicts = await Promise.all(urls.map((u) => checkNewPicture({ url: u }, { userId, tier: null, feature: 'new_picture_logo_check' })))
+  const keep = urls.filter((_, i) => verdicts[i].ok)
+  if (keep.length === urls.length) return res
+  const marks = [...new Set(verdicts.flatMap((v) => (v.ok ? [] : v.marks)))]
+  if (!keep.length) {
+    return NextResponse.json({ error: `The thumbnail came back with a store logo on it (${marks.join(', ')}), so MVP threw it away. Generate again.`, code: 'store_logo' }, { status: 422 })
+  }
+  return NextResponse.json({ ...body, thumbnailUrl: keep[0], thumbnailUrls: keep, droppedForStoreLogo: urls.length - keep.length }, { status: 200 })
 }
 
 // ── Main route ────────────────────────────────────────────────────────────────

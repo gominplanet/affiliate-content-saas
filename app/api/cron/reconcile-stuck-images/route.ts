@@ -35,7 +35,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { holdAndRelease } from '@/lib/video-hold'
 import { fixProvenanceLines } from '@/lib/provenance-fix'
-import { sweepPublishedPrices } from '@/lib/published-price-sweep'
+import { sweepPublishedPrices, sweepSchemaPrices } from '@/lib/published-price-sweep'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -94,8 +94,16 @@ export async function GET(request: Request) {
     prices = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
   }
 
+  // And the price in every post's review data (JSON-LD), every account.
+  let schemaPrices: unknown = null
+  try {
+    schemaPrices = await sweepSchemaPrices(admin)
+  } catch (e) {
+    schemaPrices = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
+  }
+
   if (error) {
-    return NextResponse.json({ error: error.message, videoHold, provenance, prices }, { status: 500 })
+    return NextResponse.json({ error: error.message, videoHold, provenance, prices, schemaPrices }, { status: 500 })
   }
 
   return NextResponse.json({
@@ -103,6 +111,7 @@ export async function GET(request: Request) {
     videoHold,
     provenance,
     prices,
+    schemaPrices,
     reconciled: count ?? 0,
     ids: (data ?? []).map((r: { id: string }) => r.id),
     cutoff,

@@ -42,9 +42,17 @@ async function main() {
   check('a post is only marked looked at after its findings are written', LIB.indexOf("from('post_logo_findings').insert(rows)") < LIB.indexOf("update({ logo_checked_at: at })"))
   check('a missing migration is said, not taken for an empty result', /MIGRATION_MISSING/.test(LIB) && /return \{ \.\.\.out, error:/.test(LIB))
 
-  check('it runs in the background every 15 minutes', /"\/api\/cron\/post-logo-sweep",\s*"schedule":\s*"\*\/15 \* \* \* \*"/.test(r('vercel.json')))
-  const CRON = r('app/api/cron/post-logo-sweep/route.ts')
-  check('and a failed run is a failed response', /status: report\.error \? 500 : 200/.test(CRON))
+  // OLD POSTS ARE LEFT AS THEY ARE (Seb, 2026-10-01): no background sweep;
+  // every NEW picture is checked instead.
+  check('old posts are not swept in the background any more', !/"\/api\/cron\/post-logo-sweep"/.test(r('vercel.json')))
+  const NEWPIC = r('lib/post-logo-sweep.ts')
+  check('a new picture with a store logo is refused', /export async function checkNewPicture/.test(NEWPIC) && /if \(f\.verdict === 'found'\) return \{ ok: false, marks: f\.marks \}/.test(NEWPIC))
+  check('blog heroes, article pictures and YouTube thumbnails are all checked before use',
+    /checkNewPicture\(\{ base64: hero\.data/.test(r('lib/blog-hero.ts'))
+    && /checkNewPicture\(\{ url: falUrl \}/.test(r('app/api/blog/generate/route.ts'))
+    && /checkNewPicture\(\{ url \}/.test(r('app/api/blog/refresh-images/route.ts'))
+    && /const res = await withoutStoreLogos\(res0, memo\.userId\)/.test(r('app/api/youtube/generate-thumbnail/route.ts')))
+  check('a thumbnail that only came back with logos says so, never ships one', /code: 'store_logo' \}, \{ status: 422 \}/.test(r('app/api/youtube/generate-thumbnail/route.ts')))
 
   const REFRESH = r('app/api/blog/refresh-images/route.ts')
   check('replacing the pictures also removes any Amazon site graphic in the post', /isRetailerSiteImage\(src\) \? '' : tag/.test(REFRESH))
@@ -56,7 +64,7 @@ async function main() {
 
   const PAGE = r('app/(dashboard)/tools/logo-check/page.tsx')
   check('the page offers to replace the pictures and says what happened', /Replace the pictures/.test(PAGE) && /\/api\/blog\/refresh-images/.test(PAGE) && /no new ones could be made/.test(PAGE))
-  check('and never calls a partly checked blog clear', /still to check/.test(PAGE) && /None of your posts has been checked yet/.test(PAGE))
+  check('and never calls a partly checked blog clear', /not checked yet/.test(PAGE) && /None of your posts has been checked yet/.test(PAGE))
 
   const MIG = r('supabase/migrations/390_post_logo_findings.sql')
   check('the migration is safe to run twice', /add column if not exists logo_checked_at/.test(MIG) && /create table if not exists public\.post_logo_findings/.test(MIG) && /drop policy if exists/.test(MIG))

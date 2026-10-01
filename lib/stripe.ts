@@ -100,25 +100,8 @@ export const PRICE_IDS = {
   amazon:  PRICE_ID_LIST.amazon[0]!,
 } as const
 
-// The credit packs now live in lib/credit-blocks.ts, which is client-safe.
-// Re-exported so every existing importer keeps working.
-export { CREDIT_BLOCKS, type CreditBlock } from '@/lib/credit-blocks'
-import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
-
-export function creditBlockPriceId(block: string): string | null {
-  const cfg = CREDIT_BLOCKS[block]
-  return cfg ? (process.env[cfg.priceEnv] || null) : null
-}
-/** Credits for a Stripe price id, or 0 if it isn't a credit-block price. Used by
- *  the webhook to credit the ledger from the ACTUAL purchased price (never
- *  trusting client metadata for the amount). */
-export function creditsForPriceId(priceId: string | null | undefined): number {
-  if (!priceId) return 0
-  for (const cfg of Object.values(CREDIT_BLOCKS)) {
-    if (process.env[cfg.priceEnv] && process.env[cfg.priceEnv] === priceId) return cfg.credits
-  }
-  return 0
-}
+// Dub credit packs were removed 2026-10-01 with dubbing (nothing goes to
+// other Amazon countries any more). None was ever bought.
 
 // A Stripe price id looks like "price_…". Guard against a mis-pasted env value —
 // e.g. a `sk_live_…` secret key or a `prod_…` product id ending up in a

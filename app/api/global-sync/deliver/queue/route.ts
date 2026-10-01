@@ -43,6 +43,13 @@ export async function GET(req: Request) {
   const onlyDomains = (url.searchParams.get('domains') || '')
     .split(',').map(v => v.trim()).filter(Boolean)
 
+  // STOREFRONT SYNC IS RETIRED (2026-10-01). It was the one caller that asked
+  // for everything queued on the account; Liftoff always names its videos.
+  // An unscoped request is answered with nothing, and says why.
+  if (onlyVideoIds.length === 0 && !jobId) {
+    return NextResponse.json({ ok: true, items: [], skipped: [], dailyRoom: [], retired: 'Storefront Sync is retired: Liftoff sends new videos to your US storefront.' })
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 

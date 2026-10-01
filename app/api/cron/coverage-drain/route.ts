@@ -72,7 +72,7 @@ type Sb = any
  * dubbed or uploaded there and the board says why rather than waiting forever.
  * Uploaded and live cells are left as they are: they happened.
  */
-async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; markets: number }> {
+async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; markets: number; syncCells: number; syncTargets: number }> {
   const now = new Date().toISOString()
   const { data: cells } = await sb.from('storefront_coverage')
     .update({ state: 'blocked', reason: UPLOAD_ONLY_REASON, updated_at: now })
@@ -83,11 +83,52 @@ async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; m
   const { data: mk } = await sb.from('storefront_markets')
     .update({ enabled: false, updated_at: now })
     .neq('domain', UPLOAD_MARKET).eq('enabled', true).select('*')
-  return { cells: (cells ?? []).length, targets: (targets ?? []).length, markets: (mk ?? []).length }
+
+  // STOREFRONT SYNC RETIRED: Liftoff sends new videos to Amazon.
+  // Its back-catalogue cells and targets that have not uploaded are closed
+  // with the reason; the Liftoff ones, which share this pipeline, are untouched.
+  // Ten minutes of grace: the Liftoff hand-over makes the cells a moment before
+  // it records the video on its own row, and a cell in that moment is Liftoff.
+  const graceAgo = new Date(Date.now() - 10 * 60_000).toISOString()
+  const { data: lf } = await sb.from('launch_items').select('video_id').not('video_id', 'is', null).limit(20000)
+  const liftoff = new Set(((lf ?? []) as Array<{ video_id: string }>).map((r) => r.video_id))
+  let syncCells = 0, syncTargets = 0
+  const { data: open } = await sb.from('storefront_coverage').select('id,video_id')
+    .not('state', 'in', '(uploaded,live,blocked)').lt('created_at', graceAgo).limit(1000)
+  const closeIds = ((open ?? []) as Array<{ id: string; video_id: string }>).filter((c) => !liftoff.has(c.video_id)).map((c) => c.id)
+  for (let i = 0; i < closeIds.length; i += 200) {
+    const { data: done } = await sb.from('storefront_coverage')
+      .update({ state: 'blocked', reason: SYNC_RETIRED_REASON, updated_at: now }).in('id', closeIds.slice(i, i + 200)).select('id')
+    syncCells += (done ?? []).length
+  }
+  const { data: waiting } = await sb.from('global_sync_targets').select('id,job_id')
+    .is('delivered_at', null).in('state', ['pending', 'localized']).lt('created_at', graceAgo).limit(1000)
+  const jobIds = [...new Set(((waiting ?? []) as Array<{ job_id: string }>).map((t) => t.job_id))]
+  const jobVideo = new Map<string, string | null>()
+  for (let i = 0; i < jobIds.length; i += 200) {
+    const { data: jobs } = await sb.from('global_sync_jobs').select('id,video_id').in('id', jobIds.slice(i, i + 200))
+    for (const j of (jobs ?? []) as Array<{ id: string; video_id: string | null }>) jobVideo.set(j.id, j.video_id)
+  }
+  const failIds = ((waiting ?? []) as Array<{ id: string; job_id: string }>)
+    .filter((t) => { const v = jobVideo.get(t.job_id); return !v || !liftoff.has(v) }).map((t) => t.id)
+  for (let i = 0; i < failIds.length; i += 200) {
+    const { data: done } = await sb.from('global_sync_targets')
+      .update({ state: 'failed', detail: SYNC_RETIRED_REASON, updated_at: now }).in('id', failIds.slice(i, i + 200)).select('id')
+    syncTargets += (done ?? []).length
+  }
+  await sb.from('storefront_markets').update({ enabled: false, updated_at: now }).eq('enabled', true)
+
+  return { cells: (cells ?? []).length, targets: (targets ?? []).length, markets: (mk ?? []).length, syncCells, syncTargets }
 }
 
-/** Every (video, ticked market) pair that has no row yet. The US store only. */
+const SYNC_RETIRED = true
+const SYNC_RETIRED_REASON = 'Storefront Sync is retired. Liftoff sends new videos to your US storefront.'
+
+/** Every (video, ticked market) pair that has no row yet. RETIRED with
+ *  Storefront Sync: nothing enrols the back catalogue any more,
+ *  and the old body is kept below this return only until it is deleted. */
 async function enrol(sb: Sb): Promise<number> {
+  if (SYNC_RETIRED) return 0
   const { data: mkts } = await sb.from('storefront_markets')
     .select('user_id,domain').eq('enabled', true).eq('domain', UPLOAD_MARKET)
   const byUser = new Map<string, string[]>()

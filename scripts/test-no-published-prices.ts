@@ -57,6 +57,14 @@ check('Deal check block: no percentage below the usual price', !/`About \$\{a\.p
   check('old deal excerpt over two lines is still cleaned', cleanDealExcerpt('Save about 20% on Chia Seeds.\nPrime Day pick.') === 'Deal alert on Chia Seeds. Prime Day pick.')
   check('a clean excerpt is left alone', cleanDealExcerpt('Deal alert on a fan.') === null)
   const CRON = r('app/api/cron/reconcile-stuck-images/route.ts')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { stripSchemaPrice } = require('../lib/published-price-sweep') as typeof import('../lib/published-price-sweep')
+  const ld = JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer', price: 59.99, priceCurrency: 'USD', priceValidUntil: '2026-10-08', availability: 'InStock', url: 'x' } }] })
+  const cleanLd = stripSchemaPrice(ld)
+  check('review data: price, currency and expiry go; the offer and availability stay',
+    !!cleanLd && !/59\.99|priceCurrency|priceValidUntil/.test(cleanLd) && /InStock/.test(cleanLd) && /"Offer"/.test(cleanLd))
+  check('review data without a price is left alone', stripSchemaPrice(JSON.stringify({ '@graph': [{ '@type': 'Product', offers: { '@type': 'Offer' } }] })) === null)
+  check('every account, in the background', /schemaPrices = await sweepSchemaPrices\(admin\)/.test(r('app/api/cron/reconcile-stuck-images/route.ts')))
   check('the sweep runs every ten minutes, on its own, and reports', /prices = await sweepPublishedPrices\(admin\)/.test(CRON) && /\n    prices,\n/.test(CRON))
 }
 

@@ -6,7 +6,7 @@
 // the other countries, so MVP stops uploading, translating and dubbing for
 // them. Every path that could still do one of those is pinned here, starting
 // with the queue SCOUT uploads from, which is the one that cannot be wrong.
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { UPLOAD_MARKET, isUploadMarket } from '../lib/markets'
 
 const failures: string[] = []
@@ -30,9 +30,13 @@ check('a new sync job takes the US store only', /isUploadMarket\(d\)/.test(r('ap
 check('dubbing answers that it is retired, never silently', /status: 410/.test(r('app/api/global-sync/dub/route.ts')))
 const MK = r('app/api/coverage/markets/route.ts')
 check('Storefront Sync lists and ticks the US store only', /MARKETS\.filter\(\(m\) => isUploadMarket\(m\.domain\)\)/.test(MK) && /enabled && !isUploadMarket\(domain\)/.test(MK))
+check('Storefront Sync is retired: the page goes to Liftoff, nothing enrols, and the queue serves only named videos',
+  /source: '\/global-sync', destination: '\/liftoff'/.test(r('next.config.ts')) && /if \(SYNC_RETIRED\) return 0/.test(DRAIN)
+  && /if \(onlyVideoIds\.length === 0 && !jobId\)/.test(QUEUE) && /syncCells/.test(DRAIN) && /lt\('created_at', graceAgo\)/.test(DRAIN))
 check('Liftoff is the US store only too', /LIFTOFF_AMAZON_MARKET = 'amazon\.com'/.test(r('lib/launch-batch.ts')))
-check('dub credits are no longer sold: checkout refuses before Stripe is called',
-  (() => { const c = r('app/api/stripe/credits-checkout/route.ts'); return /const CREDITS_RETIRED = true/.test(c) && c.indexOf('if (CREDITS_RETIRED)') > 0 && c.indexOf('if (CREDITS_RETIRED)') < c.indexOf('stripe.checkout.sessions.create') })())
+check('dub credits are gone: no checkout, no packs, and the webhook credits nothing',
+  !existsSync('app/api/stripe/credits-checkout/route.ts') && !existsSync('lib/credit-blocks.ts')
+  && !/dub_credits_add/.test(r('app/api/stripe/webhook/route.ts')))
 for (const [f, re] of [
   ['app/features/page.tsx', /every Amazon storefront|dubs the video|audio dubbed/],
   ['app/(dashboard)/liftoff/page.tsx', /translates, dubs/],

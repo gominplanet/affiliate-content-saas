@@ -19,6 +19,7 @@
 // outside: over the cap, no product image, and a generator that returned null
 // were one silent shrug. A button needs to tell somebody which of those it was.
 
+import { checkNewPicture } from '@/lib/post-logo-sweep'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
 import { getBrandPresetId } from '@/lib/brand-preset'
@@ -34,7 +35,7 @@ type Wp = any
 export type HeroOutcome =
   | { ok: true; imageUrl: string | null; mediaId: number }
   /** Every one of these was a console warning and nothing else before. */
-  | { ok: false; reason: 'over_cap' | 'no_product_image' | 'generator_failed' | 'upload_failed' | 'error'; message: string }
+  | { ok: false; reason: 'over_cap' | 'no_product_image' | 'generator_failed' | 'upload_failed' | 'store_logo' | 'error'; message: string }
 
 /** What a creator should read, per outcome. Kept beside the outcomes so a new
  *  one cannot be added without a sentence for it. */
@@ -49,6 +50,8 @@ export function heroOutcomeMessage(o: HeroOutcome): string {
       return 'The thumbnail could not be designed this time. Nothing changed on the post, so try again in a moment.'
     case 'upload_failed':
       return 'The thumbnail was designed but WordPress would not accept it. The old one is still on the post.'
+    case 'store_logo':
+      return 'The new thumbnail came back with a store logo on it, so MVP threw it away. The old one is still on the post; try again.'
     default:
       // NEVER THE RAW EXCEPTION. `message` is whatever an SDK threw, which is
       // for the log, not for somebody deciding what to do next. The sentence
@@ -130,6 +133,13 @@ export async function rebuildPostHero(opts: {
     if (!hero) {
       console.warn(`${tag} hero generation returned null — keeping the current thumb`)
       return { ok: false, reason: 'generator_failed', message: 'hero generation returned null' }
+    }
+    // NEVER A STORE LOGO (lib/post-logo-sweep checkNewPicture): thrown away,
+    // and the current thumb is kept.
+    const logo = await checkNewPicture({ base64: hero.data, mediaType: hero.mediaType }, { userId: opts.userId, tier: opts.tier ?? null, feature: 'new_picture_logo_check' })
+    if (!logo.ok) {
+      console.warn(`${tag} hero had a store logo (${logo.marks.join(', ')}) — thrown away, keeping the current thumb`)
+      return { ok: false, reason: 'store_logo', message: `the picture showed ${logo.marks.join(', ')}, so it was not used` }
     }
 
     const media = await opts.wpService.uploadImageFromBase64(hero.data, `${opts.slug}-adhero.jpg`, hero.mediaType)

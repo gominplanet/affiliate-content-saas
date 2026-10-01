@@ -143,8 +143,8 @@ export default function LogoCheckPage() {
       <div className="card p-5 mb-6">
         <p className="text-[13px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
           Amazon and the other retailers set rules about where an affiliate may show their logo, and a picture with
-          one on it can put your account at risk. MVP no longer draws them. Anything made before that changed is
-          still on your site, and MVP is looking through every picture in every post, a few at a time.
+          one on it can put your account at risk. Every new picture MVP makes is checked and any with a store logo is
+          thrown away. Pictures made before that are still on your site: check them here.
         </p>
         <p className="text-[12px] text-[#86868b] mt-2 leading-relaxed">
           It reads the pictures on your published posts. It cannot see thumbnails you uploaded to YouTube yourself,
@@ -210,7 +210,7 @@ export default function LogoCheckPage() {
                       : `All ${checked} post${checked === 1 ? '' : 's'} checked. No store logos.`}
               </p>
               <p className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] mt-1">
-                {checked} checked, {waiting} still to check{waiting > 0 ? ' (MVP carries on in the background; come back later or press Check now)' : ''}.
+                {checked} checked, {waiting} not checked yet{waiting > 0 ? ' (press Check now to carry on)' : ''}.
                 {unchecked.length > 0 ? ` ${unchecked.length} post${unchecked.length === 1 ? ' has' : 's have'} pictures that could not be opened, listed below.` : ''}
               </p>
             </div>

@@ -111,6 +111,9 @@ const nextConfig: NextConfig = {
       // name can still move without browsers remembering the old answer.
       { source: '/launch', destination: '/liftoff', permanent: false },
       { source: '/launchpad', destination: '/liftoff', permanent: false },
+      // Storefront Sync retired 2026-10-01: Liftoff sends new videos to
+      // Amazon, and nothing goes to other countries.
+      { source: '/global-sync', destination: '/liftoff', permanent: false },
     ]
   },
   // ── /freeguide → the static file in public/ ───────────────────────────────

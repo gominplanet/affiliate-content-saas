@@ -20,7 +20,7 @@ import { normalizeTier, allowedBlogImages, tierHas } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { NO_BRAND_IMAGE_CLAUSE, isRetailerSiteImage } from '@/lib/image-guard'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { forgetLogoScan } from '@/lib/post-logo-sweep'
+import { forgetLogoScan, checkNewPicture } from '@/lib/post-logo-sweep'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
@@ -385,6 +385,9 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
         bodyModel = 'fal-flux-pro-v1.1'
       }
       if (!url) return null
+      // NEVER A STORE LOGO: a picture showing one is dropped, not placed.
+      const logo = await checkNewPicture({ url }, { userId: user.id, tier: tier ?? null, feature: 'new_picture_logo_check' })
+      if (!logo.ok) { console.warn(`[refresh-images] item ${i} showed a store logo, dropped:`, logo.marks); return null }
       // Try WP media upload first; if it throws (Hostinger / WAF blocking the
       // multipart POST to /wp-json/wp/v2/media is the common case), embed the
       // fal URL directly so the image still renders.

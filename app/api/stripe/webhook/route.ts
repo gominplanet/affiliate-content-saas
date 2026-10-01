@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getStripe, creditsForPriceId, PRICE_ID_LIST } from '@/lib/stripe'
+import { getStripe, PRICE_ID_LIST } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
@@ -278,29 +278,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── One-time "your-voice" dub credit block (payment mode) ───────────────
-    // Credit the ledger from the ACTUAL purchased price, never client metadata.
-    // Handled and returned BEFORE the subscription-tier logic so a credit
-    // purchase never touches the user's plan. Idempotent via the event dedup
-    // insert above.
-    const creditAmount = creditsForPriceId(priceId)
-    if (session.mode === 'payment' || creditAmount > 0) {
-      if (creditAmount > 0) {
-        let cuid = session.metadata?.user_id || null
-        if (!cuid) {
-          cuid = await findUserIdByEmail(admin, session.customer_details?.email || session.customer_email)
-            || await findUserIdByEmail(admin, await stripeCustomerEmail(stripe, session.customer))
-        }
-        if (!cuid) {
-          await alertOps('Stripe credit purchase completed but no MVP user matched', `customer ${session.customer}, price ${priceId}. Add the credits manually.`)
-          return NextResponse.json({ received: true, unmatched: true })
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).rpc('dub_credits_add', { p_user: cuid, p_add: creditAmount })
-        return NextResponse.json({ received: true, creditsAdded: creditAmount })
-      }
-      // A payment-mode session we don't recognize — ignore rather than treating
-      // it as a subscription.
+    // ── One-time payments ──────────────────────────────────────────────────
+    // The only one MVP sold was the dub credit pack, removed 2026-10-01 (none
+    // was ever bought). A payment-mode session is ignored rather than treated
+    // as a subscription, and said in the answer.
+    if (session.mode === 'payment') {
       return NextResponse.json({ received: true, ignored: 'unrecognized_payment' })
     }
     const tier: Tier | undefined = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier

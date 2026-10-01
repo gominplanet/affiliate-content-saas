@@ -1,3 +1,4 @@
+import { checkNewPicture } from '@/lib/post-logo-sweep'
 import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
 import { uploadVideoThumbnail } from '@/lib/video-thumbnail-upload'
@@ -3096,6 +3097,15 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
               // posts endpoint is open), fall back to the fal storage URL
               // directly — the image still renders in the article via <img>,
               // it's just hosted on fal.media instead of the user's wp-uploads.
+              // NEVER A STORE LOGO: a picture showing one is dropped, not placed.
+              {
+                const logo = await checkNewPicture({ url: falUrl }, { userId: user.id, tier: tier2 ?? null, feature: 'new_picture_logo_check' })
+                if (!logo.ok) {
+                  if (!firstImgError) firstImgError = `store logo in picture ${i + 1} (${logo.marks.join(', ')}), dropped`
+                  console.warn(`[blog-images] item ${i} showed a store logo, dropped:`, logo.marks)
+                  return null
+                }
+              }
               let mediaUrl: string | null = null
               try {
                 const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)

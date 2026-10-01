@@ -38,8 +38,8 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { TIERS, SELLABLE_TIERS, type Tier } from '../lib/tier'
-import { CREDIT_BLOCKS } from '../lib/credit-blocks'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -59,12 +59,6 @@ for (const t of TIER_KEYS) {
   if (p.price) BANNED.set(p.price, `${p.label ?? t} price`)
   if (p.regularPrice) BANNED.set(p.regularPrice, `${p.label ?? t} regular price`)
 }
-// The credit packs are NOT in the sweep, and that is deliberate. Two of their
-// three amounts collide with prices we do not set: $29 is what a competitor
-// charges, quoted by name on /run-your-storefront, and banning it would make
-// the guard demand that somebody else's price be read from our own plan file.
-// They get their own check further down, against Stripe, which is stronger.
-void CREDIT_BLOCKS
 
 check('there are amounts to protect',
   BANNED.size >= 4, `only ${BANNED.size} found — lib/tier probably did not parse`)
@@ -327,9 +321,11 @@ const live = (src: string) => decomment(src)
 {
   const STAGE = read('components/launchpad/StorefrontStage.tsx')
   const CHECK = read('app/api/admin/stripe-price-check/route.ts')
-  check('the buy buttons read the pack price',
-    /CREDIT_BLOCKS\[b\]\.usd/.test(STAGE),
-    'three prices typed beside a live Stripe checkout is the $79-against-$99 setup exactly')
+  // DUB CREDIT PACKS REMOVED 2026-10-01 (none was ever bought): nothing may
+  // sell them again.
+  check('no dub credit pack is sold anywhere',
+    !/credits-checkout/.test(STAGE) && !existsSync('app/api/stripe/credits-checkout/route.ts') && !existsSync('lib/credit-blocks.ts'),
+    'the packs were removed with dubbing')
   // THE CHECK MUST CHECK WHAT CHECKOUT CHARGES. It read process.env[k]
   // directly, lib/stripe resolves Creator as CREATOR ?? STARTER, and with only
   // STARTER set in production the live report called Creator "no price id
@@ -351,9 +347,6 @@ const live = (src: string) => decomment(src)
     /STRIPE_PRICE_CREATOR \?\? process\.env\.STRIPE_PRICE_STARTER/.test(read('lib/stripe.ts'))
     && /studio:\s+\[\.\.\.priceIdsFor\(process\.env\.STRIPE_PRICE_STUDIO\)/.test(read('lib/stripe.ts')),
     'not shown is not unsupported: grandfathered subscribers must still map to their plan')
-  check('and the packs are compared against what Stripe charges',
-    /CREDIT_BLOCKS/.test(CHECK) && /cfg\.usd/.test(CHECK),
-    'a Stripe price is immutable, so nothing in the repo changes when one is repointed: only fetching it can see the gap')
 }
 
 // ── the affiliate estimator quotes a commission we would really pay ────────

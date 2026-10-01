@@ -15,7 +15,6 @@ import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, requestStorefrontProgress, getScoutStatus, type StorefrontMarketStatus, type StorefrontProgress } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { normalizeAsinInput } from '@/lib/asin'
-import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
 import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -441,16 +440,6 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     try { await fetch('/api/voice-clone/delete', { method: 'POST' }); await refreshVoice(); setConsent(false); toast.success('Cloned voice removed') }
     catch { /* ignore */ } finally { setCloning(false) }
   }
-  async function buyCredits(block: '50' | '150' | '500') {
-    setBuying(true)
-    try {
-      const r = await fetch('/api/stripe/credits-checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block }) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok || !j.url) throw new Error(j.error || 'Could not start checkout')
-      window.location.href = j.url
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not start checkout'); setBuying(false) }
-  }
-
   // Returning from a successful credit purchase.
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1000,22 +989,6 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   ? <>Each non-English dub narrates in your voice and uses 1 credit.{typeof voice.credits === 'number' ? <> {voice.credits} left this month.</> : <> Unlimited on your plan.</>}</>
                   : <>Dubs use a clean generic voice, free and unlimited. Your credits are untouched.</>}
               </p>
-              {useMyVoice && typeof voice.credits === 'number' && (
-                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-                  <span className="text-[12px]" style={muted}>Top up:</span>
-                  {/* THE PRICE ON THE BUTTON IS THE PRICE IN THE BLOCK.
-                      These were three typed strings beside a button that opens
-                      a Stripe checkout, which is how /amazon-influencer came to
-                      advertise $79 against a $99 charge. */}
-                  {(['50', '150', '500'] as const).map((b) => (
-                    <button key={b} type="button" onClick={() => void buyCredits(b)} disabled={buying}
-                      className="text-[12px] font-medium px-2.5 py-1 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-                      {b} for ${CREDIT_BLOCKS[b].usd}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           ) : (
             <div>

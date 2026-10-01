@@ -127,7 +127,8 @@ export async function forgetLogoScan(sb: Sb, postId: string): Promise<void> {
 
 export type LogoSweepReport = { posts: number; images: number; found: number; unreadable: number; left: number | null; error?: string }
 
-/** The background run: newest unchecked published posts first, a few pictures a run. */
+/** A run over the newest unchecked published posts. Not scheduled since
+ *  2026-10-01 (old posts are left as they are); kept for an admin run. */
 export async function sweepPostLogos(sb: Sb, anthropic: Anthropic, opts: { maxImages?: number; deadline?: number } = {}): Promise<LogoSweepReport> {
   const maxImages = opts.maxImages ?? SWEEP_IMAGES_PER_RUN
   const deadline = opts.deadline ?? Date.now() + 200_000
@@ -148,4 +149,49 @@ export async function sweepPostLogos(sb: Sb, anthropic: Anthropic, opts: { maxIm
   }
   if (out.left !== null) out.left = Math.max(0, out.left - out.posts)
   return out
+}
+
+// ── A NEW PICTURE, CHECKED BEFORE IT IS USED ────────────────────────────────
+//
+// Seb, 2026-10-01: old posts are left as they are; from now on no picture MVP
+// makes may carry a store's logo, Amazon's above all. Every generated hero,
+// article picture and YouTube thumbnail goes through this before it is
+// placed. A store logo means the picture is thrown away (the caller keeps what
+// it had, or says so). A check that could not run lets the picture through,
+// because the prompts already forbid logos, and says why in the log.
+
+export type NewPictureVerdict = { ok: true; checked: boolean; reason?: string } | { ok: false; marks: string[] }
+
+export async function checkNewPicture(
+  input: { url: string } | { base64: string; mediaType: string },
+  usage: { userId: string; tier: string | null; feature: string },
+): Promise<NewPictureVerdict> {
+  try {
+    if ('url' in input && isRetailerSiteImage(input.url)) return { ok: false, marks: [AMAZON_SITE_GRAPHIC] }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createAnthropicClient } = require('@/lib/anthropic') as typeof import('@/lib/anthropic')
+    const anthropic = createAnthropicClient()
+    let block: ImageBlock | null = null
+    if ('url' in input) {
+      const img = await imageBlock(input.url)
+      if (!img.ok) { console.warn('[new-picture-check] not checked:', img.reason); return { ok: true, checked: false, reason: img.reason } }
+      block = img.block
+    } else {
+      const mt = /png/.test(input.mediaType) ? 'image/png' : /webp/.test(input.mediaType) ? 'image/webp' : 'image/jpeg'
+      block = { type: 'image', source: { type: 'base64', media_type: mt, data: input.base64 } }
+    }
+    const msg = await anthropic.messages.create({
+      model: LOGO_SCAN_MODEL, max_tokens: 200,
+      messages: [{ role: 'user', content: [block, { type: 'text', text: LOGO_SCAN_PROMPT }] }],
+    })
+    recordAnthropicUsage(msg, { userId: usage.userId, tier: usage.tier, feature: usage.feature, model: LOGO_SCAN_MODEL })
+    const f = readLogoReply(((msg.content?.[0] as { text?: string } | undefined)?.text ?? '').trim())
+    if (f.verdict === 'found') return { ok: false, marks: f.marks }
+    if (f.verdict === 'unreadable') console.warn('[new-picture-check] not checked:', f.reason)
+    return { ok: true, checked: f.verdict === 'clean', reason: f.reason }
+  } catch (e) {
+    const reason = (e instanceof Error ? e.message : String(e)).slice(0, 160)
+    console.warn('[new-picture-check] not checked:', reason)
+    return { ok: true, checked: false, reason }
+  }
 }
