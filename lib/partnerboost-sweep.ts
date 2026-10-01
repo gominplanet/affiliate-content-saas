@@ -34,8 +34,8 @@ type SweepBrand = {
 /** Sweep every JOINED brand's products across the networks, in a pool. */
 export async function sweepJoinedProducts(
   token: string, opts: SweepOptions = {},
-): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null }> {
-  const concurrency = opts.concurrency ?? 12
+): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null; productDropped: number }> {
+  const concurrency = opts.concurrency ?? 8
   const deadlineMs = opts.deadlineMs ?? 250_000
   const focus = (opts.focus || '').trim().toLowerCase()
 
@@ -76,14 +76,33 @@ export async function sweepJoinedProducts(
   // never folded into "this brand has no products".
   let productErrors = 0
   let productError: string | null = null
+  // Two kinds of failure, said apart: PartnerBoost answering no ("PartnerBoost:
+  // <its message>") and the connection dropping mid-answer ("terminated",
+  // "fetch failed", a timeout), which is load and worth one more try.
+  let productDropped = 0
+  const fetchProducts = (b: SweepBrand) => b.network === 'Amazon'
+    ? listAmazonProducts(token, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
+    : listPartnerBoostProducts(token, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
   async function sweepOne(b: SweepBrand) {
     let products: PBProduct[] = []
-    try {
-      const r = b.network === 'Amazon'
-        ? await listAmazonProducts(token, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
-        : await listPartnerBoostProducts(token, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
-      products = r.products
-    } catch (e) { productErrors++; if (!productError) productError = e instanceof Error ? e.message : String(e); brandsSwept++; return }
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { products = (await fetchProducts(b)).products; lastErr = null; break }
+      catch (e) {
+        lastErr = e
+        const refused = /^PartnerBoost:/.test(e instanceof Error ? e.message : String(e))
+        if (refused || attempt === 2 || Date.now() - t0 > deadlineMs) break
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+      }
+    }
+    if (lastErr) {
+      const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
+      productErrors++
+      if (!/^PartnerBoost:/.test(msg)) productDropped++
+      if (!productError) productError = msg
+      brandsSwept++
+      return
+    }
     for (const p of products) {
       raw.push({
         key: (p.sku && String(p.sku)) || p.url,
@@ -114,7 +133,7 @@ export async function sweepJoinedProducts(
     }
   }))
 
-  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError }
+  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped }
 }
 
 /**
@@ -126,9 +145,9 @@ export async function sweepJoinedProducts(
 export async function syncUserCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
-): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean; productErrors: number; productError: string | null }> {
-  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError } = await sweepJoinedProducts(token, {
-    concurrency: 12,
+): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean; productErrors: number; productError: string | null; productDropped: number }> {
+  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped } = await sweepJoinedProducts(token, {
+    concurrency: 8,
     deadlineMs: opts.deadlineMs ?? 260_000,
     // Cache everything worth keeping — drop only zero-commission brands.
     brandGate: (b) => (b.commissionPct ?? 0) >= 1 || (b.flatPayout ?? 0) >= 1,
@@ -143,7 +162,7 @@ export async function syncUserCache(
   // Every joined brand's products refused: the token reads the brand list but
   // not the product feeds. Said, never saved as an empty catalogue.
   if (brandsSwept > 0 && productErrors === brandsSwept) {
-    throw new Error(`PartnerBoost listed your ${joinedTotal} joined brands but refused every product request (${String(productError || '').replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept.`)
+    throw new Error(`PartnerBoost listed your ${joinedTotal} joined brands but no brand's products could be read (${String(productError || '').replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept.`)
   }
   const runStart = new Date().toISOString()
   const bestByKey = new Map<string, ReturnType<typeof scorePb>>()
@@ -190,8 +209,10 @@ export async function syncUserCache(
   // selection query and were never retried.
   //
   // A partial run (timedOut) is equally unsafe to purge against: the brands it
-  // didn't reach look identical to brands that disappeared.
-  const purgeSafe = rows.length > 0 && !timedOut
+  // didn't reach look identical to brands that disappeared. So is a run where
+  // any brand's products could not be read: its products were not refreshed,
+  // and purging would delete them as if the brand had gone.
+  const purgeSafe = rows.length > 0 && !timedOut && productErrors === 0
   if (purgeSafe) {
     await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
   } else {
@@ -199,7 +220,7 @@ export async function syncUserCache(
       userId, products: rows.length, brandsSwept, joinedTotal, timedOut,
     })
   }
-  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe, productErrors, productError }
+  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe, productErrors, productError, productDropped }
 }
 
 /**

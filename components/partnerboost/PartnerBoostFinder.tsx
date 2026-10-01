@@ -85,7 +85,15 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
       setNote(`Catalog synced: ${(j.products || 0).toLocaleString()} products across ${j.brandsSwept} of your ${j.joinedBrands} joined brands${j.timedOut ? ' (partial, sync again to finish the rest)' : ''}. Scans are now instant.`)
       // Brands whose products PartnerBoost would not give are said, not hidden
       // inside the count.
-      if (j.productErrors) setError(`PartnerBoost refused the products of ${j.productErrors} brand${j.productErrors === 1 ? '' : 's'}: ${String(j.productError || '').replace(/^PartnerBoost:\s*/, '')}`)
+      if (j.productErrors) {
+        const dropped = Number(j.productDropped) || 0
+        const refused = j.productErrors - dropped
+        const parts = [
+          dropped ? `the connection to PartnerBoost dropped for ${dropped} brand${dropped === 1 ? '' : 's'} even after retrying` : '',
+          refused ? `PartnerBoost refused the products of ${refused} brand${refused === 1 ? '' : 's'} (${String(j.productError || '').replace(/^PartnerBoost:\s*/, '')})` : '',
+        ].filter(Boolean).join(', and ')
+        setError(`Not complete: ${parts}. Their saved products were kept. Sync again to fetch them.`)
+      }
       setMatches(null); setSeen(new Set()); setLastKey('') // next scan reads the fresh cache
     } catch { setError('Network error during sync.') }
     finally { setSyncing(false) }

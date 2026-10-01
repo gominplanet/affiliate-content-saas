@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     // ── LIVE path — nothing synced yet; sweep the joined brands now ───────────
     const { raw, joinedTotal, brandsSwept, brandListOk, brandListError } = await sweepJoinedProducts(token, {
-      focus, concurrency: 12, deadlineMs: 250_000,
+      focus, concurrency: 8, deadlineMs: 250_000,
       brandGate: (b) => brandPassesPb(b, rules),
     })
     // PartnerBoost refusing is not "no products": said in its own words.
