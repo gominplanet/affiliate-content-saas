@@ -39,7 +39,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { marketByDomain } from '@/lib/markets'
+import { marketByDomain, UPLOAD_MARKET, UPLOAD_ONLY_REASON } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
@@ -65,10 +65,31 @@ const CHECKS = 40
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
 
-/** Every (video, ticked market) pair that has no row yet. */
+/**
+ * OTHER COUNTRIES, RETIRED (lib/markets UPLOAD_MARKET). Every cell and target
+ * for a store other than the US that has not been uploaded is closed with the
+ * reason said, and other countries are unticked, so nothing is translated,
+ * dubbed or uploaded there and the board says why rather than waiting forever.
+ * Uploaded and live cells are left as they are: they happened.
+ */
+async function retireAbroad(sb: Sb): Promise<{ cells: number; targets: number; markets: number }> {
+  const now = new Date().toISOString()
+  const { data: cells } = await sb.from('storefront_coverage')
+    .update({ state: 'blocked', reason: UPLOAD_ONLY_REASON, updated_at: now })
+    .neq('domain', UPLOAD_MARKET).not('state', 'in', '(uploaded,live,blocked)').select('id')
+  const { data: targets } = await sb.from('global_sync_targets')
+    .update({ state: 'failed', detail: UPLOAD_ONLY_REASON, updated_at: now })
+    .neq('domain', UPLOAD_MARKET).is('delivered_at', null).in('state', ['pending', 'localized']).select('id')
+  const { data: mk } = await sb.from('storefront_markets')
+    .update({ enabled: false, updated_at: now })
+    .neq('domain', UPLOAD_MARKET).eq('enabled', true).select('*')
+  return { cells: (cells ?? []).length, targets: (targets ?? []).length, markets: (mk ?? []).length }
+}
+
+/** Every (video, ticked market) pair that has no row yet. The US store only. */
 async function enrol(sb: Sb): Promise<number> {
   const { data: mkts } = await sb.from('storefront_markets')
-    .select('user_id,domain').eq('enabled', true)
+    .select('user_id,domain').eq('enabled', true).eq('domain', UPLOAD_MARKET)
   const byUser = new Map<string, string[]>()
   for (const m of (mkts ?? [])) {
     byUser.set(m.user_id, [...(byUser.get(m.user_id) ?? []), m.domain])
@@ -870,6 +891,8 @@ export async function GET(request: Request) {
   // RECONCILE FIRST. A listing that went live is not news that should wait
   // behind a channel enrolment on a catalogue of three thousand.
   const reconciled = await reconcile(sb)
+  // Before anything can translate, dub or queue another country.
+  const retired = await retireAbroad(sb)
   const enrolled = await enrol(sb)
   const product = await products(sb)
   // EXISTENCE BEFORE THE DUB. checks() starts the localizing that prepare()
@@ -887,5 +910,5 @@ export async function GET(request: Request) {
   // the cheap steps would mean a single slow render starves the grid.
   const audio = await dubs(sb)
 
-  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, matched, checked, prepared, audio })
+  return NextResponse.json({ ok: true, reconciled, retired, enrolled, product, stock: stocked, matched, checked, prepared, audio })
 }

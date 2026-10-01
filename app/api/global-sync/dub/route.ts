@@ -20,14 +20,20 @@ import { spendGate } from '@/lib/ai-spend'
 import { ttsConfigured } from '@/lib/tts'
 import { ingestConfigured } from '@/lib/youtube-ingest'
 import { dubTarget } from '@/lib/dub-target'
+import { UPLOAD_ONLY_REASON } from '@/lib/markets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
+
+const DUBBING_RETIRED = true
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // DUBBING IS RETIRED (lib/markets UPLOAD_MARKET): uploads go to the US store
+  // only, so there is nothing to dub for. Said, not silently skipped.
+  if (DUBBING_RETIRED) return NextResponse.json({ error: UPLOAD_ONLY_REASON, retired: true }, { status: 410 })
 
   const { data: integ } = await supabase
     .from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).maybeSingle()

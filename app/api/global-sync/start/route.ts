@@ -6,6 +6,7 @@
 // background. Milestone 2 adds captions + dub; Milestone 3 delivers via SCOUT.
 //   body: { videoId, markets: string[] (domains), asin? }
 import { NextResponse } from 'next/server'
+import { isUploadMarket, UPLOAD_ONLY_REASON } from '@/lib/markets'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
@@ -49,9 +50,10 @@ export async function POST(req: Request) {
       if (na && marketByDomain(dom)) marketAsins[dom] = na
     }
   }
-  const domains = Array.isArray(body.markets) ? body.markets.filter(d => !!marketByDomain(d)) : []
+  // The US store only (lib/markets UPLOAD_MARKET).
+  const domains = Array.isArray(body.markets) ? body.markets.filter(d => !!marketByDomain(d) && isUploadMarket(d)) : []
   if (!videoId) return NextResponse.json({ error: 'videoId is required.' }, { status: 400 })
-  if (domains.length === 0) return NextResponse.json({ error: 'Pick at least one marketplace.' }, { status: 400 })
+  if (domains.length === 0) return NextResponse.json({ error: UPLOAD_ONLY_REASON }, { status: 400 })
 
   // Master video + the creator's voice.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

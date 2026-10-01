@@ -506,12 +506,14 @@ const START = live(read('app/api/global-sync/start/route.ts'))
   // board reaches them a different way: it offers every market the API returns,
   // and that list is derived from lib/markets rather than typed anywhere. The
   // claim being protected is unchanged, so the check follows the claim.
-  check('Storefront Sync reaches every market',
+  // REVERSED 2026-10-01: uploads go to the US store only (lib/markets
+  // UPLOAD_MARKET); Amazon Global Storefront shows US videos elsewhere.
+  check('Storefront Sync reaches the US store only',
     /<CoverageBoard \/>/.test(SYNC),
-    'the board lists whatever /api/coverage/markets returns, which is MARKETS itself')
-  check('and that list is never typed out by hand',
-    /MARKETS\.map\(/.test(read('app/api/coverage/markets/route.ts')),
-    'a typed list drifts from lib/markets the first time a market is added')
+    'the board lists whatever /api/coverage/markets returns')
+  check('and that list comes from lib/markets, filtered to the upload store, never typed out',
+    /MARKETS\.filter\(\(m\) => isUploadMarket\(m\.domain\)\)\.map\(/.test(read('app/api/coverage/markets/route.ts')),
+    'a typed list drifts from lib/markets')
   check('Launchpad still asks the stage to dub',
     /allowDubbing/.test(read('app/(dashboard)/launchpad/page.tsx')),
     'the stage is still the one-video path, and it must not quietly stop dubbing')

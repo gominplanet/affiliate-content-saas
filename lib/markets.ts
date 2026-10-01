@@ -62,6 +62,21 @@ export const MARKETS: Market[] = [
   { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.co.jp',  keepa: 5 },
 ]
 
+/**
+ * AMAZON UPLOADS GO TO THE US STORE ONLY.
+ *
+ * Decided 2026-10-01: MVP no longer posts to other Amazon countries or makes
+ * translations and dubs for them. Amazon's Global Storefront shows a creator's
+ * US storefront videos in the other countries itself. MARKETS stays, for
+ * research and link routing; every upload path (Liftoff, Storefront Sync, the
+ * delivery queue SCOUT reads) keeps only this store.
+ */
+export const UPLOAD_MARKET = 'amazon.com'
+export const UPLOAD_ONLY_REASON = 'MVP uploads to the US store only now. Amazon Global Storefront shows your US videos in the other countries.'
+export function isUploadMarket(domain: string | null | undefined): boolean {
+  return domain === UPLOAD_MARKET
+}
+
 export function marketByDomain(domain: string): Market | undefined {
   return MARKETS.find(m => m.domain === domain)
 }

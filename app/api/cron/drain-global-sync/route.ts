@@ -18,6 +18,7 @@
 // markets, and closes them out. The request path keeps its head start, so a
 // normal run still completes in seconds; this only picks up what that dropped.
 import { NextResponse } from 'next/server'
+import { UPLOAD_MARKET } from '@/lib/markets'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { marketByDomain, localizeMetadata } from '@/lib/global-sync'
 import { decideRecovery, STALL_AFTER_MS, type JobSnapshot } from '@/lib/global-sync-recovery'
@@ -78,6 +79,8 @@ export async function GET(request: Request) {
         .select('id,domain,lang,state')
         .eq('job_id', job.id)
         .eq('state', 'pending')
+        // The US store only (lib/markets UPLOAD_MARKET): no translation.
+        .eq('domain', UPLOAD_MARKET)
 
       const snapshot: JobSnapshot = {
         status: job.status,

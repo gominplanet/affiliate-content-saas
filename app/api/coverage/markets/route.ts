@@ -19,7 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { MARKETS, marketByDomain } from '@/lib/markets'
+import { MARKETS, marketByDomain, isUploadMarket, UPLOAD_ONLY_REASON } from '@/lib/markets'
 import { signinLabel, canDeliver } from '@/lib/storefront-coverage'
 
 export const runtime = 'nodejs'
@@ -41,7 +41,8 @@ export async function GET() {
 
   // EVERY market MVP delivers to, ticked or not, so the screen is a complete
   // picture rather than a list of what happens to have a row.
-  const markets = MARKETS.map((m) => {
+  // The US store only (lib/markets UPLOAD_MARKET).
+  const markets = MARKETS.filter((m) => isUploadMarket(m.domain)).map((m) => {
     const row = byDomain.get(m.domain)
     const signin = row?.signin_state ?? 'unknown'
     return {
@@ -109,6 +110,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Pick a marketplace MVP delivers to.' }, { status: 400 })
   }
   const enabled = body.enabled !== false
+  if (enabled && !isUploadMarket(domain)) return NextResponse.json({ error: UPLOAD_ONLY_REASON }, { status: 400 })
 
   const { error } = await sb.from('storefront_markets').upsert({
     user_id: user.id, domain, enabled, updated_at: now,

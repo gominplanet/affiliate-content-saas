@@ -28,7 +28,7 @@ export default function GlobalSyncPage() {
     <>
       <PageHero
         title="Storefront Sync"
-        subtitle="Your videos, earning in every Amazon country you sell in. Pick the countries and MVP works through your whole catalogue in the background, translating and dubbing each video for each store. The only part that needs you is the upload, which goes through your own Amazon Creator account."
+        subtitle="Your YouTube videos on your US Amazon storefront. MVP works through your whole catalogue in the background and checks each product. Amazon Global Storefront shows your US videos in the other countries. The only part that needs you is the upload, which goes through your own Amazon Creator account."
       />
       <div className="pb-28">
         <CoverageBoard />

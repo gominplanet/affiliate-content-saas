@@ -7,6 +7,7 @@
 // the ASIN, per market not yet delivered.
 import { dailyRoomFor } from '@/lib/daily-uploads'
 import { NextResponse } from 'next/server'
+import { UPLOAD_MARKET } from '@/lib/markets'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/global-sync'
@@ -74,6 +75,9 @@ export async function GET(req: Request) {
       : q.in('state', ['localized'])
     if (jobId) q = q.eq('job_id', jobId)
     if (onlyDomains.length > 0) q = q.in('domain', onlyDomains)
+    // THE HARD GATE: SCOUT is only ever handed US uploads (lib/markets
+    // UPLOAD_MARKET), whatever is still queued for other countries.
+    q = q.eq('domain', UPLOAD_MARKET)
     if (scopedJobIds) q = q.in('job_id', scopedJobIds)
     return q
   }

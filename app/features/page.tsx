@@ -63,7 +63,7 @@ function Nav() {
 const LOOP = [
   { k: 'Find', d: 'Surface the live brand campaigns that actually pay, and the products worth reviewing.' },
   { k: 'Create', d: 'Write the review, comparisons and social posts in your real voice. Thumbnails and Shorts included.' },
-  { k: 'Publish', d: 'Push it to YouTube, every Amazon storefront, your blog and your socials, localized for each.' },
+  { k: 'Publish', d: 'Push it to YouTube, your Amazon storefront, your blog and your socials.' },
   { k: 'Earn', d: "Route every click to the shopper's own store with your tag, and see what each channel makes." },
 ]
 
@@ -91,11 +91,11 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
   },
   {
     id: 'publish', n: '03', tag: 'Publish everywhere', head: 'One video, every surface it belongs on.',
-    intro: 'The same review goes to YouTube, every Amazon marketplace, your blog and your socials — each one localized and formatted for where it lands.',
+    intro: 'The same review goes to YouTube, your Amazon storefront, your blog and your socials, each one formatted for where it lands.',
     items: [
-      { icon: <Globe size={20} />, flagship: true, wide: true, title: 'Global Storefront Sync', desc: "Take one master video to every Amazon storefront you sell in. MVP matches the product's ASIN in each geo, writes the title in the local language, and dubs the video for non-English markets — in your own cloned voice — with a text-free thumbnail so no English sits on a French or German shopper's screen." },
+      { icon: <Globe size={20} />, flagship: true, wide: true, title: 'Storefront Sync', desc: "Your YouTube catalogue on your US Amazon storefront. MVP checks each product, writes the listing and queues the upload, and Amazon Global Storefront shows your US videos in the other countries." },
       { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish — with paid-promotion disclosure and monetization set for you, not left as homework.' },
-      { icon: <Rocket size={20} />, tag: 'Pro', title: 'Liftoff', desc: "Up to ten videos, one press. Upload them, choose your CTA, thumbnail look and Amazon countries once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to every Amazon storefront its product sells in, with titles localized, audio dubbed where English is not the language, and a report of where each video landed." },
+      { icon: <Rocket size={20} />, tag: 'Pro', title: 'Liftoff', desc: "Up to ten videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed." },
       { icon: <Store size={20} />, title: 'Blog & WordPress', desc: 'Publish the review to your own blog network — formatted, illustrated, and linked — so you own an asset that keeps earning past the feed.' },
       { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, auto-post Shorts to TikTok and Instagram, and hand shoppers a Link-in-Bio storefront that fills itself from what you post.' },
     ],
@@ -152,7 +152,7 @@ export default function FeaturesPage() {
             <span style={{ background: GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>Everywhere it earns</span> out.
           </h1>
           <p className="mt-6 text-[clamp(17px,2vw,21px)] leading-relaxed max-w-[54ch]" style={{ color: '#CFC4E4' }}>
-            MVP is the workflow built for Amazon Influencers: find the brands that pay, make the review in your real voice, publish it to YouTube and every Amazon storefront on earth, and route every click to the right country&apos;s store with your tag.
+            MVP is the workflow built for Amazon Influencers: find the brands that pay, make the review in your real voice, publish it to YouTube and your Amazon storefront, and route every click to the right country&apos;s store with your tag.
           </p>
           <div className="flex flex-wrap gap-3.5 mt-9">
             <a href="/signup" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>
@@ -217,7 +217,7 @@ export default function FeaturesPage() {
             <ul className="mt-6 grid gap-3">
               {[
                 'Messages brands and joins campaigns without opening a single tab',
-                'Uploads your video to every Amazon storefront from your own session',
+                'Uploads your video to your US Amazon storefront from your own session',
                 'Pulls sharp, real frames from your YouTube videos for thumbnails',
                 'One-click install from the Chrome Web Store, auto-updates itself',
               ].map(t => (
