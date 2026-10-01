@@ -23,12 +23,7 @@ and commit them. Then upload the store build:
    fields carry over. The extension **id does not change** on an update, so no
    env changes are needed. Chrome auto-updates store users once approved.
 
-Latest release: **1.11.71** — Send-on-Creator-Connections now (a) types the ASIN
-into the Affiliate+ "Search brand, keyword, or ASIN" box specifically (not the
-global/SPC search), so it filters straight to the campaign instead of scrolling
-the whole grid, and (b) accepts + sends in ONE background tab (new
-MVP_CC_ACCEPT_AND_SEND flow) so there's no cross-tab teardown race (the "Frame
-with ID 0 was removed" error).
+Latest release: **1.22.0**: SCOUT can fill a post into the creator's Facebook Group. MVP asks (MVP_FB_GROUP_PREFILL), SCOUT opens the Group in the creator's own signed-in Facebook, opens "Write something" and puts the text in. It never presses Post; the creator does. Facebook access is a new OPTIONAL host permission (`https://*.facebook.com/*`), requested on first use from fb-allow.html, so existing installs are not disabled by the update.
 
 ## First-time submission (historical — kept for reference)
 Developer Dashboard → **Add new item** → drop `mvp-cc-scout-store.zip`. The two

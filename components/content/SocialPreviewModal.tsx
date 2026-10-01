@@ -144,6 +144,27 @@ export function SocialPreviewModal({
   const groupCopy = [text.trim(), (serverHashtags || shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
     .filter(Boolean).join('\n\n')
 
+  // ── Fill with SCOUT: one click per Group ─────────────────────────────────
+  // SCOUT opens the Group in the creator's own Facebook and fills this post
+  // into "Write something"; the creator presses Post. The post is copied to
+  // the clipboard first, so every way this can fail still leaves them one
+  // paste away. What happened is shown per Group, and "filled" only shows
+  // when SCOUT saw the text land in the box.
+  const [groupFill, setGroupFill] = useState<Record<number, { state: 'working' } | { state: 'done'; filled: boolean; message: string; steps?: string }>>({})
+  async function fillGroupWithScout(i: number, g: { name: string; url: string }) {
+    try { await navigator.clipboard.writeText(groupCopy) } catch { /* the message below still says what to do */ }
+    setGroupFill((m) => ({ ...m, [i]: { state: 'working' } }))
+    const { requestFacebookGroupPrefill } = await import('@/lib/extension-frame')
+    const res = await requestFacebookGroupPrefill(g.url, groupCopy)
+    const label = g.name?.trim() || 'your Group'
+    setGroupFill((m) => ({
+      ...m,
+      [i]: res.filled
+        ? { state: 'done', filled: true, message: `SCOUT filled the post in ${label}. Check it in the Facebook tab and press Post.`, steps: res.steps }
+        : { state: 'done', filled: false, message: res.error || 'SCOUT could not fill it. The post is copied: paste it in the Group yourself.', steps: res.steps },
+    }))
+  }
+
   async function generate() {
     setLoadError(null)
     try {
@@ -391,21 +412,44 @@ export function SocialPreviewModal({
                   </div>
                   <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto p-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">{groupCopy}</pre>
                   <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                    Facebook blocks apps from posting to Groups — copy this and paste it into a new post in the Group below.
+                    Facebook lets no app post to a Group by itself. <strong>Fill with SCOUT</strong> opens your Group and puts this post in the box, and you press Post. Or copy it and paste it yourself.
                   </p>
                   {facebookGroups && facebookGroups.length > 0 ? (
                     <div className="mt-2 flex flex-col gap-1">
-                      {facebookGroups.filter(g => g.url?.trim()).map((g, i) => (
-                        <a
-                          key={i}
-                          href={g.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-[11px] text-[#1877f2] hover:underline"
-                        >
-                          <Users size={11} /> {g.name?.trim() || g.url} <ExternalLink size={9} />
-                        </a>
-                      ))}
+                      {facebookGroups.filter(g => g.url?.trim()).map((g, i) => {
+                        const st = groupFill[i]
+                        return (
+                          <div key={i} className="flex flex-col gap-0.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <a
+                                href={g.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[11px] text-[#1877f2] hover:underline min-w-0 truncate"
+                              >
+                                <Users size={11} /> {g.name?.trim() || g.url} <ExternalLink size={9} />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => { void fillGroupWithScout(i, g) }}
+                                disabled={st?.state === 'working' || !groupCopy}
+                                className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-[#1877f2] hover:bg-[#166fe0] disabled:opacity-60 rounded-md px-2 py-1"
+                              >
+                                {st?.state === 'working' ? <><Loader2 size={11} className="animate-spin" /> Filling…</> : 'Fill with SCOUT'}
+                              </button>
+                            </div>
+                            {st?.state === 'done' && (
+                              <p
+                                title={st.steps || undefined}
+                                className={`text-[10px] leading-relaxed flex items-start gap-1 ${st.filled ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}
+                              >
+                                {st.filled ? <CheckCircle size={11} className="mt-px shrink-0" /> : <AlertCircle size={11} className="mt-px shrink-0" />}
+                                <span>{st.message}</span>
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   ) : (
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
