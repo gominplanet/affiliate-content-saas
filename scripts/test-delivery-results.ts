@@ -58,9 +58,10 @@ check('a local listing is checked for stock, never assumed', /lookupAvailability
 check('the hand-off uploads to the local listing it found',
   /cachedLocalAsins\(sb, String\(it\.asin\), markets\)/.test(code('app/api/cron/launch-drain/route.ts'))
   && /asin: local\.get\(domain\) \?\? it\.asin/.test(code('app/api/cron/launch-drain/route.ts')))
-check('only a country checked in full and not sold is hidden, and it is named',
-  /row\.byVideo\.every\(\(v\) => v\.verdict === 'not_sold'\)/.test(LB) && /Not sold in: \{hidden\.map/.test(LB)
-  && /!notSoldAnywhere\(m\.domain\) \|\| opts\.selected\.includes\(m\.domain\)/.test(LB))
+// Liftoff shows the US store only now (Global Storefront), and it is never
+// hidden: a US store that does not sell the product says so on its own card.
+check('Liftoff shows the US store only, and never hides it',
+  /MARKETS\.filter\(\(m\) => m\.domain === LIFTOFF_AMAZON_MARKET\)/.test(LB) && !/Not sold in: \{hidden\.map/.test(LB))
 check('a mixed country says how many videos it sells', /of \$\{n\} \$\{videos\(n\)\} sold here, and only those upload/.test(LB))
 
 // AUSTRALIA, from the live store through SCOUT: no Keepa there.

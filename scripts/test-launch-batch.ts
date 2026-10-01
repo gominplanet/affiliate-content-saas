@@ -133,7 +133,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('an empty batch cannot launch',
     (launchBlocker(full(), []) ?? '').includes('Add at least one video'))
   check('an unfinished step is named in the refusal',
-    (launchBlocker(full({ markets: [] }), [item()]) ?? '').includes('Amazon countries'),
+    (launchBlocker(full({ markets: [] }), [item()]) ?? '').includes('US store'),
     'a disabled button with nothing beside it is the dead end this codebase keeps producing')
   check('work still running is said to be running, not broken',
     /finishes on its own/.test(launchBlocker(full(), [item({ state: 'preparing' })]) ?? ''),

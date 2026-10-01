@@ -17,7 +17,7 @@ import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
 import { normalizeStudioOptions, readStudioRun } from '@/lib/studio-finish'
-import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, withYouTubeChoice, withAmazonLater, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, withYouTubeChoice, withAmazonLater, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS, liftoffMarkets } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
@@ -162,7 +162,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // YOUTUBE OR AMAZON ONLY (migration 369), read on its own like the rest.
   const { batch: chosen, available: youtubeChoiceAvailable } = await withYouTubeChoice(sb, batch as BatchRow)
   // Liftoff in two parts (Labs): the steps and the page follow it.
-  const b = await withAmazonLater(sb, user.id, chosen)
+  // And the US store only: an older batch saved with other countries is
+  // treated as US, so the page and the background tab send nowhere else.
+  const split = await withAmazonLater(sb, user.id, chosen)
+  const b = { ...split, markets: liftoffMarkets(split.markets) }
   return NextResponse.json({
     ok: true,
     batch: {
@@ -278,7 +281,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (Array.isArray(body.markets)) {
     // Only storefronts MVP actually supports, so a typo cannot create a column
     // the pipeline has no idea what to do with.
-    patch.markets = [...new Set(body.markets.filter((d) => !!marketByDomain(d)))]
+    // And for Liftoff, the US store only (lib/launch-batch liftoffMarkets).
+    patch.markets = liftoffMarkets(body.markets.filter((d) => !!marketByDomain(d)))
   }
   if (Array.isArray(body.dailySlots)) {
     // Cleaned and sorted here as well as on screen, because the cadence is what

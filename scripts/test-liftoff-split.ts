@@ -62,7 +62,7 @@ check('part 1 clears countries picked before the split, at the first launch only
 
 const START = read('app/api/launch/batches/[id]/amazon/route.ts')
 check('Start Amazon needs a launched batch', /batch\.state !== 'launched' && batch\.state !== 'launching'/.test(START))
-check('Start Amazon saves the countries on the batch, so latecomers and the background tab use them', /update\(\{ markets: allMarkets/.test(START))
+check('Start Amazon saves the US store on the batch, so latecomers and the background tab use it', /update\(\{ markets: allMarkets/.test(START))
 check('Start Amazon makes a row per video per country, with each country\'s own ASIN', /storefront_coverage'\)\.upsert\(/.test(START) && /cachedLocalAsins\(/.test(START))
 check('Amazon never gets the CTA copy: no rendered_url anywhere in Start Amazon', !/rendered_url/.test(START))
 check('a video with no original left is named, not queued to fail later', /noOriginal\.push\(name\)/.test(START))
@@ -71,11 +71,25 @@ const BOARD = read('components/launch/LaunchBoard.tsx')
 check('the countries step is not drawn in part 1', /\{!batch\.amazon_later && <StepCard/.test(BOARD))
 check('part 2 is its own section, locked until YouTube is done', /LIFTOFF PART 2: AMAZON/.test(BOARD) && /youtubePartDone\(batch\.state, items\)/.test(BOARD) && /Opens when YouTube is done/.test(BOARD))
 check('it says "YouTube is done" from the rows, with each video\'s link', /YouTube is done\./.test(BOARD) && /youtube\.com\/watch\?v=\$\{i\.youtube_video_id\}/.test(BOARD))
-check('nothing about Amazon starts on a tick: part 2 holds them until Start Amazon',
-  /setAmazonPick\(/.test(BOARD) && /startAmazon\(amazonPick\)/.test(BOARD) && /\/api\/launch\/batches\/\$\{batchId\}\/amazon/.test(BOARD))
+check('part 2 starts Amazon on its own button, for the US store',
+  /startAmazon\(\[LIFTOFF_AMAZON_MARKET\]\)/.test(BOARD) && /Start Amazon \(US store\)/.test(BOARD) && /\/api\/launch\/batches\/\$\{batchId\}\/amazon/.test(BOARD))
+
+// ── THE US STORE ONLY (Global Storefront) ───────────────────────────────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { liftoffMarkets, LIFTOFF_AMAZON_MARKET } = require('../lib/launch-batch') as typeof import('../lib/launch-batch')
+  check('the US store is the only Amazon store Liftoff keeps', LIFTOFF_AMAZON_MARKET === 'amazon.com'
+    && JSON.stringify(liftoffMarkets(['amazon.com', 'amazon.de', 'amazon.co.uk'])) === '["amazon.com"]'
+    && JSON.stringify(liftoffMarkets(['amazon.de'])) === '[]' && JSON.stringify(liftoffMarkets(null)) === '[]')
+  check('Start Amazon queues the US store whatever the request names', /const markets = \[LIFTOFF_AMAZON_MARKET\]/.test(START) && !/body\.markets/.test(START))
+  check('a saved batch keeps the US store only', /patch\.markets = liftoffMarkets\(/.test(read('app/api/launch/batches/[id]/route.ts'))
+    && /markets: liftoffMarkets\(split\.markets\)/.test(read('app/api/launch/batches/[id]/route.ts')))
+  check('the hand-over sends the US store only, even for an older batch', /const markets: string\[\] = liftoffMarkets\(/.test(DRAIN))
+  check('the page shows the US store only', /MARKETS\.filter\(\(m\) => m\.domain === LIFTOFF_AMAZON_MARKET\)/.test(BOARD))
+}
 check('part 1 shows no Amazon panel, button or row box', /const amazonOn = !batch\.amazon_later \|\| batch\.markets\.length > 0/.test(BOARD)
   && /\{amazonOn && <div className="mt-3 flex items-center gap-3 flex-wrap">/.test(BOARD) && /hideAmazon=\{!!batch\.amazon_later && batch\.markets\.length === 0\}/.test(BOARD))
-check('one country grid for both parts', (BOARD.match(/countryGrid\(\{/g) ?? []).length === 2)
+check('one store card for both parts', (BOARD.match(/countryGrid\(\{/g) ?? []).length === 2)
 
 // ── GLOBAL SYNC WAITS FOR PART 2 ────────────────────────────────────────────
 // Global Sync enrols the whole catalogue in the countries ticked on its page.

@@ -27,7 +27,7 @@ import ChannelCheck from '@/components/launch/ChannelCheck'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, youtubePartDone, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, youtubePartDone, type CtaPreset, type StepStatus, type ItemRow, type StepId, LIFTOFF_AMAZON_MARKET } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
@@ -369,9 +369,6 @@ export default function LaunchBoard() {
   const [amazonBusy, setAmazonBusy] = useState(false)
   const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
   const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
-  // LIFTOFF PART 2: the countries ticked but not started yet, held here until
-  // Start Amazon, so nothing about Amazon happens on a tick.
-  const [amazonPick, setAmazonPick] = useState<string[]>([])
   const [amazonStarting, setAmazonStarting] = useState(false)
   // ── AND THE STUDIO STEPS, BY THEMSELVES, FIRST ─────────────────────────
   // Paid promotion, AI use, the notify box, monetization: YouTube's API sets
@@ -1272,18 +1269,16 @@ export default function LaunchBoard() {
       const started = (j.started ?? []) as string[]
       const noOriginal = (j.noOriginal ?? []) as string[]
       const notYet = (j.notYet ?? []) as string[]
-      const countries = `${domains.length} ${domains.length === 1 ? 'country' : 'countries'}`
       if (started.length > 0) {
-        toast.success(`Amazon started: ${started.length} ${started.length === 1 ? 'video' : 'videos'} in ${countries}. MVP checks each product there, translates and dubs, and SCOUT uploads each one as it is ready.`, { duration: 10000 })
+        toast.success(`Amazon started: ${started.length} ${started.length === 1 ? 'video goes' : 'videos go'} to your US storefront. MVP checks each product, and SCOUT uploads each one as it is ready.`, { duration: 10000 })
       }
       if (noOriginal.length > 0) {
         toast.error(`Not started, because MVP no longer has the original file without your CTA: ${noOriginal.join(', ')}. Amazon is never sent the CTA copy.`, { duration: 18000 })
       }
       if (notYet.length > 0) {
-        toast(`${notYet.join(', ')}: on YouTube but not recorded yet. ${notYet.length === 1 ? 'It joins' : 'They join'} Amazon within a minute, with these countries.`, { duration: 12000 })
+        toast(`${notYet.join(', ')}: on YouTube but not recorded yet. ${notYet.length === 1 ? 'It joins' : 'They join'} Amazon within a minute.`, { duration: 12000 })
       }
-      if (started.length === 0 && noOriginal.length === 0 && notYet.length === 0) toast.error('The countries are saved, but no video in this batch is on YouTube to send.')
-      setAmazonPick([])
+      if (started.length === 0 && noOriginal.length === 0 && notYet.length === 0) toast.error('Amazon is set, but no video in this batch is on YouTube to send yet.')
       setAmazonAuto('on')
       if (bgPref && scoutReady) void applyBg(true, 1)
       await load(batchId)
@@ -1357,7 +1352,9 @@ export default function LaunchBoard() {
         <div className="flex flex-col gap-3">
           <p className="text-[12.5px]" style={muted}>{opts.intro}</p>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
-            {MARKETS.filter((m) => !notSoldAnywhere(m.domain) || opts.selected.includes(m.domain)).map((m) => {
+            {/* THE US STORE ONLY: Global Storefront shows US videos in the
+                other countries (lib/launch-batch LIFTOFF_AMAZON_MARKET). */}
+            {MARKETS.filter((m) => m.domain === LIFTOFF_AMAZON_MARKET).map((m) => {
               const on = opts.selected.includes(m.domain)
               const state = signin[m.domain]
               return (
@@ -1470,19 +1467,6 @@ export default function LaunchBoard() {
               )
             })}
           </div>
-          {/* THE COUNTRIES THAT WERE HIDDEN, in one line, so a missing card
-              reads as a checked answer and not as a country MVP forgot. */}
-          {(() => {
-            const hidden = MARKETS.filter((m) => notSoldAnywhere(m.domain) && !opts.selected.includes(m.domain))
-            if (!hidden.length) return null
-            const n = avail?.videos.length ?? 0
-            return (
-              <p className="text-[11.5px]" style={muted}>
-                Not sold in: {hidden.map((m) => m.country).join(', ')}.{' '}
-                {n === 1 ? 'Amazon does not sell this product there' : `Amazon sells none of these ${n} products there`}, under this ASIN or under a listing of its own (same barcode, or same brand and model or name).
-              </p>
-            )
-          })()}
           {/* WHY SOME SAY "NOT CHECKED", rather than leaving it to look like
               a verdict. */}
           {avail?.skipped && (
@@ -1712,7 +1696,7 @@ export default function LaunchBoard() {
 
       {/* ── 4. countries (not in Liftoff part 1: Amazon is part 2) ───────── */}
       {!batch.amazon_later && <StepCard
-        n={4} title={step('countries')?.title ?? 'Pick your Amazon countries'}
+        n={4} title={step('countries')?.title ?? 'Amazon: the US store'}
         detail={step('countries')?.detail ?? ''} done={!!step('countries')?.done}
         current={!!step('countries')?.current} open={open === 'countries'} onToggle={() => toggle('countries')}
       >
@@ -1723,7 +1707,7 @@ export default function LaunchBoard() {
             void patchBatch({ markets: cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d] })
           },
           disabled: busy === 'batch',
-          intro: 'Chosen once for the whole batch. A country that does not speak English gets its own title and its own dubbed audio, made by MVP, and the same thumbnail as everywhere else.',
+          intro: 'Liftoff uploads to your US storefront only. Amazon\u2019s Global Storefront shows your US videos in the other countries\u2019 storefronts, so there is nothing to translate or dub.',
         })}
       </StepCard>}
 
@@ -2263,28 +2247,23 @@ export default function LaunchBoard() {
               </div>
               <p className="text-[12.5px]" style={muted}>
                 {startedDomains.length > 0
-                  ? `Amazon started for ${batch.markets.map((m) => m.country).join(', ')}. Each video goes to each country once its product is checked there and its translation and dub are done; the board below shows each one. To add countries, tick them and press Start again.`
-                  : 'Pick the countries, then press Start Amazon. Amazon gets your original video without the CTA, and the same thumbnail as YouTube.'}
+                  ? 'Amazon started for your US storefront. Each video goes up once its product is checked; the board below shows each one.'
+                  : 'Press Start Amazon and each video goes to your US storefront: your original video without the CTA, and the same thumbnail as YouTube. Amazon\u2019s Global Storefront shows it in the other countries.'}
               </p>
               {countryGrid({
-                selected: [...startedDomains, ...amazonPick],
-                onToggle: (d) => {
-                  if (startedDomains.includes(d)) { toast('Amazon is already started for that country.'); return }
-                  setAmazonPick((p) => (p.includes(d) ? p.filter((x) => x !== d) : [...p, d]))
-                },
-                disabled: amazonStarting,
-                intro: 'A country that does not speak English gets its own title and its own dubbed audio, made by MVP. Countries that sell none of these products are left out.',
+                selected: [LIFTOFF_AMAZON_MARKET],
+                onToggle: () => {},
+                disabled: true,
+                intro: 'Your US storefront only. Global Storefront takes it to the other countries.',
               })}
               <div className="flex items-center gap-3 flex-wrap">
                 <button
-                  onClick={() => void startAmazon(amazonPick)}
-                  disabled={amazonStarting || amazonPick.length === 0}
+                  onClick={() => void startAmazon([LIFTOFF_AMAZON_MARKET])}
+                  disabled={amazonStarting || startedDomains.length > 0}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
                   style={{ background: 'linear-gradient(135deg,#FF9900,#F97316)' }}>
                   {amazonStarting ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-                  {amazonStarting ? 'Starting…' : amazonPick.length === 0
-                    ? (startedDomains.length ? 'Tick a country to add' : 'Tick your countries')
-                    : `Start Amazon (${amazonPick.length} ${amazonPick.length === 1 ? 'country' : 'countries'})`}
+                  {amazonStarting ? 'Starting…' : startedDomains.length > 0 ? 'Amazon started' : 'Start Amazon (US store)'}
                 </button>
                 {scoutReady === false && (
                   <span className="text-[11.5px]" style={{ color: '#d97706' }}>SCOUT is not installed in this browser. MVP prepares everything, but the uploads need SCOUT.</span>

@@ -282,7 +282,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     note: (batch.markets ?? []).length > 0
       ? 'YouTube is handled from here. Amazon goes through SCOUT in your Chrome, signed in as you: from the Liftoff page, or from a background tab SCOUT opens while Chrome is open.'
       : batch.amazon_later
-        ? 'YouTube is handled from here. Amazon is part 2: once YouTube is done, pick the countries and press Start Amazon.'
-        : 'YouTube is handled from here. No Amazon countries were picked, so nothing goes to a storefront.',
+        ? 'YouTube is handled from here. Amazon is part 2: once YouTube is done, press Start Amazon and each video goes to your US storefront.'
+        : 'YouTube is handled from here. The US store was not ticked, so nothing goes to a storefront.',
   })
 }

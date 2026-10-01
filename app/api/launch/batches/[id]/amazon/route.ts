@@ -1,7 +1,9 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// POST /api/launch/batches/[id]/amazon { markets } — Liftoff part 2: Start
-// Amazon for a batch whose videos are on YouTube.
+// POST /api/launch/batches/[id]/amazon — Liftoff part 2: Start Amazon for a
+// batch whose videos are on YouTube. The US store only (lib/launch-batch
+// LIFTOFF_AMAZON_MARKET): Global Storefront shows US videos in the other
+// countries, so nothing else is queued, whatever the request names.
 //
 // NO SECOND PIPELINE. This does exactly what the hand-over does when a batch
 // launches with countries: a row per video per country in the coverage grid,
@@ -22,6 +24,7 @@ import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/markets'
 import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
+import { LIFTOFF_AMAZON_MARKET } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -46,9 +49,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { markets?: unknown }
-  const markets = [...new Set((Array.isArray(body.markets) ? body.markets : []).map(String).filter((d) => !!marketByDomain(d)))]
-  if (markets.length === 0) return NextResponse.json({ error: 'Pick at least one Amazon country.' }, { status: 400 })
+  const markets = [LIFTOFF_AMAZON_MARKET].filter((d) => !!marketByDomain(d))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -66,7 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // The countries go on the batch first: a video that reaches YouTube after
   // this (a latecomer) is handed over with them, and the batch page and the
   // background tab read them to know what to send.
-  const allMarkets = [...new Set([...(batch.markets ?? []), ...markets])]
+  const allMarkets = markets
   const { error: mErr } = await sb.from('launch_batches').update({ markets: allMarkets, updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', user.id)
   if (mErr) return NextResponse.json({ error: `The countries could not be saved: ${mErr.message}` }, { status: 500 })
 

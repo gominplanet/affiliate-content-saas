@@ -26,7 +26,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
-import { ctaStickerAllowed, ctaTopLeft, type CtaPreset } from '@/lib/launch-batch'
+import { ctaStickerAllowed, ctaTopLeft, type CtaPreset, liftoffMarkets } from '@/lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, parseFacePick, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
@@ -1364,7 +1364,9 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
   try {
     const { data: batch } = await sb.from('launch_batches')
       .select('markets').eq('id', it.batch_id).maybeSingle()
-    const markets: string[] = (batch?.markets ?? []).filter((d: string) => !!marketByDomain(d))
+    // The US store only, even for a batch saved with more before Liftoff
+    // stopped sending other countries (lib/launch-batch liftoffMarkets).
+    const markets: string[] = liftoffMarkets((batch?.markets ?? []).filter((d: string) => !!marketByDomain(d)))
     // NO COUNTRIES IS NOT NOTHING TO DO. Liftoff part 1 (and a YouTube only
     // batch) still records the video, its clean original and its Amazon
     // title, so part 2 has everything it needs when Start Amazon is pressed.
@@ -1504,14 +1506,14 @@ async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   const candidates = rows ?? []
   if (candidates.length === 0) return { linked: 0, failed: 0 }
 
-  // A batch that picked no countries has nothing to hand over, ever. Filtered
+  // A batch without the US store has nothing to hand over, ever. Filtered
   // here so those rows cannot take every slot in the limit, firing after
   // firing, and starve the ones that do.
   const batchIds = [...new Set(candidates.map((c: { batch_id: string }) => c.batch_id))]
   const { data: batches } = await sb.from('launch_batches').select('id,markets').in('id', batchIds)
   const withMarkets = new Set(
     ((batches ?? []) as Array<{ id: string; markets: string[] | null }>)
-      .filter((b) => (b.markets ?? []).some((d) => !!marketByDomain(d)))
+      .filter((b) => liftoffMarkets(b.markets).length > 0)
       .map((b) => b.id),
   )
 

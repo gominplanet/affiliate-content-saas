@@ -187,6 +187,22 @@ export function ctaTopLeft(
  */
 /** The reason a video held private for paid promotion carries, the one the
  *  uploader writes and the one lib/launch-release looks for. */
+/**
+ * LIFTOFF SENDS AMAZON THE US STORE ONLY.
+ *
+ * Amazon is rolling out Global Storefront: a creator's US storefront videos
+ * are featured in the other countries' storefronts automatically. So Liftoff
+ * uploads each video once, to the US store, and no longer translates, dubs or
+ * uploads per country. Enforced here and on the server (the batch, Start
+ * Amazon and the hand-over all keep only this), not only on the page.
+ * Global Sync is separate and unchanged.
+ */
+export const LIFTOFF_AMAZON_MARKET = 'amazon.com'
+/** The Amazon stores a Liftoff batch may send to: the US store, or none. */
+export function liftoffMarkets(markets: readonly string[] | null | undefined): string[] {
+  return (markets ?? []).includes(LIFTOFF_AMAZON_MARKET) ? [LIFTOFF_AMAZON_MARKET] : []
+}
+
 export const HELD_FOR_PAID_PROMOTION = 'Kept private. YouTube did not confirm paid promotion'
 
 /**
@@ -420,11 +436,11 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
     },
     {
       id: 'countries',
-      title: 'Pick your Amazon countries',
+      title: 'Amazon: the US store',
       done: batch.markets.length > 0,
       detail: batch.markets.length === 0
-        ? 'Where these should end up. Non-English stores get a translation and a dub.'
-        : `${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'}.`,
+        ? 'Tick the US store. Global Storefront shows your US videos in the other countries.'
+        : 'The US store. Global Storefront shows them in the other countries.',
     },
     {
       id: 'products',
@@ -616,11 +632,9 @@ export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
   else if (own > 0) out.push(`${own} on YouTube at their own date and time, the rest ${cadenceLabel(slots).toLowerCase()}${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
   else out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
 
-  if (batch.amazon_later && batch.markets.length === 0) out.push('Amazon comes after, in part 2: once YouTube is done you pick the countries and press Start Amazon.')
-  else if (batch.markets.length === 0) out.push('No Amazon storefronts, so this is YouTube only.')
-  else {
-    out.push(`${batch.markets.length} Amazon ${batch.markets.length === 1 ? 'storefront' : 'storefronts'}, each one as soon as its translation and dub are done, not on the YouTube schedule.`)
-  }
+  if (batch.amazon_later && batch.markets.length === 0) out.push('Amazon comes after, in part 2: once YouTube is done you press Start Amazon and each video goes to your US storefront.')
+  else if (batch.markets.length === 0) out.push('No Amazon storefront, so this is YouTube only.')
+  else out.push('Your US Amazon storefront, each video as soon as it is ready, not on the YouTube schedule. Global Storefront shows it in the other countries.')
   return out
 }
 
