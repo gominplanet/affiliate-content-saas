@@ -1010,7 +1010,7 @@ export function billingWindow(opts: {
       resetLabel: end ? fmt(end) : 'your next billing date',
     }
   }
-  const now = new Date()
+  const now = opts.now ?? new Date()
   const startISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
   const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
   return { startISO, resetLabel: fmt(reset) }
