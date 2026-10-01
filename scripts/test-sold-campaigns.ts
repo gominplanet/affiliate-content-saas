@@ -21,7 +21,7 @@ check('a full campaign is left out', /c\.available_slot != null && c\.available_
 check('already accepted is read from both places MVP records it',
   /from\('cc_accepted_campaigns'\)/.test(LIB) && /from\('campaigns'\)\.select\('cc_campaign_id'\)/.test(LIB) && /if \(accepted\.has\(c\.campaign_id\)\) continue/.test(LIB))
 check('the best earner comes first', /y\.earningsCents - x\.earningsCents/.test(LIB))
-check('it is Labs', /canUsePreview\('sold_campaigns'/.test(ROUTE) && /sold_campaigns: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
+check('it is Labs', /canUsePreview\('sold_campaigns'/.test(ROUTE) && /sold_campaigns: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
 check('recorded only after Amazon took it',
   ACCEPT.indexOf("if (!res.ok) return { state: 'failed'") > 0 && ACCEPT.indexOf("if (!res.ok) return { state: 'failed'") < ACCEPT.indexOf("fetch('/api/campaigns/sold-matches', { method: 'POST'")
   && /acceptSoldMatch\(m\)/.test(UI) && /acceptSoldMatch\(m, 'sold-match-daily'\)/.test(DAILY))

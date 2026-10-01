@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -37,11 +37,16 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Clip Factory: post the whole video (up to 10 minutes) as one vertical clip.
   whole_video: 'labs',
   // Earnings: accept Creator Connections campaigns for products already selling.
-  sold_campaigns: 'labs',
+  // Back to admin 2026-10-01 with the Earnings page it lives on: its daily
+  // switch is on that page, and its product rows come from that sync.
+  sold_campaigns: 'admin',
   // Liftoff in two parts: YouTube first (no countries), then Amazon when
   // YouTube is done, started with its own button.
   // All six above opened to Pro 2026-09-30 (Seb: "pro should get it all").
   liftoff_split: 'labs',
+  // Amazon Earnings page: back in Labs, admin only, 2026-10-01 (Seb: "put it
+  // into labs for now"). The product sync reads 0 rows.
+  earnings: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

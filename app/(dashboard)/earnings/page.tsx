@@ -25,6 +25,9 @@ import SoldCampaigns from '@/components/earnings/SoldCampaigns'
 import VideoInsights from '@/components/earnings/VideoInsights'
 import VideoProducts from '@/components/earnings/VideoProducts'
 import { readAllVideoProducts, readVideoProductsViaScout } from '@/lib/amazon-video-products-client'
+import { useRouter } from 'next/navigation'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canUsePreview } from '@/lib/labs-preview'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -81,7 +84,21 @@ function sumRows(rs: Row[]) {
 const isQuiet = (r: Row) =>
   !r.clicks && !r.orders && !r.earnings_cents && !r.revenue_cents
 
+// In Labs, admin only (lib/labs-preview earnings). Anyone else is sent to the
+// dashboard rather than shown a page that reads nothing.
 export default function EarningsPage() {
+  const tier = useEffectiveTier()
+  const router = useRouter()
+  useEffect(() => {
+    if (tier !== null && !canUsePreview('earnings', tier)) router.replace('/dashboard')
+  }, [tier, router])
+  if (tier === null || !canUsePreview('earnings', tier)) {
+    return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin" style={muted} /></div>
+  }
+  return <Earnings />
+}
+
+function Earnings() {
   const [rows, setRows] = useState<Row[]>([])
   const [totals, setTotals] = useState<Totals | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
