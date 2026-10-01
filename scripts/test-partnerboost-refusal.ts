@@ -22,6 +22,20 @@ check('the live Finder scan says so too', /if \(!brandListOk && brandListError\)
 check('a catalog older than two days is called stale, not instant',
   /> 2 \* 86_400_000/.test(UI) && /The automatic refresh has not succeeded since then/.test(UI))
 
+// A token is checked with PartnerBoost before "Connected" is shown, a GET
+// refused as an unknown publisher is retried as the documented POST, a saved
+// key that cannot be read is never swapped for the shared env key, and brands
+// whose products are refused are counted, not read as empty.
+const SAVE = readFileSync('app/api/integrations/external/route.ts', 'utf8')
+const SVC = readFileSync('services/partnerboost/index.ts', 'utf8')
+const KEYS = readFileSync('lib/external-keys.ts', 'utf8')
+check('a PartnerBoost token is verified before it is saved', /verifyPartnerBoostToken\(cleanPastedKey\(key\)\)/.test(SAVE) && /if \(!check\.known\)/.test(SAVE) && /status: 422/.test(SAVE))
+check('a good token clears the 12 hour sync back-off', /pb_sync_failed:\$\{g\.userId\}/.test(SAVE))
+check('a refused GET is retried as POST JSON', /code !== 1000 && first\?\.status\?\.code !== 1001\) return first/.test(SVC) && /method: 'POST'/.test(SVC))
+check('an unreadable saved key is not replaced by the env key', /saved key could not be decrypted[\s\S]{0,40}return null/.test(KEYS))
+check('refused product feeds are counted and said', /productErrors\+\+/.test(SW) && /refused every product request/.test(SW) && /PartnerBoost refused the products of/.test(UI))
+check('no screen sends people to an "All Channels" token any more', !/copy the "All Channels"|All-Channels API token|Token Manage → All Channels/.test(SW + FI + readFileSync('components/integrations/ExternalKeyConnect.tsx', 'utf8') + readFileSync('app/(dashboard)/partnerboost/page.tsx', 'utf8')))
+
 if (failures.length) {
   console.error(`\n❌ partnerboost-refusal: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

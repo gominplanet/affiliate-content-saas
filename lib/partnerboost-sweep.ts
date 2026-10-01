@@ -10,6 +10,7 @@ import {
   type PBBrandType, type PBProduct,
 } from '@/services/partnerboost'
 import { parseCommissionPct, parseDollars, scorePb, isAvoidedPb, PB_RULES, type PbCandidate } from '@/lib/partnerboost-rules'
+import { PB_TOKEN_WHERE } from '@/lib/partnerboost-copy'
 
 const NETWORKS: PBBrandType[] = ['Walmart', 'Amazon', 'DTC']
 const MAX_BRAND_PAGES = 6
@@ -33,7 +34,7 @@ type SweepBrand = {
 /** Sweep every JOINED brand's products across the networks, in a pool. */
 export async function sweepJoinedProducts(
   token: string, opts: SweepOptions = {},
-): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null }> {
+): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null }> {
   const concurrency = opts.concurrency ?? 12
   const deadlineMs = opts.deadlineMs ?? 250_000
   const focus = (opts.focus || '').trim().toLowerCase()
@@ -71,6 +72,10 @@ export async function sweepJoinedProducts(
   let brandsSwept = 0
   let cursor = 0
   let timedOut = false
+  // A brand whose products could not be read is counted and its reason kept,
+  // never folded into "this brand has no products".
+  let productErrors = 0
+  let productError: string | null = null
   async function sweepOne(b: SweepBrand) {
     let products: PBProduct[] = []
     try {
@@ -78,7 +83,7 @@ export async function sweepJoinedProducts(
         ? await listAmazonProducts(token, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
         : await listPartnerBoostProducts(token, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
       products = r.products
-    } catch { brandsSwept++; return }
+    } catch (e) { productErrors++; if (!productError) productError = e instanceof Error ? e.message : String(e); brandsSwept++; return }
     for (const p of products) {
       raw.push({
         key: (p.sku && String(p.sku)) || p.url,
@@ -109,7 +114,7 @@ export async function sweepJoinedProducts(
     }
   }))
 
-  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError }
+  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError }
 }
 
 /**
@@ -121,8 +126,8 @@ export async function sweepJoinedProducts(
 export async function syncUserCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
-): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean }> {
-  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError } = await sweepJoinedProducts(token, {
+): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean; productErrors: number; productError: string | null }> {
+  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError } = await sweepJoinedProducts(token, {
     concurrency: 12,
     deadlineMs: opts.deadlineMs ?? 260_000,
     // Cache everything worth keeping — drop only zero-commission brands.
@@ -132,8 +137,13 @@ export async function syncUserCache(
   if (!brandListOk && brandListError) {
     const refused = /token|publisher does not exist|user not exist/i.test(brandListError)
     throw new Error(refused
-      ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). In PartnerBoost open Settings, Token Manage, copy the "All Channels" API token, and paste it into External Integrations. Your saved catalog is kept until then.`
+      ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). ${PB_TOKEN_WHERE} Then paste it into the Connect PartnerBoost panel. Your saved catalog is kept until then.`
       : `PartnerBoost did not answer the brand list (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept; MVP tries again every half hour.`)
+  }
+  // Every joined brand's products refused: the token reads the brand list but
+  // not the product feeds. Said, never saved as an empty catalogue.
+  if (brandsSwept > 0 && productErrors === brandsSwept) {
+    throw new Error(`PartnerBoost listed your ${joinedTotal} joined brands but refused every product request (${String(productError || '').replace(/^PartnerBoost:\s*/, '')}). Your saved catalog is kept.`)
   }
   const runStart = new Date().toISOString()
   const bestByKey = new Map<string, ReturnType<typeof scorePb>>()
@@ -189,7 +199,7 @@ export async function syncUserCache(
       userId, products: rows.length, brandsSwept, joinedTotal, timedOut,
     })
   }
-  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe }
+  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe, productErrors, productError }
 }
 
 /**

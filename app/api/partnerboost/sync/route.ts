@@ -44,7 +44,7 @@ export async function POST() {
 
     const r = await syncUserCache(supabase, user.id, token, { deadlineMs: 260_000 })
     return NextResponse.json({
-      ok: true, joinedBrands: r.joinedTotal, brandsSwept: r.brandsSwept, products: r.products, timedOut: r.timedOut, syncedAt: r.syncedAt,
+      ok: true, joinedBrands: r.joinedTotal, brandsSwept: r.brandsSwept, products: r.products, timedOut: r.timedOut, syncedAt: r.syncedAt, productErrors: r.productErrors, productError: r.productError,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unexpected error'

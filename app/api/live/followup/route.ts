@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// /api/live/followup — Amazon Live follow-up (lib/live-followup.ts). LABS,
-// admin only while it is tested (lib/labs-preview.ts live_followup).
+// /api/live/followup — Amazon Live follow-up (lib/live-followup.ts). Pro
+// (lib/labs-preview.ts live_followup).
 //
 // GET                         the creator's follow-ups, newest first
 // GET  ?id=                   one follow-up (without the transcript)
@@ -38,7 +38,7 @@ async function gate() {
   if (!user) return { error: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is still being tested.' }, { status: 403 }) }
+  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of Pro.', upgrade: true }, { status: 403 }) }
   return { userId: user.id as string, tier: (intg?.tier as string | null) ?? null }
 }
 

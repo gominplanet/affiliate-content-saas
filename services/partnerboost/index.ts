@@ -109,12 +109,26 @@ const asNum = (v: any): number | null =>
     : null
 
 async function pbGet(qs: URLSearchParams, timeoutMs = 30_000): Promise<PBEnvelope> {
+  const first = await pbFetch(`${PB_ENDPOINT}?${qs.toString()}`, { method: 'GET' }, timeoutMs)
+  // PartnerBoost's docs show this API as a POST with a JSON body. A GET whose
+  // token is refused (1000 "Publisher does not exist", 1001 "Invalid token")
+  // is tried once more that way before the refusal is believed.
+  if (first?.status?.code !== 1000 && first?.status?.code !== 1001) return first
+  const params = Object.fromEntries(qs.entries())
+  const { mod, op, ...body } = params
+  const second = await pbFetch(`${PB_ENDPOINT}?mod=${encodeURIComponent(mod || '')}&op=${encodeURIComponent(op || '')}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }, timeoutMs).catch(() => null)
+  return second?.status?.code === 0 ? second : first
+}
+
+async function pbFetch(url: string, init: RequestInit, timeoutMs: number): Promise<PBEnvelope> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const res = await fetch(`${PB_ENDPOINT}?${qs.toString()}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
+    const res = await fetch(url, {
+      ...init,
+      headers: { Accept: 'application/json', ...(init.headers || {}) },
       cache: 'no-store',
       signal: ctrl.signal,
     })
@@ -126,6 +140,23 @@ async function pbGet(qs: URLSearchParams, timeoutMs = 30_000): Promise<PBEnvelop
     }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * Does PartnerBoost recognise this token? Asked once, the cheapest way (one
+ * brand). `known` is false only for PartnerBoost's own refusal codes (1000
+ * "Publisher does not exist", 1001 "Invalid token"); any other answer means
+ * the token is real. The message is PartnerBoost's own wording.
+ */
+export async function verifyPartnerBoostToken(token: string): Promise<{ known: boolean; code: number | null; msg: string }> {
+  try {
+    const qs = new URLSearchParams({ mod: 'medium', op: 'monetization_api', token, brand_type: 'Amazon', type: 'json', page: '1', limit: '1' })
+    const j = await pbGet(qs, 15_000)
+    const code = typeof j?.status?.code === 'number' ? j.status.code : null
+    return { known: code !== 1000 && code !== 1001 && code !== null, code, msg: String(j?.status?.msg || '') }
+  } catch (e) {
+    return { known: false, code: null, msg: e instanceof Error ? e.message : String(e) }
   }
 }
 

@@ -56,6 +56,11 @@ export async function getExternalKey(sb: SB, userId: string, provider: ExternalP
     if (data?.encrypted_key) {
       const k = maybeDecrypt(data.encrypted_key)?.trim()
       if (k) return k
+      // The creator saved a key and it cannot be read. Using the shared env
+      // key instead would make every answer about a key they did not give,
+      // which is how a refused token looked like their own. Nothing is used.
+      console.warn('[external-keys] saved key could not be decrypted', provider)
+      return null
     }
   } catch { /* table absent pre-migration → no per-user key */ }
   // Only the operator inherits the shared env key. Everyone else = blank.

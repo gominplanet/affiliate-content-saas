@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// AMAZON LIVE FOLLOW-UP: admin only while tested, drafts only, and every step
+// AMAZON LIVE FOLLOW-UP: Pro, drafts only, and every step
 // says what happened.
 //
 // Pinned here: the stream it reads, the clip windows it cuts, the captions'
@@ -39,9 +39,9 @@ const roundup = composeRoundup({ title: 'Kitchen finds', items: [{ title: 'Air F
 check('the roundup lists linked products and ends with the disclosure', /Air Fryer, 6 Quart, Black: https:\/\/mvpl\.ink\/a/.test(roundup) && !/Vacuum/.test(roundup) && roundup.endsWith('qualifying purchases.'))
 check('no dashes as sentence breaks in the roundup', !/ [–—-] /.test(roundup) && !/[–—]/.test(roundup))
 
-check('admin only while tested', canUsePreview('live_followup', 'admin') && !canUsePreview('live_followup', 'pro'))
+check('open to Pro, not to lower plans', canUsePreview('live_followup', 'pro') && canUsePreview('live_followup', 'admin') && !canUsePreview('live_followup', 'trial'))
 const nav = r('components/layout/DashboardShellV2.tsx')
-check('the Labs item is admin gated', /href: '\/live-followup'[^\n]*gate: isAdmin/.test(nav))
+check('the menu item follows the Pro switch', /href: '\/live-followup'[^\n]*gate: previewOpenToPro\('live_followup'\) \? isPro : isAdmin/.test(nav))
 
 const route = r('app/api/live/followup/route.ts')
 check('the route checks the Labs gate', /canUsePreview\('live_followup'/.test(route))
@@ -68,4 +68,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ live-followup: admin only, drafts only, clips cut from the stream inside the limits, and every step reports what happened')
+console.log('✅ live-followup: Pro, drafts only, clips cut from the stream inside the limits, and every step reports what happened')

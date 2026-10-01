@@ -82,7 +82,10 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
       if (j.needsToken) { setError('Connect your PartnerBoost API key at the top of this page first.'); return }
       if (!j.ok) { setError(j.error || 'Sync failed.'); return }
       setSyncInfo({ count: j.products, syncedAt: j.syncedAt })
-      setNote(`Catalog synced — ${(j.products || 0).toLocaleString()} products across ${j.brandsSwept} of your ${j.joinedBrands} joined brands${j.timedOut ? ' (partial — re-sync to finish the rest)' : ''}. Scans are now instant.`)
+      setNote(`Catalog synced: ${(j.products || 0).toLocaleString()} products across ${j.brandsSwept} of your ${j.joinedBrands} joined brands${j.timedOut ? ' (partial, sync again to finish the rest)' : ''}. Scans are now instant.`)
+      // Brands whose products PartnerBoost would not give are said, not hidden
+      // inside the count.
+      if (j.productErrors) setError(`PartnerBoost refused the products of ${j.productErrors} brand${j.productErrors === 1 ? '' : 's'}: ${String(j.productError || '').replace(/^PartnerBoost:\s*/, '')}`)
       setMatches(null); setSeen(new Set()); setLastKey('') // next scan reads the fresh cache
     } catch { setError('Network error during sync.') }
     finally { setSyncing(false) }

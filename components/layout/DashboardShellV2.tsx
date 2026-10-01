@@ -43,7 +43,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -591,6 +591,9 @@ export default function DashboardShellV2({
         // Amazon Live prep: pick products, get the show (lineup, timings, talking
         // points from the creator's own reviews, teleprompter). Out of Labs 2026-09, Pro.
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live Prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'New' },
+        // Live follow-up: after the Live, a clip per product and a roundup post
+        // from the replay. Drafts only (lib/labs-preview live_followup).
+        { href: '/live-followup', icon: <Scissors size={15} />, label: 'Live Follow-up', gate: previewOpenToPro('live_followup') ? isPro : isAdmin, badge: 'New' },
       ],
     },
     {
@@ -719,9 +722,9 @@ export default function DashboardShellV2({
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isAdmin, badge: 'New' },
-        // Live follow-up: a clip per product and a roundup post from an Amazon
-        // Live replay. Admin only while it is tested (lib/labs-preview live_followup).
-        { href: '/live-followup', icon: <Radio size={15} />, label: 'Live Follow-up', gate: isAdmin, badge: 'New' },
+        // Plan this video: a joined Creator Connections campaign turned into a
+        // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
+        { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
         // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
         // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network

@@ -126,7 +126,7 @@ export default function LiveFollowup() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Labs · Amazon Live</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Amazon Live</p>
         <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Live follow-up</h1>
         <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
           After a Live, paste the replay link. MVP finds the moment you showed each product, cuts a vertical clip for each, and writes an &quot;everything I showed&quot; post. Nothing posts from here: each clip opens in Clip Factory as a draft.

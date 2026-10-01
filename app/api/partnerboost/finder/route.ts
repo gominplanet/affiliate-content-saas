@@ -22,6 +22,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getExternalKey } from '@/lib/external-keys'
 import { sweepJoinedProducts, diversify } from '@/lib/partnerboost-sweep'
+import { PB_TOKEN_WHERE } from '@/lib/partnerboost-copy'
 import {
   pbRules, brandPassesPb, passesPbGates, scorePb, type PbRuleMode, type ScoredPbMatch,
 } from '@/lib/partnerboost-rules'
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: false,
         error: refused
-          ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). In PartnerBoost open Settings, Token Manage, copy the "All Channels" API token, and paste it into External Integrations.`
+          ? `PartnerBoost no longer accepts your API token (${brandListError.replace(/^PartnerBoost:\s*/, '')}). ${PB_TOKEN_WHERE} Then paste it into the Connect PartnerBoost panel.`
           : `PartnerBoost did not answer (${brandListError.replace(/^PartnerBoost:\s*/, '')}). Try again in a few minutes.`,
       }, { status: 502 })
     }

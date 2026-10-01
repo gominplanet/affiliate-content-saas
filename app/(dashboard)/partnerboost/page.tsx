@@ -263,7 +263,7 @@ export default function WalmartPBPage() {
             </li>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> In PartnerBoost go to{' '}
-              <span className="font-medium">Tools → API</span>, copy your <span className="font-medium">All-Channels API token</span>,
+              <span className="font-medium">Token manage</span>, choose your channel, copy <span className="font-medium">that channel&rsquo;s API token</span>,
               and paste it in the <span className="font-medium" style={{ color: '#0E7490' }}>Connect PartnerBoost</span> panel at the
               top of this page. It&rsquo;s stored encrypted, server-side.
             </li>

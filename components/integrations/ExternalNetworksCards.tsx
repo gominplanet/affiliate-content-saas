@@ -29,7 +29,7 @@ const PROVIDERS = [
     tool: 'MVP x PartnerBoost',
     icon: <Store size={16} />,
     blurb: 'Multi-network affiliate platform (Walmart, Amazon, DTC). Powers MVP x PartnerBoost — browse joined brands and publish posts.',
-    where: 'PartnerBoost → Settings → Token Manage → All Channels API token',
+    where: 'PartnerBoost → Token manage → your channel → API token (one token per channel)',
     dash: 'https://app.partnerboost.com/',
   },
   {
