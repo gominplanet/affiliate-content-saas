@@ -45,6 +45,7 @@ export function missedWhen(iso: string, timezone: string | null): string {
 
 export type ReleaseResult =
   | { state: 'scheduled'; at: string }
+  | { state: 'published' }
   | { state: 'waiting'; why: 'no-login' | 'not-yet' }
   | { state: 'late' }
 
@@ -60,6 +61,17 @@ export async function releaseHeld(sb: Sb, it: {
   }
   const yt = new YouTubeOAuthService(token)
   const rb = await yt.readDisclosures(videoId)
+  // WHAT YOUTUBE SAYS COMES FIRST. The held message tells the creator they
+  // can finish in Studio; if they did, the row follows YouTube rather than
+  // overwriting it. Public is public; a time set in Studio is the time.
+  if (rb?.privacyStatus === 'public') {
+    await sb.from('launch_items').update({ state: 'published', reason: null, updated_at: stamp() }).eq('id', it.id)
+    return { state: 'published' }
+  }
+  if (rb?.privacyStatus === 'private' && rb.publishAt && Date.parse(rb.publishAt) > Date.now()) {
+    await sb.from('launch_items').update({ state: 'scheduled', publish_at: rb.publishAt, reason: null, updated_at: stamp() }).eq('id', it.id)
+    return { state: 'scheduled', at: rb.publishAt }
+  }
   if (rb?.paidPromotion !== true) {
     // Still No. To the back of the line; the ten-minute check looks again.
     await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
@@ -67,6 +79,16 @@ export async function releaseHeld(sb: Sb, it: {
   }
   const planned = String(it.planned_publish_at || '')
   const at = Date.parse(planned)
+  // "Send now" was the choice: a past time is the point, not a miss.
+  const { data: now } = await sb.from('launch_items').select('publish_now').eq('id', it.id).maybeSingle()
+  if (now?.publish_now === true) {
+    await yt.updateVideoStatus(videoId, {
+      privacyStatus: 'public', publishAt: null, notifySubscribers: opts.notify,
+      madeForKids: false, embeddable: true, containsSyntheticMedia: false,
+    })
+    await sb.from('launch_items').update({ state: 'published', reason: null, updated_at: stamp() }).eq('id', it.id)
+    return { state: 'published' }
+  }
   if (!Number.isFinite(at) || at < Date.now() + 5 * 60_000) {
     await sb.from('launch_items').update({
       reason: `Kept private. Paid promotion is on now, but its time${Number.isFinite(at) ? `, ${missedWhen(planned, opts.zone)},` : ''} has passed, so it was not scheduled. Give it a new time and press Launch these too.`,

@@ -116,7 +116,9 @@ export async function POST(request: NextRequest) {
     const matches = diversify(sorted, { limit, maxPerBrand: MAX_PER_BRAND, exclude })
 
     return NextResponse.json({
-      ok: true, source: 'live', joinedBrands: joinedTotal, brandsSwept, scannedProducts: raw.length, kept: matches.length,
+      // The picks themselves: left out, the screen read "0 picks" after a
+      // sweep that found some.
+      ok: true, source: 'live', matches, joinedBrands: joinedTotal, brandsSwept, scannedProducts: raw.length, kept: matches.length,
       ...(matches.length === 0 ? { note: 'No products cleared the MVP criteria on this sweep. Try Wide or a different focus keyword.' } : {}),
     })
   } catch (e) {

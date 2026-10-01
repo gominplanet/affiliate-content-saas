@@ -104,15 +104,27 @@ export async function GET(req: Request) {
   for (const j of (jobs ?? [])) if (j.video_id) videoIdByJob.set(j.id, j.video_id)
   const videoIds = Array.from(new Set([...videoIdByJob.values()]))
   const { data: vids } = videoIds.length
-    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url,duration_seconds').eq('user_id', user.id).in('id', videoIds)
+    ? await sb.from('youtube_videos').select('id,youtube_video_id,source_video_url,thumbnail_url,duration_seconds').eq('user_id', user.id).in('id', videoIds)
     : { data: [] }
   const srcByVideo = new Map<string, string>()
   const thumbByVideo = new Map<string, string>()
   const durByVideo = new Map<string, number>()
+  const ytIdByVideo = new Map<string, string>()
   for (const v of (vids ?? [])) {
     if (v.source_video_url) srcByVideo.set(v.id, v.source_video_url)
+    else if (v.youtube_video_id) ytIdByVideo.set(v.id, v.youtube_video_id)
     if (v.thumbnail_url) thumbByVideo.set(v.id, v.thumbnail_url)
     if (v.duration_seconds) durByVideo.set(v.id, Number(v.duration_seconds) || 0)
+  }
+  // THE KEPT ORIGINAL (video_masters, migration 389) when the video row's file
+  // was cleared by the daily clean-up after 24 hours: the upload used to be
+  // skipped as "no video" and the row read "ready" forever.
+  if (ytIdByVideo.size) {
+    try {
+      const { data: masters } = await sb.from('video_masters').select('youtube_video_id,file_url').eq('user_id', user.id).in('youtube_video_id', [...ytIdByVideo.values()])
+      const fileByYt = new Map(((masters ?? []) as Array<{ youtube_video_id: string; file_url: string }>).map((m) => [m.youtube_video_id, m.file_url]))
+      for (const [vid, yt] of ytIdByVideo) { const f = fileByYt.get(yt); if (f) srcByVideo.set(vid, f) }
+    } catch { /* table not there yet: the upload is skipped and says so, as before */ }
   }
 
   // The text-free thumbnail for non-English markets (migration 306). Read it in

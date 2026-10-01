@@ -357,7 +357,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /title: 'Schedule your YouTube posts'/.test(LIB),
     '"cadence" alone does not say which platform is being scheduled')
   check('and the page says Amazon is not on that schedule',
-    /goes up as soon as its translation and dub are done/.test(BOARD),
+    /storefront is not on a schedule: each listing\s+goes up as soon as it is ready/.test(BOARD),
     'a creator who assumes Amazon follows the same times is waiting for something that already happened')
 
   // THE HONEST SENTENCE ABOUT WHAT IS NOT AUTOMATIC.
@@ -1784,8 +1784,8 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a failed poll does not replace the page', /void load\(batchId, true\)/.test(SCREEN) && /if \(!quiet\) setError/.test(SCREEN))
   check('the buttons keep Studio and Amazon apart too',
     /if \(studioRunning\.current\) \{/.test(SCREEN) && /SCOUT is sending to Amazon right now/.test(SCREEN))
-  check('no countries means nothing is sent, not everything',
-    /No Amazon countries are picked for this batch/.test(SCREEN))
+  check('no US store means nothing is sent, not everything',
+    /The US store is not ticked for this batch, so there is nothing to send to Amazon/.test(SCREEN))
   check('a launched batch offers its latecomers a launch', /Launch \{latecomers\.length === 1/.test(SCREEN))
   check('a locked row shows the time the uploader has, not the pattern',
     /fixedAt=\{it\.publish_at \?\? it\.planned_publish_at \?\? null\}/.test(SCREEN) && /const now = !locked &&/.test(SCREEN))

@@ -42,8 +42,15 @@ check('a batch where nothing reached YouTube is not "done"', !youtubePartDone('l
 const held = item({ id: 'd', state: 'blocked', youtube_video_id: 'vid00000002', reason: 'Kept private. YouTube did not confirm paid promotion on it, so it is not scheduled yet.' } as Partial<ItemRow>)
 check('a video held private for paid promotion is not "done": it has no time yet',
   !youtubePartDone('launched', [onYT, held]).done && youtubePartDone('launched', [onYT, held]).waiting === 1)
-check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1 }))
+check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1, held: 0 }))
 
+check('only held videos left: no spinner, said as a thing to do, and Amazon can start for the rest',
+  /!yt\.done && !\(yt\.held > 0 && yt\.waiting === yt\.held\)/.test(read('components/launch/LaunchBoard.tsx'))
+  && /kept private because YouTube has not confirmed paid promotion/.test(read('components/launch/LaunchBoard.tsx'))
+  && /yt\.done \? <><Check size=\{14\} \/> YouTube is done\.<\/>/.test(read('components/launch/LaunchBoard.tsx')))
+const REL = read('lib/launch-release.ts')
+check('a held video follows YouTube: public is published, a Studio time is kept, send-now goes public',
+  /rb\?\.privacyStatus === 'public'/.test(REL) && /publish_at: rb\.publishAt/.test(REL) && /now\?\.publish_now === true/.test(REL))
 check('it is open to Pro and admin, and not below', canUsePreview('liftoff_split', 'admin') && canUsePreview('liftoff_split', 'pro') && !canUsePreview('liftoff_split', 'trial'))
 
 // ── the wiring ─────────────────────────────────────────────────────────────

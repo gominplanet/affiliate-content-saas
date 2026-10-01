@@ -93,7 +93,6 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     id: 'publish', n: '03', tag: 'Publish everywhere', head: 'One video, every surface it belongs on.',
     intro: 'The same review goes to YouTube, your Amazon storefront, your blog and your socials, each one formatted for where it lands.',
     items: [
-      { icon: <Globe size={20} />, flagship: true, wide: true, title: 'Storefront Sync', desc: "Your YouTube catalogue on your US Amazon storefront. MVP checks each product, writes the listing and queues the upload, and Amazon Global Storefront shows your US videos in the other countries." },
       { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish — with paid-promotion disclosure and monetization set for you, not left as homework.' },
       { icon: <Rocket size={20} />, tag: 'Pro', title: 'Liftoff', desc: "Up to ten videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed." },
       { icon: <Store size={20} />, title: 'Blog & WordPress', desc: 'Publish the review to your own blog network — formatted, illustrated, and linked — so you own an asset that keeps earning past the feed.' },
@@ -105,7 +104,6 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     intro: "A viewer in Berlin who lands on the US store rarely buys. MVP's links fix that, and show you exactly where the money comes from.",
     items: [
       { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link — not just Amazon — cloaks the destination, and lands each click in a per-channel group so you see what YouTube, Pinterest and your blog each earn." },
-      { icon: <BarChart3 size={20} />, title: 'Earnings you can read', desc: 'Storefront and click earnings pulled together per period, so you can tell which products, posts and channels are actually paying, and do more of what works.' },
       { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your cloned voice and face stay yours.' },
     ],
   },
@@ -161,7 +159,7 @@ export default function FeaturesPage() {
             <a href="/pricing" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold transition-transform hover:-translate-y-0.5" style={{ color: '#F6F2FF', border: '1px solid rgba(246,242,255,0.28)' }}>See pricing</a>
           </div>
           <div className="flex flex-wrap gap-9 mt-14">
-            {[['9', 'Amazon marketplaces, one upload'], ['100', 'brands messaged in one batch'], ['1', 'voice — yours, in every language']].map(([n, l]) => (
+            {[['10', 'videos in one Liftoff'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
               <div key={l}>
                 <div className="text-[30px] font-extrabold tabular-nums" style={{ color: '#F6F2FF' }}>{n}</div>
                 <div className="text-[13.5px] mt-0.5" style={{ color: '#B4A7CC' }}>{l}</div>

@@ -1494,7 +1494,7 @@ async function noteHandOver(sb: Sb, id: string, r: HandOver, amazonOnly = false)
 const REPAIRS = 10
 async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,state,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id')
+    .select('id,user_id,batch_id,state,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id,reason')
     // BLOCKED TOO, when it is on YouTube: a video kept private after a missed
     // slot is still a video, and its Amazon listings do not wait for YouTube.
     // Its hand-over failing once used to mean it never reached Amazon at all.
@@ -1506,26 +1506,30 @@ async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   const candidates = rows ?? []
   if (candidates.length === 0) return { linked: 0, failed: 0 }
 
-  // A batch without the US store has nothing to hand over, ever. Filtered
-  // here so those rows cannot take every slot in the limit, firing after
-  // firing, and starve the ones that do.
-  const batchIds = [...new Set(candidates.map((c: { batch_id: string }) => c.batch_id))]
-  const { data: batches } = await sb.from('launch_batches').select('id,markets').in('id', batchIds)
-  const withMarkets = new Set(
-    ((batches ?? []) as Array<{ id: string; markets: string[] | null }>)
-      .filter((b) => liftoffMarkets(b.markets).length > 0)
-      .map((b) => b.id),
-  )
-
+  // EVERY BATCH IS REPAIRED, with or without the US store: the hand-over also
+  // records the video and its clean original, which Liftoff part 2 (Start
+  // Amazon) needs. Filtering to batches with markets after the limit let
+  // fifty unrepairable rows hold every slot, and part 1 videos were never
+  // linked, so "joins Amazon within a minute" never came true.
   let linked = 0, failed = 0
-  for (const it of candidates.filter((c: { batch_id: string }) => withMarkets.has(c.batch_id)).slice(0, REPAIRS)) {
+  for (const it of candidates.slice(0, REPAIRS)) {
     // The channel id is not stored on the row, so the title lookup falls back
     // to empty here; the channel sync fills it in later.
     // Amazon-only videos have no YouTube id; they use the same placeholder
     // the first hand-over did, so the retry lands on the same record.
     const r = await handOverToAmazon(sb, it, String(it.youtube_video_id || `upload-${it.id}`), null, it.publish_at)
     if (r.ok) linked++
-    else { failed++; await noteHandOver(sb, it.id, r, it.state === 'amazon_only') }
+    else {
+      failed++
+      await noteHandOver(sb, it.id, r, it.state === 'amazon_only')
+      // To the back of the line whatever the note did, so one row that cannot
+      // be repaired never holds the front. Not a kept-private row: its paid
+      // promotion check counts ten minutes from its last change, and a bump
+      // every minute would stop that check from ever running.
+      if (!/^Kept private\./.test(String((it as { reason?: string | null }).reason ?? ''))) {
+        await sb.from('launch_items').update({ updated_at: new Date().toISOString() }).eq('id', it.id)
+      }
+    }
   }
   return { linked, failed }
 }
@@ -1701,7 +1705,7 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
         notify: notifyByBatch.get(it.batch_id) === true,
         zone: zoneByBatch.get(it.batch_id) ?? null,
       })
-      if (r.state === 'scheduled') scheduled++
+      if (r.state === 'scheduled' || r.state === 'published') scheduled++
       else if (r.state === 'late') late++
       else waiting++
     } catch (e) {

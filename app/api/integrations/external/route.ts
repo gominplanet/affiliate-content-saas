@@ -42,8 +42,14 @@ export async function POST(request: NextRequest) {
   const key = typeof body?.key === 'string' ? body.key.trim() : ''
   if (!isExternalProvider(provider)) return NextResponse.json({ ok: false, error: 'Unknown provider' }, { status: 400 })
   if (!key) return NextResponse.json({ ok: false, error: 'API key required' }, { status: 400 })
-  await setExternalKey(g.supabase!, g.userId!, provider, key)
-  return NextResponse.json({ ok: true })
+  try {
+    await setExternalKey(g.supabase!, g.userId!, provider, key)
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'The key was not saved.' }, { status: 500 })
+  }
+  // What is now in use, read back (its last 4 characters), so the screen shows
+  // the result of the save and not just that it was pressed.
+  return NextResponse.json({ ok: true, status: await externalKeyStatus(g.supabase!, g.userId!) })
 }
 
 export async function DELETE(request: NextRequest) {

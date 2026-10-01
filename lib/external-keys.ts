@@ -62,14 +62,24 @@ export async function getExternalKey(sb: SB, userId: string, provider: ExternalP
   return (await isAdminUser(sb, userId)) ? envKeyFor(provider) : null
 }
 
+/** A pasted key without what copying adds: spaces, line breaks, zero-width
+ *  characters and quotes. A token with one of those is refused by the network
+ *  as if it did not exist ("Publisher does not exist"). */
+export function cleanPastedKey(key: string): string {
+  return String(key || '').replace(/[\s\u200B-\u200D\uFEFF"'`]/g, '')
+}
+
 export async function setExternalKey(sb: SB, userId: string, provider: ExternalProvider, key: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (sb as any).from('external_api_keys').upsert({
+  const { error } = await (sb as any).from('external_api_keys').upsert({
     user_id: userId,
     provider,
-    encrypted_key: maybeEncrypt(key.trim()),
+    encrypted_key: maybeEncrypt(cleanPastedKey(key)),
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,provider' })
+  // A save that did not happen is said: it used to report ok, and the old
+  // key kept being used with nothing on screen to say so.
+  if (error) throw new Error(`The key was not saved: ${error.message}`)
 }
 
 export async function deleteExternalKey(sb: SB, userId: string, provider: ExternalProvider): Promise<void> {

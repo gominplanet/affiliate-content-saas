@@ -826,7 +826,7 @@ export default function LaunchBoard() {
     // NO COUNTRIES MEANS NOTHING TO SEND, not every country. An empty list was
     // left off the request, and the queue read that as "all of them".
     if ((batch?.markets.length ?? 0) === 0) {
-      if (!auto) toast.error('No Amazon countries are picked for this batch, so there is nothing to send.')
+      if (!auto) toast.error('The US store is not ticked for this batch, so there is nothing to send to Amazon.')
       return null
     }
     amazonRunning.current = true
@@ -981,6 +981,8 @@ export default function LaunchBoard() {
         const name = it.title || `Video ${it.position + 1}`
         if (rel?.state === 'scheduled' && rel.at) {
           toast.success(`${name}: paid promotion confirmed by YouTube, so it is now scheduled for ${new Intl.DateTimeFormat('en-GB', { timeZone: batch?.timezone || undefined, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(rel.at))}.`, { duration: 10000 })
+        } else if (rel?.state === 'published') {
+          toast.success(`${name}: YouTube shows it as public, so it is marked published.`, { duration: 10000 })
         } else if (rel?.state === 'late') {
           toast.error(`${name}: paid promotion is on now, but its time has passed, so it was not scheduled. Give it a new time and press Launch these too.`, { duration: 14000 })
         } else if (rel?.state === 'waiting' && rel.why === 'not-yet') {
@@ -1296,7 +1298,7 @@ export default function LaunchBoard() {
     return (
       <div className="max-w-xl">
         <p className="text-[13.5px] mb-4" style={muted}>
-          Set up to ten videos in one sitting. You choose the CTA and the countries once, give each
+          Set up to ten videos in one sitting. You choose the CTA and the thumbnail look once, give each
           video its own product, then press Launch and leave it.
         </p>
         <button
@@ -1584,8 +1586,8 @@ export default function LaunchBoard() {
           </p>
         )}
         <p className="text-[12.5px] mt-1" style={muted}>
-          MVP burns your CTA into each one, builds the thumbnails, writes each country&apos;s title and
-          dubs the audio. All of that runs on our servers with this tab shut. The one part that needs
+          MVP burns your CTA into each one, builds the thumbnails and writes the Amazon title. All of
+          that runs on our servers with this tab shut. The one part that needs
           your browser is the Amazon upload, because it goes through your own logged-in Creator account.
         </p>
       </div>
@@ -1748,8 +1750,8 @@ export default function LaunchBoard() {
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
               {([
                 [true, batch.amazon_later ? 'YouTube, then Amazon' : 'YouTube and Amazon', batch.amazon_later
-                  ? 'Scheduled on YouTube at your times. Amazon is part 2: once YouTube is done you pick the countries and press Start Amazon.'
-                  : 'Scheduled on YouTube at your times, then to every Amazon country you picked.'],
+                  ? 'Scheduled on YouTube at your times. Amazon is part 2: once YouTube is done you press Start Amazon and each video goes to your US storefront.'
+                  : 'Scheduled on YouTube at your times, then to your US Amazon storefront.'],
                 [false, 'Amazon only', 'Skip YouTube. Each video goes to your Amazon storefronts as soon as it is ready.'],
               ] as Array<[boolean, string, string]>).map(([v, label, hint]) => {
                 const on = youtubeOn === v
@@ -1783,8 +1785,8 @@ export default function LaunchBoard() {
             uploading, it stays private and its row asks you for a new time. Nothing goes public that you
             did not choose.
             {batch.markets.length > 0 && (
-              <> Your <strong style={text}>Amazon</strong> storefronts are not on a schedule: each listing
-                goes up as soon as its translation and dub are done.</>
+              <> Your <strong style={text}>Amazon</strong> storefront is not on a schedule: each listing
+                goes up as soon as it is ready.</>
             )}
           </p>
 
@@ -1833,9 +1835,8 @@ export default function LaunchBoard() {
                   for the same date. */}
               {batch.markets.length > 0 && (
                 <p className="text-[11.5px] mt-2 pt-2" style={{ ...muted, borderTop: '1px solid var(--border)' }}>
-                  Amazon is not on this schedule. Each of your {batch.markets.length} {batch.markets.length === 1 ? 'storefront' : 'storefronts'} gets
-                  its listing as soon as that country&apos;s translation and dub are done, up to {' '}
-                  {batch.markets.map((m) => `${m.country} ${room[m.domain] ?? (m.domain === 'amazon.com' ? 20 : 10)}`).join(', ')} more today.
+                  Amazon is not on this schedule. Your US storefront gets each listing as soon as it is ready,
+                  up to {room['amazon.com'] ?? 20} more today.
                 </p>
               )}
             </div>
@@ -2128,7 +2129,7 @@ export default function LaunchBoard() {
             {amazonOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while Chrome is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Not on the YouTube schedule. Once a video is launched and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
+                Not on the YouTube schedule. Once a video is launched and ready, SCOUT sends it to your US storefront by itself.
                 Amazon has no way for MVP to upload from its servers, so SCOUT does it in your Chrome, signed in as you: on this page while it is open, and in a pinned background tab when it is closed (the switch below).
                 Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
@@ -2145,7 +2146,7 @@ export default function LaunchBoard() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
               style={{ background: '#0EA5A4' }}>
               {amazonBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {amazonBusy ? 'Sending to Amazon…' : `Send to Amazon now (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
+              {amazonBusy ? 'Sending to Amazon…' : 'Send to Amazon now (US store)'}
             </button>
             <span className="text-[11.5px] min-w-0 flex-1" style={out.amazonBlocker ? { color: '#d97706' } : muted}>
               {out.amazonBlocker
@@ -2218,15 +2219,26 @@ export default function LaunchBoard() {
               <p className="text-[12.5px]" style={muted}>
                 Opens once part 1 is done. Launch your videos to YouTube first: nothing about Amazon is asked or done until then.
               </p>
-            ) : !yt.done ? (
+            ) : !yt.done && !(yt.held > 0 && yt.waiting === yt.held) ? (
               <p className="text-[12.5px] inline-flex items-center gap-1.5" style={muted}>
                 <Loader2 size={12} className="animate-spin" />
                 Opens when YouTube is done. {yt.onYouTube} of {items.length} scheduled or public on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up or waiting for paid promotion to be confirmed` : ''}.
               </p>
+            ) : !yt.done && yt.onYouTube === 0 ? (
+              // ONLY HELD VIDEOS LEFT, and nothing else is coming: said as a
+              // thing to do, without a spinner over work that will not happen.
+              <p className="text-[12.5px]" style={{ color: '#d97706' }}>
+                {yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private because YouTube has not confirmed paid promotion. Tick Paid promotion in YouTube Studio (or run Studio again from the row below); MVP schedules {yt.held === 1 ? 'it' : 'them'} within ten minutes, and Amazon opens then.
+              </p>
             ) : (<>
-              <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(16,185,129,0.08)' }}>
-                <p className="text-[13.5px] font-semibold flex items-center gap-1.5" style={{ color: '#10B981' }}>
-                  <Check size={14} /> YouTube is done.
+              {!yt.done && (
+                <p className="text-[12.5px]" style={{ color: '#d97706' }}>
+                  {yt.held} {yt.held === 1 ? 'video is' : 'videos are'} kept private because YouTube has not confirmed paid promotion (tick it in Studio and MVP schedules {yt.held === 1 ? 'it' : 'them'}). You can start Amazon now for the {yt.onYouTube} on YouTube.
+                </p>
+              )}
+              <div className="rounded-xl px-3 py-2.5" style={{ background: yt.done ? 'rgba(16,185,129,0.08)' : 'rgba(217,119,6,0.08)' }}>
+                <p className="text-[13.5px] font-semibold flex items-center gap-1.5" style={{ color: yt.done ? '#10B981' : '#d97706' }}>
+                  {yt.done ? <><Check size={14} /> YouTube is done.</> : <>On YouTube so far</>}
                 </p>
                 <p className="text-[12px] mt-0.5" style={muted}>
                   {yt.onYouTube} {yt.onYouTube === 1 ? 'video is' : 'videos are'} on YouTube

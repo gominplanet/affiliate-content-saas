@@ -226,7 +226,7 @@ export async function withAmazonLater<B extends BatchRow>(
  * result and never the plan. A video that could not go does not hold part 2
  * back; it is counted and named instead.
  */
-export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null; reason?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number } {
+export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null; reason?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number; held: number } {
   const launched = batchState === 'launching' || batchState === 'launched'
   // SCHEDULED OR PUBLIC, not merely uploaded. A video held private for paid
   // promotion is uploaded and not scheduled, and calling that "on YouTube"
@@ -236,7 +236,7 @@ export function youtubePartDone(batchState: string, items: Array<{ state: string
   // Could not go, or needs the creator (a missed time): named, and not held for.
   const failed = items.filter((i) => i.state === 'blocked').length - held
   const waiting = items.length - onYouTube - failed
-  return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting }
+  return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting, held }
 }
 
 export async function withYouTubeChoice<B extends BatchRow>(
