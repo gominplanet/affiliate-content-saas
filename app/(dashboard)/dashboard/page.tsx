@@ -24,6 +24,7 @@ import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
+import TodayList from '@/components/dashboard/TodayList'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReconnectBanner from '@/components/dashboard/ReconnectBanner'
@@ -55,7 +56,7 @@ import {
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { PRIMARY_FEATURE } from '@/lib/usage-cap'
-import { canUseDealRadar } from '@/lib/feature-access'
+import { canUseDealRadar, canSeeNav } from '@/lib/feature-access'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -144,6 +145,8 @@ export default async function DashboardPage() {
   const videoCount = videoCountRaw ?? 0
   const publishedCount = postCount ?? 0
   const isNewUser = publishedCount === 0
+  // Pro (and admin) get the Today list; canSeeNav('labs') is the Pro test.
+  const isPro = canSeeNav('labs', tier)
 
   const int = integration as Record<string, unknown> | null
   const wpConnected = int?.setup_status === 'site_ready'
@@ -307,18 +310,24 @@ export default async function DashboardPage() {
           socialConnected={socialConnected}
         />
 
+        {/* Today (Pro): one ranked list of what needs the creator, in place of
+            the stack of panels. The panels it points at move below the actions. */}
+        {isPro && <TodayList />}
+
         {/* Amazon Deal Radar launch — pinned to the very top of the body, above
             "What do you want to do?", so paid users see it first. Dismissible. */}
         {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
 
+        {!isPro && (<>
         {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
             products. Self-hides when there's nothing to show. */}
-        <PriceAlertsPanel />
+        <div id="price-alerts" className="scroll-mt-20"><PriceAlertsPanel /></div>
 
         {/* Daily CC Campaign Digest — ~25 Creator Connections campaigns picked
             for this creator from their blog + YouTube history, refreshed every
             24h. Self-hides for users without CC access or with no matches. */}
-        <DailyCcDigest />
+        <div id="cc-digest" className="scroll-mt-20"><DailyCcDigest /></div>
+        </>)}
 
         {/* Free-research first — for Free Trial users the research finders ARE the
             reason they're here, so surface them above "What do you want to do?".
@@ -351,6 +360,17 @@ export default async function DashboardPage() {
             <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
           </div>
         </section>
+
+        {isPro && (<>
+        {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
+            products. Self-hides when there's nothing to show. */}
+        <div id="price-alerts" className="scroll-mt-20"><PriceAlertsPanel /></div>
+
+        {/* Daily CC Campaign Digest — ~25 Creator Connections campaigns picked
+            for this creator from their blog + YouTube history, refreshed every
+            24h. Self-hides for users without CC access or with no matches. */}
+        <div id="cc-digest" className="scroll-mt-20"><DailyCcDigest /></div>
+        </>)}
 
         {/* ── Opportunities & to-dos ────────────────────────────────────
             Action-first: what to do next to earn more. Cheap to-do cards
