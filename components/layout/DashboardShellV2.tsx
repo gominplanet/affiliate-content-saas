@@ -719,6 +719,9 @@ export default function DashboardShellV2({
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isAdmin, badge: 'New' },
+        // Live follow-up: a clip per product and a roundup post from an Amazon
+        // Live replay. Admin only while it is tested (lib/labs-preview live_followup).
+        { href: '/live-followup', icon: <Radio size={15} />, label: 'Live Follow-up', gate: isAdmin, badge: 'New' },
         // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
         // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network

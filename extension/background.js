@@ -6908,6 +6908,78 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
   }
 }
 
+// ── Amazon Live replay (MVP_AMZ_LIVE_REPLAY) ─────────────────────────────────
+// Live follow-up (Labs): after a creator's Amazon Live, MVP cuts one clip per
+// product from the replay. SCOUT opens the replay page in the creator's own
+// browser, starts the player muted, and reports what the page loaded: the
+// video stream address (an HLS playlist or an mp4) and the products shown.
+// Nothing is downloaded here; MVP's video service reads the stream itself.
+
+// Runs IN the replay page (MAIN world, so it sees the player's own requests).
+function harvestLiveReplayInPage() {
+  try {
+    const v = document.querySelector('video')
+    if (v) { try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
+    const streams = []
+    const seen = new Set()
+    const add = (u) => { if (u && /^https:\/\//.test(u) && !seen.has(u)) { seen.add(u); streams.push(u) } }
+    if (v && v.currentSrc && /^https:/.test(v.currentSrc)) add(v.currentSrc)
+    for (const e of performance.getEntriesByType('resource')) {
+      const n = e.name || ''
+      if (/\.m3u8(\?|$)/i.test(n) || /\.mp4(\?|$)/i.test(n)) add(n)
+    }
+    const asins = []
+    const aSeen = new Set()
+    const addAsin = (a) => { a = String(a || '').toUpperCase(); if (/^B0[A-Z0-9]{8}$|^[0-9]{9}[0-9X]$/.test(a) && !aSeen.has(a)) { aSeen.add(a); asins.push(a) } }
+    document.querySelectorAll('a[href*="/dp/"]').forEach((el) => { const m = /\/dp\/([A-Z0-9]{10})/i.exec(el.getAttribute('href') || ''); if (m) addAsin(m[1]) })
+    document.querySelectorAll('[data-asin]').forEach((el) => addAsin(el.getAttribute('data-asin')))
+    const html = document.documentElement ? document.documentElement.innerHTML : ''
+    const re = /"asin"\s*:\s*"([A-Z0-9]{10})"/gi
+    let m; let guard = 0
+    while ((m = re.exec(html)) && guard++ < 400) addAsin(m[1])
+    const og = document.querySelector('meta[property="og:title"]')
+    const title = (og && og.getAttribute('content')) || document.title || ''
+    const durationSec = v && Number.isFinite(v.duration) && v.duration > 0 ? Math.round(v.duration) : null
+    const signIn = /\/ap\/signin/.test(location.href)
+    return { ok: true, streams, asins: asins.slice(0, 60), title: title.slice(0, 200), durationSec, signIn, url: location.href }
+  } catch (e) {
+    return { ok: false, error: 'read-failed' }
+  }
+}
+
+async function readLiveReplay(url, callerTabId) {
+  let u
+  try { u = new URL(String(url || '')) } catch (e) { return { ok: false, error: 'bad-url' } }
+  if (u.protocol !== 'https:' || !/(^|\.)amazon\.com$/.test(u.hostname) || !/^\/live\//.test(u.pathname)) return { ok: false, error: 'not-a-live-page' }
+  let tabId = null
+  let activated = false
+  try {
+    const tab = await chrome.tabs.create({ url: u.toString(), active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    let last = null
+    // The player loads its stream after the page, and a background tab may not
+    // start it at all. Look for 12s in the background, then show the tab for
+    // up to 15s more so the player starts, then give the creator's tab back.
+    for (let i = 0; i < 18; i++) {
+      await _sleep(1500)
+      if (i === 8 && !activated) { try { await chrome.tabs.update(tabId, { active: true }); activated = true } catch (e) {} }
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: harvestLiveReplayInPage })
+      last = (r && r[0] && r[0].result) || null
+      if (last && last.signIn) return { ok: false, error: 'signed-out' }
+      if (last && last.ok && last.streams.length && (last.asins.length || i >= 10)) break
+    }
+    if (!last || !last.ok) return { ok: false, error: 'no-result' }
+    if (!last.streams.length) return { ok: false, error: 'no-stream', asins: last.asins, title: last.title }
+    return last
+  } catch (e) {
+    return { ok: false, error: 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (activated && callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 // ── Cross-marketplace ASIN existence check (MVP_AMZ_ASIN_CHECK) ──────────────
 // Video Launchpad's geo check needs to know if a product is listed on a given
 // Amazon marketplace. Keepa answers this for its supported domains, but a few
@@ -11197,6 +11269,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // under which ASIN? By fetch, no tab (see checkStoreProducts).
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 170000)
     checkStoreProducts(msg.domain, msg.items)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
+  }
+  if (msg.type === 'MVP_AMZ_LIVE_REPLAY') {
+    // Live follow-up (Labs): the replay's stream address and products, read
+    // from the replay page in the creator's browser (see readLiveReplay).
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 90000)
+    readLiveReplay(msg.url, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true

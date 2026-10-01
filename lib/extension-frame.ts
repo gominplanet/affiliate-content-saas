@@ -1120,6 +1120,20 @@ export async function requestStudioVideoFile(videoId: string, uploadUrl: string,
   return { ok: !!resp.ok, bytes: resp.bytes, error: resp.error }
 }
 
+/** What SCOUT read from an Amazon Live replay page (1.21.24+): the stream
+ *  addresses the player loaded, the products on the page, and the length. */
+export type LiveReplayRead = {
+  ok: boolean; streams?: string[]; asins?: string[]; title?: string; durationSec?: number | null; url?: string; error?: string
+}
+export async function requestLiveReplay(url: string): Promise<LiveReplayRead> {
+  const st = await getScoutStatus()
+  if (!st.installed) return { ok: false, error: 'not-installed' }
+  if (_cmpVersion(st.version, '1.21.24') < 0) return { ok: false, error: 'needs-update' }
+  const resp = await sendToExtension<LiveReplayRead>({ type: 'MVP_AMZ_LIVE_REPLAY', url }, 95000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return resp
+}
+
 /** One product's answer from a live Amazon store, read by SCOUT with fetch
  *  and no tab (1.21.21+). `localAsin` is the same product under that store's
  *  own ASIN, found by brand and model or name and confirmed on its page. */

@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -47,6 +47,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Amazon Earnings page: back in Labs, admin only, 2026-10-01 (Seb: "put it
   // into labs for now"). The product sync reads 0 rows.
   earnings: 'admin',
+  // Amazon Live follow-up: clips and a roundup post from a Live replay.
+  // Admin only while it is tested (Seb, 2026-10-01: "behind labs").
+  live_followup: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

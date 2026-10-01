@@ -505,6 +505,26 @@ export default function ClipFactoryPage() {
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }, [supabase])
 
+  // Live follow-up hands a finished vertical clip over as a draft:
+  // /clip-factory?liveClip=<our storage URL>&product=<ASIN>&name=<title>.
+  // Only a clip in MVP's own storage is taken; anything else is ignored.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      const live = q.get('liveClip') || ''
+      const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+      if (!live || !base || !live.startsWith(`${base}/storage/v1/object/public/`)) return
+      const name = (q.get('name') || '').slice(0, 120)
+      const asin = (q.get('product') || '').toUpperCase()
+      setClipSource('existing')
+      setClip({ url: live, title: name || 'Amazon Live clip' })
+      if (/^[A-Z0-9]{10}$/.test(asin)) setProduct(asin)
+      if (name) setProductName(name)
+      setStage('enhance')
+      window.history.replaceState(null, '', window.location.pathname)
+    } catch { /* a bad link just opens Clip Factory as usual */ }
+  }, [])
+
   // Reframe a parked horizontal upload to 9:16 (center-crop or split-screen) on
   // the ingest service, then carry the vertical result into Enhance.
   const doReframe = useCallback(async (mode: 'center' | 'split') => {

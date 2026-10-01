@@ -752,6 +752,59 @@ app.post('/audio', async (req, res) => {
   }
 })
 
+// ── Long streams: an Amazon Live replay ──────────────────────────────────────
+// A replay is an hour or more, served as an HLS playlist. ffmpeg reads it from
+// the URL, so the service only ever pulls what it needs: the audio track for
+// the transcript, or one window for a clip.
+
+// Cut [startSec, startSec+dur] from a stream URL into a local mp4.
+function ffmpegCutWindow(url, startSec, dur, outPath) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-threads', '1',
+      '-ss', String(startSec), '-i', url, '-t', String(dur),
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+      '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
+      '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
+    ], { timeout: 240_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 }, (err, _o, stderr) => {
+      if (err) return reject(new Error(`stream cut failed: ${String(stderr || err.message).slice(0, 200)}`))
+      resolve()
+    })
+  })
+}
+
+// POST /stream-audio — the audio of a long stream, small enough to transcribe.
+//   body: { url, userId }  →  { url, durationSeconds }
+app.post('/stream-audio', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.url || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const tmp = path.join(os.tmpdir(), `saud-${Date.now()}.m4a`)
+  try {
+    await assertPublicHttpUrl(url)
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error', '-i', url, '-t', String(MAX_SECONDS),
+        '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'aac', '-b:a', '32k', '-y', tmp,
+      ], { timeout: 285_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 }, (err, _o, stderr) => {
+        if (err) return reject(new Error(`could not read the stream: ${String(stderr || err.message).slice(0, 200)}`))
+        resolve()
+      })
+    })
+    if (!fs.existsSync(tmp)) throw new Error('the stream gave no audio')
+    const durationSeconds = await ffprobeDuration(tmp)
+    const key = `${userId || 'ingest'}/live-audio-${Date.now()}.m4a`
+    await uploadToSupabase(key, tmp, 'audio/mp4')
+    return res.json({ url: publicUrl(key), durationSeconds })
+  } catch (e) {
+    console.error('[stream-audio] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    cleanupTmp(tmp)
+  }
+})
+
 // ── Render options: split-screen reframe (#1) ────────────────────────────────
 // The reframe filtergraph lives in render-filters.js so it's unit-tested
 // directly (test-render-filters.js).
@@ -791,6 +844,10 @@ app.post('/render-short', async (req, res) => {
   const userId = String(req.body?.userId || '').trim()
   const reframeMode = req.body?.reframe === 'split' ? 'split' : 'center'
   const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
+  // stream: the source is a long stream (an Amazon Live replay playlist or a
+  // big mp4). ffmpeg reads the window straight from it, so the whole replay is
+  // never downloaded.
+  const fromStream = !fromYouTube && req.body?.stream === true
   if (!fromYouTube && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
   const dur = Math.min(180, endSec - startSec)
@@ -816,6 +873,10 @@ app.post('/render-short', async (req, res) => {
         '-o', srcTmp, '--no-playlist', '--no-warnings',
         `https://www.youtube.com/watch?v=${ytVid}`,
       ])
+      renderStart = 0
+    } else if (fromStream) {
+      await assertPublicHttpUrl(url) // SSRF guard for creator-supplied source URLs
+      await ffmpegCutWindow(url, startSec, dur, srcTmp)
       renderStart = 0
     } else {
       await assertPublicHttpUrl(url) // SSRF guard for creator-supplied source URLs
