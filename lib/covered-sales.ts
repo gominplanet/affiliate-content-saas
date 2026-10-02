@@ -14,6 +14,7 @@
 // for everyone) is read first and costs nothing. Only what it does not cover
 // goes to Keepa, through the day-old cache, in batches of a hundred.
 
+import { ytFetch } from '@/lib/youtube-quota'
 import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,7 +74,7 @@ export async function videoVisibility(apiKey: string | undefined, ids: string[])
       url.searchParams.set('part', 'status')
       url.searchParams.set('id', batch.join(','))
       url.searchParams.set('maxResults', '50')
-      const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
+      const res = await ytFetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
       if (!res.ok) return
       const data = await res.json() as { items?: Array<{ id?: string; status?: { privacyStatus?: string } }> }
       const byId = new Map((data.items ?? []).filter((v) => v.id).map((v) => [String(v.id), v]))

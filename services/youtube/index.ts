@@ -1,4 +1,6 @@
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+// Every YouTube call is counted against the shared daily quota, and held
+// back once YouTube refuses (lib/youtube-quota).
+import { ytFetch as fetchWithTimeout, noteTokenOwner } from '@/lib/youtube-quota'
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 /**
@@ -1278,7 +1280,7 @@ export class YouTubeOAuthService {
       const picked = items.slice().sort((a, b) => score(b) - score(a))[0]
       if (!picked?.id) return null
 
-      const dlRes = await fetch(
+      const dlRes = await fetchWithTimeout(
         `https://www.googleapis.com/youtube/v3/captions/${encodeURIComponent(picked.id)}?tfmt=srt`,
         { headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(15_000) },
       )
@@ -1359,13 +1361,16 @@ export async function getValidYouTubeToken(integration: Record<string, unknown>)
 
   if (!accessToken) throw new Error('YouTube OAuth not connected')
 
+  const owner = (integration.user_id as string | null | undefined) ?? null
   // Refresh if expired or expiring within 2 minutes
   if (expiry && Date.now() > expiry - 120_000) {
     if (!refreshToken) throw new Error('YouTube token expired and no refresh token available')
     const fresh = await refreshYouTubeToken(refreshToken)
+    noteTokenOwner(fresh.access_token, owner)
     return fresh.access_token
   }
 
+  noteTokenOwner(accessToken, owner)
   return accessToken
 }
 
@@ -1390,6 +1395,8 @@ export function youTubeErrorText(status: number, body: string): string {
     reason = j.error?.errors?.find((e) => e.reason)?.reason || ''
     message = String(j.error?.message || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
   } catch { /* not JSON */ }
+  // MVP holding back optional calls to keep room for uploads (lib/youtube-quota).
+  if (/^MVP is keeping/.test(message)) return `YouTube API error ${status}: quotaExceeded (held by MVP). ${message}`
   if (/quotaExceeded|dailyLimitExceeded/i.test(reason) || /exceeded your quota/i.test(message)) {
     return `YouTube API error ${status}: quotaExceeded. MVP's daily YouTube allowance is used up. It resets at midnight Pacific time; reconnecting does not help.`
   }

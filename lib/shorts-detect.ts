@@ -19,6 +19,7 @@
 // private drafts too, which a public probe cannot see. For anything the API
 // did not answer, youtube.com/shorts/<id> is asked: a Short answers there,
 // and a regular video is redirected to /watch.
+import { ytFetch } from '@/lib/youtube-quota'
 
 // A Short is at most three minutes (YouTube's limit since October 2024).
 export const SHORT_MAX_SECONDS = 180
@@ -82,13 +83,13 @@ export async function detectShorts(ids: string[], accessToken?: string | null, o
         url.searchParams.set('part', 'contentDetails,fileDetails')
         url.searchParams.set('id', batch.join(','))
         url.searchParams.set('maxResults', '50')
-        const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) })
+        const res = await ytFetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) })
         if (!res.ok) {
           // THE FRAME SIZE CAN BE REFUSED (fileDetails is owner-only, and a
           // login for another channel is not the owner). The length is not:
           // over three minutes is a regular video whatever its shape.
           const u2 = new URL(url.toString()); u2.searchParams.set('part', 'contentDetails')
-          const r2 = await fetch(u2.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null)
+          const r2 = await ytFetch(u2.toString(), { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null)
           if (r2?.ok) {
             const d2 = await r2.json() as { items?: Array<{ id?: string; contentDetails?: { duration?: string } }> }
             for (const v of d2.items ?? []) {

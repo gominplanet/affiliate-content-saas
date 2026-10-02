@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { ytFetch } from '@/lib/youtube-quota'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -26,7 +27,7 @@ export async function GET() {
     url.searchParams.set('id', channelId)
     url.searchParams.set('key', apiKey)
 
-    const res = await fetchWithTimeout(url.toString())
+    const res = await ytFetch(url.toString())
     if (!res.ok) return NextResponse.json(null)
 
     const json = await res.json()
