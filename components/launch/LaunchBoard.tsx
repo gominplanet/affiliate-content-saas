@@ -1781,6 +1781,7 @@ export default function LaunchBoard() {
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
           {items.map((it, i) => (
             <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
+              onReload={async () => { if (batchId) await load(batchId) }}
               hideAmazon={!!batch.amazon_later && batch.markets.length === 0}
               onMove={moveItem} first={i === 0} last={i === items.length - 1}
               faces={faces} faceAvailable={faceAvailable} />
@@ -2670,9 +2671,104 @@ function progressNote(it: Item): string {
   return attempt
 }
 
+/**
+ * A video's thumbnail, and the creator's own instead of MVP's. Their own goes
+ * to YouTube and Amazon exactly as uploaded (made a JPEG under YouTube's 2MB),
+ * and nothing MVP does later builds over it. Once the video is on YouTube its
+ * thumbnail is YouTube's, changed in Studio.
+ */
+function ItemThumbnail({ item, onReload }: { item: Item; onReload: () => Promise<void> }) {
+  const [working, setWorking] = useState<'up' | 'back' | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const own = item.thumbnail_source === 'creator'
+  const onYouTube = !!String(item.youtube_video_id || '').trim()
+  const lab = { color: 'var(--text-2)', fontSize: 11, fontWeight: 600 } as const
+
+  async function upload(file: File) {
+    setErr(null); setWorking('up')
+    try {
+      // UNDER THE UPLOAD LIMIT FIRST. The server takes about 4MB a request, so
+      // a big image is made a 1920-wide JPEG here before it is sent.
+      let send: Blob = file
+      if (file.size > 3.5 * 1024 * 1024) {
+        try {
+          const bmp = await createImageBitmap(file)
+          const w = Math.min(1920, bmp.width), h = Math.round(bmp.height * (w / bmp.width))
+          const c = document.createElement('canvas'); c.width = w; c.height = h
+          c.getContext('2d')?.drawImage(bmp, 0, 0, w, h)
+          const b = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', 0.9))
+          if (b) send = b
+        } catch { /* sent as it is; the server says if it is too big */ }
+      }
+      if (send.size > 4 * 1024 * 1024) { setErr('That image is too large to upload. Use one under 4MB.'); return }
+      const fd = new FormData()
+      fd.append('file', send, send === file ? file.name : 'thumbnail.jpg')
+      const r = await fetch(`/api/launch/items/${item.id}/thumbnail`, { method: 'POST', body: fd, signal: AbortSignal.timeout(90_000) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j?.error || `It could not be uploaded (${r.status}).`); return }
+      toast.success('Your thumbnail is on this video.')
+      await onReload()
+    } catch {
+      setErr('The upload did not finish. Try again.')
+    } finally { setWorking(null) }
+  }
+  async function backToMvp() {
+    setErr(null); setWorking('back')
+    try {
+      const r = await fetch(`/api/launch/items/${item.id}/thumbnail`, { method: 'DELETE', signal: AbortSignal.timeout(30_000) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j?.error || 'That did not work.'); return }
+      toast.success('MVP builds this thumbnail again.')
+      await onReload()
+    } catch { setErr('That did not finish. Try again.') } finally { setWorking(null) }
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <span className="w-5" />
+      <div className="flex-1 min-w-0">
+        <span className="block mb-1" style={lab}>Thumbnail</span>
+        <div className="flex items-center gap-3 flex-wrap">
+          {item.thumbnail_url
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={item.thumbnail_url} alt="" className="h-14 w-auto rounded border" style={{ borderColor: 'var(--border)' }} />
+            : <span className="text-[11.5px]" style={muted}>MVP builds one while it prepares the video.</span>}
+          {!onYouTube && (
+            <span className="flex items-center gap-2">
+              <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f) }} />
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={!!working}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11.5px] disabled:opacity-40"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {working === 'up' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                {own ? 'Use a different one' : 'Use my own'}
+              </button>
+              {own && (
+                <button type="button" onClick={() => void backToMvp()} disabled={!!working}
+                  className="text-[11.5px] underline disabled:opacity-40" style={muted}>
+                  {working === 'back' ? 'Switching…' : 'Let MVP build it instead'}
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+        <span className="block text-[11px] mt-1" style={muted}>
+          {onYouTube ? 'This video is on YouTube, so change its thumbnail in YouTube Studio.'
+            : own ? 'Your own thumbnail. It goes to YouTube and Amazon as you uploaded it, and MVP never builds over it.'
+            : 'JPG or PNG, at least 640 wide (1280 by 720 is best). It goes to YouTube and Amazon as you upload it.'}
+        </span>
+        {err && <span className="block text-[11.5px] mt-1" style={{ color: '#dc2626' }}>{err}</span>}
+      </div>
+    </div>
+  )
+}
+
 function ItemRowEditor({
-  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false,
+  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false, onReload,
 }: {
+  /** Read the batch again (after this row's own thumbnail changed). */
+  onReload: () => Promise<void>
   /** Liftoff part 1: nothing about Amazon on the row. */
   hideAmazon?: boolean
   item: Item
@@ -2928,6 +3024,9 @@ function ItemRowEditor({
         </label>
       </div>}
 
+      {/* ── this video's thumbnail: MVP's, or the creator's own ──────────── */}
+      <ItemThumbnail item={item} onReload={onReload} />
+
       {/* ── this video's own face ─────────────────────────────────────────── */}
       {faceAvailable && (
         <div className="flex items-start gap-2">
@@ -2952,7 +3051,9 @@ function ItemRowEditor({
               })}
             </div>
             <span className="block text-[11px] mt-1" style={muted}>
-              {item.thumbnail_url && !faceLocked
+              {item.thumbnail_source === 'creator'
+                ? 'This video uses your own thumbnail, so the face here is not used.'
+                : item.thumbnail_url && !faceLocked
                 ? 'Changing it builds this video\'s thumbnails again with the new face.'
                 : 'Only this video. The rest keep the batch\'s face.'}
             </span>

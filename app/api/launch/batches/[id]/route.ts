@@ -376,21 +376,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const lookChanged = patch.thumbnail !== undefined && !same(before.thumbnail, patch.thumbnail)
     if (ctaChanged || lookChanged) {
       const { data: built } = await sb.from('launch_items')
-        .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url')
+        .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url,thumbnail_source')
         .eq('batch_id', id).eq('user_id', user.id)
         // RENDERING TOO: a video being burned in right now has already read
         // the old CTA. Sent back to draft here, and the worker's write only
         // lands on the render it claimed, so the old one is thrown away.
         .in('state', ['rendering', 'preparing', 'prepared', 'blocked'])
         .is('youtube_video_id', null).is('planned_publish_at', null)
-      for (const it of (built ?? []) as Array<{ id: string; state?: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null }>) {
+      for (const it of (built ?? []) as Array<{ id: string; state?: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null; thumbnail_source?: string | null }>) {
+        // A new look never builds over a thumbnail the creator brought.
+        const own = it.thumbnail_source === 'creator'
+        if (own && !ctaChanged) continue
         const redo: Record<string, unknown> = { reason: null, updated_at: new Date().toISOString() }
         if (ctaChanged && (it.rendered_url || it.state === 'rendering')) {
           Object.assign(redo, { state: 'draft', rendered_url: null, render_tries: 0 })
-        } else if (lookChanged && (it.thumbnail_url || it.thumbnail_clean_url)) {
+        } else if (lookChanged && !own && (it.thumbnail_url || it.thumbnail_clean_url)) {
           Object.assign(redo, { state: 'preparing', thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
         } else continue
-        if (lookChanged) Object.assign(redo, { thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
+        if (lookChanged && !own) Object.assign(redo, { thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
         const { error: rErr } = await sb.from('launch_items').update(redo).eq('id', it.id).eq('user_id', user.id)
         if (!rErr) rebuilt++
       }
