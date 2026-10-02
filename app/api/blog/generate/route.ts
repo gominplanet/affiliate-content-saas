@@ -580,7 +580,47 @@ async function handleGenerate(request: Request) {
   const rawVideoId = (videoRow.youtube_video_id as string | undefined) ?? ''
   const youtubeVideoIdForTranscript = /^[A-Za-z0-9_-]{11}$/.test(rawVideoId) ? rawVideoId : ''
 
-  // Layer 1: official YouTube Data API.
+  // Layer 1: the YoutubeTranscript scraper. Free (no quota, no cost); it
+  // handles auto-captions, but YouTube blocks it from many cloud addresses.
+  if (!transcript && youtubeVideoIdForTranscript) {
+    try {
+      const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
+      const text = segments.map((s: { text: string }) => s.text).join(' ')
+      if (text && text.trim().length >= 40) {
+        transcript = text
+        transcriptSource = 'scraper'
+      }
+    } catch { /* leave empty */ }
+  }
+
+  // Layer 2: the video's own audio, transcribed (the path Shorts uses). No
+  // YouTube quota at all, which is why it comes before the Data API. It
+  // pulls only the audio and runs Whisper on it. Capped at an hour.
+  let whisperCues: Array<{ start: number; end: number; text: string }> = []
+  if (!transcript && youtubeVideoIdForTranscript && ingestConfigured() && transcriptionConfigured()
+    && (Number(videoRow.duration_seconds) || 0) <= 3600) {
+    try {
+      const audioUrl = await ingestAudio(youtubeVideoIdForTranscript, ownerId)
+      if (audioUrl) {
+        whisperCues = await transcribeToCues(audioUrl)
+        if (whisperCues.length) {
+          recordUsage({ userId: user.id, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
+          const text = cuesToText(whisperCues)
+          if (text.trim().length >= 40) { transcript = text; transcriptSource = 'whisper' }
+        }
+        const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
+        if (p) { try { await createAdminClient().storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
+      }
+    } catch { /* leave empty */ }
+  }
+
+  // Layer 3, LAST: the official YouTube Data API. It is the dearest thing a
+  // post can spend from the one daily YouTube quota every MVP account shares:
+  // a caption list (50 units) and a download (200), 250 a post. Once it used
+  // the token of the channel that owns the video it started succeeding, and
+  // a day of posts took the whole quota, so playlists and uploads stopped for
+  // everyone. The audio above costs no quota, so this only runs when that
+  // could not be used (no video service, or a video over an hour).
   // Perf (audit 2026-06-02): reuses the `integration` row already
   // loaded in the Promise.all above — was previously re-fetching
   // the same row a second time (~80ms saved).
@@ -601,41 +641,6 @@ async function handleGenerate(request: Request) {
           transcriptSource = 'youtube_api'
         }
       }
-    } catch { /* fall through to the scraper */ }
-  }
-
-  // Layer 2: YoutubeTranscript scraper (handles auto-captions but YouTube
-  // blocks it from many cloud IPs — best-effort).
-  if (!transcript && youtubeVideoIdForTranscript) {
-    try {
-      const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
-      const text = segments.map((s: { text: string }) => s.text).join(' ')
-      if (text && text.trim().length >= 40) {
-        transcript = text
-        transcriptSource = 'scraper'
-      }
-    } catch { /* leave empty */ }
-  }
-
-  // Layer 3: the video's own audio, transcribed (the path Shorts uses). The
-  // two layers above fail from a server more often than not: YouTube refuses
-  // auto-captions to the API and blocks the scraper from cloud addresses. This
-  // pulls only the audio and runs Whisper on it. Capped at an hour.
-  let whisperCues: Array<{ start: number; end: number; text: string }> = []
-  if (!transcript && youtubeVideoIdForTranscript && ingestConfigured() && transcriptionConfigured()
-    && (Number(videoRow.duration_seconds) || 0) <= 3600) {
-    try {
-      const audioUrl = await ingestAudio(youtubeVideoIdForTranscript, ownerId)
-      if (audioUrl) {
-        whisperCues = await transcribeToCues(audioUrl)
-        if (whisperCues.length) {
-          recordUsage({ userId: user.id, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
-          const text = cuesToText(whisperCues)
-          if (text.trim().length >= 40) { transcript = text; transcriptSource = 'whisper' }
-        }
-        const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
-        if (p) { try { await createAdminClient().storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
-      }
     } catch { /* leave empty */ }
   }
 
@@ -650,8 +655,8 @@ async function handleGenerate(request: Request) {
     } catch { /* non-fatal */ }
   }
 
-  // NOTE: no standalone empty-transcript gate here — the layered fetcher above
-  // already tries the official Data API before the scraper, and the voice-
+  // NOTE: no standalone empty-transcript gate here. The layered fetcher above
+  // tries every source, and the voice-
   // betrayal scrub + prompt rule 8 keep "we don't have a transcript" patterns
   // out of the body. The REVIEW-WORTHINESS gate below (§5.2) refuses only the
   // truly contentless case: no resolvable product AND a thin transcript.

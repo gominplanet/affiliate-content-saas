@@ -77,19 +77,21 @@ export async function bootstrapVoiceFromChannel(
     for (const v of candidates) {
       const vid = v.youtube_video_id as string
       let transcript = ''
-      // Layer 1: official captions via the creator's own OAuth grant.
-      if (yt) {
-        try {
-          const t = await yt.getTranscript(vid)
-          if (t && t.trim().length >= 40) transcript = t
-        } catch { /* try scraper */ }
-      }
-      // Layer 2: scraper (often blocked on cloud IPs, so best-effort).
+      // Layer 1: the scraper. Free; often blocked on cloud IPs, so best-effort.
       if (!transcript) {
         try {
           const segments = await YoutubeTranscript.fetchTranscript(vid, { lang: 'en' })
           const text = segments.map((s: { text: string }) => s.text).join(' ')
           if (text && text.trim().length >= 40) transcript = text
+        } catch { /* try the Data API */ }
+      }
+      // Layer 2: official captions via the creator's own OAuth grant. Last,
+      // because a caption list and download cost 250 of the one daily YouTube
+      // quota every MVP account shares.
+      if (!transcript && yt) {
+        try {
+          const t = await yt.getTranscript(vid)
+          if (t && t.trim().length >= 40) transcript = t
         } catch { /* skip this video */ }
       }
       if (!transcript) continue

@@ -35,6 +35,17 @@ check('denials are taken out of an own-video post, and real first-hand lines sta
 check('a post that is not from the creator\'s own video keeps its honest disclaimer',
   scrubVoicePatterns(html, {}).content === html)
 
+// THE SHARED QUOTA. A caption list and download cost 250 of the one daily
+// YouTube quota every account shares; a day of posts used all of it. The free
+// scraper and the audio (no quota) go first, the Data API last.
+{
+  const scrape = ROUTE.indexOf('YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript')
+  const audio = ROUTE.indexOf('ingestAudio(youtubeVideoIdForTranscript, ownerId)')
+  const api = ROUTE.indexOf('yt.getTranscript(youtubeVideoIdForTranscript)')
+  check('transcripts try the scraper, then the audio, and the quota-costly Data API last',
+    scrape > 0 && audio > scrape && api > audio)
+}
+
 if (failures.length) {
   console.error(`\n❌ blog-transcript: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
