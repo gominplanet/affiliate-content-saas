@@ -54,6 +54,7 @@ check('the report names waiting for SCOUT', /Waiting for SCOUT/.test(read('compo
 // ── ZERO QUOTA: SCOUT DOES THE REST, THE DRAIN CHECKS IT ─────────────────
 check('SCOUT\'s report: only plain true counts', (() => { const d = studioDid({ text: 'yes', tags: true, thumbnail: 1, playlist: false, visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true); return d.text === null && d.tags === true && d.thumbnail === null && d.playlist === false && d.visibility === 'schedule' })())
 check('not saved means no visibility', studioDid({ visibility: 'public' }, false).visibility === null)
+check('not saved means nothing SCOUT typed was kept', (() => { const d = studioDid({ text: true, tags: true, thumbnail: true, thumbVerified: true, playlist: true }, false); return d.text === null && d.tags === null && d.thumbnail === null && !d.thumbVerified && d.playlist === null })())
 check('a schedule with no time is not a schedule', studioDid({ visibility: 'schedule' }, true).visibility === null)
 check('a schedule holds only private and at its time', (() => {
   const did = studioDid({ visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true)
@@ -75,6 +76,8 @@ check('SCOUT reads back every link in the description', /links\.every\(\(l\) => 
 check('SCOUT saves Private when the time has gone', /visibility\.mode = 'private'; delete visibility\.publishAt/.test(bg))
 check('Studio is on screen while SCOUT fills it in, and the creator is put back', /await front\(\)\s*steps\.push/.test(bg) && /await front\(\)\s*const draftSteps/.test(bg) && /stopKeepAlive\(keepAlive\)\s*await back\(\)/.test(bg) && /let front = async \(\) => \{\}/.test(bg))
 check('SCOUT\'s step names stay MVP\'s own (text, tags, playlist)', /\{ step: 'text' \}\)\)/.test(bg) && /\{ step: 'tags' \}\)\)/.test(bg) && /\{ step: 'playlist' \}\)\)/.test(bg))
+check('SCOUT counts tags the way YouTube does, quotes and all', /\(\/\\s\/\.test\(v\) \? 2 : 0\)/.test(bg) && /if \(len \+ add > 460\) break/.test(bg))
+check('a greyed Next says what Studio shows', /Studio shows: ' \+ errs\.join/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
 
 // ── FIRST COMMENTS THROUGH SCOUT, THE API ONLY AS A LATE BACKUP ───────────

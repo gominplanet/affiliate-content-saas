@@ -88,6 +88,10 @@ export function studioDid(raw: unknown, saved: boolean): StudioDid {
   const b = (k: string) => (o[k] === true ? true : o[k] === false ? false : null)
   const v = saved && (o.visibility === 'schedule' || o.visibility === 'public' || o.visibility === 'private') ? o.visibility : null
   const at = v === 'schedule' && typeof o.publishAt === 'string' && !isNaN(Date.parse(o.publishAt)) ? new Date(o.publishAt).toISOString() : null
+  // NOT SAVED, NOT KEPT. Studio throws away what was typed into an upload
+  // window that was never saved (tags and thumbnail went with a window whose
+  // Next stayed grey), so nothing SCOUT read back there counts: MVP sets it.
+  if (!saved) return { text: null, tags: null, thumbnail: null, thumbVerified: false, playlist: null, visibility: null, publishAt: null }
   return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), thumbVerified: o.thumbVerified === true, playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
 }
 

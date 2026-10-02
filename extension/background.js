@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 12
+  const KIT_VERSION = 13
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9106,7 +9106,13 @@ function studioKitInstallInPage() {
   const next = async (dlg) => {
     const from = page(dlg)
     const btn = await waitFor(() => { const b = nextBtn(dlg); return b && !isDisabled(b) ? b : null }, 20000, 400)
-    if (!btn) return { ok: false, from, detail: 'The Next button stayed greyed out on the ' + from + ' page' }
+    if (!btn) {
+      // WHY IT IS GREY, in Studio's own words: a red field says what it
+      // wants (a title too long, tags over 500, a character it refuses).
+      const errs = Array.from(new Set(all(dlg).filter((el) => visible(el) && /error|invalid/i.test(String(el.id || '') + ' ' + String(el.className || '') + ' ' + String(el.getAttribute && el.getAttribute('aria-invalid') === 'true' ? 'invalid' : '')))
+        .map((el) => norm(deepText(el))).filter((t) => t && t.length < 160))).slice(0, 3)
+      return { ok: false, from, detail: 'The Next button stayed greyed out on the ' + from + ' page' + (errs.length ? '. Studio shows: ' + errs.join(' / ') : '') }
+    }
     click(btn)
     const to = await waitFor(() => { const p = page(dlg); return p !== from ? p : null }, 15000, 400)
     return to ? { ok: true, from, to } : { ok: false, from, detail: 'Pressed Next, but Studio stayed on the ' + from + ' page' }
@@ -10148,8 +10154,12 @@ K.steps.monetization = async (out, o) => {
     for (const t of (Array.isArray(o.tags) ? o.tags : [])) {
       const v = norm(String(t)).replace(/[<>,]/g, '').slice(0, 100)
       if (!v || want.includes(v)) continue
-      if (len + v.length + (want.length ? 1 : 0) > 480) break
-      want.push(v); len += v.length + 1
+      // YOUTUBE'S OWN COUNT: a tag with a space counts its quotes too, and a
+      // list over 500 turns the Tags box red and greys out Next, which is
+      // where a whole upload stopped. Kept under 460, as MVP's API path does.
+      const add = (want.length ? 1 : 0) + v.length + (/\s/.test(v) ? 2 : 0)
+      if (len + add > 460) break
+      want.push(v); len += add
     }
     if (!want.length) { out.ok = true; out.skipped = true; out.detail = 'No tags to add'; return out }
     const tagInput = () => all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /tags/i.test(attrLabel(el) + ' ' + ((up(el) || {}).id || '') + ' ' + ((up(up(el)) || {}).id || '') + ' ' + ((up(up(up(el))) || {}).id || ''))) || null
