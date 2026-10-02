@@ -1004,6 +1004,9 @@ export default function LaunchBoard() {
 
   /** Every video on YouTube whose Studio steps have not all read back, one
    *  at a time, because each one takes over a Studio tab. */
+  // Videos on YouTube whose Studio steps have not been read back yet.
+  const studioLeft = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok).length
+
   async function finishAllInStudio() {
     if (studioRunning.current) return
     const todo = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok)
@@ -2387,11 +2390,16 @@ export default function LaunchBoard() {
             <h2 className="text-[13px] font-semibold" style={text}>Where each video is</h2>
             {/* ONE AT A TIME, ON PURPOSE. Each run takes over a Studio tab for
                 a minute or two, and two at once would fight over it. */}
-            {scoutCanStudio && items.some((i) => !!i.youtube_video_id) && (
+            {/* Only when there is something left to do: a video on YouTube
+                whose Studio steps (paid promotion, AI use, monetization, ad
+                rating, end screen) have not been read back yet. The automatic
+                pass does these by itself; this is "do them now". */}
+            {scoutCanStudio && studioLeft > 0 && (
               <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy || amazonBusy}
+                title="SCOUT opens YouTube Studio and sets what YouTube's API cannot: paid promotion, AI use, monetization, the ad rating and the end screen. It also runs by itself as each video reaches YouTube."
                 className="text-[12px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-50"
                 style={{ background: '#0EA5A4' }}>
-                {studioBusy ? 'SCOUT is in Studio…' : 'Finish all in Studio'}
+                {studioBusy ? 'SCOUT is in Studio…' : `Finish ${studioLeft === 1 ? 'the last one' : `${studioLeft} videos`} in Studio now`}
               </button>
             )}
           </div>
