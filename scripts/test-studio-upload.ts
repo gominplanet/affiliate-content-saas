@@ -6,7 +6,7 @@
 // with this switch on, the server must never upload, SCOUT must never upload
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
-import { studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+import { leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -72,6 +72,27 @@ check('title and tags through the API only when SCOUT missed them', /if \(!textO
 check('SCOUT reads back every link in the description', /links\.every\(\(l\) => now\.includes\(l\)\)/.test(bg))
 check('SCOUT saves Private when the time has gone', /visibility\.mode = 'private'; delete visibility\.publishAt/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
+
+// ── FIRST COMMENTS THROUGH SCOUT, THE API ONLY AS A LATE BACKUP ───────────
+{
+  const now = Date.parse('2030-01-01T12:00:00Z')
+  check('a SCOUT creator\'s comment is left to SCOUT within the grace time', leaveCommentToScout(true, '2030-01-01T11:00:00Z', now))
+  check('and taken by the API after it', !leaveCommentToScout(true, new Date(now - SCOUT_COMMENT_GRACE_MS - 1000).toISOString(), now))
+  check('other creators are never held back', !leaveCommentToScout(false, '2030-01-01T11:00:00Z', now))
+  check('a comment with no time is not held back', !leaveCommentToScout(true, null, now))
+  const cron = read('app/api/cron/first-comments/route.ts')
+  check('the cron leaves SCOUT\'s comments before spending even the 1-unit check',
+    cron.indexOf('leaveCommentToScout(') > 0 && cron.indexOf('leaveCommentToScout(') < cron.indexOf('firstCommentDue(r, now)'))
+  const sr = read('app/api/youtube/first-comment/scout/route.ts')
+  check('SCOUT claims a comment only while it is waiting', /update\(\{ state: 'posting', updated_at: at \}\)\.eq\('id', id\)\.eq\('user_id', user\.id\)\.eq\('state', 'waiting'\)/.test(sr))
+  check('a result is written only over SCOUT\'s own claim', (sr.match(/\.eq\('state', 'posting'\)/g) ?? []).length >= 2)
+  check('the SCOUT comment route is behind the switch', /usesStudioUpload\(integ\?\.tier\)/.test(sr))
+  check('SCOUT posts only as the owner, only on a public video, never twice',
+    /studio\.youtube\.com\/video\/' \+ videoId/.test(bg) && /isPrivate === true\) \{ out\.notPublic = true/.test(bg) && /out\.already = true/.test(bg))
+  check('SCOUT posts from a tab behind the creator\'s', /watch\?v=' \+ youtubeVideoId, active: false/.test(bg))
+  check('Co-Pilot, older videos and Liftoff post before they pin', /await postDueFirstCommentsViaScout\(say\)\.catch/.test(read('lib/first-comment-pins.ts')))
+  check('the background tab posts due comments', /postDueFirstCommentsViaScout\(say\)/.test(read('components/launch/LiftoffRunner.tsx')))
+}
 
 if (failures.length) {
   console.error('❌ studio upload guard failed:\n  - ' + failures.join('\n  - '))

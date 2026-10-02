@@ -442,6 +442,134 @@ async function fetchYouTubeTranscript({ youtubeVideoId, callerTabId }) {
   }
 }
 
+// ── Post the first comment, at no quota (MVP_YT_POST_COMMENT) ─────────────
+// MVP used to post first comments through YouTube's Data API, 50 units each
+// from the one daily quota every MVP account shares. SCOUT posts it instead,
+// as the creator, through the same connection YouTube's own watch page uses
+// to post a comment, so it works from a tab behind the creator's own and
+// costs MVP nothing. Pinning stays as it is (pinYouTubeComment).
+//
+// ONLY AS THE VIDEO'S OWN CHANNEL, ONLY ON A PUBLIC VIDEO, ONLY ONCE. The page
+// must show the owner's Edit video link (so the comment cannot come from
+// another channel the browser is switched to), the video must not be private,
+// and a comment with the same words already on it is reported back instead of
+// a second one being posted.
+function postCommentInPage(videoId, text) {
+  return (async () => {
+    const out = { ok: false, steps: [] }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const say = (x) => out.steps.push(x)
+    const norm = (x) => String(x || '').replace(/\s+/g, ' ').trim()
+    try {
+      let pr = null, data = null
+      for (let i = 0; i < 40 && !(pr && data); i++) { pr = window.ytInitialPlayerResponse || null; data = window.ytInitialData || null; if (!(pr && data)) await sleep(250) }
+      if (!pr || !data || !pr.videoDetails || pr.videoDetails.videoId !== videoId) { out.error = 'page-not-ready'; out.detail = 'The video page did not load its data'; return out }
+      if (pr.videoDetails.isPrivate === true) { out.notPublic = true; out.detail = 'The video is not public yet'; return out }
+      const raw = JSON.stringify(data)
+      if (raw.indexOf('studio.youtube.com/video/' + videoId) < 0) { out.error = 'not-owner'; out.detail = 'YouTube in this browser is not signed in as the channel that owns this video, so nothing was posted'; return out }
+      say('owner: yes')
+      const cfg = (k) => { try { return window.ytcfg && window.ytcfg.get ? window.ytcfg.get(k) : undefined } catch (e) { return undefined } }
+      const key = cfg('INNERTUBE_API_KEY'), context = cfg('INNERTUBE_CONTEXT')
+      if (!key || !context) { out.error = 'no-config'; out.detail = 'The page had no YouTube settings to post with'; return out }
+      // Signed in as the page is: the same SAPISID hash YouTube's own page sends.
+      const cookie = (n) => { const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : '' }
+      const sapisid = cookie('SAPISID') || cookie('__Secure-3PAPISID')
+      if (!sapisid) { out.error = 'not-signed-in'; out.detail = 'YouTube in this browser is not signed in'; return out }
+      const ts = Math.floor(Date.now() / 1000)
+      const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(ts + ' ' + sapisid + ' ' + location.origin))
+      const hash = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: 'SAPISIDHASH ' + ts + '_' + hash,
+        'X-Origin': location.origin,
+        'X-Goog-AuthUser': String(cfg('SESSION_INDEX') || '0'),
+        'X-Youtube-Client-Name': String(cfg('INNERTUBE_CONTEXT_CLIENT_NAME') || '1'),
+        'X-Youtube-Client-Version': String(cfg('INNERTUBE_CLIENT_VERSION') || ''),
+      }
+      const page = cfg('DELEGATED_SESSION_ID')
+      if (page) headers['X-Goog-PageId'] = String(page)
+      const call = async (path, body) => {
+        const r = await fetch('/youtubei/v1/' + path + '?key=' + encodeURIComponent(key) + '&prettyPrint=false', { method: 'POST', credentials: 'include', headers, body: JSON.stringify(Object.assign({ context }, body)) })
+        const t = await r.text()
+        return { status: r.status, text: t }
+      }
+      // The comments section's own token, as the page would load it.
+      const find = (o, test, depth) => {
+        if (!o || typeof o !== 'object' || (depth || 0) > 60) return null
+        if (test(o)) return o
+        for (const k in o) { const f = find(o[k], test, (depth || 0) + 1); if (f) return f }
+        return null
+      }
+      const section = find(data, (o) => o.sectionIdentifier === 'comment-item-section')
+      const contObj = section ? find(section, (o) => o.continuationCommand && o.continuationCommand.token) : null
+      const token = contObj && contObj.continuationCommand.token
+      if (!token) {
+        out.error = /comments are turned off/i.test(raw) ? 'comments-off' : 'no-comments-section'
+        out.detail = out.error === 'comments-off' ? 'Comments are turned off on this video' : 'The video page had no comments section to post into'
+        return out
+      }
+      const next = await call('next', { continuation: token })
+      if (next.status !== 200) { out.error = 'next-' + next.status; out.detail = 'YouTube did not load the comments (' + next.status + ')'; return out }
+      say('comments: loaded')
+      // ALREADY THERE? The same words already on the video are this comment,
+      // posted by a run that never reported back.
+      const want = norm(text)
+      let nj = null
+      try { nj = JSON.parse(next.text) } catch (e) {}
+      const already = nj ? find(nj, (o) => {
+        const p = o.commentEntityPayload && o.commentEntityPayload.properties
+        if (p && p.commentId && norm(p.content && p.content.content) === want) return true
+        if (o.commentRenderer && o.commentRenderer.commentId && norm(((o.commentRenderer.contentText || {}).runs || []).map((r) => r.text).join('')) === want) return true
+        return false
+      }) : null
+      if (already) {
+        out.ok = true; out.already = true
+        out.commentId = (already.commentEntityPayload && already.commentEntityPayload.properties.commentId) || (already.commentRenderer && already.commentRenderer.commentId)
+        out.detail = 'This comment was already on the video'
+        return out
+      }
+      const pm = next.text.match(/"createCommentParams":"([^"]+)"/)
+      if (!pm) {
+        out.error = /comments are turned off/i.test(next.text) ? 'comments-off' : 'no-comment-box'
+        out.detail = out.error === 'comments-off' ? 'Comments are turned off on this video' : 'YouTube offered no comment box on this video'
+        return out
+      }
+      const made = await call('comment/create_comment', { createCommentParams: pm[1], commentText: String(text) })
+      if (made.status !== 200) { out.error = 'create-' + made.status; out.detail = 'YouTube did not take the comment (' + made.status + ')'; return out }
+      const idm = made.text.match(/"commentId":"([A-Za-z0-9_.-]{10,80})"/)
+      const failed = /STATUS_FAILED|"errorMessage"/.test(made.text) && !idm
+      if (!idm || failed) { out.error = 'no-comment-id'; out.detail = 'YouTube answered, but not with the new comment, so it may not be posted'; out.debugText = made.text.slice(0, 300); return out }
+      out.ok = true
+      out.commentId = idm[1]
+      out.detail = 'Posted by the video’s own channel'
+      say('posted')
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'threw'
+      out.detail = 'SCOUT hit an error posting the comment: ' + out.error
+      return out
+    }
+  })()
+}
+
+async function postYouTubeComment({ youtubeVideoId, text }) {
+  if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{11}$/.test(youtubeVideoId)) return { ok: false, error: 'bad-video-id' }
+  if (!text || String(text).length > 10000) return { ok: false, error: 'bad-text' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://www.youtube.com/watch?v=' + youtubeVideoId, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await new Promise((r) => setTimeout(r, 1500))
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: postCommentInPage, args: [youtubeVideoId, String(text)] })
+    return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'post-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Pin a comment MVP posted (YouTube has no API for pinning) ──────────────
 // MVP posts the sale comment through the Data API, which cannot pin. SCOUT
 // opens the video with that comment highlighted, in the creator's own
@@ -11140,7 +11268,9 @@ async function liftoffSave(patch) {
   return next
 }
 function liftoffWake(minutes) {
-  try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(120, minutes)) }) } catch (e) {}
+  // Up to a day: a first comment due tomorrow wakes the tab at its time,
+  // rather than every two hours until then.
+  try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(1440, minutes)) }) } catch (e) {}
 }
 
 // A background tab is ours when SCOUT opened it, or when its address says so:
@@ -11748,6 +11878,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // MVP asks whether the Group post it filled has gone up yet, and where.
     readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))
     return true // async
+  }
+  if (msg.type === 'MVP_YT_POST_COMMENT') {
+    // A first comment, posted as the creator from a tab behind theirs, at no
+    // YouTube quota (see postYouTubeComment). The answer carries the new id.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
+    postYouTubeComment({ youtubeVideoId: msg.youtubeVideoId, text: msg.text })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_YT_PIN_COMMENT') {
     // MVP posted a sale comment and asks SCOUT to pin it, in the creator's

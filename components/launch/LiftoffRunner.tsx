@@ -22,6 +22,7 @@ import { liftoffStudioRequest, normalizeStudioOptions, storeStudioRun, type Stor
 import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
 import { runStudioUploads } from '@/lib/studio-upload-client'
+import { postDueFirstCommentsViaScout } from '@/lib/first-comment-pins'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -45,6 +46,7 @@ export default function LiftoffRunner() {
     const alive = setInterval(() => { void liftoffAlive() }, 120_000)
     void (async () => {
       let more = false
+      let nextIn: number | undefined
       const sigs: string[] = []
       try {
         const st = await getScoutStatus()
@@ -126,6 +128,24 @@ export default function LiftoffRunner() {
           const after = liftoffPending((a.items ?? []) as RunnerItem[], markets, pend)
           if (after.youtube + after.studio + after.amazon > 0) { more = true; sigs.push(after.signature) }
         }
+        // THE FIRST COMMENTS THAT ARE DUE ARE POSTED FROM HERE (through
+        // SCOUT, at no quota, from a tab behind this one), and SCOUT is asked
+        // back for the next one coming up. Pinning still waits for a page the
+        // creator has open, as below.
+        const workLeft = more
+        const fc = await postDueFirstCommentsViaScout(say)
+        if (fc.on) {
+          if (fc.posted || fc.failed) say(`First comments: ${fc.posted} posted${fc.failed ? `, ${fc.failed} not` : ''}`)
+          // BACK WHEN THE NEXT ONE IS DUE, not on a timer: SCOUT wakes this
+          // tab two minutes after that comment's time (up to a day ahead).
+          if (fc.nextAt && Date.parse(fc.nextAt) - Date.now() < 24 * 3_600_000) {
+            more = true
+            const mins = Math.max(5, Math.ceil((Date.parse(fc.nextAt) - Date.now()) / 60_000) + 2)
+            // Other work left comes back in five minutes as always.
+            if (!workLeft) nextIn = mins
+            sigs.push(`fc:${fc.nextAt}`)
+          }
+        }
         // THE PINNED FIRST COMMENTS ARE NOT PINNED FROM HERE. SCOUT pins by
         // bringing a YouTube tab to the front for a few seconds, and doing
         // that from a hidden tab would pull the creator away from whatever
@@ -137,7 +157,7 @@ export default function LiftoffRunner() {
       }
       clearInterval(alive)
       say(more ? 'More to do later. SCOUT will look again.' : 'All done. Nothing left to send.')
-      await liftoffDone(more, sigs.join('#'))
+      await liftoffDone(more, sigs.join('#'), nextIn)
     })()
   }, [])
 

@@ -94,3 +94,14 @@ export function scheduleHeld(did: StudioDid | null, read: { privacyStatus: strin
   if (!did || did.visibility !== 'schedule' || !read || read.privacyStatus !== 'private' || !read.publishAt) return false
   return Math.abs(Date.parse(read.publishAt) - Date.parse(planned)) <= 120_000
 }
+
+/** How long after its time a first comment is left for SCOUT before the cron
+ *  posts it through the API (50 units) instead: late at worst, never lost. */
+export const SCOUT_COMMENT_GRACE_MS = 3 * 3_600_000
+
+/** Should the cron leave this comment to SCOUT for now. Pure. */
+export function leaveCommentToScout(scoutUser: boolean, publishAt: string | null, now = Date.now()): boolean {
+  if (!scoutUser || !publishAt) return false
+  const t = Date.parse(publishAt)
+  return !isNaN(t) && now - t < SCOUT_COMMENT_GRACE_MS
+}

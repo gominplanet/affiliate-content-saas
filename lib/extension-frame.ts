@@ -1002,6 +1002,19 @@ export async function getFacebookGroupPostStatus(watchId: string): Promise<Faceb
   return res && res.state ? res : { state: 'unknown' }
 }
 
+export interface PostCommentResult { ok: boolean; commentId?: string; already?: boolean; notPublic?: boolean; error?: string; detail?: string; steps?: string[] }
+
+/**
+ * Post a first comment as the creator, from a tab behind theirs, at no
+ * YouTube quota (SCOUT 1.26.0+). Only as the video's own channel, only on a
+ * public video, and never twice: a comment with the same words already on the
+ * video is answered with its id.
+ */
+export async function requestPostComment(youtubeVideoId: string, text: string): Promise<PostCommentResult> {
+  const res = await sendToExtension<PostCommentResult>({ type: 'MVP_YT_POST_COMMENT', youtubeVideoId, text }, 80_000)
+  return res || { ok: false, error: 'timeout', detail: 'SCOUT did not answer' }
+}
+
 export async function requestPinComment(youtubeVideoId: string, commentId: string): Promise<PinCommentResult> {
   const res = await sendToExtension<PinCommentResult>({ type: 'MVP_YT_PIN_COMMENT', youtubeVideoId, commentId }, 95_000)
   return res || { ok: false, error: 'SCOUT did not answer. Is it installed and up to date?' }
@@ -1838,8 +1851,8 @@ export async function liftoffAlive(): Promise<void> {
   await sendToExtension({ type: 'MVP_LIFTOFF_ALIVE' }, 4000)
 }
 
-export async function liftoffDone(more: boolean, signature: string): Promise<void> {
-  await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes: 5 }, 6000)
+export async function liftoffDone(more: boolean, signature: string, nextInMinutes = 5): Promise<void> {
+  await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes }, 6000)
 }
 
 /**

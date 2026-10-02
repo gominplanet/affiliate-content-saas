@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postFirstCommentIfPublic, firstCommentDue, type FirstCommentRow } from '@/lib/first-comments'
+import { usesStudioUpload, leaveCommentToScout } from '@/lib/studio-upload'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -45,7 +46,21 @@ export async function GET(req: Request) {
     .order('last_checked_at', { ascending: true, nullsFirst: true }).limit(500)
   if (error) return NextResponse.json({ ok: false, error: error.code === '42P01' ? 'video_first_comments table missing (migration 377)' : error.message })
   const now = Date.now()
-  const due = ((data ?? []) as Array<FirstCommentRow & { publish_at: string | null; last_checked_at: string | null }>)
+  // LEFT TO SCOUT FIRST. A creator on "YouTube through SCOUT" has their
+  // comments posted from their own browser at no quota; the API posts one
+  // only once it is SCOUT_COMMENT_GRACE_MS past its time, so it is late at
+  // worst, never lost. Not even the 1-unit check is spent before then.
+  const rows0 = (data ?? []) as Array<FirstCommentRow & { publish_at: string | null; last_checked_at: string | null }>
+  const scoutUsers = new Set<string>()
+  {
+    const ids = [...new Set(rows0.map((r) => r.user_id))]
+    if (ids.length) {
+      const { data: tiers } = await sb.from('integrations').select('user_id,tier').in('user_id', ids)
+      for (const t of (tiers ?? []) as Array<{ user_id: string; tier: string | null }>) if (usesStudioUpload(t.tier)) scoutUsers.add(t.user_id)
+    }
+  }
+  const due = rows0
+    .filter((r) => !leaveCommentToScout(scoutUsers.has(r.user_id), r.publish_at, now))
     .filter((r) => firstCommentDue(r, now)).slice(0, 150)
   let posted = 0, waiting = 0, failed = 0, gone = 0
   for (const row of due) {

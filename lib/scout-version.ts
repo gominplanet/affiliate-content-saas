@@ -73,6 +73,9 @@ export const SCOUT_FB_GROUP_WATCH_MIN_VERSION = '1.24.0'
  *  (MVP_STUDIO_UPLOAD), so an upload costs nothing from the shared quota. */
 export const SCOUT_STUDIO_UPLOAD_MIN_VERSION = '1.25.0'
 
+/** The oldest SCOUT that posts first comments itself, at no YouTube quota. */
+export const SCOUT_COMMENT_POST_MIN_VERSION = '1.26.0'
+
 /** True when the installed SCOUT is at least `min`. False when unknown. */
 export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {
   if (!installed) return false
