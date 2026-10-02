@@ -2137,9 +2137,19 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /onSent: \(\) => mark\(key, \{ state: 'finishing'/.test(BOARD) && /All sent from your browser/.test(BOARD),
     'a slow line holds the last MB after the browser says 100%, and that upload was flagged as stuck while it finished')
   check('files go up side by side but join the batch in the order picked',
-    /const UPLOAD_LANES = 3/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
+    /const UPLOAD_LANES = 2/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
     && inOrder(BOARD, 'await (i > 0 ? turns[i - 1]', "fetch(`/api/launch/batches/${batchId}/items`"),
     'the batch order is the publishing order, and the fastest upload is not the first video')
+  // A DROP COSTS ONE PIECE, NOT THE FILE. A 288MB video on a 0.3MB/s line
+  // restarted from zero two or three times and still failed.
+  const RES = read('lib/upload-resumable.ts')
+  check('uploads are resumable: 6MB pieces, and a drop picks up where Storage has it',
+    /const CHUNK = 6 \* 1024 \* 1024/.test(RES) && /method: 'HEAD'/.test(RES) && /Upload-Offset/.test(RES)
+    && /await uploadResumable\(\{/.test(BOARD) && inOrder(BOARD, 'await uploadResumable({', 'await uploadWithProgress({'),
+    'every retry used to throw away everything already sent')
+  check('only a resumable upload that cannot start falls back to the single upload',
+    /if \(!\(e instanceof ResumableUnavailable\)\) throw e/.test(BOARD) && /attempt <= 3 && !resumed/.test(BOARD),
+    'a fallback after a partial upload would start the file again')
   check('the tab warns before it is closed mid-upload',
     /addEventListener\('beforeunload', warn\)/.test(BOARD),
     'the upload is the one part of Liftoff that dies with the tab')

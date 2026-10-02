@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadWithProgress, STALL_MS, FINISH_MS } from '@/lib/upload-progress'
+import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import ChannelCheck from '@/components/launch/ChannelCheck'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
@@ -99,7 +100,9 @@ interface Item {
   api_disclosures?: ReportItem['api_disclosures']
 }
 /** Files sent to storage side by side. */
-const UPLOAD_LANES = 3
+// Two at once: on a slow line three uploads split the same bandwidth three
+// ways and each one is likelier to stall.
+const UPLOAD_LANES = 2
 
 /** A video's own face, as stored (migration 371). Null follows the batch. */
 type FaceValue = { kind: string; faceId?: string }
@@ -193,8 +196,8 @@ function UploadLine({ u, now, faces, onFace }: {
   const line = u.state === 'waiting' ? 'Waiting for a free lane'
     : u.state === 'uploading'
       ? stalled
-        ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it starts again on its own.`
-        : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · try ${u.tries} of 3` : ''}`
+        ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it picks up again on its own, keeping what was sent.`
+        : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · picked up after ${u.tries - 1} drop${u.tries === 2 ? '' : 's'}, nothing lost` : ''}`
       : u.state === 'finishing'
         ? slowFinish
           ? `All sent ${finishingFor}s ago and storage has not confirmed yet. It keeps waiting up to ${FINISH_MS / 60_000} min.`
@@ -1088,9 +1091,33 @@ export default function LaunchBoard() {
         durationSec = probed.duration
         const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
         path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        // RESUMABLE FIRST. The file goes in 6MB pieces, and a dropped or
+        // stalled connection picks up where it stopped instead of starting the
+        // whole file again (lib/upload-resumable). On a slow line a 288MB video
+        // used to restart from zero two or three times and still fail.
+        let resumed = false
+        try {
+          mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: 1, error: undefined })
+          await uploadResumable({
+            supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            getAccessToken: async () => (await supabase.auth.getSession()).data.session?.access_token ?? null,
+            bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
+            onProgress: ({ sent }) => mark(key, { state: 'uploading', sent, lastMoveAt: Date.now() }),
+            onResume: ({ resumes, reason }) => mark(key, { tries: resumes + 1, error: `Picked up where it stopped after: ${reason}` }),
+            onSent: () => mark(key, { state: 'finishing', sentAt: Date.now() }),
+          })
+          resumed = true
+        } catch (e) {
+          // Only a resumable upload that could not START falls back to the
+          // single upload below; one that failed partway has already used its
+          // pick-ups and says why.
+          if (!(e instanceof ResumableUnavailable)) throw e
+          path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        }
         // TWO RETRIES, each from a fresh session: a stalled connection does not
         // start moving again by being waited on.
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 3 && !resumed; attempt++) {
           const { data: { session } } = await supabase.auth.getSession()
           if (!session) throw new Error('Signed out during the upload. Sign in again and add this one again.')
           mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: attempt, error: undefined })
