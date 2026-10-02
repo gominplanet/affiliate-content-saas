@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { descriptionLines } from '@/lib/yt-description-lines'
 import { footerBlocks, sameUrl } from '@/lib/yt-description-footer'
-import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
+import { clickableTitleRulesForYouTube, emphasizeOneWord } from '@/lib/clickable-titles'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
@@ -1595,7 +1595,7 @@ export async function POST(request: Request) {
         const { data: updated, error: updErr } = await (supabase as any)
           .from('youtube_videos')
           .update({
-            generated_title: scrubTitle(titleResult.best),
+            generated_title: emphasizeOneWord(scrubTitle(titleResult.best), seoProductName),
             generated_description: description,
             generated_pinned_comment: engagementResult.pinnedComment,
             generated_tags: seoData.tags,
@@ -1705,11 +1705,11 @@ export async function POST(request: Request) {
       // (title/description/tags/pinned comment) — the "never HONEST" rule etc.
       // applies to live metadata, not just blog content.
       generated: {
-        title: scrubTitle(titleResult.best),
+        title: emphasizeOneWord(scrubTitle(titleResult.best), seoProductName),
         description: scrubBanned(description),
         tags: (seoData.tags || []).map((t: string) => scrubBanned(t)),
         pinnedComment: scrubBanned(engagementResult.pinnedComment),
-        title_alternatives: (titleResult.alternatives || []).map((t: string) => scrubTitle(t)),
+        title_alternatives: (titleResult.alternatives || []).map((t: string) => emphasizeOneWord(scrubTitle(t), seoProductName)),
         title_scores: titleScores,
       },
     })
