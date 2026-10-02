@@ -74,6 +74,9 @@ export function studioUploadFailureText(error: string | null | undefined, detail
 /** What SCOUT set and read back on a Studio upload (migration 399). */
 export type StudioDid = {
   text: boolean | null; tags: boolean | null; thumbnail: boolean | null; playlist: boolean | null
+  /** SCOUT 1.27.0+ saw its own image in Studio's thumbnail box. Without it a
+   *  thumbnail "set" by SCOUT is not believed, and MVP sets it itself. */
+  thumbVerified: boolean
   /** The visibility SCOUT saved: 'schedule', 'public', 'private', or null when it did not save. */
   visibility: 'schedule' | 'public' | 'private' | null
   publishAt: string | null
@@ -85,7 +88,7 @@ export function studioDid(raw: unknown, saved: boolean): StudioDid {
   const b = (k: string) => (o[k] === true ? true : o[k] === false ? false : null)
   const v = saved && (o.visibility === 'schedule' || o.visibility === 'public' || o.visibility === 'private') ? o.visibility : null
   const at = v === 'schedule' && typeof o.publishAt === 'string' && !isNaN(Date.parse(o.publishAt)) ? new Date(o.publishAt).toISOString() : null
-  return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
+  return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), thumbVerified: o.thumbVerified === true, playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
 }
 
 /** Read back from YouTube, did SCOUT's schedule hold: private, with the time

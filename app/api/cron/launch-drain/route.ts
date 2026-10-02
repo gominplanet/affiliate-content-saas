@@ -1364,8 +1364,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
 
       const thumbSrc = String(it.thumbnail_url || '').trim()
       const thumb: { at: string | null; error: string | null } = { at: null, error: null }
-      if (/^https:\/\//i.test(thumbSrc) && viaStudio?.thumbnail === true) {
-        // SCOUT set it in Studio and saw Studio's preview of it.
+      if (/^https:\/\//i.test(thumbSrc) && viaStudio?.thumbnail === true && viaStudio.thumbVerified) {
+        // SCOUT set it in Studio and saw its own image in Studio's thumbnail
+        // box. (SCOUT 1.26.0 counted any new preview in the dialog and called
+        // a missing thumbnail set, so its word alone is not taken.)
         thumb.at = stamp()
       } else if (/^https:\/\//i.test(thumbSrc)) {
         try {

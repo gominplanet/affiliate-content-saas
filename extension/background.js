@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 11
+  const KIT_VERSION = 12
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9971,7 +9971,7 @@ K.steps.monetization = async (out, o) => {
     const dlg = mainDialog()
     if (!dlg || page(dlg) !== 'visibility') { out.detail = 'The Visibility page is not open'; return out }
     const v = o.visibility || { mode: 'keep' }
-    if (v.mode === 'keep') { out.skipped = true; out.detail = 'Left as a draft, as you chose. Nothing was published or scheduled.'; return out }
+    if (v.mode === 'keep') { out.skipped = true; out.detail = 'Not touched here: MVP sets the time itself.'; return out }
     const doneBtn = () => byId('done-button', dlg) || findBtn(/^(schedule|publish|save)$/i, dlg)
     const finish = async (wantRe, sayRe) => {
       const b = doneBtn()
@@ -10446,8 +10446,16 @@ function studioUploadThumbInPage(url) {
       const dlg = all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog') || document
       const input = all(dlg).find((el) => el.tagName === 'INPUT' && el.type === 'file' && /image/i.test(el.accept || '')) || null
       if (!input) { out.unavailable = true; out.detail = 'Studio offers no thumbnail upload on this video'; return out }
-      const previews = () => all(dlg).filter((el) => el.tagName === 'IMG' && /^(blob:|data:image)/.test(String(el.src || '')) && el.naturalWidth > 0).length
-      const before = previews()
+      // READ BACK IN THE THUMBNAIL BOX ITSELF. Counting new preview images
+      // anywhere in the dialog passed on Studio's own frame previews, and a
+      // video read "thumbnail set" with no thumbnail on it. Only the box
+      // around this file input counts, and only an image the size of ours.
+      const up = (el) => (el ? (el.parentElement || (el.parentNode && el.parentNode.host) || null) : null)
+      let box = null
+      for (let e = up(input), i = 0; e && i < 10; e = up(e), i++) { if (/thumbnail/i.test(e.tagName || '')) box = e }
+      if (!box) { out.unavailable = true; out.detail = 'Studio’s thumbnail box was not where SCOUT expected, so MVP sets the thumbnail instead'; return out }
+      const previews = () => all(box).filter((el) => el.tagName === 'IMG' && /^(blob:|data:image)/.test(String(el.src || '')) && el.naturalWidth > 0)
+      const before = previews().map((el) => el.src)
       let res
       try { res = await fetch(url, { credentials: 'omit' }) } catch (e) { out.detail = 'This browser could not download the thumbnail from MVP'; return out }
       if (!res.ok) { out.detail = 'MVP’s thumbnail could not be read (' + res.status + ')'; return out }
@@ -10459,10 +10467,11 @@ function studioUploadThumbInPage(url) {
       input.files = dt.files
       input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
       let seen = false
-      for (let i = 0; i < 40 && !seen; i++) { await sleep(500); seen = previews() > before }
+      for (let i = 0; i < 40 && !seen; i++) { await sleep(500); seen = previews().some((el) => before.indexOf(el.src) < 0) }
       const txt = (document.body && document.body.innerText) || ''
       if (/thumbnail (couldn.t|could not|failed)|verify your account|verification/i.test(txt) && !seen) { out.detail = 'Studio would not take a custom thumbnail on this channel (it may need phone verification)'; return out }
       out.ok = seen
+      out.verified = seen
       out.readBack.preview = seen
       out.detail = seen ? 'Thumbnail set. Read back as Studio’s preview.' : 'The thumbnail went in, but Studio showed no preview of it'
       return out
@@ -10594,7 +10603,8 @@ async function scanStudioUpload(o) {
     const saved = !!(vis && vis.ok)
     const okStep = (n) => { const x = steps.find((s) => s && s.step === n); return x ? !!x.ok && !x.skipped : null }
     // What SCOUT set and read back, item by item, for MVP to skip (or do).
-    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null }
+    const thumbStep = steps.find((x) => x && x.step === 'thumbnail')
+    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), thumbVerified: !!(thumbStep && thumbStep.verified === true), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null }
     if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, did, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
     const tried = steps.filter((s) => s && !s.skipped)
     return { ok: tried.every((s) => s.ok), videoId, saved, did, steps }
