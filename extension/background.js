@@ -10523,15 +10523,17 @@ function studioUploadProgressInPage() {
     }
     visit(document.body || document)
     const text = parts.join(' ').replace(/\s+/g, ' ')
-    const pct = text.match(/uploading\s+(\d{1,3})\s*%/i)
+    const pct = text.match(/uploading[^%]{0,40}?(\d{1,3})\s*%/i)
     if (/upload failed|processing abandoned|upload couldn.t be completed|daily upload limit/i.test(text)) {
       const m = text.match(/(upload failed[^.]{0,120}|processing abandoned[^.]{0,120}|upload couldn.t be completed[^.]{0,120}|daily upload limit[^.]{0,120})/i)
       return { state: 'error', text: m ? m[1] : 'Studio reported a failed upload' }
     }
     if (pct) return { state: 'uploading', percent: Number(pct[1]), text: pct[0] }
     if (/upload complete|uploads complete|checks complete|processing (?:hd|sd|up to)|processing will begin|finished processing|video uploaded/i.test(text)) return { state: 'done', text: 'Upload complete' }
-    return { state: 'uploading', percent: null, text: '' }
-  } catch (e) { return { state: 'uploading', percent: null, text: '' } }
+    if (/\buploading\b/i.test(text)) return { state: 'uploading', percent: null, text: 'Uploading' }
+    // Nothing about an upload on the page: the caller decides what that means.
+    return { state: 'idle', percent: null, text: '' }
+  } catch (e) { return { state: 'idle', percent: null, text: '' } }
 }
 
 const STUDIO_UPLOADS_KEY = 'mvp_studio_uploads'
@@ -10601,12 +10603,23 @@ async function scanStudioUpload(o) {
       if (keys.length > 300) delete map[keys[0]]
       try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {}
     }
-    // Its own words, and Not made for kids (a fresh upload has no answer).
+    // ── ONE VISIT ON SCREEN PER VIDEO ─────────────────────────────────────
+    // Studio comes to the front once: its own words, the tags, the
+    // thumbnail, the playlist, then every page and Save, all while the file
+    // is still going up (Studio saves the settings and keeps sending). Then
+    // the creator gets Chrome back, and the file finishes behind them.
+    const vis0 = o.visibility && typeof o.visibility === 'object' ? o.visibility : null
+    const pickVisibility = () => {
+      const v = vis0 && vis0.mode === 'schedule' && vis0.publishAt ? { mode: 'schedule', publishAt: String(vis0.publishAt) }
+        : vis0 && vis0.mode === 'public' ? { mode: 'public' } : { mode: 'private' }
+      // A time already gone is not scheduled in the past: saved Private, and
+      // MVP asks the creator for a new time.
+      if (v.mode === 'schedule' && !(Date.parse(v.publishAt) > Date.now() + 3 * 60000)) return { mode: 'private' }
+      return v
+    }
+    const visOk = (list) => { const x = list.find((s) => s && s.step === 'visibility'); return !!(x && x.ok) }
     await front()
     steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' }), { step: 'text' }))
-    // EVERYTHING ELSE ON DETAILS, HERE, so none of it costs MVP's YouTube
-    // quota: tags, the designed thumbnail, the playlist. Each reads back; one
-    // that does not is reported, and MVP sets that one item itself.
     if (Array.isArray(o.tags) && o.tags.length) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadTags', { tags: o.tags }), { step: 'tags' }))
     if (o.thumbnailUrl) {
       try {
@@ -10615,18 +10628,28 @@ async function scanStudioUpload(o) {
       } catch (e) { steps.push({ step: 'thumbnail', ok: false, detail: 'SCOUT could not reach the Studio tab' }) }
     }
     if (o.playlist) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist }), { step: 'playlist' }))
-    // Back to the creator while the file goes up: sending needs no screen.
+    let visibility = pickVisibility()
+    const firstWalk = await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility }))
+    for (const x of firstWalk) steps.push(x)
+    let saved = visOk(firstWalk)
     await back()
-    // THE WHOLE FILE, BEFORE ANYTHING IS SAVED. Closing Studio mid-send loses
-    // the upload, so the tab stays until Studio has every byte.
+
+    // ── THE FILE FINISHES BEHIND ──────────────────────────────────────────
+    // Sending needs no screen. The tab stays until Studio has every byte,
+    // because closing it mid-send loses the upload.
     const sendEnd = Date.now() + 60 * 60000
-    let prog = null
+    let prog = null, seenUploading = false, quiet = 0
     while (Date.now() < sendEnd) {
       try {
         const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioUploadProgressInPage })
         prog = (pr && pr[0] && pr[0].result) || null
       } catch (e) { prog = null }
       if (prog && (prog.state === 'done' || prog.state === 'error')) break
+      if (prog && prog.state === 'uploading') { seenUploading = true; quiet = 0 }
+      else quiet++
+      // Nothing about the upload on screen any more: finished, once it was
+      // seen going (20 seconds), or after two minutes if it never showed.
+      if ((seenUploading && quiet >= 4) || quiet >= 24) { prog = { state: 'done', text: 'No upload left in progress' }; break }
       await _sleep(5000)
     }
     if (!prog || prog.state !== 'done') {
@@ -10636,26 +10659,38 @@ async function scanStudioUpload(o) {
     }
     steps.push({ step: 'sending', ok: true, detail: 'Studio has the whole file' })
     if (o.itemId) { map[o.itemId] = { videoId, sent: true, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
-    // Paid promotion, AI use, notify, then Save as Private: the drafts walker.
-    // Visibility as MVP decided it: Schedule at the video's time, Public for
-    // one the creator agreed should go now, Private otherwise. The walker
-    // never reaches Visibility unless paid promotion read back, and MVP reads
-    // the result from YouTube afterwards before counting it.
-    const vis0 = o.visibility && typeof o.visibility === 'object' ? o.visibility : null
-    const visibility = vis0 && vis0.mode === 'schedule' && vis0.publishAt ? { mode: 'schedule', publishAt: String(vis0.publishAt) }
-      : vis0 && vis0.mode === 'public' ? { mode: 'public' } : { mode: 'private' }
-    // A time that has gone by now (a long upload) is not scheduled in the
-    // past: saved Private, and MVP asks the creator for a new time.
-    if (visibility.mode === 'schedule' && !(Date.parse(visibility.publishAt) > Date.now() + 3 * 60000)) { visibility.mode = 'private'; delete visibility.publishAt }
-    const want = Object.assign({}, o.want || {}, { visibility })
-    await front()
-    const draftSteps = await runStudioDraft(tabId, videoId, want)
-    await back()
-    for (const s of draftSteps) steps.push(s)
-    const vis = draftSteps.find((s) => s && s.step === 'visibility')
-    const saved = !!(vis && vis.ok)
+
+    // ── A SAVE THAT DID NOT TAKE IS DONE AGAIN, ON THE DRAFT, NOW ─────────
+    // Only Save in Studio takes a video out of draft (YouTube's API cannot),
+    // so SCOUT opens the draft and saves it in this same run, rather than
+    // leaving a Try again for the creator. The plain address: a channel one
+    // gives Studio's "something went wrong" on a video's edit page.
+    if (!saved && !_studioAbort) {
+      try {
+        await chrome.tabs.update(tabId, { url: 'https://studio.youtube.com/video/' + videoId + '/edit' })
+        await waitForTabLoad(tabId, 30000)
+        await front()
+        await _sleep(2500)
+        const op = Object.assign({}, await studioDraftExec(tabId, 'open', {}), { step: 'open' })
+        steps.push(Object.assign({}, op, { detail: 'Second go at saving: ' + (op.detail || '') }))
+        visibility = pickVisibility()
+        if (op.ok && op.isDraft) {
+          const again = await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility }))
+          for (const x of again) steps.push(Object.assign({}, x, { detail: 'Second go: ' + (x.detail || '') }))
+          saved = visOk(again)
+        } else if (op.ok && op.isDraft === false) {
+          // Studio shows it as a normal video now: it was saved after all.
+          // Its real visibility is read back from YouTube by MVP.
+          saved = true
+          visibility = { mode: 'private' }
+        }
+      } catch (e) {
+        steps.push({ step: 'open', ok: false, detail: 'Second go at saving could not open the draft: ' + ((e && e.message) || 'error') })
+      }
+      await back()
+    }
+
     const okStep = (n) => { const x = steps.find((s) => s && s.step === n); return x ? !!x.ok && !x.skipped : null }
-    // What SCOUT set and read back, item by item, for MVP to skip (or do).
     const thumbStep = steps.find((x) => x && x.step === 'thumbnail')
     const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), thumbVerified: !!(thumbStep && thumbStep.verified === true), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null }
     if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, did, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }

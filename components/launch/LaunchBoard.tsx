@@ -33,7 +33,7 @@ import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
 import { runStudioUploads } from '@/lib/studio-upload-client'
-import { isStudioWaiting } from '@/lib/studio-upload'
+import { isStudioWaiting, DRAFT_REASON_PREFIX, STUDIO_DRAFT_SAVING } from '@/lib/studio-upload'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
@@ -398,7 +398,10 @@ export default function LaunchBoard() {
   // within the work window, and no run yet or one that timed out with tries
   // left. Opening an old batch no longer drives its public videos through
   // Studio again.
-  const studioDue = (i: Item) => liftoffPending(
+  // A draft SCOUT is about to save is not given a separate Studio pass first.
+  const isScoutDraft = (i: Item) => i.state === 'blocked' && !!i.youtube_video_id
+    && (String(i.reason || '').startsWith(DRAFT_REASON_PREFIX) || String(i.reason || '').startsWith(STUDIO_DRAFT_SAVING))
+  const studioDue = (i: Item) => !(studioUpload && isScoutDraft(i)) && liftoffPending(
     [{ ...i, studio_finish: liveRuns[i.id] ?? i.studio_finish }], [],
     { sendToYouTube: batch?.send_to_youtube !== false, studioPossible: scoutCanStudio },
   ).studio > 0
@@ -413,11 +416,11 @@ export default function LaunchBoard() {
   uploadTick.current = () => {
     if (!scoutCanUpload || !batch || uploadRunning.current || studioRunning.current || amazonRunning.current) return uploadRunning.current
     if (batch.state !== 'launched' && batch.state !== 'launching') return false
-    if (!items.some((i) => i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason))) return false
+    if (!items.some((i) => (i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason)) || isScoutDraft(i))) return false
     uploadRunning.current = true
     void runStudioUploads({
       background: true,
-      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio. Studio comes to the front for a moment while SCOUT fills it in, then you are brought back here.` : `${o.title}: ${o.said}`),
+      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio. Studio comes to the front once while SCOUT fills in every page and saves it, then you are brought back here and the file finishes behind.` : `${o.title}: ${o.said}`),
     }).then((done) => {
       if (done.length > 0 && batch) void load(batch.id, true)
     }).finally(() => { uploadRunning.current = false; setTimeout(() => setUploadNote(null), 15_000) })
@@ -2184,7 +2187,7 @@ export default function LaunchBoard() {
               {studioUpload ? (<>
                 <p className="text-[12px] font-semibold" style={text}>YouTube: SCOUT uploads in Studio, no API</p>
                 <p className="text-[11.5px] mt-1" style={muted}>
-                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you (Studio comes to the front for a moment per video, then you are put back): the file, title, description,
+                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you (Studio comes to the front once per video while SCOUT fills it in, then you are put back): the file, title, description,
                   tags, thumbnail and playlist, paid promotion and AI use, then schedules it for the time you picked. Nothing goes
                   through YouTube&apos;s API except one quick check that paid promotion and the time stuck. The pinned comment is posted
                   by SCOUT too. Keep Chrome open with SCOUT; with this page closed it carries on in a pinned background tab (below).

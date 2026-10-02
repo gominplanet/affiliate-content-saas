@@ -130,3 +130,10 @@ export function studioStoppedAt(steps: Array<{ step: string; ok: boolean; skippe
   const others = bad.slice(1).map((x) => STEP_WORDS[x.step] ?? x.step).filter((w, i, a) => a.indexOf(w) === i && w !== words)
   return `It stopped at ${words}${first.detail ? `: ${first.detail.replace(/\.$/, '')}` : ''}.${others.length ? ` Also not done: ${others.join(', ')}.` : ''}`
 }
+
+/** How a SCOUT upload that ended as a Studio draft starts its row's note. */
+export const DRAFT_REASON_PREFIX = 'On your channel ('
+/** On a draft SCOUT is saving in Studio right now. */
+export const STUDIO_DRAFT_SAVING = 'SCOUT is saving the draft in Studio now.'
+/** On a draft SCOUT tried and could not save: left for the creator. */
+export const STUDIO_DRAFT_FAILED = 'SCOUT could not save the draft in Studio.'

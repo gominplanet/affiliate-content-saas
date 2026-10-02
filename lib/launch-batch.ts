@@ -18,7 +18,7 @@
 // research, the translation, every dub, and YouTube itself) runs without them.
 // So the promise is: set it up, press Launch, leave the tab open, walk away.
 
-import { isStudioRunning, isStudioWaiting, STUDIO_UPLOAD_DONE } from '@/lib/studio-upload'
+import { isStudioRunning, isStudioWaiting, STUDIO_UPLOAD_DONE, STUDIO_DRAFT_SAVING, STUDIO_DRAFT_FAILED } from '@/lib/studio-upload'
 import { canUsePreview } from '@/lib/labs-preview'
 import { normalizeSlots, cadenceLabel, hasOwnSchedule } from '@/lib/launch-schedule'
 import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
@@ -724,7 +724,9 @@ export function itemProgressLabel(i: {
   // passed before it was ready.
   if (i.state === 'blocked' && /^Kept private\./.test(String(i.reason ?? ''))) return 'On YouTube, kept private'
   // A SCOUT upload that did not get saved is on the channel as a draft.
-  if (i.state === 'blocked' && /^On your channel \(/.test(String(i.reason ?? ''))) return 'On YouTube as a draft, needs a look'
+  if (i.state === 'blocked' && String(i.reason ?? '').startsWith(STUDIO_DRAFT_SAVING)) return 'SCOUT is saving it in Studio'
+  if (i.state === 'blocked' && String(i.reason ?? '').startsWith(STUDIO_DRAFT_FAILED)) return 'Draft in Studio, needs you'
+  if (i.state === 'blocked' && /^On your channel \(/.test(String(i.reason ?? ''))) return 'Draft in Studio, SCOUT saves it next'
   if (i.state === 'prepared' && i.planned_publish_at) {
     // YOUTUBE THROUGH SCOUT (lib/studio-upload): its own words, so SCOUT
     // working never reads as a failed try.

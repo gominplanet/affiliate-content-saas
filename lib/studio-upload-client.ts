@@ -5,10 +5,12 @@
 // Studio, and report what happened. One at a time, and one run per page, so
 // the Liftoff runner and the board never start the same upload twice.
 
-import { requestStudioUpload, type StudioUploadResult } from '@/lib/extension-frame'
+import { requestStudioUpload, requestStudioFinish, type StudioUploadResult } from '@/lib/extension-frame'
 
 export type StudioUploadItem = {
   itemId: string; channelId: string; fileUrl: string; fileName: string
+  /** A video SCOUT uploaded that is still a draft in Studio: saved, not uploaded. */
+  draft?: boolean; videoId?: string | null
   title: string; description: string; tries: number
   tags?: string[]; thumbnailUrl?: string | null; playlist?: string | null
   visibility?: { mode: 'schedule'; publishAt: string } | { mode: 'public' } | { mode: 'private' }
@@ -45,6 +47,36 @@ export function runStudioUploads(opts: { background?: boolean; onProgress?: (o: 
       } catch { claimed = false }
       if (!claimed) continue
       opts.onProgress?.({ itemId: it.itemId, title: it.title, starting: true })
+
+      // ── A DRAFT: OPENED IN STUDIO AND SAVED, NOTHING UPLOADED ────────────
+      if (it.draft && it.videoId) {
+        const vis = it.visibility ?? { mode: 'private' as const }
+        let fin: Awaited<ReturnType<typeof requestStudioFinish>>
+        try {
+          fin = await requestStudioFinish(it.videoId, {
+            details: it.want.details, monetize: it.want.monetize, selfCert: it.want.selfCert, endScreen: it.want.endScreen,
+            notifySubscribers: it.want.notifySubscribers, tagProduct: false, visibility: vis, background: opts.background === true,
+          })
+        } catch (e) { fin = { ok: false, steps: [], error: e instanceof Error ? e.message : 'failed' } }
+        const visStep = fin.steps.find((x) => x.step === 'visibility')
+        // Studio showing it as a normal video means it was saved already;
+        // MVP reads its real state back from YouTube.
+        const saved = fin.path === 'video' || !!(visStep && visStep.ok)
+        const result = { saved, visibility: fin.path === 'video' ? 'private' : vis.mode, publishAt: vis.mode === 'schedule' ? vis.publishAt : null, error: fin.error, steps: fin.steps }
+        for (let a = 0; a < 3; a++) {
+          const ok = await fetch('/api/launch/studio-uploads', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: it.itemId, draftResult: result }), signal: AbortSignal.timeout(30_000),
+          }).then((x) => x.ok).catch(() => false)
+          if (ok) break
+          await new Promise((r) => setTimeout(r, 2000 * (a + 1)))
+        }
+        const out: StudioUploadOutcome = { itemId: it.itemId, title: it.title, ok: saved, videoId: it.videoId, said: saved ? 'Saved in Studio' : (fin.error || 'SCOUT could not save the draft') }
+        done.push(out)
+        opts.onProgress?.(out)
+        if (fin.error === 'busy' || fin.error === 'not-installed') break
+        continue
+      }
 
       let res: StudioUploadResult
       try {

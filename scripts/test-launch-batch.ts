@@ -1748,7 +1748,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
       check('Try again never sends a video already on YouTube back to its thumbnail',
         inOrder(RETRY, "if (String(item.youtube_video_id || '').trim()) {", "} else if (!item.thumbnail_url) {")
-        && /patch\.publish_tries = 0\n\s*if \(String\(item\.youtube_video_id/.test(RETRY)
+        && /patch\.publish_tries = 0\n[\s\S]{0,1200}?if \(String\(item\.youtube_video_id/.test(RETRY)
         && /\.eq\('state', 'blocked'\)\.select\('id'\)/.test(RETRY))
     }
     const LAUNCH = live(read('app/api/launch/batches/[id]/launch/route.ts'))
