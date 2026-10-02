@@ -64,7 +64,17 @@ export interface VoiceScrubOptions {
    *  When provided, bare @handles in body text get wrapped in <a> tags pointing
    *  here. When absent, bare @handles are LEFT untouched (we won't invent a URL). */
   channelUrl?: string | null
+  /** The post is written from the creator's OWN video: they made it, so a
+   *  sentence saying they did not review, test or use the product is false
+   *  and is taken out. Never set for posts about products the creator has not
+   *  used (from a link), where that sentence is the honest one. */
+  ownVideo?: boolean
 }
+
+/** "I didn't actually review this product", "I haven't tested it myself",
+ *  "we never got to try it": a whole sentence denying the creator's own
+ *  review. Written by the model when the video's words were not captured. */
+const OWN_VIDEO_DENIALS = /(?:^|(?<=[.!?]\s))[^.!?<>]*\b(?:I|we)\s+(?:did\s+not|didn['’]t|have\s+not|haven['’]t|never|was\s+not|wasn['’]t|could\s+not|couldn['’]t)\s+(?:actually\s+|personally\s+|yet\s+|been\s+able\s+to\s+|get\s+to\s+|got\s+to\s+|had\s+(?:a\s+)?(?:chance|the\s+chance)\s+to\s+)?(?:review(?:ed)?|test(?:ed)?|use[d]?|tr(?:y|ied)|own(?:ed)?|handle[d]?|get\s+hands-on)\b[^.!?<>]*[.!?]\s*/gi
 
 // Matches a bare @handle not already inside an attribute value, an existing
 // <a> tag's body, or a URL path. Negative lookbehind excludes the four
@@ -100,6 +110,14 @@ export function scrubVoicePatterns(content: string, opts?: VoiceScrubOptions): V
     // 2) Phrase rewrites in place.
     let rewritten = inner
     let hits = 0
+    if (opts?.ownVideo) {
+      const denials = rewritten.match(OWN_VIDEO_DENIALS)
+      if (denials) {
+        rewritten = rewritten.replace(OWN_VIDEO_DENIALS, '')
+        hits += denials.length
+        if (!rewritten.replace(/<[^>]+>/g, '').trim()) { paragraphsRemoved++; return '' }
+      }
+    }
     for (const [re, repl] of PHRASE_REWRITES) {
       const m = rewritten.match(re)
       if (m) {

@@ -23,6 +23,11 @@ import { maybeCreateBlogShortlink, type BlogSocialLinkMode } from '@/lib/blog-sh
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
+import { transcriptionConfigured, transcribeToCues } from '@/lib/shorts-transcribe'
+import { cuesToText } from '@/lib/shorts-transcript'
+import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -549,7 +554,17 @@ async function handleGenerate(request: Request) {
   // different subsets of `youtube_videos`).
   const videoRow = video as Record<string, unknown>
   let transcript = (videoRow.transcript as string | null) || ''
-  let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'none' = transcript ? 'cache' : 'none'
+  let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'whisper' | 'none' = transcript ? 'cache' : 'none'
+  // Word-timed cues already saved for this video (Shorts transcribes the same
+  // videos), so a post never pays for words MVP already has.
+  if (!transcript) {
+    const rawCues = (videoRow as { transcript_cues?: unknown }).transcript_cues
+    const saved = (Array.isArray(rawCues) ? rawCues : [])
+      .map((c: { start?: unknown; end?: unknown; text?: unknown }) => ({ start: Number(c?.start), end: Number(c?.end), text: String(c?.text ?? '').trim() }))
+      .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.text)
+    const text = saved.length ? cuesToText(saved) : ''
+    if (text.trim().length >= 40) { transcript = text; transcriptSource = 'cache' }
+  }
   // Only a REAL YouTube id is worth asking YouTube about. A Launchpad master is
   // an uploaded file stored under a synthetic "upload-…" id, so the two fetch
   // layers below would spend a token refresh and a scrape on a video YouTube has
@@ -565,8 +580,13 @@ async function handleGenerate(request: Request) {
   if (!transcript && youtubeVideoIdForTranscript) {
     try {
       const integ = integration as Record<string, unknown> | null
-      if (integ?.youtube_oauth_access_token) {
-        const token = await getValidYouTubeToken(integ as Record<string, unknown>)
+      // THE CHANNEL THAT OWNS THE VIDEO. YouTube only hands captions to their
+      // owner, and this used the account's first token whatever channel the
+      // video was on, so a second channel or a Brand Account was refused every
+      // time and the post was written without the creator's words.
+      const owned = await getChannelOAuthToken(supabase, ownerId, (videoRow.channel_id as string | null) ?? null).catch(() => null)
+      const token = owned || (integ?.youtube_oauth_access_token ? await getValidYouTubeToken(integ as Record<string, unknown>) : null)
+      if (token) {
         const yt = createYouTubeOAuthService(token)
         const apiTranscript = await yt.getTranscript(youtubeVideoIdForTranscript)
         if (apiTranscript && apiTranscript.trim().length >= 40) {
@@ -590,13 +610,35 @@ async function handleGenerate(request: Request) {
     } catch { /* leave empty */ }
   }
 
+  // Layer 3: the video's own audio, transcribed (the path Shorts uses). The
+  // two layers above fail from a server more often than not: YouTube refuses
+  // auto-captions to the API and blocks the scraper from cloud addresses. This
+  // pulls only the audio and runs Whisper on it. Capped at an hour.
+  let whisperCues: Array<{ start: number; end: number; text: string }> = []
+  if (!transcript && youtubeVideoIdForTranscript && ingestConfigured() && transcriptionConfigured()
+    && (Number(videoRow.duration_seconds) || 0) <= 3600) {
+    try {
+      const audioUrl = await ingestAudio(youtubeVideoIdForTranscript, ownerId)
+      if (audioUrl) {
+        whisperCues = await transcribeToCues(audioUrl)
+        if (whisperCues.length) {
+          recordUsage({ userId: ownerId, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
+          const text = cuesToText(whisperCues)
+          if (text.trim().length >= 40) { transcript = text; transcriptSource = 'whisper' }
+        }
+        const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
+        if (p) { try { await createAdminClient().storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
+      }
+    } catch { /* leave empty */ }
+  }
+
   // Cache whatever we got so the next regen / rewrite is instant.
   if (transcript && transcriptSource !== 'cache') {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase
+      await (supabase as any)
         .from('youtube_videos')
-        .update({ transcript, transcript_fetched_at: new Date().toISOString() })
+        .update({ transcript, transcript_fetched_at: new Date().toISOString(), ...(whisperCues.length ? { transcript_cues: whisperCues } : {}) })
         .eq('id', videoId)
     } catch { /* non-fatal */ }
   }
@@ -665,6 +707,16 @@ async function handleGenerate(request: Request) {
         } else {
           destination = directProductUrl
           alreadyGeniuslink = true
+          // THE PRODUCT, STILL. Re-wrapping needs the creator's Geniuslink
+          // keys, but finding out WHICH product the link points at does not:
+          // the geni.us redirect is public. Without this, a creator who links
+          // with Geniuslink got posts with no product facts, no listing and no
+          // ASIN. Their own geni.us link is still the one the post uses.
+          try {
+            const finalUrl = await resolveTrueDestination(directProductUrl)
+            const asinFromFinal = asinFromAmazonUrl(finalUrl)
+            if (asinFromFinal) asinOverride = asinFromFinal.toUpperCase()
+          } catch { /* the link still works; the product is found by title below */ }
         }
       } else if (/(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(directProductUrl)) {
         // A short link — LOOK IT UP before assuming. If it lands on an
@@ -1462,7 +1514,7 @@ async function handleGenerate(request: Request) {
   // "watch the full video before deciding…" filler.
   {
     const channelUrl = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-    const scrub = scrubVoicePatterns(content, { channelUrl })
+    const scrub = scrubVoicePatterns(content, { channelUrl, ownVideo: true })
     content = scrub.content
     if (scrub.paragraphsRemoved + scrub.phrasesRewritten + scrub.handlesWrapped > 0) {
       console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s), wrapped ${scrub.handlesWrapped} @handle(s)`)
@@ -1566,7 +1618,7 @@ async function handleGenerate(request: Request) {
         critique.edits.map(e => ({ weakness: e.weakness, applied: e.applied })))
       // Re-scrub — the critique rewrites can reintroduce banned voice/words.
       const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-      content = scrubVoicePatterns(scrubBanned(critique.content), { channelUrl: channelUrlForRescrub }).content
+      content = scrubVoicePatterns(scrubBanned(critique.content), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
     } else if (critique.edits.length > 0) {
       console.log(`[blog/generate] self-critique: ${critique.edits.length} flagged but 0 applied (verbatim mismatch)`)
     }
@@ -1854,7 +1906,7 @@ async function handleGenerate(request: Request) {
       factCheckedPrePublish = true
       if (checked && checked !== content) {
         const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
       }
     } catch { /* not checked here; the after() pass tries once more */ }
   }
@@ -2596,7 +2648,7 @@ async function handleGenerate(request: Request) {
         // out a bogus spec. Pass the channel URL again so any bare @handles the
         // fact-check leaves behind also get wrapped.
         const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
         try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
