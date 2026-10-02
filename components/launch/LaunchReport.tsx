@@ -70,7 +70,7 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
   }
   if (i.state === 'prepared') {
     return i.planned_publish_at
-      ? { word: /is running now/.test(i.reason || '') ? 'Uploading now' : 'Queued for upload', colour: BUSY, done: false }
+      ? { word: /is running now|^Sending to YouTube in pieces/.test(i.reason || '') ? 'Uploading now' : 'Queued for upload', colour: BUSY, done: false }
       : { word: 'Ready, not launched', colour: WARN, done: false, problem: 'Ready but not launched yet. Press Launch these too.' }
   }
   return { word: 'Still being prepared', colour: BUSY, done: false }

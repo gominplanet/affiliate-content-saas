@@ -74,7 +74,9 @@ const live = (src: string) => src
   const sends = DRAIN.match(/notifySubscribers: notifyByBatch\.get\(it\.batch_id\) === true/g) ?? []
   // EVERY CALL, however many there are: the upload, the schedule, and the
   // go-public call for a video sent out now.
-  const calls = (DRAIN.match(/yt\.(uploadShort|updateVideoStatus)\(/g) ?? []).length
+  // The piece upload (sendInPieces) opens its session with the same options
+  // object, so it is one more call that must carry the toggle.
+  const calls = (DRAIN.match(/yt\.(uploadShort|updateVideoStatus)\(|sendInPieces\(sb, yt,/g) ?? []).length
   check('every upload and status call sends the batch\'s toggle',
     calls >= 2 && sends.length === calls, `${sends.length} of ${calls}`)
   check('a missing column reads as No, and does not stop uploads',

@@ -1018,6 +1018,73 @@ export class YouTubeOAuthService {
    * Returns the new video id. privacyStatus defaults to 'public' (cross-post
    * intent); pass 'unlisted'/'private' to hold it back.
    */
+  // ── A RESUMABLE UPLOAD ACROSS SEVERAL RUNS ───────────────────────────────
+  //
+  // uploadShort sends the whole file in one request inside one function run,
+  // and a 288MB video could not make it inside the five minutes a run has: all
+  // three tries "stopped before they could report back". These three calls let
+  // the caller open YouTube's upload session once, keep its address, and send
+  // the file in pieces over as many runs as it takes. The session address is
+  // the authority for that upload (no token is needed to send to it), and
+  // YouTube keeps it for about a week.
+
+  /** Open a resumable upload for `totalBytes` and return its address. */
+  async startResumableUpload(totalBytes: number, opts: Parameters<YouTubeOAuthService['uploadShort']>[1]): Promise<string> {
+    const meta = uploadMeta(opts)
+    const initRes = await fetchWithTimeout(
+      `https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&notifySubscribers=${opts.notifySubscribers === true ? 'true' : 'false'}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': 'video/*',
+          'X-Upload-Content-Length': String(totalBytes),
+        },
+        body: JSON.stringify(meta),
+      },
+    )
+    if (!initRes.ok) throw new Error(`YouTube upload init failed ${initRes.status}: ${(await initRes.text()).slice(0, 400)}`)
+    const url = initRes.headers.get('location')
+    if (!url) throw new Error('YouTube upload: no resumable session URL returned.')
+    return url
+  }
+
+  /** How far an upload session has got: the next byte to send, done with the
+   *  video's id, or gone (expired or unknown, so a new session is needed). */
+  static async resumableStatus(uploadUrl: string, totalBytes: number): Promise<{ next: number } | { done: true; id: string; channelId: string | null } | { gone: true }> {
+    const res = await fetchWithTimeout(uploadUrl, {
+      method: 'PUT', headers: { 'Content-Length': '0', 'Content-Range': `bytes */${totalBytes}` }, timeoutMs: 30_000,
+    })
+    if (res.status === 200 || res.status === 201) {
+      const j = await res.json().catch(() => ({})) as { id?: string; snippet?: { channelId?: string } }
+      if (j.id) return { done: true, id: j.id, channelId: j.snippet?.channelId || null }
+    }
+    if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
+    if (res.status === 404 || res.status === 410) return { gone: true }
+    throw new Error(`YouTube upload status ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  }
+
+  /** Send one piece starting at `start`. Pieces other than the last must be a
+   *  multiple of 256 KiB. */
+  static async putChunk(uploadUrl: string, bytes: Uint8Array, start: number, totalBytes: number, timeoutMs: number)
+    : Promise<{ next: number } | { done: true; id: string; channelId: string | null }> {
+    const end = start + bytes.byteLength - 1
+    const res = await fetchWithTimeout(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Length': String(bytes.byteLength), 'Content-Range': `bytes ${start}-${end}/${totalBytes}` },
+      body: bytes as unknown as BodyInit,
+      timeoutMs,
+    })
+    if (res.status === 200 || res.status === 201) {
+      const j = await res.json() as { id?: string; snippet?: { channelId?: string } }
+      if (!j.id) throw new Error('YouTube upload: no video id in response.')
+      return { done: true, id: j.id, channelId: j.snippet?.channelId || null }
+    }
+    if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
+    throw new Error(`YouTube upload failed ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  }
+
   async uploadShort(
     videoBytes: Uint8Array,
     opts: {
@@ -1272,4 +1339,38 @@ export async function getValidYouTubeToken(integration: Record<string, unknown>)
 
 export function createYouTubeOAuthService(accessToken: string) {
   return new YouTubeOAuthService(accessToken)
+}
+
+
+/** The next byte YouTube wants, from a 308's Range header ("bytes=0-1234"). */
+function rangeNext(range: string | null): number {
+  const m = /bytes=\d+-(\d+)/.exec(String(range || ''))
+  return m ? Number(m[1]) + 1 : 0
+}
+
+/** The snippet and status an upload is opened with (shared by uploadShort and
+ *  the resumable path, so the two can never send different settings). */
+function uploadMeta(opts: { title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; containsSyntheticMedia?: boolean; embeddable?: boolean }) {
+  const tags: string[] = []
+  let tagLen = 0
+  for (const t of (opts.tags || [])) {
+    const v = String(t).trim().slice(0, 40)
+    if (!v) continue
+    tagLen += v.length + 1
+    if (tagLen > 480 || tags.length >= 15) break
+    tags.push(v)
+  }
+  return {
+    snippet: {
+      title: (opts.title || 'Short').slice(0, 100),
+      description: (opts.description || '').slice(0, 4900),
+      ...(tags.length ? { tags } : {}),
+    },
+    status: {
+      privacyStatus: opts.privacyStatus || 'public',
+      selfDeclaredMadeForKids: false,
+      ...(typeof opts.embeddable === 'boolean' ? { embeddable: opts.embeddable } : {}),
+      ...(typeof opts.containsSyntheticMedia === 'boolean' ? { containsSyntheticMedia: opts.containsSyntheticMedia } : {}),
+    },
+  }
 }

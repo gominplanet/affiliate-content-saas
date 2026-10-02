@@ -73,6 +73,10 @@ const IMAGES = 6
 const THUMB_POOL = 3
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
+/** A video bigger than this goes to YouTube in pieces across runs. */
+const PIECES_FROM = 100 * 1024 * 1024
+/** One piece: a multiple of 256 KiB, as YouTube requires for all but the last. */
+const PIECE = 32 * 1024 * 1024
 /** Tries for the thumbnail step, which is TWO images and so needs its own
  *  budget. Three each: sharing one budget of three across both would leave a
  *  video that spent two firings succeeding with a single retry left. */
@@ -819,6 +823,19 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
   }
 
+  // YOUTUBE UPLOAD SESSIONS IN PROGRESS (migration 396), read on their own so
+  // a missing column only turns off sending in pieces, never every upload.
+  const ytSessions = new Map<string, string>()
+  let piecesOn = false
+  {
+    const { data: sRows, error: sErr } = await sb.from('launch_items')
+      .select('id,yt_upload_url').in('id', items.map((i: { id: string }) => i.id))
+    if (!sErr) {
+      piecesOn = true
+      for (const r of (sRows ?? []) as Array<{ id: string; yt_upload_url: string | null }>) if (r.yt_upload_url) ytSessions.set(r.id, r.yt_upload_url)
+    }
+  }
+
   // EACH BATCH'S CHANNEL, the one the creator confirmed with YouTube.
   const chRead = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
   // NOTHING UPLOADS ON A GUESS about which channel it goes to: next firing.
@@ -988,7 +1005,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // THE LAST TRY'S ERROR STAYS ON SCREEN. It used to be overwritten by
       // this note the moment the next attempt started, so a creator watched
       // "Attempt 2 of 3" become "Attempt 3 of 3" with no idea why.
-      reason: `Attempt ${tries + 1} of ${TRIES} is running now.${said0 && !/^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ` Last try: ${said0}` : /^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ' Last try stopped before it could report back, which is a time limit, not YouTube.' : ''}`.slice(0, 300),
+      reason: `Attempt ${tries + 1} of ${TRIES} is running now.${/^Sending to YouTube in pieces/.test(said0) ? ` Carrying on: ${said0.replace(/ It carries on.*$/, '')}` : said0 && !/^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ` Last try: ${said0}` : /^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ' Last try stopped before it could report back, which is a time limit, not YouTube.' : ''}`.slice(0, 300),
       updated_at: stamp(),
     }).eq('id', it.id).eq('state', 'prepared')
     const { data: claimed } = await (it.publish_tries == null ? claim.is('publish_tries', null) : claim.eq('publish_tries', tries)).select('id')
@@ -1075,33 +1092,71 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // Refuse on the header before pulling the body into memory, the same
         // way the interactive uploader does. Downloading half a gigabyte to
         // discover it is half a gigabyte is the check becoming the problem.
-        const res = await fetchWithTimeout(src, { timeoutMs: Math.max(30_000, Math.min(240_000, left() - 90_000)) })
-        if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
-        const declared = Number(res.headers.get('content-length') || 0)
-        if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
-        const bytes = Buffer.from(await res.arrayBuffer())
-        if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
-
-        const up = await yt.uploadShort(bytes, {
+        // BIG VIDEOS GO IN PIECES, ACROSS RUNS (migration 396). One request
+        // has the five minutes of one run, and a 288MB video could not make it:
+        // all three tries "stopped before they could report back". A YouTube
+        // upload session is opened once and kept on the row, the file goes in
+        // 32MB pieces read straight from storage, and a run that runs low on
+        // time saves where it got to and gives the try back. The next run
+        // carries on from there. Small videos keep the one-request path.
+        const openOpts = {
           title: title.slice(0, 100),
-          // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
-          // the same writer Launchpad uses, because the CTA burned into this
-          // very frame says "link in the description" and an empty one makes
-          // that a lie and the video unpaid.
           description: (it.description || '').slice(0, 4900),
           tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-          // PRIVATE ALWAYS, even for a video going out now: it becomes public
-          // only once its paid promotion has been set and read back, below.
-          privacyStatus: 'private',
-          // The batch's toggle, sent explicitly: left out, YouTube notifies.
+          privacyStatus: 'private' as const,
           notifySubscribers: notifyByBatch.get(it.batch_id) === true,
           embeddable: true,
           ...(disclose ? { containsSyntheticMedia: false } : {}),
-          // What is left of this firing, less room to record the id.
-          uploadTimeoutMs: left() - 20_000,
-        })
-        videoId = up.id
-        channelId = up.channelId
+        }
+        let total = 0
+        if (piecesOn) {
+          const head = await fetchWithTimeout(src, { method: 'HEAD', timeoutMs: 20_000 }).catch(() => null)
+          total = Number(head?.headers.get('content-length') || 0)
+        }
+        if (piecesOn && total > 0 && (ytSessions.has(it.id) || total > PIECES_FROM)) {
+          if (total > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+          const sent = await sendInPieces(sb, yt, it.id, src, total, ytSessions.get(it.id) ?? null, openOpts, left)
+          if (!sent.done) {
+            // PROGRESS IS NOT A FAILED TRY: the try is handed back, and the
+            // note says how far it got. The next run carries on.
+            await sb.from('launch_items').update({
+              publish_tries: tries,
+              reason: `Sending to YouTube in pieces: ${Math.round(sent.sent / 1048576)} of ${Math.round(total / 1048576)} MB so far. It carries on by itself on the next run.`,
+              updated_at: stamp(),
+            }).eq('id', it.id)
+            continue
+          }
+          videoId = sent.id
+          channelId = sent.channelId
+        } else {
+          const res = await fetchWithTimeout(src, { timeoutMs: Math.max(30_000, Math.min(240_000, left() - 90_000)) })
+          if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
+          const declared = Number(res.headers.get('content-length') || 0)
+          if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+          const bytes = Buffer.from(await res.arrayBuffer())
+          if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+
+          const up = await yt.uploadShort(bytes, {
+            title: title.slice(0, 100),
+            // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
+            // the same writer Launchpad uses, because the CTA burned into this
+            // very frame says "link in the description" and an empty one makes
+            // that a lie and the video unpaid.
+            description: (it.description || '').slice(0, 4900),
+            tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+            // PRIVATE ALWAYS, even for a video going out now: it becomes public
+            // only once its paid promotion has been set and read back, below.
+            privacyStatus: 'private',
+            // The batch's toggle, sent explicitly: left out, YouTube notifies.
+            notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+            embeddable: true,
+            ...(disclose ? { containsSyntheticMedia: false } : {}),
+            // What is left of this firing, less room to record the id.
+            uploadTimeoutMs: left() - 20_000,
+          })
+          videoId = up.id
+          channelId = up.channelId
+        }
         // IMMEDIATELY, AND ON ITS OWN. Not bundled into the update at the end
         // of this block: everything between here and there is a way for this
         // fact to be lost, and losing it is what put three copies on a channel.
@@ -1906,4 +1961,56 @@ export async function GET(request: Request) {
   const firstComments = left() > 30_000 ? await firstCommentCatchUp(sb, left) : null
   const settled = await settle(sb)
   return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, firstComments, settled })
+}
+
+
+/**
+ * Send a video to YouTube in pieces, carrying on from wherever its upload
+ * session got to. Returns done with the video's id, or how many bytes YouTube
+ * has so far when this run is running out of time. The session address is
+ * saved on the row the moment it is opened, so a run that dies mid-piece
+ * loses at most that piece.
+ */
+async function sendInPieces(
+  sb: Sb, yt: YouTubeOAuthService, itemId: string, src: string, total: number, saved: string | null,
+  openOpts: Parameters<YouTubeOAuthService['startResumableUpload']>[1], left: Left,
+): Promise<{ done: true; id: string; channelId: string | null } | { done: false; sent: number }> {
+  let url = saved
+  let next = 0
+  if (url) {
+    const st = await YouTubeOAuthService.resumableStatus(url, total)
+    if ('done' in st) {
+      await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
+      return st
+    }
+    if ('gone' in st) url = null
+    else next = st.next
+  }
+  if (!url) {
+    url = await yt.startResumableUpload(total, openOpts)
+    const { error } = await sb.from('launch_items').update({ yt_upload_url: url }).eq('id', itemId)
+    if (error) console.error('[launch-drain] could not keep the upload session', { item: itemId, said: error.message })
+    next = 0
+  }
+  while (next < total) {
+    if (left() < 75_000) return { done: false, sent: next }
+    const end = Math.min(total, next + PIECE) - 1
+    const piece = await fetchWithTimeout(src, { headers: { Range: `bytes=${next}-${end}` }, timeoutMs: 45_000 })
+    if (piece.status !== 206 && !(piece.status === 200 && next === 0 && end === total - 1)) {
+      throw new Error(`the video file could not be read in pieces (${piece.status})`)
+    }
+    const bytes = new Uint8Array(await piece.arrayBuffer())
+    const r = await YouTubeOAuthService.putChunk(url, bytes, next, total, Math.max(20_000, left() - 45_000))
+    if ('done' in r) {
+      await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
+      return r
+    }
+    next = r.next
+  }
+  const st = await YouTubeOAuthService.resumableStatus(url, total)
+  if ('done' in st) {
+    await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
+    return st
+  }
+  return { done: false, sent: 'next' in st ? st.next : next }
 }
