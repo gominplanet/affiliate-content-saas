@@ -100,7 +100,7 @@ check('the manifest and the app registry agree on the version',
 {
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('the On choice is found even with help text after it, or by its id',
-    /isRadio\(el\) && visible\(el\) && \/\^on\\b\/i\.test\(ctrlText\(el\)\)/.test(kitMon) && /byId\('radio-on', sc\)/.test(kitMon))
+    /isRadio\(el\) && visible\(el\) && wantStart\.test\(ctrlText\(el\)\)/.test(kitMon) && /byId\('radio-' \+ wantWord, sc\)/.test(kitMon) && /new RegExp\('\^' \+ wantWord \+ '\\\\b', 'i'\)/.test(kitMon))
   check('and the menu is opened through the label\'s button if the label opens nothing',
     /for \(const opener of openers\)/.test(kitMon))
   const kitVis = BG.slice(BG.indexOf('K.steps.visibility = '), BG.indexOf('window.__mvpKit = K'))
@@ -165,7 +165,7 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
   check('disabled is read on the button\'s wrapper as well as the button',
     /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
-  check('the kit version moves when the kit changes', /const KIT_VERSION = 14\b/.test(BG))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 15\b/.test(BG))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a menu that opened is not clicked shut by the next try',
     /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))
@@ -195,7 +195,7 @@ check('the manifest and the app registry agree on the version',
 {
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('an On that was not on the page before the click is the choice, wherever Studio draws it',
-    /const fresh = all\(document\)\.filter\(\(el\) => visible\(el\) && \/\^on\$\/i\.test\(deepText\(el\)\) && !onBefore\.has\(el\)\)/.test(kitMon)
+    /const fresh = all\(document\)\.filter\(\(el\) => visible\(el\) && wantExact\.test\(deepText\(el\)\) && !onBefore\.has\(el\)\)/.test(kitMon)
     && /const f1 = smallest\(fresh\)\n\s*if \(f1\) return f1/.test(kitMon)
     && /onBefore = new Set\(all\(document\)\.filter/.test(kitMon)
     && kitMon.indexOf('onBefore = new Set(all(document)') < kitMon.indexOf('click(opener)'))
@@ -214,7 +214,7 @@ check('the manifest and the app registry agree on the version',
 {
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('the monetization switch is clicked at its innermost Off, so the click passes every layer',
-    /for \(const el of all\(t\)\) \{ if \(visible\(el\) && \/\^\(on\|off\)\$\/i\.test\(deepText\(el\)\)\) inner = el \}/.test(kitMon)
+    /for \(const el of all\(t\)\) \{ if \(visible\(el\) && \/\^\(on\|off\|select\)\$\/i\.test\(deepText\(el\)\)\) inner = el \}/.test(kitMon)
     && /const openers = \[inner\]/.test(kitMon))
 }
 

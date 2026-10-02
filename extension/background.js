@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 14
+  const KIT_VERSION = 15
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9363,23 +9363,32 @@ K.steps.monetization = async (out, o) => {
       // VISIBLE ONLY. The draft window keeps its other pages in the page, and
       // a hidden child-input on one of them was clicked instead of this one:
       // nothing opened, and the step said there was no On choice.
-      const byChild = all(dlg).find((el) => el.id === 'child-input' && visible(el) && /\b(on|off)\b/i.test(deepText(el) || attrLabel(el)))
+      const byChild = all(dlg).find((el) => el.id === 'child-input' && visible(el) && /\b(on|off|select)\b/i.test(deepText(el) || attrLabel(el)))
       if (byChild) return byChild
       for (const el of all(dlg)) {
         if (!visible(el)) continue
         const t = deepText(el)
-        if (!/^(on|off)$/i.test(t)) continue
+        if (!/^(on|off|select)$/i.test(t)) continue
         const r = el.getAttribute && el.getAttribute('role')
         const tag = (el.tagName || '').toLowerCase()
         if (isBtn(el) || r === 'combobox' || r === 'listbox' || /dropdown|select|trigger/.test(tag)) return el
       }
-      for (const el of all(dlg)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) return el }
+      for (const el of all(dlg)) { if (visible(el) && /^(on|off|select)$/i.test(deepText(el))) return el }
       return null
     }
     const state = () => { const t = trigger(); const s = t ? deepText(t) : ''; return /^on\b/i.test(s) ? 'on' : /^off\b/i.test(s) ? 'off' : null }
     out.readBack.before = state()
-    if (!o.on) { out.skipped = true; out.detail = 'Left as it was: ' + (out.readBack.before || 'unknown'); return out }
-    if (out.readBack.before === 'on') { out.ok = true; out.readBack.monetization = 'on'; out.detail = 'Monetization was already On'; return out }
+    // A FRESH UPLOAD HAS NO ANSWER YET ("Select"), and Studio will not move
+    // past the page without one ("Your video needs a monetization setting").
+    // So an unanswered box is answered either way: On when asked for, Off
+    // when the batch says no. One already answered is left alone unless On
+    // was asked for.
+    const unset = !out.readBack.before && !!trigger()
+    if (!o.on && !unset) { out.skipped = true; out.detail = 'Left as it was: ' + (out.readBack.before || 'unknown'); return out }
+    const wantWord = o.on ? 'on' : 'off'
+    const wantStart = new RegExp('^' + wantWord + '\\b', 'i')
+    const wantExact = new RegExp('^' + wantWord + '$', 'i')
+    if (out.readBack.before === wantWord) { out.ok = true; out.readBack.monetization = wantWord; out.detail = 'Monetization was already ' + (o.on ? 'On' : 'Off'); return out }
     const t = trigger()
     if (!t) { out.skipped = true; out.detail = 'No monetization switch on this channel'; return out }
     // THE ON CHOICE, however Studio draws it: a radio whose label starts with
@@ -9389,13 +9398,13 @@ K.steps.monetization = async (out, o) => {
     const findOn = (before) => {
       const scopes = dialogsNow().filter((x) => !before.includes(x)).concat([document])
       for (const sc of scopes) {
-        const byOnId = byId('radio-on', sc)
+        const byOnId = byId('radio-' + wantWord, sc)
         if (byOnId && visible(byOnId)) return byOnId
-        const r = all(sc).find((el) => isRadio(el) && visible(el) && /^on\b/i.test(ctrlText(el)))
+        const r = all(sc).find((el) => isRadio(el) && visible(el) && wantStart.test(ctrlText(el)))
         if (r) return r
         const opt = all(sc).find((el) => {
           const role = el.getAttribute && el.getAttribute('role')
-          return (role === 'option' || role === 'menuitemradio' || role === 'menuitem') && visible(el) && /^on\b/i.test(ctrlText(el))
+          return (role === 'option' || role === 'menuitemradio' || role === 'menuitem') && visible(el) && wantStart.test(ctrlText(el))
         })
         if (opt) return opt
       }
@@ -9403,20 +9412,20 @@ K.steps.monetization = async (out, o) => {
       // checks the circle beside it, as a hand does.
       const smallest = (list) => list.sort((x, y) => (x.getBoundingClientRect().width * x.getBoundingClientRect().height) - (y.getBoundingClientRect().width * y.getBoundingClientRect().height))[0] || null
       for (const sc of dialogsNow().filter((x) => !before.includes(x))) {
-        const w = smallest(all(sc).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
+        const w = smallest(all(sc).filter((el) => visible(el) && wantExact.test(deepText(el))))
         if (w) return w
       }
       // OR ANYWHERE, IF IT WAS NOT THERE BEFORE THE CLICK. SCOUT's own record
       // from a real run: the click opened the menu and a plain <span>On</span>
       // appeared, in no popup Studio marks as one, so none of the above saw
       // it. An "On" that appeared with the click is the choice.
-      const fresh = all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && !onBefore.has(el))
+      const fresh = all(document).filter((el) => visible(el) && wantExact.test(deepText(el)) && !onBefore.has(el))
       const f1 = smallest(fresh)
       if (f1) return f1
       // Or an On that was already drawn (a menu Studio keeps in the page and
       // only shows), when it sits in something option-like.
       const optionish = (el) => { let x = el; for (let i = 0; i < 8 && x; i++) { if (/radio|option|item|listbox|menu/i.test((x.tagName || '') + ' ' + ((x.getAttribute && x.getAttribute('role')) || ''))) return true; x = up(x) } return false }
-      return smallest(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && optionish(el)))
+      return smallest(all(document).filter((el) => visible(el) && wantExact.test(deepText(el)) && optionish(el)))
     }
     // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
     // real button, and a click on the label opens nothing; its button-like
@@ -9428,7 +9437,7 @@ K.steps.monetization = async (out, o) => {
     // never heard it. A click on the innermost "Off" passes through every one
     // of them on its way up, the way a hand's does.
     let inner = t
-    for (const el of all(t)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) inner = el }
+    for (const el of all(t)) { if (visible(el) && /^(on|off|select)$/i.test(deepText(el))) inner = el }
     const openers = [inner]
     let e = up(inner)
     for (let i = 0; i < 8 && e && e !== t; i++) { if (/monetization|trigger|dropdown|container/i.test((e.tagName || '') + ' ' + (e.id || ''))) openers.push(e); e = up(e) }
@@ -9441,7 +9450,7 @@ K.steps.monetization = async (out, o) => {
     let onBefore = new Set()
     for (const opener of openers) {
       before = dialogsNow()
-      onBefore = new Set(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
+      onBefore = new Set(all(document).filter((el) => visible(el) && wantExact.test(deepText(el))))
       click(opener)
       out.debug.tried.push(((opener.tagName || '') + ' ' + (deepText(opener) || attrLabel(opener)).slice(0, 30)).trim())
       onOpt = await waitFor(() => findOn(before), 4000, 300)
@@ -9451,7 +9460,7 @@ K.steps.monetization = async (out, o) => {
       if (dialogsNow().some((x) => !before.includes(x))) { onOpt = await waitFor(() => findOn(before), 3000, 300); break }
     }
     if (!onOpt) {
-      out.detail = 'Clicked the monetization switch, but no On choice appeared'
+      out.detail = 'Clicked the monetization switch, but no ' + (o.on ? 'On' : 'Off') + ' choice appeared'
       out.debug.buttons = buttonSample(document)
       out.debug.radios = all(document).filter((el) => isRadio(el) && visible(el)).map((el) => ctrlText(el).slice(0, 40)).slice(0, 12)
       out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
@@ -9480,7 +9489,7 @@ K.steps.monetization = async (out, o) => {
     const nextOrDone = await waitFor(() => findBtn(/^(next|done|save)$/i, scopeNow(), { enabled: true }), 5000, 300)
     out.readBack.menuButton = nextOrDone ? (deepText(nextOrDone) || attrLabel(nextOrDone)) : null
     if (nextOrDone) { click(nextOrDone); await sleep(1200) }
-    out.readBack.rating = await K.rate(o, out)
+    out.readBack.rating = o.on ? await K.rate(o, out) : 'not-asked'
     // WAYS TO EARN KEEPS NOTHING UNTIL ITS OWN SAVE. The draft saves as it
     // goes; a video's page does not.
     if (o.page) {
@@ -9492,11 +9501,11 @@ K.steps.monetization = async (out, o) => {
       }
     }
     out.readBack.monetization = state()
-    out.ok = out.readBack.monetization === 'on' && (!o.page || out.readBack.saved !== false)
+    out.ok = out.readBack.monetization === wantWord && (!o.page || out.readBack.saved !== false)
     const said = out.readBack.rating === 'submitted' ? ' Rating: None of the above, submitted.'
       : out.readBack.rating === 'not-asked' ? ' The rating was not asked for, so it was cancelled.'
       : out.readBack.rating === 'failed' ? ' The rating could not be submitted: ' + (out.readBack.ratingWhy || 'see Studio') + '.' : ''
-    out.detail = (out.ok ? 'Monetization On. Read back from Studio.' : 'Chose On, but Studio still shows ' + (out.readBack.monetization || 'nothing')) + said
+    out.detail = (out.ok ? 'Monetization ' + (o.on ? 'On' : 'Off') + '. Read back from Studio.' : 'Chose ' + (o.on ? 'On' : 'Off') + ', but Studio still shows ' + (out.readBack.monetization || 'nothing')) + said
     if (out.ok && out.readBack.rating === 'failed') { out.ok = false; out.partial = true }
     return out
   }

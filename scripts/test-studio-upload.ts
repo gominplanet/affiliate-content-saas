@@ -84,6 +84,7 @@ check('SCOUT\'s step names stay MVP\'s own (text, tags, playlist)', /\{ step: 't
 check('SCOUT counts tags the way YouTube does, quotes and all', /\(\/\\s\/\.test\(v\) \? 2 : 0\)/.test(bg) && /if \(len \+ add > 460\) break/.test(bg))
 check('a greyed Next says what Studio shows', /Studio shows: ' \+ errs\.join/.test(bg))
 check('the upload walk answers the batch\'s own Studio options', /monetize: opts\.monetize, selfCert: opts\.monetize && opts\.adRating, endScreen: opts\.endScreen/.test(route))
+check('an unanswered monetization box ("Select") is answered either way', /const unset = !out\.readBack\.before && !!trigger\(\)/.test(bg) && /\/\^\(on\|off\|select\)\$\/i\.test\(t\)/.test(bg))
 check('SCOUT knows a page by its heading when its contents say nothing yet', /'initial check': 'checks'/.test(bg) && /if \(fs >= 22\) return NAMES\[t\]/.test(bg))
 check('an unknown page says what it showed', /\(it showed: "/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
