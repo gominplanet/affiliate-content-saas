@@ -237,7 +237,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
   check('which is skipped only for the ones going out now',
-    /if \(!goNow && !missed && !heldBack\) \{[\s\S]{0,1200}?updateVideoStatus/.test(DRAIN),
+    /if \(!goNow && !missed && !heldBack(?: && !studioScheduled)?\) \{[\s\S]{0,1200}?updateVideoStatus/.test(DRAIN),
     'calling it with a past time fails every single time')
   check('one video per firing',
     /const PUBLISHES = 1/.test(DRAIN),
@@ -1809,14 +1809,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'the scheduling call sent the time alone, which switched embedding off on every batch video')
   check('a video going out now is uploaded private and made public only once paid promotion reads back',
     /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN) && /if \(!missed && !paidConfirmed\) \{\s*heldBack = /.test(DRAIN)
-    && /if \(goNow && !heldBack\) \{/.test(DRAIN))
+    && /if \(goNow && !heldBack(?: && !studioPublic)?\) \{/.test(DRAIN))
   {
     // THE SCHEDULE IS GATED TOO: the read comes before the publish time is
     // set, and a video YouTube did not confirm is not given one.
     const readAt = DRAIN.indexOf('readBack = await yt.readDisclosures(videoId)')
     const schedAt = DRAIN.indexOf("publishAt: String(it.planned_publish_at),")
     check('paid promotion is read back before a publish time is set',
-      readAt > 0 && schedAt > 0 && readAt < schedAt && /if \(!goNow && !missed && !heldBack\) \{/.test(DRAIN),
+      readAt > 0 && schedAt > 0 && readAt < schedAt && /if \(!goNow && !missed && !heldBack(?: && !studioScheduled)?\) \{/.test(DRAIN),
       'a scheduled video went public undisclosed at its time')
     check('every hold starts "Kept private." so a new time can be given to it',
       (DRAIN.match(/`Kept private\. YouTube did not confirm paid promotion/g) ?? []).length === 2 && !/Kept private: /.test(DRAIN))

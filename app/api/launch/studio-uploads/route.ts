@@ -20,8 +20,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
+import { ytFetch } from '@/lib/youtube-quota'
 import {
-  usesStudioUpload, isStudioRunning, cleanVideoId, studioUploadFailureText,
+  usesStudioUpload, isStudioRunning, cleanVideoId, studioUploadFailureText, studioDid,
   STUDIO_UPLOAD_RUNNING, STUDIO_UPLOAD_DONE, STUDIO_UPLOAD_CLAIM_MS, STUDIO_UPLOAD_TRIES,
 } from '@/lib/studio-upload'
 
@@ -32,6 +33,7 @@ type Row = {
   id: string; batch_id: string; title: string | null; description: string | null; tags: string | null
   rendered_url: string | null; planned_publish_at: string | null; publish_tries: number | null
   reason: string | null; updated_at: string | null; youtube_video_id: string | null; state: string
+  thumbnail_url?: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,7 +52,7 @@ export async function GET() {
   if (g instanceof NextResponse) return g
   const { user, sb } = g
   const { data: rows, error } = await sb.from('launch_items')
-    .select('id,batch_id,title,description,tags,rendered_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
+    .select('id,batch_id,title,description,tags,rendered_url,thumbnail_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
     .eq('user_id', user.id).eq('state', 'prepared').is('youtube_video_id', null)
     .not('planned_publish_at', 'is', null).not('rendered_url', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(20)
@@ -67,10 +69,36 @@ export async function GET() {
   if (waiting.length === 0) return NextResponse.json({ ok: true, on: true, items: [] })
 
   const batchIds = [...new Set(waiting.map((r) => r.batch_id))]
+  type B = { id: string; youtube_channel_id: string | null; notify_subscribers: boolean | null; studio_options: unknown; send_to_youtube: boolean | null; playlist_id?: string | null }
   const { data: batches } = await sb.from('launch_batches')
     .select('id,youtube_channel_id,notify_subscribers,studio_options,send_to_youtube').in('id', batchIds)
-  const byBatch = new Map<string, { youtube_channel_id: string | null; notify_subscribers: boolean | null; studio_options: unknown; send_to_youtube: boolean | null }>()
-  for (const b of (batches ?? []) as Array<{ id: string; youtube_channel_id: string | null; notify_subscribers: boolean | null; studio_options: unknown; send_to_youtube: boolean | null }>) byBatch.set(b.id, b)
+  const byBatch = new Map<string, B>()
+  for (const b of (batches ?? []) as B[]) byBatch.set(b.id, b)
+  // Each batch's playlist, read on its own (migration 367), and its NAME,
+  // which is what Studio's list shows: one 1-unit read per batch.
+  const playlistName = new Map<string, string>()
+  {
+    const { data: pb } = await sb.from('launch_batches').select('id,playlist_id').in('id', batchIds)
+    const want = ((pb ?? []) as Array<{ id: string; playlist_id: string | null }>).filter((b) => !!b.playlist_id)
+    for (const b of want) {
+      try {
+        const token = await getChannelOAuthToken(sb, user.id, String(byBatch.get(b.id)?.youtube_channel_id || '').trim() || null)
+        if (!token) continue
+        const r = await ytFetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${encodeURIComponent(String(b.playlist_id))}`, { headers: { Authorization: `Bearer ${token}` }, timeoutMs: 15_000 })
+        const d = await r.json().catch(() => null)
+        const t = String(d?.items?.[0]?.snippet?.title || '').trim()
+        if (t) playlistName.set(b.id, t)
+      } catch { /* MVP adds it instead */ }
+    }
+  }
+  // WHICH VIDEOS THE CREATOR AGREED TO SEND NOW (migration 365), the same
+  // rule as the drain: due and agreed goes Public, due and not agreed stays
+  // Private for a new time, and anything still ahead is Scheduled.
+  const agreedNow = new Set<string>()
+  {
+    const { data: nowRows, error: nowErr } = await sb.from('launch_items').select('id').in('id', waiting.map((r) => r.id)).eq('publish_now', true)
+    if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
+  }
   // A batch with no confirmed channel uploads to the creator's default one.
   const { data: def } = await sb.from('youtube_channels').select('channel_id')
     .eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }).limit(1)
@@ -83,8 +111,19 @@ export async function GET() {
     if (!channelId) return []
     const opts = normalizeStudioOptions(b.studio_options)
     const name = (String(r.title || 'video').replace(/[^\w\- ]+/g, '').trim().slice(0, 60) || 'video') + '.mp4'
+    const at = new Date(String(r.planned_publish_at)).getTime()
+    // SCOUT saves Private instead if the time has gone by the time it gets
+    // to Visibility (a long upload), and MVP then asks for a new time.
+    const due = at <= now
+    const visibility = !due ? { mode: 'schedule' as const, publishAt: new Date(at).toISOString() }
+      : agreedNow.has(r.id) ? { mode: 'public' as const }
+      : { mode: 'private' as const }
     return [{
       itemId: r.id,
+      tags: String(r.tags || '').split(',').map((t) => t.trim()).filter(Boolean),
+      thumbnailUrl: /^https:\/\//i.test(String(r.thumbnail_url || '')) ? String(r.thumbnail_url) : null,
+      playlist: playlistName.get(r.batch_id) ?? null,
+      visibility,
       channelId,
       fileUrl: String(r.rendered_url),
       fileName: name,
@@ -108,7 +147,11 @@ export async function POST(req: Request) {
   const { user, sb } = g
   const body = await req.json().catch(() => ({})) as {
     itemId?: string; claim?: boolean
-    result?: { ok?: boolean; videoId?: string; saved?: boolean; error?: string; detail?: string; steps?: Array<{ step?: string; ok?: boolean; detail?: string; skipped?: boolean }> }
+    result?: {
+      ok?: boolean; videoId?: string; saved?: boolean; error?: string; detail?: string
+      steps?: Array<{ step?: string; ok?: boolean; detail?: string; skipped?: boolean }>
+      did?: { text?: boolean | null; tags?: boolean | null; thumbnail?: boolean | null; playlist?: boolean | null; visibility?: string | null; publishAt?: string | null } | null
+    }
   }
   const itemId = String(body.itemId || '')
   if (!/^[0-9a-f-]{36}$/i.test(itemId)) return NextResponse.json({ ok: false, error: 'Which video?' }, { status: 400 })
@@ -162,25 +205,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: same, error: same ? undefined : `This video already has a different YouTube id on record (${row.youtube_video_id}). The copy SCOUT just uploaded (${videoId}) is a second one: delete it in Studio.` })
     }
 
-    // THE WORDS MVP WROTE, EXACTLY, AND THE TAGS. Studio was given the title
-    // and description by typing, which can drift (a box that trims, a line
-    // break lost), and Studio uploads have no tags, so the API sets all three
-    // once (about 50 units). The description carries the affiliate link: if
-    // Studio's own typing did not read back AND this fails, nothing goes out.
-    const steps = Array.isArray(r.steps) ? r.steps : []
-    const textOk = steps.some((s) => s && s.step === 'text' && s.ok === true)
+    // WHAT SCOUT SET AND READ BACK, kept for the drain (migration 399), which
+    // skips each of these after its own 1-unit read and does the rest. Its
+    // own write, so a database without the column loses only the saving:
+    // the drain then does every step through the API, as before.
+    const did = studioDid(r.did, r.saved === true)
+    await sb.from('launch_items').update({ studio_upload: { ...did, videoId, at: stamp } }).eq('id', row.id)
+
+    // THE WORDS AND TAGS, THROUGH THE API ONLY WHEN SCOUT MISSED THEM (about
+    // 50 units). The description carries the affiliate link: if Studio did
+    // not keep it AND this fails, nothing goes out.
+    const wantTags = String(row.tags || '').split(',').map((t) => t.trim()).filter(Boolean)
+    const textOk = did.text === true
     let metaError: string | null = null
-    try {
-      const { data: b } = await sb.from('launch_batches').select('youtube_channel_id').eq('id', row.batch_id).maybeSingle()
-      const token = await getChannelOAuthToken(sb, user.id, String(b?.youtube_channel_id || '').trim() || null)
-      if (!token) throw new Error('the channel is not connected for publishing')
-      await new YouTubeOAuthService(token).updateVideoMetadata(videoId, {
-        title: String(row.title || '').trim().slice(0, 100),
-        description: String(row.description || '').slice(0, 4900),
-        tags: String(row.tags || '').split(',').map((t) => t.trim()).filter(Boolean),
-      })
-    } catch (e) {
-      metaError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+    if (!textOk || (wantTags.length > 0 && did.tags !== true)) {
+      try {
+        const { data: b } = await sb.from('launch_batches').select('youtube_channel_id').eq('id', row.batch_id).maybeSingle()
+        const token = await getChannelOAuthToken(sb, user.id, String(b?.youtube_channel_id || '').trim() || null)
+        if (!token) throw new Error('the channel is not connected for publishing')
+        await new YouTubeOAuthService(token).updateVideoMetadata(videoId, {
+          title: String(row.title || '').trim().slice(0, 100),
+          description: String(row.description || '').slice(0, 4900),
+          tags: wantTags,
+        })
+      } catch (e) {
+        metaError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+      }
     }
 
     if (r.saved !== true || (!textOk && metaError)) {
@@ -188,7 +238,7 @@ export async function POST(req: Request) {
         state: 'blocked',
         reason: (r.saved !== true
           ? `On your channel (${videoId}) as a draft in Studio: SCOUT uploaded it but could not finish saving it${r.detail ? ` (${r.detail})` : ''}. Open it in Studio, check it, save it as Private, then press Try again and MVP sets its time.`
-          : `On your channel (${videoId}), private, but its title and description could not be checked (${metaError}). Check them in Studio, then press Try again and MVP sets its time.`
+          : `On your channel (${videoId}), but Studio did not keep its title and description and MVP could not set them (${metaError}). Check them in Studio, then press Try again.`
         ).slice(0, 400),
         updated_at: stamp,
       }).eq('id', row.id)

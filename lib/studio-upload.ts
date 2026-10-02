@@ -70,3 +70,27 @@ export function studioUploadFailureText(error: string | null | undefined, detail
   if (e === 'no-video-id') return d || 'The file went into Studio, but Studio did not show the new video’s link.'
   return d ? `SCOUT could not upload it: ${d}` : `SCOUT could not upload it${e ? ` (${e})` : ''}.`
 }
+
+/** What SCOUT set and read back on a Studio upload (migration 399). */
+export type StudioDid = {
+  text: boolean | null; tags: boolean | null; thumbnail: boolean | null; playlist: boolean | null
+  /** The visibility SCOUT saved: 'schedule', 'public', 'private', or null when it did not save. */
+  visibility: 'schedule' | 'public' | 'private' | null
+  publishAt: string | null
+}
+
+/** SCOUT's report, cleaned: anything not plainly true is "not done". Pure. */
+export function studioDid(raw: unknown, saved: boolean): StudioDid {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const b = (k: string) => (o[k] === true ? true : o[k] === false ? false : null)
+  const v = saved && (o.visibility === 'schedule' || o.visibility === 'public' || o.visibility === 'private') ? o.visibility : null
+  const at = v === 'schedule' && typeof o.publishAt === 'string' && !isNaN(Date.parse(o.publishAt)) ? new Date(o.publishAt).toISOString() : null
+  return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
+}
+
+/** Read back from YouTube, did SCOUT's schedule hold: private, with the time
+ *  asked for (within two minutes). Pure. */
+export function scheduleHeld(did: StudioDid | null, read: { privacyStatus: string | null; publishAt: string | null } | null, planned: string): boolean {
+  if (!did || did.visibility !== 'schedule' || !read || read.privacyStatus !== 'private' || !read.publishAt) return false
+  return Math.abs(Date.parse(read.publishAt) - Date.parse(planned)) <= 120_000
+}

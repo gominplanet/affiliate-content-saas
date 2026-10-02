@@ -35,7 +35,7 @@ import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting } from '@/lib/studio-upload'
+import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting, studioDid, scheduleHeld, type StudioDid } from '@/lib/studio-upload'
 import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
@@ -841,6 +841,18 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     }
   }
 
+  // WHAT SCOUT ALREADY DID IN STUDIO for the videos it uploaded (migration
+  // 399), read on its own: on any error the map is empty and every step goes
+  // through the API, as it did before.
+  const studioByItem = new Map<string, StudioDid>()
+  {
+    const { data: sRows, error: sErr } = await sb.from('launch_items')
+      .select('id,studio_upload').in('id', items.map((i: { id: string }) => i.id)).not('studio_upload', 'is', null)
+    if (!sErr) for (const r of (sRows ?? []) as Array<{ id: string; studio_upload: Record<string, unknown> | null }>) {
+      if (r.studio_upload) studioByItem.set(r.id, studioDid(r.studio_upload, r.studio_upload.visibility != null))
+    }
+  }
+
   // EACH BATCH'S CHANNEL, the one the creator confirmed with YouTube.
   const chRead = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
   // NOTHING UPLOADS ON A GUESS about which channel it goes to: next firing.
@@ -1100,7 +1112,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       //                    channel for however long the second call takes.
       const due = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
       const goNow = due && agreedNow.has(it.id)
-      const missed = due && !goNow
+      let missed = due && !goNow
 
       // ── THE UPLOAD HAPPENS ONCE, EVER ────────────────────────────────────
       //
@@ -1257,6 +1269,14 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
       }
       const paidConfirmed = !disclose || readBack?.paidPromotion === true
+      // SCHEDULED BY SCOUT FOR ITS OWN TIME, read back from YouTube: still
+      // private with that time, or already public because the time came
+      // before this run reached it. Either way the slot was kept, not missed.
+      const viaStudio = studioByItem.get(it.id) ?? null
+      const studioOnTime = !!viaStudio && viaStudio.visibility === 'schedule' && !!viaStudio.publishAt
+        && Math.abs(Date.parse(viaStudio.publishAt) - Date.parse(String(it.planned_publish_at))) <= 120_000
+        && (scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
+      if (studioOnTime && paidConfirmed) missed = false
       let heldBack: string | null = null
       if (!missed && !paidConfirmed) {
         heldBack = (goNow
@@ -1265,7 +1285,27 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         ).slice(0, 400)
       }
 
-      if (!goNow && !missed && !heldBack) {
+      // ── WHAT SCOUT DID IN STUDIO, CHECKED, NOT TAKEN ON TRUST ────────────
+      // A video SCOUT uploaded may already be scheduled, public, in its
+      // playlist and wearing its thumbnail, all at no quota. The schedule and
+      // the visibility are confirmed by the read above (1 unit); anything
+      // SCOUT did not do, or that does not read back, is done here as before.
+      const studioScheduled = !goNow && !missed && !heldBack && studioOnTime
+      const studioPublic = goNow && !heldBack && viaStudio?.visibility === 'public' && readBack?.privacyStatus === 'public'
+      // NEVER OUT WITHOUT ITS DISCLOSURE. If YouTube does not confirm paid
+      // promotion on a video SCOUT scheduled or published, it is made private
+      // here, whatever Studio showed.
+      if ((!paidConfirmed || missed) && viaStudio && viaStudio.visibility && viaStudio.visibility !== 'private'
+        && (!readBack || readBack.privacyStatus !== 'private' || !!readBack.publishAt)) {
+        try {
+          await yt.updateVideoStatus(videoId, { privacyStatus: 'private', notifySubscribers: notifyByBatch.get(it.batch_id) === true, ...keep })
+        } catch (pe) {
+          const said = pe instanceof Error && pe.message ? pe.message : String(pe)
+          throw new Error(`SCOUT scheduled it in Studio, but YouTube did not confirm paid promotion, and MVP could not make it private again: ${said}`)
+        }
+      }
+
+      if (!goNow && !missed && !heldBack && !studioScheduled) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
         // may call itself scheduled. A failure here is now said in the terms
         // that matter to somebody looking at their channel: the video is on it.
@@ -1297,7 +1337,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // a second time. What it must not do is fail quietly, so the outcome is
       // written either way and the board reads it.
       // ── (FOR "NOW") GO PUBLIC, ONLY WITH THE DISCLOSURE IN PLACE ────────
-      if (goNow && !heldBack) {
+      if (goNow && !heldBack && !studioPublic) {
         try {
           await yt.updateVideoStatus(videoId, {
             privacyStatus: 'public',
@@ -1324,7 +1364,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
 
       const thumbSrc = String(it.thumbnail_url || '').trim()
       const thumb: { at: string | null; error: string | null } = { at: null, error: null }
-      if (/^https:\/\//i.test(thumbSrc)) {
+      if (/^https:\/\//i.test(thumbSrc) && viaStudio?.thumbnail === true) {
+        // SCOUT set it in Studio and saw Studio's preview of it.
+        thumb.at = stamp()
+      } else if (/^https:\/\//i.test(thumbSrc)) {
         try {
           const tr = await fetchWithTimeout(thumbSrc, { timeoutMs: 60_000 })
           if (!tr.ok) throw new Error(`the thumbnail file could not be read (${tr.status})`)
@@ -1347,7 +1390,8 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       if (playlist && !inPlaylist.has(it.id)) {
         let added: string | null = null, plError: string | null = null
         try {
-          await yt.addVideoToPlaylist(playlist, videoId)
+          // SCOUT picked it in Studio and read it back off the dropdown.
+          if (viaStudio?.playlist !== true) await yt.addVideoToPlaylist(playlist, videoId)
           added = stamp()
         } catch (pe) {
           plError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)

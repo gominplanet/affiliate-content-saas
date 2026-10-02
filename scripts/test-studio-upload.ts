@@ -6,7 +6,7 @@
 // with this switch on, the server must never upload, SCOUT must never upload
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
-import { usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+import { studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -40,7 +40,7 @@ const bg = read('extension/background.js')
 check('SCOUT handles MVP_STUDIO_UPLOAD', /msg\.type === 'MVP_STUDIO_UPLOAD'/.test(bg))
 check('SCOUT answers a repeat with the id it kept', /already: true, videoId: map\[o\.itemId\]\.videoId/.test(bg))
 check('SCOUT waits for the whole file before saving', bg.indexOf("step: 'sending', ok: true") > 0 && bg.indexOf("step: 'sending', ok: true") < bg.indexOf('const draftSteps = await runStudioDraft(tabId, videoId, want)'))
-check('SCOUT saves Studio uploads as private', /visibility: \{ mode: 'private' \}/.test(bg))
+check('SCOUT saves Private unless MVP asked for a schedule or Public', /: \{ mode: 'private' \}/.test(bg))
 check('the file is fetched in SCOUT’s own world', /world: 'ISOLATED', func: studioUploadFileInPage/.test(bg))
 check('the kit has the upload text step', /K\.steps\.uploadText/.test(bg))
 
@@ -50,6 +50,28 @@ check('manifest and SCOUT_LATEST_VERSION agree', ver.includes(`SCOUT_LATEST_VERS
 check('the upload floor is 1.25.0', /SCOUT_STUDIO_UPLOAD_MIN_VERSION = '1\.25\.0'/.test(ver))
 check('the runner and the board check the SCOUT floor', /SCOUT_STUDIO_UPLOAD_MIN_VERSION/.test(read('components/launch/LiftoffRunner.tsx')) && /SCOUT_STUDIO_UPLOAD_MIN_VERSION/.test(read('components/launch/LaunchBoard.tsx')))
 check('the report names waiting for SCOUT', /Waiting for SCOUT/.test(read('components/launch/LaunchReport.tsx')))
+
+// ── ZERO QUOTA: SCOUT DOES THE REST, THE DRAIN CHECKS IT ─────────────────
+check('SCOUT\'s report: only plain true counts', (() => { const d = studioDid({ text: 'yes', tags: true, thumbnail: 1, playlist: false, visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true); return d.text === null && d.tags === true && d.thumbnail === null && d.playlist === false && d.visibility === 'schedule' })())
+check('not saved means no visibility', studioDid({ visibility: 'public' }, false).visibility === null)
+check('a schedule with no time is not a schedule', studioDid({ visibility: 'schedule' }, true).visibility === null)
+check('a schedule holds only private and at its time', (() => {
+  const did = studioDid({ visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true)
+  return scheduleHeld(did, { privacyStatus: 'private', publishAt: '2030-01-01T10:01:00Z' }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, { privacyStatus: 'private', publishAt: '2030-01-01T11:00:00Z' }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, { privacyStatus: 'public', publishAt: null }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, null, '2030-01-01T10:00:00Z')
+})())
+check('the drain reads what SCOUT did on its own', /select\('id,studio_upload'\)/.test(drain))
+check('the drain skips the schedule only when YouTube reads it back', /if \(!goNow && !missed && !heldBack && !studioScheduled\)/.test(drain) && /scheduleHeld\(viaStudio, readBack/.test(drain))
+check('the drain skips going public only when YouTube reads it public', /studioPublic = goNow && !heldBack && viaStudio\?\.visibility === 'public' && readBack\?\.privacyStatus === 'public'/.test(drain))
+check('unconfirmed paid promotion pulls a SCOUT schedule back to private', /if \(\(!paidConfirmed \|\| missed\) && viaStudio && viaStudio\.visibility && viaStudio\.visibility !== 'private'/.test(drain) && /privacyStatus: 'private', notifySubscribers: notifyByBatch/.test(drain))
+check('a thumbnail SCOUT did not set is set by MVP', /viaStudio\?\.thumbnail === true\)/.test(drain) && /yt\.uploadThumbnail\(videoId/.test(drain))
+check('a playlist SCOUT did not pick is added by MVP', /if \(viaStudio\?\.playlist !== true\) await yt\.addVideoToPlaylist/.test(drain))
+check('title and tags through the API only when SCOUT missed them', /if \(!textOk \|\| \(wantTags\.length > 0 && did\.tags !== true\)\)/.test(route))
+check('SCOUT reads back every link in the description', /links\.every\(\(l\) => now\.includes\(l\)\)/.test(bg))
+check('SCOUT saves Private when the time has gone', /visibility\.mode = 'private'; delete visibility\.publishAt/.test(bg))
+check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
 
 if (failures.length) {
   console.error('❌ studio upload guard failed:\n  - ' + failures.join('\n  - '))

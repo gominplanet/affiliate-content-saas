@@ -10,6 +10,8 @@ import { requestStudioUpload, type StudioUploadResult } from '@/lib/extension-fr
 export type StudioUploadItem = {
   itemId: string; channelId: string; fileUrl: string; fileName: string
   title: string; description: string; tries: number
+  tags?: string[]; thumbnailUrl?: string | null; playlist?: string | null
+  visibility?: { mode: 'schedule'; publishAt: string } | { mode: 'public' } | { mode: 'private' }
   want: { details: boolean; notifySubscribers: boolean; monetize: boolean; selfCert: boolean; endScreen: boolean; tagProduct: false }
 }
 
@@ -49,6 +51,7 @@ export function runStudioUploads(opts: { background?: boolean; onProgress?: (o: 
         res = await requestStudioUpload({
           itemId: it.itemId, channelId: it.channelId, fileUrl: it.fileUrl, fileName: it.fileName,
           title: it.title, description: it.description, want: it.want, background: opts.background === true,
+          tags: it.tags, thumbnailUrl: it.thumbnailUrl, playlist: it.playlist, visibility: it.visibility,
         })
       } catch (e) {
         res = { ok: false, steps: [], error: e instanceof Error ? e.message : 'failed' }
@@ -71,7 +74,10 @@ export function runStudioUploads(opts: { background?: boolean; onProgress?: (o: 
       const out: StudioUploadOutcome = {
         itemId: it.itemId, title: it.title, ok: !!res.videoId, videoId: res.videoId,
         said: res.videoId
-          ? (res.saved ? `Uploaded through Studio (${res.videoId})` : `Uploaded (${res.videoId}) but not saved in Studio`)
+          ? (!res.saved ? `Uploaded (${res.videoId}) but not saved in Studio`
+            : res.did && res.did.visibility === 'schedule' ? `Uploaded and scheduled in Studio (${res.videoId})`
+            : res.did && res.did.visibility === 'public' ? `Uploaded and published in Studio (${res.videoId})`
+            : `Uploaded through Studio (${res.videoId})`)
           : said || res.detail || res.error || 'SCOUT could not upload it',
       }
       done.push(out)

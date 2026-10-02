@@ -1880,6 +1880,13 @@ export interface StudioUploadOpts {
   /** The drafts walker's answers (paid promotion, AI use, notify). SCOUT
    *  always saves the upload as Private; MVP sets its time afterwards. */
   want: Partial<StudioFinishOpts>
+  /** Set on Details by SCOUT 1.26.0+, so none of them costs MVP's quota. */
+  tags?: string[]
+  thumbnailUrl?: string | null
+  /** The playlist's name, as Studio's list shows it. */
+  playlist?: string | null
+  /** Schedule at the video's time, Public for one agreed to go now, else Private. */
+  visibility?: { mode: 'schedule'; publishAt: string } | { mode: 'public' } | { mode: 'private' }
   background?: boolean
 }
 
@@ -1890,6 +1897,8 @@ export interface StudioUploadResult {
   already?: boolean
   error?: string
   detail?: string
+  /** What SCOUT set and read back (1.26.0+). */
+  did?: Record<string, unknown> | null
   steps: StudioFinishStep[]
 }
 
@@ -1901,7 +1910,7 @@ export interface StudioUploadResult {
  */
 export async function requestStudioUpload(opts: StudioUploadOpts): Promise<StudioUploadResult> {
   if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; videoId?: string; saved?: boolean; already?: boolean; error?: string; detail?: string; steps?: StudioFinishStep[] }>(
+  const resp = await sendToExtension<{ ok?: boolean; videoId?: string; saved?: boolean; already?: boolean; error?: string; detail?: string; did?: Record<string, unknown> | null; steps?: StudioFinishStep[] }>(
     { type: 'MVP_STUDIO_UPLOAD', opts: { ...opts, want: { ...opts.want, notifySubscribers: opts.want.notifySubscribers === true } } },
     // SCOUT allows the file an hour to send and gives up at 70 minutes.
     72 * 60_000,
@@ -1909,7 +1918,7 @@ export async function requestStudioUpload(opts: StudioUploadOpts): Promise<Studi
   if (!resp) return { ok: false, steps: [], error: 'timeout' }
   return {
     ok: !!resp.ok, videoId: resp.videoId, saved: resp.saved, already: resp.already,
-    error: resp.error, detail: resp.detail, steps: Array.isArray(resp.steps) ? resp.steps : [],
+    error: resp.error, detail: resp.detail, did: resp.did ?? null, steps: Array.isArray(resp.steps) ? resp.steps : [],
   }
 }
 

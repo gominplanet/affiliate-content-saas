@@ -8692,7 +8692,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 10
+  const KIT_VERSION = 11
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9986,7 +9986,13 @@ K.steps.monetization = async (out, o) => {
       try { document.execCommand('insertText', false, text) } catch (e) {}
       await sleep(500)
       const now = norm(box.innerText || box.textContent || '')
-      return now.slice(0, 40) === norm(text).slice(0, 40)
+      const want = norm(text)
+      if (now === want) return true
+      // THE LINKS ARE WHAT EARN. Studio may tidy spacing, but every link MVP
+      // wrote must be in the box, or the read-back fails and MVP sets the
+      // description itself.
+      const links = want.match(/https?:\/\/\S+/g) || []
+      return now.slice(0, 40) === want.slice(0, 40) && Math.abs(now.length - want.length) <= 20 && links.every((l) => now.includes(l))
     }
     const tb = await waitFor(titleBox, 15000, 400)
     const tOk = o.title ? await typeInto(tb, String(o.title).slice(0, 100)) : true
@@ -9999,6 +10005,94 @@ K.steps.monetization = async (out, o) => {
     out.detail = out.ok
       ? 'Title, description and Not made for kids set. Read back from Studio.'
       : 'Studio did not keep: ' + [tOk ? '' : 'the title', dOk ? '' : 'the description', kids.confirmed ? '' : 'Not made for kids'].filter(Boolean).join(', ')
+    return out
+  }
+
+  // ── A NEW UPLOAD'S TAGS (Liftoff, uploaded through Studio) ──────────────
+  // Behind "Show more" on Details. Typed as a person types, a comma after
+  // each, and read back as the chips Studio made. Studio caps tags at 500
+  // characters, so the list is trimmed to fit before it is typed.
+  K.steps.uploadTags = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The upload’s Details page is not open'; return out }
+    const want = []
+    let len = 0
+    for (const t of (Array.isArray(o.tags) ? o.tags : [])) {
+      const v = norm(String(t)).replace(/[<>,]/g, '').slice(0, 100)
+      if (!v || want.includes(v)) continue
+      if (len + v.length + (want.length ? 1 : 0) > 480) break
+      want.push(v); len += v.length + 1
+    }
+    if (!want.length) { out.ok = true; out.skipped = true; out.detail = 'No tags to add'; return out }
+    const tagInput = () => all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /tags/i.test(attrLabel(el) + ' ' + ((up(el) || {}).id || '') + ' ' + ((up(up(el)) || {}).id || '') + ' ' + ((up(up(up(el))) || {}).id || ''))) || null
+    if (!tagInput()) {
+      const more = byId('toggle-button', dlg) || findBtn(/^show more$/i, dlg)
+      if (more && /show more/i.test(deepText(more) || attrLabel(more))) { click(more); await waitFor(tagInput, 6000, 300) }
+    }
+    const input = tagInput()
+    if (!input) { out.detail = 'Could not find the Tags box (under Show more)'; out.debug.buttons = buttonSample(dlg); return out }
+    const chips = () => {
+      let host = input
+      for (let i = 0; i < 6 && host; i++) { if (/tags|chip-bar/i.test((host.id || '') + ' ' + (host.tagName || ''))) break; host = up(host) }
+      return all(host || dlg).filter((el) => /chip/i.test(el.tagName || '') && visible(el)).map((el) => norm(deepText(el)).replace(/\s*(remove|close|cancel)\s*$/i, '')).filter(Boolean)
+    }
+    const before = chips().length
+    try { input.focus() } catch (e) {}
+    for (const t of want) {
+      try { document.execCommand('insertText', false, t + ',') } catch (e) {}
+      await sleep(120)
+      if (norm(input.value)) {
+        for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+        await sleep(120)
+      }
+    }
+    await sleep(600)
+    const have = chips()
+    out.readBack.tags = have.length - before
+    const missing = want.filter((t) => !have.some((c) => c.toLowerCase() === t.toLowerCase()))
+    out.ok = have.length - before >= Math.max(1, want.length - 1) || missing.length === 0
+    out.detail = out.ok ? (want.length - missing.length) + ' of ' + want.length + ' tags in Studio. Read back as chips.' : 'Studio kept ' + Math.max(0, have.length - before) + ' of ' + want.length + ' tags'
+    return out
+  }
+
+  // ── A NEW UPLOAD'S PLAYLIST ─────────────────────────────────────────────
+  // Picked by its name in Studio's own Playlists list, then read back off the
+  // dropdown, which shows the playlists the video is in.
+  K.steps.uploadPlaylist = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The upload’s Details page is not open'; return out }
+    const name = norm(o.playlist || '')
+    if (!name) { out.ok = true; out.skipped = true; out.detail = 'No playlist was chosen'; return out }
+    const trigger = () => {
+      const host = all(dlg).find((el) => /playlist/i.test(el.tagName || '') && visible(el)) || null
+      const scope = host || dlg
+      return all(scope).find((el) => visible(el) && (/dropdown-trigger/i.test(el.tagName || '') || (el.getAttribute && el.getAttribute('role') === 'button' && /playlist|select/i.test(deepText(el) + ' ' + attrLabel(el))))) || null
+    }
+    const tr = await waitFor(trigger, 8000, 400)
+    if (!tr) { out.detail = 'Could not find the Playlists box'; out.debug.buttons = buttonSample(dlg); return out }
+    if (new RegExp('(^|,\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s*,|$)', 'i').test(norm(deepText(tr)))) { out.ok = true; out.detail = 'Already in “' + name + '”'; return out }
+    const before = dialogsNow()
+    click(tr)
+    const box = await waitFor(() => {
+      const d = newDialog(before) || null
+      const scope = d || document
+      return all(scope).find((el) => isCheckbox(el) && visible(el) && norm(labelOf(el)).toLowerCase() === name.toLowerCase()) || null
+    }, 8000, 300)
+    if (!box) {
+      out.detail = 'Your playlist “' + name + '” is not in Studio’s list'
+      const close = findBtn(/^(done|close|cancel)$/i, newDialog(before) || document)
+      if (close) click(close)
+      return out
+    }
+    if (!isChecked(box)) { click(box); await sleep(600) }
+    const ticked = isChecked(box)
+    const done = findBtn(/^done$/i, newDialog(before) || document)
+    if (done) click(done)
+    await sleep(900)
+    const shown = norm(trigger() ? deepText(trigger()) : '')
+    out.readBack.playlist = shown
+    out.ok = ticked && shown.toLowerCase().includes(name.toLowerCase())
+    out.detail = out.ok ? 'Added to “' + name + '”. Read back from Studio.' : 'Ticked “' + name + '”, but Studio shows “' + shown + '”'
     return out
   }
 
@@ -10211,6 +10305,46 @@ function studioUploadFileInPage(fileUrl, fileName, expectedChannel) {
   })()
 }
 
+// The designed thumbnail into a new upload's Details page. SCOUT's own world,
+// like the video, and read back as the preview Studio shows for a file it took.
+// Shorts may have no thumbnail box; that is said, and MVP sets it instead.
+function studioUploadThumbInPage(url) {
+  return (async () => {
+    const out = { step: 'thumbnail', ok: false, detail: '', readBack: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const all = (root) => { const acc = []; const w = (r) => { let e; try { e = r.querySelectorAll('*') } catch (x) { return } for (const el of e) { acc.push(el); if (el.shadowRoot) w(el.shadowRoot) } }; w(root || document); return acc }
+    try {
+      if (!/^https:\/\//.test(String(url || ''))) { out.ok = true; out.skipped = true; out.detail = 'No designed thumbnail to set'; return out }
+      const dlg = all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog') || document
+      const input = all(dlg).find((el) => el.tagName === 'INPUT' && el.type === 'file' && /image/i.test(el.accept || '')) || null
+      if (!input) { out.unavailable = true; out.detail = 'Studio offers no thumbnail upload on this video'; return out }
+      const previews = () => all(dlg).filter((el) => el.tagName === 'IMG' && /^(blob:|data:image)/.test(String(el.src || '')) && el.naturalWidth > 0).length
+      const before = previews()
+      let res
+      try { res = await fetch(url, { credentials: 'omit' }) } catch (e) { out.detail = 'This browser could not download the thumbnail from MVP'; return out }
+      if (!res.ok) { out.detail = 'MVP’s thumbnail could not be read (' + res.status + ')'; return out }
+      const blob = await res.blob()
+      if (!blob.size || blob.size > 2 * 1024 * 1024) { out.detail = blob.size ? 'The thumbnail is over YouTube’s 2MB limit' : 'The thumbnail file was empty'; return out }
+      const type = /^image\/(jpeg|png)$/.test(blob.type) ? blob.type : 'image/jpeg'
+      const dt = new DataTransfer()
+      dt.items.add(new File([blob], type === 'image/png' ? 'thumbnail.png' : 'thumbnail.jpg', { type }))
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      let seen = false
+      for (let i = 0; i < 40 && !seen; i++) { await sleep(500); seen = previews() > before }
+      const txt = (document.body && document.body.innerText) || ''
+      if (/thumbnail (couldn.t|could not|failed)|verify your account|verification/i.test(txt) && !seen) { out.detail = 'Studio would not take a custom thumbnail on this channel (it may need phone verification)'; return out }
+      out.ok = seen
+      out.readBack.preview = seen
+      out.detail = seen ? 'Thumbnail set. Read back as Studio’s preview.' : 'The thumbnail went in, but Studio showed no preview of it'
+      return out
+    } catch (e) {
+      out.detail = 'SCOUT hit an error setting the thumbnail: ' + ((e && e.message) || 'threw')
+      return out
+    }
+  })()
+}
+
 // Which channel Studio is on, from the page's own settings (MAIN world).
 function studioChannelInPage() {
   try { return String((window.ytcfg && window.ytcfg.get && window.ytcfg.get('CHANNEL_ID')) || '') } catch (e) { return '' }
@@ -10253,7 +10387,7 @@ async function scanStudioUpload(o) {
   try { const st = await chrome.storage.local.get([STUDIO_UPLOADS_KEY]); map = st[STUDIO_UPLOADS_KEY] || {} } catch (e) {}
   const forget = async () => { if (!o.itemId) return; try { delete map[o.itemId]; await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
   if (o.itemId && map[o.itemId] && map[o.itemId].sent) {
-    return { ok: true, already: true, videoId: map[o.itemId].videoId, saved: map[o.itemId].saved === true, steps: [{ step: 'upload', ok: true, detail: 'SCOUT already uploaded this one (' + map[o.itemId].videoId + ')' }] }
+    return { ok: true, already: true, videoId: map[o.itemId].videoId, saved: map[o.itemId].saved === true, did: map[o.itemId].did || null, steps: [{ step: 'upload', ok: true, detail: 'SCOUT already uploaded this one (' + map[o.itemId].videoId + ')' }] }
   }
   _studioChannelId = channelId
   _studioAbort = false
@@ -10284,6 +10418,17 @@ async function scanStudioUpload(o) {
     }
     // Its own words, and Not made for kids (a fresh upload has no answer).
     steps.push(Object.assign({ step: 'text' }, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' })))
+    // EVERYTHING ELSE ON DETAILS, HERE, so none of it costs MVP's YouTube
+    // quota: tags, the designed thumbnail, the playlist. Each reads back; one
+    // that does not is reported, and MVP sets that one item itself.
+    if (Array.isArray(o.tags) && o.tags.length) steps.push(Object.assign({ step: 'tags' }, await studioDraftExec(tabId, 'uploadTags', { tags: o.tags })))
+    if (o.thumbnailUrl) {
+      try {
+        const tr = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: studioUploadThumbInPage, args: [String(o.thumbnailUrl)] })
+        steps.push((tr && tr[0] && tr[0].result) || { step: 'thumbnail', ok: false, detail: 'Studio did not answer' })
+      } catch (e) { steps.push({ step: 'thumbnail', ok: false, detail: 'SCOUT could not reach the Studio tab' }) }
+    }
+    if (o.playlist) steps.push(Object.assign({ step: 'playlist' }, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist })))
     // THE WHOLE FILE, BEFORE ANYTHING IS SAVED. Closing Studio mid-send loses
     // the upload, so the tab stays until Studio has every byte.
     const sendEnd = Date.now() + 60 * 60000
@@ -10304,14 +10449,27 @@ async function scanStudioUpload(o) {
     steps.push({ step: 'sending', ok: true, detail: 'Studio has the whole file' })
     if (o.itemId) { map[o.itemId] = { videoId, sent: true, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
     // Paid promotion, AI use, notify, then Save as Private: the drafts walker.
-    const want = Object.assign({}, o.want || {}, { visibility: { mode: 'private' } })
+    // Visibility as MVP decided it: Schedule at the video's time, Public for
+    // one the creator agreed should go now, Private otherwise. The walker
+    // never reaches Visibility unless paid promotion read back, and MVP reads
+    // the result from YouTube afterwards before counting it.
+    const vis0 = o.visibility && typeof o.visibility === 'object' ? o.visibility : null
+    const visibility = vis0 && vis0.mode === 'schedule' && vis0.publishAt ? { mode: 'schedule', publishAt: String(vis0.publishAt) }
+      : vis0 && vis0.mode === 'public' ? { mode: 'public' } : { mode: 'private' }
+    // A time that has gone by now (a long upload) is not scheduled in the
+    // past: saved Private, and MVP asks the creator for a new time.
+    if (visibility.mode === 'schedule' && !(Date.parse(visibility.publishAt) > Date.now() + 3 * 60000)) { visibility.mode = 'private'; delete visibility.publishAt }
+    const want = Object.assign({}, o.want || {}, { visibility })
     const draftSteps = await runStudioDraft(tabId, videoId, want)
     for (const s of draftSteps) steps.push(s)
     const vis = draftSteps.find((s) => s && s.step === 'visibility')
     const saved = !!(vis && vis.ok)
-    if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+    const okStep = (n) => { const x = steps.find((s) => s && s.step === n); return x ? !!x.ok && !x.skipped : null }
+    // What SCOUT set and read back, item by item, for MVP to skip (or do).
+    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null }
+    if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, did, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
     const tried = steps.filter((s) => s && !s.skipped)
-    return { ok: tried.every((s) => s.ok), videoId, saved, steps }
+    return { ok: tried.every((s) => s.ok), videoId, saved, did, steps }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'failed', steps }
   } finally {
