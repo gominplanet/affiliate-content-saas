@@ -93,7 +93,7 @@ export class YouTubeService {
     const res = await fetchWithTimeout(url.toString())
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     return res.json() as Promise<T>
   }
@@ -358,7 +358,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     return res.json() as Promise<T>
   }
@@ -818,7 +818,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const j = await res.json() as any
@@ -836,7 +836,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
   }
 
@@ -1375,6 +1375,27 @@ export function createYouTubeOAuthService(accessToken: string) {
 
 
 /** The next byte YouTube wants, from a 308's Range header ("bytes=0-1234"). */
+/**
+ * A YouTube error as one readable line, with Google's reason code first.
+ * The raw body used to be cut at 300 characters, which falls before the
+ * reason, and YouTube's quota message puts a link between "exceeded your"
+ * and "quota". So a used-up daily quota read as an unknown 403 that told the
+ * creator to reconnect YouTube, and every quota check that looked for
+ * "quotaExceeded" or "exceeded your quota" missed it.
+ */
+export function youTubeErrorText(status: number, body: string): string {
+  let reason = '', message = ''
+  try {
+    const j = JSON.parse(body) as { error?: { message?: string; errors?: Array<{ reason?: string }> } }
+    reason = j.error?.errors?.find((e) => e.reason)?.reason || ''
+    message = String(j.error?.message || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  } catch { /* not JSON */ }
+  if (/quotaExceeded|dailyLimitExceeded/i.test(reason) || /exceeded your quota/i.test(message)) {
+    return `YouTube API error ${status}: quotaExceeded. MVP's daily YouTube allowance is used up. It resets at midnight Pacific time; reconnecting does not help.`
+  }
+  return `YouTube API error ${status}: ${reason ? `${reason}. ` : ''}${(message || body).slice(0, 300)}`
+}
+
 function rangeNext(range: string | null): number {
   const m = /bytes=\d+-(\d+)/.exec(String(range || ''))
   return m ? Number(m[1]) + 1 : 0

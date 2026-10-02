@@ -4257,7 +4257,10 @@ export default function StudioPage() {
       .then(({ ok, d }) => {
         if (!alive) return
         if (!ok || !Array.isArray(d?.playlists)) {
-          setPlaylistsNote(`Could not load your playlists: ${d?.error || 'YouTube did not answer'}. If this keeps happening, reconnect YouTube under Settings.`)
+          const why = String(d?.error || '')
+          setPlaylistsNote(/quotaExceeded|exceeded your/i.test(why)
+            ? 'Playlists cannot load right now: MVP’s daily YouTube allowance is used up. It resets at midnight Pacific time. Reconnecting will not help.'
+            : `Could not load your playlists: ${why || 'YouTube did not answer'}. If this keeps happening, reconnect YouTube under Settings.`)
           return
         }
         setPlaylists(d.playlists)
