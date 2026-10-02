@@ -44,6 +44,13 @@ The schema audit query (`npm run schema:audit` prints it) is the way to confirm
 what is actually missing from the database. Paste that too rather than
 describing it.
 
+## Facts to get right
+
+MVP sells exactly TWO plans: **Amazon at $99/month** and **Pro at $199/month**.
+There is no free plan, no Creator plan and no Studio plan to quote. Older tier
+names still exist in `lib/tier.ts` for legacy accounts; never present them as
+plans in reports, comparisons, copy or answers.
+
 ## Writing style
 
 No em-dashes, en-dashes, or spaced-hyphen sentence breaks in anything
