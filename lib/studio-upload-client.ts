@@ -56,13 +56,18 @@ export function runStudioUploads(opts: { background?: boolean; onProgress?: (o: 
           fin = await requestStudioFinish(it.videoId, {
             details: it.want.details, monetize: it.want.monetize, selfCert: it.want.selfCert, endScreen: it.want.endScreen,
             notifySubscribers: it.want.notifySubscribers, tagProduct: false, visibility: vis, background: opts.background === true,
+            privateIfScheduleFails: true,
           })
         } catch (e) { fin = { ok: false, steps: [], error: e instanceof Error ? e.message : 'failed' } }
-        const visStep = fin.steps.find((x) => x.step === 'visibility')
+        const visSteps = fin.steps.filter((x) => x.step === 'visibility')
+        const okVis = visSteps.find((x) => x.ok)
+        // Saved Private as the fallback when the date would not take.
+        const asPrivate = !!okVis && visSteps.indexOf(okVis) > 0
         // Studio showing it as a normal video means it was saved already;
         // MVP reads its real state back from YouTube.
-        const saved = fin.path === 'video' || !!(visStep && visStep.ok)
-        const result = { saved, visibility: fin.path === 'video' ? 'private' : vis.mode, publishAt: vis.mode === 'schedule' ? vis.publishAt : null, error: fin.error, steps: fin.steps }
+        const saved = fin.path === 'video' || !!okVis
+        const mode = fin.path === 'video' || asPrivate ? 'private' : vis.mode
+        const result = { saved, visibility: mode, publishAt: mode === 'schedule' && vis.mode === 'schedule' ? vis.publishAt : null, error: fin.error, steps: fin.steps }
         for (let a = 0; a < 3; a++) {
           const ok = await fetch('/api/launch/studio-uploads', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },

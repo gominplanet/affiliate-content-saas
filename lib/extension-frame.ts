@@ -1808,6 +1808,9 @@ export interface StudioFinishOpts {
   /** The product's name. When given, SCOUT only tags a result whose name
    *  shares words with it, and says so when the top result does not. */
   productTitle?: string
+  /** Drafts only: a schedule Studio will not take is saved Private instead,
+   *  so the video leaves draft and MVP sets the time (Liftoff's own drafts). */
+  privateIfScheduleFails?: boolean
   /** Drafts only: the last page of the modal. See StudioVisibility. */
   visibility?: StudioVisibility
   /** Run from Liftoff's background tab: Studio opens behind, never in front,

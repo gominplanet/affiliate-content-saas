@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 15
+  const KIT_VERSION = 16
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -10068,11 +10068,25 @@ K.steps.monetization = async (out, o) => {
     // Date: open the picker, type the date into its box.
     const before = dialogsNow()
     click(trigger())
+    // THE DATE BOX, however Studio draws the picker: a box already holding a
+    // date, or the text box inside a date picker, in the popup or the page.
     const dateInput = await waitFor(() => {
-      const d = newDialog(before) || document
-      return all(d).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /\d{4}/.test(el.value || '')) || null
-    }, 6000, 300)
-    if (!dateInput) { out.detail = 'Opened the date picker, but found no date box'; out.debug.buttons = buttonSample(document); return out }
+      const scopes = [newDialog(before), document].filter(Boolean)
+      for (const d of scopes) {
+        const inputs = all(d).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && el.type !== 'checkbox' && el.type !== 'radio')
+        const byValue = inputs.find((el) => /\d{4}/.test(el.value || '') || /^[A-Za-z]{3,9}\.? \d{1,2}/.test(el.value || ''))
+        if (byValue) return byValue
+        const inPicker = inputs.find((el) => { let x = el; for (let i = 0; i < 8 && x; i++) { if (/date/i.test((x.tagName || '') + ' ' + (x.id || ''))) return true; x = up(x) } return false })
+        if (inPicker) return inPicker
+      }
+      return null
+    }, 8000, 300)
+    if (!dateInput) {
+      out.detail = 'Opened the date picker, but found no date box'
+      out.debug.buttons = buttonSample(document)
+      out.debug.inputs = all(document).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el)).map((el) => (el.type || '') + ':' + String(el.value || '').slice(0, 20) + ':' + String(attrLabel(el) || '').slice(0, 20)).slice(0, 10)
+      return out
+    }
     setVal(dateInput, dateStr)
     // No Escape to close the picker: Escape also closes the whole draft
     // window. Enter in the date box closes the picker on its own.
@@ -10193,7 +10207,9 @@ K.steps.monetization = async (out, o) => {
     const chips = () => {
       let host = input
       for (let i = 0; i < 6 && host; i++) { if (/tags|chip-bar/i.test((host.id || '') + ' ' + (host.tagName || ''))) break; host = up(host) }
-      return all(host || dlg).filter((el) => /chip/i.test(el.tagName || '') && visible(el)).map((el) => norm(deepText(el)).replace(/\s*(remove|close|cancel)\s*$/i, '')).filter(Boolean)
+      // A tag extension (vidIQ) puts a score in front of each chip ("38
+      // GENICOOK freezer tray"), so the number is taken off before comparing.
+      return all(host || dlg).filter((el) => /chip/i.test(el.tagName || '') && visible(el)).map((el) => norm(deepText(el)).replace(/\s*(remove|close|cancel)\s*$/i, '').replace(/^\d{1,3}\s+/, '')).filter(Boolean)
     }
     const before = chips().length
     try { input.focus() } catch (e) {}
@@ -10208,7 +10224,7 @@ K.steps.monetization = async (out, o) => {
     await sleep(600)
     const have = chips()
     out.readBack.tags = have.length - before
-    const missing = want.filter((t) => !have.some((c) => c.toLowerCase() === t.toLowerCase()))
+    const missing = want.filter((t) => !have.some((c) => c.toLowerCase() === t.toLowerCase() || c.toLowerCase().indexOf(t.toLowerCase()) >= 0))
     out.ok = have.length - before >= Math.max(1, want.length - 1) || missing.length === 0
     out.detail = out.ok ? (want.length - missing.length) + ' of ' + want.length + ' tags in Studio. Read back as chips.' : 'Studio kept ' + Math.max(0, have.length - before) + ' of ' + want.length + ' tags'
     return out
@@ -10638,9 +10654,20 @@ async function scanStudioUpload(o) {
     }
     if (o.playlist) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist }), { step: 'playlist' }))
     let visibility = pickVisibility()
-    const firstWalk = await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility }))
+    // NEVER LEFT A DRAFT OVER THE DATE. A schedule Studio would not take is
+    // saved Private on the spot, from the same Visibility page: the video is
+    // out of draft, and MVP sets its time itself afterwards.
+    const privateIfScheduleFailed = async (list) => {
+      const v = list.find((x) => x && x.step === 'visibility')
+      if (!v || v.ok || visibility.mode !== 'schedule') return list
+      const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
+      list.push(Object.assign({}, p, { step: 'visibility', detail: 'The time could not be set in Studio, so it was saved Private and MVP sets the time: ' + (p.detail || '') }))
+      if (p.ok) visibility = { mode: 'private' }
+      return list
+    }
+    const firstWalk = await privateIfScheduleFailed(await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility })))
     for (const x of firstWalk) steps.push(x)
-    let saved = visOk(firstWalk)
+    let saved = firstWalk.some((x) => x && x.step === 'visibility' && x.ok)
     await back()
 
     // ── THE FILE FINISHES BEHIND ──────────────────────────────────────────
@@ -10684,9 +10711,9 @@ async function scanStudioUpload(o) {
         steps.push(Object.assign({}, op, { detail: 'Second go at saving: ' + (op.detail || '') }))
         visibility = pickVisibility()
         if (op.ok && op.isDraft) {
-          const again = await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility }))
+          const again = await privateIfScheduleFailed(await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility })))
           for (const x of again) steps.push(Object.assign({}, x, { detail: 'Second go: ' + (x.detail || '') }))
-          saved = visOk(again)
+          saved = again.some((x) => x && x.step === 'visibility' && x.ok)
         } else if (op.ok && op.isDraft === false) {
           // Studio shows it as a normal video now: it was saved after all.
           // Its real visibility is read back from YouTube by MVP.
@@ -10791,6 +10818,14 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       }
       if (open && open.ok && open.isDraft) {
         const draftSteps = await runStudioDraft(tabId, videoId, want)
+        // A DRAFT MVP ASKED TO SAVE is never left a draft over the date: a
+        // schedule Studio would not take is saved Private on the spot, and
+        // MVP sets the time itself.
+        const vs = draftSteps.find((x) => x && x.step === 'visibility')
+        if (want.privateIfScheduleFails && vs && !vs.ok && want.visibility && want.visibility.mode === 'schedule') {
+          const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
+          draftSteps.push(Object.assign({}, p, { step: 'visibility', savedPrivate: !!p.ok, detail: 'The time could not be set in Studio, so it was saved Private and MVP sets the time: ' + (p.detail || '') }))
+        }
         return summarise([open].concat(draftSteps), 'draft')
       }
       // Neither a draft nor a video page: say so, rather than running the

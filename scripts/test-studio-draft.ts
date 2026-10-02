@@ -44,7 +44,7 @@ const BG_RAW = read('extension/background.js')
 const slice = (from: string, len: number) => { const at = BG.indexOf(from); return at < 0 ? '' : BG.slice(at, at + len) }
 
 // ── the kit ──────────────────────────────────────────────────────────────
-const kit = slice('function studioKitInstallInPage()', 60000)
+const kit = slice('function studioKitInstallInPage()', 120000)
 check('the draft toolkit exists', kit.length > 0)
 const kitClick = kit.slice(kit.indexOf('const click = (el) =>'), kit.indexOf('const click = (el) =>') + 500)
 check('the kit clicks once',
