@@ -939,7 +939,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     // "running now" within the last five and a half minutes belongs to a
     // firing that is still alive; after that, the firing is dead and the row
     // goes round again as below.
-    if (/^Attempt \d+ of \d+ is running now\.$/.test(said0) && it.updated_at
+    if (/^Attempt \d+ of \d+ is running now\./.test(said0) && it.updated_at
       && Date.now() - new Date(it.updated_at).getTime() < 330_000) continue
     if (tries >= TRIES) {
       // THE LAST REAL ERROR SURVIVES THE GIVING UP.
@@ -955,7 +955,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // one from "YouTube said no". It means the firing was cut off before the
       // catch could run, which is a time problem and not a YouTube problem, and
       // quoting the note back as "the last thing it said" would hide that.
-      const inflight = /^Attempt \d+ of \d+ is running now\.$/.test(said)
+      const inflight = /^Attempt \d+ of \d+ is running now\./.test(said)
       const generic = inflight || /^YouTube would not take this video/.test(said)
       // ON THE CHANNEL ALREADY CHANGES THE ADVICE ENTIRELY. "Check the channel
       // is still connected" was printed over a video that had uploaded three
@@ -985,7 +985,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     // row in the same instant cannot both take it.
     const claim = sb.from('launch_items').update({
       publish_tries: tries + 1,
-      reason: `Attempt ${tries + 1} of ${TRIES} is running now.`,
+      // THE LAST TRY'S ERROR STAYS ON SCREEN. It used to be overwritten by
+      // this note the moment the next attempt started, so a creator watched
+      // "Attempt 2 of 3" become "Attempt 3 of 3" with no idea why.
+      reason: `Attempt ${tries + 1} of ${TRIES} is running now.${said0 && !/^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ` Last try: ${said0}` : /^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ' Last try stopped before it could report back, which is a time limit, not YouTube.' : ''}`.slice(0, 300),
       updated_at: stamp(),
     }).eq('id', it.id).eq('state', 'prepared')
     const { data: claimed } = await (it.publish_tries == null ? claim.is('publish_tries', null) : claim.eq('publish_tries', tries)).select('id')

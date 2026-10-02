@@ -713,7 +713,7 @@ export function itemProgressLabel(i: {
   // passed before it was ready.
   if (i.state === 'blocked' && /^Kept private\./.test(String(i.reason ?? ''))) return 'On YouTube, kept private'
   if (i.state === 'prepared' && i.planned_publish_at) {
-    if (/^Attempt \d+ of \d+ is running now\.$/.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
+    if (/^Attempt \d+ of \d+ is running now\./.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
     if (Number(i.publish_tries ?? 0) > 0) return 'Upload will be tried again'
     return 'Queued for YouTube'
   }

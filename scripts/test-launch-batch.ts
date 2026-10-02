@@ -1674,7 +1674,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
   // ── THE WORKER DOES NOT DOUBLE UP, AND NEVER OUTLIVES ITS FIRING ───────
   check('an upload another firing is running is left to it',
-    /is running now\\\.\$\/\.test\(said0\) && it\.updated_at\s*&& Date\.now\(\) - new Date\(it\.updated_at\)\.getTime\(\) < 330_000\) continue/.test(DRAIN) && /claim\.eq\('publish_tries', tries\)/.test(DRAIN),
+    /is running now\\\.\/\.test\(said0\) && it\.updated_at\s*&& Date\.now\(\) - new Date\(it\.updated_at\)\.getTime\(\) < 330_000\) continue/.test(DRAIN) && /claim\.eq\('publish_tries', tries\)/.test(DRAIN),
     'firings overlap; the second one saw a prepared row with no id and uploaded it again')
   check('a render and a thumbnail are claimed before they start',
     /\.eq\('id', it\.id\)\.eq\('state', 'draft'\)\.select\('id'\)/.test(DRAIN) && /claim\.eq\('thumb_tries', tries\)/.test(DRAIN))
@@ -1925,7 +1925,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   // AN ATTEMPT THAT NEVER CAME BACK IS NOT THE SAME AS A REFUSAL.
   check('an attempt is recorded while it runs',
-    /reason: `Attempt \$\{tries \+ 1\} of \$\{TRIES\} is running now\.`/.test(DRAIN),
+    /reason: `Attempt \$\{tries \+ 1\} of \$\{TRIES\} is running now\.\$\{/.test(DRAIN) && /Last try: \$\{said0\}/.test(DRAIN),
     'a firing killed mid-upload used to burn a try and write nothing at all')
   check('and three attempts that never reported back say so',
     /stopped before they could report back, which is a time problem rather than a YouTube one/.test(DRAIN)
