@@ -35,7 +35,11 @@ type Counts = { videos: number; pinned: number; postedNotPinned: number; waiting
 type Step = 'waiting' | 'posting' | 'pinning' | 'done' | 'held' | 'failed'
 type RunItem = { id: string; title: string; step: Step; note: string | null }
 
-const needsOne = (v: Video) => !v.firstComment || v.firstComment.state === 'failed' || v.firstComment.state === 'cancelled'
+// NEVER-HEARD-BACK IS NOT "NOT POSTED": a post whose answer was lost may well
+// be on the video, so it is not offered for a second one in bulk.
+const MAYBE_POSTED = /never heard back/i
+const needsOne = (v: Video) => !v.firstComment || v.firstComment.state === 'cancelled'
+  || (v.firstComment.state === 'failed' && !MAYBE_POSTED.test(v.firstComment.lastError || ''))
 
 export default function OlderVideos() {
   const [videos, setVideos] = useState<Video[]>([])
@@ -213,6 +217,8 @@ export default function OlderVideos() {
           const status = !fc ? null
             : fc.state === 'posted' ? (fc.pinned === true ? { t: 'Pinned', c: '#16a34a' } : { t: `Posted, not pinned${fc.pinError ? `: ${fc.pinError}` : ''}`, c: '#d97706' })
             : fc.state === 'waiting' ? { t: `Waiting until the video is public${fc.lastError ? ` (${fc.lastError})` : ''}`, c: '#0EA5A4' }
+            : fc.state === 'posting' ? { t: 'Posting now', c: '#0EA5A4' }
+            : fc.state === 'failed' && MAYBE_POSTED.test(fc.lastError || '') ? { t: fc.lastError || 'May already be on the video.', c: '#b26a00' }
             : fc.state === 'failed' ? { t: `Not posted: ${fc.lastError || 'no reason given'}`, c: '#d70015' }
             : { t: 'Cancelled', c: '#86868b' }
           return (

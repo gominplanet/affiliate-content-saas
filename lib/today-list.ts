@@ -127,21 +127,27 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
     }),
 
     read('scheduled posts', async () => {
-      const rows = ok<Array<{ error_message: string | null }>>(
-        await sb.from('scheduled_posts').select('error_message')
-          .eq('user_id', ownerId).eq('status', 'failed')
-          .gte('updated_at', new Date(now.getTime() - 7 * DAY).toISOString()).limit(200))
-      const n = rows.filter((r) => {
-        const em = r.error_message || ''
-        return !(em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX) || em.startsWith(AUTO_FAILED_PREFIX))
-      }).length
+      // Counted in the database: a read stops at 200 (and at 1,000 whatever it
+      // asks for), which made a bad week look smaller than it was.
+      const since = new Date(now.getTime() - 7 * DAY).toISOString()
+      const failedCount = async (prefix?: string) => {
+        let q = sb.from('scheduled_posts').select('id', { count: 'exact', head: true })
+          .eq('user_id', ownerId).eq('status', 'failed').gte('updated_at', since)
+        if (prefix) q = q.like('error_message', `${prefix}%`)
+        const r = await q
+        if (r.error) throw new Error(r.error.message)
+        return r.count ?? 0
+      }
+      const [all, skipped, resolved, autoFailed] = await Promise.all([failedCount(), failedCount(AUTO_SKIP_PREFIX), failedCount(RESOLVED_PREFIX), failedCount(AUTO_FAILED_PREFIX)])
+      const n = Math.max(0, all - skipped - resolved - autoFailed)
       if (n) items.push(item('failed_posts', 'urgent', n, `${plural(n, 'post', 'posts')} failed this week`, 'Each failed post shows its error and can be sent again.', '/content?tab=scheduled', 'Review'))
     }),
 
     read('held blog posts', async () => {
-      const rows = ok<Array<{ id: string }>>(
-        await sb.from('blog_posts').select('id').eq('user_id', ownerId).not('aio->held', 'is', null).limit(50))
-      if (rows.length) items.push(item('held_posts', 'urgent', rows.length, `${plural(rows.length, 'post was', 'posts were')} kept as a draft`, 'The quality check held them and says why. Fix and publish, or publish as is.', '/content', 'Review'))
+      const r = await sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).not('aio->held', 'is', null)
+      if (r.error) throw new Error(r.error.message)
+      const held = r.count ?? 0
+      if (held) items.push(item('held_posts', 'urgent', held, `${plural(held, 'post was', 'posts were')} kept as a draft`, 'The quality check held them and says why. Fix and publish, or publish as is.', '/content', 'Review'))
     }),
 
     read('price alerts', async () => {
@@ -182,11 +188,15 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
 
     canUsePreview('post_refresh', tier) && read('posts due an update', async () => {
       const cutoff = new Date(now.getTime() - REFRESH_AFTER_DAYS * DAY).toISOString()
-      const rows = ok<Array<{ refreshed_at: string | null; refresh_snoozed_until: string | null }>>(
-        await sb.from('blog_posts').select('refreshed_at,refresh_snoozed_until')
-          .eq('user_id', ownerId).eq('status', 'published').not('wordpress_post_id', 'is', null)
-          .in('post_type', ['review', 'comparison']).lte('published_at', cutoff).limit(500))
-      const n = rows.filter((r) => (!r.refreshed_at || r.refreshed_at < cutoff) && (!r.refresh_snoozed_until || Date.parse(r.refresh_snoozed_until) < now.getTime())).length
+      // The whole rule in the query, counted there: 500 unordered rows then
+      // filtered showed an arbitrary part of a big blog.
+      const r = await sb.from('blog_posts').select('id', { count: 'exact', head: true })
+        .eq('user_id', ownerId).eq('status', 'published').not('wordpress_post_id', 'is', null)
+        .in('post_type', ['review', 'comparison']).lte('published_at', cutoff)
+        .or(`refreshed_at.is.null,refreshed_at.lt.${cutoff}`)
+        .or(`refresh_snoozed_until.is.null,refresh_snoozed_until.lt.${now.toISOString()}`)
+      if (r.error) throw new Error(r.error.message)
+      const n = r.count ?? 0
       if (n) items.push(item('refresh_due', 'upkeep', n, `${plural(n, 'review is', 'reviews are')} due a one-line update`, 'A first-hand line after 90 days keeps a review fresh for Google.', '/content', 'Update'))
     }),
   ].filter(Boolean))

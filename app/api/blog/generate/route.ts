@@ -560,7 +560,9 @@ async function handleGenerate(request: Request) {
   // the column list here is dynamic (different code paths select
   // different subsets of `youtube_videos`).
   const videoRow = video as Record<string, unknown>
-  let transcript = (videoRow.transcript as string | null) || ''
+  // A scrap is not a transcript: under 80 characters reads as none, so saved
+  // word cues and the other sources are still tried.
+  let transcript = ((videoRow.transcript as string | null) || '').trim().length >= 80 ? (videoRow.transcript as string) : ''
   let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'whisper' | 'none' = transcript ? 'cache' : 'none'
   // Word-timed cues already saved for this video (Shorts transcribes the same
   // videos), so a post never pays for words MVP already has.
@@ -570,12 +572,8 @@ async function handleGenerate(request: Request) {
       .map((c: { start?: unknown; end?: unknown; text?: unknown }) => ({ start: Number(c?.start), end: Number(c?.end), text: String(c?.text ?? '').trim() }))
       .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.text)
     const text = saved.length ? cuesToText(saved) : ''
-    if (text.trim().length >= 40) { transcript = text; transcriptSource = 'cache' }
+    if (text.trim().length >= 80) { transcript = text; transcriptSource = 'cache' }
   }
-  // A SCRAP IS NOT A TRANSCRIPT. A cached 40 to 79 characters (the scraper
-  // keeps anything from 40) stopped every layer below from looking, and the
-  // post was then written as if there were no words at all.
-  if (transcript && transcript.trim().length < 80) { transcript = ''; transcriptSource = 'none' }
   // Only a REAL YouTube id is worth asking YouTube about. A Launchpad master is
   // an uploaded file stored under a synthetic "upload-…" id, so the two fetch
   // layers below would spend a token refresh and a scrape on a video YouTube has
@@ -590,7 +588,7 @@ async function handleGenerate(request: Request) {
     try {
       const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
       const text = segments.map((s: { text: string }) => s.text).join(' ')
-      if (text && text.trim().length >= 40) {
+      if (text && text.trim().length >= 80) {
         transcript = text
         transcriptSource = 'scraper'
       }
@@ -610,7 +608,7 @@ async function handleGenerate(request: Request) {
         if (whisperCues.length) {
           recordUsage({ userId: user.id, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
           const text = cuesToText(whisperCues)
-          if (text.trim().length >= 40) { transcript = text; transcriptSource = 'whisper' }
+          if (text.trim().length >= 80) { transcript = text; transcriptSource = 'whisper' }
         }
         const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
         if (p) { try { await createAdminClient().storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
@@ -640,7 +638,7 @@ async function handleGenerate(request: Request) {
       if (token) {
         const yt = createYouTubeOAuthService(token)
         const apiTranscript = await yt.getTranscript(youtubeVideoIdForTranscript)
-        if (apiTranscript && apiTranscript.trim().length >= 40) {
+        if (apiTranscript && apiTranscript.trim().length >= 80) {
           transcript = apiTranscript
           transcriptSource = 'youtube_api'
         }
@@ -2086,7 +2084,7 @@ async function handleGenerate(request: Request) {
           // every rebuild, so a held draft went live unreviewed and a post
           // scheduled for next week went out today. Only this job's own post
           // (an earlier attempt of it) gets the status it was asked for.
-          ...(heldForReview ? { status: 'draft' as const } : existingIsThisJobsPost ? { status: wpStatus } : {}),
+          ...(heldForReview ? { status: 'draft' as const } : existingIsThisJobsPost ? { status: wpStatus, ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}) } : {}),
           tags: tagIds,
           categories: categoryIds,
         })

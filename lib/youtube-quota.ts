@@ -116,9 +116,21 @@ async function admin(): Promise<any | null> {
   } catch { return null }
 }
 
+// ONE READ AT A TIME, AND NEVER LONG. This sits in front of every YouTube
+// call, uploads included, so a slow database must not slow YouTube: a read
+// that takes over 1.5 seconds is not waited for, and the call goes ahead on
+// what this instance already knows.
+let inflight: Promise<State> | null = null
 async function readState(): Promise<State> {
   const day = quotaDay()
   if (state && state.day === day && Date.now() - state.readAt < READ_EVERY_MS) return state
+  if (!inflight) inflight = readStateNow().finally(() => { inflight = null })
+  const known: State = state && state.day === day ? state : { day, spent: 0, refusedAt: null, readAt: 0 }
+  return Promise.race([inflight, new Promise<State>((r) => setTimeout(() => r(known), 1500))])
+}
+
+async function readStateNow(): Promise<State> {
+  const day = quotaDay()
   const next: State = { day, spent: state?.day === day ? state.spent : 0, refusedAt: state?.day === day ? state.refusedAt : null, readAt: Date.now() }
   const sb = await admin()
   if (sb) {
@@ -189,13 +201,16 @@ export async function ytFetch(input: string | URL, init: TimeoutInit = {}): Prom
       return res
     }
   }
-  record(s.day, userId, call.method, call.units, res.ok)
+  // A refused request costs YouTube's minimum (1 unit), not the full price:
+  // charging a refused upload 1,600 put the day past the reserve line within
+  // minutes of a channel hitting its own upload limit.
+  record(s.day, userId, call.method, res.ok ? call.units : res.status >= 500 ? 0 : 1, res.ok)
   return res
 }
 
 /** For Admin > Costs: the day so far. */
 export async function quotaToday(): Promise<{ day: string; quota: number; reserveAt: number; spent: number; refusedAt: string | null; msToReset: number }> {
-  state = null
-  const s = await readState()
+  // The admin panel waits for the real numbers.
+  const s = await readStateNow()
   return { day: s.day, quota: DAILY_QUOTA, reserveAt: Math.round(DAILY_QUOTA * RESERVE_AT), spent: s.spent, refusedAt: s.refusedAt ? new Date(s.refusedAt).toISOString() : null, msToReset: msToReset() }
 }

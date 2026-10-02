@@ -211,7 +211,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // the upload opened, so a change here would show on the board and never
   // reach the video. Read on its own: before migration 396 there is no column
   // and no piece upload, so nothing is locked.
-  if (typeof body.title === 'string' || typeof body.description === 'string') {
+  if (item.state === 'prepared' && (typeof body.title === 'string' || typeof body.description === 'string')) {
     const { data: up, error: upErr } = await sb.from('launch_items').select('yt_upload_url').eq('id', id).maybeSingle()
     if (!upErr && up?.yt_upload_url) {
       return NextResponse.json({

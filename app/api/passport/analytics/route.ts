@@ -94,10 +94,13 @@ export async function GET(request: Request) {
     const groupParam = (url.searchParams.get('group') || '').trim() // '' all · 'none' ungrouped · else group id
     const distinctCodes = [...new Set(allHuman.map((c) => c.code))]
     const codeToGroup = new Map<string, string | null>()
-    if (distinctCodes.length) {
+    // IN CHUNKS. Thousands of codes in one request made a URL too long or a
+    // reply over 1,000 rows, the error was ignored, and every click showed as
+    // Ungrouped (and a ?group= filter as zero).
+    for (let i = 0; i < distinctCodes.length; i += 200) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: linkRows } = await (supabase as any)
-        .from('passport_links').select('code, group_id').in('code', distinctCodes)
+        .from('passport_links').select('code, group_id').in('code', distinctCodes.slice(i, i + 200))
       for (const l of ((linkRows ?? []) as { code: string; group_id: string | null }[])) codeToGroup.set(l.code, l.group_id ?? null)
     }
     const groupName = new Map<string, string>()

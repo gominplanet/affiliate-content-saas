@@ -86,9 +86,11 @@ const DENY_ADV = String.raw`(?:actually|personally|yet|been\s+able\s+to|had\s+(?
 const DENY_VERB = String.raw`(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\s+out)?|use[d]?|own(?:ed)?|handle[d]?|get\s+hands-on\s+with)`
 const DENY_OBJ = String.raw`\s+(?:this|these|it|them|the\s+(?:product|item|unit|device|model|one)s?)\b`
 const DENY_TAIL = String.raw`(?:\s+(?:myself|ourselves|personally|yet|out|first-?hand|in\s+person|hands-on))*\s*[.!?]`
+// "I never actually tested this product." counts too, with its adverb.
+const DENY_NEVER = String.raw`\b(?:I|we)\s+(?:have\s+|'ve\s+)?never\s+`
 const OWN_VIDEO_DENIALS = new RegExp(
   String.raw`(?:^|(?<=[.!?]\s))[^.!?<>]*` +
-  `(?:${DENY_NEG}${DENY_ADV}${DENY_VERB}${DENY_OBJ}[^.!?<>]*[.!?]` +
+  `(?:(?:${DENY_NEG}|${DENY_NEVER})${DENY_ADV}${DENY_VERB}${DENY_OBJ}[^.!?<>]*[.!?]` +
   `|${DENY_NEG}(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\\s+out)?)${DENY_OBJ}${DENY_TAIL})\\s*`,
   'gi',
 )

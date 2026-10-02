@@ -73,7 +73,8 @@ export async function GET(req: Request) {
       videos: withFc.length,
       pinned: withFc.filter((x) => x.fc?.state === 'posted' && x.fc.pinned === true).length,
       postedNotPinned: withFc.filter((x) => x.fc?.state === 'posted' && x.fc.pinned !== true).length,
-      waiting: withFc.filter((x) => x.fc?.state === 'waiting').length,
+      // Being posted counts with waiting: it is on its way, not missing.
+      waiting: withFc.filter((x) => x.fc?.state === 'waiting' || x.fc?.state === 'posting').length,
       none: withFc.filter((x) => !x.fc || x.fc.state === 'failed' || x.fc.state === 'cancelled').length,
     },
     truncated: (vids ?? []).length >= SCAN,

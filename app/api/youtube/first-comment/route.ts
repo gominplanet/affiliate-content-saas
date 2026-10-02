@@ -81,13 +81,19 @@ export async function POST(req: Request) {
   if (existing?.state === 'posted' && existing.comment_id) {
     return NextResponse.json({ ok: true, id: existing.id, state: 'posted', commentId: existing.comment_id, already: true })
   }
+  // BEING POSTED RIGHT NOW (by the ten-minute run): reset to waiting here,
+  // it would be claimed and posted a second time.
+  if (existing?.state === 'posting') {
+    return NextResponse.json({ ok: true, id: existing.id, state: 'waiting', posting: true, note: 'MVP is posting this comment right now. It shows here in a moment.' })
+  }
   const at = new Date().toISOString()
   let row: FirstCommentRow
   if (existing) {
     const { data: upd, error } = await admin.from('video_first_comments')
       .update({ text, state: 'waiting', last_error: null, video_title: body.videoTitle?.slice(0, 200) ?? null, channel_id: channel ?? existing.channel_id, updated_at: at })
-      .eq('id', existing.id).select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at').single()
-    if (error || !upd) return NextResponse.json({ error: 'The first comment could not be queued.' }, { status: 500 })
+      .eq('id', existing.id).neq('state', 'posting').neq('state', 'posted').select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at').maybeSingle()
+    if (error) return NextResponse.json({ error: 'The first comment could not be queued.' }, { status: 500 })
+    if (!upd) return NextResponse.json({ ok: true, id: existing.id, state: 'waiting', posting: true, note: 'MVP is posting this comment right now. It shows here in a moment.' })
     row = upd
   } else {
     const { data: ins, error } = await admin.from('video_first_comments')

@@ -804,6 +804,8 @@ async function ownerTier(sb: Sb, userId: string): Promise<string | null> {
 }
 
 async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; failed: number }> {
+  // Creators whose channel hit its own daily upload limit this run.
+  const capped = new Set<string>()
   tierCache.clear()
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
@@ -947,6 +949,14 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
 
     const tries = Number(it.publish_tries ?? 0)
     const said0 = String(it.reason || '').trim()
+    // WAITING ON YOUTUBE: not asked again every minute. The shared allowance
+    // is looked at every ten minutes (until the reset), a channel's own upload
+    // limit hourly, and a creator whose channel hit it this run waits.
+    if (capped.has(String(it.user_id))) continue
+    if (/^Waiting/.test(said0) && it.updated_at) {
+      const since = Date.now() - new Date(it.updated_at).getTime()
+      if (since < (/own daily upload limit/.test(said0) ? 3_600_000 : 600_000)) continue
+    }
     // ── ANOTHER FIRING IS UPLOADING THIS ONE ──────────────────────────────
     //
     // THE WAY A VIDEO COULD GO UP TWICE. Firings start every minute and run up
@@ -1394,6 +1404,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
             : 'Waiting for YouTube’s daily allowance, which every MVP account shares, to reset at midnight Pacific. MVP carries on by itself after that; nothing to do.',
           updated_at: stamp(),
         }).eq('id', it.id)
+        // ONE CHANNEL'S OWN LIMIT IS ONE CHANNEL'S. Stopping the pass here
+        // stalled every other creator's uploads behind it all day; only this
+        // creator's other videos wait. The shared allowance stops everyone.
+        if (channelCap) { capped.add(String(it.user_id)); continue }
         break
       }
       // LEFT PREPARED so the next firing tries again, with the reason on the
@@ -1769,7 +1783,7 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
     .not('youtube_video_id', 'is', null)
     .like('reason', `${HELD_FOR_PAID_PROMOTION}%`)
     .lt('updated_at', tenAgo)
-    .order('updated_at', { ascending: true }).limit(200)
+    .order('updated_at', { ascending: true }).limit(1000)
   // EACH CHECK COSTS FROM THE ONE DAILY YOUTUBE QUOTA EVERY ACCOUNT SHARES.
   // Every ten minutes for every held video, forever, was 144 units a video a
   // day. Often only near the planned time now (lib/launch-release heldCheckDue);

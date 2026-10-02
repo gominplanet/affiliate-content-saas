@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3502,7 +3502,9 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $path = isset($body['path']) ? (string) $body['path'] : '/';
         // Path-shape check: no `..`, no `/wp-admin`, no protocol-relative,
         // and matches a recognisable REST path skeleton.
-        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#', $path) || strpos($path, '..') !== false) {
+        // D: "$" means the very end. Without it, a trailing newline ("/wp/v2/users/me\n")
+        // passed every pattern here while WordPress still routed it (v1.1.1).
+        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#D', $path) || strpos($path, '..') !== false) {
             return new WP_REST_Response(['code' => 'bad_path', 'message' => 'Path must look like /wp/v2/posts'], 400);
         }
         // Hard route allowlist — without this, a leaked proxy_secret = full
@@ -3510,13 +3512,13 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         // /wp/v2/plugins to install a malicious plugin, etc). The dashboard
         // only ever needs these routes; deny everything else.
         $allowed_path_patterns = [
-            '#^/wp/v2/posts(?:/[0-9]+)?$#',
-            '#^/wp/v2/pages(?:/[0-9]+)?$#',
-            '#^/wp/v2/media(?:/[0-9]+)?$#',
-            '#^/wp/v2/tags(?:/[0-9]+)?$#',
-            '#^/wp/v2/categories(?:/[0-9]+)?$#',
-            '#^/wp/v2/users/me$#',
-            '#^/affiliateos/v1/.+$#',
+            '#^/wp/v2/posts(?:/[0-9]+)?$#D',
+            '#^/wp/v2/pages(?:/[0-9]+)?$#D',
+            '#^/wp/v2/media(?:/[0-9]+)?$#D',
+            '#^/wp/v2/tags(?:/[0-9]+)?$#D',
+            '#^/wp/v2/categories(?:/[0-9]+)?$#D',
+            '#^/wp/v2/users/me$#D',
+            '#^/affiliateos/v1/[A-Za-z0-9_/\-]+$#D',
         ];
         $allowed = false;
         foreach ($allowed_path_patterns as $pat) {

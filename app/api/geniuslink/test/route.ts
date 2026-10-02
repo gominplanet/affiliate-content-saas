@@ -36,8 +36,11 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, error: 'Not logged in' }, { status: 401 })
 
     const body = await request.json().catch(() => ({})) as { apiKey?: string; apiSecret?: string }
-    let apiKey = (body.apiKey || '').trim()
-    let apiSecret = (body.apiSecret || '').trim()
+    // A team member sees masked keys ("••••abcd"); sent back, they mean "the
+    // saved ones", which are tested here on the server.
+    const masked = (v?: string) => /^\u2022+/.test((v || '').trim())
+    let apiKey = masked(body.apiKey) ? '' : (body.apiKey || '').trim()
+    let apiSecret = masked(body.apiSecret) ? '' : (body.apiSecret || '').trim()
 
     // No creds supplied → fall back to whatever is saved on the owner's row
     // (VAs test the owner's account, matching how generation reads them).
