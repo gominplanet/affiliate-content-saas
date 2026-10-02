@@ -281,6 +281,9 @@ async function handleGenerate(request: Request) {
     autopilot?: boolean
   }
   const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
+  // An admin repair of a live post (app/api/admin/rebuild-posts). Honoured
+  // only on the job worker's service call, which the admin route queues.
+  const isRepair = isServiceCall && (body as { repair?: unknown }).repair === true
   const scheduleMode = body.scheduleMode
   const scheduledForIso = body.scheduledFor
 
@@ -354,6 +357,10 @@ async function handleGenerate(request: Request) {
     .maybeSingle()
 
   const isRewrite = !!existingForLimit
+  // A repair rewrites a live post in place and never makes a new one.
+  if (isRepair && !existingForLimit?.wordpress_post_id) {
+    return NextResponse.json({ error: 'This video has no live post on record to repair, so nothing was written.', reason: 'repair_no_post' }, { status: 409 })
+  }
   // When set: skip createPost and updatePost(existingWpPostId) instead, so the
   // live URL + Google indexing history are preserved across the rebuild.
   let existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
@@ -622,7 +629,7 @@ async function handleGenerate(request: Request) {
       if (audioUrl) {
         whisperCues = await transcribeToCues(audioUrl)
         if (whisperCues.length) {
-          recordUsage({ userId: ownerId, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
+          recordUsage({ userId: user.id, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
           const text = cuesToText(whisperCues)
           if (text.trim().length >= 40) { transcript = text; transcriptSource = 'whisper' }
         }
@@ -650,6 +657,17 @@ async function handleGenerate(request: Request) {
   // truly contentless case: no resolvable product AND a thin transcript.
   // allowEmptyTranscript is that gate's explicit "generate anyway" override.
   const transcriptUsed = !!transcript && transcript.trim().length >= 80
+
+  // AN ADMIN REPAIR (app/api/admin/rebuild-posts) exists to put the creator's
+  // own words into a post that was written without them. Without a transcript
+  // it would only write the same research post again over a live one, so it
+  // stops here and the post is left exactly as it was.
+  if (isRepair && !transcriptUsed) {
+    return NextResponse.json({
+      error: 'No transcript could be read from this video (captions refused and the audio could not be transcribed), so the post was left as it was.',
+      reason: 'repair_no_transcript',
+    }, { status: 422 })
+  }
 
   // ── 5. Resolve the product / affiliate link ───────────────────────────────
   // Priority:
@@ -2320,7 +2338,9 @@ async function handleGenerate(request: Request) {
     // blocked (Pro gets one AI rewrite per post). Only mutate these
     // fields when this *is* a rewrite — fresh generations leave them
     // at the defaults (0 / null).
-    ...(isRewrite
+    // An admin repair is ours to pay for, so it does not use up one of the
+    // creator's rebuilds of this post.
+    ...(isRewrite && !isRepair
       ? {
           // Increment (not set) so the 3-per-post rebuild cap actually counts up.
           rewrite_count: ((existingForLimit?.rewrite_count as number) ?? 0) + 1,
