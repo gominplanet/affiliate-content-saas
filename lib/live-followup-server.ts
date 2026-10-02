@@ -77,13 +77,25 @@ export async function matchMoments(products: LiveProduct[], cues: TranscriptCue[
   : Promise<{ ok: true; moments: LiveMoment[]; missing: LiveProduct[] } | Fail> {
   if (!products.length) return { ok: false, error: 'No products to look for: pick the show plan, or the replay page listed none.' }
   const transcript = cuesToTimestampedText(cues, 120_000)
-  const { system, user } = buildMatchPrompt(products, transcript)
   try {
     const model = 'claude-haiku-4-5-20251001'
-    const msg = await createAnthropicClient().messages.create({ model, max_tokens: 3000, system, messages: [{ role: 'user', content: user }] })
-    recordAnthropicUsage(msg, { userId, tier, feature: 'live_followup_match', model })
-    const raw = (msg.content[0] as { type: string; text?: string }).text || ''
-    const moments = parseMoments(raw, products, durationSec)
+    // IN GROUPS OF 20. One reply for every product ran past its length on a
+    // Live with fifty or more, the cut-off JSON read as no moments at all, and
+    // the screen said "Found 0 products" as if the plan were wrong. A reply
+    // that is still cut off is said, never read as an empty answer.
+    const moments: LiveMoment[] = []
+    for (let i = 0; i < products.length; i += 20) {
+      const group = products.slice(i, i + 20)
+      const { system, user } = buildMatchPrompt(group, transcript)
+      const msg = await createAnthropicClient().messages.create({ model, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
+      recordAnthropicUsage(msg, { userId, tier, feature: 'live_followup_match', model })
+      if (msg.stop_reason === 'max_tokens') {
+        return { ok: false, error: 'The answer about where each product was shown was cut off, so nothing was changed. Try again.' }
+      }
+      const raw = (msg.content[0] as { type: string; text?: string }).text || ''
+      moments.push(...parseMoments(raw, group, durationSec))
+    }
+    moments.sort((a, b) => a.startSec - b.startSec)
     const found = new Set(moments.map((m) => m.asin))
     return { ok: true, moments, missing: products.filter((p) => !found.has(p.asin)) }
   } catch (e) {

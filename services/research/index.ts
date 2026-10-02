@@ -2,7 +2,7 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import type { AmazonProduct } from '@/services/amazon'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
-import { assertPublicHttpUrlResolved } from '@/lib/ssrf-guard'
+import { safeFetch } from '@/lib/ssrf-guard'
 
 /**
  * Web-research agent for the campaign content engine.
@@ -135,13 +135,13 @@ export async function researchProductFromUrl(
     // SSRF guard: `url` is user-influenced (from-link body / video description).
     // Refuse private/reserved/metadata hosts + non-http schemes; keep the
     // never-throw contract (blocked → '' → caller falls back to transcript).
-    try { await assertPublicHttpUrlResolved(url) } catch { return '' }
-    const res = await fetch(url, {
+    // Every redirect hop is checked too (lib/ssrf-guard safeFetch).
+    const res = await safeFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      redirect: 'follow',
       // Don't let a slow/hanging product page block the generation pipeline.
       signal: AbortSignal.timeout(12000),
-    })
+    }).catch(() => null)
+    if (!res) return ''
     if (!res.ok) return ''
     const html = await res.text()
     // Strip scripts/styles/tags → readable text. Cap so we don't blow the
@@ -286,12 +286,12 @@ function isJunkImageUrl(url: string): boolean {
  */
 export async function fetchProductImageFromPage(url: string): Promise<string | null> {
   try {
-    try { await assertPublicHttpUrlResolved(url) } catch { return null }  // SSRF guard (user-influenced url)
-    const res = await fetch(url, {
+    // SSRF guard on the url and on every redirect hop (user-influenced url).
+    const res = await safeFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      redirect: 'follow',
       signal: AbortSignal.timeout(10000),
-    })
+    }).catch(() => null)
+    if (!res) return null
     if (!res.ok) return null
     const html = await res.text()
     let img: string | null =
@@ -345,13 +345,12 @@ export async function fetchProductImageFromPage(url: string): Promise<string | n
  */
 export async function fetchProductGalleryFromPage(url: string): Promise<string[]> {
   try {
-    try { await assertPublicHttpUrlResolved(url) } catch { return [] }  // SSRF guard (user-influenced url)
-    const res = await fetch(url, {
+    // SSRF guard on the url and on every redirect hop (user-influenced url).
+    const res = await safeFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      redirect: 'follow',
       signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return []
+    }).catch(() => null)
+    if (!res || !res.ok) return []
     const html = await res.text()
     const candidates: string[] = []
 

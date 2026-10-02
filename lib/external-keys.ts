@@ -54,7 +54,11 @@ export async function getExternalKey(sb: SB, userId: string, provider: ExternalP
       .eq('provider', provider)
       .maybeSingle()
     if (data?.encrypted_key) {
-      const k = maybeDecrypt(data.encrypted_key)?.trim()
+      // maybeDecrypt THROWS on a key it cannot read, and the throw used to land
+      // in the "table absent" catch below, which then handed an admin the
+      // shared env key: the very fallback the line after this forbids.
+      let k: string | undefined
+      try { k = maybeDecrypt(data.encrypted_key)?.trim() } catch { k = undefined }
       if (k) return k
       // The creator saved a key and it cannot be read. Using the shared env
       // key instead would make every answer about a key they did not give,
@@ -111,7 +115,9 @@ export async function externalKeyStatus(sb: SB, userId: string): Promise<Record<
     for (const row of (data || [])) {
       const prov: unknown = row.provider
       if (!isExternalProvider(prov)) continue
-      const k = maybeDecrypt(row.encrypted_key) || ''
+      // One unreadable key must not hide every provider as "not connected".
+      let k = ''
+      try { k = maybeDecrypt(row.encrypted_key) || '' } catch { k = '' }
       out[prov] = { connected: true, last4: k.slice(-4) || null, viaEnv: out[prov].viaEnv }
     }
   } catch { /* table absent → all show not-connected (env fallback flag stands) */ }

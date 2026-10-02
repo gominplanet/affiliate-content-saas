@@ -1,3 +1,4 @@
+import { maybeEncrypt } from '@/lib/secrets'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createHostingerService } from '@/services/hostinger'
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
         user_id: user.id,
         wordpress_url: `https://${domain}`,
         wordpress_username: adminUser,
-        wordpress_app_password: adminPassword,
+        wordpress_app_password: maybeEncrypt(adminPassword),
         setup_status: 'wordpress_installing',
         setup_job_id: result.jobId,
         setup_subscription_id: subscriptionId,

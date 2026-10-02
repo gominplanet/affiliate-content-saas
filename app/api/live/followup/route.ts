@@ -74,13 +74,26 @@ export async function POST(req: NextRequest) {
   if (action === 'create') {
     const replayUrl = String(body.replayUrl || '').trim()
     if (!/^https:\/\/(www\.)?amazon\.com\/live\//i.test(replayUrl)) return NextResponse.json({ error: 'Paste the replay link from amazon.com/live.' }, { status: 400 })
+    // THE BROADCAST, NAMED. Without its id the page cannot be read here, and
+    // the stream would be whatever the request said it was: any https address,
+    // fetched and transcribed by MVP's video service on MVP's account.
+    const broadcastId = broadcastIdOf(replayUrl)
+    if (!broadcastId) return NextResponse.json({ error: 'That link does not name a broadcast. Open the Live on amazon.com and copy the link from the address bar (it contains /live/broadcast/).' }, { status: 400 })
     const planId = typeof body.planId === 'string' && body.planId ? body.planId : null
     // 1. The replay page itself: its data names the stream, Amazon's captions
     //    and the products shown, with no login (lib/amazon-live-page).
     const page = await readReplayPage(replayUrl)
     // 2. What SCOUT read in the browser, when the page could not be read here.
     const read = (body.read || {}) as { streams?: unknown; asins?: unknown; title?: unknown; durationSec?: unknown }
-    const scoutStreams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter((x) => /^https:\/\//i.test(x)).slice(0, 20)
+    // Only Amazon's own video hosts, and only this broadcast's video.
+    const amazonVideo = (x: string) => {
+      try {
+        const u = new URL(x)
+        return u.protocol === 'https:' && /(?:^|\.)(?:cloudfront\.net|media-amazon\.com|amazon\.com|live-video\.net|amazonvideo\.com)$/i.test(u.hostname)
+          && u.pathname.toLowerCase().includes(broadcastId)
+      } catch { return false }
+    }
+    const scoutStreams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter(amazonVideo).slice(0, 20)
     const stream = page.ok && page.data.streamUrl ? page.data.streamUrl : pickStream(scoutStreams)
     if (!stream) {
       return NextResponse.json({
@@ -146,7 +159,21 @@ export async function POST(req: NextRequest) {
     // A product shown that MVP could not name cannot be looked for in speech:
     // it is listed with the ones not found, never dropped without a word.
     const missing = [...m.missing, ...unnamed.map((asin) => ({ asin, title: `${asin} (no product name found)` }))]
-    const followup = await save({ moments: m.moments, missing, state: 'matched', error: null })
+    // CLIPS AND FRAMING ALREADY MADE ARE KEPT. Finding the products again
+    // replaced every moment, so each clip and every hand-set framing vanished
+    // without a word. A product found at the same time keeps all of it; one
+    // found at a new time keeps the framing (same Live, same set) but not the
+    // clip, which was cut from the old window.
+    const before = new Map(((Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]).map((x) => [x.asin, x]))
+    const merged = m.moments.map((mo) => {
+      const old = before.get(mo.asin)
+      if (!old) return mo
+      const keepFrame = { cropX: old.cropX, framing: old.framing, layout: old.layout, frameUrl: old.frameUrl, frameAspect: old.frameAspect, frameNote: old.frameNote }
+      return old.startSec === mo.startSec && old.endSec === mo.endSec
+        ? { ...mo, ...keepFrame, clipUrl: old.clipUrl, clipError: old.clipError }
+        : { ...mo, ...keepFrame }
+    })
+    const followup = await save({ moments: merged, missing, state: 'matched', error: null })
     return NextResponse.json({ followup })
   }
 

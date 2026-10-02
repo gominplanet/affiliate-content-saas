@@ -54,6 +54,10 @@ const publicPaths = [
   // customer-blog visitors' browsers. CORS preflight (OPTIONS) must reach the
   // route handler too, which is why it's allowlisted here.
   '/api/blog/product-finder',
+  // Apify calls this when a storefront run finishes. It has no session; the
+  // route checks the secret it was given at the start. Without this entry the
+  // call was sent to /login and every finished run was silently lost.
+  '/api/creator/sync/callback',
   // "Work with brands" inbox — public POST hit by the WP blog's brand-contact
   // form (cross-origin, no session). Enforces its OWN auth: HMAC + honeypot +
   // hCaptcha. CORS preflight (OPTIONS) must reach the handler too. Note the

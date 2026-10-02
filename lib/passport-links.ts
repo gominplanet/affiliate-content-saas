@@ -155,10 +155,11 @@ export function parseUserAgent(ua: string | null | undefined): { device: string 
   // and non-browser HTTP clients. Both are traffic; neither is a reader.
   const BOT = new RegExp([
     // self-declared crawlers and link previewers
-    'bot\\b', '\\bbots\\b', 'crawler', 'spider', 'slurp', 'archiver', 'scraper',
+    // (not Cubot, a phone maker: "CUBOT X30" is a person on an Android phone)
+    '(?<!cu)bot\\b', '\\bbots\\b', 'crawler', 'spider', 'slurp', 'archiver', 'scraper',
     'facebookexternalhit', 'whatsapp', 'slackbot', 'discordbot', 'telegrambot',
     'twitterbot', 'linkedinbot', 'pinterestbot', 'redditbot', 'embedly', 'quora link preview',
-    'applebot', 'googlebot', 'bingbot', 'bingpreview', 'yandex', 'duckduck', 'baiduspider',
+    'applebot', 'googlebot', 'bingbot', 'bingpreview', 'yandex', 'duckduckbot', 'duckassistbot', 'baiduspider',
     'semrush', 'ahrefs', 'mj12', 'dotbot', 'petalbot', 'dataforseo', 'screaming frog',
     'google-inspectiontool', 'chrome-lighthouse', 'gptbot', 'ccbot', 'claudebot', 'perplexity',
     // headless and scripted clients

@@ -16,7 +16,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
+import { safeFetch, SsrfBlocked } from '@/lib/ssrf-guard'
 import {
   rememberProductImage, recallProductImage, parseImageDataUri, isAsin,
   type ProductImageSource,
@@ -65,18 +65,18 @@ export async function POST(request: Request) {
       // The URL comes from a request body, so it could point anywhere. Same
       // guard the YouTube thumbnail resolver uses, including a re-check after
       // redirects in case a public host 30x's into private space.
+      // Resolved and checked, every redirect hop too (lib/ssrf-guard safeFetch):
+      // the plain check never looked up the name, so a host pointing at an
+      // internal address passed, and its answer was stored publicly.
+      let res: Response
       try {
-        assertPublicHttpUrl(raw)
+        res = await safeFetch(raw, {
+          signal: AbortSignal.timeout(15_000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (MVP Affiliate)' },
+        })
       } catch (e) {
         if (e instanceof SsrfBlocked) return NextResponse.json({ error: 'That image URL was rejected.' }, { status: 400 })
         throw e
-      }
-      const res = await fetch(raw, {
-        signal: AbortSignal.timeout(15_000),
-        headers: { 'User-Agent': 'Mozilla/5.0 (MVP Affiliate)' },
-      })
-      if (res.url && res.url !== raw) {
-        try { assertPublicHttpUrl(res.url) } catch { return NextResponse.json({ error: 'That image URL was rejected.' }, { status: 400 }) }
       }
       if (!res.ok) return NextResponse.json({ error: `Could not read that image (${res.status}).` }, { status: 502 })
       buffer = Buffer.from(await res.arrayBuffer())

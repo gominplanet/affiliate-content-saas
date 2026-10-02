@@ -14,7 +14,11 @@ const FI = readFileSync('app/api/partnerboost/finder/route.ts', 'utf8')
 const UI = readFileSync('components/partnerboost/PartnerBoostFinder.tsx', 'utf8')
 
 check('the sweep keeps what PartnerBoost said when the brand list fails',
-  /catch \(e\) \{ if \(!brandListError\) brandListError = /.test(SW) && /brandListOk = true/.test(SW))
+  /if \(!res\) \{ if \(!brandListError\) brandListError = /.test(SW) && /brandListOk = true/.test(SW))
+// One network's brand list failing while others answered deleted that
+// network's whole saved catalogue; a throttled brand list is now retried.
+check('the purge never runs after any brand list failed', /productErrors === 0 && !brandListError/.test(SW))
+check('a throttled brand list is waited out and asked again', /for \(let attempt = 0; attempt < 3 && !res; attempt\+\+\)/.test(SW))
 check('a sync with no brand list answer throws, in PartnerBoost\'s words, and keeps the cache',
   /if \(!brandListOk && brandListError\) \{/.test(SW) && /no longer accepts your API token/.test(SW)
   && SW.indexOf('if (!brandListOk && brandListError)') < SW.indexOf("from('pb_finder_cache').upsert"))

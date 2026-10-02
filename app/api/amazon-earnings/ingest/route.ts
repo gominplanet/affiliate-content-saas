@@ -17,6 +17,7 @@
 // CENTS, rounded here, so no float ever reaches a total.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { canUsePreview } from '@/lib/labs-preview'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -52,6 +53,13 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+  // Earnings is in Labs (admin only): the page checked, the API did not.
+  {
+    const { data: tierRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    if (!canUsePreview('earnings', (tierRow as { tier?: string } | null)?.tier)) {
+      return NextResponse.json({ error: 'Earnings is not open on your plan yet.' }, { status: 403 })
+    }
+  }
 
   const body = await request.json().catch(() => null) as { periods?: PeriodRow[]; products?: ProductRow[] } | null
   if (!body) return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 })

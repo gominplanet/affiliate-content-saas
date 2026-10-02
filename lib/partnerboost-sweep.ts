@@ -54,8 +54,19 @@ export async function sweepJoinedProducts(
   for (const network of NETWORKS) {
     for (let page = 1; page <= MAX_BRAND_PAGES; page++) {
       let res
-      try { res = await listPartnerBoostBrands(token, { brandType: network, relationship: 'Joined', page, limit: BRAND_LIMIT }) }
-      catch (e) { if (!brandListError) brandListError = e instanceof Error ? e.message : String(e); break }
+      // The brand list gets the same patience as products: "Too many
+      // request" and a dropped connection are waited out and asked again.
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < 3 && !res; attempt++) {
+        try { res = await listPartnerBoostBrands(token, { brandType: network, relationship: 'Joined', page, limit: BRAND_LIMIT }) }
+        catch (e) {
+          lastErr = e
+          const m = e instanceof Error ? e.message : String(e)
+          if (!/too many request|rate|429|ECONNRESET|socket|terminated|fetch failed|timed? ?out/i.test(m)) break
+          await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)))
+        }
+      }
+      if (!res) { if (!brandListError) brandListError = lastErr instanceof Error ? lastErr.message : String(lastErr); break }
       brandListOk = true
       for (const b of res.brands) {
         joinedTotal++
@@ -182,11 +193,20 @@ export async function syncUserCache(
   // When each brand was last saved, so this run starts with the stalest.
   const lastSynced = new Map<string, number>()
   {
-    const { data } = await sb.from('pb_finder_cache').select('brand_id,brand_mcid,synced_at').eq('user_id', userId).limit(50000)
-    for (const r of (data ?? []) as Array<{ brand_id: string | null; brand_mcid: string | null; synced_at: string }>) {
-      const k = r.brand_id || r.brand_mcid
-      const t = Date.parse(r.synced_at)
-      if (k && Number.isFinite(t) && t > (lastSynced.get(k) ?? 0)) lastSynced.set(k, t)
+    // Read in pages: a request returns 1,000 rows at most, whatever the
+    // limit says, so a catalogue of 16,000 products only showed its first
+    // 1,000 here and "stalest first" ordered by a fraction of the brands.
+    for (let from = 0; from < 60_000; from += 1000) {
+      const { data, error } = await sb.from('pb_finder_cache').select('brand_id,brand_mcid,synced_at')
+        .eq('user_id', userId).order('id').range(from, from + 999)
+      if (error) break
+      const rows = (data ?? []) as Array<{ brand_id: string | null; brand_mcid: string | null; synced_at: string }>
+      for (const r of rows) {
+        const k = r.brand_id || r.brand_mcid
+        const t = Date.parse(r.synced_at)
+        if (k && Number.isFinite(t) && t > (lastSynced.get(k) ?? 0)) lastSynced.set(k, t)
+      }
+      if (rows.length < 1000) break
     }
   }
   const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped, productThrottled } = await sweepJoinedProducts(token, {
@@ -256,7 +276,10 @@ export async function syncUserCache(
   // didn't reach look identical to brands that disappeared. So is a run where
   // any brand's products could not be read: its products were not refreshed,
   // and purging would delete them as if the brand had gone.
-  const purgeSafe = rows.length > 0 && !timedOut && productErrors === 0
+  // AND EVERY NETWORK'S BRAND LIST ANSWERED. One network failing (Walmart
+  // throttled, say) while the others answered made every one of that
+  // network's saved products look gone, and the purge deleted them all.
+  const purgeSafe = rows.length > 0 && !timedOut && productErrors === 0 && !brandListError
   if (purgeSafe) {
     await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
   } else {

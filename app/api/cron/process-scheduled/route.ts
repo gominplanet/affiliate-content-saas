@@ -63,7 +63,11 @@ import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-dis
 // to cap the per-tick work — if the batch is huge we'll catch the
 // stragglers on the next minute.
 const MAX_PER_TICK = 25
-export const maxDuration = 60
+// 240, not 60. An Instagram Reel or TikTok takes 30 seconds to two minutes
+// to process on their side, and the function was killed mid-wait: the row
+// was reclaimed, failed, and sometimes posted twice. Kept under the five
+// minute stuck-row reclaim so a live run is never reclaimed under itself.
+export const maxDuration = 240
 
 // Disclaimer used by Threads + Telegram + Facebook so the body the user
 // edited stays clean and we append ours at publish time.
@@ -510,7 +514,11 @@ async function publishOne(
     pinterest: p.pinterest_pin_id,
     telegram: p.telegram_message_id,
   }
-  const alreadyPosted = existingExternalId[row.platform]
+  // ONLY ON A ROW THAT HAS RUN BEFORE. On a first run the id on the post is
+  // from an EARLIER share (re-sharing is a feature, and so is a second
+  // Facebook Page), and this marked the new share completed with the old
+  // post's id without posting anything.
+  const alreadyPosted = (row.retry_count ?? 0) > 0 ? existingExternalId[row.platform] : null
   if (alreadyPosted) {
     console.warn(`[process-scheduled] row ${row.id}: ${row.platform} already has external id ${String(alreadyPosted)} — skipping republish (idempotency)`)
     return { externalId: String(alreadyPosted) }

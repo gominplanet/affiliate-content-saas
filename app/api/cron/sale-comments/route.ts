@@ -33,11 +33,17 @@ export async function GET(req: Request) {
   // A failed edit (a used-up YouTube quota, a login to reconnect) is tried
   // again on the next run, as long as the sale is still over.
   const { data, error } = await sb.from('sale_comments')
-    .select('id,user_id,asin,youtube_video_id,channel_id,comment_id,lasting_text,state')
+    .select('id,user_id,asin,youtube_video_id,channel_id,comment_id,lasting_text,state,last_error')
     .in('state', ['on_sale', 'failed'])
     .order('last_checked_at', { ascending: true, nullsFirst: true }).limit(300)
   if (error) return NextResponse.json({ ok: false, error: error.code === '42P01' ? 'sale_comments table missing (migration 374)' : error.message })
-  const rows = (data ?? []) as Array<SaleCommentRow & { asin: string; state: string }>
+  // A FAILED EDIT IS RETRIED ONLY WHEN THE FAILURE CAN PASS: a used-up quota,
+  // a timeout, YouTube having a bad moment. A refusal that will say the same
+  // thing next time (a wrong login, a deleted comment) was retried every
+  // three hours forever, each try costing from the shared YouTube quota.
+  const passing = /quota|timed? ?out|timeout|\b5\d\d\b|ECONN|network|temporar|try again|did not answer/i
+  const rows = ((data ?? []) as Array<SaleCommentRow & { asin: string; state: string; last_error?: string | null }>)
+    .filter((r) => r.state !== 'failed' || passing.test(String(r.last_error || '')))
   if (!rows.length) return NextResponse.json({ ok: true, rows: 0 })
 
   const tokens = await fetchKeepaTokenStatus()

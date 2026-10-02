@@ -120,7 +120,7 @@ export async function gatherWeek(sb: Sb, ownerId: string, w: WeekWindow, prev: W
       const by = new Map<string, number>()
       for (let from = 0; from < 20000; from += 1000) {
         const r = ok(await human(sb.from('passport_link_clicks').select('country')
-          .eq('user_id', ownerId).gte('created_at', s).lt('created_at', e)).order('created_at').range(from, from + 999))
+          .eq('user_id', ownerId).gte('created_at', s).lt('created_at', e)).order('created_at').order('id').range(from, from + 999))
         const rows = (r.data ?? []) as Array<{ country: string | null }>
         for (const c of rows) {
           const k = (c.country || '').toUpperCase() || 'Unknown'
