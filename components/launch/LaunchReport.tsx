@@ -12,6 +12,7 @@
 import { explainAmazonUpload, MAX_UPLOAD_TRIES } from '@/lib/amazon-upload-errors'
 import { MARKETS } from '@/lib/markets'
 import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
+import { isStudioWaiting, isStudioRunning, STUDIO_UPLOAD_DONE } from '@/lib/studio-upload'
 
 const GOOD = '#10B981', WARN = '#d97706', BAD = '#ef4444', BUSY = '#0EA5A4', IDLE = 'var(--text-2)'
 const text = { color: 'var(--text)' } as const
@@ -74,6 +75,15 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
       : { word: 'Did not upload', colour: BAD, done: true, problem: i.reason || 'It could not be uploaded.' }
   }
   if (i.state === 'prepared') {
+    // UPLOADED THROUGH STUDIO BY SCOUT (Labs): each state its own words, so
+    // waiting for SCOUT never reads like YouTube's quota, and a SCOUT that
+    // failed and will try again never reads like a queue.
+    if (i.planned_publish_at && !i.youtube_video_id) {
+      if (isStudioWaiting(i.reason)) return { word: 'Waiting for SCOUT', colour: WARN, done: false, problem: i.reason || undefined }
+      if (isStudioRunning(i.reason)) return { word: 'Uploading in Studio', colour: BUSY, done: false }
+      if (/^(?:SCOUT |Studio |YouTube Studio |The file went into Studio)/.test(i.reason || '')) return { word: 'SCOUT tries again', colour: WARN, done: false, problem: i.reason || undefined }
+    }
+    if (i.youtube_video_id && (i.reason || '') === STUDIO_UPLOAD_DONE) return { word: 'On YouTube, time next', colour: BUSY, done: false }
     // Waiting on YouTube's daily allowance: not stuck, not failed, and says so.
     if (i.planned_publish_at && /^Waiting/.test(i.reason || '')) return { word: 'Waiting for YouTube', colour: WARN, done: false, problem: i.reason || undefined }
     return i.planned_publish_at

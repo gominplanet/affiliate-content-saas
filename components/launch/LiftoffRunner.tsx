@@ -20,7 +20,8 @@ import { requestStudioFinish, getScoutStatus, liftoffDone, liftoffAlive } from '
 import { deliverPreparedStorefronts } from '@/lib/storefront-delivery'
 import { liftoffStudioRequest, normalizeStudioOptions, storeStudioRun, type StoredStudioRun } from '@/lib/studio-finish'
 import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
-import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
+import { runStudioUploads } from '@/lib/studio-upload-client'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -48,6 +49,17 @@ export default function LiftoffRunner() {
       try {
         const st = await getScoutStatus()
         const studioPossible = st.installed && scoutAtLeast(st.version, SCOUT_STUDIO_MIN_VERSION)
+        // ── UPLOADS THROUGH YOUTUBE STUDIO FIRST (Labs, lib/studio-upload):
+        // the videos the server is leaving to SCOUT so they cost nothing from
+        // the shared YouTube quota. Each one then goes through the server's
+        // usual steps, and its Studio pass below, on the next round.
+        if (st.installed && scoutAtLeast(st.version, SCOUT_STUDIO_UPLOAD_MIN_VERSION)) {
+          const ups = await runStudioUploads({
+            background: true,
+            onProgress: (o) => say('starting' in o ? `Uploading through Studio: ${o.title}` : `  ${o.said}`),
+          })
+          if (ups.length > 0) more = true
+        }
         const r = await fetch('/api/launch/batches')
         const j = await r.json().catch(() => ({}))
         if (!r.ok) { clearInterval(alive); say(`Could not read your batches: ${j?.error || r.status}`); await liftoffDone(true, 'error'); return }

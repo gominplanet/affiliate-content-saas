@@ -8692,7 +8692,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 9
+  const KIT_VERSION = 10
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9966,6 +9966,42 @@ K.steps.monetization = async (out, o) => {
     return out
   }
 
+  // ── A NEW UPLOAD'S OWN WORDS (Liftoff, uploaded through Studio) ─────────
+  // Studio names a new upload after its file. The title and description are
+  // typed into Studio's own boxes the way a person types, and read back. Made
+  // for kids is answered No here as well: a fresh upload has no answer, and
+  // Studio does not move past Details without one.
+  K.steps.uploadText = async (out, o) => {
+    const dlg = await waitFor(() => { const d = mainDialog(); return d && page(d) === 'details' ? d : null }, 20000, 500)
+    if (!dlg) { out.detail = 'The upload’s Details page is not open'; return out }
+    const boxes = () => all(dlg).filter((el) => el.getAttribute && el.getAttribute('contenteditable') === 'true' && visible(el))
+    const near = (el) => attrLabel(el) + ' ' + (el.id || '') + ' ' + ((up(el) || {}).id || '') + ' ' + ((up(up(el)) || {}).id || '') + ' ' + ((up(up(up(el))) || {}).id || '')
+    const titleBox = () => boxes().find((el) => /title/i.test(near(el))) || boxes()[0] || null
+    const descBox = () => boxes().find((el) => /tell viewers|description/i.test(near(el))) || boxes().find((el) => el !== titleBox()) || null
+    const typeInto = async (box, text) => {
+      if (!box) return false
+      try { box.focus() } catch (e) {}
+      try { document.execCommand('selectAll', false); document.execCommand('delete', false) } catch (e) {}
+      await sleep(250)
+      try { document.execCommand('insertText', false, text) } catch (e) {}
+      await sleep(500)
+      const now = norm(box.innerText || box.textContent || '')
+      return now.slice(0, 40) === norm(text).slice(0, 40)
+    }
+    const tb = await waitFor(titleBox, 15000, 400)
+    const tOk = o.title ? await typeInto(tb, String(o.title).slice(0, 100)) : true
+    const dOk = o.description ? await typeInto(descBox(), String(o.description).slice(0, 4900)) : true
+    out.readBack.title = tOk
+    out.readBack.description = dOk
+    const kids = await answerRadio('kids', /not made for kids/i, dlg)
+    out.readBack.notForKids = kids.found ? kids.confirmed : null
+    out.ok = tOk && dOk && kids.confirmed
+    out.detail = out.ok
+      ? 'Title, description and Not made for kids set. Read back from Studio.'
+      : 'Studio did not keep: ' + [tOk ? '' : 'the title', dOk ? '' : 'the description', kids.confirmed ? '' : 'Not made for kids'].filter(Boolean).join(', ')
+    return out
+  }
+
   window.__mvpKit = K
   return true
 }
@@ -10093,6 +10129,195 @@ async function runStudioDraft(tabId, videoId, want) {
   }
   steps.push({ step: 'unknown', ok: false, detail: 'SCOUT went through more pages than a draft has, and stopped' })
   return steps
+}
+
+// ── LIFTOFF UPLOADS THROUGH YOUTUBE STUDIO (MVP_STUDIO_UPLOAD) ──────────────
+// An upload through YouTube's API costs 1,600 of the one daily quota every MVP
+// account shares, so MVP could upload about six videos a day for everyone
+// together. Studio uploads cost nothing from it: SCOUT opens Studio's upload
+// box in the creator's own signed-in Chrome, puts the finished file in it, and
+// walks the same dialog a person would (the drafts walker above): title and
+// description, Not made for kids, paid promotion Yes, AI use No, notify as the
+// batch says, then Save as Private. MVP sets the time afterwards, as it does
+// for every Liftoff video.
+//
+// ONE UPLOAD PER VIDEO, EVER. The new video's id is kept the moment Studio
+// shows it, so a run asked again for the same Liftoff video answers with that
+// id instead of uploading a second copy. It is forgotten only when the file
+// never finished sending, which is the one case that needs a new upload.
+function studioUploadFileInPage(fileUrl, fileName, expectedChannel) {
+  return (async () => {
+    const out = { ok: false, detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const all = (root) => { const acc = []; const w = (r) => { let e; try { e = r.querySelectorAll('*') } catch (x) { return } for (const el of e) { acc.push(el); if (el.shadowRoot) w(el.shadowRoot) } }; w(root || document); return acc }
+    try {
+      // Read by studioChannelInPage (ytcfg lives in the page's own world;
+      // this runs in SCOUT's, where Studio's rules on downloads do not apply).
+      const onChannel = String(expectedChannel && expectedChannel.on || '')
+      expectedChannel = expectedChannel && expectedChannel.want
+      out.debug.channel = onChannel
+      if (expectedChannel && onChannel && onChannel !== expectedChannel) {
+        out.error = 'wrong-channel'
+        out.detail = 'Studio is on a different channel (' + onChannel + ') from the one this batch is for, so nothing was uploaded. Switch channel in YouTube, or reconnect the right one in MVP.'
+        return out
+      }
+      const dialog = () => all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog') || null
+      let input = null
+      for (let i = 0; i < 60 && !input; i++) {
+        const d = dialog()
+        input = (d ? all(d) : all(document)).find((el) => el.tagName === 'INPUT' && el.type === 'file') || null
+        if (!input) await sleep(500)
+      }
+      if (!input) { out.error = 'no-picker'; out.detail = 'Studio’s upload box did not open'; return out }
+      // The finished video, from MVP's storage, into this browser.
+      let res
+      try { res = await fetch(fileUrl, { credentials: 'omit' }) } catch (e) { out.error = 'file-fetch-blocked'; out.detail = 'This browser could not download the video from MVP'; return out }
+      if (!res.ok) { out.error = 'file-http-' + res.status; out.detail = 'MVP’s copy of the video could not be read (' + res.status + ')'; return out }
+      const blob = await res.blob()
+      out.debug.bytes = blob.size
+      if (!blob.size) { out.error = 'empty-file'; out.detail = 'The video file was empty'; return out }
+      const file = new File([blob], fileName || 'video.mp4', { type: blob.type && /^video\//.test(blob.type) ? blob.type : 'video/mp4' })
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      // Studio moves to Details and starts sending. The video's own link
+      // ("youtu.be/<id>") is in the dialog as soon as Studio has an id.
+      let id = null
+      const end = Date.now() + 180000
+      while (!id && Date.now() < end) {
+        const d = dialog()
+        const tx = (document.body ? document.body.innerText : '') || ''
+        if (/daily upload limit|upload limit reached/i.test(tx)) { out.error = 'upload-limit'; out.detail = 'YouTube says this channel has reached its own daily upload limit (uploadLimitExceeded)'; return out }
+        if (d) {
+          for (const el of all(d)) {
+            const href = (el.tagName === 'A' && el.href) ? String(el.href) : ''
+            const m = href.match(/(?:youtu\.be\/|\/shorts\/|[?&]v=)([A-Za-z0-9_-]{11})/)
+            if (m) { id = m[1]; break }
+          }
+        }
+        if (!id) await sleep(1000)
+      }
+      if (!id) { out.error = 'no-video-id'; out.detail = 'The file went in, but Studio did not show the video’s link within three minutes'; return out }
+      out.ok = true
+      out.videoId = id
+      out.detail = 'Studio took the file and gave it an id'
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'threw'
+      out.detail = 'SCOUT hit an error in Studio: ' + out.error
+      return out
+    }
+  })()
+}
+
+// Which channel Studio is on, from the page's own settings (MAIN world).
+function studioChannelInPage() {
+  try { return String((window.ytcfg && window.ytcfg.get && window.ytcfg.get('CHANNEL_ID')) || '') } catch (e) { return '' }
+}
+
+// How far Studio has got with sending the file: 'uploading' (with a
+// percentage when shown), 'done' once Studio has all of it, or 'error' with
+// Studio's own words.
+function studioUploadProgressInPage() {
+  try {
+    const parts = []
+    const visit = (n) => {
+      for (const c of Array.from(n.childNodes || [])) {
+        if (c.nodeType === 3) { const v = String(c.nodeValue || '').trim(); if (v) parts.push(v) }
+        else if (c.nodeType === 1) { const t = c.tagName; if (t === 'STYLE' || t === 'SCRIPT' || t === 'TEMPLATE') continue; if (c.shadowRoot) visit(c.shadowRoot); visit(c) }
+      }
+    }
+    visit(document.body || document)
+    const text = parts.join(' ').replace(/\s+/g, ' ')
+    const pct = text.match(/uploading\s+(\d{1,3})\s*%/i)
+    if (/upload failed|processing abandoned|upload couldn.t be completed|daily upload limit/i.test(text)) {
+      const m = text.match(/(upload failed[^.]{0,120}|processing abandoned[^.]{0,120}|upload couldn.t be completed[^.]{0,120}|daily upload limit[^.]{0,120})/i)
+      return { state: 'error', text: m ? m[1] : 'Studio reported a failed upload' }
+    }
+    if (pct) return { state: 'uploading', percent: Number(pct[1]), text: pct[0] }
+    if (/upload complete|uploads complete|checks complete|processing (?:hd|sd|up to)|processing will begin|finished processing|video uploaded/i.test(text)) return { state: 'done', text: 'Upload complete' }
+    return { state: 'uploading', percent: null, text: '' }
+  } catch (e) { return { state: 'uploading', percent: null, text: '' } }
+}
+
+const STUDIO_UPLOADS_KEY = 'mvp_studio_uploads'
+let _studioUploadBusy = false
+
+async function scanStudioUpload(o) {
+  const steps = []
+  const channelId = (o && o.channelId && /^UC[\w-]{20,}$/.test(String(o.channelId))) ? String(o.channelId) : null
+  if (!channelId) return { ok: false, error: 'no-channel', detail: 'MVP did not say which channel to upload to', steps }
+  if (!o || !/^https:\/\//.test(String(o.fileUrl || ''))) return { ok: false, error: 'no-file', detail: 'MVP did not give the video file', steps }
+  let map = {}
+  try { const st = await chrome.storage.local.get([STUDIO_UPLOADS_KEY]); map = st[STUDIO_UPLOADS_KEY] || {} } catch (e) {}
+  const forget = async () => { if (!o.itemId) return; try { delete map[o.itemId]; await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+  if (o.itemId && map[o.itemId] && map[o.itemId].sent) {
+    return { ok: true, already: true, videoId: map[o.itemId].videoId, saved: map[o.itemId].saved === true, steps: [{ step: 'upload', ok: true, detail: 'SCOUT already uploaded this one (' + map[o.itemId].videoId + ')' }] }
+  }
+  _studioChannelId = channelId
+  _studioAbort = false
+  let tabId = null
+  const keepAlive = startKeepAlive()
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', active: o.background !== true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 45000)
+    await _sleep(3500)
+    let onChannel = ''
+    try {
+      const cr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioChannelInPage })
+      onChannel = String((cr && cr[0] && cr[0].result) || '')
+    } catch (e) {}
+    // SCOUT's own world: the download from MVP is not subject to Studio's
+    // page rules there, and the file box is the same element in both.
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: studioUploadFileInPage, args: [String(o.fileUrl), String(o.fileName || 'video.mp4'), { want: channelId, on: onChannel }] })
+    const up = (r && r[0] && r[0].result) || { ok: false, error: 'no-result', detail: 'Studio did not answer' }
+    steps.push({ step: 'upload', ok: !!up.ok, detail: up.detail || '', debug: up.debug })
+    if (!up.ok || !up.videoId) return { ok: false, error: up.error || 'upload-failed', detail: up.detail || '', steps }
+    const videoId = up.videoId
+    if (o.itemId) {
+      map[o.itemId] = { videoId, sent: false, at: Date.now() }
+      const keys = Object.keys(map)
+      if (keys.length > 300) delete map[keys[0]]
+      try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {}
+    }
+    // Its own words, and Not made for kids (a fresh upload has no answer).
+    steps.push(Object.assign({ step: 'text' }, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' })))
+    // THE WHOLE FILE, BEFORE ANYTHING IS SAVED. Closing Studio mid-send loses
+    // the upload, so the tab stays until Studio has every byte.
+    const sendEnd = Date.now() + 60 * 60000
+    let prog = null
+    while (Date.now() < sendEnd) {
+      try {
+        const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioUploadProgressInPage })
+        prog = (pr && pr[0] && pr[0].result) || null
+      } catch (e) { prog = null }
+      if (prog && (prog.state === 'done' || prog.state === 'error')) break
+      await _sleep(5000)
+    }
+    if (!prog || prog.state !== 'done') {
+      await forget()
+      steps.push({ step: 'sending', ok: false, detail: prog && prog.state === 'error' ? 'Studio says: ' + prog.text : 'The file did not finish sending within an hour' })
+      return { ok: false, error: 'not-sent', detail: steps[steps.length - 1].detail, steps }
+    }
+    steps.push({ step: 'sending', ok: true, detail: 'Studio has the whole file' })
+    if (o.itemId) { map[o.itemId] = { videoId, sent: true, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+    // Paid promotion, AI use, notify, then Save as Private: the drafts walker.
+    const want = Object.assign({}, o.want || {}, { visibility: { mode: 'private' } })
+    const draftSteps = await runStudioDraft(tabId, videoId, want)
+    for (const s of draftSteps) steps.push(s)
+    const vis = draftSteps.find((s) => s && s.step === 'visibility')
+    const saved = !!(vis && vis.ok)
+    if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+    const tried = steps.filter((s) => s && !s.skipped)
+    return { ok: tried.every((s) => s.ok), videoId, saved, steps }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'failed', steps }
+  } finally {
+    stopKeepAlive(keepAlive)
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
 }
 
 async function scanStudioFinish(videoId, opts, callerTabId) {
@@ -11253,6 +11478,20 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     readVdpPages(Array.isArray(msg.ids) ? msg.ids : [])
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
+  }
+  if (msg.type === 'MVP_STUDIO_UPLOAD') {
+    // Liftoff: upload a finished video through YouTube Studio, which costs
+    // nothing from MVP's shared YouTube quota (see scanStudioUpload). One at
+    // a time, and never while another Studio run is going.
+    if (_studioBusy || _studioUploadBusy) { sendResponse({ ok: false, steps: [], error: 'busy' }); return false }
+    _studioBusy = true
+    _studioUploadBusy = true
+    const timeout = setTimeout(() => { _studioAbort = true; sendResponse({ ok: false, steps: [], error: 'timeout' }) }, 70 * 60000)
+    scanStudioUpload(msg.opts || {})
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })
+      .finally(() => { _studioBusy = false; _studioUploadBusy = false })
     return true
   }
   if (msg.type === 'MVP_STUDIO_VIDEO_FILE') {

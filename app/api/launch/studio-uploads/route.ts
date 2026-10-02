@@ -1,0 +1,213 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// GET  /api/launch/studio-uploads  the creator's Liftoff videos waiting for
+//                                  SCOUT to upload them through YouTube Studio.
+// POST /api/launch/studio-uploads  { itemId, claim: true }  SCOUT is starting one.
+//                                  { itemId, result }       how it went.
+//
+// See lib/studio-upload for why. The server never uploads these rows; the
+// drain picks each one up again once it has the id SCOUT reports here, and
+// goes on as for any other upload (read back, time, thumbnail, playlist,
+// pinned comment, Amazon).
+//
+// ONE UPLOAD PER VIDEO. A row is claimed on the try count it was read with,
+// so two tabs cannot both start it, and the id is written only where there is
+// none, so a late report can never replace a video already recorded.
+
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeStudioOptions } from '@/lib/studio-finish'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { YouTubeOAuthService } from '@/services/youtube'
+import {
+  usesStudioUpload, isStudioRunning, cleanVideoId, studioUploadFailureText,
+  STUDIO_UPLOAD_RUNNING, STUDIO_UPLOAD_DONE, STUDIO_UPLOAD_CLAIM_MS, STUDIO_UPLOAD_TRIES,
+} from '@/lib/studio-upload'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+type Row = {
+  id: string; batch_id: string; title: string | null; description: string | null; tags: string | null
+  rendered_url: string | null; planned_publish_at: string | null; publish_tries: number | null
+  reason: string | null; updated_at: string | null; youtube_video_id: string | null; state: string
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function gate(): Promise<{ user: { id: string }; sb: any } | NextResponse> {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const sb = createAdminClient()
+  const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!usesStudioUpload(integ?.tier)) return NextResponse.json({ ok: true, on: false, items: [] })
+  return { user, sb }
+}
+
+export async function GET() {
+  const g = await gate()
+  if (g instanceof NextResponse) return g
+  const { user, sb } = g
+  const { data: rows, error } = await sb.from('launch_items')
+    .select('id,batch_id,title,description,tags,rendered_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
+    .eq('user_id', user.id).eq('state', 'prepared').is('youtube_video_id', null)
+    .not('planned_publish_at', 'is', null).not('rendered_url', 'is', null)
+    .order('planned_publish_at', { ascending: true }).limit(20)
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  const now = Date.now()
+  const waiting = ((rows ?? []) as Row[]).filter((r) => {
+    if (!/^https:\/\//i.test(String(r.rendered_url || '')) || !String(r.title || '').trim()) return false
+    // Claimed by a SCOUT that is still within its time.
+    if (isStudioRunning(r.reason) && r.updated_at && now - new Date(r.updated_at).getTime() < STUDIO_UPLOAD_CLAIM_MS) return false
+    // A channel at its own daily limit is asked again hourly.
+    if (/own daily upload limit/.test(String(r.reason || '')) && r.updated_at && now - new Date(r.updated_at).getTime() < 3_600_000) return false
+    return true
+  })
+  if (waiting.length === 0) return NextResponse.json({ ok: true, on: true, items: [] })
+
+  const batchIds = [...new Set(waiting.map((r) => r.batch_id))]
+  const { data: batches } = await sb.from('launch_batches')
+    .select('id,youtube_channel_id,notify_subscribers,studio_options,send_to_youtube').in('id', batchIds)
+  const byBatch = new Map<string, { youtube_channel_id: string | null; notify_subscribers: boolean | null; studio_options: unknown; send_to_youtube: boolean | null }>()
+  for (const b of (batches ?? []) as Array<{ id: string; youtube_channel_id: string | null; notify_subscribers: boolean | null; studio_options: unknown; send_to_youtube: boolean | null }>) byBatch.set(b.id, b)
+  // A batch with no confirmed channel uploads to the creator's default one.
+  const { data: def } = await sb.from('youtube_channels').select('channel_id')
+    .eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }).limit(1)
+  const fallbackChannel = String((def ?? [])[0]?.channel_id || '').trim() || null
+
+  const items = waiting.flatMap((r) => {
+    const b = byBatch.get(r.batch_id)
+    if (!b || b.send_to_youtube === false) return []
+    const channelId = String(b.youtube_channel_id || '').trim() || fallbackChannel
+    if (!channelId) return []
+    const opts = normalizeStudioOptions(b.studio_options)
+    const name = (String(r.title || 'video').replace(/[^\w\- ]+/g, '').trim().slice(0, 60) || 'video') + '.mp4'
+    return [{
+      itemId: r.id,
+      channelId,
+      fileUrl: String(r.rendered_url),
+      fileName: name,
+      title: String(r.title || '').trim().slice(0, 100),
+      description: String(r.description || '').slice(0, 4900),
+      tries: Number(r.publish_tries ?? 0),
+      lastReason: r.reason,
+      want: {
+        details: opts.disclosures,
+        notifySubscribers: b.notify_subscribers === true,
+        monetize: false, selfCert: false, endScreen: false, tagProduct: false,
+      },
+    }]
+  })
+  return NextResponse.json({ ok: true, on: true, items })
+}
+
+export async function POST(req: Request) {
+  const g = await gate()
+  if (g instanceof NextResponse) return g
+  const { user, sb } = g
+  const body = await req.json().catch(() => ({})) as {
+    itemId?: string; claim?: boolean
+    result?: { ok?: boolean; videoId?: string; saved?: boolean; error?: string; detail?: string; steps?: Array<{ step?: string; ok?: boolean; detail?: string; skipped?: boolean }> }
+  }
+  const itemId = String(body.itemId || '')
+  if (!/^[0-9a-f-]{36}$/i.test(itemId)) return NextResponse.json({ ok: false, error: 'Which video?' }, { status: 400 })
+  const { data: row } = await sb.from('launch_items')
+    .select('id,batch_id,title,description,tags,rendered_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
+    .eq('id', itemId).eq('user_id', user.id).maybeSingle() as { data: Row | null }
+  if (!row) return NextResponse.json({ ok: false, error: 'That video is not in your Liftoff.' }, { status: 404 })
+  const stamp = new Date().toISOString()
+  const tries = Number(row.publish_tries ?? 0)
+
+  // ── CLAIM ─────────────────────────────────────────────────────────────────
+  if (body.claim) {
+    if (row.state !== 'prepared' || row.youtube_video_id) return NextResponse.json({ ok: false, error: 'It is not waiting for an upload any more.' }, { status: 409 })
+    if (tries >= STUDIO_UPLOAD_TRIES) {
+      // THE LAST REAL ERROR SURVIVES THE GIVING UP, as in the drain.
+      const said = String(row.reason || '').trim()
+      await sb.from('launch_items').update({
+        state: 'blocked',
+        reason: `SCOUT could not upload this through YouTube Studio after ${tries} tries.${said && !isStudioRunning(said) ? ` The last thing it said: ${said}` : ''} Check YouTube Studio for a copy before pressing Try again.`.slice(0, 400),
+        updated_at: stamp,
+      }).eq('id', row.id).eq('state', 'prepared').is('youtube_video_id', null)
+      return NextResponse.json({ ok: false, error: 'out-of-tries' }, { status: 409 })
+    }
+    const q = sb.from('launch_items').update({
+      publish_tries: tries + 1,
+      reason: `${STUDIO_UPLOAD_RUNNING} Try ${tries + 1} of ${STUDIO_UPLOAD_TRIES}.`,
+      updated_at: stamp,
+    }).eq('id', row.id).eq('state', 'prepared').is('youtube_video_id', null)
+    const { data: took } = await (row.publish_tries == null ? q.is('publish_tries', null) : q.eq('publish_tries', tries)).select('id')
+    if (!took || took.length === 0) return NextResponse.json({ ok: false, error: 'Another SCOUT took it first.' }, { status: 409 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // ── RESULT ────────────────────────────────────────────────────────────────
+  const r = body.result
+  if (!r || typeof r !== 'object') return NextResponse.json({ ok: false, error: 'No result.' }, { status: 400 })
+  const videoId = cleanVideoId(r.videoId)
+  if (videoId) {
+    // Only where none is recorded: a report that arrives late must not
+    // replace a video already on the row.
+    const { data: kept, error: idErr } = await sb.from('launch_items').update({
+      youtube_video_id: videoId,
+      // The upload is done, so its try is handed back for the steps after it.
+      publish_tries: Math.max(0, tries - 1),
+      reason: STUDIO_UPLOAD_DONE,
+      updated_at: stamp,
+    }).eq('id', row.id).is('youtube_video_id', null).select('id')
+    if (idErr) return NextResponse.json({ ok: false, error: idErr.message }, { status: 500 })
+    if (!kept || kept.length === 0) {
+      const same = row.youtube_video_id === videoId
+      return NextResponse.json({ ok: same, error: same ? undefined : `This video already has a different YouTube id on record (${row.youtube_video_id}). The copy SCOUT just uploaded (${videoId}) is a second one: delete it in Studio.` })
+    }
+
+    // THE WORDS MVP WROTE, EXACTLY, AND THE TAGS. Studio was given the title
+    // and description by typing, which can drift (a box that trims, a line
+    // break lost), and Studio uploads have no tags, so the API sets all three
+    // once (about 50 units). The description carries the affiliate link: if
+    // Studio's own typing did not read back AND this fails, nothing goes out.
+    const steps = Array.isArray(r.steps) ? r.steps : []
+    const textOk = steps.some((s) => s && s.step === 'text' && s.ok === true)
+    let metaError: string | null = null
+    try {
+      const { data: b } = await sb.from('launch_batches').select('youtube_channel_id').eq('id', row.batch_id).maybeSingle()
+      const token = await getChannelOAuthToken(sb, user.id, String(b?.youtube_channel_id || '').trim() || null)
+      if (!token) throw new Error('the channel is not connected for publishing')
+      await new YouTubeOAuthService(token).updateVideoMetadata(videoId, {
+        title: String(row.title || '').trim().slice(0, 100),
+        description: String(row.description || '').slice(0, 4900),
+        tags: String(row.tags || '').split(',').map((t) => t.trim()).filter(Boolean),
+      })
+    } catch (e) {
+      metaError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+    }
+
+    if (r.saved !== true || (!textOk && metaError)) {
+      await sb.from('launch_items').update({
+        state: 'blocked',
+        reason: (r.saved !== true
+          ? `On your channel (${videoId}) as a draft in Studio: SCOUT uploaded it but could not finish saving it${r.detail ? ` (${r.detail})` : ''}. Open it in Studio, check it, save it as Private, then press Try again and MVP sets its time.`
+          : `On your channel (${videoId}), private, but its title and description could not be checked (${metaError}). Check them in Studio, then press Try again and MVP sets its time.`
+        ).slice(0, 400),
+        updated_at: stamp,
+      }).eq('id', row.id)
+      return NextResponse.json({ ok: true, videoId, held: true, metaError })
+    }
+    return NextResponse.json({ ok: true, videoId, metaError })
+  }
+
+  // No video: say why on the row. The drain does not touch it; the next SCOUT
+  // run offers it again until it is out of tries.
+  const why = studioUploadFailureText(r.error, r.detail)
+  const wrong = r.error === 'wrong-channel'
+  await sb.from('launch_items').update({
+    // A wrong channel is not fixed by trying again, so it stops at once.
+    ...(wrong || tries >= STUDIO_UPLOAD_TRIES ? { state: 'blocked' } : {}),
+    // Busy is not an attempt.
+    ...(r.error === 'busy' ? { publish_tries: Math.max(0, tries - 1) } : {}),
+    reason: why.slice(0, 400),
+    updated_at: stamp,
+  }).eq('id', row.id).eq('state', 'prepared').is('youtube_video_id', null)
+  return NextResponse.json({ ok: true, recorded: why })
+}

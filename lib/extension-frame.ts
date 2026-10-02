@@ -1870,6 +1870,49 @@ export async function requestStudioFinish(
   return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error, path: resp.path }
 }
 
+export interface StudioUploadOpts {
+  itemId: string
+  channelId: string
+  fileUrl: string
+  fileName: string
+  title: string
+  description: string
+  /** The drafts walker's answers (paid promotion, AI use, notify). SCOUT
+   *  always saves the upload as Private; MVP sets its time afterwards. */
+  want: Partial<StudioFinishOpts>
+  background?: boolean
+}
+
+export interface StudioUploadResult {
+  ok: boolean
+  videoId?: string
+  saved?: boolean
+  already?: boolean
+  error?: string
+  detail?: string
+  steps: StudioFinishStep[]
+}
+
+/**
+ * Liftoff: upload one finished video through YouTube Studio (SCOUT 1.25.0+),
+ * which costs nothing from MVP's shared YouTube quota. SCOUT keeps the new
+ * video's id the moment Studio shows it, so asking again for the same item
+ * answers with that id rather than uploading a second copy.
+ */
+export async function requestStudioUpload(opts: StudioUploadOpts): Promise<StudioUploadResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; videoId?: string; saved?: boolean; already?: boolean; error?: string; detail?: string; steps?: StudioFinishStep[] }>(
+    { type: 'MVP_STUDIO_UPLOAD', opts: { ...opts, want: { ...opts.want, notifySubscribers: opts.want.notifySubscribers === true } } },
+    // SCOUT allows the file an hour to send and gives up at 70 minutes.
+    72 * 60_000,
+  )
+  if (!resp) return { ok: false, steps: [], error: 'timeout' }
+  return {
+    ok: !!resp.ok, videoId: resp.videoId, saved: resp.saved, already: resp.already,
+    error: resp.error, detail: resp.detail, steps: Array.isArray(resp.steps) ? resp.steps : [],
+  }
+}
+
 export interface YtSaveRecipe {
   via?: string
   url: string

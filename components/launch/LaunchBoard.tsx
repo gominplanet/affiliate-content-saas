@@ -31,7 +31,9 @@ import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/l
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, youtubePartDone, type CtaPreset, type StepStatus, type ItemRow, type StepId, LIFTOFF_AMAZON_MARKET } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
-import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
+import { runStudioUploads } from '@/lib/studio-upload-client'
+import { isStudioWaiting } from '@/lib/studio-upload'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
@@ -398,8 +400,30 @@ export default function LaunchBoard() {
     [{ ...i, studio_finish: liveRuns[i.id] ?? i.studio_finish }], [],
     { sendToYouTube: batch?.send_to_youtube !== false, studioPossible: scoutCanStudio },
   ).studio > 0
+  // ── UPLOADS THROUGH YOUTUBE STUDIO (Labs, lib/studio-upload) ────────────
+  // Videos the server left for SCOUT, so they cost nothing from the shared
+  // YouTube quota. They go before the Studio steps: SCOUT runs one Studio job
+  // at a time, and these are what the rest is waiting on.
+  const scoutCanUpload = scoutReady === true && scoutAtLeast(scoutVersion, SCOUT_STUDIO_UPLOAD_MIN_VERSION)
+  const uploadRunning = useRef(false)
+  const [uploadNote, setUploadNote] = useState<string | null>(null)
+  const uploadTick = useRef<() => boolean>(() => false)
+  uploadTick.current = () => {
+    if (!scoutCanUpload || !batch || uploadRunning.current || studioRunning.current || amazonRunning.current) return uploadRunning.current
+    if (batch.state !== 'launched' && batch.state !== 'launching') return false
+    if (!items.some((i) => i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason))) return false
+    uploadRunning.current = true
+    void runStudioUploads({
+      background: true,
+      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio (in a tab behind this one).` : `${o.title}: ${o.said}`),
+    }).then((done) => {
+      if (done.length > 0 && batch) void load(batch.id, true)
+    }).finally(() => { uploadRunning.current = false; setTimeout(() => setUploadNote(null), 15_000) })
+    return true
+  }
   const studioTick = useRef<() => void>(() => {})
   studioTick.current = () => {
+    if (uploadTick.current()) return
     if (!scoutCanStudio || !batch || studioRunning.current || studioManual.current || amazonRunning.current) return
     if (Date.now() < studioBusyUntil.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
@@ -418,7 +442,7 @@ export default function LaunchBoard() {
   const amazonTick = useRef<() => void>(() => {})
   amazonTick.current = () => {
     // The Studio steps go first; Amazon waits for them to finish.
-    if (studioRunning.current || (scoutCanStudio && items.some((i) => studioDue(i) && !studioTried.current.has(i.id)))) return
+    if (uploadRunning.current || studioRunning.current || (scoutCanStudio && items.some((i) => studioDue(i) && !studioTried.current.has(i.id)))) return
     if (amazonAuto !== 'on' || scoutReady !== true || !batch || amazonRunning.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
     if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
@@ -2403,6 +2427,14 @@ export default function LaunchBoard() {
               </button>
             )}
           </div>
+          {uploadNote && (
+            <p className="text-[12px] mb-2 rounded-lg px-3 py-2" style={{ background: 'var(--surface-2, rgba(14,165,164,0.08))', color: 'var(--text)' }}>{uploadNote}</p>
+          )}
+          {!scoutCanUpload && items.some((i) => i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason)) && (
+            <p className="text-[12px] mb-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,149,0,0.10)', color: 'var(--text)' }}>
+              These videos upload through YouTube Studio with SCOUT, and {scoutReady === true ? `your SCOUT is ${scoutVersion ?? 'an older version'}. They need SCOUT ${SCOUT_STUDIO_UPLOAD_MIN_VERSION} or later` : 'SCOUT is not answering in this Chrome'}, so nothing is uploading yet.
+            </p>
+          )}
           <ul className="flex flex-col gap-1.5">
             {items.map((it) => (
               <li key={it.id} className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"

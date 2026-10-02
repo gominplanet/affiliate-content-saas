@@ -1656,7 +1656,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       && /studioTried\.current\.add\(next\.id\)/.test(SCREEN),
     'once per video per visit, so a run that stops is not retried on a timer')
   check('and Amazon waits for them',
-    /amazonTick\.current = \(\) => \{\s*if \(studioRunning\.current/.test(SCREEN),
+    /amazonTick\.current = \(\) => \{[\s\S]{0,120}?if \(uploadRunning\.current \|\| studioRunning\.current/.test(SCREEN),
     'the disclosures are what must be in place before a video goes public')
   check('only with a SCOUT that has the new Studio steps',
     /const scoutCanStudio = scoutReady === true && scoutAtLeast\(scoutVersion, SCOUT_STUDIO_MIN_VERSION\)/.test(SCREEN)

@@ -35,6 +35,7 @@ import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
 import { canUsePreview } from '@/lib/labs-preview'
+import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting } from '@/lib/studio-upload'
 import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
@@ -810,7 +811,9 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
-    .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
+    // Room for rows waiting on SCOUT's Studio upload (below), which are passed
+    // over here and must not crowd out the rows this firing can upload.
+    .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4 + 40)
   const items = rows ?? []
   if (items.length === 0) return { scheduled: 0, failed: 0 }
 
@@ -944,6 +947,24 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       const handed = await handOverToAmazon(sb, it, `upload-${it.id}`, null, stamp())
       await noteHandOver(sb, it.id, handed, true)
       scheduled++
+      continue
+    }
+
+    // ── UPLOADED BY SCOUT IN YOUTUBE STUDIO, NOT HERE ────────────────────
+    // For a creator with the Studio upload on (lib/studio-upload), the upload
+    // costs 1,600 of the quota every account shares, so it is left to SCOUT,
+    // which reports the new id to app/api/launch/studio-uploads. The row says
+    // it is waiting for SCOUT; once it has an id it goes on below as usual.
+    if (!String(it.youtube_video_id || '').trim() && usesStudioUpload(await ownerTier(sb, String(it.user_id)))) {
+      // Said once, over nothing or over a note from the API's own waiting. A
+      // reason SCOUT wrote (its last failure) stays on screen until it reports
+      // again, so the creator sees why the last go did not work.
+      const was = String(it.reason || '').trim()
+      if (!isStudioWaiting(was) && !isStudioRunning(was) && (!was || /^(?:Waiting for YouTube|Attempt \d+ of \d+ is running now)/.test(was))) {
+        const q = sb.from('launch_items').update({ reason: STUDIO_UPLOAD_WAITING, updated_at: stamp() })
+          .eq('id', it.id).eq('state', 'prepared').is('youtube_video_id', null)
+        await (it.reason == null ? q.is('reason', null) : q.eq('reason', it.reason))
+      }
       continue
     }
 
