@@ -22,7 +22,7 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { ytFetch } from '@/lib/youtube-quota'
 import {
-  usesStudioUpload, isStudioRunning, cleanVideoId, studioUploadFailureText, studioDid,
+  usesStudioUpload, isStudioRunning, cleanVideoId, studioUploadFailureText, studioDid, studioStoppedAt,
   STUDIO_UPLOAD_RUNNING, STUDIO_UPLOAD_DONE, STUDIO_UPLOAD_CLAIM_MS, STUDIO_UPLOAD_TRIES,
 } from '@/lib/studio-upload'
 
@@ -210,7 +210,13 @@ export async function POST(req: Request) {
     // own write, so a database without the column loses only the saving:
     // the drain then does every step through the API, as before.
     const did = studioDid(r.did, r.saved === true)
-    await sb.from('launch_items').update({ studio_upload: { ...did, videoId, at: stamp } }).eq('id', row.id)
+    // WHAT SCOUT SAW, STEP BY STEP, kept with it: a run that stops part way
+    // must say where, not only that it stopped.
+    const seen = (Array.isArray(r.steps) ? r.steps : []).filter((x) => x && typeof x.step === 'string')
+      .map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '').slice(0, 200) }))
+      .slice(0, 30)
+    await sb.from('launch_items').update({ studio_upload: { ...did, videoId, at: stamp, steps: seen } }).eq('id', row.id)
+    const stoppedAt = studioStoppedAt(seen)
 
     // THE WORDS AND TAGS, THROUGH THE API ONLY WHEN SCOUT MISSED THEM (about
     // 50 units). The description carries the affiliate link: if Studio did
@@ -237,9 +243,9 @@ export async function POST(req: Request) {
       await sb.from('launch_items').update({
         state: 'blocked',
         reason: (r.saved !== true
-          ? `On your channel (${videoId}) as a draft in Studio: SCOUT uploaded it but could not finish saving it${r.detail ? ` (${r.detail})` : ''}. Open it in Studio, check it, save it as Private, then press Try again and MVP sets its time.`
+          ? `On your channel (${videoId}) as a draft in Studio: SCOUT uploaded it but did not get to save it. ${stoppedAt || (r.detail ? `SCOUT said: ${r.detail}.` : 'SCOUT gave no reason.')} Open it in Studio, check it, save it as Private, then press Try again and MVP sets its time.`
           : `On your channel (${videoId}), but Studio did not keep its title and description and MVP could not set them (${metaError}). Check them in Studio, then press Try again.`
-        ).slice(0, 400),
+        ).slice(0, 600),
         updated_at: stamp,
       }).eq('id', row.id)
       return NextResponse.json({ ok: true, videoId, held: true, metaError })

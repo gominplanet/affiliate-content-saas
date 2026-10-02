@@ -105,3 +105,21 @@ export function leaveCommentToScout(scoutUser: boolean, publishAt: string | null
   const t = Date.parse(publishAt)
   return !isNaN(t) && now - t < SCOUT_COMMENT_GRACE_MS
 }
+
+const STEP_WORDS: Record<string, string> = {
+  upload: 'the upload', text: 'the title and description', tags: 'the tags', thumbnail: 'the thumbnail',
+  playlist: 'the playlist', sending: 'sending the file', open: 'opening the upload', details: 'paid promotion and AI use',
+  next: 'moving to the next page', monetization: 'monetization', adsuit: 'the ad rating', elements: 'video elements',
+  endscreen: 'the end screen', checks: 'the checks page', visibility: 'saving it (Visibility)', unknown: 'a page SCOUT did not recognise',
+}
+
+/** The step a SCOUT Studio run stopped at, in words, with what Studio showed.
+ *  Null when nothing failed. Pure. */
+export function studioStoppedAt(steps: Array<{ step: string; ok: boolean; skipped?: boolean; detail?: string }>): string | null {
+  const bad = steps.filter((x) => !x.ok && !x.skipped)
+  if (bad.length === 0) return null
+  const first = bad[0]
+  const words = STEP_WORDS[first.step] ?? first.step
+  const others = bad.slice(1).map((x) => STEP_WORDS[x.step] ?? x.step).filter((w, i, a) => a.indexOf(w) === i && w !== words)
+  return `It stopped at ${words}${first.detail ? `: ${first.detail.replace(/\.$/, '')}` : ''}.${others.length ? ` Also not done: ${others.join(', ')}.` : ''}`
+}

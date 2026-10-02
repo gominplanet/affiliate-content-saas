@@ -211,8 +211,11 @@ export default function LaunchReport({
     }
   }
   const allDone = ytLeft === 0 && amzLeft === 0 && studioLeft === 0
+  // THROUGH SCOUT, the YouTube half waits on Chrome too, so it is not said
+  // to "carry on regardless".
+  const viaScout = sorted.some((i) => isStudioWaiting(i.reason) || isStudioRunning(i.reason) || (i.reason || '') === STUDIO_UPLOAD_DONE)
   const working = [
-    ytLeft ? `${ytLeft} on YouTube` : '',
+    ytLeft ? `${ytLeft} going to YouTube` : '',
     studioLeft ? `${studioLeft} Studio ${studioLeft === 1 ? 'pass' : 'passes'}` : '',
     amzLeft ? `${amzLeft} Amazon ${amzLeft === 1 ? 'listing' : 'listings'}` : '',
   ].filter(Boolean)
@@ -229,7 +232,9 @@ export default function LaunchReport({
       <p className="text-[12px] mt-0.5" style={muted}>
         {allDone
           ? `YouTube: ${sorted.filter((i) => i.state === 'published' || (i.state === 'scheduled' && !/^The time came and went/.test(i.reason || ''))).length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
-          : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
+          : viaScout
+            ? `Still working: ${working.join(', ')}. SCOUT does all of it in your Chrome, so keep Chrome open (with Keep going on, this page can be closed).`
+            : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
       </p>
 
       <div className="mt-3 overflow-x-auto">

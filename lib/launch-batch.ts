@@ -18,6 +18,7 @@
 // research, the translation, every dub, and YouTube itself) runs without them.
 // So the promise is: set it up, press Launch, leave the tab open, walk away.
 
+import { isStudioRunning, isStudioWaiting, STUDIO_UPLOAD_DONE } from '@/lib/studio-upload'
 import { canUsePreview } from '@/lib/labs-preview'
 import { normalizeSlots, cadenceLabel, hasOwnSchedule } from '@/lib/launch-schedule'
 import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
@@ -700,6 +701,16 @@ export function itemStateLabel(state: ItemState): string {
  * it. And an attempt in progress says so, because "queued" one second in and
  * ten minutes in is the working-versus-stuck failure again.
  */
+/** Where a SCOUT Studio upload is, read off the row's note. Pure. */
+function studioStage(reason: string | null | undefined): 'waiting' | 'running' | 'done' | 'retry' | null {
+  const r = String(reason ?? '')
+  if (isStudioRunning(r)) return 'running'
+  if (isStudioWaiting(r)) return 'waiting'
+  if (r === STUDIO_UPLOAD_DONE) return 'done'
+  if (/^(?:SCOUT |Studio |YouTube Studio |The file went into Studio)/.test(r)) return 'retry'
+  return null
+}
+
 export function itemProgressLabel(i: {
   state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null; reason?: string | null
   asin?: string | null
@@ -712,7 +723,16 @@ export function itemProgressLabel(i: {
   // and the uploader deliberately did not make it public because its slot
   // passed before it was ready.
   if (i.state === 'blocked' && /^Kept private\./.test(String(i.reason ?? ''))) return 'On YouTube, kept private'
+  // A SCOUT upload that did not get saved is on the channel as a draft.
+  if (i.state === 'blocked' && /^On your channel \(/.test(String(i.reason ?? ''))) return 'On YouTube as a draft, needs a look'
   if (i.state === 'prepared' && i.planned_publish_at) {
+    // YOUTUBE THROUGH SCOUT (lib/studio-upload): its own words, so SCOUT
+    // working never reads as a failed try.
+    const st = studioStage(i.reason)
+    if (st === 'running') return 'SCOUT is uploading it in Studio'
+    if (st === 'waiting') return 'Waiting for SCOUT to upload it'
+    if (st === 'done') return 'On YouTube, MVP is setting its time'
+    if (st === 'retry') return 'SCOUT tries again'
     if (/^Attempt \d+ of \d+ is running now\./.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
     // A big video going up in pieces over several runs: moving, not failing.
     if (/^Sending to YouTube in pieces/.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
@@ -725,11 +745,14 @@ export function itemProgressLabel(i: {
 /** The colour for that label. Queued and uploading are MOVING, not done, so
  *  they are not green: green is only for states that really are finished. */
 export function itemProgressTone(i: {
-  state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null
+  state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null; reason?: string | null
   asin?: string | null
 }): 'good' | 'busy' | 'warn' | 'idle' {
   if (i.state === 'preparing' && !String(i.asin ?? '').trim()) return 'warn'
   if (i.state === 'prepared' && i.planned_publish_at) {
+    const st = studioStage(i.reason)
+    if (st === 'running' || st === 'done' || st === 'waiting') return 'busy'
+    if (st === 'retry') return 'warn'
     return Number(i.publish_tries ?? 0) > 0 ? 'warn' : 'busy'
   }
   return itemStateTone(i.state)
@@ -771,7 +794,10 @@ export interface LaunchOutcome {
 
 export function launchOutcome(items: {
   state: ItemState; video_id?: string | null; planned_publish_at?: string | null
-}[]): LaunchOutcome {
+}[], opts: {
+  /** YouTube through SCOUT: the upload is SCOUT's, in Studio, not the API's. */
+  studioUpload?: boolean
+} = {}): LaunchOutcome {
   const total = items.length
   const onYouTube = items.filter((i) => i.state === 'scheduled' || i.state === 'published').length
   // Amazon only: finished with YouTube by choice, not waiting on it.
@@ -805,10 +831,12 @@ export function launchOutcome(items: {
     const allQueued = queued === working
     headline = onYouTube === 0
       ? (allQueued
-          ? `${working} of ${total} queued for YouTube. The uploader runs every minute.`
+          ? (opts.studioUpload
+              ? `${working} of ${total} waiting for SCOUT to upload through YouTube Studio. Keep Chrome open; no YouTube API is used.`
+              : `${working} of ${total} queued for YouTube. The uploader runs every minute.`)
           : `${working} of ${total} still being prepared. Nothing is on YouTube yet.`)
       : (allQueued
-          ? `${onYouTube} of ${total} on YouTube, ${working} queued for upload.`
+          ? `${onYouTube} of ${total} on YouTube, ${working} ${opts.studioUpload ? 'waiting for SCOUT to upload through Studio' : 'queued for upload'}.`
           : `${onYouTube} of ${total} on YouTube, ${working} still working.`)
   } else if (amazonOnly > 0 && onYouTube === 0) {
     headline = total === 1 ? 'Handed to Amazon. YouTube skipped, as you chose.' : `All ${total} handed to Amazon. YouTube skipped, as you chose.`

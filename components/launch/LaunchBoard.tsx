@@ -286,6 +286,8 @@ export default function LaunchBoard() {
   // read through that channel's login, since that is where the videos go.
   const [uploadChannel, setUploadChannel] = useState<string | null>(null)
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
+  // YouTube through SCOUT (Labs): SCOUT uploads in Studio, no YouTube API.
+  const [studioUpload, setStudioUpload] = useState(false)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
   // THE CREATOR'S SAVED FACES, for choosing one per video. A channel with two
@@ -648,6 +650,7 @@ export default function LaunchBoard() {
       setNotifyAvailable(j.notifyAvailable !== false)
       setPlaylistId(j.playlistId ?? null)
       if (j.studioOptions) setStudioOpts(j.studioOptions as StudioOptions)
+      setStudioUpload(j.studioUpload === true)
       setYtOptionsAvailable(j.youtubeOptionsAvailable !== false)
       setYoutubeChoiceAvailable(j.youtubeChoiceAvailable !== false)
       setFaceAvailable(j.faceAvailable !== false)
@@ -2111,7 +2114,7 @@ export default function LaunchBoard() {
         // `launched.scheduled`, a number captured from the launch reply and
         // never revisited, so it read "1 video scheduled" in green above a
         // board reading "Cannot go" for that same video.
-        const out = launchOutcome(items as unknown as ItemRow[])
+        const out = launchOutcome(items as unknown as ItemRow[], { studioUpload })
         // THE TIMES COME FROM THE ROWS TOO when this is a reload rather than a
         // press, for the same reason the counts do.
         const live = items
@@ -2178,12 +2181,22 @@ export default function LaunchBoard() {
               account from this tab, and the heading now says so. */}
           <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
             {youtubeOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
-              <p className="text-[11.5px] mt-1" style={muted}>
-                Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
-                and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
-                the ad rating, the end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
-              </p>
+              {studioUpload ? (<>
+                <p className="text-[12px] font-semibold" style={text}>YouTube: SCOUT uploads in Studio, no API</p>
+                <p className="text-[11.5px] mt-1" style={muted}>
+                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you: the file, title, description,
+                  tags, thumbnail and playlist, paid promotion and AI use, then schedules it for the time you picked. Nothing goes
+                  through YouTube&apos;s API except one quick check that paid promotion and the time stuck. The pinned comment is posted
+                  by SCOUT too. Keep Chrome open with SCOUT; with this page closed it carries on in a pinned background tab (below).
+                </p>
+              </>) : (<>
+                <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
+                <p className="text-[11.5px] mt-1" style={muted}>
+                  Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
+                  and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
+                  the ad rating, the end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
+                </p>
+              </>)}
             </div>}
             {amazonOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while Chrome is open</p>
@@ -2220,7 +2233,7 @@ export default function LaunchBoard() {
                 <span className="block text-[11.5px]" style={
                   bgPref && bgState && (bgState.ok === false || !bgState.hasAlarms || bgState.lastRun === 'signed-out' || bgState.lastRun === 'timed-out') ? { color: '#d97706' } : muted}>
                   {!bgPref
-                    ? 'Off: the Studio steps and Amazon uploads only run while this page is open.'
+                    ? (studioUpload ? 'Off: SCOUT only uploads to YouTube, and to Amazon, while this page is open.' : 'Off: the Studio steps and Amazon uploads only run while this page is open.')
                     : bgState?.error === 'bad-origin'
                       ? 'SCOUT only keeps Liftoff going from mvpaffiliate.io. Open Liftoff there for this to work.'
                     : bgState?.error === 'no-reply'
@@ -2229,7 +2242,9 @@ export default function LaunchBoard() {
                       ? 'Your SCOUT is too old for this. Update SCOUT to the latest version, then reload this page.'
                       : bgState?.lastRun === 'signed-out'
                         ? 'The last background run found you signed out of MVP in this browser, so it could not do anything. Stay signed in and it carries on.'
-                        : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
+                        : studioUpload
+                          ? 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to upload your videos through Studio, post their comments and send them to Amazon, then closes it.'
+                          : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
                   {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${({ 'all-done': 'all done', waiting: 'more to do', 'timed-out': 'stopped answering, closed', 'tab-closed': 'its tab was closed', 'could-not-open': 'could not open a tab', 'signed-out': 'signed out', opened: 'running now', armed: 'waiting to start' } as Record<string, string>)[bgState.lastRun ?? ''] ?? bgState.lastRun})` : ''}
                 </span>
               </span>

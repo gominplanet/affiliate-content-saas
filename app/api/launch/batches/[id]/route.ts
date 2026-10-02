@@ -12,6 +12,7 @@
 
 import { launchReadiness } from '@/lib/launch-readiness'
 import { NextResponse } from 'next/server'
+import { usesStudioUpload } from '@/lib/studio-upload'
 import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
@@ -199,6 +200,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     youtubeChoiceAvailable,
     amazonTitleAvailable,
     faceAvailable,
+    // YouTube through SCOUT (lib/studio-upload): the board says SCOUT uploads
+    // in Studio, not that MVP's uploader does through the API.
+    studioUpload: await (async () => {
+      const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+      return usesStudioUpload(integ?.tier)
+    })(),
   })
 }
 
