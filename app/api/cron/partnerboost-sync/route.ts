@@ -63,7 +63,9 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const r = await syncUserCache(admin, userId, token, { deadlineMs: 260_000 })
+      // 200 seconds of the 300: a request already in flight at the deadline
+      // can take 30 more, and a retry as a POST 30 after that.
+      const r = await syncUserCache(admin, userId, token, { deadlineMs: 200_000 })
       if ((r as { timedOut?: boolean }).timedOut) await markFailed(userId)
       return NextResponse.json({ ok: true, refreshed: userId, ...r })
     } catch (e) {

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3466,11 +3466,17 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $bruteKeySite = 'affiliateos_proxy_brute';
         $bruteIp   = (int) get_transient($bruteKeyIp);
         $bruteSite = (int) get_transient($bruteKeySite);
-        if ($bruteIp >= 5 || $bruteSite >= 50) {
-            return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
-        }
 
-        if (!$stored || strlen($token) !== strlen($stored) || !hash_equals($stored, $token)) {
+        // (v1.1.1) THE TOKEN IS CHECKED FIRST, and the counters apply only to
+        // bad tokens. They were checked first, so fifty bad requests a minute
+        // from anywhere (or from behind a shared CDN address) locked MVP's own
+        // valid calls out too and stopped all publishing to the site. A right
+        // token cannot be guessed, so letting it through costs nothing.
+        $good = $stored && strlen($token) === strlen($stored) && hash_equals($stored, $token);
+        if (!$good) {
+            if ($bruteIp >= 5 || $bruteSite >= 50) {
+                return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
+            }
             set_transient($bruteKeyIp,   $bruteIp + 1,   60);
             set_transient($bruteKeySite, $bruteSite + 1, 60);
             return new WP_REST_Response(['code' => 'bad_token', 'message' => 'Invalid proxy token.'], 401);
@@ -3515,6 +3521,12 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $allowed = false;
         foreach ($allowed_path_patterns as $pat) {
             if (preg_match($pat, $path)) { $allowed = true; break; }
+        }
+        // (v1.1.1) The admin's own account is read, never changed, through
+        // the proxy: a POST to /wp/v2/users/me could set the admin's email or
+        // password, which made a leaked proxy secret a full takeover.
+        if ($allowed && $path === '/wp/v2/users/me' && $method !== 'GET') {
+            $allowed = false;
         }
         if (!$allowed) {
             return new WP_REST_Response(['code' => 'forbidden_path', 'message' => 'Proxy route not in allowlist.'], 403);

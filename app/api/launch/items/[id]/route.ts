@@ -207,6 +207,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       error: 'This one is already on your YouTube channel, so its title, description and product are set there now. Change them in YouTube Studio.',
     }, { status: 409 })
   }
+  // UPLOADING IN PIECES NOW: the title and description went to YouTube when
+  // the upload opened, so a change here would show on the board and never
+  // reach the video. Read on its own: before migration 396 there is no column
+  // and no piece upload, so nothing is locked.
+  if (typeof body.title === 'string' || typeof body.description === 'string') {
+    const { data: up, error: upErr } = await sb.from('launch_items').select('yt_upload_url').eq('id', id).maybeSingle()
+    if (!upErr && up?.yt_upload_url) {
+      return NextResponse.json({
+        error: 'This one is uploading to YouTube right now with the title and description it started with. Change them in YouTube Studio once it is up.',
+      }, { status: 409 })
+    }
+  }
   // QUEUED FOR UPLOAD: the product is locked, because the thumbnails and the
   // description the uploader is about to send were made from the old one.
   if (item.planned_publish_at && typeof body.product === 'string') {

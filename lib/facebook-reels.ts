@@ -29,6 +29,7 @@ const metaError = (j: Record<string, unknown>, fallback: string) => {
 
 export async function publishPageReel(opts: { pageId: string; token: string; videoUrl: string; description: string }): Promise<ReelResult> {
   const { pageId, token } = opts
+  const began = Date.now()
   // 1. Start: Meta gives a video id to upload into.
   const start = await fetch(`${GRAPH}/${encodeURIComponent(pageId)}/video_reels`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -56,9 +57,13 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
   const fj = await json(fin)
   if (!fin.ok || fj.success === false) return { ok: false, step: 'finish', error: metaError(fj, `Facebook did not accept the Reel (HTTP ${fin.status}).`) }
 
-  // 4. Read back what happened to it.
+  // 4. Read back what happened to it, ON A DEADLINE. Twelve looks after the
+  // three steps above could take the whole request past its time limit, after
+  // the Reel was already published, so the creator saw an error and posted it
+  // again. Past four minutes from the start it reports "processing", which is
+  // true, and the Reel stays the one that was posted.
   const url = `https://www.facebook.com/reel/${videoId}`
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 12 && Date.now() - began < 240_000; i++) {
     await new Promise((r) => setTimeout(r, 5000))
     try {
       const s = await fetch(`${GRAPH}/${encodeURIComponent(videoId)}?fields=status&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(15_000) })

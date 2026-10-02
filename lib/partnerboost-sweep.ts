@@ -41,6 +41,10 @@ export async function sweepJoinedProducts(
 ): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null; productDropped: number; productThrottled: number }> {
   const concurrency = opts.concurrency ?? 4
   const deadlineMs = opts.deadlineMs ?? 250_000
+  // THE CLOCK STARTS HERE, not after the brand list: up to eighteen brand
+  // list calls used to run off the clock, and the run went past the function
+  // limit, was killed before it recorded anything, and was picked again.
+  const tStart = Date.now()
   const focus = (opts.focus || '').trim().toLowerCase()
 
   // 1. Joined brands across the networks (paginated), optionally brand-gated.
@@ -63,6 +67,7 @@ export async function sweepJoinedProducts(
           lastErr = e
           const m = e instanceof Error ? e.message : String(e)
           if (!/too many request|rate|429|ECONNRESET|socket|terminated|fetch failed|timed? ?out/i.test(m)) break
+          if (Date.now() - tStart > deadlineMs / 2) break
           await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)))
         }
       }
@@ -85,7 +90,7 @@ export async function sweepJoinedProducts(
 
   // 2. Per-brand product pull in a CONCURRENCY pool.
   const raw: PbCandidate[] = []
-  const t0 = Date.now()
+  const t0 = tStart
   let brandsSwept = 0
   let cursor = 0
   let timedOut = false
@@ -123,6 +128,9 @@ export async function sweepJoinedProducts(
     let lastErr: unknown = null
     for (let attempt = 0; attempt < 5; attempt++) {
       await waitTurn()
+      // Out of time after waiting: this brand is not reached this run (the
+      // run is partial, so nothing is purged), never counted as failed.
+      if (Date.now() - t0 > deadlineMs) { timedOut = true; return }
       try { products = (await fetchProducts(b)).products; lastErr = null; backoff = Math.max(0, backoff - 1000); break }
       catch (e) {
         lastErr = e

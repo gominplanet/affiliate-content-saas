@@ -14,7 +14,7 @@ import { STALL_MS } from '@/lib/upload-progress'
 
 /** Storage's resumable endpoint takes 6MB pieces, the last one smaller. */
 export const CHUNK = 6 * 1024 * 1024
-/** How many times one upload may pick up after a drop before giving up. */
+/** How many drops in a row, with nothing new arriving, before giving up. */
 export const MAX_RESUMES = 12
 
 export interface ResumableEvents {
@@ -65,17 +65,28 @@ export async function uploadResumable(opts: {
 
   // 2. Send the pieces, picking up after any drop.
   let offset = 0
-  let resumes = 0
+  let resumes = 0      // every pick-up, for the progress line
+  let stalled = 0      // drops in a row with nothing new arriving
+  let lastDropAt = -1
   while (offset < total) {
     try {
       offset = await sendPiece(uploadUrl, await headers(), opts.file, offset, total, opts.onProgress)
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e)
-      if (++resumes > MAX_RESUMES) throw new Error(`The connection dropped ${MAX_RESUMES} times. Last time: ${reason}`)
-      await new Promise((r) => setTimeout(r, Math.min(15_000, 1500 * resumes)))
-      // Where Storage has it up to: everything before this is kept.
+      resumes++
+      // MAX_RESUMES counts drops IN A ROW. Counted over the whole file, a big
+      // video on a flaky line failed after 13 drops even though every one of
+      // them picked up and carried on.
+      stalled = offset > lastDropAt ? 1 : stalled + 1
+      lastDropAt = offset
+      if (stalled > MAX_RESUMES || resumes > MAX_RESUMES * 10) throw new Error(`The connection kept dropping without getting further (${resumes} drops). Last time: ${reason}`)
+      await new Promise((r) => setTimeout(r, Math.min(15_000, 1500 * stalled)))
+      // Where Storage has it up to: everything before this is kept. A missing
+      // header is "not known", never zero: zero sent every later piece to the
+      // wrong place and used up the pick-ups.
       const at = await fetch(uploadUrl, { method: 'HEAD', headers: await headers(), signal: AbortSignal.timeout(20_000) }).catch(() => null)
-      const known = Number(at?.headers.get('Upload-Offset'))
+      const h = at?.headers.get('Upload-Offset') ?? null
+      const known = h === null ? NaN : Number(h)
       if (at && at.ok && Number.isFinite(known) && known >= 0) offset = known
       opts.onResume?.({ resumes, from: offset, reason })
       opts.onProgress({ sent: offset, total })

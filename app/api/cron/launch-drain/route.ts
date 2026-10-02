@@ -1119,8 +1119,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
           if (!sent.done) {
             // PROGRESS IS NOT A FAILED TRY: the try is handed back, and the
             // note says how far it got. The next run carries on.
+            // ONLY WHEN IT MOVED. A run that sent nothing new keeps the try it
+            // used, so an upload that is stuck cannot go round forever.
+            const before = Number((/^Sending to YouTube in pieces: (\d+) of/.exec(said0) ?? [])[1] ?? -1)
+            const moved = Math.round(sent.sent / 1048576) > before
             await sb.from('launch_items').update({
-              publish_tries: tries,
+              publish_tries: moved ? tries : tries + 1,
               reason: `Sending to YouTube in pieces: ${Math.round(sent.sent / 1048576)} of ${Math.round(total / 1048576)} MB so far. It carries on by itself on the next run.`,
               updated_at: stamp(),
             }).eq('id', it.id)
