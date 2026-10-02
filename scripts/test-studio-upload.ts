@@ -78,6 +78,9 @@ check('Studio is on screen while SCOUT fills it in, and the creator is put back'
 check('SCOUT\'s step names stay MVP\'s own (text, tags, playlist)', /\{ step: 'text' \}\)\)/.test(bg) && /\{ step: 'tags' \}\)\)/.test(bg) && /\{ step: 'playlist' \}\)\)/.test(bg))
 check('SCOUT counts tags the way YouTube does, quotes and all', /\(\/\\s\/\.test\(v\) \? 2 : 0\)/.test(bg) && /if \(len \+ add > 460\) break/.test(bg))
 check('a greyed Next says what Studio shows', /Studio shows: ' \+ errs\.join/.test(bg))
+check('the upload walk answers the batch\'s own Studio options', /monetize: opts\.monetize, selfCert: opts\.monetize && opts\.adRating, endScreen: opts\.endScreen/.test(route))
+check('SCOUT knows a page by its heading when its contents say nothing yet', /'initial check': 'checks'/.test(bg) && /if \(fs >= 22\) return NAMES\[t\]/.test(bg))
+check('an unknown page says what it showed', /\(it showed: "/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
 
 // ── FIRST COMMENTS THROUGH SCOUT, THE API ONLY AS A LATE BACKUP ───────────

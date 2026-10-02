@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 13
+  const KIT_VERSION = 14
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9098,6 +9098,18 @@ function studioKitInstallInPage() {
     if (/none of the above/.test(vt)) return 'adsuit'
     if (/made for kids|title \(required\)|add a title/.test(vt)) return 'details'
     if (/monetization/.test(vt) && /(^|\n)(on|off)(\n|$)/.test(vt)) return 'monetization'
+    // BY THE PAGE'S OWN HEADING, when its contents say nothing yet. A fresh
+    // upload's Monetization page has no On or Off chosen while YouTube runs
+    // its checks, and a whole upload stopped there as "a page SCOUT did not
+    // recognise". The big heading at the top of each page names it.
+    const NAMES = { 'details': 'details', 'monetization': 'monetization', 'ad suitability': 'adsuit', 'video elements': 'elements', 'checks': 'checks', 'initial check': 'checks', 'visibility': 'visibility' }
+    for (const el of all(dlg)) {
+      const t = String(el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
+      if (!t || t.length > 20 || !Object.prototype.hasOwnProperty.call(NAMES, t) || !visible(el)) continue
+      let fs = 0
+      try { fs = parseFloat(getComputedStyle(el).fontSize) || 0 } catch (e) {}
+      if (fs >= 22) return NAMES[t]
+    }
     return 'unknown'
   }
   const buttonSample = (scope) => Array.from(new Set(all(scope).filter((el) => isBtn(el) && visible(el)).map((el) => (deepText(el) || attrLabel(el)).slice(0, 40)).filter(Boolean))).slice(0, 40)
@@ -10318,7 +10330,7 @@ async function runStudioDraft(tabId, videoId, want) {
       return steps
     }
     if (!pg || pg === 'gone' || pg === 'unknown') {
-      steps.push({ step: 'unknown', ok: false, detail: pg === 'gone' ? 'The draft window closed before Visibility' : 'SCOUT did not recognise this page of the draft', debug: where.debug })
+      steps.push({ step: 'unknown', ok: false, detail: pg === 'gone' ? 'The draft window closed before Visibility' : 'SCOUT did not recognise this page of the draft' + (where.debug && where.debug.text ? ' (it showed: "' + String(where.debug.text).replace(/\s+/g, ' ').slice(0, 140) + '")' : ''), debug: where.debug })
       return steps
     }
     if (done.has(pg)) {

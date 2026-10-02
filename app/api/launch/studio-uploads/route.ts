@@ -134,7 +134,9 @@ export async function GET() {
       want: {
         details: opts.disclosures,
         notifySubscribers: b.notify_subscribers === true,
-        monetize: false, selfCert: false, endScreen: false, tagProduct: false,
+        // THE SAME PAGES A PERSON WOULD ANSWER, in the same window: a fresh
+        // upload's Ad suitability page can hold Next until it is answered.
+        monetize: opts.monetize, selfCert: opts.monetize && opts.adRating, endScreen: opts.endScreen, tagProduct: false,
       },
     }]
   })
