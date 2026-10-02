@@ -8,6 +8,7 @@ import { segmentOptions, type Segment } from '@/lib/admin-segments'
 
 import { TIERS, isSellableTier, SELLABLE_TIERS } from '@/lib/tier'
 import { RebuildPosts } from '@/components/admin/RebuildPosts'
+import { DomainSwap } from '@/components/admin/DomainSwap'
 
 // The same list the broadcast tool offers, built from the plans that exist,
 // so "the people I am looking at" and "the people that would email" cannot
@@ -476,6 +477,8 @@ export default function AdminUsersPage() {
           </div>
 
           <RebuildPosts userId={user.id} email={user.email} />
+
+          <DomainSwap userId={user.id} />
 
           {/* Delete posts on the creator's behalf.
               The monthly allowance is COUNT(blog_posts) in the billing window,

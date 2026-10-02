@@ -746,6 +746,38 @@ export class YouTubeOAuthService {
     return res.ok
   }
 
+  /**
+   * Swap one site address for another in a video's live description (lib/
+   * domain-swap). The live description is read first, so whatever the creator
+   * wrote since is kept; title, tags, category and language are sent back as
+   * they are. Returns what happened, never a guess: 'changed', 'unchanged'
+   * (the old address is not in it), or 'missing' (no such video).
+   */
+  async swapDescriptionDomain(videoId: string, swap: (desc: string) => string): Promise<'changed' | 'unchanged' | 'missing'> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = await this.get<any>('/videos', { part: 'snippet', id: videoId })
+    const snip = existing.items?.[0]?.snippet
+    if (!snip) return 'missing'
+    const desc: string = snip.description || ''
+    const next = swap(desc)
+    if (next === desc) return 'unchanged'
+    const snippet: Record<string, unknown> = {
+      title: (snip.title || '').slice(0, 100),
+      description: next.slice(0, 5000),
+      categoryId: snip.categoryId || '22',
+    }
+    if (Array.isArray(snip.tags) && snip.tags.length) snippet.tags = snip.tags
+    if (snip.defaultLanguage) snippet.defaultLanguage = snip.defaultLanguage
+    if (snip.defaultAudioLanguage) snippet.defaultAudioLanguage = snip.defaultAudioLanguage
+    const res = await fetchWithTimeout(`${BASE}/videos?part=snippet`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: videoId, snippet }),
+    })
+    if (!res.ok) throw new Error(`YouTube refused the update (${res.status}): ${(await res.text()).slice(0, 200)}`)
+    return 'changed'
+  }
+
   // ── Pro batch-publish module ─────────────────────────────────────────
   // The methods below back the "Apply to YouTube" Pro feature: list the
   // creator's playlists for the dropdown, add a video to a playlist, and
