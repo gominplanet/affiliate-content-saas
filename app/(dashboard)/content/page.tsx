@@ -3080,7 +3080,9 @@ export default function ContentPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any).__mvpBrandModalOpen) return
       const now = Date.now()
-      if (now - lastAutoRefreshRef.current < 30_000) return // 30s throttle
+      // Five minutes: each refocus asks YouTube for the newest videos, from the
+      // one daily quota every MVP account shares. The Refresh button is not limited.
+      if (now - lastAutoRefreshRef.current < 300_000) return
       lastAutoRefreshRef.current = now
       refreshActiveTabRef.current()
     }

@@ -84,7 +84,7 @@ export async function GET(request: Request) {
     let cachedTruncated = false
     let haveCache = false
     let cacheAgeMs = Number.POSITIVE_INFINITY
-    if (!forceRefresh) {
+    {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (supabase as any)
@@ -104,7 +104,10 @@ export async function GET(request: Request) {
 
     // Fresh enough → serve straight from cache. ZERO YouTube quota, recalls
     // nothing from the API. This is the common path on a normal page open.
-    if (haveCache && cacheAgeMs < FRESH_MS) {
+    // A FORCED refresh counts too when the last full scan is under ten
+    // minutes old: each one can cost over a thousand units of the one daily
+    // YouTube quota every MVP account shares.
+    if (haveCache && (cacheAgeMs < FRESH_MS || (forceRefresh && cacheAgeMs < 10 * 60_000))) {
       return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true })
     }
 
@@ -236,7 +239,9 @@ export async function GET(request: Request) {
     // results. `searchAdded` is surfaced for diagnosis.
     let searchAdded = 0
     try {
-      const viaSearch = await yt.listMyVideosViaSearch(10)
+      // Two pages (about 200 units), not ten (about 1,000): scheduled videos
+      // are recent ones, and SCOUT reads Studio's full scheduled list anyway.
+      const viaSearch = await yt.listMyVideosViaSearch(2)
       for (const v of viaSearch) {
         if (!v.youtubeVideoId || seen.has(v.youtubeVideoId)) continue
         seen.add(v.youtubeVideoId)

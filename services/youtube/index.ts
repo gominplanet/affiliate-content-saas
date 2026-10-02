@@ -707,12 +707,12 @@ export class YouTubeOAuthService {
       })
       if (!res2.ok) {
         const body2 = await res2.text()
-        throw new Error(`YouTube update failed ${res2.status}: ${body2.slice(0, 500)}`)
+        throw new Error(`YouTube update failed ${res2.status}: ${ytBodySummary(body2)}`)
       }
       return
     }
 
-    throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
+    throw new Error(`YouTube update failed ${res.status}: ${ytBodySummary(body1)}`)
   }
 
   /**
@@ -729,6 +729,13 @@ export class YouTubeOAuthService {
     if (!snip) return false
     const desc: string = snip.description || ''
     if (desc.includes(blogUrl)) return false // already linked
+    // Already linked under another address for the same post (the site moved
+    // from a temporary domain, or www was added): the post's own path is
+    // enough to say it is there.
+    try {
+      const path = new URL(blogUrl).pathname.replace(/\/+$/, '')
+      if (path.length > 3 && desc.includes(path)) return false
+    } catch { /* not a URL: compared in full above */ }
     const line = `\n\n📝 Full written review & details: ${blogUrl}`
     const newDesc = (desc + line).slice(0, 5000)
 
@@ -776,7 +783,7 @@ export class YouTubeOAuthService {
       headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: videoId, snippet }),
     })
-    if (!res.ok) throw new Error(`YouTube refused the update (${res.status}): ${(await res.text()).slice(0, 200)}`)
+    if (!res.ok) throw new Error(`YouTube refused the update (${res.status}): ${ytBodySummary(await res.text())}`)
     return 'changed'
   }
 
@@ -860,7 +867,7 @@ export class YouTubeOAuthService {
     // 409 conflict = video already in this playlist; treat as success.
     if (!res.ok && res.status !== 409) {
       const body = await res.text()
-      throw new Error(`Add to playlist failed ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`Add to playlist failed ${res.status}: ${ytBodySummary(body)}`)
     }
   }
 
@@ -972,7 +979,7 @@ export class YouTubeOAuthService {
         responseStatus: res.status,
         responseBody: body.slice(0, 1200),
       })
-      throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
+      throw new Error(`YouTube status update failed ${res.status}: ${ytBodySummary(body)}`)
     }
 
   }
@@ -992,7 +999,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube would not set paid promotion (${res.status}): ${body.slice(0, 300)}`)
+      throw new Error(`YouTube would not set paid promotion (${res.status}): ${ytBodySummary(body)}`)
     }
   }
 
@@ -1038,7 +1045,7 @@ export class YouTubeOAuthService {
     )
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube thumbnail upload failed ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`YouTube thumbnail upload failed ${res.status}: ${ytBodySummary(body)}`)
     }
   }
 
@@ -1078,7 +1085,7 @@ export class YouTubeOAuthService {
         body: JSON.stringify(meta),
       },
     )
-    if (!initRes.ok) throw new Error(`YouTube upload init failed ${initRes.status}: ${(await initRes.text()).slice(0, 400)}`)
+    if (!initRes.ok) throw new Error(`YouTube upload init failed ${initRes.status}: ${ytBodySummary(await initRes.text())}`)
     const url = initRes.headers.get('location')
     if (!url) throw new Error('YouTube upload: no resumable session URL returned.')
     return url
@@ -1096,7 +1103,7 @@ export class YouTubeOAuthService {
     }
     if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
     if (res.status === 404 || res.status === 410) return { gone: true }
-    throw new Error(`YouTube upload status ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    throw new Error(`YouTube upload status ${res.status}: ${ytBodySummary(await res.text())}`)
   }
 
   /** Send one piece starting at `start`. Pieces other than the last must be a
@@ -1116,7 +1123,7 @@ export class YouTubeOAuthService {
       return { done: true, id: j.id, channelId: j.snippet?.channelId || null }
     }
     if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
-    throw new Error(`YouTube upload failed ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    throw new Error(`YouTube upload failed ${res.status}: ${ytBodySummary(await res.text())}`)
   }
 
   async uploadShort(
@@ -1193,7 +1200,7 @@ export class YouTubeOAuthService {
     )
     if (!initRes.ok) {
       const b = await initRes.text()
-      throw new Error(`YouTube upload init failed ${initRes.status}: ${b.slice(0, 400)}`)
+      throw new Error(`YouTube upload init failed ${initRes.status}: ${ytBodySummary(b)}`)
     }
     const uploadUrl = initRes.headers.get('location')
     if (!uploadUrl) throw new Error('YouTube upload: no resumable session URL returned.')
@@ -1207,7 +1214,7 @@ export class YouTubeOAuthService {
     })
     if (!putRes.ok) {
       const b = await putRes.text()
-      throw new Error(`YouTube upload failed ${putRes.status}: ${b.slice(0, 400)}`)
+      throw new Error(`YouTube upload failed ${putRes.status}: ${ytBodySummary(b)}`)
     }
     // part=snippet,status, so the finished resource carries the OWNING channel.
     // Callers need it to build a Studio deep link scoped to that channel — an
@@ -1388,6 +1395,14 @@ export function createYouTubeOAuthService(accessToken: string) {
  * creator to reconnect YouTube, and every quota check that looked for
  * "quotaExceeded" or "exceeded your quota" missed it.
  */
+/** The useful part of a YouTube error body: Google's reason code first, then
+ *  the message without its HTML. Never cut before the reason, which is what
+ *  hid a used-up quota. */
+export function ytBodySummary(body: string): string {
+  const t = youTubeErrorText(0, body).replace(/^YouTube API error 0: /, '')
+  return t.slice(0, 400)
+}
+
 export function youTubeErrorText(status: number, body: string): string {
   let reason = '', message = ''
   try {

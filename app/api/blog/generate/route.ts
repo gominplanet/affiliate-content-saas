@@ -572,6 +572,10 @@ async function handleGenerate(request: Request) {
     const text = saved.length ? cuesToText(saved) : ''
     if (text.trim().length >= 40) { transcript = text; transcriptSource = 'cache' }
   }
+  // A SCRAP IS NOT A TRANSCRIPT. A cached 40 to 79 characters (the scraper
+  // keeps anything from 40) stopped every layer below from looking, and the
+  // post was then written as if there were no words at all.
+  if (transcript && transcript.trim().length < 80) { transcript = ''; transcriptSource = 'none' }
   // Only a REAL YouTube id is worth asking YouTube about. A Launchpad master is
   // an uploaded file stored under a synthetic "upload-…" id, so the two fetch
   // layers below would spend a token refresh and a scrape on a video YouTube has
@@ -1980,7 +1984,10 @@ async function handleGenerate(request: Request) {
   if (productMismatch) heldReasons.push(productMismatch)
   if (body.autopilot === true) {
     const src = (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null
-    if (src === 'none') heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
+    // NO WORDS FROM THE VIDEO: the writer marks every blog post as from the
+    // creator's own video, so 'none' never came back and this hold never ran.
+    // Whether a transcript was used is the real question.
+    if (src === 'none' || !transcriptUsed) heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
     if (tells.length >= AI_TELL_HOLD_AT) heldReasons.push(`It still reads as machine-written in ${tells.length} places: ${tells.slice(0, 5).map((t) => t.kind.replace(/^word: /, '"') + (t.kind.startsWith('word: ') ? '"' : '')).join(', ')}.`)
   }
   // Never on a post that is already live (a rebuild or an adopted slug), whose
@@ -2075,7 +2082,11 @@ async function handleGenerate(request: Request) {
           title: generated.title,
           content,
           excerpt: generated.excerpt,
-          status: heldForReview ? 'draft' : 'publish',
+          // A LIVE POST'S STATUS IS THE CREATOR'S. This sent 'publish' on
+          // every rebuild, so a held draft went live unreviewed and a post
+          // scheduled for next week went out today. Only this job's own post
+          // (an earlier attempt of it) gets the status it was asked for.
+          ...(heldForReview ? { status: 'draft' as const } : existingIsThisJobsPost ? { status: wpStatus } : {}),
           tags: tagIds,
           categories: categoryIds,
         })
@@ -2089,6 +2100,10 @@ async function handleGenerate(request: Request) {
         // cleared). This was the #1 cause of "Internal Server Error" on
         // re-generates against a deleted post.
         const m = err instanceof Error ? err.message : String(err)
+        // An admin repair never makes a new post (app/api/admin/rebuild-posts).
+        if (isRepair && /rest_post_invalid_id|invalid post id|"status":\s*404/i.test(m)) {
+          return NextResponse.json({ error: 'The post is no longer on the site (WordPress says it does not exist), so the repair made nothing.', reason: 'repair_post_gone' }, { status: 409 })
+        }
         if (/rest_post_invalid_id|invalid post id|"status":\s*404/i.test(m)) {
           console.warn(`[blog-generate] stored WP post ${existingWpPostId} is gone — creating fresh instead:`, m)
           existingWpPostId = null
@@ -2209,8 +2224,11 @@ async function handleGenerate(request: Request) {
       const media = await uploadVideoThumbnail(wpService, { youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb })
       await wpService.updatePost(wpPost.id, {
         title: generated.title, slug, content, excerpt: generated.excerpt,
-        status: wpStatus,
-        ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+        // An existing post keeps its own status here too (see the rebuild above).
+        ...(existingWpPostId && !existingIsThisJobsPost ? {} : {
+          status: wpStatus,
+          ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+        }),
         tags: tagIds, featured_media: media.id,
       })
     }
@@ -2266,6 +2284,9 @@ async function handleGenerate(request: Request) {
   const blogPayload = {
     user_id: ownerId,
     video_id: videoId,
+    // When this post was last written: how the admin repair tells a rewrite
+    // that finished after the worker stopped waiting from one that did not.
+    updated_at: new Date().toISOString(),
     title: generated.title,
     slug,
     content,
@@ -2529,7 +2550,9 @@ async function handleGenerate(request: Request) {
     // be worse than no link. For draft-flip the cron will fire this when
     // it flips the post; for wp-native it's just skipped (future: post-
     // status-transition webhook from WP could fire it at publish time).
-    if (!isScheduled) {
+    // Not on an admin repair: the post was linked when it was first made, and
+    // a second line costs quota and clutters the creator's description.
+    if (!isScheduled && !isRepair) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: ytRow } = await supabase
@@ -3332,6 +3355,15 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // for a held post, why it is a draft. Written even when scoring failed,
     // because a hold with no record is a draft nobody is told about.
     const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(titleFix ? { titleFix } : {}), ...(brandFixes.size ? { brandFix: { brand: officialBrand, from: [...brandFixes] } } : {}), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
+    // A REBUILD KEEPS THE HOLD. The post's status is left as it was (a held
+    // draft stays a draft), so the reason it is held stays on screen with it.
+    if (!heldForReview && existingWpPostId && !existingIsThisJobsPost) {
+      try {
+        const { data: prior } = await (supabase as any).from('blog_posts').select('aio').eq('id', savedPost.id).maybeSingle()
+        const priorHeld = (prior?.aio as { held?: unknown } | null)?.held
+        if (priorHeld) (record as Record<string, unknown>).held = priorHeld
+      } catch { /* nothing to keep */ }
+    }
     try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
   }
 

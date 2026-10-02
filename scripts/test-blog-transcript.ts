@@ -32,6 +32,14 @@ const html = '<p>This topper is great. I didn\'t actually review this product, s
 const own = scrubVoicePatterns(html, { ownVideo: true }).content
 check('denials are taken out of an own-video post, and real first-hand lines stay',
   !/didn't actually review|haven't tested/.test(own) && /I tested the cooling for a week/.test(own) && /It fits king beds/.test(own))
+{
+  // Real review lines that mention not using something are NOT denials.
+  const real = '<p>I never use the turbo setting because it is loud.</p><p>We couldn\'t use it in the rain, the seal leaked.</p><p>I didn\'t use a pencil to mark the holes.</p><p>I didn\'t test it in the rain, so I cannot say how it holds up there.</p>'
+  check('real first-hand lines and cons stay, even when they say "didn\'t use"',
+    scrubVoicePatterns(real, { ownVideo: true }).content === real)
+  check('"I haven\'t personally tried these" is a denial',
+    !/personally tried/.test(scrubVoicePatterns('<p>Good stuff. I haven\'t personally tried these, but buyers like them.</p>', { ownVideo: true }).content))
+}
 check('a post that is not from the creator\'s own video keeps its honest disclaimer',
   scrubVoicePatterns(html, {}).content === html)
 

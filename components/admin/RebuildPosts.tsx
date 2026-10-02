@@ -20,6 +20,7 @@ export function RebuildPosts({ userId, email }: { userId: string; email: string 
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [photos, setPhotos] = useState(false)
 
   async function load(pickSuggested: boolean) {
     setLoading(true); setError(null)
@@ -52,7 +53,7 @@ export function RebuildPosts({ userId, email }: { userId: string; email: string 
     try {
       const r = await fetch('/api/admin/rebuild-posts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, videoIds: Array.from(picked) }),
+        body: JSON.stringify({ userId, videoIds: Array.from(picked), includeImages: photos }),
       })
       const d = await r.json().catch(() => null) as { ok?: boolean; queued?: number; refused?: Array<{ reason: string }>; error?: string } | null
       if (!d) setNote({ ok: false, text: 'The request returned nothing readable, so it is not known whether anything was queued. Reload the list to see.' })
@@ -71,7 +72,7 @@ export function RebuildPosts({ userId, email }: { userId: string; email: string 
 
   const counts = (rows ?? []).reduce((m, p) => {
     const s = p.repair?.status
-    if (s === 'done') m.done++
+    if (s === 'done' || s === 'updated') m.done++
     else if (s === 'failed') m.failed++
     else if (s === 'queued' || s === 'running') m.waiting++
     return m
@@ -83,7 +84,7 @@ export function RebuildPosts({ userId, email }: { userId: string; email: string 
         <div className="min-w-0">
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Rebuild their video posts (on us)</p>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-            Rewrites each post from their own video, in place on their site. Same address, date and featured image. It does not use up their rebuilds or their monthly posts, and it is skipped when the video&apos;s words cannot be read.
+            Rewrites each post from their own video, in place on their site. Same address, date, status and featured image. It does not use up their rebuilds or their monthly posts, and it is skipped when the video&apos;s words cannot be read. Photos inside the old post are not kept unless you tick new photos below.
           </p>
         </div>
         {!open && (
@@ -132,6 +133,9 @@ export function RebuildPosts({ userId, email }: { userId: string; email: string 
                 ))}
               </ul>
               <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <label className="inline-flex items-center gap-1.5 text-[11.5px] text-[#6e6e73] dark:text-[#b0b0b5]">
+                  <input type="checkbox" checked={photos} onChange={(e) => setPhotos(e.target.checked)} /> Make new photos for the post body (slower, image cost on us)
+                </label>
                 <button onClick={() => load(false)} disabled={loading} className="btn-secondary text-xs inline-flex items-center gap-1.5">
                   {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
                 </button>
@@ -165,6 +169,7 @@ function RepairLine({ repair }: { repair: Repair }) {
   if (!repair) return null
   const when = repair.at ? new Date(repair.at).toLocaleString() : ''
   if (repair.status === 'done') return <p className="text-[10.5px] text-[#34c759]">Rebuilt {when}</p>
+  if (repair.status === 'updated') return <p className="text-[10.5px] text-[#ff9500]">The worker stopped waiting, but the post was rewritten {when}. Open it to check.</p>
   if (repair.status === 'failed') return <p className="text-[10.5px] text-[#ff3b30]">Not rebuilt, post left as it was: {(repair.error || 'no reason recorded').slice(0, 220)}</p>
   if (repair.status === 'running') return <p className="text-[10.5px] text-[#ff9500]">Rebuilding now…</p>
   return <p className="text-[10.5px] text-[#86868b]">Queued</p>

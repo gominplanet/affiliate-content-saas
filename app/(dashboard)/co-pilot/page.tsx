@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 import Link from 'next/link'
@@ -341,6 +341,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     setEnabled(true)
   }
 
+  const usedNonce = useRef(0)
   useEffect(() => {
     if (!enabled) return       // not opted in → make NO YouTube calls at all
     let cancelled = false
@@ -349,7 +350,11 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     if (channelId) params.set('channelId', channelId)
     // refreshNonce only advances when the user hits "Refresh from YouTube" —
     // force a fresh full scan then; otherwise serve the cached library scan.
-    if (refreshNonce > 0) params.set('refresh', '1')
+    // ONCE PER PRESS. It stayed above zero after the first press, so every
+    // later channel switch ran the full scan again.
+    const forced = refreshNonce > usedNonce.current
+    usedNonce.current = refreshNonce
+    if (forced) params.set('refresh', '1')
     const qs = params.toString() ? `?${params.toString()}` : ''
     fetch(`/api/youtube/calendar${qs}`)
       .then(r => r.json())
@@ -373,7 +378,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     try { const raw = localStorage.getItem(SCOUT_KEY); if (raw) cachedScout = JSON.parse(raw) } catch { /* ignore */ }
     if (cachedScout && Array.isArray(cachedScout.events)) setScoutVideos(cachedScout.events)
     const scoutFresh = !!cachedScout && Array.isArray(cachedScout.events) && (Date.now() - (cachedScout.cachedAt || 0)) < SCOUT_TTL
-    if (!scoutFresh || refreshNonce > 0) {
+    if (!scoutFresh || forced) {
       requestStudioSchedule().then(s => {
         if (cancelled || !s.ok || !s.videos.length) return
         const mapped: CalEvent[] = s.videos.map(v => ({ youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' }))

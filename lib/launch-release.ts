@@ -66,10 +66,12 @@ export async function releaseHeld(sb: Sb, it: {
   // overwriting it. Public is public; a time set in Studio is the time.
   if (rb?.privacyStatus === 'public') {
     await sb.from('launch_items').update({ state: 'published', reason: null, updated_at: stamp() }).eq('id', it.id)
+    await commentFollows(sb, it.user_id, videoId, stamp())
     return { state: 'published' }
   }
   if (rb?.privacyStatus === 'private' && rb.publishAt && Date.parse(rb.publishAt) > Date.now()) {
     await sb.from('launch_items').update({ state: 'scheduled', publish_at: rb.publishAt, reason: null, updated_at: stamp() }).eq('id', it.id)
+    await commentFollows(sb, it.user_id, videoId, rb.publishAt)
     return { state: 'scheduled', at: rb.publishAt }
   }
   if (rb?.paidPromotion !== true) {
@@ -81,12 +83,17 @@ export async function releaseHeld(sb: Sb, it: {
   const at = Date.parse(planned)
   // "Send now" was the choice: a past time is the point, not a miss.
   const { data: now } = await sb.from('launch_items').select('publish_now').eq('id', it.id).maybeSingle()
-  if (now?.publish_now === true) {
+  // ONLY WHILE "NOW" IS STILL THE PLAN. A video given a new, later time after
+  // it was held kept its old "send now" flag, and this made it public hours
+  // before the time the creator had just chosen. A planned time still ahead
+  // wins over the flag.
+  if (now?.publish_now === true && !(Number.isFinite(at) && at > Date.now() + 5 * 60_000)) {
     await yt.updateVideoStatus(videoId, {
       privacyStatus: 'public', publishAt: null, notifySubscribers: opts.notify,
       madeForKids: false, embeddable: true, containsSyntheticMedia: false,
     })
     await sb.from('launch_items').update({ state: 'published', reason: null, updated_at: stamp() }).eq('id', it.id)
+    await commentFollows(sb, it.user_id, videoId, stamp())
     return { state: 'published' }
   }
   if (!Number.isFinite(at) || at < Date.now() + 5 * 60_000) {
@@ -108,6 +115,7 @@ export async function releaseHeld(sb: Sb, it: {
   await sb.from('launch_items').update({
     state: 'scheduled', publish_at: planned, reason: null, updated_at: stamp(),
   }).eq('id', it.id)
+  await commentFollows(sb, it.user_id, videoId, planned)
   // The disclosure record, now that it reads Yes. Separate, so a database
   // without migration 368 loses this and nothing else.
   await sb.from('launch_items').update({
@@ -118,4 +126,40 @@ export async function releaseHeld(sb: Sb, it: {
     },
   }).eq('id', it.id)
   return { state: 'scheduled', at: planned }
+}
+
+
+/**
+ * Is a video held for paid promotion due another look? Each look costs from
+ * the shared YouTube quota, so they are often only near the planned time.
+ * Pure.
+ *   no planned time (going out now once disclosed)      every 30 minutes
+ *   within two hours of the planned time                every 10 minutes
+ *   further ahead, or up to a day past                  every hour
+ *   up to two weeks past                                every 6 hours
+ *   older                                               once a day
+ */
+export function heldCheckDue(plannedIso: string | null, lastIso: string | null, now = Date.now()): boolean {
+  const last = lastIso ? Date.parse(lastIso) : NaN
+  if (!Number.isFinite(last)) return true
+  const since = now - last
+  const planned = plannedIso ? Date.parse(plannedIso) : NaN
+  if (!Number.isFinite(planned)) return since >= 30 * 60_000
+  const off = now - planned
+  const every = Math.abs(off) <= 2 * 3_600_000 ? 10 * 60_000
+    : off < 86_400_000 ? 3_600_000
+    : off < 14 * 86_400_000 ? 6 * 3_600_000
+    : 86_400_000
+  return since >= every
+}
+
+/** The video's first comment follows its new time. Queued while the video was
+ *  held, it had no time and was looked at only every six hours, so it landed
+ *  up to six hours after the video went public. Allowed to fail. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function commentFollows(sb: any, userId: string, videoId: string, at: string): Promise<void> {
+  try {
+    await sb.from('video_first_comments').update({ publish_at: at, last_checked_at: null })
+      .eq('user_id', userId).eq('youtube_video_id', videoId).eq('state', 'waiting')
+  } catch { /* the six-hour check still posts it */ }
 }

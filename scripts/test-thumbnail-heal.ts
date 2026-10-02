@@ -153,7 +153,10 @@ const heal = strip(HEAL)
   check('and so does a comparison post, for every video it embeds',
     /await videosNotPublic\(ids\.map/.test(CMP) && /code: 'video_not_public'/.test(CMP))
   check('published means YouTube says public or unlisted (it plays) and the publish time has passed',
-    /if \(\(vis === 'public' \|\| vis === 'unlisted'\) && !future\) continue/.test(VP) && /if \(vis === undefined && !future\) continue/.test(VP))
+    /if \(\(vis === 'public' \|\| vis === 'unlisted'\) && !future\) continue/.test(VP) && /if \(vis === undefined && !future\) \{ unknown\?\.add\(v\.youtubeVideoId\); continue \}/.test(VP))
+  // An unanswered check lets a post be WRITTEN on the date's word, but never
+  // PUBLISHED from a hold on it (lib/video-hold).
+  check('a held post is released only on YouTube\'s own word', /if \(unknown\.has\(r\.youtube_videos\?\.youtube_video_id \|\| ''\)\) continue/.test(readFileSync('lib/video-hold.ts', 'utf8')))
   check('and a video not public yet waits, it is not written off',
     /status: candidates\.length \? 'waiting_for_public_video' : 'no_videos_left'/.test(AB))
   const VT = readFileSync('lib/video-thumbnail-upload.ts', 'utf8')

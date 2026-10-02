@@ -29,9 +29,20 @@ export async function GET(req: Request) {
   // again with every connected channel; a video truly gone is then forgotten.
   await sb.from('video_first_comments').update({ state: 'waiting', last_checked_at: null })
     .eq('state', 'failed').like('last_error', 'The saved login cannot see this video%')
+  // A POST THAT NEVER REPORTED BACK. The row is claimed ('posting') before the
+  // comment is sent; one still claimed after fifteen minutes belongs to a run
+  // that died in between, so the comment may well be on the video. Said so,
+  // and never posted again by itself.
+  await sb.from('video_first_comments').update({
+    state: 'failed',
+    last_error: 'MVP started posting this comment but never heard back, so it may already be on the video. Check the video before posting it again.',
+  }).eq('state', 'posting').lt('updated_at', new Date(started - 15 * 60_000).toISOString())
+  // ONLY ROWS THAT CAN BE DUE. Comments for videos scheduled later sat at the
+  // head of this list and could crowd out every comment that was due.
   const { data, error } = await sb.from('video_first_comments')
     .select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at,publish_at,last_checked_at')
-    .eq('state', 'waiting').order('last_checked_at', { ascending: true, nullsFirst: true }).limit(500)
+    .eq('state', 'waiting').or(`publish_at.is.null,publish_at.lte.${new Date(started).toISOString()}`)
+    .order('last_checked_at', { ascending: true, nullsFirst: true }).limit(500)
   if (error) return NextResponse.json({ ok: false, error: error.code === '42P01' ? 'video_first_comments table missing (migration 377)' : error.message })
   const now = Date.now()
   const due = ((data ?? []) as Array<FirstCommentRow & { publish_at: string | null; last_checked_at: string | null }>)

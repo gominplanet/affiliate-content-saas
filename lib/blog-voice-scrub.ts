@@ -74,7 +74,24 @@ export interface VoiceScrubOptions {
 /** "I didn't actually review this product", "I haven't tested it myself",
  *  "we never got to try it": a whole sentence denying the creator's own
  *  review. Written by the model when the video's words were not captured. */
-const OWN_VIDEO_DENIALS = /(?:^|(?<=[.!?]\s))[^.!?<>]*\b(?:I|we)\s+(?:did\s+not|didn['’]t|have\s+not|haven['’]t|never|was\s+not|wasn['’]t|could\s+not|couldn['’]t)\s+(?:actually\s+|personally\s+|yet\s+|been\s+able\s+to\s+|get\s+to\s+|got\s+to\s+|had\s+(?:a\s+)?(?:chance|the\s+chance)\s+to\s+)?(?:review(?:ed)?|test(?:ed)?|use[d]?|tr(?:y|ied)|own(?:ed)?|handle[d]?|get\s+hands-on)\b[^.!?<>]*[.!?]\s*/gi
+// ONLY ABOUT THE PRODUCT ITSELF. The first version took any "I never use",
+// "we couldn't use it", "I didn't use a pencil", which removed real steps and
+// real cons from real reviews ("We couldn't use it in the rain, the seal
+// leaked"). Now a sentence goes only when it says the creator did not
+// review, test or try THIS product: with an "actually", "personally", "yet" or
+// "had a chance to", or a review/test/try verb whose sentence ends right
+// after naming the product ("I haven't tested it myself.").
+const DENY_NEG = String.raw`\b(?:I|we)\s+(?:did\s+not|didn['’]t|have\s+not|haven['’]t)\s+`
+const DENY_ADV = String.raw`(?:actually|personally|yet|been\s+able\s+to|had\s+(?:a|the)\s+chance\s+to|gotten\s+to|got\s+to|get\s+to)\s+`
+const DENY_VERB = String.raw`(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\s+out)?|use[d]?|own(?:ed)?|handle[d]?|get\s+hands-on\s+with)`
+const DENY_OBJ = String.raw`\s+(?:this|these|it|them|the\s+(?:product|item|unit|device|model|one)s?)\b`
+const DENY_TAIL = String.raw`(?:\s+(?:myself|ourselves|personally|yet|out|first-?hand|in\s+person|hands-on))*\s*[.!?]`
+const OWN_VIDEO_DENIALS = new RegExp(
+  String.raw`(?:^|(?<=[.!?]\s))[^.!?<>]*` +
+  `(?:${DENY_NEG}${DENY_ADV}${DENY_VERB}${DENY_OBJ}[^.!?<>]*[.!?]` +
+  `|${DENY_NEG}(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\\s+out)?)${DENY_OBJ}${DENY_TAIL})\\s*`,
+  'gi',
+)
 
 // Matches a bare @handle not already inside an attribute value, an existing
 // <a> tag's body, or a URL path. Negative lookbehind excludes the four

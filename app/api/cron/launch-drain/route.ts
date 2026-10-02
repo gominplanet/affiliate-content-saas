@@ -42,7 +42,7 @@ import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
-import { missedWhen, releaseHeld, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
+import { missedWhen, releaseHeld, heldCheckDue, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -1164,8 +1164,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // second upload on the next firing. Three goes, then it is logged;
         // the update at the end of this block writes the id once more.
         for (let w = 0; w < 3; w++) {
+          // The upload session is cleared IN THE SAME WRITE as the id. Cleared
+          // first, a run that died between the two left a row with neither,
+          // and the next run uploaded the whole video again. Kept until the id
+          // is safe, the next run asks the session and gets the id back.
           const { error: idErr } = await sb.from('launch_items')
-            .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
+            .update({ youtube_video_id: videoId, updated_at: stamp(), ...(piecesOn ? { yt_upload_url: null } : {}) }).eq('id', it.id)
           if (!idErr) break
           console.error('[launch-drain] could not record the YouTube id', { item: it.id, videoId, said: idErr.message, attempt: w + 1 })
           await new Promise((r) => setTimeout(r, 1000 * (w + 1)))
@@ -1313,6 +1317,9 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         } catch (pe) {
           plError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)
           console.warn('[launch-drain] playlist refused', { item: it.id, said: plError })
+          // Out of YouTube's daily allowance is not a refusal: left unrecorded,
+          // so the playlist catch-up adds it after the reset.
+          if (/quotaExceeded|dailyLimitExceeded/i.test(plError)) plError = null
         }
         await sb.from('launch_items').update({ playlist_added_at: added, playlist_error: plError }).eq('id', it.id)
       }
@@ -1367,6 +1374,24 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       await noteHandOver(sb, it.id, handed)
       scheduled++
     } catch (e) {
+      // YOUTUBE'S DAILY ALLOWANCE IS NOT A FAILED TRY. The quota is shared by
+      // every MVP account and resets at midnight Pacific; this video did
+      // nothing wrong. It used to burn a try per firing, so within minutes
+      // every queued video across every batch was blocked for good. Now the
+      // try is handed back, the row says what it is waiting for, and this
+      // firing stops publishing (the next video would get the same answer).
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/quotaExceeded|dailyLimitExceeded|uploadLimitExceeded/i.test(msg)) {
+        const channelCap = /uploadLimitExceeded/i.test(msg)
+        await sb.from('launch_items').update({
+          publish_tries: tries,
+          reason: channelCap
+            ? 'Waiting: YouTube says this channel has reached its own daily upload limit. MVP carries on by itself tomorrow.'
+            : 'Waiting for YouTube’s daily allowance, which every MVP account shares, to reset at midnight Pacific. MVP carries on by itself after that; nothing to do.',
+          updated_at: stamp(),
+        }).eq('id', it.id)
+        break
+      }
       // LEFT PREPARED so the next firing tries again, with the reason on the
       // row rather than in a log nobody reads.
       // THE FALLBACK USED TO BE THE GENERIC SENTENCE ITSELF, word for word, so
@@ -1735,13 +1760,19 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
   const stamp = () => new Date().toISOString()
   const tenAgo = new Date(Date.now() - 10 * 60_000).toISOString()
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,youtube_video_id,planned_publish_at')
+    .select('id,user_id,batch_id,youtube_video_id,planned_publish_at,updated_at')
     .eq('state', 'blocked')
     .not('youtube_video_id', 'is', null)
     .like('reason', `${HELD_FOR_PAID_PROMOTION}%`)
     .lt('updated_at', tenAgo)
-    .order('updated_at', { ascending: true }).limit(25)
-  const items = rows ?? []
+    .order('updated_at', { ascending: true }).limit(200)
+  // EACH CHECK COSTS FROM THE ONE DAILY YOUTUBE QUOTA EVERY ACCOUNT SHARES.
+  // Every ten minutes for every held video, forever, was 144 units a video a
+  // day. Often only near the planned time now (lib/launch-release heldCheckDue);
+  // SCOUT's Studio step releases a video the moment it saves, so this is the
+  // fallback, not the main path.
+  const items = (rows ?? []).filter((r: { planned_publish_at: string | null; updated_at?: string | null }) =>
+    heldCheckDue(r.planned_publish_at, (r as { updated_at?: string | null }).updated_at ?? null)).slice(0, 25)
   if (items.length === 0) return { scheduled: 0, waiting: 0, late: 0 }
 
   const batchIds = Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id))))
@@ -1909,6 +1940,9 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
       added++
     } catch (e) {
       const said = (e instanceof Error && e.message ? e.message : String(e)).slice(0, 200)
+      // Out of the shared daily allowance: try again after the reset, and
+      // stop asking for the rest of this run.
+      if (/quotaExceeded|dailyLimitExceeded/i.test(said)) break
       await sb.from('launch_items').update({ playlist_error: said }).eq('id', it.id)
       failed++
     }
@@ -1980,7 +2014,6 @@ async function sendInPieces(
   if (url) {
     const st = await YouTubeOAuthService.resumableStatus(url, total)
     if ('done' in st) {
-      await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
       return st
     }
     if ('gone' in st) url = null
@@ -2002,14 +2035,12 @@ async function sendInPieces(
     const bytes = new Uint8Array(await piece.arrayBuffer())
     const r = await YouTubeOAuthService.putChunk(url, bytes, next, total, Math.max(20_000, left() - 45_000))
     if ('done' in r) {
-      await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
       return r
     }
     next = r.next
   }
   const st = await YouTubeOAuthService.resumableStatus(url, total)
   if ('done' in st) {
-    await sb.from('launch_items').update({ yt_upload_url: null }).eq('id', itemId)
     return st
   }
   return { done: false, sent: 'next' in st ? st.next : next }

@@ -1910,8 +1910,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /if \(!videoId\) \{/.test(DRAIN),
     'every retry re-uploaded, and a real channel collected three copies of one video')
   check('the id is written the moment YouTube hands it over',
-    /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\) \}\)/.test(DRAIN),
+    /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\), \.\.\.\(piecesOn \? \{ yt_upload_url: null \} : \{\}\) \}\)/.test(DRAIN),
     'bundling it into the update at the end of the block is how it got lost')
+  check('the upload session is cleared only together with the id',
+    !/function sendInPieces[\s\S]*?update\(\{ yt_upload_url: null \}\)[\s\S]*?\n\}/.test(DRAIN),
+    'cleared first, a run dying between the two writes uploaded the whole video again')
+  check('a used-up YouTube quota is not a failed try',
+    /if \(\/quotaExceeded\|dailyLimitExceeded\|uploadLimitExceeded\/i\.test\(msg\)\) \{[\s\S]{0,200}publish_tries: tries,/.test(DRAIN),
+    'every queued video across every batch was blocked within minutes of the quota running out')
   check('and the worker can actually see it',
     /planned_publish_at,publish_tries,reason,youtube_video_id[,']/.test(DRAIN),
     'a column the query does not select is a resume that never happens')

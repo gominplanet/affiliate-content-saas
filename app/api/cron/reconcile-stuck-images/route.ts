@@ -74,7 +74,10 @@ export async function GET(request: Request) {
 
   // Posts waiting for their videos.
   let videoHold: unknown = null
-  try {
+  // Every half hour, not every ten minutes: each run asks YouTube about up to
+  // 800 videos from the one daily quota every account shares.
+  if (new Date().getUTCMinutes() % 30 >= 10) videoHold = { skipped: 'Checked on the hour and half hour.' }
+  else try {
     const r = await holdAndRelease(admin, share(60))
     videoHold = r.missingColumn
       ? { skipped: 'Posts cannot wait for their videos until migration 388 is run.' }

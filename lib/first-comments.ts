@@ -75,6 +75,7 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
   if (!token) return fail('The channel this video is on is not connected for publishing. Connect it under Settings.')
   let yt = new YouTubeOAuthService(token)
   let status: Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>> = null
+  let unsure = false
   try { status = await yt.getVideoStatus(row.youtube_video_id) } catch {
     // YouTube did not answer: not a verdict. Try again on the next run.
     await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
@@ -91,9 +92,14 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
       const t = await getChannelOAuthToken(sb, row.user_id, c.channelId).catch(() => null)
       if (!t || t === token) continue
       const other = new YouTubeOAuthService(t)
-      const seen = await other.getVideoStatus(row.youtube_video_id).catch(() => null)
+      // A check that THREW (quota, timeout) is not "cannot see it".
+      const seen = await other.getVideoStatus(row.youtube_video_id).catch(() => { unsure = true; return null })
       if (seen) { yt = other; status = seen; row = { ...row, channel_id: c.channelId }; break }
     }
+  }
+  if (!status && unsure) {
+    await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
+    return { state: 'waiting', publishAt: null, reason: 'no_answer' }
   }
   if (!status) {
     // DELETED FROM YOUTUBE IS FORGOTTEN BY MVP. Only when it is certain: the
@@ -113,7 +119,11 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
         const tok = await getChannelOAuthToken(sb, row.user_id, owner)
         const mine = tok ? await new YouTubeOAuthService(tok).getMyChannel() : null
         ownerConfirmed = !!mine && mine.id === owner
-      } catch { ownerConfirmed = false }
+      } catch {
+        // Could not ask (quota, timeout): wait, rather than fail or forget.
+        await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
+        return { state: 'waiting', publishAt: null, reason: 'no_answer' }
+      }
     }
     if (connected && ownerConfirmed) {
       await sb.from('video_first_comments').delete().eq('id', row.id)
@@ -134,23 +144,44 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
   }
   // THE COMMENTER IS THE VIDEO'S OWN CHANNEL, asked of YouTube.
   let me: { id: string } | null = null
-  try { me = await yt.getMyChannel() } catch { me = null }
+  try { me = await yt.getMyChannel() } catch (e) {
+    // Could not ask is not "the wrong channel": that sentence failed comments
+    // for good on a used-up quota. Try again on the next run.
+    const why = e instanceof Error ? e.message : String(e)
+    await sb.from('video_first_comments').update({
+      last_checked_at: at,
+      ...(/quota/i.test(why) ? { last_error: "YouTube's daily limit for MVP was used up. It will try again." } : {}),
+    }).eq('id', row.id)
+    return { state: 'waiting', publishAt: null, reason: /quota/i.test(why) ? 'quota' : 'no_answer' }
+  }
   if (!me || (status.channelId && me.id !== status.channelId)) {
     return fail('The saved login is not the channel this video is on, so the comment would come from the wrong channel. Nothing was posted. Reconnect that channel under Settings.')
   }
+  // CLAIMED BEFORE POSTING, so the ten-minute run and a creator's own Post
+  // button cannot both post it. Only a row still waiting (or failed, which
+  // the button retries) can be taken; whoever loses the claim posts nothing.
+  const { data: took } = await sb.from('video_first_comments')
+    .update({ state: 'posting', updated_at: at }).eq('id', row.id).in('state', ['waiting', 'failed']).select('id')
+  if (!took || took.length === 0) return { state: 'waiting', publishAt: null, reason: 'no_answer' }
   try {
     const id = await yt.postComment(row.youtube_video_id, row.text)
     if (!id) return fail('YouTube did not return the comment id, so MVP cannot tell whether it was posted.')
-    await sb.from('video_first_comments').update({
-      state: 'posted', comment_id: id, posted_at: at, last_checked_at: at, last_error: null, updated_at: at,
-      channel_id: status.channelId ?? row.channel_id,
-    }).eq('id', row.id)
+    // Written until it lands: a lost write here would leave the row looking
+    // unposted and invite a second comment.
+    for (let w = 0; w < 3; w++) {
+      const { error: wErr } = await sb.from('video_first_comments').update({
+        state: 'posted', comment_id: id, posted_at: at, last_checked_at: at, last_error: null, updated_at: at,
+        channel_id: status.channelId ?? row.channel_id,
+      }).eq('id', row.id)
+      if (!wErr) break
+      await new Promise((r) => setTimeout(r, 800 * (w + 1)))
+    }
     return { state: 'posted', commentId: id }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (/quota/i.test(msg)) {
       // A used-up daily limit is not the comment's fault: wait for tomorrow.
-      await sb.from('video_first_comments').update({ last_checked_at: at, last_error: "YouTube's daily limit for MVP was used up. It will try again." }).eq('id', row.id)
+      await sb.from('video_first_comments').update({ state: 'waiting', last_checked_at: at, last_error: "YouTube's daily limit for MVP was used up. It will try again." }).eq('id', row.id)
       return { state: 'waiting', publishAt: null, reason: 'quota' }
     }
     return fail(/commentsDisabled|disabled comments/i.test(msg) ? 'Comments are turned off on this video.' : `YouTube did not take the comment: ${msg.slice(0, 160)}`)

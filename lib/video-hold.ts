@@ -77,10 +77,11 @@ export async function holdAndRelease(sb: Sb, deadline = Date.now() + 90_000): Pr
 
   const all = [...waiting, ...live.values()].filter((r) => r.youtube_videos?.youtube_video_id)
   if (!all.length) return out
+  const unknown = new Set<string>()
   const notPublic = new Map((await videosNotPublic(all.map((r) => ({
     youtubeVideoId: r.youtube_videos!.youtube_video_id as string,
     publishedAt: r.youtube_videos!.published_at,
-  })))).map((n) => [n.youtubeVideoId, n]))
+  })), unknown)).map((n) => [n.youtubeVideoId, n]))
 
   const wpFor = async (r: Row) => {
     const site = await credsForPost(sb, r.user_id, r).catch(() => null)
@@ -103,6 +104,10 @@ export async function holdAndRelease(sb: Sb, deadline = Date.now() + 90_000): Pr
       await sb.from('blog_posts').update({ waiting_for_video_until: n.goesLiveAt }).eq('id', r.id)
       continue
     }
+    // YOUTUBE DID NOT ANSWER (a used-up quota, an outage): not a yes. A held
+    // post is published only on YouTube's word that the video is live; the
+    // stored date alone released posts whose video was still private.
+    if (unknown.has(r.youtube_videos?.youtube_video_id || '')) continue
     try {
       const c = await wpFor(r)
       if (!c) continue

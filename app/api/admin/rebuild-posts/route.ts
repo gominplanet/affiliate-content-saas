@@ -45,13 +45,13 @@ async function requireAdmin(): Promise<{ admin: any; adminId: string } | { error
   return { admin: createAdminClient() as any, adminId: user.id }
 }
 
-type PostRow = { id: string; title: string | null; video_id: string; wordpress_url: string | null; wordpress_site_id: string | null; content: string | null; created_at: string }
+type PostRow = { id: string; title: string | null; video_id: string; wordpress_url: string | null; wordpress_site_id: string | null; content: string | null; created_at: string; updated_at: string | null; status: string | null }
 
 async function readPosts(admin: Sb, userId: string): Promise<PostRow[]> {
   const out: PostRow[] = []
   for (let from = 0; from < 2000; from += 500) {
     const { data, error } = await admin.from('blog_posts')
-      .select('id,title,video_id,wordpress_url,wordpress_site_id,content,created_at')
+      .select('id,title,video_id,wordpress_url,wordpress_site_id,content,created_at,updated_at,status')
       .eq('user_id', userId).not('video_id', 'is', null).not('wordpress_post_id', 'is', null)
       .order('created_at', { ascending: false }).range(from, from + 499)
     if (error) throw new Error(error.message)
@@ -87,18 +87,25 @@ export async function GET(request: Request) {
       .select('id,status,error,input,created_at,finished_at')
       .eq('owner_id', userId).eq('kind', 'blog').contains('input', { repair: true })
       .order('created_at', { ascending: false }).limit(500)
-    const lastJob = new Map<string, { status: string; error: string | null; at: string }>()
+    const lastJob = new Map<string, { status: string; error: string | null; at: string; startedAt: string }>()
     for (const j of (jobs ?? []) as Array<{ status: string; error: string | null; input: { videoId?: string }; created_at: string; finished_at: string | null }>) {
       const vid = j.input?.videoId
-      if (vid && !lastJob.has(vid)) lastJob.set(vid, { status: j.status, error: j.error, at: j.finished_at || j.created_at })
+      if (vid && !lastJob.has(vid)) lastJob.set(vid, { status: j.status, error: j.error, at: j.finished_at || j.created_at, startedAt: j.created_at })
     }
 
     const rows = posts.map((p) => {
       const hasTranscript = transcribed.get(p.video_id) ?? false
       const reasons = repairReasons({ hasTranscript, signals: researchSignals(p.content) })
+      // THE WORKER STOPS WAITING BEFORE THE REWRITE DOES. A repair it gave up
+      // on can still have finished, so "not rebuilt" is only said when the
+      // post did not change after the job started.
+      let repair = lastJob.get(p.video_id) ?? null
+      if (repair && repair.status === 'failed' && p.updated_at && Date.parse(p.updated_at) > Date.parse(repair.startedAt)) {
+        repair = { ...repair, status: 'updated', at: p.updated_at }
+      }
       return {
         id: p.id, title: p.title, videoId: p.video_id, url: p.wordpress_url, createdAt: p.created_at,
-        hasTranscript, reasons, repair: lastJob.get(p.video_id) ?? null,
+        hasTranscript, reasons, repair, live: p.status === 'published',
       }
     })
     return NextResponse.json({ ok: true, posts: rows })
@@ -111,7 +118,7 @@ export async function POST(request: Request) {
   const gate = await requireAdmin()
   if ('error' in gate) return gate.error
   const { admin, adminId } = gate
-  const body = await request.json().catch(() => ({})) as { userId?: string; videoIds?: string[] }
+  const body = await request.json().catch(() => ({})) as { userId?: string; videoIds?: string[]; includeImages?: boolean }
   const userId = body.userId
   const videoIds = Array.isArray(body.videoIds) ? [...new Set(body.videoIds.filter((v) => typeof v === 'string'))].slice(0, MAX_QUEUE_PER_CALL) : []
   if (!userId || videoIds.length === 0) return NextResponse.json({ ok: false, error: 'userId and videoIds required' }, { status: 400 })
@@ -131,7 +138,7 @@ export async function POST(request: Request) {
     const siteId = site.get(videoId)
     const jobId = await enqueueGenerationJob(admin, {
       userId: adminId, ownerId: userId, kind: 'blog', maxAttempts: 1,
-      input: { videoId, repair: true, ...(siteId ? { siteId } : {}) },
+      input: { videoId, repair: true, ...(body.includeImages === true ? { includeImages: true } : {}), ...(siteId ? { siteId } : {}) },
     })
     if (jobId) queued.push(videoId)
     else refused.push({ videoId, reason: 'the job queue would not take it' })

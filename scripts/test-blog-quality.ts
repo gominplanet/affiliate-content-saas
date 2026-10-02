@@ -97,7 +97,10 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the gate counts tells before the post is sent', G.indexOf('const tells = findAiTells(content)') > 0 && G.indexOf('const tells = findAiTells(content)') < publishAt)
   check('only auto-pilot posts are held, and a held post goes to WordPress as a draft',
     /if \(body\.autopilot === true\)/.test(G) && /if \(heldForReview\) wpStatus = 'draft'/.test(G))
-  check('a retry of the same job keeps the draft a draft', /existingIsThisJobsPost = true/.test(G) && /status: heldForReview \? 'draft' : 'publish'/.test(G))
+  check('a retry of the same job keeps the draft a draft', /existingIsThisJobsPost = true/.test(G) && /\.\.\.\(heldForReview \? \{ status: 'draft' as const \} : existingIsThisJobsPost \? \{ status: wpStatus \} : \{\}\)/.test(G))
+  // A rebuild never changes a live post's status: a held draft stayed a
+  // draft, a post scheduled for next week went out today before this.
+  check('a rebuild leaves the post\'s own status alone', !/status: heldForReview \? 'draft' : 'publish'/.test(G) && /existingWpPostId && !existingIsThisJobsPost \? \{\} : \{/.test(G))
   check('a held draft is not pinged to IndexNow', /if \(!isScheduled && !heldForReview\)/.test(G))
   check('a held draft carries no schedule the draft-flip cron could publish', /isScheduled && scheduledForIso && !heldForReview/.test(G))
   check('the hold and its reasons are recorded even when scoring fails', /\.\.\.\(aio \?\? \{\}\), tells:/.test(G) && /held: \{ at: new Date\(\)\.toISOString\(\), reasons: heldReasons \}/.test(G))

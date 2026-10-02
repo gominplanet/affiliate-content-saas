@@ -48,15 +48,24 @@ async function requireAdmin(): Promise<{ admin: Sb } | { error: NextResponse }> 
 
 type VideoRow = { id: string; title: string | null; youtube_video_id: string | null; channel_id: string | null; description: string | null }
 
-async function videosLinking(admin: Sb, userId: string, host: string, limit: number): Promise<{ rows: VideoRow[]; total: number }> {
-  const { data, count, error } = await admin.from('youtube_videos')
-    .select('id,title,youtube_video_id,channel_id,description', { count: 'exact' })
-    .eq('user_id', userId).ilike('description', `%${host}%`)
-    .order('published_at', { ascending: false, nullsFirst: false }).limit(limit)
-  if (error) throw new Error(error.message)
-  // ilike also matches a longer host that ends the same way; count exactly.
-  const rows = ((data ?? []) as VideoRow[]).filter((v) => countHost(v.description, host) > 0)
-  return { rows, total: count ?? rows.length }
+async function videosLinking(admin: Sb, userId: string, host: string, limit: number, skip: string[] = []): Promise<{ rows: VideoRow[]; total: number }> {
+  // Every candidate is read (ilike also matches a longer host that ends the
+  // same way, so the count is made exactly), and videos that already failed
+  // in an earlier run are skipped, so a run always reaches new videos instead
+  // of trying the same unfixable ones forever.
+  const all: VideoRow[] = []
+  for (let from = 0; from < 5000; from += 500) {
+    const { data, error } = await admin.from('youtube_videos')
+      .select('id,title,youtube_video_id,channel_id,description')
+      .eq('user_id', userId).ilike('description', `%${host}%`)
+      .order('published_at', { ascending: false, nullsFirst: false }).order('id').range(from, from + 499)
+    if (error) throw new Error(error.message)
+    all.push(...((data ?? []) as VideoRow[]))
+    if ((data ?? []).length < 500) break
+  }
+  const exact = all.filter((v) => countHost(v.description, host) > 0)
+  const skipped = new Set(skip)
+  return { rows: exact.filter((v) => !skipped.has(v.id)).slice(0, limit), total: exact.length }
 }
 
 /** What WordPress at this address says its home is, or why it could not be read. */
@@ -64,9 +73,13 @@ async function siteAnswers(host: string): Promise<{ ok: boolean; home: string | 
   try {
     const r = await fetchWithTimeout(`https://${host}/wp-json/`, { timeoutMs: 15_000, signal: AbortSignal.timeout(15_000), redirect: 'follow' })
     if (r.status >= 500) return { ok: false, home: null, note: `https://${host} answered with an error (${r.status}).` }
-    const j = await r.json().catch(() => null) as { home?: string; url?: string } | null
+    const j = await r.json().catch(() => null) as { home?: string; url?: string; namespaces?: unknown } | null
+    // A parked domain answers too. Only a WordPress site counts.
+    if (!j || (!j.home && !j.url && !Array.isArray(j.namespaces))) {
+      return { ok: false, home: null, note: `https://${host} answers, but not as a WordPress site (no WordPress at /wp-json/). It may be parked or not connected to the site yet.` }
+    }
     const home = normalizeHost(j?.home || j?.url || '') || null
-    return { ok: true, home, note: home ? `WordPress at ${host} says its address is ${home}.` : `https://${host} answers, but did not say its WordPress address.` }
+    return { ok: true, home, note: home ? `WordPress at ${host} says its address is ${home}.` : `https://${host} is WordPress, but did not say its address.` }
   } catch (e) {
     return { ok: false, home: null, note: `https://${host} did not answer (${e instanceof Error ? e.message : String(e)}).` }
   }
@@ -112,7 +125,7 @@ export async function POST(request: Request) {
   const gate = await requireAdmin()
   if ('error' in gate) return gate.error
   const { admin } = gate
-  const body = await request.json().catch(() => ({})) as { userId?: string; from?: string; to?: string }
+  const body = await request.json().catch(() => ({})) as { userId?: string; from?: string; to?: string; skip?: string[] }
   const userId = body.userId
   const from = normalizeHost(body.from), to = normalizeHost(body.to)
   if (!userId || !from || !to) return NextResponse.json({ ok: false, error: 'Give the creator, the old address and the new address (for example mysite.com).' }, { status: 400 })
@@ -124,7 +137,8 @@ export async function POST(request: Request) {
   if (!site.ok) return NextResponse.json({ ok: false, error: `Nothing was changed. ${site.note} Connect the domain first, then try again.` }, { status: 422 })
   const wordpressMoved = site.home === to
 
-  const { rows, total } = await videosLinking(admin, userId, from, SWAP_PER_RUN)
+  const skip = Array.isArray(body.skip) ? body.skip.filter((x) => typeof x === 'string').slice(0, 2000) : []
+  const { rows, total } = await videosLinking(admin, userId, from, SWAP_PER_RUN, skip)
   const { data: integ } = await admin.from('integrations').select('*').eq('user_id', userId).maybeSingle()
   const tokens = new Map<string, string | null>()
   const tokenFor = async (channelId: string | null): Promise<string | null> => {
@@ -138,13 +152,13 @@ export async function POST(request: Request) {
     return tokens.get(k) ?? null
   }
 
-  const report = { changed: 0, alreadyRight: 0, missing: 0, failed: [] as Array<{ title: string; reason: string }> }
+  const report = { changed: 0, alreadyRight: 0, missing: 0, failed: [] as Array<{ id: string; title: string; reason: string }> }
   for (const v of rows) {
     const title = v.title || 'Untitled video'
-    if (!v.youtube_video_id) { report.failed.push({ title, reason: 'no YouTube id on record' }); continue }
+    if (!v.youtube_video_id) { report.failed.push({ id: v.id, title, reason: 'no YouTube id on record' }); continue }
     try {
       const token = await tokenFor(v.channel_id)
-      if (!token) { report.failed.push({ title, reason: 'the channel this video is on is not connected for editing' }); continue }
+      if (!token) { report.failed.push({ id: v.id, title, reason: 'the channel this video is on is not connected for editing' }); continue }
       const outcome = await createYouTubeOAuthService(token).swapDescriptionDomain(v.youtube_video_id, (d) => swapDomain(d, from, to))
       if (outcome === 'missing') report.missing++
       else if (outcome === 'changed') report.changed++
@@ -152,7 +166,7 @@ export async function POST(request: Request) {
       // Our copy follows the live one, so it leaves this list either way.
       await admin.from('youtube_videos').update({ description: swapDomain(v.description || '', from, to) }).eq('id', v.id)
     } catch (e) {
-      report.failed.push({ title, reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+      report.failed.push({ id: v.id, title, reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
     }
   }
 
@@ -170,11 +184,15 @@ export async function POST(request: Request) {
     if (iu && countHost(iu, from)) await admin.from('integrations').update({ wordpress_url: swapDomain(iu, from, to) }).eq('user_id', userId)
   }
 
+  // Still carrying the old address: skipped failures from earlier runs, this
+  // run's failures, and the ones not reached yet.
   const left = Math.max(0, total - report.changed - report.alreadyRight - report.missing)
+  const notReached = Math.max(0, left - skip.length - report.failed.length)
   return NextResponse.json({
     ok: report.failed.length === 0,
     ...report,
     left,
+    notReached,
     site: site.note,
     wordpressMoved,
     postsUpdated,

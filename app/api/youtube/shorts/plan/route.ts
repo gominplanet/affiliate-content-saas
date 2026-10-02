@@ -248,7 +248,13 @@ export async function POST(request: Request) {
         if (p) { try { await sb.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
     }
-    // 3. Official YouTube Data API captions via the creator's OAuth token.
+    // 3. youtube-transcript scraper: free (often IP-blocked on cloud).
+    if (cues.length === 0 && youtubeVideoId) {
+      cues = await fetchTranscriptCues(youtubeVideoId)
+    }
+    // 4. Official YouTube Data API captions via the creator's OAuth token,
+    //    LAST: a caption list and download cost 250 of the one daily YouTube
+    //    quota every MVP account shares.
     if (cues.length === 0 && youtubeVideoId) {
       try {
         const token = await getChannelOAuthToken(supabase, user.id, (video.channel_id as string | null) ?? null)
@@ -256,11 +262,7 @@ export async function POST(request: Request) {
           const srt = await createYouTubeOAuthService(token).getCaptionSrt(youtubeVideoId)
           if (srt) cues = parseSrtCues(srt)
         }
-      } catch { /* fall through to the scraper */ }
-    }
-    // 4. youtube-transcript scraper — last resort (often IP-blocked on cloud).
-    if (cues.length === 0 && youtubeVideoId) {
-      cues = await fetchTranscriptCues(youtubeVideoId)
+      } catch { /* no transcript from YouTube */ }
     }
     if (cues.length === 0) {
       const canUpload = !/^https:\/\//i.test(sourceUrl)

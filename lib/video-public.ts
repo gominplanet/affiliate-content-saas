@@ -22,6 +22,10 @@ export type NotPublic = { youtubeVideoId: string; reason: 'scheduled' | 'private
 
 export async function videosNotPublic(
   videos: Array<{ youtubeVideoId: string; publishedAt?: string | null }>,
+  /** Filled with the videos YouTube gave no answer for (quota, outage). The
+   *  date decides those for writing; anything that would PUBLISH on the
+   *  strength of it should wait instead (lib/video-hold). */
+  unknown?: Set<string>,
 ): Promise<NotPublic[]> {
   const list = videos.filter((v) => /^[A-Za-z0-9_-]{11}$/.test(v.youtubeVideoId))
   if (!list.length) return []
@@ -32,7 +36,7 @@ export async function videosNotPublic(
     const future = !!v.publishedAt && new Date(v.publishedAt).getTime() > now
     const vis = seen.get(v.youtubeVideoId)
     if ((vis === 'public' || vis === 'unlisted') && !future) continue
-    if (vis === undefined && !future) continue // YouTube not asked: the date said it is out
+    if (vis === undefined && !future) { unknown?.add(v.youtubeVideoId); continue } // YouTube not asked: the date said it is out
     out.push({
       youtubeVideoId: v.youtubeVideoId,
       reason: future ? 'scheduled' : 'private',

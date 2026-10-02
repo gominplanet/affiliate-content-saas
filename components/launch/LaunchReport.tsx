@@ -62,6 +62,11 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
   // CHOSEN, NOT MISSED: an Amazon-only batch never goes to YouTube.
   if (i.state === 'amazon_only') return { word: 'Skipped (Amazon only)', colour: IDLE, done: true }
   if (i.state === 'published') return { word: `Live${i.publish_at ? ` since ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
+  // THE TIME CAME AND IT DID NOT GO PUBLIC. The checker leaves the row
+  // 'scheduled' and writes why; that is a problem, not a green tick.
+  if (i.state === 'scheduled' && /^The time came and went/.test(i.reason || '')) {
+    return { word: 'Did not go public', colour: BAD, done: true, problem: i.reason || undefined }
+  }
   if (i.state === 'scheduled') return { word: `Scheduled${i.publish_at ? ` for ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
   if (i.state === 'blocked') {
     return i.youtube_video_id
@@ -69,6 +74,8 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
       : { word: 'Did not upload', colour: BAD, done: true, problem: i.reason || 'It could not be uploaded.' }
   }
   if (i.state === 'prepared') {
+    // Waiting on YouTube's daily allowance: not stuck, not failed, and says so.
+    if (i.planned_publish_at && /^Waiting/.test(i.reason || '')) return { word: 'Waiting for YouTube', colour: WARN, done: false, problem: i.reason || undefined }
     return i.planned_publish_at
       ? { word: /is running now|^Sending to YouTube in pieces/.test(i.reason || '') ? 'Uploading now' : 'Queued for upload', colour: BUSY, done: false }
       : { word: 'Ready, not launched', colour: WARN, done: false, problem: 'Ready but not launched yet. Press Launch these too.' }
@@ -211,7 +218,7 @@ export default function LaunchReport({
       </h2>
       <p className="text-[12px] mt-0.5" style={muted}>
         {allDone
-          ? `YouTube: ${sorted.filter((i) => i.state === 'scheduled' || i.state === 'published').length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
+          ? `YouTube: ${sorted.filter((i) => i.state === 'published' || (i.state === 'scheduled' && !/^The time came and went/.test(i.reason || ''))).length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
           : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
       </p>
 

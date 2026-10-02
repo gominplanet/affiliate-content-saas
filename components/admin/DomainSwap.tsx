@@ -9,8 +9,8 @@ import { Loader2, Link2 } from 'lucide-react'
 
 type Host = { host: string; temporary: boolean; posts: number; siteOnFile: boolean; videos: number }
 type Result = {
-  ok: boolean; error?: string; changed?: number; alreadyRight?: number; missing?: number; left?: number
-  failed?: Array<{ title: string; reason: string }>; site?: string; wordpressMoved?: boolean; postsUpdated?: number
+  ok: boolean; error?: string; changed?: number; alreadyRight?: number; missing?: number; left?: number; notReached?: number
+  failed?: Array<{ id: string; title: string; reason: string }>; site?: string; wordpressMoved?: boolean; postsUpdated?: number
 }
 
 export function DomainSwap({ userId }: { userId: string }) {
@@ -21,6 +21,8 @@ export function DomainSwap({ userId }: { userId: string }) {
   const [to, setTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
+  // Videos that failed in an earlier run: skipped, so each run reaches new ones.
+  const [skip, setSkip] = useState<string[]>([])
 
   async function load() {
     setLoading(true); setError(null)
@@ -44,10 +46,11 @@ export function DomainSwap({ userId }: { userId: string }) {
     try {
       const r = await fetch('/api/admin/domain-swap', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, from, to }),
+        body: JSON.stringify({ userId, from, to, skip }),
       })
       const d = await r.json().catch(() => null) as Result | null
       setResult(d ?? { ok: false, error: 'The swap returned nothing readable, so it is not known what changed. Check again before running it twice.' })
+      if (d?.failed?.length) setSkip((prev) => [...new Set([...prev, ...d.failed!.map((f) => f.id)])])
       await load()
     } finally {
       setBusy(false)
@@ -108,7 +111,7 @@ function SwapResult({ r }: { r: Result }) {
     <div className="rounded-lg p-2.5 text-[12px]" style={{ background: failed.length ? '#ff950012' : '#34c75912' }}>
       <p className="text-[#1d1d1f] dark:text-[#f5f5f7]">
         {r.changed ?? 0} descriptions changed{r.alreadyRight ? `, ${r.alreadyRight} already right on YouTube` : ''}{r.missing ? `, ${r.missing} no longer on YouTube` : ''}{failed.length ? `, ${failed.length} not changed` : ''}.
-        {' '}{r.left ? `${r.left} still to do: press Swap again (25 per run, to spare the daily YouTube quota).` : 'None left to do.'}
+        {' '}{r.notReached ? `${r.notReached} not reached yet: press Swap again (25 per run, to spare the daily YouTube quota).` : r.left ? `Every video MVP can change is done; ${r.left} still carry the old address because they could not be changed (reasons below or from earlier runs).` : 'None left to do.'}
       </p>
       {r.site && <p className="text-[#6e6e73] dark:text-[#b0b0b5] mt-1">{r.site}</p>}
       <p className="text-[#6e6e73] dark:text-[#b0b0b5] mt-0.5">

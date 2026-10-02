@@ -227,6 +227,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       .update({ publish_now: true }).in('id', nowIds).eq('user_id', user.id)
     if (nowErr) publishNowRecorded = false
   }
+  // AND THE REST ARE NOT "NOW", even if an earlier launch said they were. A
+  // held video given a new time kept its old flag and went public early.
+  // Allowed to fail for the same reason as above.
+  {
+    const laterIds = ready.map((r) => r.id).filter((rid) => !nowIds.includes(rid))
+    if (laterIds.length > 0) await sb.from('launch_items').update({ publish_now: false }).in('id', laterIds).eq('user_id', user.id)
+  }
 
   // ── write the plan onto the rows, and CHECK each write ───────────────────
   //
