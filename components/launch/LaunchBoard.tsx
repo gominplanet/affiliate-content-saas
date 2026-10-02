@@ -1742,6 +1742,10 @@ export default function LaunchBoard() {
         current={!!step('thumbnail')?.current} open={open === 'thumbnail'} onToggle={() => toggle('thumbnail')}
         optional={stepIsOptional('thumbnail')}
       >
+        {/* YOUR OWN, WHERE THUMBNAILS ARE CHOSEN. The upload lived only on
+            each video's row in step 5, and the first place anyone looked for
+            it was here. */}
+        <OwnThumbnails items={items} onReload={async () => { if (batchId) await load(batchId) }} />
         <ThumbnailPicker
           value={batch.thumbnail}
           chosen={!!batch.thumbnail_chosen}
@@ -2672,12 +2676,56 @@ function progressNote(it: Item): string {
 }
 
 /**
+ * Step 3's "use your own": every video in the batch with its own upload, so a
+ * creator who made their thumbnails elsewhere brings them in here, where
+ * thumbnails are chosen. Videos given one skip the look below; the rest still
+ * get it.
+ */
+function OwnThumbnails({ items, onReload }: { items: Item[]; onReload: () => Promise<void> }) {
+  const ownCount = items.filter((i) => i.thumbnail_source === 'creator').length
+  const [show, setShow] = useState(ownCount > 0)
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Have your own thumbnails?</p>
+          <p className="text-[11.5px]" style={muted}>
+            {ownCount > 0
+              ? `${ownCount} of ${items.length} ${items.length === 1 ? 'video uses' : 'videos use'} your own. The rest get the look below.`
+              : 'Upload one for any video. Those skip the look below and go to YouTube and Amazon exactly as you made them.'}
+          </p>
+        </div>
+        <button type="button" onClick={() => setShow((v) => !v)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white shrink-0"
+          style={{ background: '#0EA5A4' }}>
+          <Upload size={12} /> {show ? 'Hide' : 'Use my own thumbnails'}
+        </button>
+      </div>
+      {show && (
+        <div className="mt-3 flex flex-col gap-3">
+          {items.length === 0
+            ? <p className="text-[12px]" style={muted}>Add your videos first (step 1), then give each one its thumbnail here.</p>
+            : items.map((it) => (
+              <div key={it.id} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <p className="text-[12px] font-medium truncate mb-1.5" style={{ color: 'var(--text)' }}>
+                  {it.position + 1}. {it.title || 'Untitled video'}
+                </p>
+                <ItemThumbnail item={it} onReload={onReload} bare />
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * A video's thumbnail, and the creator's own instead of MVP's. Their own goes
  * to YouTube and Amazon exactly as uploaded (made a JPEG under YouTube's 2MB),
  * and nothing MVP does later builds over it. Once the video is on YouTube its
  * thumbnail is YouTube's, changed in Studio.
  */
-function ItemThumbnail({ item, onReload }: { item: Item; onReload: () => Promise<void> }) {
+function ItemThumbnail({ item, onReload, bare = false }: { item: Item; onReload: () => Promise<void>; bare?: boolean }) {
   const [working, setWorking] = useState<'up' | 'back' | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -2726,9 +2774,9 @@ function ItemThumbnail({ item, onReload }: { item: Item; onReload: () => Promise
 
   return (
     <div className="flex items-start gap-2">
-      <span className="w-5" />
+      {!bare && <span className="w-5" />}
       <div className="flex-1 min-w-0">
-        <span className="block mb-1" style={lab}>Thumbnail</span>
+        {!bare && <span className="block mb-1" style={lab}>Thumbnail</span>}
         <div className="flex items-center gap-3 flex-wrap">
           {item.thumbnail_url
             // eslint-disable-next-line @next/next/no-img-element

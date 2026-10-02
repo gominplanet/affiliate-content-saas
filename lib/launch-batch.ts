@@ -429,7 +429,7 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
       title: 'Choose your thumbnail look',
       done: !!batch.thumbnail_chosen,
       detail: !batch.thumbnail_chosen
-        ? 'The style, the face and the hook. Picked once, used on all of them.'
+        ? 'The style, the face and the hook, picked once for all of them. Or upload your own.'
         : batch.thumbnail
           ? presetSummary(batch.thumbnail)
           : 'The house look on all of them, which is a choice you can change here.',

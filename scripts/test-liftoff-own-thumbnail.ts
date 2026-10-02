@@ -18,6 +18,7 @@ check('a new batch look does not build over it', /if \(own && !ctaChanged\) cont
 const drain = read('app/api/cron/launch-drain/route.ts')
 check('the drain builds only when there is no thumbnail', /const need = it\.thumbnail_url \? 0 : 1/.test(drain))
 check('the board offers it', /function ItemThumbnail\(/.test(read('components/launch/LaunchBoard.tsx')))
+check('and offers it in step 3, where thumbnails are chosen', /<OwnThumbnails items=\{items\}[\s\S]{0,200}<ThumbnailPicker/.test(read('components/launch/LaunchBoard.tsx')))
 
 if (failures.length) { console.error('❌ own thumbnail guard failed:\n  - ' + failures.join('\n  - ')); process.exit(1) }
 console.log('✓ own thumbnail guard passed')
