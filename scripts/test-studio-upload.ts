@@ -73,6 +73,8 @@ check('a playlist SCOUT did not pick is added by MVP', /if \(viaStudio\?\.playli
 check('title and tags through the API only when SCOUT missed them', /if \(!textOk \|\| \(wantTags\.length > 0 && did\.tags !== true\)\)/.test(route))
 check('SCOUT reads back every link in the description', /links\.every\(\(l\) => now\.includes\(l\)\)/.test(bg))
 check('SCOUT saves Private when the time has gone', /visibility\.mode = 'private'; delete visibility\.publishAt/.test(bg))
+check('Studio is on screen while SCOUT fills it in, and the creator is put back', /await front\(\)\s*steps\.push/.test(bg) && /await front\(\)\s*const draftSteps/.test(bg) && /stopKeepAlive\(keepAlive\)\s*await back\(\)/.test(bg) && /let front = async \(\) => \{\}/.test(bg))
+check('SCOUT\'s step names stay MVP\'s own (text, tags, playlist)', /\{ step: 'text' \}\)\)/.test(bg) && /\{ step: 'tags' \}\)\)/.test(bg) && /\{ step: 'playlist' \}\)\)/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
 
 // ── FIRST COMMENTS THROUGH SCOUT, THE API ONLY AS A LATE BACKUP ───────────

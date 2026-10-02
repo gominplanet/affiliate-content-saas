@@ -10529,10 +10529,36 @@ async function scanStudioUpload(o) {
   _studioChannelId = channelId
   _studioAbort = false
   let tabId = null
+  let front = async () => {}
+  let back = async () => {}
   const keepAlive = startKeepAlive()
   try {
-    const tab = await chrome.tabs.create({ url: 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', active: o.background !== true })
+    // STUDIO MUST BE ON SCREEN WHILE SCOUT FILLS IT IN. Chrome barely draws a
+    // tab that is behind another one and slows its timers to a crawl, and in
+    // one Studio's upload window never showed its Details page to SCOUT at
+    // all: the file went in, and nothing else did. So the tab opens behind,
+    // takes the file, comes to the front only for the steps that need the
+    // window drawn, and the creator's own tab is put back each time.
+    let prevTab = null
+    try { const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }); prevTab = a || null } catch (e) {}
+    const tab = await chrome.tabs.create({ url: 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', active: false })
     tabId = tab.id
+    front = async () => {
+      try {
+        const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+        if (a && a.id !== tabId) prevTab = a
+        await chrome.tabs.update(tabId, { active: true })
+        if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true })
+      } catch (e) {}
+      await _sleep(1500)
+    }
+    back = async () => {
+      if (!prevTab || prevTab.id === tabId) return
+      try {
+        await chrome.tabs.update(prevTab.id, { active: true })
+        if (prevTab.windowId != null) await chrome.windows.update(prevTab.windowId, { focused: true })
+      } catch (e) {}
+    }
     await waitForTabLoad(tabId, 45000)
     await _sleep(3500)
     let onChannel = ''
@@ -10554,18 +10580,21 @@ async function scanStudioUpload(o) {
       try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {}
     }
     // Its own words, and Not made for kids (a fresh upload has no answer).
-    steps.push(Object.assign({ step: 'text' }, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' })))
+    await front()
+    steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' }), { step: 'text' }))
     // EVERYTHING ELSE ON DETAILS, HERE, so none of it costs MVP's YouTube
     // quota: tags, the designed thumbnail, the playlist. Each reads back; one
     // that does not is reported, and MVP sets that one item itself.
-    if (Array.isArray(o.tags) && o.tags.length) steps.push(Object.assign({ step: 'tags' }, await studioDraftExec(tabId, 'uploadTags', { tags: o.tags })))
+    if (Array.isArray(o.tags) && o.tags.length) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadTags', { tags: o.tags }), { step: 'tags' }))
     if (o.thumbnailUrl) {
       try {
         const tr = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: studioUploadThumbInPage, args: [String(o.thumbnailUrl)] })
         steps.push((tr && tr[0] && tr[0].result) || { step: 'thumbnail', ok: false, detail: 'Studio did not answer' })
       } catch (e) { steps.push({ step: 'thumbnail', ok: false, detail: 'SCOUT could not reach the Studio tab' }) }
     }
-    if (o.playlist) steps.push(Object.assign({ step: 'playlist' }, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist })))
+    if (o.playlist) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist }), { step: 'playlist' }))
+    // Back to the creator while the file goes up: sending needs no screen.
+    await back()
     // THE WHOLE FILE, BEFORE ANYTHING IS SAVED. Closing Studio mid-send loses
     // the upload, so the tab stays until Studio has every byte.
     const sendEnd = Date.now() + 60 * 60000
@@ -10597,7 +10626,9 @@ async function scanStudioUpload(o) {
     // past: saved Private, and MVP asks the creator for a new time.
     if (visibility.mode === 'schedule' && !(Date.parse(visibility.publishAt) > Date.now() + 3 * 60000)) { visibility.mode = 'private'; delete visibility.publishAt }
     const want = Object.assign({}, o.want || {}, { visibility })
+    await front()
     const draftSteps = await runStudioDraft(tabId, videoId, want)
+    await back()
     for (const s of draftSteps) steps.push(s)
     const vis = draftSteps.find((s) => s && s.step === 'visibility')
     const saved = !!(vis && vis.ok)
@@ -10612,6 +10643,7 @@ async function scanStudioUpload(o) {
     return { ok: false, error: (e && e.message) || 'failed', steps }
   } finally {
     stopKeepAlive(keepAlive)
+    await back()
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
   }
 }

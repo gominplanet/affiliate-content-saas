@@ -417,7 +417,7 @@ export default function LaunchBoard() {
     uploadRunning.current = true
     void runStudioUploads({
       background: true,
-      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio (in a tab behind this one).` : `${o.title}: ${o.said}`),
+      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio. Studio comes to the front for a moment while SCOUT fills it in, then you are brought back here.` : `${o.title}: ${o.said}`),
     }).then((done) => {
       if (done.length > 0 && batch) void load(batch.id, true)
     }).finally(() => { uploadRunning.current = false; setTimeout(() => setUploadNote(null), 15_000) })
@@ -2184,7 +2184,7 @@ export default function LaunchBoard() {
               {studioUpload ? (<>
                 <p className="text-[12px] font-semibold" style={text}>YouTube: SCOUT uploads in Studio, no API</p>
                 <p className="text-[11.5px] mt-1" style={muted}>
-                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you: the file, title, description,
+                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you (Studio comes to the front for a moment per video, then you are put back): the file, title, description,
                   tags, thumbnail and playlist, paid promotion and AI use, then schedules it for the time you picked. Nothing goes
                   through YouTube&apos;s API except one quick check that paid promotion and the time stuck. The pinned comment is posted
                   by SCOUT too. Keep Chrome open with SCOUT; with this page closed it carries on in a pinned background tab (below).
