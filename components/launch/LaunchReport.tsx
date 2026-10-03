@@ -34,6 +34,9 @@ export interface ReportItem {
   studio_finish?: StoredStudioRun | null
   api_disclosures?: {
     asked?: boolean; paidPromotion?: boolean | null; aiUseNo?: boolean | null
+    /** What YouTube said to the AI question: true, false, or null when it
+     *  said nothing. Missing on rows recorded before it was kept. */
+    aiUse?: boolean | null
     embeddable?: boolean | null; madeForKids?: boolean | null; error?: string | null
   } | null
   asin?: string | null
@@ -186,6 +189,7 @@ export default function LaunchReport({
     const d = i.api_disclosures
     if (d?.error) problems.push({ video: name, where: 'YouTube settings', what: d.error })
     if (d?.asked && d.paidPromotion === false) problems.push({ video: name, where: 'YouTube settings', what: 'YouTube reports paid promotion as No.' })
+    if (d?.asked && d.aiUse === true) problems.push({ video: name, where: 'YouTube settings', what: 'YouTube reads this video as using AI. Set AI use to No in Studio.' })
     if (i.playlist_error) problems.push({ video: name, where: 'Playlist', what: i.playlist_error })
     if (i.thumbnail_error) problems.push({ video: name, where: 'Thumbnail', what: i.thumbnail_error })
     // One rule with the background tab: a run that timed out with tries left
@@ -277,7 +281,18 @@ export default function LaunchReport({
                             ? means YouTube did not say (or migration 368 is
                             not in yet). */}
                         {d?.asked !== false && <Check label="Paid promotion" value={d?.paidPromotion} />}
-                        {d?.asked !== false && <Check label="AI use: No" value={d?.aiUseNo} />}
+                        {d?.asked !== false && (() => {
+                          // YOUTUBE'S OWN ANSWER FIRST; when it said nothing,
+                          // SCOUT's read-back in Studio. Older rows stored
+                          // "nothing" as false, so without aiUse a false is
+                          // not taken as a No-was-refused.
+                          const yt = d?.aiUse !== undefined ? (d.aiUse === false ? true : d.aiUse === true ? false : null) : (d?.aiUseNo === true ? true : null)
+                          const studio = run?.steps.find((s) => s.step === 'details')?.ok === true
+                          const value = yt ?? (studio ? true : null)
+                          const title = yt === false ? 'YouTube reads this video as using AI'
+                            : yt === true ? 'Read back from YouTube' : studio ? 'Read back in Studio by SCOUT (YouTube did not say)' : 'Not confirmed yet'
+                          return <Check label="AI use: No" value={value} title={title} />
+                        })()}
                         <Check label="Embedding" value={d?.embeddable} />
                         <Check label="Thumbnail" value={i.thumbnail_set_at ? true : i.thumbnail_error ? false : null}
                           title={i.thumbnail_error || undefined} />

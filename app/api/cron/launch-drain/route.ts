@@ -1355,7 +1355,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         api_disclosures: {
           at: stamp(), asked: disclose,
           paidPromotion: readBack?.paidPromotion ?? null,
-          aiUseNo: readBack ? readBack.containsSyntheticMedia === false : null,
+          // SILENT IS NOT "YES". YouTube often leaves the AI question out of
+          // its answer; that read as "not No" and drew a red cross beside a
+          // video Studio had just read back as AI use: No. aiUse keeps what
+          // YouTube actually said (true, false, or null for nothing).
+          aiUseNo: readBack && readBack.containsSyntheticMedia != null ? readBack.containsSyntheticMedia === false : null,
+          aiUse: readBack?.containsSyntheticMedia ?? null,
           embeddable: readBack?.embeddable ?? null,
           madeForKids: readBack?.madeForKids ?? null,
           error: discloseError,

@@ -131,6 +131,8 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('the date is typed only into the picker, never a box behind the window', /const inDatePicker = /.test(bg) && !/const scopes = \[newDialog\(before\), document\]/.test(bg))
   check('a date that did not take gets one slower go', /out\.readBack\.dateSecondGo = true/.test(bg))
   check('an end screen already on the video counts as done, not as an editor that never opened', /const alreadyHas = async/.test(bg) && /const viaRow = await openedEditor\(25000\)/.test(bg) && /The video already has an end screen, so SCOUT left it as it is/.test(bg))
+  check('a silent YouTube answer on AI use is unknown, never a red cross', /aiUseNo: readBack && readBack\.containsSyntheticMedia != null \? readBack\.containsSyntheticMedia === false : null/.test(read('app/api/cron/launch-drain/route.ts')) && /aiUse: rb\.containsSyntheticMedia \?\? null/.test(read('lib/launch-release.ts')))
+  check('the report falls back to SCOUT\'s Studio read-back for AI use', /const value = yt \?\? \(studio \? true : null\)/.test(read('components/launch/LaunchReport.tsx')))
   check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
 }
 

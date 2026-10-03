@@ -121,7 +121,7 @@ export async function releaseHeld(sb: Sb, it: {
   await sb.from('launch_items').update({
     api_disclosures: {
       at: stamp(), asked: true, paidPromotion: true,
-      aiUseNo: rb.containsSyntheticMedia === false, embeddable: rb.embeddable, madeForKids: rb.madeForKids,
+      aiUseNo: rb.containsSyntheticMedia != null ? rb.containsSyntheticMedia === false : null, aiUse: rb.containsSyntheticMedia ?? null, embeddable: rb.embeddable, madeForKids: rb.madeForKids,
       error: null, via: 'studio',
     },
   }).eq('id', it.id)
