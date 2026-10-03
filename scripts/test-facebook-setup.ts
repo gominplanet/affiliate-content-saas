@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'node:fs'
 import { pageReelCaption } from '../lib/reel-group-caption'
+import { productLinkFromDescription } from '../lib/description-product-link'
 import { outsideLinks, allowanceFor, planEnforces, linkLimitRefusal, cleanPlan, linkWindow } from '../lib/facebook-link-budget'
 
 const failures: string[] = []
@@ -99,6 +100,20 @@ check('without the post\'s own link, the Reel waits for it or links to the Group
 check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the Reel did not go out/.test(reel))
 check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
 check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('app/(dashboard)/clip-factory/page.tsx')) && /Set up your deals Group first\./.test(read('app/(dashboard)/clip-factory/page.tsx')))
+
+// ── The product link from the YouTube description ───────────────────────────
+{
+  const desc = 'My honest review of this suitcase.\n\n🎬 Subscribe: https://youtube.com/@me\n🛒 Grab it on Amazon 👉 https://www.mvpl.ink/sb2v2dy\nFollow me https://instagram.com/me\nRead more https://myblog.com/post'
+  check('the Amazon or short product link in a description is found', productLinkFromDescription(desc) === 'https://www.mvpl.ink/sb2v2dy')
+  check('socials and YouTube are never taken for the product', productLinkFromDescription('Follow https://instagram.com/me and https://youtube.com/@me') === null)
+  check('a link on a selling line is found when there is no Amazon link', productLinkFromDescription('Intro\nShop the cream here: https://brand.com/cream') === 'https://brand.com/cream')
+  check('an empty description gives no link', productLinkFromDescription('') === null && productLinkFromDescription(null) === null)
+  const rc = read('lib/reel-caption.ts')
+  check('Clip Factory reads the stored description before the bare ASIN, after the blog post and Enhance', rc.indexOf("productSource = 'video-description'") > rc.indexOf("productSource = 'blog-post'") && rc.indexOf("productSource = 'video-description'") < rc.indexOf("'enhance-product' : 'video-asin'"))
+  check('the panel says the link came from the YouTube description', /'video-description': 'from your YouTube video/.test(read('components/clip-factory/PublishPanel.tsx')))
+  check('the Group post waits for a product link, and a typed one counts', /requireProductLink/.test(read('components/clip-factory/PublishPanel.tsx')) && /typedProductLink/.test(read('components/clip-factory/PublishPanel.tsx')))
+  check('a Reel description is not promised clickable', !/Links in a Reel description are clickable/.test(read('lib/clip-description.ts')))
+}
 
 if (failures.length) {
   console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))

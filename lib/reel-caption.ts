@@ -13,7 +13,9 @@
 //      re-minted for Facebook in their link style, as the blog's Facebook
 //      share does);
 //   2. the product typed in Enhance (an Amazon link, an ASIN, or any store URL);
-//   3. the ASIN recorded on the video itself.
+//   3. the product link in the source video's own YouTube description (lib/
+//      description-product-link), read from what MVP already stored;
+//   4. the ASIN recorded on the video itself.
 // Then the full review (the long video or the blog post, per the creator's
 // Facebook link setting), and the disclosure.
 //
@@ -34,6 +36,7 @@ import { normalizeAsinInput } from '@/lib/asin'
 import { parseLinkPrefs, composeCaption, effectiveDisclosure, youtubeWatchUrl, isAmazonLink, type ContentLink } from '@/lib/social-link-mode'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { landsOnAmazon } from '@/lib/amazon-destination'
+import { productLinkFromDescription } from '@/lib/description-product-link'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -41,7 +44,7 @@ type Sb = any
 const DEFAULT_DISCLAIMER = 'This post may contain affiliate links. I may earn a commission at no extra cost to you.'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type ReelLinkSource = 'blog-post' | 'enhance-product' | 'video-asin'
+export type ReelLinkSource = 'blog-post' | 'enhance-product' | 'video-description' | 'video-asin'
 
 export type ReelCaption = {
   caption: string
@@ -96,7 +99,7 @@ export async function resolveClipLinks(sb: Sb, userId: string, input: {
   // ── the source video and its blog post ────────────────────────────────────
   const srcId = String(input.sourceVideoId || '').trim()
   const { data: video } = UUID.test(srcId)
-    ? await sb.from('youtube_videos').select('id,youtube_video_id,title,asin').eq('id', srcId).eq('user_id', userId).maybeSingle()
+    ? await sb.from('youtube_videos').select('id,youtube_video_id,title,asin,description,generated_description').eq('id', srcId).eq('user_id', userId).maybeSingle()
     : { data: null }
   const { data: posts } = video
     ? await sb.from('blog_posts')
@@ -129,9 +132,31 @@ export async function resolveClipLinks(sb: Sb, userId: string, input: {
     }
   }
 
-  // 2 and 3. The product from Enhance, then the video's own ASIN.
+  // 2, 3 and 4. The product from Enhance, the link in the video's YouTube
+  // description, then the video's own ASIN.
+  const typedInput = String(input.product || '').trim()
+  const fromDescription = !typedInput && !productLink
+    ? (productLinkFromDescription(video?.description as string | null) || productLinkFromDescription(video?.generated_description as string | null))
+    : null
+  if (!productLink && fromDescription) {
+    // An Amazon page link is re-made with this creator's tag and link style
+    // for where it is going; a short link (geni.us, mvpl.ink, amzn.to) is the
+    // creator's own and goes as it is.
+    const descAsin = /amazon\.[a-z.]+\//i.test(fromDescription) ? normalizeAsinInput(fromDescription) : null
+    if (descAsin) {
+      const dest = amazonDestination(descAsin, tag)
+      const r = await resolveCloakedLinkDetailed({ supabase: sb, userId, destination: dest, asin: descAsin, channel, source: channel, label: title, config: cfg })
+      productLink = r.url || dest
+      linkNote = cloakFallbackNote(r)
+      amazon = true
+    } else {
+      productLink = fromDescription
+      amazon = isAmazonLink(fromDescription) || await landsOnAmazon(userId, fromDescription)
+    }
+    productSource = 'video-description'
+  }
   if (!productLink) {
-    const typed = String(input.product || '').trim()
+    const typed = typedInput
     const typedAsin = typed ? normalizeAsinInput(typed) : null
     const videoAsin = video?.asin ? normalizeAsinInput(String(video.asin)) : null
     const typedUrl = !typedAsin && /^https:\/\//i.test(typed) ? typed : null

@@ -15,7 +15,7 @@ import {
 
 export type PublishKit = {
   productLink: string | null
-  productSource: 'blog-post' | 'enhance-product' | 'video-asin' | null
+  productSource: 'blog-post' | 'enhance-product' | 'video-description' | 'video-asin' | null
   linkNote: string | null
   amazon: boolean
   blogUrl: string | null
@@ -30,6 +30,7 @@ export type PublishChoice = { text: string; title?: string; tags?: string[] }
 const SOURCE_LABEL: Record<string, string> = {
   'blog-post': 'from the blog post for this video',
   'enhance-product': 'from the product you added in Enhance',
+  'video-description': 'from your YouTube video\u2019s description',
   'video-asin': 'from the product on this video',
 }
 
@@ -56,6 +57,13 @@ export default function PublishPanel(props: {
   /** The button's words when the caller does something other than post here
    *  (Facebook, Group first: "Post to my Group + Page"). */
   confirmLabel?: string
+  /** The panel writes something other than this platform's description
+   *  (Facebook, Group first: the Group post), said in its heading and note. */
+  heading?: string
+  linkNote?: string
+  /** Set when a post without the product link is pointless (the Group post,
+   *  where people buy): the button waits, and this says why. */
+  requireProductLink?: string
 }) {
   const { platform, kit } = props
   const rules = CLIP_PLATFORM_RULES[platform]
@@ -94,13 +102,18 @@ export default function PublishPanel(props: {
   const tooLong = text.length > limit
   // No disclosure means the post must not go: the links request failed and
   // nothing is known about this clip, which is not the same as nothing found.
-  const blocked = !kit?.disclosure
+  // A product link typed into the post by hand counts: any link that is not
+  // the YouTube review or Facebook itself.
+  const typedProductLink = (text.match(/https?:\/\/\S+|\b(?:amzn\.to|geni\.us|mvpl\.ink)\/\S+/gi) ?? [])
+    .some((u) => !/youtube\.com|youtu\.be|facebook\.com/i.test(u))
+  const needsProduct = !!props.requireProductLink && !!kit && !kit.productLink && !typedProductLink
+  const blocked = !kit?.disclosure || needsProduct
   const confirmLabel = props.confirmLabel ?? (platform === 'youtube' ? 'Post Short' : platform === 'facebook' ? 'Post Reel' : `Continue to ${rules.label}`)
 
   return (
     <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: `${props.color}55` }}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{rules.label}: what goes in the description</p>
+        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{props.heading ?? `${rules.label}: what goes in the description`}</p>
         <button onClick={props.onCancel} disabled={props.busy} aria-label="Close" className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={15} /></button>
       </div>
 
@@ -115,7 +128,10 @@ export default function PublishPanel(props: {
       )}
 
       {kit && (<>
-        <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] leading-snug">{rules.linkNote}</p>
+        <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] leading-snug">{props.linkNote ?? rules.linkNote}</p>
+        {needsProduct && (
+          <p className="text-[12.5px] font-semibold text-[#ff3b30] leading-snug">{props.requireProductLink}</p>
+        )}
 
         {platform === 'youtube' && (
           <div className="flex flex-col gap-2">

@@ -1361,6 +1361,9 @@ export default function ClipFactoryPage() {
                 onConfirm={confirmPanel}
                 onCancel={() => setPanel(null)}
                 confirmLabel={panel === 'facebook' && reelGroupFirst ? 'Post to my Group + Page' : undefined}
+                heading={panel === 'facebook' && reelGroupFirst ? 'Your Group post: what goes in it' : undefined}
+                linkNote={panel === 'facebook' && reelGroupFirst ? 'This is the post under your clip in your Group. Links in a Group post are tappable.' : undefined}
+                requireProductLink={panel === 'facebook' && reelGroupFirst ? 'Add the product in Enhance first (or type its link into the post). Your Group post is where people buy, so it needs the product link.' : undefined}
               />
             )}
             {/* WHAT EACH PLATFORM TAKES, said before the button rather than
