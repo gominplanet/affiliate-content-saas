@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 16
+  const KIT_VERSION = 17
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -10019,7 +10019,16 @@ K.steps.monetization = async (out, o) => {
       return !!said
     }
     if (v.mode === 'public' || v.mode === 'private' || v.mode === 'unlisted') {
-      const radio = all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '$', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
+      const findRadio = () => all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '\\b', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
+      // FOLDED AWAY BY THE SCHEDULE. With Studio's Schedule section open, the
+      // Save or publish section (Private, Unlisted, Public) is folded shut, and
+      // the Private fallback after a failed schedule found no Private at all.
+      if (!findRadio()) {
+        const unfold = byId('first-container-expand-button', dlg) ||
+          all(dlg).find((el) => visible(el) && (isBtn(el) || (el.getAttribute && el.getAttribute('role') === 'button') || /expand/i.test(el.id || '')) && /^save or publish\b/i.test(deepText(el)))
+        if (unfold) { click(unfold); await waitFor(findRadio, 6000, 300) }
+      }
+      const radio = findRadio()
       if (!radio) { out.detail = 'Could not find the ' + v.mode + ' option'; out.debug.buttons = buttonSample(dlg); return out }
       if (!isChecked(radio)) { click(radio); await sleep(700) }
       out.readBack.visibility = isChecked(radio) ? v.mode : null
@@ -10087,7 +10096,23 @@ K.steps.monetization = async (out, o) => {
       out.debug.inputs = all(document).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el)).map((el) => (el.type || '') + ':' + String(el.value || '').slice(0, 20) + ':' + String(attrLabel(el) || '').slice(0, 20)).slice(0, 10)
       return out
     }
-    setVal(dateInput, dateStr)
+    // TYPED, AS A KEYBOARD DOES. A value dropped into the box with its
+    // setter left Studio's picker on today ("Typed Oct 30, but Studio shows
+    // Oct 3"): the picker reads key-by-key input. Select all, type the date,
+    // press Enter; the setter only if typing did not land.
+    const typeInto = async (input, val) => {
+      try {
+        input.focus()
+        if (input.select) input.select()
+        document.execCommand('selectAll', false)
+        document.execCommand('insertText', false, val)
+        await sleep(300)
+        for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+      } catch (e) {}
+    }
+    await typeInto(dateInput, dateStr)
+    await sleep(800)
+    if (norm(dateInput.value) !== dateStr && !(trigger() && new Date(deepText(trigger())).getDate() === D)) setVal(dateInput, dateStr)
     // No Escape to close the picker: Escape also closes the whole draft
     // window. Enter in the date box closes the picker on its own.
     // READ WHEN STUDIO HAS CAUGHT UP. The button under the picker kept showing
@@ -10113,8 +10138,8 @@ K.steps.monetization = async (out, o) => {
     const twelve = /[ap]\.?m/i.test(timeInput.value)
     const pad = (n) => String(n).padStart(2, '0')
     const timeStr = twelve ? ((H % 12 || 12) + ':' + pad(Mi) + ' ' + (H < 12 ? 'AM' : 'PM')) : (pad(H) + ':' + pad(Mi))
-    setVal(timeInput, timeStr)
-    await sleep(900)
+    await typeInto(timeInput, timeStr)
+    await sleep(700)
     const readTime = (s) => {
       const x = norm(s).match(/^(\d{1,2}):(\d{2})\s?([ap])?/i)
       if (!x) return null
@@ -10122,6 +10147,7 @@ K.steps.monetization = async (out, o) => {
       if (x[3] && /p/i.test(x[3])) h += 12
       return h * 60 + parseInt(x[2], 10)
     }
+    if (readTime(timeInput.value) !== H * 60 + Mi) { setVal(timeInput, timeStr); await sleep(700) }
     out.readBack.time = norm(timeInput.value)
     if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled'; return out }
     // Premiere stays off.
