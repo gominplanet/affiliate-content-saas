@@ -4,9 +4,9 @@
 //
 // FACEBOOK SETUP: one page, three steps, one rule.
 //
-// "Your Page gets the content. Your Group gets the links." Meta limits many
-// Pages to about 2 outside-link posts a month, and past that a link shows as
-// plain text nobody can tap. Groups have no reported limit. So the creator
+// "Your Page gets the content. Your Group gets the links." Meta gives a Page
+// 2 outside-link posts a month unless it pays for Meta One (Meta's help page
+// facebook.com/help/1929252614431792). Groups have no reported limit. So the creator
 // connects the Page, says whether it is limited, saves their deals Group, and
 // lets SCOUT fill Group posts. MVP then counts the Page's outside-link posts
 // and stops one that would go past the limit (lib/facebook-link-budget).
@@ -22,17 +22,19 @@ import { Check, Loader2, FlaskConical, Trash2, ExternalLink, Users, Link2, Shiel
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { requestFacebookAccess } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
+import { META_PLANS, type MetaPlan } from '@/lib/facebook-link-budget'
 
 type Setup = {
   on: boolean
   page: { id: string; name: string | null } | null
-  linkLimit: 'limited' | 'unlimited' | 'unsure' | null
+  plan: MetaPlan | null
+  renewsDay: number | null
   allowance: number | null
   used: number
   left: number | null
+  resetsAt: string
   counted: boolean
   enforced: boolean
-  windowDays: number
   groups: Array<{ name: string; url: string }>
 }
 
@@ -87,7 +89,8 @@ function FacebookSetup() {
       const r = await fetch('/api/facebook/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || `Could not save (${r.status})`)
-      toast.success(d.already ? 'That Group is already saved' : ok)
+      if (d.warning) toast.warning(d.warning, { duration: 9000 })
+      else toast.success(d.already ? 'That Group is already saved' : ok)
       await load()
       return true
     } catch (e) {
@@ -109,11 +112,13 @@ function FacebookSetup() {
   if (!s) return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
   if (!s.on) return <div className="max-w-2xl mx-auto py-10 px-4 text-sm" style={{ color: 'var(--text-soft)' }}>Facebook setup is not open on your account yet.</div>
 
-  const pageDone = !!s.page && s.linkLimit !== null
+  const pageDone = !!s.page && s.plan !== null
   const groupDone = s.groups.length > 0
   const scoutDone = access === 'granted'
   const allDone = pageDone && groupDone && scoutDone
-  const limited = s.linkLimit !== 'unlimited'
+  const limited = s.allowance != null
+  const planInfo = META_PLANS.find((p) => p.plan === s.plan)
+  const resetDay = new Date(s.resetsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
   return (
     <div className="max-w-2xl mx-auto py-6 px-4 flex flex-col gap-5">
@@ -130,8 +135,8 @@ function FacebookSetup() {
       <div className="rounded-2xl border p-4 flex flex-col gap-2" style={{ borderColor: 'rgba(24,119,242,0.35)', background: 'rgba(24,119,242,0.06)' }}>
         <p className="text-[17px] font-semibold" style={{ color: 'var(--text)' }}>Your Page gets the content. Your Group gets the links.</p>
         <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-          Facebook now limits most Pages to about 2 posts a month with an outside link, like an Amazon link.
-          After that, the link still shows, but as plain text nobody can tap. Groups have no reported limit.
+          Facebook gives a Page 2 posts a month with an outside link, like an Amazon link, unless you pay for Meta One.
+          It resets on the 1st. Links to your own Group don&apos;t count, and Groups have no reported limit.
           So your videos and reviews go on your Page, and your Amazon links go in your own Group.
         </p>
       </div>
@@ -155,36 +160,35 @@ function FacebookSetup() {
         )}
 
         <div className="flex flex-col gap-2 pt-1">
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Does Facebook limit your Page&apos;s links?</p>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Do you pay for Meta One?</p>
           <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-            Check your Page&apos;s Professional Dashboard on Facebook. If it is limited, Facebook says so there.
+            Meta One is Facebook&apos;s paid plan for Pages. It decides how many link posts your Page gets a month.
           </p>
-          <div className="grid gap-2">
-            {([
-              { v: 'limited', t: 'Yes, it is limited', d: 'MVP counts your link posts and stops before one would be wasted.' },
-              { v: 'unsure', t: 'Not sure', d: 'MVP plays it safe and counts 2 a month. You can change this any time.' },
-              { v: 'unlimited', t: 'No, my Page has no limit', d: 'For example, you pay for Meta One Max. MVP counts, but never stops a post.' },
-            ] as const).map((o) => (
-              <button key={o.v} disabled={saving} onClick={() => post({ linkLimit: o.v, allowance: o.v === 'limited' ? (s.allowance ?? 2) : null }, 'Saved')}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {META_PLANS.map((o) => (
+              <button key={o.plan} disabled={saving} onClick={() => post({ plan: o.plan, renewsDay: s.renewsDay }, 'Saved')}
                 className="text-left rounded-xl border px-3 py-2.5 transition-colors"
-                style={s.linkLimit === o.v ? { borderColor: '#1877F2', background: 'rgba(24,119,242,0.07)' } : { borderColor: 'var(--border)' }}>
-                <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{s.linkLimit === o.v ? '● ' : '○ '}{o.t}</span>
-                <span className="block text-[12px]" style={{ color: 'var(--text-soft)' }}>{o.d}</span>
+                style={s.plan === o.plan ? { borderColor: '#1877F2', background: 'rgba(24,119,242,0.07)' } : { borderColor: 'var(--border)' }}>
+                <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{s.plan === o.plan ? '● ' : '○ '}{o.label}</span>
+                <span className="block text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                  {o.plan === 'not_limited' ? 'MVP counts, but never holds a post.'
+                    : o.allowance == null ? 'No limit on link posts.'
+                    : `${o.allowance} link posts a month${o.renews ? ', reset when your plan renews' : ', reset on the 1st'}.`}
+                </span>
               </button>
             ))}
           </div>
-          {s.linkLimit === 'limited' && (
-            <div className="flex items-center gap-2 flex-wrap text-[12px]" style={{ color: 'var(--text-soft)' }}>
-              Links a month:
-              {[2, 8, 20].map((n) => (
-                <button key={n} disabled={saving} onClick={() => post({ linkLimit: 'limited', allowance: n }, `Set to ${n} a month`)}
-                  className="px-2.5 py-1 rounded-lg border font-semibold"
-                  style={s.allowance === n ? { borderColor: '#1877F2', color: '#1877F2' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
-                  {n}
-                </button>
-              ))}
-              <span>(2 free or Meta One Essential, 8 Advanced, 20 Expert)</span>
-            </div>
+          {planInfo?.renews && planInfo.allowance != null && (
+            <label className="flex items-center gap-2 flex-wrap text-[12px]" style={{ color: 'var(--text-soft)' }}>
+              Your plan renews on day
+              <select value={s.renewsDay ?? ''} disabled={saving}
+                onChange={(e) => post({ plan: s.plan, renewsDay: Number(e.target.value) || null }, 'Renewal day saved')}
+                className="rounded-lg border px-2 py-1 bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                <option value="">choose</option>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              of the month. {s.renewsDay ? '' : 'Until you choose, MVP counts from the 1st.'}
+            </label>
           )}
 
           {/* THE COUNT, with what it can and cannot see. */}
@@ -197,10 +201,10 @@ function FacebookSetup() {
               ) : (
                 <span>
                   <strong style={{ color: s.enforced && s.left === 0 ? '#DC2626' : 'var(--text)' }}>
-                    Page links used: {s.used}{s.allowance != null && limited ? ` of ${s.allowance}` : ''}
-                  </strong>{' '}
-                  in the last {s.windowDays} days. This counts only posts MVP made; posts you put up yourself are not seen.
-                  {s.linkLimit === null ? ' Answer the question above and MVP starts protecting your links.' : ''}
+                    Page link posts this month: {s.used}{limited ? ` of ${s.allowance}` : ''}
+                  </strong>
+                  {limited ? `, resets ${resetDay}` : ''}. This counts only posts MVP made; posts you put up yourself are not seen.
+                  {s.plan === null ? ' Answer the question above and MVP starts protecting your links.' : ''}
                 </span>
               )}
             </div>
@@ -280,7 +284,7 @@ function FacebookSetup() {
           <li>Your Page gets your videos, reviews and Reels.</li>
           <li>Your Group gets the Amazon links: press Fill with SCOUT on any post, then press Post.</li>
           <li>After you post in the Group, MVP offers a short Page post that links to it. A link to your own Group never counts toward the limit.</li>
-          <li>{limited ? 'If a Page post would go past your link limit, MVP stops it and tells you, instead of posting a link nobody can tap.' : 'MVP keeps counting your Page links, so you can see them here.'}</li>
+          <li>{limited ? 'If a Page post would go past your link limit, MVP stops it and tells you, so the link is not wasted.' : 'MVP keeps counting your Page links, so you can see them here.'}</li>
         </ul>
       </section>
     </div>

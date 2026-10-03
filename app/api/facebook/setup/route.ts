@@ -1,10 +1,11 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // GET  /api/facebook/setup  where the creator's Facebook setup stands: the Page,
-//                           their answer about Meta's link limit, how many
-//                           outside-link posts MVP put on the Page in the last
-//                           30 days, and the Groups saved for Fill with SCOUT.
-// POST /api/facebook/setup  { linkLimit, allowance }  the link-limit answer
+//                           their Meta One plan, how many outside-link posts
+//                           MVP put on the Page since the allowance last reset,
+//                           and the Groups saved for Fill with SCOUT.
+// POST /api/facebook/setup  { plan, renewsDay }      the Meta One plan, and
+//                                                    the day a paid plan renews
 //                           { group: { name, url } }  save a Group
 //                           { removeGroup: url }      forget a Group
 //
@@ -16,9 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { isFacebookGroupLink } from '@/lib/facebook-group-link'
-import {
-  facebookSetupEnabled, readLinkBudget, cleanAnswer, ALLOWANCE_CHOICES, LINK_WINDOW_DAYS,
-} from '@/lib/facebook-link-budget'
+import { facebookSetupEnabled, readLinkBudget, cleanPlan, META_PLANS } from '@/lib/facebook-link-budget'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,13 +68,14 @@ export async function GET() {
   return NextResponse.json({
     ok: true, on: true,
     page,
-    linkLimit: budget.answer,
+    plan: budget.plan,
+    renewsDay: budget.renewsDay,
     allowance: budget.allowance,
     used: budget.used,
     left: budget.left,
+    resetsAt: budget.resetsAt,
     counted: budget.counted,
     enforced: budget.enforced,
-    windowDays: LINK_WINDOW_DAYS,
     groups: cleanGroups((brand as { facebook_groups?: unknown } | null)?.facebook_groups),
   })
 }
@@ -84,17 +84,25 @@ export async function POST(req: Request) {
   const g = await gate()
   if ('res' in g) return g.res
   const { user, admin } = g
-  const body = await req.json().catch(() => ({})) as { linkLimit?: unknown; allowance?: unknown; group?: { name?: unknown; url?: unknown }; removeGroup?: unknown }
+  const body = await req.json().catch(() => ({})) as { plan?: unknown; renewsDay?: unknown; group?: { name?: unknown; url?: unknown }; removeGroup?: unknown }
 
-  if (body.linkLimit !== undefined) {
-    const answer = cleanAnswer(body.linkLimit)
-    if (!answer) return NextResponse.json({ error: 'Choose one of the answers.' }, { status: 400 })
-    const n = Number(body.allowance)
-    const allowance = answer === 'limited' && (ALLOWANCE_CHOICES as readonly number[]).includes(n) ? n : null
+  if (body.plan !== undefined) {
+    const plan = META_PLANS.some((p) => p.plan === body.plan) ? cleanPlan(body.plan) : null
+    if (!plan) return NextResponse.json({ error: 'Choose one of the answers.' }, { status: 400 })
+    const renews = META_PLANS.find((p) => p.plan === plan)?.renews === true
+    const d = Math.floor(Number(body.renewsDay))
+    const renewsDay = renews && d >= 1 && d <= 31 ? d : null
+    // The day a paid plan renews is its own column (migration 401), written
+    // apart so a database with only migration 400 still keeps the plan.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (admin as any).from('integrations').update({ facebook_link_limit: answer, facebook_link_allowance: allowance }).eq('user_id', user.id)
+    const { error } = await (admin as any).from('integrations').update({ facebook_link_limit: plan, facebook_link_allowance: null }).eq('user_id', user.id)
     if (error) {
       return NextResponse.json({ error: /facebook_link/.test(error.message || '') ? 'The database is missing migration 400, so the answer could not be saved.' : `Could not save: ${error.message}` }, { status: 500 })
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: dayErr } = await (admin as any).from('integrations').update({ facebook_link_renews_day: renewsDay }).eq('user_id', user.id)
+    if (dayErr && renewsDay != null) {
+      return NextResponse.json({ ok: true, warning: 'Your plan is saved, but the renewal day needs migration 401, so MVP counts from the 1st for now.' })
     }
     return NextResponse.json({ ok: true })
   }
