@@ -273,6 +273,14 @@ export function SocialPreviewModal({
       return
     }
   }
+  // The Facebook hub's record of what went where (app/api/facebook/hub).
+  // Best effort: a record that fails to save never fails the post.
+  function recordFacebookPush(r: { groupPostUrl: string | null; pagePostUrl: string | null; groupIdx: number }) {
+    void fetch('/api/facebook/hub', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'blog', sourceId: postId, title: text.trim().split('\n')[0]?.slice(0, 160) || null, groupUrl: savedGroups[r.groupIdx]?.url ?? null, groupPostUrl: r.groupPostUrl, pagePostUrl: r.pagePostUrl }),
+    }).catch(() => {})
+  }
   async function shareGroupPostOnPage(i: number, auto?: { link: string; teaser: string }) {
     // auto: called from the watcher, where this render's groupShare is stale.
     const cur: GroupShare | undefined = auto
@@ -294,11 +302,13 @@ export function SocialPreviewModal({
       if (!res.ok || !data.ok) throw new Error(data.error || `Facebook said no (${res.status})`)
       const where = isFacebookGroupPostLink(data.link) ? 'the Group post' : 'your Group'
       setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'shared', tone: 'ok', note: `Done: posted in your Group, and shared on ${data.page || 'your Page'} linking to ${where}.` } }))
+      recordFacebookPush({ groupPostUrl: cur.link, pagePostUrl: data.id ? `https://www.facebook.com/${data.id}` : null, groupIdx: i })
       if (groupFirstMode) onPublished()
     } catch (e) {
       // FAILED IS NOT DONE: the Group post is up, the Page post is not, and
       // the box stays open with the reason and a button to try it again.
       setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'ready', tone: 'warn', note: 'Your Group post is up, but the Page post did not go out.', error: e instanceof Error ? e.message : 'The Page post failed.' } }))
+      if (auto) recordFacebookPush({ groupPostUrl: cur.link, pagePostUrl: null, groupIdx: i })
     }
   }
 
@@ -542,7 +552,7 @@ export function SocialPreviewModal({
                   <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first</p>
                   <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-0.5">
                     Your Amazon links go in your own Facebook Group, and MVP shares each Group post on your Page for you.
-                    It takes a few minutes, and the <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta</a> page walks you through it.
+                    It takes a few minutes, and the <a href="/facebook" className="text-[#7C3AED] hover:underline font-semibold">Facebook</a> page walks you through it.
                     Until then, this posts to your Page with the link.
                   </p>
                 </div>

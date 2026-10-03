@@ -114,6 +114,9 @@ export function ReelGroupFirst(p: {
   start: { text: string; at: number } | null
   onBusy: (busy: boolean) => void
   onReelPosted: (url: string | null, description: string) => void
+  /** For the Facebook hub's record: the clip's source video and title. */
+  sourceVideoId?: string | null
+  clipTitle?: string | null
 }) {
   const [groupIdx, setGroupIdx] = useState(0)
   const [caption, setCaption] = useState(p.defaultCaption)
@@ -127,6 +130,14 @@ export function ReelGroupFirst(p: {
 
   const group = p.groups[Math.min(groupIdx, p.groups.length - 1)]
   const say = (l: FlowLine) => { if (mounted.current) setLines((xs) => [...xs, l]) }
+
+  // The Facebook hub's record of what went where. Best effort.
+  function record(groupPostUrl: string, pagePostUrl: string | null) {
+    void fetch('/api/facebook/hub', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'clip', sourceId: p.clipUrl, videoId: p.sourceVideoId ?? null, title: p.clipTitle ?? null, groupUrl: group?.url ?? null, groupPostUrl, pagePostUrl }),
+    }).catch(() => {})
+  }
 
   async function postReel(link: string, how: 'post' | 'group') {
     setRetry(null)
@@ -145,10 +156,12 @@ export function ReelGroupFirst(p: {
         ? `Done. The Reel is live on ${data.page || 'your Page'}, and its first line links to ${how === 'post' ? 'your Group post' : 'your Group'}.`
         : `Done. Facebook accepted the Reel and is still processing it; it appears on ${data.page || 'your Page'} shortly, linking to ${how === 'post' ? 'your Group post' : 'your Group'}.` })
       p.onReelPosted(data.url || null, String(data.description || description))
+      record(link, data.url || null)
     } catch (e) {
       // THE GROUP POST IS UP, THE REEL IS NOT: said as exactly that.
       say({ tone: 'bad', text: `Your Group post is up, but the Reel did not go out: ${e instanceof Error ? e.message : 'Facebook refused it.'}` })
       setRetry(link)
+      record(link, null)
     } finally { p.onBusy(false) }
   }
 

@@ -80,12 +80,12 @@ check('Social Push turns it on with the Labs switch', /groupFirst: canUsePreview
 // ── The Meta page and its switch ────────────────────────────────────────────
 check('one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
 check('the setup route only accepts real Group links', /isFacebookGroupLink/.test(read('app/api/facebook/setup/route.ts')))
-const page = read('app/(dashboard)/meta/page.tsx')
+const page = read('app/(dashboard)/facebook/page.tsx')
 check('the Meta page says how Facebook works in plain words', /Your Group holds the link\. Your Page points to it\./.test(page))
 check('the Meta page says who does what, for posts and for Reels', /You do/.test(page) && /MVP does/.test(page) && /title: 'A Reel'/.test(page))
 check('the Meta page asks nothing about link limits', !/Meta One/.test(page))
-check('Instagram comment to DM is said as waiting, not live', /waiting for Meta/.test(page))
-check('the old address still lands on the Meta page', /redirect\('\/meta'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')))
+check('the hub is Facebook only: no Instagram on it', !/Instagram/.test(page))
+check('the old addresses still land on the Facebook hub', /redirect\('\/facebook'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')) && /redirect\('\/facebook'\)/.test(read('app/(dashboard)/meta/page.tsx')))
 check('SCOUT answers whether it is allowed on Facebook', /msg\.type === 'MVP_FB_ACCESS'/.test(read('extension/background.js')))
 
 // ── Clip Factory: the clip in the Group, the Reel linking to that exact post ─
@@ -152,6 +152,19 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   const panel = read('components/vertical/ShortsCreatePanel.tsx')
   check('a dropped connection looks for the finished Short before saying anything', /if \(e instanceof TypeError\) \{/.test(panel) && /Checking whether the Short finished/.test(panel))
   check('and only then says what happened, in words', /The connection to MVP dropped while this Short was rendering/.test(panel))
+}
+
+// ── The Facebook hub ───────────────────────────────────────────────────────
+{
+  const hubRoute = read('app/api/facebook/hub/route.ts')
+  check('the hub gathers reviews, Reel-length clips and videos with no clip', /from\('blog_posts'\)/.test(hubRoute) && /from\('youtube_shorts'\)/.test(hubRoute) && /c\.seconds >= 3 && c\.seconds <= REEL_MAX_SEC/.test(hubRoute) && /!clipped\.has\(v\.id\)/.test(hubRoute))
+  check('a re-burned clip still counts as posted', /clipv:\$\{p\.video_id\}:\$\{p\.title\}/.test(hubRoute))
+  check('the record keeps only Facebook addresses', /facebook\\\.com\\\//.test(hubRoute))
+  check('both flows record what went where, and a Group-only post too', /recordFacebookPush\(/.test(read('components/content/SocialPreviewModal.tsx')) && /record\(link, null\)/.test(read('components/clip-factory/ReelDestinations.tsx')))
+  check('a hub row says where it is: not on Facebook, Group only, or both', /Not on Facebook yet/.test(page) && /In your Group, not on your Page yet/.test(page) && /In your Group and on your Page/.test(page))
+  check('a review posts from the hub in the same Group-first window', /<SocialPreviewModal[\s\S]{0,900}groupFirst/.test(page))
+  check('a video opens its clips in Clip Factory in one click', /\/clip-factory\?video=\$\{v\.id\}/.test(page) && /get\('video'\)/.test(read('app/(dashboard)/clip-factory/page.tsx')))
+  check('without migration 402 the hub says so, never a silent "not posted"', /migration 402/.test(page))
 }
 
 if (failures.length) {

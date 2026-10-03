@@ -504,9 +504,9 @@ export default function DashboardShellV2({
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
-        // Meta: Facebook (Page, deals Group, SCOUT) and Instagram, set up and
-        // explained in one place. Admin while tested; then Amazon and Pro alike.
-        { href: '/meta', icon: <Users size={15} />, label: 'Meta', gate: isAdmin, badge: 'New' },
+        // The Facebook hub: everything made in MVP pushed to the creator's
+        // Facebook Page and Group, on one page. Admin while tested.
+        { href: '/facebook', icon: <Users size={15} />, label: 'Facebook', gate: isAdmin, badge: 'New' },
         // External Integrations — connect your own API keys for outside networks
         // (Levanta, PartnerBoost, Wayward). Paid tiers only (matches the API gate).
         { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseFinders },

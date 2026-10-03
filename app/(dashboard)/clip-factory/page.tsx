@@ -338,6 +338,21 @@ export default function ClipFactoryPage() {
     setOnramp(t)
   }, [])
 
+  // DEEP LINK FROM THE FACEBOOK HUB: /clip-factory?video=<id> opens that
+  // video's clips straight away, so "Make Facebook Reels" is one click.
+  useEffect(() => {
+    let id: string | null = null
+    try { id = new URLSearchParams(window.location.search).get('video') } catch { id = null }
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return
+    ;(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any).from('youtube_videos').select('id,youtube_video_id,title,thumbnail_url,duration_seconds').eq('id', id).maybeSingle()
+      if (!data) return
+      pickTab('long')
+      setSelectedVideo({ id: data.id, youtubeVideoId: data.youtube_video_id ?? null, title: data.title ?? 'Video', thumbnailUrl: data.thumbnail_url ?? null, durationSeconds: data.duration_seconds ?? null })
+    })()
+  }, [supabase, pickTab])
+
   const loadShorts = useCallback(async () => {
     setLoadingShorts(true)
     try {
@@ -1327,7 +1342,7 @@ export default function ClipFactoryPage() {
             {panel === 'facebook' && canUsePreview('facebook_setup', tier) && fbGroups !== null && fbGroups.length === 0 && (
               <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/[0.04] p-3">
                 <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first.</b> A link in a Reel&apos;s caption often can&apos;t be tapped.
-                With a Group, MVP puts the clip and your link in the Group, and the Reel links straight to that post. The <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta</a> page walks you through it.
+                With a Group, MVP puts the clip and your link in the Group, and the Reel links straight to that post. The <a href="/facebook" className="text-[#7C3AED] hover:underline font-semibold">Facebook</a> page walks you through it.
               </p>
             )}
             {(panel === 'facebook' || fbFlowStart) && reelGroupFirst && fbGroups && (
@@ -1338,6 +1353,8 @@ export default function ClipFactoryPage() {
                 pageName={fbPages?.find((x) => x.id === fbPageId)?.name ?? null}
                 defaultCaption={pageReelCaption(publishCaption, panelHashtags)}
                 start={fbFlowStart}
+                sourceVideoId={clip?.sourceVideoId ?? null}
+                clipTitle={clip?.title ?? null}
                 onBusy={setPublishingFb}
                 onReelPosted={(url, description) => {
                   setPosted(pp => ({ ...pp, facebook: true }))
