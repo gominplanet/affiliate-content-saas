@@ -62,13 +62,27 @@ check('no new way to post to a Page slipped past the guard', (fbService.match(/\
 check('a held scheduled post never marks Facebook as failing', /em\.startsWith\(LINK_LIMIT_PREFIX\)/.test(read('lib/channel-health.ts')) && /\$\{LINK_LIMIT_PREFIX\} \$\{fbLinkCheck\.error\}/.test(read('app/api/cron/process-scheduled/route.ts')))
 check('a stopped blog share is a 409 with its code, not "Facebook failed"', /code: limited\?\.code/.test(read('app/api/blog/facebook-post/route.ts')))
 
-// ── The page and its switch ─────────────────────────────────────────────────
-check('Facebook setup is one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
+// ── The link limit is switched off (Seb: "we shouldn't even apply to it") ───
+check('nothing is held back while the guard is off', /export const LINK_GUARD_ON = false/.test(read('lib/facebook-link-budget.ts')) && /const enforced = LINK_GUARD_ON &&/.test(read('lib/facebook-link-budget.ts')))
+
+// ── Social Push: Group first, one click ─────────────────────────────────────
+const modal = read('components/content/SocialPreviewModal.tsx')
+check('one button per Group: Group + Page', /`Post to \$\{g\.name\?\.trim\(\) \|\| 'Group'\} \+ Page`/.test(modal))
+check('the Page post goes out by itself once SCOUT sees the Group post', /void shareGroupPostOnPage\(i, \{ link: st\.url/.test(modal))
+check('without the post\'s own link, the Page post links to the Group and says so', /void shareGroupPostOnPage\(i, \{ link: g\.url/.test(modal) && /could not read the post's own link/.test(modal))
+check('no direct Page post with the affiliate link in Group-first mode', /\{groupFirstMode \? null : scheduleEnabled/.test(modal) && /platformKey && !groupFirstMode/.test(modal))
+check('a Page post that fails after the Group post is said, not shown as done', /Your Group post is up, but the Page post did not go out\./.test(modal))
+check('creators with no Group are nudged to set one up', /Set up your deals Group first/.test(modal))
+check('Social Push turns it on with the Labs switch', /groupFirst: canUsePreview\('facebook_setup', userTier\)/.test(read('app/(dashboard)/content/page.tsx')))
+
+// ── The Meta page and its switch ────────────────────────────────────────────
+check('one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
 check('the setup route only accepts real Group links', /isFacebookGroupLink/.test(read('app/api/facebook/setup/route.ts')))
-const page = read('app/(dashboard)/facebook-setup/page.tsx')
-check('the page says the rule in plain words', /Your Page gets the content\. Your Group gets the links\./.test(page))
-check('the count says what it cannot see', /posts you put up yourself are not seen/.test(page))
-check('a count that cannot be read says so, never a silent zero', /cannot count your Page&apos;s link posts yet/.test(page))
+const page = read('app/(dashboard)/meta/page.tsx')
+check('the Meta page says how Facebook works in plain words', /On Facebook, your Group gets the links and your Page points to them\./.test(page))
+check('the Meta page asks nothing about link limits', !/Meta One/.test(page))
+check('Instagram comment to DM is said as waiting, not live', /waiting for Meta/.test(page))
+check('the old address still lands on the Meta page', /redirect\('\/meta'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')))
 check('SCOUT answers whether it is allowed on Facebook', /msg\.type === 'MVP_FB_ACCESS'/.test(read('extension/background.js')))
 
 if (failures.length) {

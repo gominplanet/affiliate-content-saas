@@ -44,6 +44,7 @@ export function SocialPreviewModal({
   facebookGroups,
   publishTargetLabel,
   facebookPages,
+  groupFirst,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
@@ -80,6 +81,12 @@ export function SocialPreviewModal({
    *  a Page dropdown so they can pick which Page to publish to right here; the
    *  chosen page's id overrides extraBody.socialAccountId on publish/schedule. */
   facebookPages?: Array<{ id: string; name: string; isDefault?: boolean }>
+  /** Facebook, Group first (Labs facebook_setup): one button per saved Group.
+   *  SCOUT fills the post with the affiliate link and picture in the Group,
+   *  the creator presses Post, and the moment SCOUT sees it go up MVP posts
+   *  a short Page post linking to it. No Page post carries the affiliate
+   *  link, so Meta's limit on outside links never comes into it. */
+  groupFirst?: boolean
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -123,6 +130,11 @@ export function SocialPreviewModal({
   // "buy it now" second CTA. Only offered on Facebook, and only when the post
   // actually has an affiliate link (the server reports it via affiliateAvailable).
   const isFacebook = platformKey === 'facebook'
+  const savedGroups = (facebookGroups ?? []).filter((g) => g.url?.trim())
+  const groupFirstMode = isFacebook && !!groupFirst && !!shareUrl && savedGroups.length > 0
+  // What the Page post says, written before the button is pressed, since it
+  // goes out by itself once the Group post is up.
+  const [pageTeaser, setPageTeaser] = useState('')
   // Whether the post has an affiliate link at all (drives the Link-settings note).
   // The blog/affiliate/both choice itself now lives in Link settings, applied
   // server-side, so there's no per-post affiliate toggle here anymore.
@@ -182,7 +194,7 @@ export function SocialPreviewModal({
     setGroupFill((m) => ({
       ...m,
       [i]: res.filled
-        ? { state: 'done', filled: true, message: `SCOUT filled the post in ${label}.${mediaNote} Check it in the Facebook tab and press Post.`, steps: res.steps }
+        ? { state: 'done', filled: true, message: `SCOUT filled the post in ${label}.${mediaNote} Check it in the Facebook tab and press Post${groupFirstMode ? '. MVP shares it on your Page by itself' : ''}.`, steps: res.steps }
         : { state: 'done', filled: false, message: res.error || 'SCOUT could not fill it. The post is copied: paste it in the Group yourself.', steps: res.steps },
     }))
     if (res.filled) void watchGroupPost(i, g, res.watchId, !!res.canWatch)
@@ -212,6 +224,11 @@ export function SocialPreviewModal({
     const hook = first.length > 160 ? first.slice(0, 157).trimEnd() + '…' : first
     return [`New in ${groupName}:`, hook, 'The full post, links and all, is in the Group 👇'].filter(Boolean).join('\n\n')
   }
+  // The Page post's words, prefilled once the post text has loaded.
+  useEffect(() => {
+    if (groupFirstMode && !pageTeaser && text.trim()) setPageTeaser(teaserFor(savedGroups[0]?.name?.trim() || 'my Group'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupFirstMode, text])
   async function watchGroupPost(i: number, g: { name: string; url: string }, watchId: string | undefined, canWatch: boolean) {
     const label = g.name?.trim() || 'your Group'
     const base = { link: g.url, teaser: teaserFor(label) }
@@ -229,8 +246,22 @@ export function SocialPreviewModal({
       if (st.state === 'watching') continue
       const manual = ' Paste the post\'s link below (click its time stamp in Facebook and copy the address), or share the Group itself.'
       if (st.state === 'posted' && st.url && isFacebookGroupLink(st.url)) {
+        if (groupFirstMode) {
+          // ONE CLICK: the creator pressed Post, so the Page post follows by
+          // itself, linking to that exact Group post.
+          set({ phase: 'posting', tone: 'wait', link: st.url, teaser: pageTeaser.trim() || base.teaser, note: `Posted in ${label}. Sharing it on your Page now…` })
+          void shareGroupPostOnPage(i, { link: st.url, teaser: pageTeaser.trim() || base.teaser })
+          return
+        }
         set({ phase: 'ready', tone: 'ok', link: st.url, note: `Posted in ${label}. Share it on your Page? This links to the Group post itself, so it stays on Facebook.` })
       } else if (st.state === 'posted_no_link' || st.state === 'posted') {
+        if (groupFirstMode) {
+          // SCOUT saw it go up but not its address: the Page post links to
+          // the Group itself, and says so.
+          set({ phase: 'posting', tone: 'wait', link: g.url, teaser: pageTeaser.trim() || base.teaser, note: `Posted in ${label}. SCOUT could not read the post's own link, so the Page post links to your Group. Sharing it now…` })
+          void shareGroupPostOnPage(i, { link: g.url, teaser: pageTeaser.trim() || base.teaser })
+          return
+        }
         set({ phase: 'ready', tone: 'warn', note: `SCOUT saw the post go up in ${label} but could not read its link.` + manual })
       } else if (st.state === 'closed') {
         set({ phase: 'ready', tone: 'warn', note: 'The Facebook tab closed before SCOUT saw the post go up.' + manual })
@@ -242,8 +273,11 @@ export function SocialPreviewModal({
       return
     }
   }
-  async function shareGroupPostOnPage(i: number) {
-    const cur = groupShare[i]
+  async function shareGroupPostOnPage(i: number, auto?: { link: string; teaser: string }) {
+    // auto: called from the watcher, where this render's groupShare is stale.
+    const cur: GroupShare | undefined = auto
+      ? { phase: 'ready', tone: 'wait', note: '', link: auto.link, teaser: auto.teaser }
+      : groupShare[i]
     if (!cur) return
     if (!isFacebookGroupLink(cur.link)) {
       setGroupShare((m) => ({ ...m, [i]: { ...cur, error: 'The link has to be your Group or a post in it (facebook.com/groups/…).' } }))
@@ -259,9 +293,12 @@ export function SocialPreviewModal({
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || `Facebook said no (${res.status})`)
       const where = isFacebookGroupPostLink(data.link) ? 'the Group post' : 'your Group'
-      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'shared', tone: 'ok', note: `Shared on ${data.page || 'your Page'}, linking to ${where}.` } }))
+      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'shared', tone: 'ok', note: `Done: posted in your Group, and shared on ${data.page || 'your Page'} linking to ${where}.` } }))
+      if (groupFirstMode) onPublished()
     } catch (e) {
-      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'ready', error: e instanceof Error ? e.message : 'The Page post failed.' } }))
+      // FAILED IS NOT DONE: the Group post is up, the Page post is not, and
+      // the box stays open with the reason and a button to try it again.
+      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'ready', tone: 'warn', note: 'Your Group post is up, but the Page post did not go out.', error: e instanceof Error ? e.message : 'The Page post failed.' } }))
     }
   }
 
@@ -462,7 +499,7 @@ export function SocialPreviewModal({
               {isFacebook && (
                 <div className="mb-4 rounded-xl border border-gray-200 dark:border-white/10 p-3">
                   <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">What Facebook shows</p>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mb-2">Used for your Page post, and for Groups when you use Fill with SCOUT.</p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mb-2">{groupFirstMode ? 'Used for your Group post.' : 'Used for your Page post, and for Groups when you use Fill with SCOUT.'}</p>
                   <label className="flex items-start gap-2 text-xs cursor-pointer mb-2">
                     <input
                       type="radio"
@@ -499,12 +536,44 @@ export function SocialPreviewModal({
                 </div>
               )}
 
+              {/* NO GROUP YET: the nudge, before anything else. */}
+              {isFacebook && groupFirst && savedGroups.length === 0 && (
+                <div className="mb-4 rounded-xl border p-3 border-[#1877f2]/30 bg-[#1877f2]/[0.06]">
+                  <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first</p>
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-0.5">
+                    Your Amazon links go in your own Facebook Group, and MVP shares each Group post on your Page for you.
+                    It takes a few minutes, and the <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta</a> page walks you through it.
+                    Until then, this posts to your Page with the link.
+                  </p>
+                </div>
+              )}
+
+              {/* GROUP FIRST, ONE CLICK: what the Page will say, then a button
+                  per Group. SCOUT fills the Group post, the creator presses
+                  Post, and the Page post follows by itself. */}
+              {groupFirstMode && (
+                <div className="mb-3 rounded-xl border border-gray-200 dark:border-white/10 p-3">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">How this posts</p>
+                  <ol className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed list-decimal pl-4 mt-1">
+                    <li>SCOUT opens your Group and fills in the post above, with your affiliate link and picture. You press Post.</li>
+                    <li>The moment it is up, MVP posts this on {activePageLabel || 'your Page'}, linking to it:</li>
+                  </ol>
+                  <textarea
+                    value={pageTeaser}
+                    onChange={(e) => setPageTeaser(e.target.value)}
+                    rows={4}
+                    aria-label="What your Page post says"
+                    className="mt-2 w-full text-[11px] p-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                </div>
+              )}
+
               {/* Facebook manual-share: copy block + saved Groups. Only shown
                   when the caller passes shareUrl (the Facebook flow). */}
               {shareUrl && (
                 <div className="mb-4 rounded-xl border border-gray-200 dark:border-white/10 p-3 bg-[#f5f5f7] dark:bg-white/5">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post to a Facebook Group</span>
+                    <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{groupFirstMode ? 'Your Group post' : 'Post to a Facebook Group'}</span>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(groupCopy).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
@@ -516,7 +585,9 @@ export function SocialPreviewModal({
                   </div>
                   <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto p-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">{groupCopy}</pre>
                   <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                    Facebook lets no app post to a Group by itself. <strong>Fill with SCOUT</strong> opens your Group and puts this post in the box, and you press Post. Or copy it and paste it yourself.
+                    {groupFirstMode
+                      ? 'Facebook lets no app press Post in a Group, so that one click is yours. Keep this window open until the Page post is done.'
+                      : <>Facebook lets no app post to a Group by itself. <strong>Fill with SCOUT</strong> opens your Group and puts this post in the box, and you press Post. Or copy it and paste it yourself.</>}
                   </p>
                   {facebookGroups && facebookGroups.length > 0 ? (
                     <div className="mt-2 flex flex-col gap-1">
@@ -536,10 +607,10 @@ export function SocialPreviewModal({
                               <button
                                 type="button"
                                 onClick={() => { void fillGroupWithScout(i, g) }}
-                                disabled={st?.state === 'working' || !groupCopy}
+                                disabled={st?.state === 'working' || !groupCopy || (groupFirstMode && !pageTeaser.trim())}
                                 className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-[#1877f2] hover:bg-[#166fe0] disabled:opacity-60 rounded-md px-2 py-1"
                               >
-                                {st?.state === 'working' ? <><Loader2 size={11} className="animate-spin" /> Filling…</> : 'Fill with SCOUT'}
+                                {st?.state === 'working' ? <><Loader2 size={11} className="animate-spin" /> Filling…</> : groupFirstMode ? `Post to ${g.name?.trim() || 'Group'} + Page` : 'Fill with SCOUT'}
                               </button>
                             </div>
                             {st?.state === 'done' && (
@@ -615,7 +686,7 @@ export function SocialPreviewModal({
               {/* Schedule-for-later toggle + date picker (only when caller
                   passed a platformKey — i.e. one of the 6 supported
                   schedulable platforms). */}
-              {platformKey && (
+              {platformKey && !groupFirstMode && (
                 <div className="mb-4">
                   <label className="flex items-center gap-2 text-xs cursor-pointer mb-2">
                     <input
@@ -681,9 +752,9 @@ export function SocialPreviewModal({
                   disabled={publishing || scheduling}
                   className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] px-3 py-2 disabled:opacity-60"
                 >
-                  Cancel
+                  {groupFirstMode ? 'Close' : 'Cancel'}
                 </button>
-                {scheduleEnabled && platformKey ? (
+                {groupFirstMode ? null : scheduleEnabled && platformKey ? (
                   <button
                     onClick={schedule}
                     disabled={scheduling || !text.trim()}

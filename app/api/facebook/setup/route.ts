@@ -9,7 +9,7 @@
 //                           { group: { name, url } }  save a Group
 //                           { removeGroup: url }      forget a Group
 //
-// One page for the whole setup (app/(dashboard)/facebook-setup): "Your Page
+// One page for the whole setup (app/(dashboard)/meta): "Your Page
 // gets the content. Your Group gets the links."
 
 import { NextResponse } from 'next/server'
@@ -46,7 +46,7 @@ async function gate() {
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await (admin as any).from('integrations')
-    .select('tier,facebook_page_id,facebook_page_access_token,facebook_page_name').eq('user_id', user.id).maybeSingle()
+    .select('tier,facebook_page_id,facebook_page_access_token,facebook_page_name,instagram_access_token,instagram_user_id,instagram_username').eq('user_id', user.id).maybeSingle()
   if (!facebookSetupEnabled(integ?.tier)) return { res: NextResponse.json({ ok: true, on: false }) }
   return { user, supabase, admin, integ }
 }
@@ -77,6 +77,7 @@ export async function GET() {
     counted: budget.counted,
     enforced: budget.enforced,
     groups: cleanGroups((brand as { facebook_groups?: unknown } | null)?.facebook_groups),
+    instagram: { connected: !!(integ?.instagram_access_token && integ?.instagram_user_id), username: integ?.instagram_username ?? null },
   })
 }
 

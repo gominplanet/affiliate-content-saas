@@ -3,6 +3,7 @@
 // entry after a new client component entered its import graph (a stale build
 // cache dropped content/page.tsx#default from the manifest → RSC render error).
 
+import { canUsePreview } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
@@ -1857,6 +1858,9 @@ const VideoCard = memo(function VideoCardImpl({
                   publishTargetLabel: fbPageLabel,
                   // Let the modal show a Page dropdown when >1 connected Page.
                   facebookPages: fbAccounts.map(a => ({ id: a.id, name: a.displayName || 'Facebook Page', isDefault: a.isDefault })),
+                  // Group first, one click (Labs facebook_setup): the Group gets
+                  // the affiliate post, the Page gets a post linking to it.
+                  groupFirst: canUsePreview('facebook_setup', userTier),
                 }
               : {}
             return (

@@ -35,6 +35,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, tierAllowsSocial } from '@/lib/tier'
 import { canUsePreview } from '@/lib/labs-preview'
 
+// SWITCHED OFF (Seb, 2026-10-03: "we shouldn't even think about the two link
+// limit"). Facebook in Social Push now posts the affiliate link in the
+// creator's Group and only a Facebook link on the Page, so the limit never
+// comes into it there. Nothing is held back anywhere while this is false;
+// MVP still quietly records link posts, so the count is there if it is ever
+// wanted again.
+export const LINK_GUARD_ON = false
+
 /** Is Facebook setup (the page and the link guard) on for this creator. One
  *  switch: admin while tested, then every plan that posts to Facebook. */
 export function facebookSetupEnabled(rawTier: unknown): boolean {
@@ -177,7 +185,7 @@ export async function readLinkBudget(userId: string, pageId: string | null | und
       if (!error) { used = count ?? 0; counted = true }
     } catch { /* no migration 400: counted stays false */ }
   }
-  const enforced = counted && facebookSetupEnabled(tier) && planEnforces(plan) && allowance != null
+  const enforced = LINK_GUARD_ON && counted && facebookSetupEnabled(tier) && planEnforces(plan) && allowance != null
   return { enforced, plan, renewsDay, allowance, used, left: allowance == null ? null : Math.max(0, allowance - used), resetsAt: win.resets.toISOString(), counted }
 }
 
