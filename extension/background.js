@@ -13344,7 +13344,9 @@ function installGroupPostHook(markOld) {
     const m = flat.match(RE)
     if (m) { window.__scoutGroupPost = { url: m[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'facebook' }; return }
     // No URL in the answer: build it from the post id and this Group.
-    const id = (flat.match(/"post_id"\s*:\s*"(\d{6,})"/) || [])[1]
+    // Facebook names the new post's number several ways; a video post often
+    // carries only one of the later ones.
+    const id = (flat.match(/"(?:post_id|top_level_post_id|legacy_story_hideable_id|story_fbid|mf_story_key)"\s*:\s*"?(\d{6,})"?/) || [])[1]
     const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
     if (id && slug) window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }
   }
@@ -13399,9 +13401,14 @@ function readGroupPostState(snippet) {
   for (const a of arts) {
     for (const l of Array.from(a.querySelectorAll('a[role="link"]'))) {
       const t = (l.innerText || '').trim()
-      if (l.dataset.scoutHover || !(l.getAttribute('href') === '#' || /^(\d+\s?[smhdw]|just now|now)$/i.test(t))) continue
-      l.dataset.scoutHover = '1'
-      try { l.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); l.dispatchEvent(new FocusEvent('focus')) } catch (e) {}
+      if (!(l.getAttribute('href') === '#' || /^(\d+\s?[smhdw]|just now|now|\d+\s?(min|mins|hr|hrs))$/i.test(t))) continue
+      // Hovered on every look, not once: Facebook fills the timestamp's link
+      // in on hover, and a post still settling can drop it again. A hover is
+      // never a click.
+      try {
+        for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) l.dispatchEvent(new MouseEvent(type, { bubbles: true }))
+        l.dispatchEvent(new FocusEvent('focus'))
+      } catch (e) {}
     }
   }
   return out
@@ -13456,8 +13463,12 @@ function watchGroupPost(tabId, snippet) {
         if (url) return await saveGroupWatch(id, { state: 'posted', url, via: r.net ? r.net.via : 'feed' })
         if (r.seen || r.created) {
           if (!seenAt) seenAt = Date.now()
-          // Give the timestamp link a moment to fill in before giving up on it.
-          if (Date.now() - seenAt > 20000) return await saveGroupWatch(id, { state: 'posted_no_link' })
+          // Give the timestamp link time to fill in before giving up on it. A
+          // VIDEO post is created at once but only reaches the feed when
+          // Facebook has processed the video, a minute or more: 20 seconds
+          // gave up on a clip post that was simply still processing.
+          const patience = r.seen ? 45000 : 4 * 60 * 1000
+          if (Date.now() - seenAt > patience) return await saveGroupWatch(id, { state: 'posted_no_link' })
         }
         if (!r.dialog) {
           if (!dialogGoneAt) dialogGoneAt = Date.now()

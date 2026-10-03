@@ -162,7 +162,7 @@ export function ReelGroupFirst(p: {
     const res = await requestFacebookGroupPrefill(group.url, text, { kind: 'clip', url: p.clipUrl })
     p.onBusy(false)
     if (!res.filled) { say({ tone: 'bad', text: res.error || 'SCOUT could not fill the Group post. The text is copied: paste it in the Group yourself.' }); return }
-    say({ tone: res.clipAttached === false ? 'warn' : 'ok', text: `The post is ready in ${group.name || 'your Group'}. ${res.media || ''} Then press Post in the Facebook tab.`.replace(/\s+/g, ' ').trim() })
+    say({ tone: res.clipAttached === false ? 'warn' : 'ok', text: `The post is ready in ${group.name || 'your Group'} in the Facebook tab. ${res.media || 'Press Post there.'}`.replace(/\s+/g, ' ').trim() })
     if (!res.canWatch || !res.watchId) {
       say({ tone: 'warn', text: 'Your SCOUT cannot see the post go up. After you press Post, paste the Group post\'s link below (click its time stamp and copy the address).' })
       setManual({ link: '' })
@@ -176,7 +176,7 @@ export function ReelGroupFirst(p: {
       if (st.state === 'watching') continue
       if (st.state === 'posted' && st.url && isFacebookGroupPostLink(st.url)) { await postReel(st.url, 'post'); return }
       if (st.state === 'posted' || st.state === 'posted_no_link') {
-        say({ tone: 'warn', text: 'SCOUT saw your Group post go up but could not read its own link. Paste it below for a Reel that links straight to it, or post the Reel linking to your Group.' })
+        say({ tone: 'warn', text: 'SCOUT saw your Group post go up but could not read its own link. In Facebook, click the time under your name on the post (like "Just now"), copy the address, and paste it below. Or post the Reel linking to your Group.' })
         setManual({ link: '' })
         return
       }
