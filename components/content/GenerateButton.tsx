@@ -36,7 +36,7 @@ import { describeImages } from '@/lib/images-status'
 // 'pending' = the job ran past our wait window but is STILL generating in the
 // background (it isn't a failure — it lands in the Library on its own). Shown as
 // calm info, never a red error with a duplicate-causing Retry.
-type GenStatus = 'idle' | 'generating' | 'done' | 'error' | 'pending'
+type GenStatus = 'idle' | 'generating' | 'done' | 'error' | 'pending' | 'notLive'
 
 // Cosmetic step indicator while /api/blog/generate is in flight. The image
 // step is intentionally NOT here — image generation runs fire-and-forget
@@ -103,6 +103,10 @@ export function GenerateButton({
   // error offers "Run Connection Doctor" instead of a Retry that would just
   // hit the same wall.
   const [needsDoctor, setNeedsDoctor] = useState(false)
+  // NOT LIVE YET IS NOT AN ERROR. MVP writes posts only from public videos
+  // (lib/video-public), and a scheduled one was shown in red with a Retry
+  // that could only fail again. Its go-live time, when YouTube gave one.
+  const [goesLiveAt, setGoesLiveAt] = useState<string | null>(null)
   const [result, setResult] = useState(existingPost || null)
   // In-line "Add images" action on already-published rows. Was previously
   // only available on the older-posts simple list; rich VideoCard rows
@@ -248,7 +252,7 @@ export function GenerateButton({
     setUserImages(prev => { const n = [...prev]; n[idx] = null; return n })
   }
 
-  async function generate(opts?: { rewriteFeedback?: string }) {
+  async function generate(opts?: { rewriteFeedback?: string; scheduleAt?: string }) {
     setStatus('generating')
     setStepIdx(0)
     setError(null)
@@ -279,6 +283,10 @@ export function GenerateButton({
             ...(includeImages && userImages.some(Boolean) ? { userImageUrls: userImages.filter((u): u is string => !!u) } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
+            // Written now, published by WordPress itself at this time: the
+            // one way the server allows a post for a scheduled video, since
+            // it never shows before the video does.
+            ...(opts?.scheduleAt ? { scheduleMode: 'wp-native', scheduledFor: opts.scheduleAt } : {}),
           }, ctrl.signal)
           let d: Record<string, unknown> = {}
           try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
@@ -358,6 +366,12 @@ export function GenerateButton({
         // Pre-flight blocked the publish: WordPress is refusing writes. Offer the
         // Connection Doctor instead of a Retry (which would replay the same
         // wall). No generation was consumed.
+        if (data.code === 'video_not_public') {
+          setError(errText(data.error) || 'This video is not public on YouTube yet.')
+          setGoesLiveAt(typeof data.goesLiveAt === 'string' ? data.goesLiveAt : null)
+          setStatus('notLive')
+          return
+        }
         if (data.reason === 'wp_connection') {
           setNeedsDoctor(true)
           setError(errText(data.error) || 'Your WordPress connection is blocked — run the Connection Doctor to fix it, then try again.')
@@ -367,6 +381,7 @@ export function GenerateButton({
         throw new Error(errText(data.error) || 'Generation failed')
       }
       setResult({ url: data.wordpressUrl as string, title: data.title as string, held: !!(data.held as { reasons?: string[] } | null)?.reasons?.length })
+      if (opts?.scheduleAt) toast.success(`Written and scheduled. WordPress publishes it ${new Date(opts.scheduleAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}, after your video goes live.`, { duration: 9000 })
 
       // The AI in-article image step lives inside the generate route's
       // after() block. Vercel routinely cuts that block off before the slow
@@ -617,6 +632,35 @@ export function GenerateButton({
         style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
         <p className="text-xs" style={{ color: '#b26a00' }}>{error}</p>
         <button onClick={() => window.location.reload()} className="text-xs text-[#7C3AED] hover:underline text-left">Refresh to check →</button>
+      </div>
+    )
+  }
+  if (status === 'notLive') {
+    // Amber, with what the creator can actually do: schedule the post for
+    // after the video, or come back once it is live. No Retry that fails.
+    const liveMs = goesLiveAt ? new Date(goesLiveAt).getTime() : NaN
+    const future = Number.isFinite(liveMs) && liveMs > Date.now()
+    const when = future ? new Date(liveMs).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg px-2.5 py-2"
+        style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+        <p className="text-xs font-semibold" style={{ color: '#b26a00' }}>
+          {when ? `Waiting for the video: it goes live on YouTube ${when}` : 'Waiting for the video to be public on YouTube'}
+        </p>
+        <p className="text-xs" style={{ color: '#b26a00' }}>
+          MVP writes posts only from videos people can watch, so nothing was written.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          {future && (
+            <button onClick={() => generate({ scheduleAt: new Date(liveMs + 10 * 60_000).toISOString() })}
+              className="text-xs font-semibold text-[#7C3AED] hover:underline text-left">
+              Write it now, publish 10 minutes after the video →
+            </button>
+          )}
+          <button onClick={() => { setStatus('idle'); setError(null) }} className="text-xs text-[#6e6e73] hover:underline text-left">
+            {future ? 'Leave it for now' : 'Check again'}
+          </button>
+        </div>
       </div>
     )
   }

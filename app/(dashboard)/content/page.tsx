@@ -2913,7 +2913,20 @@ export default function ContentPage() {
     setBrandDisclaimer((b?.affiliate_disclaimer as string | null) ?? '')
     setBrandFacebookGroups(Array.isArray(b?.facebook_groups) ? (b!.facebook_groups as Array<{ name: string; url: string }>) : [])
     setBlogImagePref(typeof b?.blog_image_count === 'number' ? (b.blog_image_count as number) : null)
-    setVideos(vids)
+    // ONLY VIDEOS PEOPLE CAN WATCH. MVP writes posts only from public videos
+    // (lib/video-public), so a scheduled one listed here could only be
+    // refused: "...is scheduled on YouTube and goes public...", in red, with
+    // a Retry. It joins the list on its own once its time has passed. A video
+    // that already has a post stays, so nothing written ever disappears.
+    {
+      const withPost = new Set(((blogPosts as Array<{ video_id?: string | null }> | null) ?? []).map((p) => p.video_id).filter(Boolean) as string[])
+      const now = Date.now()
+      const live = (vids as Record<string, unknown>[]).filter((v) => {
+        const at = v.published_at ? Date.parse(String(v.published_at)) : NaN
+        return !(Number.isFinite(at) && at > now) || withPost.has(String(v.id))
+      })
+      setVideos(live as typeof vids)
+    }
 
     // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
     // lingers in blog_posts, which would otherwise leave its source video stuck
