@@ -168,8 +168,9 @@ export function ReelGroupFirst(p: {
       setManual({ link: '' })
       return
     }
-    say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open.' })
-    const end = Date.now() + 20 * 60 * 1000
+    say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open: after you post, Facebook processes the video first, which can take several minutes, and MVP carries on by itself.' })
+    // Facebook can process a video post for many minutes; SCOUT watches for 30.
+    const end = Date.now() + 32 * 60 * 1000
     while (mounted.current && Date.now() < end) {
       await new Promise((r) => setTimeout(r, 3000))
       const st = await getFacebookGroupPostStatus(res.watchId)

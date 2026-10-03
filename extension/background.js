@@ -13386,6 +13386,8 @@ function readGroupPostState(snippet) {
     dialog: Array.from(document.querySelectorAll('[role="dialog"] [contenteditable="true"]')).some(visible),
     seen: false,
     feedUrl: null,
+    // Facebook's notice while a video post is still being processed.
+    processing: /processing video|video in your post is being processed|vidéo est en cours de traitement|se está procesando el video/i.test(document.body ? document.body.innerText : ''),
   }
   if (out.net || !snippet) return out
   const norm = (s) => String(s || '').replace(/\s+/g, ' ')
@@ -13460,7 +13462,7 @@ function watchGroupPost(tabId, snippet) {
     let seenAt = 0
     try {
       await saveGroupWatch(id, { state: 'watching' })
-      while (Date.now() - started < 15 * 60 * 1000) {
+      while (Date.now() - started < 30 * 60 * 1000) {
         await sleep(2000)
         let tab = null
         try { tab = await chrome.tabs.get(tabId) } catch (e) {}
@@ -13486,7 +13488,10 @@ function watchGroupPost(tabId, snippet) {
           // VIDEO post is created at once but only reaches the feed when
           // Facebook has processed the video, a minute or more: 20 seconds
           // gave up on a clip post that was simply still processing.
-          const patience = r.seen ? 45000 : 4 * 60 * 1000
+          // Facebook's own "Processing video" notice on the page means the post
+          // is still coming: no clock runs while it shows.
+          if (r.processing && !r.seen) seenAt = Date.now()
+          const patience = r.seen ? 45000 : 6 * 60 * 1000
           if (Date.now() - seenAt > patience) return await saveGroupWatch(id, { state: 'posted_no_link' })
         }
         if (!r.dialog) {

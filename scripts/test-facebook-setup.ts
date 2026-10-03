@@ -118,7 +118,7 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
 // ── A video Group post gets time to reach the feed ─────────────────────────
 {
   const bg = read('extension/background.js')
-  check('a video post that is created but not yet in the feed gets minutes, not 20 seconds', /const patience = r\.seen \? 45000 : 4 \* 60 \* 1000/.test(bg))
+  check('a video post that is created but not yet in the feed gets minutes, not 20 seconds', /const patience = r\.seen \? 45000 : 6 \* 60 \* 1000/.test(bg) && /if \(r\.processing && !r\.seen\) seenAt = Date\.now\(\)/.test(bg))
   check('the timestamp is hovered on every look, never clicked', /for \(const type of \['pointerover', 'pointerenter', 'mouseover', 'mouseenter'\]\)/.test(bg))
   check('the post number is read under every name Facebook uses', /top_level_post_id\|legacy_story_hideable_id\|story_fbid/.test(bg))
 }
