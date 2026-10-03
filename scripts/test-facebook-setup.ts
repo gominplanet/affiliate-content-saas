@@ -133,6 +133,20 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('Clip Factory posts the Reel linking to either address', /isFacebookGroupPostLink\(st\.url\) \|\| isFacebookReelLink\(st\.url\)/.test(read('components/clip-factory/ReelDestinations.tsx')))
 }
 
+// ── The new post is found by its own hook, never by the shared disclosure ──
+{
+  const bg = read('extension/background.js')
+  const start = bg.indexOf('function groupSnippet(')
+  const src = bg.slice(start, bg.indexOf('\n}\n', start) + 2)
+  // eslint-disable-next-line no-new-func
+  const groupSnippet = new Function(src + '; return groupSnippet')() as (t: string) => string
+  const post = 'The insert pops right out and goes straight in the dishwasher.\n\n🛒 Grab it on Amazon 👉 https://www.mvpl.ink/np4zh58\n🎬 Watch the full review 👉 https://www.youtube.com/watch?v=BJqeYMIDhlg\n\n#crockpottips #kitchencleanup\n\nThis post contains affiliate links. I may earn a commission at no extra cost to you. As an Amazon Associate I earn from qualifying purchases.'
+  const snip = groupSnippet(post)
+  check('the fingerprint is the post\'s own opening line', snip.startsWith('The insert pops right out'))
+  check('the fingerprint is never the disclosure every post shares', !/affiliate|commission|Associate/i.test(snip))
+  check('a post whose time stamp says hours or a date is never taken for the new one', /const OLD_STAMP = /.test(bg) && /&& !isOld\(a\)\)/.test(bg))
+}
+
 // ── A dropped connection during a render is checked, never shown raw ────────
 {
   const panel = read('components/vertical/ShortsCreatePanel.tsx')

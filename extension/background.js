@@ -13308,12 +13308,16 @@ async function fillGroupComposerInPage(text, hero) {
 const FB_GROUP_POST_RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
 const fbGroupWatches = new Map()
 
-// A line of the post that is unlikely to be in any older post: the longest
-// line that is not a link. The first line is the product CTA, which every
-// post shares, so it is a poor fingerprint.
+// A line of THIS post that no older post shares: the opening line of the
+// write-up (the hook). NEVER the longest line: that was the disclosure ("This
+// post contains affiliate links... Amazon Associate..."), the same on every
+// post, and SCOUT matched an older Group post with it and handed MVP that
+// post's address: a Reel went out linking to the wrong product. Lines every
+// post shares (links, hashtags, the CTA lines, the disclosure) are left out.
 function groupSnippet(text) {
-  const lines = String(text || '').split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l && !/https?:\/\//.test(l))
-  lines.sort((a, b) => b.length - a.length)
+  const SHARED = /https?:\/\/|affiliate|commission|amazon associate|qualifying purchases|#ad\b|grab it|watch the full review|link in (my )?bio|^#/i
+  const lines = String(text || '').split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter((l) => l.length >= 12 && !SHARED.test(l))
   return (lines[0] || '').slice(0, 40)
 }
 
@@ -13385,8 +13389,14 @@ function readGroupPostState(snippet) {
   }
   if (out.net || !snippet) return out
   const norm = (s) => String(s || '').replace(/\s+/g, ' ')
+  // ONLY A POST THAT IS NEW. Facebook redraws its feed, so the "old" marks put
+  // on the posts already there can vanish; a post whose own time stamp says
+  // hours, days or a date is never the one just made.
+  const OLD_STAMP = /^(\d+\s?(h|hr|hrs|hour|hours|d|day|days|w|wk|wks|y|yr|yrs))$|^yesterday|^[a-z]{3,9}\.? \d{1,2}(,? \d{4})?$|^\d{1,2} [a-z]{3,9}/i
+  const isOld = (a) => Array.from(a.querySelectorAll('a[role="link"], a[href*="/posts/"], a[href*="/permalink/"], a[href*="/reel/"]'))
+    .some((l) => OLD_STAMP.test((l.innerText || '').trim()))
   const arts = Array.from(document.querySelectorAll('[role="article"], [aria-posinset]'))
-    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0)
+    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0 && !isOld(a))
   if (!arts.length) return out
   out.seen = true
   const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
