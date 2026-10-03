@@ -55,7 +55,10 @@ export function runStudioUploads(opts: { background?: boolean; onProgress?: (o: 
         try {
           fin = await requestStudioFinish(it.videoId, {
             details: it.want.details, monetize: it.want.monetize, selfCert: it.want.selfCert, endScreen: it.want.endScreen,
-            notifySubscribers: it.want.notifySubscribers, tagProduct: false, visibility: vis, background: opts.background === true,
+            // IN FRONT, ALWAYS. Studio is not drawn in a tab behind another
+            // one, and a draft saved from a hidden tab never saw its window
+            // open ("Pressed Edit draft, but the draft window did not open").
+            notifySubscribers: it.want.notifySubscribers, tagProduct: false, visibility: vis, background: false,
             privateIfScheduleFails: true,
           })
         } catch (e) { fin = { ok: false, steps: [], error: e instanceof Error ? e.message : 'failed' } }
