@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 17
+  const KIT_VERSION = 18
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9093,6 +9093,10 @@ function studioKitInstallInPage() {
   const page = (dlg) => {
     const vt = visibleText(dlg).toLowerCase()
     if (/\bpublic\b/.test(vt) && /\bprivate\b/.test(vt) && /\bunlisted\b/.test(vt)) return 'visibility'
+    // VISIBILITY WITH THE SCHEDULE OPEN folds Private, Unlisted and Public
+    // away, and a draft left there reopened as "a page SCOUT did not
+    // recognise", so its window read as never opened.
+    if (/save or publish|set as instant premiere|before you publish|select a date to make your video public/.test(vt)) return 'visibility'
     if (/copyright/.test(vt) && /community guidelines|we.ll check your video|checking/.test(vt)) return 'checks'
     if (/end screen/.test(vt) && /\bcards\b/.test(vt)) return 'elements'
     if (/none of the above/.test(vt)) return 'adsuit'
@@ -9154,8 +9158,11 @@ function studioKitInstallInPage() {
     if (!ready) { out.detail = 'Studio never showed the video page or an Edit draft button'; out.debug.buttons = buttonSample(document); return out }
     if (ready === 'draft') {
       click(findBtn(/^edit draft$/i, document))
-      const opened = await waitFor(() => { const d = mainDialog(); return d && page(d) !== 'unknown' ? d : null }, 20000, 400)
-      if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); return out }
+      let opened = await waitFor(() => { const d = mainDialog(); return d && page(d) !== 'unknown' ? d : null }, 15000, 400)
+      // OPEN IS OPEN. A window that came up on a page SCOUT cannot name is
+      // still the draft's window: it goes back to Details below.
+      if (!opened) opened = mainDialog()
+      if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); out.debug.text = visibleText(document).slice(0, 300); return out }
     }
     // A draft somebody already clicked through reopens on the page they left
     // it on. The steps start at Details, so go back there first.

@@ -90,6 +90,7 @@ check('tag chips are read without an extension\'s score in front', /\.replace\(\
 check('Private is found even with the Schedule section open', /first-container-expand-button/.test(bg) && /\^save or publish/.test(bg))
 check('the date and time are typed, not dropped in', /await typeInto\(dateInput, dateStr\)/.test(bg) && /await typeInto\(timeInput, timeStr\)/.test(bg) && bg.indexOf('const readTime = (s) =>') < bg.indexOf('if (readTime(timeInput.value) !== H * 60 + Mi) { setVal('))
 check('a leftover draft is saved with Studio in front, never in a hidden tab', /visibility: vis, background: false,/.test(read('lib/studio-upload-client.ts')))
+check('a draft reopened on Visibility with the schedule open is still recognised as open', /save or publish\|set as instant premiere/.test(bg) && /if \(!opened\) opened = mainDialog\(\)/.test(bg))
 check('SCOUT knows a page by its heading when its contents say nothing yet', /'initial check': 'checks'/.test(bg) && /if \(fs >= 22\) return NAMES\[t\]/.test(bg))
 check('an unknown page says what it showed', /\(it showed: "/.test(bg))
 check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
