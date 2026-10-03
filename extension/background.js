@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 20
+  const KIT_VERSION = 21
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -10063,6 +10063,8 @@ K.steps.monetization = async (out, o) => {
         const d2 = mainDialog()
         const b2 = doneBtn()
         if (d2 && page(d2) === 'visibility' && b2 && !isDisabled(b2) && wantRe.test(deepText(b2) || attrLabel(b2))) {
+          const ap = findBtn(/^apply$/i, d2, { enabled: true })
+          if (ap) { click(ap); await sleep(1200); out.readBack.appliedBeforeSecondPress = true }
           out.readBack.pressedTwice = true
           said = await press()
         }
@@ -10281,6 +10283,25 @@ K.steps.monetization = async (out, o) => {
     if (prem && isChecked(prem)) { click(prem); await sleep(500) }
     out.readBack.premiere = prem ? isChecked(prem) : null
     if (prem && isChecked(prem)) { out.detail = 'Set as Premiere is ticked and would not untick, so nothing was scheduled'; return out }
+    // APPLY FIRST. Studio's schedule panel now keeps the date and time to
+    // itself until its own Apply is pressed, and Schedule pressed before
+    // that does nothing: the window stayed on "Saved as private", pressed
+    // twice, with Apply sitting next to the date. Pressed here, then the
+    // date and time read again before Schedule.
+    const applyBtn = () => findBtn(/^apply$/i, dlg, { enabled: true })
+    out.readBack.applyShown = !!applyBtn()
+    if (applyBtn()) {
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
+      click(applyBtn())
+      await waitFor(() => (!applyBtn() ? true : null), 5000, 300)
+      await sleep(600)
+      out.readBack.applied = !applyBtn()
+      // Still showing the date asked for (when the panel is still open; a
+      // panel that folded shut after Apply shows the time on its heading).
+      if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
+      const tBox = all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}/.test(norm(el.value)))
+      if (tBox && readTime(tBox.value) !== H * 60 + Mi) { out.detail = 'Pressed Apply, but Studio then showed ' + norm(tBox.value) + ' instead of ' + timeStr + ', so nothing was scheduled'; return out }
+    }
     const ok = await finish(/^schedule$/i, /video scheduled|scheduled for/)
     out.ok = ok
     if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')'

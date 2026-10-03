@@ -140,6 +140,7 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
     check('a step that failed and stayed failed is not finished', !studioRunSettled({ ok: false, steps: [{ step: 'visibility', ok: false }, { step: 'visibility', ok: false }] }))
     check('the board offers Studio again only for unfinished runs', /!studioRunSettled\(liveRuns\[i\.id\] \?\? i\.studio_finish\)\)\.length/.test(read('components/launch/LaunchBoard.tsx')))
   }
+  check('Studio\'s Apply is pressed before Schedule, and the date and time read again after it', /const applyBtn = \(\) => findBtn\(\/\^apply\$\/i, dlg, \{ enabled: true \}\)/.test(bg) && bg.indexOf('const applyBtn = ') < bg.indexOf("const ok = await finish(/^schedule$/i") && /Pressed Apply, but Studio then showed/.test(bg))
   check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
 }
 
