@@ -11,7 +11,7 @@
 
 import { explainAmazonUpload, MAX_UPLOAD_TRIES } from '@/lib/amazon-upload-errors'
 import { MARKETS } from '@/lib/markets'
-import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
+import { studioRunNeeded, studioRunSettled, type StoredStudioRun } from '@/lib/studio-finish'
 import { isStudioWaiting, isStudioRunning, STUDIO_UPLOAD_DONE } from '@/lib/studio-upload'
 
 const GOOD = '#10B981', WARN = '#d97706', BAD = '#ef4444', BUSY = '#0EA5A4', IDLE = 'var(--text-2)'
@@ -196,7 +196,7 @@ export default function LaunchReport({
     // is still to come, not a problem yet.
     const studioDue = !!i.youtube_video_id && studioPossible && i.state !== 'amazon_only' && studioRunNeeded(i.studio_finish)
     if (studioDue) studioLeft++
-    if (i.studio_finish && !i.studio_finish.ok && !studioDue) {
+    if (i.studio_finish && !studioRunSettled(i.studio_finish) && !studioDue) {
       const open = i.studio_finish.steps.filter((s) => !s.ok && !s.skipped).map((s) => s.detail).filter(Boolean)
       problems.push({
         video: name, where: 'YouTube Studio',
@@ -301,7 +301,7 @@ export default function LaunchReport({
                             title={i.playlist_error || undefined} />
                         )}
                         {(() => { const fc = firstCommentCheck(i.first_comment); return fc ? <Check label="First comment" value={fc.value} title={fc.title} /> : null })()}
-                        <Check label="Studio steps" value={run ? run.ok : null}
+                        <Check label="Studio steps" value={run ? studioRunSettled(run) : null}
                           title={run ? run.steps.map((s) => `${s.step}: ${s.detail}`).join('\n') : studioPossible ? 'Not run yet' : 'SCOUT is not available in this browser'} />
                       </span>
                     )}

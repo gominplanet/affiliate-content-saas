@@ -6,7 +6,7 @@
 // with this switch on, the server must never upload, SCOUT must never upload
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
-import { storeStudioRun, readStudioRun } from '../lib/studio-finish'
+import { storeStudioRun, readStudioRun, studioRunSettled, studioRunHeadline } from '../lib/studio-finish'
 import { leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
@@ -133,6 +133,13 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('an end screen already on the video counts as done, not as an editor that never opened', /const alreadyHas = async/.test(bg) && /const viaRow = await openedEditor\(25000\)/.test(bg) && /The video already has an end screen, so SCOUT left it as it is/.test(bg))
   check('a silent YouTube answer on AI use is unknown, never a red cross', /aiUseNo: readBack && readBack\.containsSyntheticMedia != null \? readBack\.containsSyntheticMedia === false : null/.test(read('app/api/cron/launch-drain/route.ts')) && /aiUse: rb\.containsSyntheticMedia \?\? null/.test(read('lib/launch-release.ts')))
   check('the report falls back to SCOUT\'s Studio read-back for AI use', /const value = yt \?\? \(studio \? true : null\)/.test(read('components/launch/LaunchReport.tsx')))
+  {
+    const steps = [{ step: 'details', ok: true }, { step: 'visibility', ok: false }, { step: 'visibility', ok: true }, { step: 'sending', ok: true }]
+    check('Schedule refused then saved Private counts as finished', studioRunSettled({ ok: false, steps }))
+    check('and says how, not "Check: Schedule"', /saved it Private and MVP set the time/.test(studioRunHeadline({ ok: false, steps, path: 'draft' })))
+    check('a step that failed and stayed failed is not finished', !studioRunSettled({ ok: false, steps: [{ step: 'visibility', ok: false }, { step: 'visibility', ok: false }] }))
+    check('the board offers Studio again only for unfinished runs', /!studioRunSettled\(liveRuns\[i\.id\] \?\? i\.studio_finish\)\)\.length/.test(read('components/launch/LaunchBoard.tsx')))
+  }
   check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
 }
 

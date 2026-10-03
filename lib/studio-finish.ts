@@ -97,6 +97,19 @@ export function studioStepText(s: StudioFinishStep): string {
   return s.error ? `Did not work: ${s.error}` : 'Did not work'
 }
 
+/** Did a run end with everything done, counting a step that failed and was
+ *  then done another way later in the same run (Schedule refused, then saved
+ *  Private). ONE RULE for the board's "Finish in Studio" count, the report
+ *  and the headline, so a finished video is not offered another Studio run.
+ *  Pure. */
+export function studioRunSettled(r: { ok: boolean; steps: Array<{ step: string; ok: boolean; skipped?: boolean }> } | null | undefined): boolean {
+  if (!r) return false
+  if (r.ok) return true
+  const asked = r.steps.filter((s) => !s.skipped)
+  if (asked.length === 0) return false
+  return asked.every((s, i) => s.ok || asked.slice(i + 1).some((t) => t.step === s.step && t.ok))
+}
+
 /** The line above the list. Only "every step read back" when every step that
  *  was asked for actually did. */
 export function studioRunHeadline(r: StudioFinishResult): string {
@@ -107,6 +120,12 @@ export function studioRunHeadline(r: StudioFinishResult): string {
   const done = asked.filter((s) => s.ok)
   if (asked.length === 0) return r.error ? `SCOUT could not start: ${r.error}` : 'Nothing was asked of SCOUT'
   if (done.length === asked.length) return 'Done in Studio. Every setting was read back.'
+  // DONE, BUT NOT ALL THE FIRST WAY: said as which, not as a problem.
+  if (studioRunSettled(r)) {
+    const redone = asked.filter((s, i) => !s.ok && asked.slice(i + 1).some((t) => t.step === s.step && t.ok)).map((s) => s.step)
+    if (redone.length === 1 && redone[0] === 'visibility') return 'Done in Studio. Studio would not take the time, so SCOUT saved it Private and MVP set the time.'
+    return `Done in Studio. Done a second way: ${Array.from(new Set(redone)).map(studioStepLabel).join(', ')}.`
+  }
   const first = asked.find((s) => !s.ok && !s.notReached)
   // "STOPPED" ONLY WHEN IT STOPPED. A step that could not be confirmed, with
   // everything after it done, is not a stop, and saying so sent people

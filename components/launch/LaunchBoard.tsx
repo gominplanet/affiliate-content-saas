@@ -35,7 +35,7 @@ import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION
 import { runStudioUploads } from '@/lib/studio-upload-client'
 import { isStudioWaiting, DRAFT_REASON_PREFIX, STUDIO_DRAFT_SAVING } from '@/lib/studio-upload'
 import {
-  DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
+  DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioRunSettled, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
 } from '@/lib/studio-finish'
 import StepCard from './StepCard'
@@ -1035,11 +1035,13 @@ export default function LaunchBoard() {
   /** Every video on YouTube whose Studio steps have not all read back, one
    *  at a time, because each one takes over a Studio tab. */
   // Videos on YouTube whose Studio steps have not been read back yet.
-  const studioLeft = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok).length
+  // A run that did a step a second way (Schedule refused, saved Private) is
+  // finished: offering it again only sends Studio to the front for nothing.
+  const studioLeft = items.filter((i) => !!i.youtube_video_id && !studioRunSettled(liveRuns[i.id] ?? i.studio_finish)).length
 
   async function finishAllInStudio() {
     if (studioRunning.current) return
-    const todo = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok)
+    const todo = items.filter((i) => !!i.youtube_video_id && !studioRunSettled(liveRuns[i.id] ?? i.studio_finish))
     let done = 0
     // The automatic pass stands aside while this runs, so the two never try
     // to start the same video.
@@ -2581,7 +2583,7 @@ export default function LaunchBoard() {
                     const asResult = { ok: run.ok, steps: run.steps, error: run.error ?? undefined, path: run.path ?? undefined }
                     return (
                       <details className="mt-0.5">
-                        <summary className="text-[11.5px] cursor-pointer select-none" style={{ color: run.ok ? '#10B981' : '#d97706' }}>
+                        <summary className="text-[11.5px] cursor-pointer select-none" style={{ color: studioRunSettled(run) ? '#10B981' : '#d97706' }}>
                           {studioRunHeadline(asResult)}
                         </summary>
                         <ul className="mt-1 flex flex-col gap-0.5 pl-1">
