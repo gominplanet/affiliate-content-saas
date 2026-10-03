@@ -6,7 +6,10 @@
 // creator's Facebook Groups with SCOUT: Meta lets no app post into a Group, so
 // SCOUT opens the Group and fills the post (the Reel's link first, so Facebook
 // shows the playable Reel), and the creator presses Post.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { isFacebookGroupLink, isFacebookGroupPostLink } from '@/lib/facebook-group-link'
+import { pageReelCaption } from '@/lib/reel-group-caption'
+export { pageReelCaption }
 import { Loader2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -79,6 +82,173 @@ export function ShareReelToGroups(p: { reelUrl: string; text: string; groups: Re
         className="self-start inline-flex items-center gap-1.5 text-[12px] font-medium text-[#1877F2] hover:underline">
         <Copy size={12} /> Copy the Group post instead
       </button>
+    </div>
+  )
+}
+
+// ── GROUP FIRST, THEN THE PAGE (Labs facebook_setup) ───────────────────────
+//
+// A Reel's caption link does not sell: on a limited Page it cannot be tapped,
+// and Michelle's cream Reel had 259 views and 0 clicks. So the clip goes into
+// the creator's Group first, with the affiliate link right under the video,
+// and the Page Reel links to THAT Group post: a Facebook link, which Meta
+// never counts as an outside link. A viewer taps once and lands on the post
+// with the product link, not on a Group to search through.
+//
+// One click: SCOUT opens the Group, attaches the clip and writes the post;
+// the creator presses Post; SCOUT reads the new post's address; MVP posts the
+// Reel on the Page with "Get it here 👉 <that post>" as its first line (only
+// the first lines of a Reel caption show on a phone). Every way this can stop
+// is said in words, and the Reel never goes out linking to a guess.
+
+
+type FlowLine = { tone: 'wait' | 'ok' | 'warn' | 'bad'; text: string }
+
+export function ReelGroupFirst(p: {
+  groups: ReelGroup[]
+  clipUrl: string | null
+  pageId: string
+  pageName: string | null
+  defaultCaption: string
+  /** Set by the publish panel's button: the Group post's text, and when. */
+  start: { text: string; at: number } | null
+  onBusy: (busy: boolean) => void
+  onReelPosted: (url: string | null, description: string) => void
+}) {
+  const [groupIdx, setGroupIdx] = useState(0)
+  const [caption, setCaption] = useState(p.defaultCaption)
+  const [lines, setLines] = useState<FlowLine[]>([])
+  const [manual, setManual] = useState<{ link: string } | null>(null)
+  const [retry, setRetry] = useState<string | null>(null)
+  const mounted = useRef(true)
+  const lastStart = useRef<number | null>(null)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => { if (!caption && p.defaultCaption) setCaption(p.defaultCaption) }, [p.defaultCaption, caption])
+
+  const group = p.groups[Math.min(groupIdx, p.groups.length - 1)]
+  const say = (l: FlowLine) => { if (mounted.current) setLines((xs) => [...xs, l]) }
+
+  async function postReel(link: string, how: 'post' | 'group') {
+    setRetry(null)
+    setManual(null)
+    const description = [`Get it here 👉 ${link}`, caption.trim()].filter(Boolean).join('\n\n')
+    say({ tone: 'wait', text: `Posting the Reel on ${p.pageName || 'your Page'}, linking to ${how === 'post' ? 'your Group post' : 'your Group'}…` })
+    p.onBusy(true)
+    try {
+      const res = await fetch('/api/clip-factory/facebook-reel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: p.clipUrl, description, ...(p.pageId ? { socialAccountId: p.pageId } : {}) }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
+      say({ tone: 'ok', text: data.state === 'published'
+        ? `Done. The Reel is live on ${data.page || 'your Page'}, and its first line links to ${how === 'post' ? 'your Group post' : 'your Group'}.`
+        : `Done. Facebook accepted the Reel and is still processing it; it appears on ${data.page || 'your Page'} shortly, linking to ${how === 'post' ? 'your Group post' : 'your Group'}.` })
+      p.onReelPosted(data.url || null, String(data.description || description))
+    } catch (e) {
+      // THE GROUP POST IS UP, THE REEL IS NOT: said as exactly that.
+      say({ tone: 'bad', text: `Your Group post is up, but the Reel did not go out: ${e instanceof Error ? e.message : 'Facebook refused it.'}` })
+      setRetry(link)
+    } finally { p.onBusy(false) }
+  }
+
+  async function run(text: string) {
+    if (!group || !p.clipUrl) return
+    setLines([]); setManual(null); setRetry(null)
+    try { await navigator.clipboard.writeText(text) } catch { /* the lines below say what to do */ }
+    say({ tone: 'wait', text: `SCOUT is opening ${group.name || 'your Group'} and attaching the clip…` })
+    p.onBusy(true)
+    const { requestFacebookGroupPrefill, getFacebookGroupPostStatus } = await import('@/lib/extension-frame')
+    const res = await requestFacebookGroupPrefill(group.url, text, { kind: 'clip', url: p.clipUrl })
+    p.onBusy(false)
+    if (!res.filled) { say({ tone: 'bad', text: res.error || 'SCOUT could not fill the Group post. The text is copied: paste it in the Group yourself.' }); return }
+    say({ tone: res.clipAttached === false ? 'warn' : 'ok', text: `The post is ready in ${group.name || 'your Group'}. ${res.media || ''} Then press Post in the Facebook tab.`.replace(/\s+/g, ' ').trim() })
+    if (!res.canWatch || !res.watchId) {
+      say({ tone: 'warn', text: 'Your SCOUT cannot see the post go up. After you press Post, paste the Group post\'s link below (click its time stamp and copy the address).' })
+      setManual({ link: '' })
+      return
+    }
+    say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open.' })
+    const end = Date.now() + 20 * 60 * 1000
+    while (mounted.current && Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 3000))
+      const st = await getFacebookGroupPostStatus(res.watchId)
+      if (st.state === 'watching') continue
+      if (st.state === 'posted' && st.url && isFacebookGroupPostLink(st.url)) { await postReel(st.url, 'post'); return }
+      if (st.state === 'posted' || st.state === 'posted_no_link') {
+        say({ tone: 'warn', text: 'SCOUT saw your Group post go up but could not read its own link. Paste it below for a Reel that links straight to it, or post the Reel linking to your Group.' })
+        setManual({ link: '' })
+        return
+      }
+      say({ tone: 'warn', text: st.state === 'closed'
+        ? 'The Facebook tab closed before SCOUT saw the post go up. If you posted it, paste its link below.'
+        : st.state === 'not_seen'
+          ? 'SCOUT did not see the post appear. If your Group approves posts first, it shows up once approved. Paste its link below when it is up.'
+          : 'SCOUT stopped watching before it saw the post. If you posted it, paste its link below.' })
+      setManual({ link: '' })
+      return
+    }
+  }
+
+  useEffect(() => {
+    if (!p.start || p.start.at === lastStart.current) return
+    lastStart.current = p.start.at
+    void run(p.start.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.start])
+
+  const tone = (t: FlowLine['tone']) => t === 'ok' ? 'text-[#10B981]' : t === 'bad' ? 'text-[#ff3b30]' : t === 'warn' ? 'text-[#ff9500]' : 'text-[#6e6e73] dark:text-[#b0b0b5]'
+
+  return (
+    <div className="rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/[0.04] p-3 flex flex-col gap-2.5">
+      <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your Group gets the clip with the link. Your Page gets the Reel, pointing to it.</p>
+      <ol className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] leading-snug list-decimal pl-4 flex flex-col gap-0.5">
+        <li><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">You check the post below</b> and press <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Post to my Group + Page</b>.</li>
+        <li><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">SCOUT</b> opens your Group, attaches the clip and writes the post with your product link.</li>
+        <li><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">You press Post</b> in Facebook. Facebook lets no app press it for you.</li>
+        <li><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">MVP</b> posts the Reel on {p.pageName || 'your Page'}, with a link to that exact Group post on its first line.</li>
+      </ol>
+      {p.groups.length > 1 && (
+        <label className="flex items-center gap-2 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7] flex-wrap">
+          Group:
+          <select value={groupIdx} onChange={(e) => setGroupIdx(Number(e.target.value))}
+            className="rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[12.5px]">
+            {p.groups.map((g, i) => <option key={g.url} value={i}>{g.name || g.url}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="flex flex-col gap-1">
+        <span className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">The Reel&apos;s caption on your Page</span>
+        <span className="text-[11.5px] text-[#86868b]">MVP puts &quot;Get it here 👉&quot; and the link to your Group post above this.</span>
+        <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={4}
+          className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#1c1c1e] px-2.5 py-2 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7]" />
+      </label>
+      {lines.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {lines.map((l, i) => (
+            <li key={i} className={`text-[12px] leading-snug flex items-start gap-1.5 ${tone(l.tone)}`}>
+              {l.tone === 'wait' && i === lines.length - 1 ? <Loader2 size={12} className="animate-spin mt-0.5 shrink-0" /> : <span aria-hidden className="shrink-0">{l.tone === 'ok' ? '✓' : l.tone === 'bad' ? '✗' : l.tone === 'warn' ? '!' : '·'}</span>}
+              <span>{l.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {manual && (
+        <div className="flex flex-col gap-1.5">
+          <input value={manual.link} onChange={(e) => setManual({ link: e.target.value })} placeholder="facebook.com/groups/your-group/posts/…"
+            className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2.5 py-1.5 text-[12.5px] font-mono" />
+          <div className="flex gap-2 flex-wrap">
+            <button disabled={!isFacebookGroupPostLink(manual.link.trim())} onClick={() => void postReel(manual.link.trim(), 'post')}
+              className="rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2] disabled:opacity-50">Post the Reel linking to this post</button>
+            {group && isFacebookGroupLink(group.url) && (
+              <button onClick={() => void postReel(group.url, 'group')} className="rounded-lg px-2.5 py-1 text-[12px] font-semibold border border-[#1877F2]/40 text-[#1877F2]">Link to my Group instead</button>
+            )}
+          </div>
+        </div>
+      )}
+      {retry && (
+        <button onClick={() => void postReel(retry, isFacebookGroupPostLink(retry) ? 'post' : 'group')} className="self-start rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2]">Try the Reel again</button>
+      )}
     </div>
   )
 }

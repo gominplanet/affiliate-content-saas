@@ -124,21 +124,15 @@ function MetaSetup() {
       </div>
 
       {/* HOW FACEBOOK WORKS, said once, plainly. */}
-      <div className="rounded-2xl border p-4 flex flex-col gap-2.5" style={{ borderColor: 'rgba(24,119,242,0.35)', background: 'rgba(24,119,242,0.06)' }}>
-        <p className="text-[17px] font-semibold" style={{ color: 'var(--text)' }}>On Facebook, your Group gets the links and your Page points to them.</p>
+      <div className="rounded-2xl border p-4 flex flex-col gap-2" style={{ borderColor: 'rgba(24,119,242,0.35)', background: 'rgba(24,119,242,0.06)' }}>
+        <p className="text-[17px] font-semibold" style={{ color: 'var(--text)' }}>Your Group holds the link. Your Page points to it.</p>
         <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-          When you push a post to Facebook from <Link href="/content?tab=posts" className="underline">Social Push</Link>, you press one button:
-        </p>
-        <ol className="text-[13px] leading-relaxed list-decimal pl-5 flex flex-col gap-1" style={{ color: 'var(--text-soft)' }}>
-          <li><strong style={{ color: 'var(--text)' }}>Your Group.</strong> SCOUT opens your Group and fills in the post, with your Amazon link and the picture. You press Post. Facebook lets no app press it for you.</li>
-          <li><strong style={{ color: 'var(--text)' }}>Your Page.</strong> The moment it is up, MVP posts on your Page by itself, linking to that Group post.</li>
-        </ol>
-        <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-          Facebook limits how many outside links a Page can post, but links to your own Group never count. This way your Page never runs out.
+          Facebook lets a Page post only a couple of outside links a month, and a link in a Reel&apos;s caption often can&apos;t be tapped.
+          A link to your own Group always works. So your Amazon link goes in a Group post, and your Page sends people straight to that post: one tap, and they see the product and the link.
         </p>
       </div>
 
-      <h2 className="text-[13px] font-bold uppercase tracking-wider pt-1" style={{ color: 'var(--text-faint)' }}>Facebook setup</h2>
+      <h2 className="text-[13px] font-bold uppercase tracking-wider pt-1" style={{ color: 'var(--text-faint)' }}>Set up once</h2>
 
       {/* STEP 1: THE PAGE */}
       <section className="card rounded-2xl border p-4 flex flex-col gap-2.5" style={{ borderColor: 'var(--border)' }}>
@@ -222,9 +216,45 @@ function MetaSetup() {
         )}
       </section>
 
+      {/* EVERY TIME YOU POST: who does what, for posts and for Reels. */}
+      <section className="card rounded-2xl border p-4 flex flex-col gap-3" style={{ borderColor: 'var(--border)' }}>
+        <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Then, every time you post</h2>
+        {([
+          {
+            title: 'A review or blog post',
+            where: <>from <Link href="/content?tab=posts" className="underline">Social Push</Link></>,
+            you: ['Press Facebook on the post, then Post to my Group + Page.', 'Press Post in the Facebook tab that opens.'],
+            mvp: ['SCOUT opens your Group and writes the post, with your Amazon link and picture.', 'The moment it is up, MVP posts on your Page, linking to that Group post.'],
+          },
+          {
+            title: 'A Reel',
+            where: <>from <Link href="/clip-factory" className="underline">Clip Factory</Link> (Pro)</>,
+            you: ['Press Facebook Reel, check the post, then Post to my Group + Page.', 'In the Facebook tab, wait for the clip to finish uploading, then press Post.'],
+            mvp: ['SCOUT opens your Group, attaches the clip and writes the post with your product link.', 'MVP posts the Reel on your Page, with "Get it here" and a link to that exact Group post on the first line.'],
+          },
+        ]).map((w) => (
+          <div key={w.title} className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{w.title} <span className="font-normal text-[12.5px]" style={{ color: 'var(--text-faint)' }}>{w.where}</span></p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#1877F2' }}>You do</p>
+                <ol className="text-[12.5px] leading-snug list-decimal pl-4 flex flex-col gap-0.5" style={{ color: 'var(--text-soft)' }}>{w.you.map((t) => <li key={t}>{t}</li>)}</ol>
+              </div>
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#10B981' }}>MVP does</p>
+                <ol className="text-[12.5px] leading-snug list-decimal pl-4 flex flex-col gap-0.5" style={{ color: 'var(--text-soft)' }}>{w.mvp.map((t) => <li key={t}>{t}</li>)}</ol>
+              </div>
+            </div>
+          </div>
+        ))}
+        <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+          The one click that stays yours is Post in your Group: Facebook lets no app press it. Keep the MVP tab open until it says Done.
+        </p>
+      </section>
+
       {allDone && (
         <div className="rounded-2xl border p-4 text-[13px]" style={{ borderColor: 'rgba(16,185,129,0.45)', background: 'rgba(16,185,129,0.06)', color: 'var(--text-soft)' }}>
-          <strong style={{ color: 'var(--text)' }}>Facebook is set.</strong> Go to <Link href="/content?tab=posts" className="underline">Social Push</Link>, press Facebook on any post, then press <strong style={{ color: 'var(--text)' }}>Post to your Group + Page</strong>.
+          <strong style={{ color: 'var(--text)' }}>Facebook is set.</strong> Next time you post from <Link href="/content?tab=posts" className="underline">Social Push</Link> or <Link href="/clip-factory" className="underline">Clip Factory</Link>, press <strong style={{ color: 'var(--text)' }}>Post to my Group + Page</strong>.
         </div>
       )}
 

@@ -53,6 +53,9 @@ export default function PublishPanel(props: {
   onRetry: () => void
   onConfirm: (c: PublishChoice) => void
   onCancel: () => void
+  /** The button's words when the caller does something other than post here
+   *  (Facebook, Group first: "Post to my Group + Page"). */
+  confirmLabel?: string
 }) {
   const { platform, kit } = props
   const rules = CLIP_PLATFORM_RULES[platform]
@@ -92,7 +95,7 @@ export default function PublishPanel(props: {
   // No disclosure means the post must not go: the links request failed and
   // nothing is known about this clip, which is not the same as nothing found.
   const blocked = !kit?.disclosure
-  const confirmLabel = platform === 'youtube' ? 'Post Short' : platform === 'facebook' ? 'Post Reel' : `Continue to ${rules.label}`
+  const confirmLabel = props.confirmLabel ?? (platform === 'youtube' ? 'Post Short' : platform === 'facebook' ? 'Post Reel' : `Continue to ${rules.label}`)
 
   return (
     <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: `${props.color}55` }}>

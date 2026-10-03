@@ -25,8 +25,13 @@ const FILL = fillStart >= 0 ? BG.slice(fillStart) : ''
 check('the page script exists', fillStart >= 0)
 check('it never clicks a Post button',
   !/aria-label=?\\?["']?Post|innerText\s*===?\s*['"]Post|\btext\(\)\s*===?\s*['"]Post/i.test(FILL)
-  && (FILL.match(/\.click\(\)/g) || []).length === 1,
-  'the only click allowed is the one that opens "Write something"')
+  && (FILL.match(/\.click\(\)/g) || []).length === 2
+  && /trigger\.click\(\)/.test(FILL)
+  // The second: Facebook's own Photo/video button, found only by that label,
+  // so a clip can be attached. Never anything that could post.
+  && /if \(mediaBtn\) \{ mediaBtn\.click\(\)/.test(FILL)
+  && /const mediaBtn = [^\n]*\^\(photo\\\/video\|photo or video/.test(FILL),
+  'the only clicks allowed open "Write something" and Photo/video')
 check('filled is only claimed after the text is seen in the box',
   FILL.indexOf("if (!how) return fail(") > 0 && FILL.indexOf("if (!how) return fail(") < FILL.indexOf('return { ok: true, filled: true'))
 check('what happened to the hero is said, attached or not',

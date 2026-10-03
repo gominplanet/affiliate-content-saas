@@ -13113,6 +13113,11 @@ async function prefillFacebookGroup({ groupUrl, text, media }) {
     } else if (media && media.kind === 'thumbnail' && media.url) {
       const dataUrl = await fbImageDataUrl(media.url)
       hero = dataUrl ? { kind: 'thumbnail', dataUrl } : { kind: 'thumbnail', failed: true }
+    } else if (media && media.kind === 'clip' && /^https:\/\//i.test(String(media.url || ''))) {
+      // A Clip Factory clip, attached as the video itself. Fetched inside the
+      // Facebook page (the clip hosts allow it), not passed through here: a
+      // clip is tens of megabytes.
+      hero = { kind: 'clip', url: String(media.url) }
     }
     // The listener goes in BEFORE the fill, so the moment the creator presses
     // Post, Facebook's own answer (which carries the new post's address) is
@@ -13235,6 +13240,53 @@ async function fillGroupComposerInPage(text, hero) {
       mediaNote = attached ? 'The thumbnail is attached.' : 'The thumbnail did not attach, so add it yourself if you want it.'
       steps.push('thumbnail: ' + (attached ? 'attached' : 'not attached'))
     }
+  }
+  // THE CLIP AFTER THE TEXT, like the thumbnail: an attached video replaces
+  // any link card, and the links in the text stay clickable. Pasted as a file
+  // first; if Facebook ignores that, through the composer's Photo/video
+  // button and its file box. Believed only when the dialog shows a video.
+  if (hero && hero.kind === 'clip') {
+    let file = null
+    try {
+      const res = await fetch(hero.url)
+      if (res.ok) {
+        const blob = await res.blob()
+        if (/^video\//.test(blob.type || 'video/mp4') && blob.size > 0 && blob.size <= 1024 * 1024 * 1024) {
+          file = new File([blob], 'clip.mp4', { type: blob.type || 'video/mp4' })
+        }
+      }
+    } catch (e) {}
+    if (!file) {
+      steps.push('clip: download failed')
+      return { ok: true, filled: true, steps: steps.join('; '), clipAttached: false, media: 'SCOUT could not download the clip, so the video is not attached. Add it yourself before you press Post, or the Group post goes out without it.' }
+    }
+    const hasVideo = () => !!dialog.querySelector('video') || /uploading|processing|téléversement|subiendo/i.test(dialog.innerText || '')
+    try {
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      box.focus()
+      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    } catch (e) {}
+    let attached = false
+    for (let i = 0; i < 15 && !attached; i++) { await sleep(400); attached = hasVideo() }
+    if (!attached) {
+      const mediaBtn = Array.from(dialog.querySelectorAll('[role="button"], [aria-label]')).find((el) => visible(el) && /^(photo\/video|photo or video|photo\/vid|foto\/vídeo|photo\/vidéo)/i.test((el.getAttribute('aria-label') || el.innerText || '').trim()))
+      if (mediaBtn) { mediaBtn.click(); await sleep(900) }
+      const input = Array.from(dialog.querySelectorAll('input[type="file"]')).find((el) => /video|\*/i.test(el.getAttribute('accept') || '*')) || dialog.querySelector('input[type="file"]')
+      if (input) {
+        try {
+          const dt = new DataTransfer()
+          dt.items.add(file)
+          input.files = dt.files
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+        } catch (e) {}
+        for (let i = 0; i < 40 && !attached; i++) { await sleep(500); attached = hasVideo() }
+      }
+      steps.push('clip: ' + (mediaBtn ? 'media button' : 'no media button') + ', ' + (input ? 'file box' : 'no file box'))
+    }
+    steps.push('clip: ' + (attached ? 'attached' : 'not attached'))
+    return { ok: true, filled: true, steps: steps.join('; '), clipAttached: attached, media: attached ? 'The clip is attached. Wait for it to finish uploading, then press Post.' : 'The clip did not attach. Add it yourself with Photo/video before you press Post.' }
   }
   return { ok: true, filled: true, steps: steps.join('; '), media: mediaNote || undefined }
 }

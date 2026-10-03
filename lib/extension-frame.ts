@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -953,8 +953,8 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
-export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean }
-export type FacebookGroupMedia = { kind: 'thumbnail' | 'video'; url: string } | null
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** A clip was asked for: whether the dialog showed the video. */ clipAttached?: boolean; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean }
+export type FacebookGroupMedia = { kind: 'thumbnail' | 'video' | 'clip'; url: string } | null
 
 /**
  * Ask SCOUT to open one of the creator's Facebook Groups and fill MVP's post
@@ -973,6 +973,11 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   }
   if (!scoutAtLeast(status.version, SCOUT_FB_GROUP_MIN_VERSION)) {
     return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and filling Group posts needs ${SCOUT_FB_GROUP_MIN_VERSION}. Chrome updates it by itself soon. Until then the post is copied: paste it in the Group yourself.` }
+  }
+  // A clip needs SCOUT 1.40.0: an older one would fill the text and leave the
+  // video out, a Group post without the thing it is about. Stopped, and said.
+  if (media?.kind === 'clip' && !scoutAtLeast(status.version, SCOUT_FB_GROUP_CLIP_MIN_VERSION)) {
+    return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and attaching a clip to a Group post needs ${SCOUT_FB_GROUP_CLIP_MIN_VERSION}. Chrome updates it by itself soon; nothing was filled.` }
   }
   // An older SCOUT fills the text but cannot attach the hero, and says nothing
   // about it. Said here instead, so "no image" is never a silent difference.

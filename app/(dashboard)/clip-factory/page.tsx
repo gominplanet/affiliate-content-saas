@@ -17,7 +17,7 @@
 // existing API routes — no new engines.
 
 import PublishPanel, { type PublishKit, type PublishChoice } from '@/components/clip-factory/PublishPanel'
-import { ReelPagePicker, ShareReelToGroups, type ReelPage, type ReelGroup } from '@/components/clip-factory/ReelDestinations'
+import { ReelPagePicker, ShareReelToGroups, ReelGroupFirst, pageReelCaption, type ReelPage, type ReelGroup } from '@/components/clip-factory/ReelDestinations'
 import type { ClipPlatform } from '@/lib/clip-description'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipFactoryGuide } from '@/components/guide/tool-guides'
@@ -256,6 +256,10 @@ export default function ClipFactoryPage() {
   const [fbDestError, setFbDestError] = useState<string | null>(null)
   const [fbPageId, setFbPageId] = useState('')
   const [fbReelText, setFbReelText] = useState('')
+  // Group first, then the Page (Labs facebook_setup): the panel's button hands
+  // its text to ReelGroupFirst, which runs SCOUT, waits for the Group post,
+  // then posts the Reel linking to it.
+  const [fbFlowStart, setFbFlowStart] = useState<{ text: string; at: number } | null>(null)
   // The Reel's description, built by the server and shown before posting:
   // what posts is exactly this text, and whether it carries a product link is
   // said on screen rather than discovered on Facebook.
@@ -744,7 +748,7 @@ export default function ClipFactoryPage() {
     }
   }, [kits, clip, product, productName, publishCaption, panelHashtags])
   // A different clip or product means different links.
-  useEffect(() => { kitEpoch.current++; setKits({}); setKitErrors({}); setPanel(null) }, [clip, product, productName])
+  useEffect(() => { kitEpoch.current++; setKits({}); setKitErrors({}); setPanel(null); setFbFlowStart(null) }, [clip, product, productName])
 
   // Facebook Reel on the creator's Page (Labs): posts exactly the panel's text.
   // The answer says whether it is live or still processing, from what Facebook
@@ -781,15 +785,19 @@ export default function ClipFactoryPage() {
     }).catch((e) => setFbDestError(String(e)))
   }, [panel, fbPages, fbDestError])
 
+  // Group first is on for this creator, and there is a Group to post into.
+  const reelGroupFirst = canUsePreview('facebook_setup', tier) && (fbGroups?.length ?? 0) > 0
+
   const confirmPanel = useCallback((c: PublishChoice) => {
     if (panel === 'youtube') void postYouTube(c)
+    else if (panel === 'facebook' && reelGroupFirst) setFbFlowStart({ text: c.text, at: Date.now() })
     else if (panel === 'facebook') void postFacebookReel(c.text)
     else if (panel === 'tiktok') { setTtCaption(c.text); setPanel(null); setTtOpen(true) }
     else if (panel === 'instagram') { setIgCaption(c.text); setPanel(null); setIgOpen(true) }
-  }, [panel, postYouTube, postFacebookReel])
+  }, [panel, postYouTube, postFacebookReel, reelGroupFirst])
 
   const restart = useCallback(() => {
-    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setPanel(null); setKits({}); setTtCaption(null); setIgCaption(null); setCoverOffsetMs(null); setStage('create')
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setFbFlowStart(null); setPanel(null); setKits({}); setTtCaption(null); setIgCaption(null); setCoverOffsetMs(null); setStage('create')
   }, [])
 
   // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
@@ -1314,7 +1322,31 @@ export default function ClipFactoryPage() {
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
             {panel === 'facebook' && <ReelPagePicker pages={fbPages} value={fbPageId} onChange={setFbPageId} error={fbDestError} />}
-            {fbReelUrl && <ShareReelToGroups reelUrl={fbReelUrl} text={fbReelText} groups={fbGroups} />}
+            {/* NO GROUP YET: the nudge. The Reel still posts, with its link in
+                the caption, where it may not be tappable. */}
+            {panel === 'facebook' && canUsePreview('facebook_setup', tier) && fbGroups !== null && fbGroups.length === 0 && (
+              <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/[0.04] p-3">
+                <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first.</b> A link in a Reel&apos;s caption often can&apos;t be tapped.
+                With a Group, MVP puts the clip and your link in the Group, and the Reel links straight to that post. The <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta</a> page walks you through it.
+              </p>
+            )}
+            {(panel === 'facebook' || fbFlowStart) && reelGroupFirst && fbGroups && (
+              <ReelGroupFirst
+                groups={fbGroups}
+                clipUrl={publishUrl}
+                pageId={fbPageId}
+                pageName={fbPages?.find((x) => x.id === fbPageId)?.name ?? null}
+                defaultCaption={pageReelCaption(publishCaption, panelHashtags)}
+                start={fbFlowStart}
+                onBusy={setPublishingFb}
+                onReelPosted={(url, description) => {
+                  setPosted(pp => ({ ...pp, facebook: true }))
+                  setFbReelUrl(url)
+                  setFbReelText(description)
+                }}
+              />
+            )}
+            {fbReelUrl && !reelGroupFirst && <ShareReelToGroups reelUrl={fbReelUrl} text={fbReelText} groups={fbGroups} />}
             {panel && (
               <PublishPanel
                 platform={panel}
@@ -1328,6 +1360,7 @@ export default function ClipFactoryPage() {
                 busy={panel === 'youtube' ? publishingYt : panel === 'facebook' ? publishingFb : false}
                 onConfirm={confirmPanel}
                 onCancel={() => setPanel(null)}
+                confirmLabel={panel === 'facebook' && reelGroupFirst ? 'Post to my Group + Page' : undefined}
               />
             )}
             {/* WHAT EACH PLATFORM TAKES, said before the button rather than

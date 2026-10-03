@@ -6,6 +6,7 @@
 // that say why: never a post whose link Facebook shows as plain text.
 
 import { readFileSync } from 'node:fs'
+import { pageReelCaption } from '../lib/reel-group-caption'
 import { outsideLinks, allowanceFor, planEnforces, linkLimitRefusal, cleanPlan, linkWindow } from '../lib/facebook-link-budget'
 
 const failures: string[] = []
@@ -79,11 +80,25 @@ check('Social Push turns it on with the Labs switch', /groupFirst: canUsePreview
 check('one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
 check('the setup route only accepts real Group links', /isFacebookGroupLink/.test(read('app/api/facebook/setup/route.ts')))
 const page = read('app/(dashboard)/meta/page.tsx')
-check('the Meta page says how Facebook works in plain words', /On Facebook, your Group gets the links and your Page points to them\./.test(page))
+check('the Meta page says how Facebook works in plain words', /Your Group holds the link\. Your Page points to it\./.test(page))
+check('the Meta page says who does what, for posts and for Reels', /You do/.test(page) && /MVP does/.test(page) && /title: 'A Reel'/.test(page))
 check('the Meta page asks nothing about link limits', !/Meta One/.test(page))
 check('Instagram comment to DM is said as waiting, not live', /waiting for Meta/.test(page))
 check('the old address still lands on the Meta page', /redirect\('\/meta'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')))
 check('SCOUT answers whether it is allowed on Facebook', /msg\.type === 'MVP_FB_ACCESS'/.test(read('extension/background.js')))
+
+// ── Clip Factory: the clip in the Group, the Reel linking to that exact post ─
+{
+  const cap = pageReelCaption('This cream changed my skin.\nGrab it 👉 https://amzn.to/abc\nLink in bio\n#skincare #glow', ['skincare', 'glow'])
+  check('the Page Reel caption drops the Amazon link and "link in bio"', !/amzn\.to|link in bio/i.test(cap) && /This cream changed my skin\./.test(cap) && /#skincare/.test(cap))
+}
+const reel = read('components/clip-factory/ReelDestinations.tsx')
+check('SCOUT attaches the clip itself to the Group post', /\{ kind: 'clip', url: p\.clipUrl \}/.test(reel) && /hero\.kind === 'clip'/.test(read('extension/background.js')))
+check('the Reel\'s first line links to the exact Group post', /`Get it here 👉 \$\{link\}`/.test(reel) && /isFacebookGroupPostLink\(st\.url\)\) \{ await postReel\(st\.url, 'post'\)/.test(reel))
+check('without the post\'s own link, the Reel waits for it or links to the Group only when asked', /Link to my Group instead/.test(reel) && !/postReel\(group\.url, 'group'\); return/.test(reel))
+check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the Reel did not go out/.test(reel))
+check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
+check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('app/(dashboard)/clip-factory/page.tsx')) && /Set up your deals Group first\./.test(read('app/(dashboard)/clip-factory/page.tsx')))
 
 if (failures.length) {
   console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))
