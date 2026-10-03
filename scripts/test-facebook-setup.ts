@@ -115,6 +115,13 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('a Reel description is not promised clickable', !/Links in a Reel description are clickable/.test(read('lib/clip-description.ts')))
 }
 
+// ── A dropped connection during a render is checked, never shown raw ────────
+{
+  const panel = read('components/vertical/ShortsCreatePanel.tsx')
+  check('a dropped connection looks for the finished Short before saying anything', /if \(e instanceof TypeError\) \{/.test(panel) && /Checking whether the Short finished/.test(panel))
+  check('and only then says what happened, in words', /The connection to MVP dropped while this Short was rendering/.test(panel))
+}
+
 if (failures.length) {
   console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))
   process.exit(1)

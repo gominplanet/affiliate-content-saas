@@ -224,12 +224,47 @@ export function ShortsCreatePanel({
       notifyShortsUsageChanged()
       toast.success('Short rendered')
     } catch (e) {
+      // THE CONNECTION DROPPED, NOT THE RENDER. "Failed to fetch" is the
+      // browser saying it lost MVP before an answer came back; a heavy render
+      // (split screen) can still finish on the server. So MVP looks before it
+      // says anything, for up to three minutes, and never shows those words.
+      if (e instanceof TypeError) {
+        const before = { status: clip.status, url: clip.renderedUrl }
+        toast('The connection dropped while rendering. Checking whether the Short finished…')
+        for (let i = 0; i < 18; i++) {
+          await new Promise((r) => setTimeout(r, 10_000))
+          try {
+            const res = await fetch(`/api/youtube/shorts?videoId=${encodeURIComponent(videoId)}`, { cache: 'no-store' })
+            const data = await res.json().catch(() => ({}))
+            const now = (data.shorts as ShortRow[] | undefined)?.find((c) => c.id === clip.id)
+            if (!now) continue
+            if (now.status === 'rendered' && (now.renderedUrl !== before.url || before.status !== 'rendered')) {
+              setClips(prev => prev.map(c => (c.id === clip.id ? now : c)))
+              notifyShortsUsageChanged()
+              toast.success('Short rendered')
+              setRenderingId(null)
+              return
+            }
+            if (now.status === 'failed' && now.renderError && now.renderError !== clip.renderError) {
+              setClips(prev => prev.map(c => (c.id === clip.id ? now : c)))
+              toast.error(now.renderError)
+              setRenderingId(null)
+              return
+            }
+          } catch { /* still offline: keep looking */ }
+        }
+        const said = 'The connection to MVP dropped while this Short was rendering, and three minutes later it still had not finished. Press Render Short again.'
+        toast.error(said)
+        setClips(prev => prev.map(c => (c.id === clip.id ? { ...c, status: 'failed', renderError: said } : c)))
+        setRenderingId(null)
+        return
+      }
       toast.error(errText(e))
       setClips(prev => prev.map(c => (c.id === clip.id ? { ...c, status: 'failed', renderError: errText(e) } : c)))
     } finally {
-      setRenderingId(null)
+      setRenderingId((cur) => (cur === clip.id ? null : cur))
     }
-  }, [canRender, styleById, captionsById, layoutById])
+  }, [canRender, styleById, captionsById, layoutById, videoId])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
