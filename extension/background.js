@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 19
+  const KIT_VERSION = 20
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9810,7 +9810,33 @@ K.steps.monetization = async (out, o) => {
     // greyed out, and reported the Save it never managed to press.
     const addBtn = () => all(dlg).find((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen') || null
     const editorOpen = () => (findBtn(/^discard changes$/i, document) && /import from latest video/i.test(visibleText(document)) ? true : null)
+    // THE EDITOR, WITH OR WITHOUT ITS TEMPLATES. Studio shows "Import from
+    // latest video" only on an empty end screen. On a video that already has
+    // one (imported during the upload) it opens straight onto the elements,
+    // and that open editor read as "the editor did not open".
+    const editorUp = () => (findBtn(/^discard changes$/i, document) || all(document).some((el) => visible(el) && /endscreen.*editor|ytve-endscreen/i.test(el.tagName || '')) ? true : null)
     const editorSave = () => findBtn(/^save$/i, document, { enabled: true })
+    // ALREADY THERE: nothing is changed, the editor is left the way a person
+    // leaves it with no changes (Discard, or its close button).
+    const alreadyHas = async () => {
+      out.readBack.endScreen = true
+      out.readBack.alreadyThere = true
+      const discard = findBtn(/^discard changes$/i, document, { enabled: true })
+      const close = discard || all(document).find((el) => isBtn(el) && visible(el) && /^close$/i.test(attrLabel(el) || deepText(el)))
+      if (close) click(close)
+      await sleep(1200)
+      const leave = findBtn(/^discard$/i, document, { enabled: true })
+      if (leave) click(leave)
+      out.ok = true
+      out.detail = 'The video already has an end screen, so SCOUT left it as it is'
+      return out
+    }
+    const openedEditor = async (ms) => {
+      if (!(await waitFor(editorUp, ms, 500))) return null
+      // The templates panel can draw a moment after the editor itself.
+      if (await waitFor(editorOpen, 5000, 500)) return await inEditor()
+      return await alreadyHas()
+    }
     const inEditor = async () => {
       const label = all(document).find((el) => visible(el) && /^import from latest video$/i.test(deepText(el)))
       const targets = []
@@ -9881,14 +9907,16 @@ K.steps.monetization = async (out, o) => {
       }
       out.debug.rowTarget = target ? ((target.tagName || '').toLowerCase() + ':' + (attrLabel(target) || deepText(target) || '').slice(0, 40)) : 'label'
       click(target || label)
-      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      const viaRow = await openedEditor(25000)
+      if (viaRow) return viaRow
       out.detail = 'Pressed End screen on the Details page, but the editor did not open'
       out.debug.buttons = buttonSample(document)
       out.debug.url = location.href.slice(0, 160)
       return out
     }
     if (o.page) {
-      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      const viaPage = await openedEditor(25000)
+      if (viaPage) return viaPage
       out.detail = 'The video\u2019s end-screen page did not open the editor'
       out.debug.buttons = buttonSample(document)
       out.debug.url = location.href.slice(0, 160)

@@ -130,6 +130,7 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('Schedule never fails silently: it says what Studio showed', /Studio did not confirm it' \+ \(shown/.test(bg))
   check('the date is typed only into the picker, never a box behind the window', /const inDatePicker = /.test(bg) && !/const scopes = \[newDialog\(before\), document\]/.test(bg))
   check('a date that did not take gets one slower go', /out\.readBack\.dateSecondGo = true/.test(bg))
+  check('an end screen already on the video counts as done, not as an editor that never opened', /const alreadyHas = async/.test(bg) && /const viaRow = await openedEditor\(25000\)/.test(bg) && /The video already has an end screen, so SCOUT left it as it is/.test(bg))
   check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
 }
 

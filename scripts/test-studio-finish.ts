@@ -165,7 +165,7 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
   check('disabled is read on the button\'s wrapper as well as the button',
     /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
-  check('the kit version moves when the kit changes', /const KIT_VERSION = 19\b/.test(BG))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 20\b/.test(BG))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a menu that opened is not clicked shut by the next try',
     /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))
@@ -260,9 +260,9 @@ check('the manifest and the app registry agree on the version',
   check('SCOUT opens the end screen from the Details page first',
     /await goto\('edit', true\)/.test(run) && /studioDraftExec\(tabId, 'endscreen', \{ detailsRow: true, videoId \}\)/.test(run)
     && /if \(!es\.ok && es\.fallback\)/.test(run))
-  const kit = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.endscreen = ') + 9000)
+  const kit = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.endscreen = ') + 12000)
   check('the Details-page path presses the End screen row and reuses the editor steps',
-    /if \(o\.detailsRow\) \{/.test(kit) && /\/\^end screen\$\/i\.test\(deepText\(el\)\)/.test(kit) && /if \(await waitFor\(editorOpen, 25000, 500\)\) return await inEditor\(\)/.test(kit))
+    /if \(o\.detailsRow\) \{/.test(kit) && /\/\^end screen\$\/i\.test\(deepText\(el\)\)/.test(kit) && /const viaRow = await openedEditor\(25000\)/.test(kit) && /if \(await waitFor\(editorOpen, 5000, 500\)\) return await inEditor\(\)/.test(kit))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
