@@ -12190,6 +12190,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_FB_ACCESS') {
+    // Facebook setup's third step: is SCOUT allowed on Facebook, and if asked,
+    // ask the creator now (the same Allow window the first Group fill shows),
+    // so the first real post does not stop on a permission prompt.
+    (async () => {
+      let has = false
+      try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
+      if (!has && msg.ask) has = await askFacebookAccess()
+      return { granted: !!has }
+    })().then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
   if (msg.type === 'MVP_FB_GROUP_POST_STATUS') {
     // MVP asks whether the Group post it filled has gone up yet, and where.
     readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))

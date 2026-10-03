@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -985,6 +985,17 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   // older one shows "paste the link" instead of a wait that never ends.
   const canWatch = scoutAtLeast(status.version, SCOUT_FB_GROUP_WATCH_MIN_VERSION) && !!res?.watchId
   return res ? { ...res, canWatch } : { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+}
+
+/** Is SCOUT allowed on Facebook (Facebook setup, step 3). ask: show the Allow
+ *  window now when it is not. 'old' is a SCOUT that cannot answer: it asks
+ *  on the first Group fill instead. Resolves, never throws. */
+export async function requestFacebookAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_FB_ACCESS_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
+  const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_FB_ACCESS', ask }, ask ? 185_000 : 10_000)
+  return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
 }
 
 /** Where the Group post SCOUT filled stands, after the creator presses Post.

@@ -6,6 +6,7 @@
 // → publish. FB puts the geni.us link inline; IG can't carry a caption link, so
 // it appends "link in bio" and (best-effort) drops a product tile in the shop
 // grid the bio points at.
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { publishMedia } from '@/services/instagram'
 import { createFacebookService } from '@/services/facebook'
 import { tileImageFor } from '@/lib/tile-image'
@@ -198,9 +199,14 @@ export async function publishToFacebook(opts: {
   // Facebook: lead with the affiliate link + disclosure, then the rest.
   const caption = facebookCaptionOrder(body, linkUrl)
 
+  // The caption leads with the affiliate link: counted against Meta's monthly
+  // limit on outside links, and stopped past it (lib/facebook-link-budget).
+  const linkCheck = await checkPageLinkPost({ userId: opts.userId, pageId: intRow.facebook_page_id, text: caption })
+  if (!linkCheck.ok) throw new Error(linkCheck.error)
   const fb = createFacebookService(intRow.facebook_page_access_token, intRow.facebook_page_id)
   const res = await fb.postPhoto({ imageUrl: opts.imageUrl, caption })
   const postId = res.post_id || res.id
+  if (linkCheck.counts) await recordPageLinkPost({ userId: opts.userId, pageId: intRow.facebook_page_id, postId, source: 'amazon-design' })
   return { id: postId, url: `https://www.facebook.com/${postId}`, caption, linkUrl, note }
 }
 

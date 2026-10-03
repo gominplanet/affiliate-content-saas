@@ -13,6 +13,7 @@
  * Each platform runs in its own try/catch and returns an independent result, so
  * one failure never blocks the others.
  */
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import {
   decryptIntegrationRow, encryptIntegrationWrite,
 } from '@/lib/integration-secrets'
@@ -168,10 +169,15 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         })
         if (!acct) throw new Error('Facebook Page is not connected.')
         const caption = composeText(baseCaption, 'facebook', link, disclaimer, retailer)
+        // A deal post always carries its Amazon link: the first thing Meta's
+        // monthly link limit stops. Past it, not posted, and said why.
+        const linkCheck = await checkPageLinkPost({ userId, pageId: acct.externalId, pageName: acct.displayName, text: caption, link: img ? null : link })
+        if (!linkCheck.ok) throw new Error(linkCheck.error)
         const fb = createFacebookService(acct.accessToken, acct.externalId)
         let id: string
         if (img) { const r = await fb.postPhoto({ imageUrl: img, caption }); id = r.post_id || r.id }
         else { const r = await fb.postLink({ message: caption, link }); id = r.id }
+        if (linkCheck.counts) await recordPageLinkPost({ userId, pageId: acct.externalId, postId: id, source: 'deal' })
         return { platform, ok: true, url: `https://www.facebook.com/${id}` }
 
       } else if (platform === 'threads') {

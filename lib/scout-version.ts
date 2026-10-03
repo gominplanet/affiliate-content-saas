@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.38.0'
+export const SCOUT_LATEST_VERSION = '1.39.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -68,6 +68,8 @@ export const SCOUT_FB_GROUP_MEDIA_MIN_VERSION = '1.23.0'
 /** The oldest SCOUT that watches for the filled Group post to go up and
  *  reports its address, so MVP can offer a Page post linking to it. */
 export const SCOUT_FB_GROUP_WATCH_MIN_VERSION = '1.24.0'
+/** SCOUT answers "is it allowed on Facebook" and can ask, for Facebook setup. */
+export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 
 /** The oldest SCOUT that uploads Liftoff videos through YouTube Studio
  *  (MVP_STUDIO_UPLOAD), so an upload costs nothing from the shared quota. */

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -278,8 +279,18 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     })
     let photoFellBack = false
 
-    const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string }> = []
+    const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string; code?: string }> = []
+    // The link this post carries, for Meta's monthly limit on outside links
+    // (lib/facebook-link-budget). The photo post carries it in the caption.
+    const carriedLink = attachment.kind === 'photo' && attachment.imageUrl ? null : (attachment.link || shareUrl)
     for (const acct of fbAccounts) {
+      // PAST THE PAGE'S LINK LIMIT, NOT POSTED: Facebook would show the link
+      // as plain text. Said per Page, in words, never a silent dead link.
+      const linkCheck = await checkPageLinkPost({ userId: user.id, pageId: acct.externalId, pageName: acct.displayName, text: caption, link: carriedLink })
+      if (!linkCheck.ok) {
+        results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: linkCheck.error, code: linkCheck.code })
+        continue
+      }
       try {
         const fbService = createFacebookService(acct.accessToken, acct.externalId)
         // A /photos post returns { id: <photo id>, post_id: <PAGEID_POSTID> }. We
@@ -309,6 +320,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
           pagePostId = r.id
         }
         results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
+        if (linkCheck.counts || photoFellBack) await recordPageLinkPost({ userId: user.id, pageId: acct.externalId, postId: pagePostId, source: 'blog' })
       } catch (e) {
         results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: e instanceof Error ? e.message : String(e) })
       }
@@ -316,9 +328,12 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
 
     const succeeded = results.filter(r => r.ok)
     if (succeeded.length === 0) {
+      // A post stopped by the link limit is a 409 with its code, so the page
+      // shows it as the limit (with what to do), not as Facebook failing.
+      const limited = results.find((r) => r.code === 'fb_link_limit')
       return NextResponse.json(
-        { error: results[0]?.error || 'Facebook publish failed', results },
-        { status: 502 },
+        { error: (limited ?? results[0])?.error || 'Facebook publish failed', code: limited?.code, results },
+        { status: limited && results.every((r) => r.code === 'fb_link_limit') ? 409 : 502 },
       )
     }
 

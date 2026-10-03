@@ -17,6 +17,7 @@
  * racing for the same row → one wins, the other sees an empty result.
  */
 
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { blogPinLink } from '@/lib/pin-product-link'
 import { NextResponse } from 'next/server'
@@ -37,7 +38,7 @@ import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { scrubBanned } from '@/lib/scrub'
 import { maybeDecrypt } from '@/lib/secrets'
-import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel } from '@/lib/channel-health'
+import { getDeadChannels, shouldSkipChannel, autoSkipMessage, LINK_LIMIT_PREFIX, type DeadChannel } from '@/lib/channel-health'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials, isSitePaused } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
@@ -863,6 +864,15 @@ async function publishOne(
         amazonDestination: schedAmazonDestination,
       })
       const fbFallbackLink = primaryCardUrl(fbPref, schedAffiliateLink, url, schedVideoUrl) ?? url
+      // META'S MONTHLY LIMIT ON OUTSIDE LINKS (lib/facebook-link-budget): past
+      // it, held back with the reason on the row, never posted with a dead
+      // link. The prefix keeps it out of the "Facebook is failing" streak.
+      const fbWillAttach = chooseFacebookAttachment({ requested: fbMedia, videoUrl: schedVideoUrl, imageUrl, fallbackLink: fbFallbackLink })
+      const fbLinkCheck = await checkPageLinkPost({
+        userId: row.user_id, pageId: fbPageId, text: caption,
+        link: fbWillAttach.kind === 'photo' && fbWillAttach.imageUrl ? null : (fbWillAttach.link || fbFallbackLink),
+      })
+      if (!fbLinkCheck.ok) throw new Error(`${LINK_LIMIT_PREFIX} ${fbLinkCheck.error}`)
       const fb = createFacebookService(fbPageToken, fbPageId)
       // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
       // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as
@@ -873,6 +883,7 @@ async function publishOne(
         requested: fbMedia, videoUrl: schedVideoUrl, imageUrl, fallbackLink: fbFallbackLink,
       })
       let fbPostId: string
+      let fbPostedLink = false
       if (fbAttachment.kind === 'photo' && fbAttachment.imageUrl) {
         try {
           const r = await fb.postPhoto({ imageUrl: fbAttachment.imageUrl, caption })
@@ -886,6 +897,7 @@ async function publishOne(
           if (/\b401\b|\b403\b|token|expired|revoked|unauthorized|oauth/i.test(pm)) throw photoErr
           const r = await fb.postLink({ message: caption, link: fbFallbackLink })
           fbPostId = r.id
+          fbPostedLink = true
         }
       } else {
         // The video choice lands here: Facebook builds a playable card from the
@@ -893,6 +905,7 @@ async function publishOne(
         const r = await fb.postLink({ message: caption, link: fbAttachment.link || fbFallbackLink })
         fbPostId = r.id
       }
+      if (fbLinkCheck.counts || fbPostedLink) await recordPageLinkPost({ userId: row.user_id, pageId: fbPageId, postId: fbPostId, source: 'scheduled' })
       await admin.from('blog_posts').update({ facebook_post_id: fbPostId }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'facebook', socialPermalink.facebook(fbPostId))
       return { externalId: fbPostId }

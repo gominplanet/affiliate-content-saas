@@ -30,6 +30,10 @@ export const AUTO_FAILED_PREFIX = '[auto-failed]'
  *  the old failures are still the newest outcomes on record, so the "needs
  *  reconnecting" alert keeps nagging until some future scheduled post succeeds. */
 export const RESOLVED_PREFIX = '[resolved]'
+/** A Page post MVP held back because the Page had used its outside-link
+ *  posts for the month (lib/facebook-link-budget). The channel works; the
+ *  limit is Meta's, so it never counts towards "Facebook is failing". */
+export const LINK_LIMIT_PREFIX = '[link-limit]'
 
 export type DeadReason = 'not_connected' | 'expired' | 'failing'
 
@@ -166,7 +170,7 @@ export async function getDeadChannels(
       // failures already resolved by a reconnect. Neither is evidence that the
       // channel is currently broken.
       const em = r.error_message || ''
-      if (em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX) || em.startsWith(AUTO_FAILED_PREFIX)) continue
+      if (em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX) || em.startsWith(AUTO_FAILED_PREFIX) || em.startsWith(LINK_LIMIT_PREFIX)) continue
       if (!byPlatform.has(r.platform)) byPlatform.set(r.platform, [])
       byPlatform.get(r.platform)!.push(r)
     }

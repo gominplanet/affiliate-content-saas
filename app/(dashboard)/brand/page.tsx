@@ -1773,7 +1773,7 @@ export default function BrandPage() {
               </button>
             </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Paste the links to Facebook Groups you admin. When you push a post to Facebook, we&apos;ll list them so you can open each one and paste your post in (Meta&apos;s API can&apos;t post to Groups — only Pages).
+              Paste the links to Facebook Groups you run. Facebook lets no app post in a Group, so when you share a post, Fill with SCOUT opens each Group and puts the post in the box, and you press Post. Groups are where your Amazon links go: Facebook limits how many link posts a Page gets.
             </p>
             {data.facebook_groups.length === 0 && (
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No groups yet — add one to enable one-click sharing.</p>
