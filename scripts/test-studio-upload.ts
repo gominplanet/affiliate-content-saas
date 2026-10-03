@@ -6,6 +6,7 @@
 // with this switch on, the server must never upload, SCOUT must never upload
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
+import { storeStudioRun, readStudioRun } from '../lib/studio-finish'
 import { leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
@@ -114,6 +115,22 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('SCOUT posts from a tab behind the creator\'s', /watch\?v=' \+ youtubeVideoId, active: false/.test(bg))
   check('Co-Pilot, older videos and Liftoff post before they pin', /await postDueFirstCommentsViaScout\(say\)\.catch/.test(read('lib/first-comment-pins.ts')))
   check('the background tab posts due comments', /postDueFirstCommentsViaScout\(say\)/.test(read('components/launch/LiftoffRunner.tsx')))
+}
+
+// ── THE RECORD SHOWS WHAT HAPPENED LAST, ALL OF IT ────────────────────────
+{
+  const many = Array.from({ length: 23 }, (_, i) => ({ step: i === 22 ? 'visibility' : 'x' + i, ok: i === 22, detail: 'd' }))
+  const kept = storeStudioRun({ ok: false, path: 'draft', steps: many })
+  check('a run past twenty steps keeps its last one (the save that worked)', kept.steps.length === 23 && kept.steps[22].ok === true)
+  check('and reads back whole', readStudioRun(kept)?.steps.length === 23)
+  const route = read('app/api/launch/studio-uploads/route.ts')
+  check('a draft saved later replaces the failed upload steps in the record', /UPLOAD_ONLY_STEPS\.has\(x\.step\)/.test(route) && /Saving the draft: /.test(route))
+  check('what SCOUT saw on a failed step is kept', /\.\.\.seenBits\(x\)/.test(route))
+  check('a Private fallback that failed never reads as saved', /saving it Private did not work either/.test(bg) && !/so it was saved Private and MVP sets the time: ' \+/.test(bg))
+  check('Schedule never fails silently: it says what Studio showed', /Studio did not confirm it' \+ \(shown/.test(bg))
+  check('the date is typed only into the picker, never a box behind the window', /const inDatePicker = /.test(bg) && !/const scopes = \[newDialog\(before\), document\]/.test(bg))
+  check('a date that did not take gets one slower go', /out\.readBack\.dateSecondGo = true/.test(bg))
+  check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
 }
 
 if (failures.length) {

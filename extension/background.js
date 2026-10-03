@@ -8820,7 +8820,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 18
+  const KIT_VERSION = 19
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -10013,30 +10013,84 @@ K.steps.monetization = async (out, o) => {
       out.readBack.finalButton = lbl
       if (!b || !wantRe.test(lbl)) { out.detail = 'The last button reads "' + lbl + '", not what was asked, so SCOUT did not press it'; return false }
       if (isDisabled(b)) { out.detail = 'The ' + lbl + ' button is greyed out'; return false }
-      click(b)
-      const said = await waitFor(() => {
-        const vt = visibleText(document).toLowerCase()
-        if (sayRe.test(vt)) return 'said'
-        if (!mainDialog()) return 'closed'
-        return null
-      }, 25000, 600)
+      // NOTHING OPEN OVER IT. A time list or date picker left open can take
+      // the press for itself and close, and Schedule then "did not work"
+      // with nothing on screen to say why.
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
+      await sleep(400)
+      const press = async () => {
+        click(doneBtn() || b)
+        return waitFor(() => {
+          const vt = visibleText(document).toLowerCase()
+          if (sayRe.test(vt)) return 'said'
+          if (!mainDialog()) return 'closed'
+          return null
+        }, 25000, 600)
+      }
+      let said = await press()
+      // PRESSED ONCE MORE, ONLY IF NOTHING MOVED: still the Visibility page,
+      // its button still there and not greyed. A second press on a page that
+      // did move would land on whatever Studio opened next.
+      if (!said) {
+        const d2 = mainDialog()
+        const b2 = doneBtn()
+        if (d2 && page(d2) === 'visibility' && b2 && !isDisabled(b2) && wantRe.test(deepText(b2) || attrLabel(b2))) {
+          out.readBack.pressedTwice = true
+          said = await press()
+        }
+      }
       out.readBack.confirmation = said
+      if (!said) {
+        // WHAT STUDIO SHOWED INSTEAD, in its own words: the top window's
+        // text, so the next fix is not a guess.
+        const d3 = mainDialog()
+        const shown = d3 ? norm(visibleText(d3)).slice(0, 160) : ''
+        out.debug.afterPress = shown
+        out.debug.buttons = buttonSample(d3 || document)
+        out.detail = 'Pressed ' + lbl + ', but Studio did not confirm it' + (shown ? ' (it showed: "' + shown.slice(0, 90) + '")' : '')
+        return false
+      }
       const close = findBtn(/^close$/i, document)
       if (close) click(close)
-      return !!said
+      return true
     }
     if (v.mode === 'public' || v.mode === 'private' || v.mode === 'unlisted') {
       const findRadio = () => all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '\\b', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
       // FOLDED AWAY BY THE SCHEDULE. With Studio's Schedule section open, the
       // Save or publish section (Private, Unlisted, Public) is folded shut, and
       // the Private fallback after a failed schedule found no Private at all.
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
       if (!findRadio()) {
-        const unfold = byId('first-container-expand-button', dlg) ||
-          all(dlg).find((el) => visible(el) && (isBtn(el) || (el.getAttribute && el.getAttribute('role') === 'button') || /expand/i.test(el.id || '')) && /^save or publish\b/i.test(deepText(el)))
-        if (unfold) { click(unfold); await waitFor(findRadio, 6000, 300) }
+        // Every way back to it, in turn: Studio's own expand button, the
+        // "Save or publish" heading itself, then folding the Schedule
+        // section shut again (the two sections open one at a time).
+        const tries = [
+          () => byId('first-container-expand-button', dlg),
+          () => all(dlg).find((el) => visible(el) && (isBtn(el) || (el.getAttribute && el.getAttribute('role') === 'button') || /expand/i.test(el.id || '')) && /^save or publish\b/i.test(deepText(el))),
+          () => { let best = null, len = 1e9; for (const el of all(dlg)) { if (!visible(el)) continue; const t = norm(deepText(el)); if (/^save or publish\b/i.test(t) && t.length < len) { best = el; len = t.length } } return best },
+          () => byId('second-container-expand-button', dlg),
+        ]
+        for (const t of tries) {
+          if (findRadio()) break
+          const el = t()
+          if (!el) continue
+          click(el)
+          await waitFor(findRadio, 4000, 300)
+        }
       }
-      const radio = findRadio()
-      if (!radio) { out.detail = 'Could not find the ' + v.mode + ' option'; out.debug.buttons = buttonSample(dlg); return out }
+      let radio = findRadio()
+      // STILL FOLDED: Studio's own radio, found by its name, pressed where it
+      // is. Only believed if Studio then reads it back as chosen.
+      if (!radio) {
+        const hidden = all(dlg).find((el) => isRadio(el) && String((el.getAttribute && el.getAttribute('name')) || '').toLowerCase() === v.mode)
+        if (hidden) { click(hidden); await sleep(700); if (isChecked(hidden)) radio = hidden }
+      }
+      if (!radio) {
+        out.detail = 'Could not find the ' + v.mode + ' option'
+        out.debug.buttons = buttonSample(dlg)
+        out.debug.text = norm(visibleText(dlg)).slice(0, 200)
+        return out
+      }
       if (!isChecked(radio)) { click(radio); await sleep(700) }
       out.readBack.visibility = isChecked(radio) ? v.mode : null
       if (!out.readBack.visibility) { out.detail = 'Chose ' + v.mode + ', but Studio did not keep it'; return out }
@@ -10086,16 +10140,20 @@ K.steps.monetization = async (out, o) => {
     click(trigger())
     // THE DATE BOX, however Studio draws the picker: a box already holding a
     // date, or the text box inside a date picker, in the popup or the page.
+    // ONLY THE PICKER'S OWN BOX. A search of the whole page on the second go
+    // (the draft reopened over the video's edit page) could type the date
+    // into a box behind the window, and Studio's date stayed on today:
+    // "Typed Oct 30, but Studio shows Oct 3". The popup that opened, or a box
+    // inside a date picker, or a box in the Visibility window; never the page.
+    const inDatePicker = (el) => { let x = el; for (let i = 0; i < 10 && x; i++) { if (/date-?picker|datepicker|calendar/i.test((x.tagName || '') + ' ' + (x.id || ''))) return true; x = up(x) } return false }
     const dateInput = await waitFor(() => {
-      const scopes = [newDialog(before), document].filter(Boolean)
-      for (const d of scopes) {
-        const inputs = all(d).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && el.type !== 'checkbox' && el.type !== 'radio')
-        const byValue = inputs.find((el) => /\d{4}/.test(el.value || '') || /^[A-Za-z]{3,9}\.? \d{1,2}/.test(el.value || ''))
-        if (byValue) return byValue
-        const inPicker = inputs.find((el) => { let x = el; for (let i = 0; i < 8 && x; i++) { if (/date/i.test((x.tagName || '') + ' ' + (x.id || ''))) return true; x = up(x) } return false })
-        if (inPicker) return inPicker
-      }
-      return null
+      const textBoxes = (d) => all(d).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && el.type !== 'checkbox' && el.type !== 'radio')
+      const dateLike = (el) => /\d{4}/.test(el.value || '') || /^[A-Za-z]{3,9}\.? \d{1,2}/.test(el.value || '')
+      const pop = newDialog(before)
+      if (pop) { const ins = textBoxes(pop); const hit = ins.find(dateLike) || ins.find(inDatePicker) || ins[0]; if (hit) return hit }
+      const picker = textBoxes(document).find((el) => inDatePicker(el) && dateLike(el)) || textBoxes(document).find(inDatePicker)
+      if (picker) return picker
+      return textBoxes(dlg).find((el) => dateLike(el) && !/^\d{1,2}:\d{2}/.test(el.value || '')) || null
     }, 8000, 300)
     if (!dateInput) {
       out.detail = 'Opened the date picker, but found no date box'
@@ -10134,6 +10192,39 @@ K.steps.monetization = async (out, o) => {
     }
     let matched = await waitFor(dateMatches, 6000, 300)
     if (!matched && newDialog(before) && trigger()) { click(trigger()); matched = await waitFor(dateMatches, 4000, 300) }
+    if (!matched && trigger()) {
+      // ONE SLOWER GO, as a person types: picker opened again, its box
+      // emptied, each character its own keystroke, then Enter.
+      out.readBack.dateSecondGo = true
+      const before2 = dialogsNow()
+      if (!newDialog(before)) click(trigger())
+      await sleep(800)
+      const pop2 = newDialog(before2) || newDialog(before)
+      const box2 = (pop2 && all(pop2).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el))) ||
+        all(document).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && inDatePicker(el))
+      if (box2) {
+        try {
+          box2.focus()
+          if (box2.select) box2.select()
+          document.execCommand('selectAll', false)
+          document.execCommand('delete', false)
+          for (const ch of dateStr) {
+            box2.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }))
+            document.execCommand('insertText', false, ch)
+            box2.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }))
+            await sleep(40)
+          }
+          await sleep(300)
+          for (const type of ['keydown', 'keypress', 'keyup']) box2.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+        } catch (e) {}
+        matched = await waitFor(dateMatches, 6000, 300)
+        if (!matched && (newDialog(before2) || newDialog(before)) && trigger()) { click(trigger()); matched = await waitFor(dateMatches, 4000, 300) }
+      }
+      if (!matched) {
+        out.debug.dateBox = box2 ? String(box2.value || '').slice(0, 30) + ' in ' + String((up(up(box2)) || {}).tagName || '').toLowerCase() : 'no box'
+        out.debug.inputs = all(document).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el)).map((el) => (el.type || '') + ':' + String(el.value || '').slice(0, 20) + ':' + (inDatePicker(el) ? 'picker' : '')).slice(0, 10)
+      }
+    }
     const shownDate = matched || (trigger() ? deepText(trigger()) : '')
     const dateOk = !!matched
     out.readBack.date = shownDate
@@ -10694,7 +10785,7 @@ async function scanStudioUpload(o) {
       const v = list.find((x) => x && x.step === 'visibility')
       if (!v || v.ok || visibility.mode !== 'schedule') return list
       const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
-      list.push(Object.assign({}, p, { step: 'visibility', detail: 'The time could not be set in Studio, so it was saved Private and MVP sets the time: ' + (p.detail || '') }))
+      list.push(Object.assign({}, p, { step: 'visibility', detail: p.ok ? 'The time could not be set in Studio, so it was saved Private and MVP sets the time' : 'The time could not be set in Studio, and saving it Private did not work either: ' + (p.detail || 'no reason given') }))
       if (p.ok) visibility = { mode: 'private' }
       return list
     }
@@ -10857,7 +10948,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
         const vs = draftSteps.find((x) => x && x.step === 'visibility')
         if (want.privateIfScheduleFails && vs && !vs.ok && want.visibility && want.visibility.mode === 'schedule') {
           const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
-          draftSteps.push(Object.assign({}, p, { step: 'visibility', savedPrivate: !!p.ok, detail: 'The time could not be set in Studio, so it was saved Private and MVP sets the time: ' + (p.detail || '') }))
+          draftSteps.push(Object.assign({}, p, { step: 'visibility', savedPrivate: !!p.ok, detail: p.ok ? 'The time could not be set in Studio, so it was saved Private and MVP sets the time' : 'The time could not be set in Studio, and saving it Private did not work either: ' + (p.detail || 'no reason given') }))
         }
         return summarise([open].concat(draftSteps), 'draft')
       }

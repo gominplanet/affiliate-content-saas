@@ -17,7 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { normalizeStudioOptions, storeStudioRun } from '@/lib/studio-finish'
+import { normalizeStudioOptions, storeStudioRun, readStudioRun } from '@/lib/studio-finish'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { ytFetch } from '@/lib/youtube-quota'
@@ -36,6 +36,18 @@ type Row = {
   reason: string | null; updated_at: string | null; youtube_video_id: string | null; state: string
   thumbnail_url?: string | null
 }
+
+type SentStep = { step?: string; ok?: boolean; detail?: string; skipped?: boolean; readBack?: unknown; debug?: unknown }
+
+/** A step's read-back and debug, when they are plain objects. */
+function seenBits(x: SentStep): { readBack?: Record<string, unknown>; debug?: Record<string, unknown> } {
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined)
+  return { readBack: obj(x.readBack), debug: obj(x.debug) }
+}
+
+/** The steps of an upload that belong to the upload itself, kept above a
+ *  later draft save so the record still shows the file, tags and thumbnail. */
+const UPLOAD_ONLY_STEPS = new Set(['upload', 'text', 'tags', 'thumbnail', 'playlist', 'sending'])
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function gate(): Promise<{ user: { id: string }; sb: any } | NextResponse> {
@@ -165,10 +177,10 @@ export async function POST(req: Request) {
   const { user, sb } = g
   const body = await req.json().catch(() => ({})) as {
     itemId?: string; claim?: boolean
-    draftResult?: { saved?: boolean; visibility?: string; publishAt?: string | null; error?: string; steps?: Array<{ step?: string; ok?: boolean; detail?: string; skipped?: boolean }> }
+    draftResult?: { saved?: boolean; visibility?: string; publishAt?: string | null; error?: string; steps?: SentStep[] }
     result?: {
       ok?: boolean; videoId?: string; saved?: boolean; error?: string; detail?: string
-      steps?: Array<{ step?: string; ok?: boolean; detail?: string; skipped?: boolean }>
+      steps?: SentStep[]
       did?: { text?: boolean | null; tags?: boolean | null; thumbnail?: boolean | null; playlist?: boolean | null; visibility?: string | null; publishAt?: string | null } | null
     }
   }
@@ -195,6 +207,19 @@ export async function POST(req: Request) {
   if (body.draftResult && row.state === 'blocked' && row.youtube_video_id && String(row.reason || '').startsWith(STUDIO_DRAFT_SAVING)) {
     const dr = body.draftResult
     const visibility = dr.visibility === 'schedule' || dr.visibility === 'public' || dr.visibility === 'private' ? dr.visibility : null
+    // THE LATEST RUN IS THE ONE SHOWN. The row kept the upload's steps, which
+    // ended "could not save", on a video this save then took out of draft:
+    // the header said Scheduled while the list said Schedule failed. The
+    // upload's own steps stay on top; the save's steps replace the rest.
+    try {
+      const { data: had } = await sb.from('launch_items').select('studio_finish').eq('id', row.id).maybeSingle()
+      const prior = readStudioRun(had?.studio_finish)
+      const kept = (prior?.steps ?? []).filter((x) => UPLOAD_ONLY_STEPS.has(x.step))
+      const fresh = (Array.isArray(dr.steps) ? dr.steps : []).filter((x) => x && typeof x.step === 'string')
+        .map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: `Saving the draft: ${String(x.detail || (x.ok ? 'Done' : 'Did not work'))}`, ...seenBits(x) }))
+      const run = storeStudioRun({ ok: dr.saved === true && fresh.every((x) => x.ok || x.skipped), path: 'draft', error: dr.saved === true ? undefined : (dr.error || 'not-saved'), steps: [...kept, ...fresh] }, new Date(), prior)
+      await sb.from('launch_items').update({ studio_finish: run }).eq('id', row.id)
+    } catch { /* a missing column only loses the record */ }
     if (dr.saved === true && visibility) {
       // SAVED IN STUDIO: the drain carries on (it reads YouTube back first).
       const { data: prev } = await sb.from('launch_items').select('studio_upload').eq('id', row.id).maybeSingle()
@@ -265,14 +290,16 @@ export async function POST(req: Request) {
     // must say where, not only that it stopped.
     const seen = (Array.isArray(r.steps) ? r.steps : []).filter((x) => x && typeof x.step === 'string')
       .map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '').slice(0, 200) }))
-      .slice(0, 30)
+      .slice(0, 40)
     await sb.from('launch_items').update({ studio_upload: { ...did, videoId, at: stamp, steps: seen } }).eq('id', row.id)
     const stoppedAt = studioStoppedAt(seen)
     // THE STUDIO PASS IS THIS RUN. SCOUT answered every Studio page in the
     // upload itself, so it is recorded as the video's Studio run and the
     // board does not send Studio to the front a second time for it.
     try {
-      const run = storeStudioRun({ ok: r.ok === true && r.saved === true, path: 'draft', error: r.saved === true ? undefined : (r.error ?? 'not-saved'), steps: (Array.isArray(r.steps) ? r.steps : []).filter((x) => x && typeof x.step === 'string').map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '') })) }, new Date(), null)
+      // What SCOUT saw on a failed step goes with it (storeStudioRun keeps it
+      // only for failures, capped), so the next fix is not a guess.
+      const run = storeStudioRun({ ok: r.ok === true && r.saved === true, path: 'draft', error: r.saved === true ? undefined : (r.error ?? 'not-saved'), steps: (Array.isArray(r.steps) ? r.steps : []).filter((x) => x && typeof x.step === 'string').map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || ''), ...seenBits(x) })) }, new Date(), null)
       await sb.from('launch_items').update({ studio_finish: run }).eq('id', row.id)
     } catch { /* a missing column only loses the record */ }
 

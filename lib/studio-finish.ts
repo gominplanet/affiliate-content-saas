@@ -171,6 +171,10 @@ export interface StoredStudioRun {
 
 export const MAX_STUDIO_TRIES = 3
 
+/** Steps kept from one run: a Studio upload with its second go at saving is
+ *  about 22, so there is room to spare. */
+export const MAX_STORED_STEPS = 40
+
 /** Does this video still need a Studio run? None yet, or one that timed out
  *  with tries left. ONE RULE for the page, the background tab and the count. */
 export function studioRunNeeded(r: Pick<StoredStudioRun, 'error' | 'tries'> | null | undefined): boolean {
@@ -185,7 +189,10 @@ export function storeStudioRun(r: StudioFinishResult, at: Date = new Date(), pri
     path: r.path ?? null,
     error: r.error ?? null,
     tries: Math.min(99, (prior?.tries ?? 0) + 1),
-    steps: r.steps.slice(0, 20).map((s) => ({
+    // EVERY STEP, NOT THE FIRST TWENTY. An upload with a second go at saving
+    // runs past twenty, and the cut hid the very step that saved it: the row
+    // read "17 of 20 confirmed, check Schedule" on a video Studio had saved.
+    steps: r.steps.slice(0, MAX_STORED_STEPS).map((s) => ({
       step: String(s.step).slice(0, 30),
       ok: !!s.ok,
       skipped: !!s.skipped,
@@ -221,7 +228,7 @@ export function readStudioRun(raw: unknown): StoredStudioRun | null {
     error: typeof o.error === 'string' ? o.error.slice(0, 200) : null,
     tries: typeof o.tries === 'number' && Number.isFinite(o.tries) ? Math.max(1, Math.min(99, Math.floor(o.tries))) : 1,
     // Capped: this is read from a request body as well as from the row.
-    steps: (o.steps as unknown[]).slice(0, 20).filter((s) => s && typeof s === 'object').map((s) => {
+    steps: (o.steps as unknown[]).slice(0, MAX_STORED_STEPS).filter((s) => s && typeof s === 'object').map((s) => {
       const x = s as Record<string, unknown>
       return {
         step: String(x.step ?? '').slice(0, 30),
