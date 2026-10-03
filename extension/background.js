@@ -13395,6 +13395,13 @@ function readGroupPostState(snippet) {
       const m = String(l.href || '').match(RE)
       if (m) { out.feedUrl = 'https://www.facebook.com' + m[0] + '/'; return out }
     }
+    // A VIDEO posted in a Group has no Group post address: its timestamp opens
+    // it as a Reel (facebook.com/reel/<id>), which shows the video with the
+    // post's text and links. That is its address, so it is the one used.
+    for (const l of Array.from(a.querySelectorAll('a[href]'))) {
+      const v = String(l.href || '').match(/\/reel\/(\d{6,})/)
+      if (v) { out.feedUrl = 'https://www.facebook.com/reel/' + v[1] + '/'; return out }
+    }
   }
   // Facebook fills in the timestamp link's real address on hover. Hover only
   // the timestamp, never anything else.
@@ -13450,6 +13457,8 @@ function watchGroupPost(tabId, snippet) {
         if (!tab) return await saveGroupWatch(id, { state: 'closed' })
         const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
         if (onPost) return await saveGroupWatch(id, { state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
+        const onReel = String(tab.url || '').match(/^https:\/\/(?:www|web|m)\.facebook\.com\/reel\/(\d{6,})/)
+        if (onReel) return await saveGroupWatch(id, { state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
         let r = null
         try {
           const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet] })

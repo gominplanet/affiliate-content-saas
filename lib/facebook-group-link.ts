@@ -19,3 +19,16 @@ export function isFacebookGroupPostLink(raw: string): boolean {
   if (!isFacebookGroupLink(raw)) return false
   return /^\/groups\/[^/]+\/(posts|permalink)\/\d+/.test(new URL(raw.trim()).pathname)
 }
+
+/** A video posted in a Group opens as a Reel: facebook.com/reel/<id>. It shows
+ *  the video with the post's text and links, so it can stand in for the Group
+ *  post's address (Clip Factory, Group first). A Facebook link, so never one
+ *  of the outside links Meta rations. */
+export function isFacebookReelLink(raw: string): boolean {
+  try {
+    const u = new URL(String(raw || '').trim())
+    return u.protocol === 'https:' && HOSTS.test(u.hostname) && /^\/reel\/\d{6,}\/?$/.test(u.pathname)
+  } catch {
+    return false
+  }
+}

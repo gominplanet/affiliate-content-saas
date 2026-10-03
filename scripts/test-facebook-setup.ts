@@ -95,7 +95,7 @@ check('SCOUT answers whether it is allowed on Facebook', /msg\.type === 'MVP_FB_
 }
 const reel = read('components/clip-factory/ReelDestinations.tsx')
 check('SCOUT attaches the clip itself to the Group post', /\{ kind: 'clip', url: p\.clipUrl \}/.test(reel) && /hero\.kind === 'clip'/.test(read('extension/background.js')))
-check('the Reel\'s first line links to the exact Group post', /`Get it here 👉 \$\{link\}`/.test(reel) && /isFacebookGroupPostLink\(st\.url\)\) \{ await postReel\(st\.url, 'post'\)/.test(reel))
+check('the Reel\'s first line links to the exact Group post', /`Get it here 👉 \$\{link\}`/.test(reel) && /isFacebookReelLink\(st\.url\)\)\) \{ await postReel\(st\.url, 'post'\)/.test(reel))
 check('without the post\'s own link, the Reel waits for it or links to the Group only when asked', /Link to my Group instead/.test(reel) && !/postReel\(group\.url, 'group'\); return/.test(reel))
 check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the Reel did not go out/.test(reel))
 check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
@@ -121,6 +121,16 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('a video post that is created but not yet in the feed gets minutes, not 20 seconds', /const patience = r\.seen \? 45000 : 4 \* 60 \* 1000/.test(bg))
   check('the timestamp is hovered on every look, never clicked', /for \(const type of \['pointerover', 'pointerenter', 'mouseover', 'mouseenter'\]\)/.test(bg))
   check('the post number is read under every name Facebook uses', /top_level_post_id\|legacy_story_hideable_id\|story_fbid/.test(bg))
+}
+
+// ── A video in a Group has a Reel address, and that address is used ─────────
+{
+  const { isFacebookReelLink, isFacebookGroupPostLink } = require('../lib/facebook-group-link') as typeof import('../lib/facebook-group-link')
+  check('a Group video\'s Reel address is accepted', isFacebookReelLink('https://www.facebook.com/reel/2121612745112942') && !isFacebookReelLink('https://evil.com/reel/2121612745112942') && !isFacebookReelLink('https://www.facebook.com/reel/abc'))
+  check('a Group post address is still accepted', isFacebookGroupPostLink('https://www.facebook.com/groups/247dealsandcoupons/posts/123456789/'))
+  const bg = read('extension/background.js')
+  check('SCOUT reads the Reel address from the new post and from the tab', /out\.feedUrl = 'https:\/\/www\.facebook\.com\/reel\/' \+ v\[1\]/.test(bg) && /via: 'tab reel'/.test(bg))
+  check('Clip Factory posts the Reel linking to either address', /isFacebookGroupPostLink\(st\.url\) \|\| isFacebookReelLink\(st\.url\)/.test(read('components/clip-factory/ReelDestinations.tsx')))
 }
 
 // ── A dropped connection during a render is checked, never shown raw ────────

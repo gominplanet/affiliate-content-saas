@@ -7,7 +7,7 @@
 // SCOUT opens the Group and fills the post (the Reel's link first, so Facebook
 // shows the playable Reel), and the creator presses Post.
 import { useEffect, useRef, useState } from 'react'
-import { isFacebookGroupLink, isFacebookGroupPostLink } from '@/lib/facebook-group-link'
+import { isFacebookGroupLink, isFacebookGroupPostLink, isFacebookReelLink } from '@/lib/facebook-group-link'
 import { pageReelCaption } from '@/lib/reel-group-caption'
 export { pageReelCaption }
 import { Loader2, Copy } from 'lucide-react'
@@ -174,9 +174,11 @@ export function ReelGroupFirst(p: {
       await new Promise((r) => setTimeout(r, 3000))
       const st = await getFacebookGroupPostStatus(res.watchId)
       if (st.state === 'watching') continue
-      if (st.state === 'posted' && st.url && isFacebookGroupPostLink(st.url)) { await postReel(st.url, 'post'); return }
+      // The Group post's own address, or, for a video, the Reel address its
+      // timestamp opens (the video with the post's text and links).
+      if (st.state === 'posted' && st.url && (isFacebookGroupPostLink(st.url) || isFacebookReelLink(st.url))) { await postReel(st.url, 'post'); return }
       if (st.state === 'posted' || st.state === 'posted_no_link') {
-        say({ tone: 'warn', text: 'SCOUT saw your Group post go up but could not read its own link. In Facebook, click the time under your name on the post (like "Just now"), copy the address, and paste it below. Or post the Reel linking to your Group.' })
+        say({ tone: 'warn', text: 'SCOUT saw your Group post go up but could not read its own link. In Facebook, click the time under your name on the post (like "Just now"), copy the address (for a video it starts facebook.com/reel/), and paste it below. Or post the Reel linking to your Group.' })
         setManual({ link: '' })
         return
       }
@@ -235,10 +237,10 @@ export function ReelGroupFirst(p: {
       )}
       {manual && (
         <div className="flex flex-col gap-1.5">
-          <input value={manual.link} onChange={(e) => setManual({ link: e.target.value })} placeholder="facebook.com/groups/your-group/posts/…"
+          <input value={manual.link} onChange={(e) => setManual({ link: e.target.value })} placeholder="facebook.com/groups/your-group/posts/… or facebook.com/reel/…"
             className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2.5 py-1.5 text-[12.5px] font-mono" />
           <div className="flex gap-2 flex-wrap">
-            <button disabled={!isFacebookGroupPostLink(manual.link.trim())} onClick={() => void postReel(manual.link.trim(), 'post')}
+            <button disabled={!(isFacebookGroupPostLink(manual.link.trim()) || isFacebookReelLink(manual.link.trim()))} onClick={() => void postReel(manual.link.trim(), 'post')}
               className="rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2] disabled:opacity-50">Post the Reel linking to this post</button>
             {group && isFacebookGroupLink(group.url) && (
               <button onClick={() => void postReel(group.url, 'group')} className="rounded-lg px-2.5 py-1 text-[12px] font-semibold border border-[#1877F2]/40 text-[#1877F2]">Link to my Group instead</button>
