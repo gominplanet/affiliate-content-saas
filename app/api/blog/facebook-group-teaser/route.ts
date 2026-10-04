@@ -52,7 +52,13 @@ export async function POST(request: NextRequest) {
     const acct = accounts[0]
     if (!acct) return NextResponse.json({ error: 'No Facebook Page is connected. Connect one in Integrations.' }, { status: 400 })
 
-    const r = await createFacebookService(acct.accessToken, acct.externalId).postLink({ message, link })
+    // THE LINK GOES IN THE TEXT, never as Facebook's link attachment. Given a
+    // Group post as the attachment, Facebook treats it as a share of that post
+    // and refuses it from a Page ("the post that you're sharing couldn't be
+    // loaded", subcode 1609008). Written in the text it is a plain link that
+    // opens the Group post, the same way the Page Reel's "Get it here" does.
+    const text = message.includes(link) ? message : `${message}\n\n${link}`
+    const r = await createFacebookService(acct.accessToken, acct.externalId).postText({ message: text })
     return NextResponse.json({ ok: true, id: r.id, page: acct.displayName, link })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Facebook post failed' }, { status: 502 })

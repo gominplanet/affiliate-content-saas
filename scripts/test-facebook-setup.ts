@@ -5,6 +5,7 @@
 // post that carries an outside link, and stops one past the limit with words
 // that say why: never a post whose link Facebook shows as plain text.
 
+import { execSync } from 'child_process'
 import { readFileSync } from 'node:fs'
 import { pageReelCaption } from '../lib/reel-group-caption'
 import { productLinkFromDescription } from '../lib/description-product-link'
@@ -60,7 +61,13 @@ for (const [name, file] of paths) {
   check(`${name}: records a link post after`, /recordPageLinkPost\(/.test(src))
 }
 const fbService = read('services/facebook/index.ts')
-check('no new way to post to a Page slipped past the guard', (fbService.match(/\/feed`|\/photos`/g) ?? []).length === 2)
+check('no new way to post to a Page slipped past the guard', (fbService.match(/\/feed`|\/photos`/g) ?? []).length === 3)
+// The third is postText, for the Page post that points to a Group post. A
+// link to Facebook is not an outside link, and its one route refuses others.
+{
+  const users = execSync("grep -rl 'postText(' app lib components services || true").toString().trim().split('\n').filter(Boolean).sort()
+  check('a text Page post is used only by the Group post route, which takes Group links only', users.join(',') === 'app/api/blog/facebook-group-teaser/route.ts,services/facebook/index.ts')
+}
 check('a held scheduled post never marks Facebook as failing', /em\.startsWith\(LINK_LIMIT_PREFIX\)/.test(read('lib/channel-health.ts')) && /\$\{LINK_LIMIT_PREFIX\} \$\{fbLinkCheck\.error\}/.test(read('app/api/cron/process-scheduled/route.ts')))
 check('a stopped blog share is a 409 with its code, not "Facebook failed"', /code: limited\?\.code/.test(read('app/api/blog/facebook-post/route.ts')))
 

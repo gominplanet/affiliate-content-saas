@@ -30,6 +30,20 @@ export class FacebookService {
     return res.json()
   }
 
+  /** A text post. A link written in the text is still a tappable link. */
+  async postText(opts: { message: string }): Promise<{ id: string }> {
+    const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/feed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: opts.message, access_token: this.pageAccessToken }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`Facebook post failed ${res.status}: ${body.slice(0, 300)}`)
+    }
+    return res.json()
+  }
+
   // Posts a photo with caption — better reach than link posts
   async postPhoto(opts: {
     imageUrl: string
