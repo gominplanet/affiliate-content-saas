@@ -220,4 +220,28 @@ export interface SocialKit {
   /** Facebook Group only. */
   rules?: { title: string; description: string }[]
   questions?: string[]
+  /** A niche Group kit: the niche it was made for. */
+  niche?: string
+}
+
+// NICHE GROUPS. A creator runs one Page and a Group per niche, so the Facebook
+// Group kit is made once per niche: Kitchen, Automotive... Each lives in its
+// own saved slot, "facebook_group:kitchen", next to the plain "facebook_group"
+// kit made from the whole brand. Pure.
+export const NICHE_KIT_PLATFORMS: LaunchPlatform[] = ['facebook_group']
+
+export function nicheSlug(niche: string | null | undefined): string {
+  return String(niche || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30)
+}
+
+/** The saved slot for a platform and niche; the plain platform with no niche. */
+export function kitSlot(platform: LaunchPlatform, niche?: string | null): string {
+  const slug = NICHE_KIT_PLATFORMS.includes(platform) ? nicheSlug(niche) : ''
+  return slug ? `${platform}:${slug}` : platform
+}
+
+/** A niche from the request: trimmed, short, or null. */
+export function cleanNiche(v: unknown): string | null {
+  const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 40) : ''
+  return nicheSlug(s) ? s : null
 }

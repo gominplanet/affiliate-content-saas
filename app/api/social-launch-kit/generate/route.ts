@@ -1,6 +1,10 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// POST /api/social-launch-kit/generate  { platform: 'facebook' | 'pinterest' }
+// POST /api/social-launch-kit/generate  { platform: 'facebook' | 'pinterest', niche? }
+//
+// niche (Facebook Group): a kit for ONE niche Group, like Kitchen, saved in
+// its own slot so a creator can make one per niche. The brand still sets the
+// voice; the niche sets what the Group is about.
 //
 // Generates ready-to-paste profile copy — names, @handles, short + long bio,
 // category, search keywords, a first post, and (Pinterest) starter boards —
@@ -15,7 +19,7 @@ import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { toUserMessage } from '@/lib/friendly-error'
-import { LAUNCH_PLATFORMS, type LaunchPlatform, type SocialKit } from '@/lib/social-launch-kit'
+import { LAUNCH_PLATFORMS, kitSlot, cleanNiche, NICHE_KIT_PLATFORMS, type LaunchPlatform, type SocialKit } from '@/lib/social-launch-kit'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { getDefaultSite } from '@/lib/wordpress-sites'
 
@@ -26,10 +30,13 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json().catch(() => ({})) as { platform?: string }
+  const body = await request.json().catch(() => ({})) as { platform?: string; niche?: string }
   const platform = body.platform as LaunchPlatform
   const spec = platform ? LAUNCH_PLATFORMS[platform] : undefined
   if (!spec) return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
+  const niche = NICHE_KIT_PLATFORMS.includes(platform) ? cleanNiche(body.niche) : null
+  // The saved slot: 'facebook_group:kitchen' for a niche Group, else the platform.
+  const slot = kitSlot(platform, niche)
 
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (intRow?.tier as Tier) ?? 'trial'
@@ -45,16 +52,17 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scope = (q: any) => (siteId ? q.eq('site_id', siteId) : q.is('site_id', null))
 
-  // ONE generation per platform PER SITE for everyone except admins. Once a kit is
+  // ONE generation per slot PER SITE for everyone except admins (each niche
+  // Group is its own slot, so a new niche always gets its kit). Once a kit is
   // saved, regenerating is admin-only — the saved kit stays on the page to use anytime.
   const isAdmin = tier === 'admin'
   if (!isAdmin) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existingKit } = await scope((supabase as any).from('social_launch_kits')
-      .select('kit').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+      .select('kit').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
     if (existingKit?.kit) {
       return NextResponse.json({
-        error: 'You\'ve already generated this kit. It\'s saved on the page to use anytime — regenerating is available to admins only.',
+        error: niche ? `You've already made the ${niche} Group kit. It's saved on the page to use anytime. Pick another niche for a new Group.` : 'You\'ve already generated this kit. It\'s saved on the page to use anytime — regenerating is available to admins only.',
         locked: true,
       }, { status: 403 })
     }
@@ -93,10 +101,13 @@ export async function POST(request: Request) {
   const system = `You set up a creator's ${spec.label} profile so it looks professional and gets discovered. You write in THEIR voice, grounded in their real brand — never generic, never invented. ${BANNED_RULE}
 Return ONLY a single JSON object. No prose, no markdown fences.`
 
+  const nicheBlock = niche
+    ? `\nTHIS GROUP: one niche Group in a set. The creator runs one Facebook Page and a separate Group per niche, and this Group is ONLY about: ${niche}.\nEvery name idea, web address, bio, keyword, rule and the welcome post are about ${niche} products and the people who shop for them. Names should say the niche plainly (a member must know from the name alone that it is about ${niche}); the brand name may appear but is optional. Never mention the creator's other niches.\n`
+    : ''
   const userMsg = `BRAND
 - Name: ${brandName}
 - Niche(s): ${niches}
-${tagline ? `- Tagline: ${tagline}\n` : ''}${audience ? `- Audience: ${audience}\n` : ''}${tone ? `- Tone: ${tone}\n` : ''}${website ? `- Website: ${website}\n` : ''}${learnBlock ? `\n${learnBlock}\n` : ''}
+${tagline ? `- Tagline: ${tagline}\n` : ''}${audience ? `- Audience: ${audience}\n` : ''}${tone ? `- Tone: ${tone}\n` : ''}${website ? `- Website: ${website}\n` : ''}${learnBlock ? `\n${learnBlock}\n` : ''}${nicheBlock}
 TASK — produce a ${spec.label} launch kit as a JSON object with these keys:
 - "names": 3 profile/Page name ideas (each <= ${spec.nameMax} characters). The first is the safe, obvious choice.
 - "handles": 3 username ideas (letters, numbers, dots or underscores only — no spaces — each <= 30 characters).
@@ -105,7 +116,7 @@ TASK — produce a ${spec.label} launch kit as a JSON object with these keys:
 - "category": the single best ${spec.label} category for this creator.
 - "keywords": 6-10 search keywords/interests to add so ${spec.label} surfaces them.
 - "firstPost": ${firstPostLine}.${boardsAsk}${rulesAsk}${questionsAsk}
-Everything must be specific to THIS brand and niche.`
+Everything must be specific to THIS brand and ${niche ? `the ${niche} niche` : 'niche'}.`
 
   let raw = ''
   try {
@@ -169,6 +180,7 @@ Everything must be specific to THIS brand and niche.`
       .slice(0, spec.rules)
   }
   if (spec.questions) kit.questions = arr(parsed.questions).slice(0, spec.questions)
+  if (niche) kit.niche = niche
 
   // Save this platform's copy for the ACTIVE site so it persists. Manual upsert
   // (uniqueness now spans site_id via a coalesce index that onConflict can't
@@ -176,15 +188,15 @@ Everything must be specific to THIS brand and niche.`
   try {
     const now = new Date().toISOString()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existing } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+    const { data: existing } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
     if (existing) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await scope((supabase as any).from('social_launch_kits').update({ kit, updated_at: now }).eq('user_id', user.id).eq('platform', platform))
+      await scope((supabase as any).from('social_launch_kits').update({ kit, updated_at: now }).eq('user_id', user.id).eq('platform', slot))
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform, kit, updated_at: now })
+      await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform: slot, kit, updated_at: now })
     }
   } catch { /* saving is best-effort — never block the response */ }
 
-  return NextResponse.json({ ok: true, platform, kit })
+  return NextResponse.json({ ok: true, platform, slot, kit })
 }

@@ -34,3 +34,20 @@ export function cleanNicheGroup(raw: unknown): NicheGroup | null {
   const s = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null)
   return { name: s(g.name, 80) || 'Facebook Group', url: g.url.trim(), niche: s(g.niche, 40), keywords: s(g.keywords, 300) }
 }
+
+/** Starting words for the common niches. The creator can change them. Shared
+ *  by Meta Hub (a saved Group's words) and the Launch Kit (a niche Group kit). */
+export const NICHE_PRESETS: Array<[string, string]> = [
+  ['Kitchen', 'kitchen, cooking, air fryer, blender, knife, pan, coffee, food storage'],
+  ['Home', 'home, cleaning, vacuum, storage, organizer, bedding, decor'],
+  ['Automotive', 'car, truck, automotive, dash cam, tire, detailing, jump starter'],
+  ['Tech', 'tech, phone, charger, headphones, laptop, smart home, gadget'],
+  ['Beauty', 'beauty, skincare, hair, makeup, nails'],
+  ['Outdoors', 'outdoor, camping, hiking, grill, garden, patio'],
+  ['Pets', 'dog, cat, pet, leash, litter'],
+  ['Fitness', 'fitness, workout, gym, yoga, protein'],
+  ['Tools', 'tool, drill, workshop, diy, garage'],
+  ['Baby', 'baby, toddler, stroller, nursery, kids'],
+]
+
+export const nicheWords = (n: string) => NICHE_PRESETS.find(([k]) => k.toLowerCase() === n.trim().toLowerCase())?.[1] ?? ''

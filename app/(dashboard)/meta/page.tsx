@@ -29,7 +29,7 @@ import { requestFacebookAccess } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 import ClipFactory from '@/components/clip-factory/ClipFactory'
-import type { NicheGroup } from '@/lib/facebook-niche'
+import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
 type Hub = {
@@ -51,20 +51,6 @@ type Setup = {
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 type StepKey = 'page' | 'groups' | 'scout' | 'reels' | 'reviews'
 
-/** Starting words for the common niches. The creator can change them. */
-const NICHES: Array<[string, string]> = [
-  ['Kitchen', 'kitchen, cooking, air fryer, blender, knife, pan, coffee, food storage'],
-  ['Home', 'home, cleaning, vacuum, storage, organizer, bedding, decor'],
-  ['Automotive', 'car, truck, automotive, dash cam, tire, detailing, jump starter'],
-  ['Tech', 'tech, phone, charger, headphones, laptop, smart home, gadget'],
-  ['Beauty', 'beauty, skincare, hair, makeup, nails'],
-  ['Outdoors', 'outdoor, camping, hiking, grill, garden, patio'],
-  ['Pets', 'dog, cat, pet, leash, litter'],
-  ['Fitness', 'fitness, workout, gym, yoga, protein'],
-  ['Tools', 'tool, drill, workshop, diy, garage'],
-  ['Baby', 'baby, toddler, stroller, nursery, kids'],
-]
-const nicheWords = (n: string) => NICHES.find(([k]) => k.toLowerCase() === n.trim().toLowerCase())?.[1] ?? ''
 
 const FB = '#1877F2'
 const OK = '#10B981'
@@ -366,7 +352,7 @@ function MetaHub() {
         {howTo && (
           <ol className="text-[12.5px] leading-relaxed list-decimal pl-5 flex flex-col gap-1" style={{ color: 'var(--text-soft)' }}>
             <li>Open your Page on Facebook, go to <strong>Groups</strong> and press <strong>Create group</strong>, so the Group belongs to your Page.</li>
-            <li>Name it after the niche, like &quot;Kitchen Deals and Finds&quot;. The <Link href="/social-launch-kit" className="underline">Social Launch Kit</Link> writes the name, rules, welcome post and cover for you.</li>
+            <li>Name it after the niche, like &quot;Kitchen Deals and Finds&quot;. Or let the <Link href={add.niche.trim() ? `/social-launch-kit?niche=${encodeURIComponent(add.niche.trim())}` : '/social-launch-kit#kit-facebook_group'} className="underline">Social Launch Kit</Link> write the name, rules, welcome post and cover for {add.niche.trim() ? `your ${add.niche.trim()} Group` : 'the niche you pick'}.</li>
             <li>Set privacy to <strong>Public</strong>. Amazon has to be able to see where your links are.</li>
             <li>Add the Group&apos;s address to your website list in Amazon Associates before your first link.</li>
             <li>Paste the Group&apos;s address above, pick its niche, and save. Repeat for each niche.</li>

@@ -18,7 +18,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
 import { composeWithNanoBanana, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth, generateWideBanner } from '@/lib/thumbnail-generators'
 import { createOpenAIService } from '@/services/openai'
-import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
+import { LAUNCH_PLATFORMS, type LaunchPlatform, kitSlot, cleanNiche, NICHE_KIT_PLATFORMS } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/lib/social-launch-kit-prompt'
 import { composeWideBanner } from '@/lib/social-launch-kit-banner'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
@@ -56,13 +56,16 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => ({})) as {
-    platform?: string; kind?: string; referenceImage?: string; style?: string
+    platform?: string; kind?: string; referenceImage?: string; style?: string; niche?: string
     headline?: string; about?: string; category?: string; keywords?: string[]; brandName?: string
   }
   const bannerStyle: 'bold' | 'minimal' = body.style === 'minimal' ? 'minimal' : 'bold'
   const platform = body.platform as LaunchPlatform
   const spec = platform ? LAUNCH_PLATFORMS[platform] : undefined
   if (!spec) return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
+  // A niche Group's images live in that niche's slot and are about that niche.
+  const niche = NICHE_KIT_PLATFORMS.includes(platform) ? cleanNiche(body.niche) : null
+  const slot = kitSlot(platform, niche)
   const kind: 'banner' | 'avatar' = body.kind === 'avatar' ? 'avatar' : 'banner'
   if (kind === 'banner' && !spec.banner) return NextResponse.json({ error: 'This platform has no cover image.' }, { status: 400 })
   if (kind === 'avatar' && !spec.avatar) return NextResponse.json({ error: 'This platform has no profile picture.' }, { status: 400 })
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
   if (!isAdmin) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existingKit } = await scope((supabase as any).from('social_launch_kits')
-      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
     const already = kind === 'banner' ? existingKit?.banner_url : existingKit?.avatar_url
     if (already) {
       return NextResponse.json({
@@ -113,7 +116,7 @@ export async function POST(request: Request) {
   const colorLine = hasColors
     ? `Use this brand's own colours: ${primary} (primary) and ${secondary} (accent).`
     : `Use this brand's OWN colours, drawn from the attached logo — do NOT impose black-and-gold or any preset palette.`
-  const niches = (Array.isArray(b.niches) ? b.niches : []).filter(Boolean).join(', ') || 'lifestyle products'
+  const niches = niche || (Array.isArray(b.niches) ? b.niches : []).filter(Boolean).join(', ') || 'lifestyle products'
   const logoUrl = String(b.logo_url || '').trim()
   const bannerUrl = String(b.header_banner_url || '').trim()
 
@@ -169,6 +172,8 @@ export async function POST(request: Request) {
       }
     } catch { /* fall back to declared order */ }
   }
+  // A niche Group's cover shows that niche's products only.
+  if (niche) categories = [niche]
 
   // gpt-image-1 paints 1.5:1; cover-cropping (centre) to a wider banner slices
   // the top+bottom. cropFrac is how much each of top/bottom a cover-crop removes.
@@ -338,13 +343,13 @@ export async function POST(request: Request) {
         // coalesce index onConflict can't target).
         const now = new Date().toISOString()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: existingRow } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+        const { data: existingRow } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
         if (existingRow) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await scope((supabase as any).from('social_launch_kits').update({ [col]: savedUrl, updated_at: now }).eq('user_id', user.id).eq('platform', platform))
+          await scope((supabase as any).from('social_launch_kits').update({ [col]: savedUrl, updated_at: now }).eq('user_id', user.id).eq('platform', slot))
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform, [col]: savedUrl, updated_at: now })
+          await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform: slot, [col]: savedUrl, updated_at: now })
         }
       }
     } catch { /* persistence is best-effort */ }

@@ -195,6 +195,21 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('Meta Hub is Facebook only: no TikTok or Instagram words', !/TikTok|Instagram/.test(page))
 }
 
+// ── Launch Kit: niche first, one Group kit per niche ───────────────────────
+{
+  const { kitSlot, cleanNiche } = require('../lib/social-launch-kit') as typeof import('../lib/social-launch-kit')
+  check('a niche Group kit has its own saved slot', kitSlot('facebook_group', 'Kitchen') === 'facebook_group:kitchen' && kitSlot('facebook_group', 'Home & Garden') === 'facebook_group:home-garden')
+  check('no niche, or another platform, keeps the old slot', kitSlot('facebook_group', '') === 'facebook_group' && kitSlot('facebook', 'Kitchen') === 'facebook' && cleanNiche('  ') === null)
+  const gen = read('app/api/social-launch-kit/generate/route.ts')
+  check('the kit is written for that niche, saved and locked per niche', /this Group is ONLY about: \$\{niche\}/.test(gen) && /\.eq\('platform', slot\)\)\.maybeSingle\(\)/.test(gen) && /platform: slot, kit/.test(gen) && !/\.eq\('platform', platform\)/.test(gen))
+  const img = read('app/api/social-launch-kit/image/route.ts')
+  check('its cover is about that niche and saved in its slot', /if \(niche\) categories = \[niche\]/.test(img) && /platform: slot, \[col\]/.test(img) && !/\.eq\('platform', platform\)/.test(img))
+  const kitPage = read('app/(dashboard)/social-launch-kit/page.tsx')
+  check('the Group card asks the niche first, and each made niche is a tab', /Which niche is this Group for\?/.test(kitPage) && /k\.startsWith\('facebook_group:'\)/.test(kitPage) && /get\('niche'\)/.test(kitPage))
+  check('a made niche Group goes into Meta Hub with its niche', /group: \{ name: kit\.names\[0\][\s\S]{0,80}niche, keywords/.test(kitPage))
+  check('Meta Hub sends the niche to the Launch Kit', /\/social-launch-kit\?niche=\$\{encodeURIComponent/.test(page))
+}
+
 if (failures.length) {
   console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))
   process.exit(1)
