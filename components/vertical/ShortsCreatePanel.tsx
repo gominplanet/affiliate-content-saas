@@ -10,7 +10,7 @@
  * This is the same plan/ingest/render pipeline the ShortsStudioModal uses, minus
  * the publish pills (publishing happens in Clip Factory's own stage).
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check, Trash2 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
@@ -94,7 +94,11 @@ export function ShortsCreatePanel({
 
   useEffect(() => { void load() }, [load])
 
-  const findShorts = useCallback(async (whole = false) => {
+  // Set below: SCOUT fetching the creator's own video from YouTube Studio.
+  // Answers whether the file came in.
+  const getFromStudioRef = useRef<(() => Promise<boolean>) | null>(null)
+
+  const findShorts = useCallback(async (whole = false, autoStudio = true) => {
     setPlanning(true); setError(null)
     try {
       // Pull the timestamped transcript from the creator's OWN browser via SCOUT
@@ -115,8 +119,17 @@ export function ShortsCreatePanel({
       const data = await safeJson(res)
       if (!res.ok) {
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-        // No captions and no file: show the way in (Get it from YouTube
-        // Studio, or drop the file), which used to be named but not shown.
+        // NO CAPTIONS: GET THE VIDEO, DON'T STOP. YouTube sometimes will not
+        // hand over the captions; a creator then read "bring the video in"
+        // and compared MVP with tools that just carry on. So SCOUT fetches
+        // their own video from YouTube Studio right away, MVP transcribes the
+        // file, and Find Shorts runs again by itself, once. Only when that
+        // fails too is the way in shown, with SCOUT's own reason.
+        if (data.needsUpload && autoStudio && youtubeVideoId && getFromStudioRef.current) {
+          toast('YouTube would not give MVP the captions. SCOUT is getting your video from YouTube Studio so MVP can transcribe it…', { duration: 9000 })
+          const got = await getFromStudioRef.current()
+          if (got) { setPlanning(false); return await findShorts(whole, false) }
+        }
         if (data.needsUpload) setNeedsUpload(true)
         throw new Error(data.error || 'Could not find Shorts')
       }
@@ -146,8 +159,8 @@ export function ShortsCreatePanel({
   // downloaded from YouTube on MVP's server (which YouTube blocks).
   const [fromStudio, setFromStudio] = useState<'idle' | 'working' | 'done'>('idle')
   const [studioError, setStudioError] = useState<string | null>(null)
-  const getFromStudio = useCallback(async () => {
-    if (!youtubeVideoId) return
+  const getFromStudio = useCallback(async (): Promise<boolean> => {
+    if (!youtubeVideoId) return false
     setFromStudio('working'); setStudioError(null)
     try {
       const a = await fetch('/api/youtube/shorts/studio-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId }) })
@@ -170,11 +183,14 @@ export function ShortsCreatePanel({
       const atj = await safeJson(at)
       if (!at.ok || !atj.ok) throw new Error(atj.error || 'The file did not attach.')
       setHasSource(true); setNeedsUpload(false); setFromStudio('done')
-      toast.success('Your video is in, from YouTube Studio. Press Find Shorts or Render again.')
+      toast.success('Your video is in, from YouTube Studio.')
+      return true
     } catch (e) {
       setFromStudio('idle'); setStudioError(errText(e))
+      return false
     }
   }, [videoId, youtubeVideoId])
+  useEffect(() => { getFromStudioRef.current = getFromStudio }, [getFromStudio])
 
   // Remove a clip from the list. Posted clips stay posted on the platforms.
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -337,7 +353,7 @@ export function ShortsCreatePanel({
           {youtubeVideoId && (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <button
-                onClick={getFromStudio}
+                onClick={() => { void getFromStudio() }}
                 disabled={fromStudio === 'working'}
                 className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: PURPLE }}

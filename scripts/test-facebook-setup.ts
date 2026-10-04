@@ -147,6 +147,13 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('a post whose time stamp says hours or a date is never taken for the new one', /const OLD_STAMP = /.test(bg) && /&& !isOld\(a\)\)/.test(bg))
 }
 
+// ── No captions from YouTube: get the video and carry on, once ─────────────
+{
+  const panel = read('components/vertical/ShortsCreatePanel.tsx')
+  check('without captions, SCOUT fetches the video from Studio and Find Shorts runs again by itself', /data\.needsUpload && autoStudio && youtubeVideoId && getFromStudioRef\.current/.test(panel) && /return await findShorts\(whole, false\)/.test(panel))
+  check('it tries once, then shows the way in with SCOUT\'s own reason', /findShorts = useCallback\(async \(whole = false, autoStudio = true\)/.test(panel) && /setStudioError\(errText\(e\)\)/.test(panel))
+}
+
 // ── A dropped connection during a render is checked, never shown raw ────────
 {
   const panel = read('components/vertical/ShortsCreatePanel.tsx')
