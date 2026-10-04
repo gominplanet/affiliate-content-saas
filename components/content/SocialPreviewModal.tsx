@@ -296,12 +296,16 @@ export function SocialPreviewModal({
       const res = await fetch('/api/blog/facebook-group-teaser', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: cur.teaser, link: cur.link, socialAccountId: effectiveExtraBody?.socialAccountId }),
+        // The thumbnail MVP made goes on the Page post too, so it is not a bare link.
+        body: JSON.stringify({ message: cur.teaser, link: cur.link, socialAccountId: effectiveExtraBody?.socialAccountId, imageUrl: heroImageUrl || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || `Facebook said no (${res.status})`)
       const where = isFacebookGroupPostLink(data.link) ? 'the Group post' : 'your Group'
-      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'shared', tone: 'ok', note: `Done: posted in your Group, and shared on ${data.page || 'your Page'} linking to ${where}.` } }))
+      // Say whether the thumbnail went with it: a text-only Page post must not
+      // read the same as one with the picture.
+      const pic = data.photo ? ' with the thumbnail' : data.photoTried ? ' as text only (Facebook refused the thumbnail)' : ''
+      setGroupShare((m) => ({ ...m, [i]: { ...cur, phase: 'shared', tone: 'ok', note: `Done: posted in your Group, and shared on ${data.page || 'your Page'}${pic}, linking to ${where}.` } }))
       recordFacebookPush({ groupPostUrl: cur.link, pagePostUrl: data.id ? `https://www.facebook.com/${data.id}` : null, groupIdx: i })
       if (groupFirstMode) onPublished()
     } catch (e) {

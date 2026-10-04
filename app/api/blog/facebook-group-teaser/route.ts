@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
-    const body = await request.json() as { message?: string; link?: string; socialAccountId?: string }
+    const body = await request.json() as { message?: string; link?: string; socialAccountId?: string; imageUrl?: string }
     const message = String(body.message || '').trim().slice(0, 5000)
     const link = String(body.link || '').trim()
     if (!message) return NextResponse.json({ error: 'Write a line or two for the Page post first.' }, { status: 400 })
@@ -60,8 +60,24 @@ export async function POST(request: NextRequest) {
     // loaded", subcode 1609008). Written in the text it is a plain link that
     // opens the Group post, the same way the Page Reel's "Get it here" does.
     const text = message.includes(link) ? message : `${message}\n\n${link}`
-    const r = await createFacebookService(acct.accessToken, acct.externalId).postText({ message: text })
-    return NextResponse.json({ ok: true, id: r.id, page: acct.displayName, link })
+    // WITH THE THUMBNAIL MVP MADE, so the Page post is not a bare link: a photo
+    // post whose caption is the text, link included (still tappable). If the
+    // photo is refused, the post still goes out as text, and the answer says
+    // which one went out.
+    const svc = createFacebookService(acct.accessToken, acct.externalId)
+    const imageUrl = typeof body.imageUrl === 'string' && /^https:\/\//i.test(body.imageUrl.trim()) ? body.imageUrl.trim() : null
+    let id: string | null = null
+    let photo = false
+    let photoError: string | null = null
+    if (imageUrl) {
+      try {
+        const r = await svc.postPhoto({ imageUrl, caption: text })
+        id = r.post_id || r.id
+        photo = true
+      } catch (e) { photoError = e instanceof Error ? e.message.slice(0, 200) : 'the photo was refused' }
+    }
+    if (!id) id = (await svc.postText({ message: text })).id
+    return NextResponse.json({ ok: true, id, page: acct.displayName, link, photo, photoTried: !!imageUrl, photoError })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Facebook post failed' }, { status: 502 })
   }
