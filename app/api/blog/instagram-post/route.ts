@@ -15,6 +15,7 @@
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -45,9 +46,10 @@ type ImageMode = 'image' | 'story' | 'both'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as {
@@ -339,7 +341,7 @@ Return ONLY the caption text + hashtags.`,
           results.reelId = reelId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId).eq('user_id', user.id)
           // Pulse: learn which tags this Reel used (best-effort, non-blocking).
           void recordReachSample({ userId: user.id, mediaId: reelId, caption: feedCaption ?? '' })
         } catch (err) {
@@ -357,7 +359,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -379,7 +381,7 @@ Return ONLY the caption text + hashtags.`,
           results.imagePostId = imagePostId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Image post publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -395,7 +397,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }

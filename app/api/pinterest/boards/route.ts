@@ -6,6 +6,7 @@
 //          { action: 'auto' } clears the target (organize by category).
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { PinterestService } from '@/services/pinterest'
 
@@ -23,9 +24,10 @@ async function loadPinterest(supabase: Awaited<ReturnType<typeof createServerCli
 }
 
 export async function GET() {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   const row = await loadPinterest(supabase, user.id)
   const token = row?.pinterest_access_token || ''
   if (!token) return NextResponse.json({ ok: true, connected: false, boards: [], target: null })
@@ -38,9 +40,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient())
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   const body = await request.json().catch(() => ({})) as { action?: string; boardId?: string; name?: string }
   const row = await loadPinterest(supabase, user.id)
   const token = row?.pinterest_access_token || ''

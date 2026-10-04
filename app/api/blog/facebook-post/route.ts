@@ -3,6 +3,7 @@ import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budge
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
@@ -32,9 +33,10 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string; includeAffiliateCta?: boolean; media?: string }
@@ -340,7 +342,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     // ── 9. Save facebook_post_id (first success) + bump re-publish counter ────
     const firstId = succeeded[0].id!
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId)
+    await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId).eq('user_id', user.id)
     // Record the permalink so the brand-recap links straight to the post.
     await recordSocialPermalink(supabase, postId, 'facebook', socialPermalink.facebook(firstId))
     // Count one re-publish per Page actually posted to, so the per-post cap

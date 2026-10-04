@@ -2743,7 +2743,13 @@ export default function ContentPage() {
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const uid = user.id
+    // A VIRTUAL ASSISTANT works in the owner's library: the owner's videos,
+    // posts and brand (readable to a VA, migration 116), and the owner's
+    // connected socials, which every post goes through (lib/agency-publish).
+    // Reading by the VA's own id showed them an empty account.
+    const who = await fetch('/api/agency/whoami', { cache: 'no-store' }).then((r) => r.json()).catch(() => null) as { isVa?: boolean; ownerId?: string } | null
+    const isVa = !!(who?.isVa && who.ownerId)
+    const uid = isVa ? (who!.ownerId as string) : user.id
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -2835,14 +2841,14 @@ export default function ContentPage() {
 
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }, brandTagRows] = await Promise.all([
       fetchAllVideos(),
-      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
+      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', uid).single(),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', uid).single(),
       // `scheduled_for` + `schedule_mode` were added in migration 104.
       // Cast to any because the supabase-generated types haven't been
       // regenerated yet — same pattern as other post-migration selects
       // in the codebase. Drop after `gen types` runs.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,images_hosted_count,images_status,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,images_hosted_count,images_status,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', uid).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -2850,7 +2856,7 @@ export default function ContentPage() {
       // /api/cron/refresh-indexing and on-demand by the SEO page's Check button.
       // Lets us show a ✓ / ⏳ / ✗ badge on the Content page so users don't have
       // to leave to know whether Google has indexed each post.
-      sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', user.id),
+      sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', uid),
       // Per-video brand tags (migration 160), loaded SEPARATELY from the main
       // youtube_videos COLS select on purpose: that select has no column-drop
       // fallback, so a pre-migration DB (column absent) would empty the whole
@@ -2859,7 +2865,7 @@ export default function ContentPage() {
       // Bounded to the same newest-MAX_VIDEOS window the main list loads (same
       // published_at desc order), so we never pull the user's entire catalog a
       // second time just for tags, and every loaded video still gets its tag.
-      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id).order('published_at', { ascending: false, nullsFirst: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
+      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', uid).order('published_at', { ascending: false, nullsFirst: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
     ])
 
     // Merge brand_tags into the video rows by id (best-effort; absent → null).
@@ -2898,6 +2904,20 @@ export default function ContentPage() {
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(metaOn && !!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     setTiktokConnected(!!(i as Record<string, unknown>)?.tiktok_access_token && !!(i as Record<string, unknown>)?.tiktok_open_id)
+    if (isVa) {
+      // The VA's session cannot read the owner's integrations row, so the
+      // flags above all read "not connected". Ask the server, which reads the
+      // owner's connections and sends back only which platforms are on.
+      try {
+        const d = await fetch('/api/social/connected', { cache: 'no-store' }).then((r) => r.json())
+        const on = new Set<string>(Array.isArray(d?.connected) ? d.connected : [])
+        setFbConnected(on.has('facebook')); setPinterestConnected(on.has('pinterest')); setThreadsConnected(on.has('threads'))
+        setLinkedInConnected(on.has('linkedin')); setTwitterConnected(on.has('twitter')); setBlueskyConnected(on.has('bluesky'))
+        setTelegramConnected(on.has('telegram')); setInstagramConnected(on.has('instagram')); setTiktokConnected(on.has('tiktok'))
+      } catch { /* the flags stay off, and posting says why */ }
+      // The owner's WordPress is set up if they have published posts.
+      setChecks((c) => (c ? { ...c, wpReady: c.wpReady || ((blogPosts as unknown[] | null)?.length ?? 0) > 0 } : c))
+    }
     const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
     setUserTier(resolvedTier)
     // Pro multi-account: load connected Facebook Pages + Instagram accounts so
@@ -3018,7 +3038,7 @@ export default function ContentPage() {
       const { data: schedRows } = await (sb as any)
         .from('scheduled_posts')
         .select('blog_post_id,platform,status,updated_at')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .gte('updated_at', thirtyDaysAgo)
         .order('updated_at', { ascending: false })
         .limit(500)

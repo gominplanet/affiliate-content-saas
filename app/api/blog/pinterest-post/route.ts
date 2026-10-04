@@ -5,6 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
 import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
@@ -23,9 +24,10 @@ import { spendGate } from '@/lib/ai-spend'
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient())
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tierRow } = await supabase

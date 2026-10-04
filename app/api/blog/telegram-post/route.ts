@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { channelShareUrl } from '@/lib/channel-share-url'
@@ -35,9 +36,10 @@ const CAPTION_BUDGET = 800 // Telegram caption limit is 1024; leave room for URL
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // ── Tier gate ───────────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -210,7 +212,7 @@ Return ONLY the post text.`,
     await supabase
       .from('blog_posts')
       .update({ telegram_message_id: String(result.messageId) })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     await incrementSocialCount(supabase, postId!, 'telegram')
 
     return NextResponse.json({

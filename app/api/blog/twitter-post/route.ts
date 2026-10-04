@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -25,9 +26,10 @@ const TWEET_HARD_LIMIT = 280
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // X / Twitter auto-publish is a Pro-only feature.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -275,7 +277,7 @@ Return ONLY the tweet text.`,
     await supabase
       .from('blog_posts')
       .update({ twitter_post_id: tweet.id })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the tweet.
     await recordSocialPermalink(supabase, postId!, 'x', socialPermalink.x(tweet.id))
     await incrementSocialCount(supabase, postId!, 'twitter')

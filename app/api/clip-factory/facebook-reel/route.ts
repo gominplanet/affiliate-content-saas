@@ -15,6 +15,7 @@
 import { cleanNicheGroup } from '@/lib/facebook-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
 import { canUsePreview } from '@/lib/labs-preview'
 import { metaEnabledForUser } from '@/lib/feature-flags'
@@ -31,9 +32,10 @@ export const maxDuration = 300
 // saved in Brand Profile, which a Reel can be shared into with SCOUT after it
 // is up on the Page (Meta lets no app post into a Group).
 export async function GET() {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const [{ data: intRow }, { data: rows }, { data: brand }] = await Promise.all([
@@ -55,9 +57,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient())
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
   const body = await req.json().catch(() => ({})) as {

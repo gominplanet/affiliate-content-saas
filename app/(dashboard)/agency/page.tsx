@@ -321,8 +321,10 @@ export default function AgencyPage() {
           owner unticks "Publish to socials", believes their accounts are
           protected, and nothing changed. */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-100">
-        <b>What these permissions do today:</b> “Manage newsletter” is enforced now — a VA without
-        it cannot send or edit your list. The other five are recorded on the VA and shown here,
+        <b>What these permissions do today:</b> “Manage newsletter” and “Publish to socials” are enforced.
+        A VA with “Publish to socials” posts and schedules through the accounts you connected, without
+        ever needing your social logins; without it, they can see your queue but cannot post. Only you
+        can connect or disconnect an account. The other four are recorded on the VA and shown here,
         but are not yet enforced at every route, so treat them as your intent for a VA rather
         than a lock. Invite people you trust with the workspace, and revoke to remove access.
       </div>

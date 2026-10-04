@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { ThreadsService } from '@/services/threads'
@@ -19,9 +20,10 @@ const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purcha
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Threads publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // Threads auto-publish is Creator+ (Creator, Pro, Admin).

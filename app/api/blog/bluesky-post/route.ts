@@ -3,6 +3,7 @@ import { landsOnAmazon } from '@/lib/amazon-destination'
 import { postProductAsin } from '@/lib/post-product-link'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
@@ -25,9 +26,10 @@ const POST_CHAR_LIMIT = 300
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // Bluesky auto-publish is Creator+ (free for us to run, but gives Creator
     // a meaningful extra channel over Starter).
@@ -225,7 +227,7 @@ Return ONLY the post text.`,
     await supabase
       .from('blog_posts')
       .update({ bluesky_post_uri: result.uri })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     await incrementSocialCount(supabase, postId!, 'bluesky')
 
     return NextResponse.json({

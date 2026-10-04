@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
 import { getConnectedPlatforms } from '@/lib/channel-health'
@@ -40,9 +41,10 @@ const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter'
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     /** Set when MVP's own schedule moved but WordPress's did not. The two then
      *  disagree about when the post publishes, and WordPress wins. */
@@ -129,7 +131,7 @@ export async function PATCH(request: Request) {
         await Promise.all(pending.map(r =>
           (supabase as any).from('scheduled_posts')
             .update({ scheduled_at: new Date(new Date(r.scheduled_at).getTime() + delta).toISOString() })
-            .eq('id', r.id),
+            .eq('id', r.id).eq('user_id', user.id),
         ))
       }
     }

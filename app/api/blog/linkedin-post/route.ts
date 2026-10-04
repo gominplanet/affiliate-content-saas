@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -29,9 +30,10 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // LinkedIn posting is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,7 +254,7 @@ Return ONLY the post text, no extra commentary.`,
     await supabase
       .from('blog_posts')
       .update({ linkedin_post_id: result.id })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the post.
     await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
     await incrementSocialCount(supabase, postId!, 'linkedin')
