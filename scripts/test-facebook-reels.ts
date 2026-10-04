@@ -9,7 +9,7 @@ const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) 
 
 const LIB = readFileSync('lib/facebook-reels.ts', 'utf8')
 const ROUTE = readFileSync('app/api/clip-factory/facebook-reel/route.ts', 'utf8')
-const PAGE = readFileSync('app/(dashboard)/clip-factory/page.tsx', 'utf8')
+const PAGE = readFileSync('components/clip-factory/ClipFactory.tsx', 'utf8')
 const LABS = readFileSync('lib/labs-preview.ts', 'utf8')
 
 check('start, upload by URL, then finish as published, in that order',

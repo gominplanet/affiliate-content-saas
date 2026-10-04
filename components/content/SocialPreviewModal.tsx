@@ -552,7 +552,7 @@ export function SocialPreviewModal({
                   <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first</p>
                   <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-0.5">
                     Your Amazon links go in your own Facebook Group, and MVP shares each Group post on your Page for you.
-                    It takes a few minutes, and the <a href="/facebook" className="text-[#7C3AED] hover:underline font-semibold">Facebook</a> page walks you through it.
+                    It takes a few minutes, and the <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta Hub</a> walks you through it.
                     Until then, this posts to your Page with the link.
                   </p>
                 </div>

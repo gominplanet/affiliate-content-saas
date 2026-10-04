@@ -37,7 +37,7 @@ check('hashtags are taken out of the write-up and placed by choice', stripHashta
 const why = unavailableReasons({ productLink: null, videoUrl: null, blogUrl: null }, [])
 check('a choice that adds nothing says why', !!why.productLink && /No product link found/.test(why.productLink) && !!why.review && !!why.hashtags)
 
-const PAGE = r('app/(dashboard)/clip-factory/page.tsx')
+const PAGE = r('components/clip-factory/ClipFactory.tsx')
 check('every pill opens the panel rather than posting', ['tiktok', 'instagram', 'youtube', 'facebook'].every((p) => new RegExp(`openPanel\\('${p}'\\)`).test(PAGE)))
 check('the Reel cover sits above the pills', PAGE.indexOf("'Choose Reel cover'") > 0 && PAGE.indexOf("'Choose Reel cover'") < PAGE.indexOf('<PostPill label="TikTok"'))
 check('YouTube posts the panel\u2019s title, description and tags', /title: choice\.title/.test(PAGE) && /description: choice\.text/.test(PAGE) && /tags: choice\.tags/.test(PAGE))

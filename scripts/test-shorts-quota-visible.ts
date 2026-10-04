@@ -110,10 +110,10 @@ const RENDER_ROUTE = live(read('app/api/youtube/shorts/render/route.ts'))
       'a creator deciding whether to render should not have to scroll to find out how many are left')
   }
   check('the Clip Factory header uses the same badge, not its own copy',
-    /<ShortsQuotaBadge \/>/.test(live(read('app/(dashboard)/clip-factory/page.tsx'))),
+    /<ShortsQuotaBadge \/>/.test(live(read('components/clip-factory/ClipFactory.tsx'))),
     'the second implementation is the one that goes stale')
   check('and no longer keeps a private usage fetch beside it',
-    !/fetch\('\/api\/youtube\/shorts\/usage'\)/.test(live(read('app/(dashboard)/clip-factory/page.tsx'))),
+    !/fetch\('\/api\/youtube\/shorts\/usage'\)/.test(live(read('components/clip-factory/ClipFactory.tsx'))),
     'two readers of one number is how they disagree')
 }
 

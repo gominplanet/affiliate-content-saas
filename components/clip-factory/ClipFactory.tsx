@@ -1,0 +1,1461 @@
+'use client'
+
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
+//
+// Clip Factory (LABS) — the merged home of Shorts Studio (make a vertical
+// clip from a long video, from the ground up) and Shop Burner (add a CTA/link
+// overlay + product + auto-DM, then publish). One section, three stages:
+//
+//   1) Create  — get a vertical clip three ways: cut one from a regular
+//                YouTube video (Shorts Studio), pick one of your existing
+//                YouTube Shorts, or upload your own vertical video.
+//   2) Enhance — burn a CTA overlay + attach a product link (Shop Burner engine).
+//   3) Publish — push to Instagram / TikTok / YouTube (or download).
+//
+// Lives in Labs so it can be tested next to the two originals without touching
+// them; graduates once proven (flip the nav gate). Every stage reuses the
+// existing API routes — no new engines.
+
+import PublishPanel, { type PublishKit, type PublishChoice } from '@/components/clip-factory/PublishPanel'
+import { ReelPagePicker, ShareReelToGroups, ReelGroupFirst, pageReelCaption, type ReelPage, type ReelGroup } from '@/components/clip-factory/ReelDestinations'
+import type { ClipPlatform } from '@/lib/clip-description'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ClipFactoryGuide } from '@/components/guide/tool-guides'
+import dynamic from 'next/dynamic'
+import Link from 'next/link'
+import { toast } from 'sonner'
+import {
+  Rocket, Scissors, Flame, Send, Loader2, Search, Youtube, Link2,
+  Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
+  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown, Facebook,
+} from 'lucide-react'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
+import { ShortsQuotaBadge } from '@/components/vertical/ShortsQuotaBadge'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { dispatchCapReached } from '@/components/CapReachedBanner'
+import { errText } from '@/lib/err-text'
+import { requestVideoTranscriptCues } from '@/lib/extension-frame'
+import { extractYouTubeVideoId } from '@/lib/youtube-url'
+import { buildYouTubeShortTitle } from '@/lib/youtube-title'
+import { buildYouTubeTags } from '@/lib/youtube-tags'
+import {
+  CTA_STICKERS, PLATFORM_BADGES, ctaStickerUrl,
+  type CtaDestination, type CtaMode,
+} from '@/lib/cta-stickers'
+import type { Tier } from '@/lib/tier'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { canUsePreview } from '@/lib/labs-preview'
+
+const TikTokDirectModal = dynamic(
+  () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
+  { ssr: false },
+)
+const InstagramBurnedModal = dynamic(
+  () => import('@/components/InstagramBurnedModal').then(m => ({ default: m.InstagramBurnedModal })),
+  { ssr: false },
+)
+// Reel cover-frame picker for the burned clip — client-only, callback-based (no DB;
+// the offset is threaded straight to publish as thumb_offset).
+const ReelCoverPicker = dynamic(() => import('@/components/content/ReelCoverPicker'), { ssr: false })
+
+const PURPLE = '#7C3AED'
+// Legible-in-both-themes styling for an UNSELECTED pill/chip. The old inline
+// rgba(0,0,0,.12) borders + grey text were near-invisible on the dark theme.
+const PILL_IDLE = 'text-[#1d1d1f] dark:text-[#f5f5f7] bg-black/[0.04] dark:bg-white/[0.08] border-black/15 dark:border-white/25 hover:border-[#7C3AED]/60'
+// A selected pill: solid purple fill (paired with inline backgroundColor).
+const PILL_ON = 'text-white border-transparent'
+// A selected-but-outline chip (e.g. style/position choices): purple text + tint.
+const PILL_SEL = 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]'
+const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
+const POSITIONS = [
+  { key: 'lower-left', label: 'Lower third', desc: 'Bottom — clears IG & TikTok UI' },
+  { key: 'upper-left', label: 'Upper third', desc: 'Top of the screen' },
+] as const
+const STYLES = [
+  { key: 'white-pill', label: 'White on dark' },
+  { key: 'yellow-pill', label: 'Yellow on dark' },
+  { key: 'black-pill', label: 'Black on white' },
+  { key: 'white-shadow', label: 'White + shadow' },
+] as const
+const DURATIONS = [
+  { key: 5, label: '5s' },
+  { key: 10, label: '10s' },
+  { key: 30, label: '30s' },
+  { key: 0, label: 'Whole clip' },
+] as const
+
+type Stage = 'create' | 'enhance' | 'publish'
+// sourceVideoId: the youtube_videos row the clip came from, when MVP knows it.
+// The Facebook Reel description reads its blog post and product from there.
+interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number; sourceVideoId?: string }
+interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
+interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
+
+/** Facebook Reels' recommended badges: the gallery's link-in-description and
+ *  shop-below designs (there is no Facebook in-app shop to point at). */
+const FACEBOOK_BADGE_IDS = ['link-in-desc-2', 'link-in-desc-1', 'link-in-desc-3', 'shop-below-burst', 'shop-below-bold']
+
+function fmtDuration(sec: number | null): string {
+  if (!sec || sec <= 0) return ''
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60)
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
+}
+
+// A cross-post pill: outline + brand color until posted, then fills solid.
+function PostPill({ posted, label, color, icon, onClick, busy, disabled }: {
+  posted: boolean; label: string; color: string; icon: React.ReactNode
+  onClick: () => void; busy?: boolean; disabled?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || busy}
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border transition-colors disabled:opacity-50"
+      style={posted ? { backgroundColor: color, borderColor: color, color: '#fff' } : { borderColor: `${color}66`, color }}
+    >
+      {busy ? <Loader2 size={13} className="animate-spin" /> : posted ? <Check size={13} /> : icon}
+      {label}{posted ? ' · Posted' : ''}
+    </button>
+  )
+}
+
+// The video preview with the selected CTA badge overlaid and draggable. Position
+// is a top-left fraction of the frame; width is a fraction of frame width — the
+// exact values sent to the burn, so what you drag is what you get.
+function BadgeStage({ videoUrl, badgeUrl, pos, widthPct, onChange }: {
+  videoUrl: string; badgeUrl: string | null
+  pos: { x: number; y: number }; widthPct: number
+  onChange: (p: { x: number; y: number }) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const grab = useRef<{ dx: number; dy: number } | null>(null)
+  const onDown = (e: React.PointerEvent) => {
+    if (!ref.current) return
+    e.preventDefault(); e.stopPropagation()
+    const r = ref.current.getBoundingClientRect()
+    grab.current = { dx: e.clientX - (r.left + pos.x * r.width), dy: e.clientY - (r.top + pos.y * r.height) }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!grab.current || !ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    const x = Math.min(1 - widthPct, Math.max(0, (e.clientX - r.left - grab.current.dx) / r.width))
+    const y = Math.min(0.98, Math.max(0, (e.clientY - r.top - grab.current.dy) / r.height))
+    onChange({ x, y })
+  }
+  const onUp = () => { grab.current = null }
+  return (
+    <div ref={ref} className="relative rounded-xl overflow-hidden bg-black aspect-[9/16] w-full max-w-[260px] select-none">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video src={videoUrl} controls playsInline className="w-full h-full object-cover" />
+      {badgeUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={badgeUrl} alt="" draggable={false}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          className="absolute touch-none cursor-move drop-shadow-lg"
+          style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%`, width: `${widthPct * 100}%` }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Clip Factory. On its own page, or inside Meta Hub with facebookOnly: no
+ *  page header, and Facebook is the only place a clip is published, so the
+ *  creator never leaves Meta Hub to make and post a Reel. */
+export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: boolean } = {}) {
+  const supabase = useMemo(() => createBrowserClient(), [])
+  const [tier, setTier] = useState<Tier | string>('trial')
+  const [gateLoaded, setGateLoaded] = useState(false)
+  const isPro = tier === 'pro' || tier === 'admin'
+
+  const [stage, setStage] = useState<Stage>('create')
+  const [clip, setClip] = useState<WorkingClip | null>(null)
+  // Shorts usage lives in ShortsQuotaBadge now: it fetches, and it re-fetches
+  // on every render anywhere in the app. The copy that lived here refreshed on
+  // mount and on "Use this clip", which is not when a slot is spent.
+
+  // ---- Create: long-video on-ramp (opens Shorts Studio) ----
+  const [videos, setVideos] = useState<VideoLite[]>([])
+  // Scheduled videos left out of the list until they are live.
+  const [scheduledCount, setScheduledCount] = useState(0)
+  const [vidQuery, setVidQuery] = useState('')
+  const [selectedVideo, setSelectedVideo] = useState<VideoLite | null>(null)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [ownership, setOwnership] = useState(false)
+  const [generating, setGenerating] = useState(false)
+
+  // ---- Create: existing-short / upload on-ramp ----
+  const [onramp, setOnramp] = useState<'long' | 'short' | 'upload'>('long')
+  const [shorts, setShorts] = useState<ShortItem[]>([])
+  const [loadingShorts, setLoadingShorts] = useState(false)
+  const [shortQuery, setShortQuery] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [fetchingShortId, setFetchingShortId] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  // A horizontal upload can't drop straight into Enhance (the burn would crop off
+  // its sides), so we park it here and let the creator pick a 9:16 reframe first.
+  const [pendingHorizontal, setPendingHorizontal] = useState<{ url: string; durationSec: number; title: string; frame: string | null } | null>(null)
+  const [reframing, setReframing] = useState<null | 'center' | 'split'>(null)
+  // Default the Create step to the creator's Shorts when they have no long videos
+  // to cut from — but only once, and never over a tab they picked themselves.
+  const didAutoPick = useRef(false)
+  const [videosLoaded, setVideosLoaded] = useState(false)
+
+  // Where the working clip came from: 'created' (rendered from a long video, so
+  // it carries a plan caption) vs 'existing' (uploaded / picked short — no
+  // caption yet, so we push the creator to add a product link for a real one).
+  const [clipSource, setClipSource] = useState<'created' | 'existing'>('existing')
+
+  // ---- Enhance ----
+  const [overlayType, setOverlayType] = useState<'sticker' | 'text'>('sticker')
+  const [stickerTab, setStickerTab] = useState<'recommended' | 'gallery' | 'mine' | 'make'>('recommended')
+  // Where the clip is going + how the viewer buys — drives the recommended
+  // badges and the "make your own" generation style.
+  // Facebook is a page-level destination: Reels have no in-app shop and there
+  // is no Facebook badge artwork, so its recommended badges are the gallery's
+  // "Link in the description" and "Shop below" designs, and its buy path is
+  // always the link in the description.
+  const [destination, setDestination] = useState<CtaDestination | 'facebook'>('tiktok')
+  const [mode, setMode] = useState<CtaMode>('shop')
+  const [stickerId, setStickerId] = useState<string>(PLATFORM_BADGES[0]?.id ?? CTA_STICKERS[0]?.id ?? '')
+  // A custom (AI-generated / saved) box URL. When set, it wins over stickerId.
+  const [customStickerUrl, setCustomStickerUrl] = useState<string | null>(null)
+  const [myStickers, setMyStickers] = useState<Array<{ id: string; url: string; tag: string }>>([])
+  const [tagText, setTagText] = useState('')
+  const [genLoading, setGenLoading] = useState(false)
+  const [caption, setCaption] = useState('LINK IN BIO')
+  const [style, setStyle] = useState<typeof STYLES[number]['key']>('white-pill')
+  const [position, setPosition] = useState<typeof POSITIONS[number]['key']>('lower-left')
+  const [burnDuration, setBurnDuration] = useState<number>(10)
+  // Free placement of the badge on the preview: top-left fraction + width
+  // fraction of the frame. What you drag is exactly what gets burned.
+  const [badgePos, setBadgePos] = useState<{ x: number; y: number }>({ x: 0.19, y: 0.66 })
+  const [badgeWidthPct, setBadgeWidthPct] = useState<number>(0.42)
+  const [product, setProduct] = useState('')
+  const [productName, setProductName] = useState('')
+  const [burning, setBurning] = useState(false)
+  const [burnedUrl, setBurnedUrl] = useState<string | null>(null)
+  const [composedCaption, setComposedCaption] = useState<string>('')
+
+  // ---- Publish ----
+  const [ttOpen, setTtOpen] = useState(false)
+  const [igOpen, setIgOpen] = useState(false)
+  // Reel cover frame (ms into the burned clip) + its picker. Threaded to the IG
+  // burned publish as thumb_offset. Reset whenever the render changes (below).
+  const [coverOffsetMs, setCoverOffsetMs] = useState<number | null>(null)
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false)
+  const [publishingYt, setPublishingYt] = useState(false)
+  const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean; facebook?: boolean }>({})
+  const [publishingFb, setPublishingFb] = useState(false)
+  const [fbReelUrl, setFbReelUrl] = useState<string | null>(null)
+  // Where a Reel goes: the Page (picked when there are several) and, after it
+  // is up, the creator's Groups through SCOUT. Loaded once, when the Facebook
+  // pill is first opened.
+  const [fbPages, setFbPages] = useState<ReelPage[] | null>(null)
+  const [fbGroups, setFbGroups] = useState<ReelGroup[] | null>(null)
+  const [fbDestError, setFbDestError] = useState<string | null>(null)
+  const [fbPageId, setFbPageId] = useState('')
+  const [fbReelText, setFbReelText] = useState('')
+  // Group first, then the Page (Labs facebook_setup): the panel's button hands
+  // its text to ReelGroupFirst, which runs SCOUT, waits for the Group post,
+  // then posts the Reel linking to it.
+  const [fbFlowStart, setFbFlowStart] = useState<{ text: string; at: number } | null>(null)
+  // The Reel's description, built by the server and shown before posting:
+  // what posts is exactly this text, and whether it carries a product link is
+  // said on screen rather than discovered on Facebook.
+  // THE PUBLISH PANEL. A pill opens it for its platform; it asks what goes in
+  // the description (components/clip-factory/PublishPanel) and posts, or hands
+  // the text to the TikTok or Instagram window. One kit per platform, fetched
+  // when the pill is first pressed and dropped when the clip or product changes.
+  const [panel, setPanel] = useState<ClipPlatform | null>(null)
+  const [kits, setKits] = useState<Partial<Record<ClipPlatform, PublishKit>>>({})
+  // Per platform, so a slow failure on one never shows inside another's panel.
+  const [kitErrors, setKitErrors] = useState<Partial<Record<ClipPlatform, string>>>({})
+  // Bumped whenever the clip or product changes, so a links answer for the old
+  // ones is thrown away instead of filed under the new.
+  const kitEpoch = useRef(0)
+  const [ttCaption, setTtCaption] = useState<string | null>(null)
+  const [igCaption, setIgCaption] = useState<string | null>(null)
+  // The uploaded YouTube video id, so we can link the creator straight to it
+  // (a Short can take a few minutes to process before it's visible).
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null)
+
+  // The clip that flows into Publish: the burned one if Enhance ran, else the raw clip.
+  const publishUrl = burnedUrl || clip?.url || ''
+  // A caption is ALWAYS available for a scripted clip: the planner wrote a hook
+  // + hashtags per clip. Use that as the floor so Publish never opens with an
+  // empty caption when the burn returns nothing or Enhance is skipped. (Only a
+  // raw upload with no plan/title/hashtags can still be empty — that's the case
+  // the Enhance panel nudges toward adding a product link.)
+  const fallbackCaption = useMemo(() => {
+    if (!clip) return ''
+    const tags = (clip.hashtags || []).map((h) => (h.startsWith('#') ? h : `#${h}`)).join(' ')
+    return [clip.caption || clip.title || '', tags].filter(Boolean).join('\n\n').trim()
+  }, [clip])
+  const publishCaption = composedCaption || fallbackCaption
+  // Every hashtag the clip has: its own and those the Enhance caption wrote
+  // (an uploaded Short has only the latter). #ad is the disclosure's job.
+  const panelHashtags = useMemo(() => {
+    const fromCaption = (publishCaption.match(/(^|\s)#([\p{L}\p{N}_]+)/gu) ?? []).map((h) => h.trim().replace(/^#/, ''))
+    return [...(clip?.hashtags || []).map((h) => h.replace(/^#/, '')), ...fromCaption].filter((h) => !/^ad$/i.test(h))
+  }, [clip, publishCaption])
+
+  // Load gate + long videos on mount.
+  useEffect(() => {
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setGateLoaded(true); return }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+      setTier((intRow?.tier as string) || 'trial')
+      setGateLoaded(true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('youtube_videos')
+        .select('id,youtube_video_id,title,thumbnail_url,duration_seconds,is_vertical,published_at')
+        .eq('user_id', user.id).or('is_vertical.is.null,is_vertical.eq.false')
+        .order('published_at', { ascending: false, nullsFirst: false }).limit(200)
+      // ONLY VIDEOS THAT ARE OUT. A scheduled video's publish time is in the
+      // future, so newest-first put it at the top, and a clip cut from it could
+      // go out before the video itself (the same hard rule as blog posts). It
+      // is counted instead, and appears here the day it goes live.
+      const nowMs = Date.now()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all = (data ?? []) as any[]
+      const live = all.filter(v => !v.published_at || new Date(v.published_at).getTime() <= nowMs)
+      setScheduledCount(all.length - live.length)
+      setVideos(live.map(v => ({
+        id: v.id, youtubeVideoId: v.youtube_video_id ?? null, title: v.title ?? 'Untitled',
+        thumbnailUrl: v.thumbnail_url ?? null, durationSeconds: v.duration_seconds ?? null,
+      })))
+      setVideosLoaded(true)
+    })()
+  }, [supabase])
+
+  // Manual tab choice — flags auto-pick as spent so it never overrides the user.
+  const pickTab = useCallback((t: 'long' | 'short' | 'upload') => {
+    didAutoPick.current = true
+    setOnramp(t)
+  }, [])
+
+  // DEEP LINK: ?video=<id> (on /clip-factory, or on /meta where Meta Hub
+  // remounts this on a picked video) opens that video's clips straight away.
+  useEffect(() => {
+    let id: string | null = null
+    try { id = new URLSearchParams(window.location.search).get('video') } catch { id = null }
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return
+    ;(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any).from('youtube_videos').select('id,youtube_video_id,title,thumbnail_url,duration_seconds').eq('id', id).maybeSingle()
+      if (!data) return
+      pickTab('long')
+      setSelectedVideo({ id: data.id, youtubeVideoId: data.youtube_video_id ?? null, title: data.title ?? 'Video', thumbnailUrl: data.thumbnail_url ?? null, durationSeconds: data.duration_seconds ?? null })
+    })()
+  }, [supabase, pickTab])
+
+  const loadShorts = useCallback(async () => {
+    setLoadingShorts(true)
+    try {
+      const res = await fetch('/api/instagram/burn/shorts')
+      const data = await res.json()
+      setShorts((data.shorts || []) as ShortItem[])
+    } catch { /* non-fatal */ }
+    finally { setLoadingShorts(false) }
+  }, [])
+
+  useEffect(() => { if (onramp === 'short' && shorts.length === 0) void loadShorts() }, [onramp, shorts.length, loadShorts])
+
+  // Auto-pick the Shorts tab for a creator with no long videos to cut from, so
+  // they land right on their Shorts instead of an empty "connect YouTube" screen.
+  // Runs once; a manual tab click (pickTab) or having long videos cancels it.
+  useEffect(() => {
+    if (didAutoPick.current || !videosLoaded) return
+    if (videos.length > 0) { didAutoPick.current = true; return }
+    if (shorts.length === 0) { void loadShorts(); return } // re-runs once shorts land
+    didAutoPick.current = true
+    setOnramp('short')
+  }, [videosLoaded, videos.length, shorts.length, loadShorts])
+
+  const filteredVideos = useMemo(() => {
+    const q = vidQuery.trim().toLowerCase()
+    return q ? videos.filter(v => v.title.toLowerCase().includes(q)) : videos
+  }, [videos, vidQuery])
+  const filteredShorts = useMemo(() => {
+    const q = shortQuery.trim().toLowerCase()
+    return q ? shorts.filter(s => s.title.toLowerCase().includes(q)) : shorts
+  }, [shorts, shortQuery])
+
+  const generateFromLink = useCallback(async () => {
+    const url = linkUrl.trim()
+    if (!url) { toast.error('Paste a YouTube link first.'); return }
+    if (!ownership) { toast.error('Confirm you own the video first.'); return }
+    setGenerating(true)
+    try {
+      // Grab the timestamped transcript from the creator's own browser via SCOUT
+      // (past YouTube's cloud-IP block) and pass it along, so a pasted link plans
+      // clips without depending on the flaky server-side fetch. Best-effort.
+      let cues: Array<{ text: string; offset: number; duration: number }> = []
+      const ytId = extractYouTubeVideoId(url)
+      if (ytId) {
+        try { cues = await requestVideoTranscriptCues(ytId) } catch { /* fall back to server */ }
+      }
+      const res = await fetch('/api/youtube/shorts/plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl: url, ownershipConfirmed: true, ...(cues.length ? { cues } : {}) }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not generate clips from that link.')
+      }
+      if (data.video) {
+        setSelectedVideo({ id: data.video.id, youtubeVideoId: data.video.youtubeVideoId ?? null, title: data.video.title ?? 'Video', thumbnailUrl: null, durationSeconds: null })
+        setLinkUrl(''); setOwnership(false)
+      }
+    } catch (e) { toast.error(errText(e)) }
+    finally { setGenerating(false) }
+  }, [linkUrl, ownership])
+
+  // Load a vertical Short (a youtube_videos row) into the Enhance stage: use its
+  // stored MP4, or fetch it in-app if there isn't one. Shared by the picker and
+  // the ?videoId= deep-link (e.g. from the Instagram publish modal).
+  const loadShortById = useCallback(async (id: string, fallbackTitle?: string, productUrl?: string) => {
+    try {
+      let videoUrl = ''
+      let title = fallbackTitle || 'Short'
+      const res0 = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(id)}`)
+      if (res0.ok) {
+        const d0 = await res0.json()
+        videoUrl = (d0.videoUrl as string) || ''
+        if (d0.title) title = d0.title as string
+      }
+      // No stored MP4 — fetch it inside MVP (the downloader service), never send
+      // the creator to YouTube Studio to download + re-upload.
+      if (!videoUrl) {
+        setFetchingShortId(id)
+        const res = await fetch('/api/youtube/shorts/ingest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: id, target: 'short' }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.videoUrl) {
+          if (data.ingestDisabled) throw new Error("Automatic fetch isn’t available right now — please upload the clip instead.")
+          if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+          throw new Error(data.error || "We couldn't fetch this Short automatically.")
+        }
+        videoUrl = data.videoUrl as string
+        setShorts(prev => prev.map(x => (x.id === id ? { ...x, hasVideo: true } : x)))
+      }
+      if (!videoUrl) throw new Error('No video available for this Short.')
+      if (productUrl) setProduct(productUrl)
+      setClipSource('existing')
+      setOnramp('short')
+      setClip({ url: videoUrl, title, sourceVideoId: id })
+      setStage('enhance')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setFetchingShortId(null) }
+  }, [])
+
+  const pickShort = useCallback((s: ShortItem) => {
+    void loadShortById(s.id, s.title, s.productUrl || undefined)
+  }, [loadShortById])
+
+  // Deep-link: /clip-factory?videoId=<uuid>[&product=…] jumps straight into
+  // Enhance for that Short (e.g. from the Instagram publish modal).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const vid = (params.get('videoId') || '').trim()
+    if (vid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vid)) {
+      void loadShortById(vid, undefined, params.get('product') || undefined)
+    }
+  }, [loadShortById])
+
+  // Read a local file's dimensions + duration before upload, so we can tell a
+  // vertical clip (goes straight to Enhance) from a horizontal one (needs a 9:16
+  // reframe first). Best-effort: on any probe error we treat it as vertical and
+  // let the burn's center-crop handle it, rather than blocking the upload.
+  // Also grab a single frame as a data URL so a horizontal upload can show a real
+  // preview of the center-crop vs split-screen reframe before the creator commits.
+  // The frame comes from a same-origin blob URL, so the canvas isn't tainted.
+  const probeVideo = (file: File): Promise<{ width: number; height: number; duration: number; frame: string | null }> =>
+    new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.muted = true
+      let settled = false
+      const done = (r: { width: number; height: number; duration: number; frame: string | null }) => {
+        if (settled) return; settled = true; URL.revokeObjectURL(url); resolve(r)
+      }
+      v.onloadedmetadata = () => {
+        const width = v.videoWidth || 0, height = v.videoHeight || 0
+        const duration = Number.isFinite(v.duration) ? v.duration : 0
+        const grab = () => {
+          try {
+            const c = document.createElement('canvas'); c.width = width || 640; c.height = height || 360
+            const ctx = c.getContext('2d')
+            if (ctx) { ctx.drawImage(v, 0, 0, c.width, c.height); done({ width, height, duration, frame: c.toDataURL('image/jpeg', 0.7) }) }
+            else done({ width, height, duration, frame: null })
+          } catch { done({ width, height, duration, frame: null }) }
+        }
+        v.onseeked = grab
+        try { v.currentTime = Math.min(1, (duration || 2) / 2) } catch { grab() }
+        setTimeout(grab, 1500) // fallback if 'seeked' never fires
+      }
+      v.onerror = () => done({ width: 0, height: 0, duration: 0, frame: null })
+      v.src = url
+    })
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!file.type.startsWith('video/')) { toast.error('Please select a video file (MP4 recommended).'); return }
+    if (file.size > 300 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 300MB.`); return }
+    setUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const dims = await probeVideo(file)
+      const isHorizontal = dims.width > 0 && dims.height > 0 && dims.width > dims.height
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
+      const path = `${user.id}/burner-${crypto.randomUUID()}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4' })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      if (isHorizontal) {
+        // Park it and let the creator choose the 9:16 layout (center vs split).
+        setPendingHorizontal({ url: urlData.publicUrl, durationSec: dims.duration, title: file.name, frame: dims.frame })
+      } else {
+        setClipSource('existing')
+        setClip({ url: urlData.publicUrl, title: file.name })
+        setStage('enhance')
+      }
+    } catch (e) { toast.error(errText(e)) }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+  }, [supabase])
+
+  // Live follow-up hands a finished vertical clip over as a draft:
+  // /clip-factory?liveClip=<our storage URL>&product=<ASIN>&name=<title>.
+  // Only a clip in MVP's own storage is taken; anything else is ignored.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      const live = q.get('liveClip') || ''
+      const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+      if (!live || !base || !live.startsWith(`${base}/storage/v1/object/public/`)) return
+      const name = (q.get('name') || '').slice(0, 120)
+      const asin = (q.get('product') || '').toUpperCase()
+      setClipSource('existing')
+      setClip({ url: live, title: name || 'Amazon Live clip' })
+      if (/^[A-Z0-9]{10}$/.test(asin)) setProduct(asin)
+      if (name) setProductName(name)
+      setStage('enhance')
+      window.history.replaceState(null, '', window.location.pathname)
+    } catch { /* a bad link just opens Clip Factory as usual */ }
+  }, [])
+
+  // Reframe a parked horizontal upload to 9:16 (center-crop or split-screen) on
+  // the ingest service, then carry the vertical result into Enhance.
+  const doReframe = useCallback(async (mode: 'center' | 'split') => {
+    if (!pendingHorizontal) return
+    setReframing(mode)
+    try {
+      const res = await fetch('/api/clip-factory/reframe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: pendingHorizontal.url, reframe: mode, durationSec: pendingHorizontal.durationSec }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not reframe that video.')
+      }
+      setClipSource('existing')
+      setClip({ url: data.url as string, title: pendingHorizontal.title })
+      setPendingHorizontal(null)
+      setStage('enhance')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setReframing(null) }
+  }, [pendingHorizontal])
+
+  // Load the creator's saved custom CTA boxes ("My boxes").
+  const loadMyStickers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/instagram/burn/my-stickers')
+      const data = await res.json()
+      setMyStickers((data.stickers || []) as Array<{ id: string; url: string; tag: string }>)
+    } catch { /* non-fatal */ }
+  }, [])
+
+  // Generate a custom CTA box from a typed tag (AI badge -> transparent PNG),
+  // styled for the selected destination + mode. Tag is optional — the API
+  // defaults to "SHOP NOW" / "LINK IN BIO" for the combo.
+  const generateSticker = useCallback(async () => {
+    const tag = tagText.trim()
+    setGenLoading(true)
+    try {
+      const res = await fetch('/api/instagram/burn/generate-sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(destination === 'facebook'
+          // No Facebook badge style: a link-in-description badge in the
+          // Instagram link style, worded for Facebook.
+          ? { tag: tag || 'LINK IN THE DESCRIPTION', destination: 'instagram', mode: 'bio' }
+          : { tag, destination, mode }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        if (res.status === 429 || data.limitReached) dispatchCapReached(data.error || 'You have hit your monthly CTA box limit.', { cap: data.cap || 'cta_box', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not create the box')
+      }
+      setCustomStickerUrl(data.stickerUrl as string)
+      setStickerId('')
+      setMyStickers(prev => [{ id: data.id as string, url: data.stickerUrl as string, tag: data.tag as string }, ...prev])
+      setTagText('')
+      toast.success('CTA box created')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setGenLoading(false) }
+  }, [tagText])
+
+  const deleteMySticker = useCallback(async (id: string, url: string) => {
+    setMyStickers(prev => prev.filter(s => s.id !== id))
+    if (customStickerUrl === url) { setCustomStickerUrl(null); setStickerId(CTA_STICKERS[0]?.id ?? '') }
+    try { await fetch(`/api/instagram/burn/my-stickers?id=${encodeURIComponent(id)}`, { method: 'DELETE' }) } catch { /* non-fatal */ }
+  }, [customStickerUrl])
+
+  useEffect(() => { void loadMyStickers() }, [loadMyStickers])
+
+  // Switch destination/mode, jump to the Recommended tab, and pre-select the
+  // first matching platform badge so the pick is never left pointing at a badge
+  // from the other platform.
+  const applyDestMode = (d: CtaDestination | 'facebook', m: CtaMode) => {
+    if (d === 'facebook') {
+      setDestination('facebook'); setMode('bio'); setStickerTab('recommended')
+      setStickerId(FACEBOOK_BADGE_IDS[0]); setCustomStickerUrl(null)
+      return
+    }
+    setDestination(d); setMode(m); setStickerTab('recommended')
+    const first = PLATFORM_BADGES.find(b => b.destination === d && b.mode === m)
+    if (first) { setStickerId(first.id); setCustomStickerUrl(null) }
+  }
+  const recommendedBadges = useMemo(
+    () => destination === 'facebook'
+      ? FACEBOOK_BADGE_IDS.map(id => CTA_STICKERS.find(s => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s)
+      : PLATFORM_BADGES.filter(b => b.destination === destination && b.mode === mode),
+    [destination, mode],
+  )
+  // The older hand-made badges (no destination tag) live under Gallery now.
+  const galleryBadges = useMemo(() => CTA_STICKERS.filter(s => !s.destination), [])
+  // The box that's currently selected (custom wins over gallery id), shown big
+  // in a preview so you can actually check it before burning.
+  const selectedBox = useMemo(() => {
+    if (customStickerUrl) {
+      const m = myStickers.find(x => x.url === customStickerUrl)
+      return { url: customStickerUrl, label: m?.tag || 'Your box' }
+    }
+    const s = CTA_STICKERS.find(x => x.id === stickerId)
+    return s ? { url: ctaStickerUrl(s.file), label: s.label } : null
+  }, [customStickerUrl, myStickers, stickerId])
+  // When the selected badge changes, seed a sensible on-video size from its
+  // registry width (0.75 = the old "badge, not banner" scale). The user can
+  // still resize + drag from there.
+  useEffect(() => {
+    const s = CTA_STICKERS.find(x => x.id === stickerId)
+    const base = customStickerUrl ? 0.55 : (s?.widthPct ?? 0.55)
+    setBadgeWidthPct(Math.min(0.9, Math.max(0.25, base * 0.75)))
+  }, [stickerId, customStickerUrl])
+
+  const runBurn = useCallback(async () => {
+    if (!clip) return
+    setBurning(true)
+    setBurnedUrl(null)
+    try {
+      const useCustom = overlayType === 'sticker' && !!customStickerUrl
+      const sticker = overlayType === 'sticker' && !customStickerUrl ? CTA_STICKERS.find(s => s.id === stickerId) : undefined
+      const res = await fetch('/api/instagram/burn', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: clip.url,
+          caption: overlayType === 'text' ? caption : undefined,
+          style: overlayType === 'text' ? style : undefined,
+          stickerId: sticker?.id,
+          customStickerUrl: useCustom ? customStickerUrl : undefined,
+          position,
+          // Free placement + size from the drag preview (sticker overlays only).
+          placement: overlayType === 'sticker' ? { xPct: badgePos.x, yPct: badgePos.y } : undefined,
+          stickerWidthPct: overlayType === 'sticker' ? badgeWidthPct : undefined,
+          product: product.trim() || undefined,
+          productName: productName.trim() || undefined,
+          stickerDurationSec: burnDuration,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        if (data.limitReached) dispatchCapReached(data.error || 'Enhancing is a Pro feature.', { cap: data.cap || 'instagram_burner', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Burn failed')
+      }
+      setBurnedUrl(data.url as string)
+      // Never let a caption-less burn wipe the clip's own AI caption.
+      setComposedCaption(((data.caption as string) || '').trim() || fallbackCaption)
+      setStage('publish')
+      toast.success('Overlay burned')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setBurning(false) }
+  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, badgePos, badgeWidthPct, product, productName, burnDuration, fallbackCaption])
+
+  // Skip Enhance: publish the raw clip, but keep the clip's AI caption (don't
+  // wipe it to empty — that's what left Publish caption-less).
+  const skipEnhance = useCallback(() => { setBurnedUrl(null); setComposedCaption(fallbackCaption); setStage('publish') }, [fallbackCaption])
+
+  const postYouTube = useCallback(async (choice: PublishChoice) => {
+    if (!publishUrl) return
+    setPublishingYt(true)
+    try {
+      // Exactly what the panel showed: its title, description and tags.
+      const res = await fetch('/api/youtube/upload-short', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: publishUrl,
+          title: choice.title || buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []),
+          description: choice.text,
+          tags: choice.tags ?? buildYouTubeTags(clip?.hashtags || [], clip?.title || ''),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        // No upload scope on this connection yet — kick off incremental auth to
+        // grant just youtube.upload, then the creator comes back and posts.
+        if (data.reconnectRequired) {
+          toast('One-time step: grant YouTube publishing access…')
+          window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent('/clip-factory')}`
+          return
+        }
+        throw new Error(data.error || 'YouTube upload failed')
+      }
+      setPosted(p => ({ ...p, youtube: true }))
+      setPanel(cur => (cur === 'youtube' ? null : cur))
+      if (data.videoId) setYtVideoId(data.videoId as string)
+      toast.success('Uploaded to YouTube. It may take a few minutes to process.')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setPublishingYt(false) }
+  }, [publishUrl, clip])
+
+  // Open a platform's panel, fetching what its description can carry.
+  const openPanel = useCallback(async (p: ClipPlatform, retry = false) => {
+    setPanel(p)
+    if (kits[p] && !retry) return
+    setKitErrors(e => ({ ...e, [p]: undefined }))
+    const epoch = kitEpoch.current
+    try {
+      const res = await fetch('/api/clip-factory/publish-kit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: p, sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
+          title: clip?.title, hashtags: panelHashtags, writeUp: publishCaption,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not find the links for this clip.')
+      if (epoch !== kitEpoch.current) return
+      setKits(k => ({ ...k, [p]: data as PublishKit }))
+    } catch (e) {
+      // NOT filed as an empty answer: that read as "no product link" and "no
+      // disclosure" and stuck. The panel says it failed and offers a retry.
+      if (epoch !== kitEpoch.current) return
+      setKitErrors(er => ({ ...er, [p]: errText(e) }))
+    }
+  }, [kits, clip, product, productName, publishCaption, panelHashtags])
+  // A different clip or product means different links.
+  useEffect(() => { kitEpoch.current++; setKits({}); setKitErrors({}); setPanel(null); setFbFlowStart(null) }, [clip, product, productName])
+
+  // Facebook Reel on the creator's Page (Labs): posts exactly the panel's text.
+  // The answer says whether it is live or still processing, from what Facebook
+  // reported back.
+  const postFacebookReel = useCallback(async (text: string) => {
+    if (!publishUrl || !text.trim()) return
+    setPublishingFb(true)
+    try {
+      const res = await fetch('/api/clip-factory/facebook-reel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: publishUrl, description: text, ...(fbPageId ? { socialAccountId: fbPageId } : {}) }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
+      setPosted(p => ({ ...p, facebook: true }))
+      setFbReelUrl(data.url || null)
+      setFbReelText(String(data.description || text))
+      setPanel(cur => (cur === 'facebook' ? null : cur))
+      toast.success(data.state === 'published'
+        ? `Reel is live on ${data.page || 'your Page'}.`
+        : `Facebook accepted the Reel and is still processing it. It appears on ${data.page || 'your Page'} shortly.`)
+    } catch (e) { toast.error(errText(e)) }
+    finally { setPublishingFb(false) }
+  }, [publishUrl, fbPageId])
+
+  // The Pages and Groups, read once when the Facebook pill is first opened.
+  useEffect(() => {
+    if (panel !== 'facebook' || fbPages !== null || fbDestError) return
+    fetch('/api/clip-factory/facebook-reel', { cache: 'no-store' }).then((r) => r.json()).then((j) => {
+      if (j.error) { setFbDestError(j.error); return }
+      const pages = (j.pages ?? []) as ReelPage[]
+      setFbPages(pages); setFbGroups((j.groups ?? []) as ReelGroup[])
+      setFbPageId((pages.find((x) => x.isDefault) ?? pages[0])?.id ?? '')
+    }).catch((e) => setFbDestError(String(e)))
+  }, [panel, fbPages, fbDestError])
+
+  // Group first is on for this creator, and there is a Group to post into.
+  const reelGroupFirst = canUsePreview('facebook_setup', tier) && (fbGroups?.length ?? 0) > 0
+
+  const confirmPanel = useCallback((c: PublishChoice) => {
+    if (panel === 'youtube') void postYouTube(c)
+    else if (panel === 'facebook' && reelGroupFirst) setFbFlowStart({ text: c.text, at: Date.now() })
+    else if (panel === 'facebook') void postFacebookReel(c.text)
+    else if (panel === 'tiktok') { setTtCaption(c.text); setPanel(null); setTtOpen(true) }
+    else if (panel === 'instagram') { setIgCaption(c.text); setPanel(null); setIgOpen(true) }
+  }, [panel, postYouTube, postFacebookReel, reelGroupFirst])
+
+  const restart = useCallback(() => {
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setFbReelUrl(null); setFbFlowStart(null); setPanel(null); setKits({}); setTtCaption(null); setIgCaption(null); setCoverOffsetMs(null); setStage('create')
+  }, [])
+
+  // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
+  // frame the user picked against the old bytes — clear it so the offset can never
+  // point at a stale render.
+  useEffect(() => { setCoverOffsetMs(null) }, [publishUrl])
+
+  // Hold the UI until the tier gate resolves — otherwise a non-Pro user gets a
+  // flash of the full paid tool before the locked card renders.
+  if (!gateLoaded) {
+    return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+  }
+
+  if (!isPro) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        <FeatureLockedCard
+          icon={<Rocket size={22} />}
+          feature="Clip Factory"
+          description="Turn a long video into captioned vertical Shorts, add a shoppable CTA overlay, and publish to Instagram, TikTok and YouTube, all in one flow."
+          requiredTier="pro"
+          currentTier={tier as Tier}
+        />
+      </div>
+    )
+  }
+
+  const STEPS: Array<{ key: Stage; label: string; icon: React.ReactNode }> = [
+    { key: 'create', label: 'Create', icon: <Scissors size={14} /> },
+    { key: 'enhance', label: 'Enhance', icon: <Flame size={14} /> },
+    { key: 'publish', label: 'Publish', icon: <Send size={14} /> },
+  ]
+  const stageIndex = STEPS.findIndex(s => s.key === stage)
+
+  return (
+    <div className={facebookOnly ? '' : 'max-w-5xl mx-auto px-4 sm:px-6 py-6'}>
+      {/* Header */}
+      {!facebookOnly && (<>
+      <div className="flex items-center gap-2 mb-1">
+        <Rocket size={20} style={{ color: PURPLE }} />
+        <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>
+        <ClipFactoryGuide />
+        {/* One implementation, shared with the Shorts panels below and with the
+            Shorts Studio modal. This pill used to be the only counter in the
+            product, it loaded once on mount and refreshed only when somebody
+            clicked "Use this clip", so it could read 12 / 50 while the creator
+            rendered her fiftieth. It now refreshes on every render. */}
+        <ShortsQuotaBadge />
+      </div>
+      <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-2xl mb-5">
+        Make a vertical short from a long video, add a shoppable CTA and product link, then publish to Instagram,
+        TikTok and YouTube. Shorts Studio and Shop Burner, one flow.
+      </p>
+      </>)}
+
+      {/* Stepper */}
+      <div className="flex items-center gap-2 mb-6">
+        {STEPS.map((s, i) => {
+          const active = s.key === stage
+          const done = i < stageIndex
+          const reachable = i === 0 || !!clip
+          return (
+            <div key={s.key} className="flex items-center gap-2">
+              <button
+                onClick={() => reachable && setStage(s.key)}
+                disabled={!reachable}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
+                  active
+                    ? 'text-white border-transparent'
+                    : done
+                      ? 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]/50'
+                      : 'text-[#1d1d1f] dark:text-[#f5f5f7] bg-black/[0.03] dark:bg-white/[0.08] border-black/15 dark:border-white/25 hover:border-[#7C3AED]/60'
+                }`}
+                style={active ? { backgroundColor: PURPLE } : undefined}
+              >
+                {done ? <Check size={14} /> : s.icon}
+                {i + 1}. {s.label}
+              </button>
+              {i < STEPS.length - 1 && <ArrowRight size={14} className="text-black/30 dark:text-white/40" />}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ---------------- CREATE ---------------- */}
+      {stage === 'create' && (
+        <div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button onClick={() => pickTab('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
+              <Scissors size={13} /> Pick a regular YouTube video
+            </button>
+            <button onClick={() => pickTab('short')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'short' ? PILL_ON : PILL_IDLE}`} style={onramp === 'short' ? { backgroundColor: PURPLE } : undefined}>
+              <Video size={13} /> Pick a YouTube Short
+            </button>
+            <button onClick={() => pickTab('upload')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'upload' ? PILL_ON : PILL_IDLE}`} style={onramp === 'upload' ? { backgroundColor: PURPLE } : undefined}>
+              <UploadCloud size={13} /> Upload your own video
+            </button>
+          </div>
+
+          {onramp === 'long' && selectedVideo ? (
+            <div>
+              <button onClick={() => setSelectedVideo(null)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b] mb-4">
+                <ArrowLeft size={14} /> Pick a different video
+              </button>
+              <ShortsCreatePanel
+                videoId={selectedVideo.id}
+                youtubeVideoId={selectedVideo.youtubeVideoId}
+                videoTitle={selectedVideo.title}
+                allowWhole={canUsePreview('whole_video', tier)}
+                onUseClip={(c) => {
+                  setClipSource('created')
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec, sourceVideoId: selectedVideo.id })
+                  // Seed the caption from the plan (retained on the clip too, so
+                  // it survives an empty burn / Skip Enhance via fallbackCaption).
+                  setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
+                  setSelectedVideo(null)
+                  setStage('enhance')
+                }}
+              />
+            </div>
+          ) : onramp === 'long' ? (
+            <div>
+              {/* Paste a link */}
+              <div className="rounded-xl border border-black/5 dark:border-white/10 p-4 mb-5 bg-white dark:bg-[#1c1c1e]">
+                <div className="flex items-center gap-2 mb-2">
+                  <Link2 size={15} style={{ color: PURPLE }} />
+                  <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Paste a YouTube link</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void generateFromLink() }} placeholder="https://youtube.com/watch?v=…" className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                  <button onClick={generateFromLink} disabled={generating || !linkUrl.trim() || !ownership} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                    {generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                    {generating ? 'Generating…' : 'Generate Clips'}
+                  </button>
+                </div>
+                <label className="flex items-start gap-2 mt-2.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={ownership} onChange={e => setOwnership(e.target.checked)} className="mt-0.5 accent-[#7C3AED]" />
+                  <span className="text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5]">I own this video or have the rights to use it. Unauthorized videos may violate copyright.</span>
+                </label>
+              </div>
+
+              {videos.length > 0 && (
+                <div className="relative mb-4 max-w-sm">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                  <input value={vidQuery} onChange={e => setVidQuery(e.target.value)} placeholder="Search your videos…" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent pl-9 pr-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                </div>
+              )}
+              {scheduledCount > 0 && (
+                <p className="text-[12px] text-[#86868b] -mt-2 mb-4">
+                  {scheduledCount} scheduled video{scheduledCount === 1 ? ' is' : 's are'} not shown: clips are made only from videos that are public. {scheduledCount === 1 ? 'It appears' : 'They appear'} here once live.
+                </p>
+              )}
+              {videos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-3 text-[#86868b]">
+                  <Youtube size={30} />
+                  <p className="text-sm max-w-xs">No long videos synced yet. Connect YouTube and sync your channel, then come back.</p>
+                  <Link href="/content" className="text-sm font-medium" style={{ color: PURPLE }}>Go to Content →</Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredVideos.map(v => (
+                    <button key={v.id} onClick={() => setSelectedVideo(v)} className="group text-left rounded-xl border border-black/5 dark:border-white/10 overflow-hidden hover:border-[#7C3AED]/50 transition-colors bg-white dark:bg-[#1c1c1e]">
+                      <div className="relative aspect-video bg-black/5 dark:bg-white/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {v.thumbnailUrl && <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />}
+                        {fmtDuration(v.durationSeconds) && <span className="absolute bottom-1.5 right-1.5 text-[10px] font-medium rounded bg-black/75 text-white px-1.5 py-0.5 tabular-nums">{fmtDuration(v.durationSeconds)}</span>}
+                        <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}><Scissors size={13} /> Make Shorts</span>
+                        </span>
+                      </div>
+                      <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2.5 line-clamp-2">{v.title}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-[#86868b] mt-4">
+                Pick a video to find its best moments and render a vertical clip right here, then add a CTA and publish. No downloads, no re-uploads.
+              </p>
+            </div>
+          ) : onramp === 'short' ? (
+            <div>
+              <div className="relative mb-4 max-w-sm">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                <input value={shortQuery} onChange={e => setShortQuery(e.target.value)} placeholder="Search your shorts…" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent pl-9 pr-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              </div>
+              {loadingShorts ? (
+                <div className="flex items-center justify-center py-12 text-[#86868b]"><Loader2 size={20} className="animate-spin" /></div>
+              ) : shorts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-3 text-[#86868b]">
+                  <Youtube size={30} />
+                  <p className="text-sm max-w-xs">No YouTube Shorts found yet. Sync your YouTube channel so we can pull them in, or use "Upload your own vertical video".</p>
+                  <Link href="/content" className="text-sm font-medium" style={{ color: PURPLE }}>Go to Content →</Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {filteredShorts.map(s => {
+                    const fetching = fetchingShortId === s.id
+                    return (
+                      <button key={s.id} onClick={() => pickShort(s)} disabled={fetching} className="group text-left rounded-xl border border-black/5 dark:border-white/10 overflow-hidden hover:border-[#7C3AED]/50 transition-colors bg-white dark:bg-[#1c1c1e] disabled:opacity-70">
+                        <div className="relative aspect-[9/16] bg-black/5 dark:bg-white/5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-full h-full object-cover" /> : <Video size={22} className="absolute inset-0 m-auto text-[#c7c7cc]" />}
+                          {s.posted && <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold rounded-full bg-[#34c759] text-white px-1.5 py-0.5">Posted</span>}
+                          {!s.hasVideo && !fetching && <span className="absolute bottom-1.5 left-1.5 right-1.5 inline-flex items-center justify-center gap-1 text-[9px] text-white bg-black/70 rounded px-1 py-0.5"><Download size={10} /> Tap to fetch</span>}
+                          {fetching && <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-[10px] font-medium gap-1"><Loader2 size={14} className="animate-spin" /> Fetching…</span>}
+                        </div>
+                        <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2 line-clamp-2">{s.title}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-[#86868b] mt-4">
+                Pick one of your Shorts to add a CTA and publish it to TikTok or Instagram. We fetch the video the first time you use it.
+              </p>
+            </div>
+          ) : pendingHorizontal ? (
+            <div>
+              <div className="rounded-xl border border-black/5 dark:border-white/10 p-6 bg-white dark:bg-[#1c1c1e]">
+                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">This is a horizontal video</p>
+                <p className="text-[12px] text-[#86868b] mb-5 max-w-md">Shorts and Reels are vertical (9:16), so choose how to fit it. You can change your mind by uploading again.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+                  <button onClick={() => void doReframe('center')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    {pendingHorizontal.frame && (
+                      <div className="mx-auto mb-3 w-[84px] aspect-[9/16] rounded-md overflow-hidden border border-black/10 dark:border-white/15 bg-black/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-full object-cover object-center" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mb-1">
+                      {reframing === 'center' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Scissors size={15} style={{ color: PURPLE }} />}
+                      <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Center crop</span>
+                    </div>
+                    <p className="text-[11px] text-[#86868b]">Zoom into the middle of the frame. Best when your subject stays centered.</p>
+                  </button>
+                  <button onClick={() => void doReframe('split')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    {pendingHorizontal.frame && (
+                      <div className="mx-auto mb-3 w-[84px] aspect-[9/16] rounded-md overflow-hidden border border-black/10 dark:border-white/15 bg-black/5 flex flex-col">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-1/2 object-cover object-top" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-1/2 object-cover object-bottom" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mb-1">
+                      {reframing === 'split' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Video size={15} style={{ color: PURPLE }} />}
+                      <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Split screen</span>
+                    </div>
+                    <p className="text-[11px] text-[#86868b]">Stack the frame top and bottom so nothing gets cut off the sides.</p>
+                  </button>
+                </div>
+                {reframing && <p className="text-[11px] text-[#86868b] mt-4 inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Reframing your video… this takes a moment.</p>}
+                <button onClick={() => setPendingHorizontal(null)} disabled={!!reframing} className="mt-4 block text-[12px] font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white disabled:opacity-50">Cancel and upload a different video</button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="rounded-xl border border-dashed border-black/15 dark:border-white/20 p-8 flex flex-col items-center justify-center text-center gap-3 bg-white dark:bg-[#1c1c1e]">
+                <UploadCloud size={30} style={{ color: PURPLE }} />
+                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload your own video</p>
+                <p className="text-[12px] text-[#86868b] max-w-xs">Vertical (9:16) works best and is ready right away. Horizontal is fine too, we&apos;ll help you reframe it to 9:16. Add a shoppable CTA and product link, then publish to TikTok or Instagram. Up to 300MB.</p>
+                <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f) }} />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading} className="mt-1 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                  {uploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
+                  {uploading ? 'Uploading…' : 'Choose a video'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---------------- ENHANCE ---------------- */}
+      {stage === 'enhance' && clip && (
+        <div className="grid md:grid-cols-[1fr_240px] gap-6">
+          <div className="flex flex-col gap-5">
+            {/* Overlay type */}
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Call-to-action overlay</p>
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => setOverlayType('sticker')} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${overlayType === 'sticker' ? PILL_SEL : PILL_IDLE}`}>CTA box</button>
+                <button onClick={() => setOverlayType('text')} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${overlayType === 'text' ? PILL_SEL : PILL_IDLE}`}>Caption text</button>
+              </div>
+              {overlayType === 'sticker' ? (
+                <div>
+                  {/* Where the clip is going + how they buy — two taps set the
+                      recommended badges and the "make your own" style. */}
+                  <div className="rounded-xl border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] p-2.5 mb-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Post to</span>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => applyDestMode('tiktok', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'tiktok' ? PILL_SEL : PILL_IDLE}`}><Music2 size={12} /> TikTok</button>
+                        <button onClick={() => applyDestMode('instagram', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'instagram' ? PILL_SEL : PILL_IDLE}`}><Instagram size={12} /> Instagram</button>
+                        {canUsePreview('facebook_reels', tier) && (
+                          <button onClick={() => applyDestMode('facebook', 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'facebook' ? PILL_SEL : PILL_IDLE}`}><Facebook size={12} /> Facebook</button>
+                        )}
+                      </div>
+                    </div>
+                    {destination === 'facebook' ? (
+                      <p className="text-[11px] text-[#86868b] leading-snug">Facebook Reels have no in-app shop, so the badge points viewers to the link in your description.</p>
+                    ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Buy via</span>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => applyDestMode(destination, 'shop')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'shop' ? PILL_SEL : PILL_IDLE}`} title="In-app shop — badge points a downward arrow at the shop button"><ArrowDown size={12} /> In-app shop</button>
+                        <button onClick={() => applyDestMode(destination, 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'bio' ? PILL_SEL : PILL_IDLE}`} title="No in-app shop — badge says Link in bio"><Link2 size={12} /> Link in bio</button>
+                      </div>
+                    </div>
+                    )}
+                  </div>
+
+                  {/* Source tabs */}
+                  <div className="flex gap-2 mb-3">
+                    <button onClick={() => setStickerTab('recommended')} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'recommended' ? PILL_SEL : PILL_IDLE}`}><Sparkles size={12} /> Recommended</button>
+                    <button onClick={() => setStickerTab('gallery')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'gallery' ? PILL_SEL : PILL_IDLE}`}>Gallery</button>
+                    <button onClick={() => setStickerTab('mine')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'mine' ? PILL_SEL : PILL_IDLE}`}>My boxes{myStickers.length ? ` (${myStickers.length})` : ''}</button>
+                    <button onClick={() => setStickerTab('make')} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'make' ? PILL_SEL : PILL_IDLE}`}><Wand2 size={12} /> Make your own</button>
+                  </div>
+
+                  {/* Recommended — the finalized platform badges for this combo.
+                      Shown big on a neutral tile so the transparent art reads. */}
+                  {stickerTab === 'recommended' && (
+                    recommendedBadges.length === 0 ? (
+                      <p className="text-[12px] text-[#86868b] py-4">No ready-made badge for this combo yet. Try <span className="font-medium text-[#7C3AED]">Make your own</span>.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {recommendedBadges.map(s => {
+                          const on = !customStickerUrl && stickerId === s.id
+                          return (
+                            <button key={s.id} onClick={() => { setStickerId(s.id); setCustomStickerUrl(null) }} className="rounded-xl border-2 overflow-hidden p-3 bg-[#f2f2f7] dark:bg-[#161617] transition-colors flex items-center justify-center" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={s.label}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-20 object-contain" />
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  )}
+
+                  {stickerTab === 'gallery' && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {galleryBadges.map(s => {
+                        const on = !customStickerUrl && stickerId === s.id
+                        return (
+                          <button key={s.id} onClick={() => { setStickerId(s.id); setCustomStickerUrl(null) }} className="rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e] transition-colors" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={s.label}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-12 object-contain" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {stickerTab === 'mine' && (
+                    myStickers.length === 0 ? (
+                      <p className="text-[12px] text-[#86868b] py-4">No custom boxes yet. Hit <span className="font-medium text-[#7C3AED]">Make your own</span> to design one from a few words.</p>
+                    ) : (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {myStickers.map(m => {
+                          const on = customStickerUrl === m.url
+                          return (
+                            <div key={m.id} className="relative group">
+                              <button onClick={() => { setCustomStickerUrl(m.url); setStickerId('') }} className="w-full rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e]" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={m.tag}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={m.url} alt={m.tag} className="w-full h-12 object-contain" />
+                              </button>
+                              <button onClick={() => deleteMySticker(m.id, m.url)} className="absolute -top-1.5 -right-1.5 rounded-full bg-[#ff3b30] text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete"><Trash2 size={11} /></button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  )}
+
+                  {stickerTab === 'make' && (
+                    <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-3">
+                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                        Design a <span className="font-semibold text-[#7C3AED]">{destination === 'tiktok' ? 'TikTok' : destination === 'facebook' ? 'Facebook' : 'Instagram'} · {destination === 'facebook' ? 'link in description' : mode === 'shop' ? 'in-app shop' : 'link in bio'}</span> badge.
+                      </p>
+                      <p className="text-[11px] text-[#86868b] mb-2">Type your words, or leave it blank for &ldquo;{mode === 'shop' ? 'SHOP NOW' : 'LINK IN BIO'}&rdquo;. It comes out in that platform&apos;s style with the right {mode === 'shop' ? 'downward shop arrow' : 'link-in-bio message'}.</p>
+                      <div className="flex gap-2">
+                        <input value={tagText} onChange={e => setTagText(e.target.value.slice(0, 40))} onKeyDown={e => { if (e.key === 'Enter') void generateSticker() }} placeholder={mode === 'shop' ? 'e.g. Grab yours today' : 'e.g. Tap the link'} className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                        <button onClick={generateSticker} disabled={genLoading} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                          {genLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                          {genLoading ? 'Designing…' : 'Create box'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-[#86868b] mt-1.5">1–6 words work best. New boxes are saved to My boxes and selected automatically.</p>
+                    </div>
+                  )}
+
+                  {/* Big preview of the selected box so it's easy to check
+                      before burning (thumbnails are small on purpose). */}
+                  {selectedBox && (
+                    <div className="mt-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] mb-1.5">Selected box</p>
+                      <div className="rounded-xl border border-black/5 dark:border-white/10 bg-[#f2f2f7] dark:bg-[#161617] p-4 flex items-center justify-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={selectedBox.url} alt={selectedBox.label} className="max-h-40 w-auto max-w-full object-contain" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <input value={caption} onChange={e => setCaption(e.target.value.slice(0, 60))} placeholder="LINK IN BIO" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {CAPTION_PRESETS.map(p => <button key={p} onClick={() => setCaption(p)} className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${caption === p ? PILL_SEL : PILL_IDLE}`}>{p}</button>)}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STYLES.map(st => <button key={st.key} onClick={() => setStyle(st.key)} className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${style === st.key ? PILL_SEL : PILL_IDLE}`}>{st.label}</button>)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Position + duration */}
+            <div className="flex flex-wrap gap-4">
+              {overlayType === 'sticker' ? (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
+                  <div className="inline-flex items-start gap-2 rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/5 px-3 py-2 text-[11px] text-[#4b4b4f] dark:text-[#d2d2d7] max-w-[240px]">
+                    <Wand2 size={13} className="mt-0.5 shrink-0 text-[#7C3AED]" />
+                    <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Drag the badge</span> on the preview to place it anywhere, and use the <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Size</span> slider to resize. It burns exactly where you leave it.</span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
+                  <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => setPosition(p.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
+                </div>
+              )}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">How long it shows</p>
+                <div className="flex gap-2">{DURATIONS.map(d => <button key={d.key} onClick={() => setBurnDuration(d.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${burnDuration === d.key ? PILL_SEL : PILL_IDLE}`}>{d.label}</button>)}</div>
+              </div>
+            </div>
+
+            {/* Product link — pushed hard for clips that didn't come from a scripted
+                long video (uploads / existing shorts have no caption otherwise). */}
+            {clipSource === 'existing' ? (
+              <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 p-3.5">
+                <p className="text-[12px] font-semibold text-[#9a5d00] dark:text-[#ffcf8f] flex items-center gap-1.5"><Package size={13} /> Add your product link so we can write the caption</p>
+                <p className="text-[11px] text-[#9a5d00] dark:text-[#ffcf8f]/85 mt-0.5 mb-2.5 leading-relaxed">
+                  This short didn&apos;t come from a scripted video, so we need the ASIN or affiliate link to write a proper caption with your link and hashtags. Without it the caption comes out empty.
+                </p>
+                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              </div>
+            ) : (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Product link (optional)</p>
+                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={() => setStage('create')} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b]"><ArrowLeft size={14} /> Back</button>
+              <button onClick={runBurn} disabled={burning} className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-[13px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                {burning ? <Loader2 size={14} className="animate-spin" /> : <Flame size={14} />}
+                {burning ? 'Burning…' : 'Burn overlay & continue'}
+              </button>
+              <button onClick={skipEnhance} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Skip — publish as is</button>
+            </div>
+          </div>
+
+          {/* Preview — badge overlaid on the clip, drag to place it */}
+          <div className="flex flex-col items-center gap-2">
+            <BadgeStage
+              videoUrl={clip.url}
+              badgeUrl={overlayType === 'sticker' ? (selectedBox?.url ?? null) : null}
+              pos={badgePos}
+              widthPct={badgeWidthPct}
+              onChange={setBadgePos}
+            />
+            {overlayType === 'sticker' && selectedBox && (
+              <div className="w-full max-w-[260px]">
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b]">Size</span>
+                  <input type="range" min={0.25} max={0.9} step={0.01} value={badgeWidthPct} onChange={e => setBadgeWidthPct(Number(e.target.value))} className="flex-1 accent-[#7C3AED]" />
+                </div>
+                <p className="text-[11px] text-[#86868b] text-center mt-0.5">Drag the badge to move it.</p>
+              </div>
+            )}
+            <p className="text-[11px] text-[#86868b] text-center truncate max-w-full">{clip.title}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- PUBLISH ---------------- */}
+      {stage === 'publish' && publishUrl && (
+        <div className="grid md:grid-cols-[1fr_240px] gap-6">
+          <div className="flex flex-col gap-4">
+            <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
+              {burnedUrl ? 'Overlay burned. Publish your finished clip:' : 'Publishing the clip as is (no overlay):'}
+            </p>
+            {/* REEL COVER FIRST: it is chosen before posting, and Instagram
+                uses it as the Reel's cover, so it sits above the pills. */}
+            {!facebookOnly && <div className="flex flex-col gap-1">
+              <button
+                onClick={() => setCoverPickerOpen(true)}
+                className="inline-flex items-center gap-1.5 self-start rounded-full px-3 py-1.5 text-[13px] font-medium border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
+                title="Choose the still frame Instagram shows as your Reel cover"
+              >
+                <ImageIcon size={13} /> {coverOffsetMs != null ? `Reel cover · ${(coverOffsetMs / 1000).toFixed(1)}s` : 'Choose Reel cover'}
+              </button>
+              <p className="text-[11.5px] text-[#86868b]">{coverOffsetMs != null ? 'Instagram uses this frame as the cover.' : 'Pick it before posting to Instagram, or Instagram uses the first frame.'}</p>
+            </div>}
+            <div className="flex flex-wrap items-center gap-2">
+              {!facebookOnly && <PostPill label="TikTok" color="#FE2C55" icon={<Music2 size={13} />} posted={!!posted.tiktok} onClick={() => void openPanel('tiktok')} />}
+              {!facebookOnly && <PostPill label="Instagram" color="#E1306C" icon={<Instagram size={13} />} posted={!!posted.instagram} onClick={() => void openPanel('instagram')} />}
+              {/* YouTube Shorts publishing — admin-only until Google verifies the
+                  upload scope and we flip NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED on. */}
+              {!facebookOnly && youtubeUploadEnabled({ tier }) && (
+                <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={() => void openPanel('youtube')} />
+              )}
+              {canUsePreview('facebook_reels', tier) && !(clip?.durationSec && clip.durationSec > 90) && (
+                <PostPill label="Facebook Reel" color="#1877F2" icon={<Facebook size={13} />} posted={!!posted.facebook} busy={publishingFb} onClick={() => void openPanel('facebook')} />
+              )}
+              {fbReelUrl && (
+                <a href={fbReelUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-[#1877F2] underline-offset-2 hover:underline">View Reel</a>
+              )}
+              <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
+            </div>
+            {panel === 'facebook' && <ReelPagePicker pages={fbPages} value={fbPageId} onChange={setFbPageId} error={fbDestError} />}
+            {/* NO GROUP YET: the nudge. The Reel still posts, with its link in
+                the caption, where it may not be tappable. */}
+            {panel === 'facebook' && canUsePreview('facebook_setup', tier) && fbGroups !== null && fbGroups.length === 0 && (
+              <p className="text-[12px] text-[#6e6e73] dark:text-[#b0b0b5] rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/[0.04] p-3">
+                <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your deals Group first.</b> A link in a Reel&apos;s caption often can&apos;t be tapped.
+                With a Group, MVP puts the clip and your link in the Group, and the Reel links straight to that post. The <a href="/meta" className="text-[#7C3AED] hover:underline font-semibold">Meta Hub</a> walks you through it.
+              </p>
+            )}
+            {(panel === 'facebook' || fbFlowStart) && reelGroupFirst && fbGroups && (
+              <ReelGroupFirst
+                groups={fbGroups}
+                clipUrl={publishUrl}
+                pageId={fbPageId}
+                pageName={fbPages?.find((x) => x.id === fbPageId)?.name ?? null}
+                defaultCaption={pageReelCaption(publishCaption, panelHashtags)}
+                start={fbFlowStart}
+                sourceVideoId={clip?.sourceVideoId ?? null}
+                clipTitle={clip?.title ?? null}
+                onBusy={setPublishingFb}
+                onReelPosted={(url, description) => {
+                  setPosted(pp => ({ ...pp, facebook: true }))
+                  setFbReelUrl(url)
+                  setFbReelText(description)
+                }}
+              />
+            )}
+            {fbReelUrl && !reelGroupFirst && <ShareReelToGroups reelUrl={fbReelUrl} text={fbReelText} groups={fbGroups} />}
+            {panel && (
+              <PublishPanel
+                platform={panel}
+                color={panel === 'tiktok' ? '#FE2C55' : panel === 'instagram' ? '#E1306C' : panel === 'youtube' ? '#FF0000' : '#1877F2'}
+                kit={kits[panel] ?? null}
+                kitError={kitErrors[panel] ?? null}
+                writeUp={publishCaption}
+                hashtags={panelHashtags}
+                alreadyPosted={!!posted[panel]}
+                onRetry={() => void openPanel(panel, true)}
+                busy={panel === 'youtube' ? publishingYt : panel === 'facebook' ? publishingFb : false}
+                onConfirm={confirmPanel}
+                onCancel={() => setPanel(null)}
+                confirmLabel={panel === 'facebook' && reelGroupFirst ? 'Post to my Group + Page' : undefined}
+                heading={panel === 'facebook' && reelGroupFirst ? 'Your Group post: what goes in it' : undefined}
+                linkNote={panel === 'facebook' && reelGroupFirst ? 'This is the post under your clip in your Group. Links in a Group post are tappable.' : undefined}
+                requireProductLink={panel === 'facebook' && reelGroupFirst ? 'Add the product in Enhance first (or type its link into the post). Your Group post is where people buy, so it needs the product link.' : undefined}
+              />
+            )}
+            {/* WHAT EACH PLATFORM TAKES, said before the button rather than
+                after a refusal. Only shown for a clip long enough to meet one. */}
+            {clip?.durationSec && clip.durationSec > 90 && (
+              <p className="text-[12px] text-[#86868b] leading-snug">
+                This clip is {Math.floor(clip.durationSec / 60)}:{String(Math.round(clip.durationSec % 60)).padStart(2, '0')} long.
+                {canUsePreview('facebook_reels', tier) ? ' Facebook Reels take up to 90 seconds, so Facebook is not offered.' : ''}
+                {clip.durationSec > 180 ? ' YouTube counts anything over 3 minutes as a regular video, not a Short.' : ''}
+                {' '}TikTok takes up to 10 minutes on most accounts, and Instagram Reels up to 15.
+              </p>
+            )}
+            {ytVideoId && (
+              <div className="rounded-lg border border-[#FF0000]/25 bg-[#FF0000]/5 p-3 text-[12px] text-[#4b4b4f] dark:text-[#d2d2d7]">
+                <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Uploaded to YouTube. A Short can take a few minutes to process before it shows publicly.</p>
+                <div className="flex flex-wrap gap-3">
+                  <a href={`https://studio.youtube.com/video/${ytVideoId}/edit`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline" style={{ color: '#FF0000' }}><ExternalLink size={12} /> Open in YouTube Studio</a>
+                  <a href={`https://youtube.com/shorts/${ytVideoId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline" style={{ color: '#FF0000' }}><ExternalLink size={12} /> View the Short</a>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={() => setStage('enhance')} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b]"><ArrowLeft size={14} /> Back to Enhance</button>
+              <button onClick={restart} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Start another</button>
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-xl overflow-hidden bg-black aspect-[9/16] w-full max-w-[220px]">
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <video src={publishUrl} controls playsInline className="w-full h-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Publish modals */}
+      {ttOpen && publishUrl && (
+        <TikTokDirectModal
+          burnedVideoUrl={publishUrl}
+          initialCaption={ttCaption ?? publishCaption}
+          tier={tier}
+          sourceYoutubeVideoId={selectedVideo?.youtubeVideoId ?? ytVideoId ?? undefined}
+          product={product.trim() || undefined}
+          productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
+          onClose={() => setTtOpen(false)}
+          onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); setTtOpen(false); toast.success('Posted to TikTok') }}
+        />
+      )}
+      {igOpen && publishUrl && (
+        <InstagramBurnedModal
+          burnedVideoUrl={publishUrl}
+          initialCaption={igCaption ?? publishCaption}
+          defaultDmLink={product.trim()}
+          product={product.trim() || undefined}
+          productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
+          coverOffsetMs={coverOffsetMs}
+          onClose={() => setIgOpen(false)}
+          onPosted={() => { setPosted(p => ({ ...p, instagram: true })); toast.success('Posted to Instagram') }}
+        />
+      )}
+
+      {/* Reel cover-frame picker for the burned clip (scrub → thumb_offset) */}
+      {coverPickerOpen && publishUrl && (
+        <ReelCoverPicker
+          videoUrl={publishUrl}
+          initialOffsetMs={coverOffsetMs}
+          onPick={(ms) => setCoverOffsetMs(ms)}
+          onClose={() => setCoverPickerOpen(false)}
+        />
+      )}
+    </div>
+  )
+}

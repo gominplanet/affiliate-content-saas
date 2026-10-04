@@ -12,6 +12,7 @@
 //
 // LABS, admin only while it is tested (lib/labs-preview facebook_reels).
 
+import { cleanNicheGroup } from '@/lib/facebook-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
@@ -49,7 +50,7 @@ export async function GET() {
   if (!pages.length && def) pages.push({ id: '', name: def.displayName || 'your Facebook Page', isDefault: true })
   const groups = (Array.isArray(brand?.facebook_groups) ? brand.facebook_groups : [])
     .filter((g: { url?: string }) => typeof g?.url === 'string' && /facebook\.com\/groups\//i.test(g.url))
-    .map((g: { name?: string; url: string }) => ({ name: String(g.name || 'Facebook Group'), url: g.url }))
+    .map((g: unknown) => cleanNicheGroup(g)).filter(Boolean)
   return NextResponse.json({ pages, groups, defaultPage: def?.displayName ?? null })
 }
 

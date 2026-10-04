@@ -80,12 +80,14 @@ check('Social Push turns it on with the Labs switch', /groupFirst: canUsePreview
 // ── The Meta page and its switch ────────────────────────────────────────────
 check('one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
 check('the setup route only accepts real Group links', /isFacebookGroupLink/.test(read('app/api/facebook/setup/route.ts')))
-const page = read('app/(dashboard)/facebook/page.tsx')
+const page = read('app/(dashboard)/meta/page.tsx')
 check('the Meta page says how Facebook works in plain words', /Your Group holds the link\. Your Page points to it\./.test(page))
 check('the Meta page says who does what, for posts and for Reels', /You do/.test(page) && /MVP does/.test(page) && /title: 'A Reel'/.test(page))
 check('the Meta page asks nothing about link limits', !/Meta One/.test(page))
 check('the hub is Facebook only: no Instagram on it', !/Instagram/.test(page))
-check('the old addresses still land on the Facebook hub', /redirect\('\/facebook'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')) && /redirect\('\/facebook'\)/.test(read('app/(dashboard)/meta/page.tsx')))
+check('the old addresses land on Meta Hub', /redirect\('\/meta'\)/.test(read('app/(dashboard)/facebook-setup/page.tsx')) && /redirect\('\/meta'\)/.test(read('app/(dashboard)/facebook/page.tsx')))
+check('the menu says Meta Hub and opens /meta', /href: '\/meta', icon: <Users size=\{15\} \/>, label: 'Meta Hub'/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the nudges send people to Meta Hub, not the old address', !/href="\/facebook"/.test(read('components/clip-factory/ClipFactory.tsx')) && !/href="\/facebook"/.test(read('components/content/SocialPreviewModal.tsx')))
 check('SCOUT answers whether it is allowed on Facebook', /msg\.type === 'MVP_FB_ACCESS'/.test(read('extension/background.js')))
 
 // ── Clip Factory: the clip in the Group, the Reel linking to that exact post ─
@@ -99,7 +101,7 @@ check('the Reel\'s first line links to the exact Group post', /`Get it here 👉
 check('without the post\'s own link, the Reel waits for it or links to the Group only when asked', /Link to my Group instead/.test(reel) && !/postReel\(group\.url, 'group'\); return/.test(reel))
 check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the Reel did not go out/.test(reel))
 check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
-check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('app/(dashboard)/clip-factory/page.tsx')) && /Set up your deals Group first\./.test(read('app/(dashboard)/clip-factory/page.tsx')))
+check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('components/clip-factory/ClipFactory.tsx')) && /Set up your deals Group first\./.test(read('components/clip-factory/ClipFactory.tsx')))
 
 // ── The product link from the YouTube description ───────────────────────────
 {
@@ -170,8 +172,20 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('both flows record what went where, and a Group-only post too', /recordFacebookPush\(/.test(read('components/content/SocialPreviewModal.tsx')) && /record\(link, null\)/.test(read('components/clip-factory/ReelDestinations.tsx')))
   check('a hub row says where it is: not on Facebook, Group only, or both', /Not on Facebook yet/.test(page) && /In your Group, not on your Page yet/.test(page) && /In your Group and on your Page/.test(page))
   check('a review posts from the hub in the same Group-first window', /<SocialPreviewModal[\s\S]{0,900}groupFirst/.test(page))
-  check('a video opens its clips in Clip Factory in one click', /\/clip-factory\?video=\$\{v\.id\}/.test(page) && /get\('video'\)/.test(read('app/(dashboard)/clip-factory/page.tsx')))
+  check('a video opens its clips in the Clip Factory inside Meta Hub, in one click', /onClick=\{\(\) => makeReels\(v\.id\)\}/.test(page) && /replaceState\(null, '', `\/meta\?video=\$\{videoId\}`\)/.test(page) && /get\('video'\)/.test(read('components/clip-factory/ClipFactory.tsx')))
   check('without migration 402 the hub says so, never a silent "not posted"', /migration 402/.test(page))
+}
+
+// ── Meta Hub: one umbrella, five steps, niche Groups, Clip Factory inside ──
+{
+  check('Meta Hub has the five steps in order', /n=\{1\} title="Your Page"[\s\S]*n=\{2\} title="Your niche Groups"[\s\S]*n=\{3\} title="SCOUT on Facebook"[\s\S]*n=\{4\} title="Make Reels"[\s\S]*n=\{5\} title="Share your reviews"/.test(page))
+  check('each step ticks when done and opens again on a tap', /done \? <Check size=\{15\} \/> : n/.test(page) && /aria-expanded=\{open\}/.test(page) && /onToggle=\{\(\) => toggle\('reels'\)\}/.test(page))
+  check('Make Reels ticks only on a Reel that is in a Group and on the Page', /reelsDone = !!hub\?\.clips\.some\(\(c\) => c\.status === 'both'\)/.test(page))
+  check('Clip Factory runs inside Meta Hub, Facebook only, remounted on the picked video', /<ClipFactory facebookOnly key=\{`\$\{reelVideo \?\? 'pick'\}:\$\{groupsSig\}`\} \/>/.test(page))
+  check('a niche Group keeps its niche and words, and can be edited', /post\(\{ updateGroup: editing \}/.test(page) && /updateGroup/.test(read('app/api/facebook/setup/route.ts')) && /cleanNicheGroup/.test(read('app/api/clip-factory/facebook-reel/route.ts')))
+  check('the clip goes to the Group whose words match it', /pickNicheGroup\(p\.groups/.test(read('components/clip-factory/ReelDestinations.tsx')))
+  check('a new creator gets the how-to for a niche Group: Public, Associates list', /How to make a niche Group/.test(page) && /<strong>Public<\/strong>/.test(page) && /Amazon Associates/.test(page))
+  check('Meta Hub is Facebook only: no TikTok or Instagram words', !/TikTok|Instagram/.test(page))
 }
 
 if (failures.length) {

@@ -9,12 +9,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { isFacebookGroupLink, isFacebookGroupPostLink, isFacebookReelLink } from '@/lib/facebook-group-link'
 import { pageReelCaption } from '@/lib/reel-group-caption'
+import { pickNicheGroup } from '@/lib/facebook-niche'
 export { pageReelCaption }
 import { Loader2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
 export type ReelPage = { id: string; name: string; isDefault: boolean }
-export type ReelGroup = { name: string; url: string }
+export type ReelGroup = { name: string; url: string; niche?: string | null; keywords?: string | null }
 
 export function ReelPagePicker(p: { pages: ReelPage[] | null; value: string; onChange: (id: string) => void; error?: string | null }) {
   if (p.error) return <p className="text-[12px] text-[#ff3b30]">Your Facebook Pages could not be loaded: {p.error}</p>
@@ -118,7 +119,9 @@ export function ReelGroupFirst(p: {
   sourceVideoId?: string | null
   clipTitle?: string | null
 }) {
-  const [groupIdx, setGroupIdx] = useState(0)
+  // THE MATCHING NICHE GROUP first: the kitchen clip goes to the Kitchen
+  // Group, by the words saved with each Group. Changeable below.
+  const [groupIdx, setGroupIdx] = useState(() => pickNicheGroup(p.groups, `${p.clipTitle ?? ''} ${p.defaultCaption}`))
   const [caption, setCaption] = useState(p.defaultCaption)
   const [lines, setLines] = useState<FlowLine[]>([])
   const [manual, setManual] = useState<{ link: string } | null>(null)
@@ -229,7 +232,7 @@ export function ReelGroupFirst(p: {
           Group:
           <select value={groupIdx} onChange={(e) => setGroupIdx(Number(e.target.value))}
             className="rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[12.5px]">
-            {p.groups.map((g, i) => <option key={g.url} value={i}>{g.name || g.url}</option>)}
+            {p.groups.map((g, i) => <option key={g.url} value={i}>{g.niche ? `${g.niche}: ` : ''}{g.name || g.url}</option>)}
           </select>
         </label>
       )}

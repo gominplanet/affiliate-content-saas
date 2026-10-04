@@ -17,16 +17,16 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { isFacebookGroupLink } from '@/lib/facebook-group-link'
+import { cleanNicheGroup, type NicheGroup } from '@/lib/facebook-niche'
 import { facebookSetupEnabled, readLinkBudget, cleanPlan, META_PLANS } from '@/lib/facebook-link-budget'
 
 export const dynamic = 'force-dynamic'
 
-type Group = { name: string; url: string }
+type Group = NicheGroup
 
 function cleanGroups(raw: unknown): Group[] {
   if (!Array.isArray(raw)) return []
-  return raw.filter((g) => g && typeof g === 'object' && typeof (g as Group).url === 'string')
-    .map((g) => ({ name: String((g as Group).name || '').slice(0, 80), url: String((g as Group).url).trim() }))
+  return raw.map(cleanNicheGroup).filter((g): g is Group => !!g)
 }
 
 /** A Group link in its plain form: https://www.facebook.com/groups/<slug>/ */
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
   const g = await gate()
   if ('res' in g) return g.res
   const { user, admin } = g
-  const body = await req.json().catch(() => ({})) as { plan?: unknown; renewsDay?: unknown; group?: { name?: unknown; url?: unknown }; removeGroup?: unknown }
+  const body = await req.json().catch(() => ({})) as { plan?: unknown; renewsDay?: unknown; group?: { name?: unknown; url?: unknown; niche?: unknown; keywords?: unknown }; removeGroup?: unknown; updateGroup?: { url?: unknown; niche?: unknown; keywords?: unknown; name?: unknown } }
 
   if (body.plan !== undefined) {
     const plan = META_PLANS.some((p) => p.plan === body.plan) ? cleanPlan(body.plan) : null
@@ -108,11 +108,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  if (body.group || body.removeGroup) {
+  if (body.group || body.removeGroup || body.updateGroup) {
     const { data: brand } = await admin.from('brand_profiles').select('user_id,facebook_groups').eq('user_id', user.id).maybeSingle()
     if (!brand) return NextResponse.json({ error: 'Set up your Brand Profile first, then add the Group here.' }, { status: 409 })
     let groups = cleanGroups((brand as { facebook_groups?: unknown }).facebook_groups)
-    if (body.removeGroup) {
+    const txt = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null)
+    if (body.updateGroup) {
+      // A Group's niche and the words that describe it.
+      const target = groupUrl(String(body.updateGroup.url || '')) ?? String(body.updateGroup.url || '')
+      groups = groups.map((x) => (groupUrl(x.url) ?? x.url) === target
+        ? { ...x, niche: txt(body.updateGroup!.niche, 40), keywords: txt(body.updateGroup!.keywords, 300), name: txt(body.updateGroup!.name, 80) || x.name }
+        : x)
+    } else if (body.removeGroup) {
       const gone = groupUrl(String(body.removeGroup)) ?? String(body.removeGroup)
       groups = groups.filter((x) => (groupUrl(x.url) ?? x.url) !== gone)
     } else {
@@ -120,7 +127,7 @@ export async function POST(req: Request) {
       if (!url) return NextResponse.json({ error: 'That is not a Facebook Group link. It looks like facebook.com/groups/your-group.' }, { status: 400 })
       const name = String(body.group?.name || '').trim().slice(0, 80) || 'My Group'
       if (groups.some((x) => (groupUrl(x.url) ?? x.url) === url)) return NextResponse.json({ ok: true, already: true })
-      groups = [...groups, { name, url }].slice(0, 10)
+      groups = [...groups, { name, url, niche: txt(body.group?.niche, 40), keywords: txt(body.group?.keywords, 300) }].slice(0, 10)
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (admin as any).from('brand_profiles').update({ facebook_groups: groups }).eq('user_id', user.id)

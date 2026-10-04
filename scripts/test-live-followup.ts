@@ -61,7 +61,7 @@ check('SCOUT only opens amazon.com/live pages for it', /not-a-live-page/.test(bg
 const frame = r('lib/extension-frame.ts')
 check('MVP asks for SCOUT 1.22.1 before using it', /_cmpVersion\(st\.version, '1\.22\.1'\) < 0/.test(frame))
 
-const cf = r('app/(dashboard)/clip-factory/page.tsx')
+const cf = r('components/clip-factory/ClipFactory.tsx')
 check('Clip Factory only takes a hand-over clip from MVP storage', /liveClip/.test(cf) && /storage\/v1\/object\/public\//.test(cf))
 
 // THE REPLAY PAGE: the stream, Amazon's captions and the products shown are
