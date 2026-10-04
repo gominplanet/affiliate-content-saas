@@ -122,6 +122,18 @@ function enforcedKeys(): Set<string> {
   }
 }
 
+// A VA connecting YouTube for the owner (the "new row violates row-level
+// security policy for table youtube_channels" ticket).
+{
+  const ch = readFileSync(join(root, 'app/api/youtube/channels/route.ts'), 'utf8')
+  check('a VA adding a channel by link writes it on the owner with the service role', /const writer = isOwner \? sb : \(createAdminClient\(\) as any\)/.test(ch) && /writer\.from\('youtube_channels'\)\.insert\(\{\s*user_id: ownerId/.test(ch),
+    'the VA session cannot insert a row for the owner, so it fails with a raw RLS error')
+  const start = readFileSync(join(root, 'app/api/auth/youtube/route.ts'), 'utf8')
+  check('a VA is stopped before Google sign-in, with a reason in words', /getOwnerUserId\(user\.id\)\) !== user\.id/.test(start) && /youtube_error=va_owner_connects/.test(start)
+    && /va_owner_connects/.test(readFileSync(join(root, 'app/(dashboard)/connect-youtube/page.tsx'), 'utf8')),
+    'otherwise the tokens land on the VA\'s own empty account and the owner stays unconnected')
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

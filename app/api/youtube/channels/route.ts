@@ -19,6 +19,7 @@ import { listYouTubeChannels, setDefaultChannel, maxChannelsForTier, canAddChann
 import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 import { resolveYouTubeChannel } from '@/services/youtube'
 import { normalizeTier } from '@/lib/tier'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 // Never cache — this must reflect a connect/disconnect the instant it happens,
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if ('error' in auth) return auth.error
-  const { ownerId } = auth
+  const { ownerId, isOwner } = auth
 
   let body: { action?: string; channelRowId?: string | null; siteId?: string; channelUrl?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
@@ -106,7 +107,14 @@ export async function POST(request: Request) {
     }
     // First real row → make it the default so Co-Pilot reads it straight away.
     const isFirst = existing.filter(c => c.id !== 'legacy').length === 0
-    const { error } = await sb.from('youtube_channels').insert({
+    // A Virtual Assistant adds the channel to the OWNER's account. Their own
+    // session cannot write the owner's row (the "new row violates row-level
+    // security policy for table youtube_channels" ticket), so the server writes
+    // it: a public, read-only row with no tokens, under the owner, which is
+    // exactly what the owner would have added themselves.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writer = isOwner ? sb : (createAdminClient() as any)
+    const { error } = await writer.from('youtube_channels').insert({
       user_id: ownerId,
       channel_id: resolved.channelId,
       channel_title: resolved.title,

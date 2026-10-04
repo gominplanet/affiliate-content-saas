@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { getOwnerUserId } from '@/lib/agency'
 
 export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -19,6 +20,13 @@ export async function GET(req: Request) {
   // /onboarding instead of dumping them on /setup mid-flow.
   const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
   const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
+  // A VIRTUAL ASSISTANT does not sign in to Google here: the tokens would land
+  // on their own empty MVP account, not the owner's, and the owner's channel
+  // would stay unconnected. Say so in words, and point to the way that works
+  // for a VA: Connect it by link, which saves the channel on the owner.
+  if ((await getOwnerUserId(user.id)) !== user.id) {
+    return NextResponse.redirect(`${appUrl}${returnTo || '/connect-youtube'}${(returnTo || '').includes('?') ? '&' : '?'}youtube_error=va_owner_connects`)
+  }
   // We ALWAYS force Google's account chooser (below). This is the fix for the
   // multi-channel footgun: when a Google login owns several YouTube channels
   // (a personal channel + Brand Account channels), `prompt=consent` alone
