@@ -93,6 +93,16 @@ check('the kit writes group rules and membership questions', /"rules": exactly/.
 const PG = read('components/launch-kit/LaunchKit.tsx')
 check('a platform with no profile picture shows no avatar slot', /\{spec\.avatar && \(/.test(PG))
 
+// THE YOUTUBE LINK GOES LAST. The card is built from it first, the box is
+// cleared (checked, since Facebook ignores a plain select-all), the post goes
+// in, and the link is added at the end, so the affiliate link reads first.
+{
+  const fill = BG.slice(BG.indexOf('async function fillGroupComposerInPage'))
+  check('the YouTube link is cleared from the top, and the clear is checked', /const cleared = await clearBox\(\)/.test(fill) && /youtube link: stuck at the top/.test(fill))
+  check('it goes back at the end of the post, checked too', /pasteText\('\\n\\n' \+ hero\.url\)/.test(fill) && /boxText\(\)\.endsWith\(hero\.url\)/.test(fill))
+  check('a link stuck at the top is said, not hidden', /The YouTube link stayed on the first line/.test(fill))
+}
+
 if (failures.length) {
   console.error(`\n❌ fb-group-fill: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

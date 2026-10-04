@@ -13180,17 +13180,56 @@ async function fillGroupComposerInPage(text, hero) {
   const hasYouTubeCard = () => !!dialog.querySelector('a[href*="youtube.com"], a[href*="youtu.be"], img[src*="ytimg.com"]')
   let mediaNote = ''
 
-  // VIDEO FIRST. Facebook builds the card from the first link it sees in the
-  // box and keeps it after that text is gone, so the YouTube link goes in
-  // alone, the card appears, then the box is cleared and the post goes in.
+  // VIDEO FIRST, LINK LAST. Facebook builds the card from the first link it
+  // sees in the box and keeps it after that text is gone. So the YouTube link
+  // goes in alone, the card appears, the box is CLEARED, the post goes in, and
+  // the YouTube link goes back at the very END: the affiliate link is the
+  // first thing people read, and the video card stays.
+  //
+  // The clear is checked. Facebook's editor ignores a plain select-all, which
+  // is how the YouTube link used to stay stuck on the first line with the post
+  // glued after it on the same line.
+  const boxText = () => (box.innerText || '').replace(/\u200b/g, '').trim()
+  const selectAllInBox = () => {
+    box.focus()
+    const sel = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(box)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+  const clearBox = async () => {
+    for (let attempt = 0; attempt < 4 && boxText(); attempt++) {
+      try {
+        selectAllInBox()
+        if (attempt % 2 === 0) document.execCommand('delete', false)
+        else box.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }))
+      } catch (e) {}
+      await sleep(250)
+    }
+    return !boxText()
+  }
+  const caretToEnd = () => {
+    box.focus()
+    const sel = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(box)
+    range.collapse(false)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+  let videoAtEnd = false
   if (hero && hero.kind === 'video') {
     pasteText(hero.url)
     let card = false
     for (let i = 0; i < 20 && !card; i++) { await sleep(400); card = hasYouTubeCard() }
-    try { box.focus(); document.execCommand('selectAll', false); document.execCommand('delete', false) } catch (e) {}
+    const cleared = await clearBox()
     await sleep(300)
     steps.push(card ? 'video card: built' : 'video card: not built')
+    steps.push(cleared ? 'youtube link: cleared from the top' : 'youtube link: stuck at the top')
+    videoAtEnd = cleared
     if (!card) mediaNote = 'Facebook did not build the video card, so it will show a card for the first link instead. Paste the YouTube link at the top if you want the video.'
+    else if (!cleared) mediaNote = 'The YouTube link stayed on the first line. Delete that line and paste it at the end if you want the affiliate link first.'
   }
 
   const head = text.replace(/\s+/g, ' ').trim().slice(0, 24)
@@ -13206,6 +13245,21 @@ async function fillGroupComposerInPage(text, hero) {
   }
   if (!how) return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
   steps.push('text: ' + how)
+
+  // The YouTube link back at the end, under the post. Checked like the text.
+  if (videoAtEnd) {
+    caretToEnd()
+    pasteText('\n\n' + hero.url)
+    await sleep(500)
+    let atEnd = boxText().endsWith(hero.url)
+    if (!atEnd) {
+      try { caretToEnd(); document.execCommand('insertText', false, '\n\n' + hero.url) } catch (e) {}
+      await sleep(500)
+      atEnd = boxText().endsWith(hero.url)
+    }
+    steps.push(atEnd ? 'youtube link: at the end' : 'youtube link: not added at the end')
+    if (!atEnd && !mediaNote) mediaNote = 'The video card is on, but the YouTube link did not go in at the end. Paste it under the post if you want it in the text.'
+  }
 
   if (hero && hero.kind === 'video' && !mediaNote) {
     await sleep(800)
