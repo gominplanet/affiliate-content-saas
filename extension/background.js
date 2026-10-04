@@ -3749,17 +3749,48 @@ function acceptCampaignInPage() {
   const exact = (t) => /^(accept|accept campaign|accept this campaign|accept affiliate\+? campaign|accept offer|accept & continue)$/i.test(t)
   const loose = (t) => /\baccept\b/i.test(t) && !/accept all|accepted|accept sponsored/i.test(t)
   const bodyTxt = document.body ? (document.body.innerText || '') : ''
+  // FULL FIRST. A full campaign's page says so ("maximum number of accepted
+  // creators", "no spots left"...), and that sentence contains "accepted", so
+  // checked after the already-accepted test it read as "Already accepted,
+  // you're in" for a campaign nobody can join. A failure must not look like
+  // success.
+  const FULL = /(campaign|offer) (is |has )?(now )?(full|filled|closed)|no (more )?(spots?|slots?|openings|availability)( (left|available|remaining))?|(spots?|slots?) (are )?(all )?(filled|taken|full)|reached (its |the )?(maximum|max|limit|capacity)|maximum (number of )?(accepted )?creators|no longer (accepting|available)|fully (booked|subscribed|claimed)|\b0 (spots?|slots?)( left| available| remaining)?\b|campaign (has )?ended/i
+  const fullHit = bodyTxt.match(FULL)
+  const said = (m) => {
+    if (!m) return ''
+    const i = Math.max(0, (m.index || 0) - 60)
+    return bodyTxt.slice(i, (m.index || 0) + m[0].length + 60).replace(/\s+/g, ' ').trim().slice(0, 180)
+  }
   let btn = controls().find((e) => exact(norm(e)))
   if (!btn) btn = controls().find((e) => loose(norm(e)))
+  if (btn && (btn.disabled || btn.getAttribute('aria-disabled') === 'true') && fullHit) {
+    return { ok: false, full: true, reason: 'full', said: said(fullHit) }
+  }
   if (!btn) {
-    // No accept control — if the page already reads as accepted, call it done.
-    if (/\baccepted\b/i.test(bodyTxt) && !/accept\b/i.test(bodyTxt)) return { ok: true, accepted: true, already: true }
+    if (fullHit) return { ok: false, full: true, reason: 'full', said: said(fullHit) }
+    // No accept control. Already accepted only on Amazon's own words for it.
+    if (/already accepted|you('ve| have) accepted|campaign accepted|\baccepted\b/i.test(bodyTxt) && !/accept\b/i.test(bodyTxt)) return { ok: true, accepted: true, already: true }
     return { ok: false, reason: 'accept-button-not-found', sample: controls().map((e) => norm(e)).filter(Boolean).slice(0, 14) }
   }
   const label = norm(btn)
   try { btn.scrollIntoView({ block: 'center' }) } catch (e) {}
   btn.click()
-  return { ok: true, accepted: true, clicked: label }
+  // preFull: wording already on the page before the click, so the check after
+  // it only counts what Amazon said in answer.
+  return { ok: true, accepted: true, clicked: label, preFull: said(fullHit) }
+}
+
+// After the click: what did Amazon answer? A full campaign can show its Accept
+// button and refuse only once pressed, so the click alone is not "joined".
+function acceptOutcomeInPage() {
+  const bodyTxt = document.body ? (document.body.innerText || '') : ''
+  const FULL = /(campaign|offer) (is |has )?(now )?(full|filled|closed)|no (more )?(spots?|slots?|openings|availability)( (left|available|remaining))?|(spots?|slots?) (are )?(all )?(filled|taken|full)|reached (its |the )?(maximum|max|limit|capacity)|maximum (number of )?(accepted )?creators|no longer (accepting|available)|fully (booked|subscribed|claimed)|\b0 (spots?|slots?)( left| available| remaining)?\b|campaign (has )?ended/i
+  const m = bodyTxt.match(FULL)
+  if (m) {
+    const i = Math.max(0, (m.index || 0) - 60)
+    return { full: true, said: bodyTxt.slice(i, (m.index || 0) + m[0].length + 60).replace(/\s+/g, ' ').trim().slice(0, 180) }
+  }
+  return { full: false }
 }
 
 // Read the PRODUCTS a Creator Connections campaign covers.
@@ -3815,7 +3846,7 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
     for (let i = 0; i < 6; i++) {
       const res = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
       const r = res && res[0] && res[0].result
-      if (r && r.ok) return r
+      if (r && (r.ok || r.full)) return r
       await _sleep(700)
     }
     return null
@@ -3833,6 +3864,7 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
     } catch (e) {}
 
     let r = await tryAccept()
+    if (r && r.full) return r
     // Button never rendered headless → bring the tab forward once, retry, return.
     if (!r) {
       try {
@@ -3845,6 +3877,14 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
       }
     }
     if (r && r.ok) await _sleep(1500) // let the click commit before we close
+    // A click is not a join until Amazon has not refused it: read the page again.
+    if (r && r.ok && r.clicked) {
+      try {
+        const vr = await chrome.scripting.executeScript({ target: { tabId }, func: acceptOutcomeInPage })
+        const v = vr && vr[0] && vr[0].result
+        if (v && v.full && v.said !== (r.preFull || '')) return { ok: false, full: true, reason: 'full', said: v.said, clicked: r.clicked }
+      } catch (e) {}
+    }
     return r || { ok: false, error: 'accept-button-not-found' }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? e.message : 'accept-exception' }

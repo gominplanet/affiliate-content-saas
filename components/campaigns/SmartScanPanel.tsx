@@ -21,6 +21,7 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck, SlidersHorizontal } from 'lucide-react'
 import { requestCcSmartScan, requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
+import { liveSpotTerms, refreshLiveSpots, type LiveSpotsResult } from '@/lib/cc-live-spots'
 import {
   ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
   campaignRules, type CampaignRuleMode,
@@ -82,6 +83,8 @@ export default function SmartScanPanel({
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // Live spot counts refreshed after a scan (lib/cc-live-spots).
+  const [liveSpots, setLiveSpots] = useState<'checking' | LiveSpotsResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Campaign-mode results
   const [matches, setMatches] = useState<ScoredMatch[] | null>(null)
@@ -270,6 +273,13 @@ export default function SmartScanPanel({
     if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dl}`)
     else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dl}`)
     else if (dl) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dl}`)
+    // Then the live spot counts for what was scanned, so campaigns that filled
+    // since the last catalogue load stop showing as open, for everyone.
+    const terms = liveSpotTerms(focus, raw.map(m => m.brand))
+    if (terms.length && !s?.blocked) {
+      setLiveSpots('checking')
+      void refreshLiveSpots(terms).then(setLiveSpots).catch(() => setLiveSpots(null))
+    } else setLiveSpots(null)
   }
 
   // ── CAMPAIGNS OFF — onsite Amazon search, verified in waves ──────────────
@@ -451,6 +461,17 @@ export default function SmartScanPanel({
       )}
       {error && <div className="px-4 pb-3 text-[12px] text-[#ff3b30]">{error}</div>}
       {note && !error && <div className="px-4 pb-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>{note}</div>}
+      {liveSpots && !error && (
+        <div className="px-4 pb-3 text-[12px]" style={{ color: liveSpots !== 'checking' && liveSpots.failed && !liveSpots.saved ? '#d97706' : 'var(--text-faint)' }}>
+          {liveSpots === 'checking'
+            ? 'Checking live open spots on Amazon…'
+            : liveSpots.saved
+              ? `Live open spots updated for ${liveSpots.saved} campaign${liveSpots.saved === 1 ? '' : 's'} (${liveSpots.terms.join(', ')})${liveSpots.nowFull ? `, ${liveSpots.nowFull} now full and hidden for everyone` : ''}.`
+              : liveSpots.failed
+                ? 'Could not check live open spots on Amazon this time. The spot counts shown are from the last catalogue load.'
+                : `No live spot counts came back for ${liveSpots.terms.join(', ')}.`}
+        </div>
+      )}
 
       {/* ── Campaign results ── */}
       {matches && !error && (

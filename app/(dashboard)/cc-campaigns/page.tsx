@@ -173,8 +173,10 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           ? 'SCOUT extension not detected. Install/enable it and open Amazon Creator Connections, then try again.'
           : res.error === 'timeout'
             ? 'SCOUT timed out. Make sure you’re logged into Amazon, then try again.'
-            : res.reason || res.error || 'Couldn’t accept automatically — use “Open on Amazon”.'
+            : res.reason || res.error || 'Couldn’t accept automatically. Use “Open on Amazon”.'
         toast.error(msg, { id: tId, duration: 8_000 })
+        // Full on Amazon: reload, so the card the catalogue still showed as open goes.
+        if (res.full) onActed?.()
         return
       }
       // Record it, awaited, so an accept MVP just performed cannot go missing
@@ -185,7 +187,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         source: 'campaign-card',
       })
       setAcceptedLocal(true)
-      toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
+      toast.success(res.already ? 'Already accepted. You’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
       onActed?.() // refresh per-ASIN status so "Hide joined" sees this immediately
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })
@@ -470,12 +472,15 @@ export default function CcCampaignsPage() {
     if (list.length === 0) return
     setBulkAccepting(true)
     const tId = 'cc-bulk-accept'
-    let done = 0, joined = 0, already = 0, failed = 0
+    let done = 0, joined = 0, already = 0, failed = 0, full = 0
     toast.loading(`Accepting 0 of ${list.length}…`, { id: tId, duration: Infinity })
     for (const c of list) {
       try {
         const r = await requestAcceptCampaign(c.detailsUrl)
-        if (r.ok && r.already) already++
+        // Full on Amazon is its own count: not a failure of MVP's, and each one
+        // is now marked full in the catalogue for everyone.
+        if (r.full) full++
+        else if (r.ok && r.already) already++
         else if (r.ok) {
           joined++
           await recordAccept({
@@ -489,7 +494,7 @@ export default function CcCampaignsPage() {
       toast.loading(`Accepting ${done} of ${list.length}…`, { id: tId, duration: Infinity })
       if (done < list.length) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000))
     }
-    toast.success(`Accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
+    toast.success(`Accepted ${joined} · ${already} already joined${full ? ` · ${full} full on Amazon (taken off the list)` : ''}${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
     setBulkAccepting(false)
     clearSelected()
     loadStatus()

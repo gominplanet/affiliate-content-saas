@@ -430,7 +430,13 @@ export async function requestAcceptAndSendBrand(detailsUrl: string, message: str
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, accepted: resp.accepted }
 }
 
-export interface AcceptCampaignResult { ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }
+export interface AcceptCampaignResult {
+  ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string
+  /** Amazon said the campaign is full; MVP has marked it full in the catalogue. */
+  full?: boolean
+  /** Amazon's own words about it, when SCOUT read them. */
+  said?: string
+}
 
 /**
  * "Accept on Amazon" from the /epc list: SCOUT opens the campaign's details page
@@ -459,11 +465,28 @@ export async function requestCampaignAsins(detailsUrl: string): Promise<{ ok: bo
 export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptCampaignResult> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string; full?: boolean; said?: string }>(
     { type: 'MVP_CC_ACCEPT', detailsUrl },
     95000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
+  // FULL ON AMAZON: the catalogue still showed spots, so mark it full for every
+  // creator (app/api/cc/campaign-full), and say it plainly, wherever the Accept
+  // was pressed. Every caller shows `reason` on a failed accept.
+  if (resp.full) {
+    let marked = false
+    try {
+      const campaignId = new URL(detailsUrl).searchParams.get('campaignId') || ''
+      if (campaignId) {
+        const r = await fetch('/api/cc/campaign-full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId }), signal: AbortSignal.timeout(15000) })
+        marked = !!(await r.json().catch(() => null))?.marked
+      }
+    } catch { /* the message still says it is full */ }
+    return {
+      ok: false, full: true, error: 'full', said: resp.said,
+      reason: `This campaign is full on Amazon, so it can't be joined right now.${marked ? ' MVP has taken it off the list for everyone.' : ''}`,
+    }
+  }
   return { ok: !!resp.ok, accepted: resp.accepted, already: resp.already, error: resp.error, reason: resp.reason }
 }
 
