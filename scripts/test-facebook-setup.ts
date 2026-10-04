@@ -204,10 +204,19 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('the kit is written for that niche, saved and locked per niche', /this Group is ONLY about: \$\{niche\}/.test(gen) && /\.eq\('platform', slot\)\)\.maybeSingle\(\)/.test(gen) && /platform: slot, kit/.test(gen) && !/\.eq\('platform', platform\)/.test(gen))
   const img = read('app/api/social-launch-kit/image/route.ts')
   check('its cover is about that niche and saved in its slot', /if \(niche\) categories = \[niche\]/.test(img) && /platform: slot, \[col\]/.test(img) && !/\.eq\('platform', platform\)/.test(img))
-  const kitPage = read('app/(dashboard)/social-launch-kit/page.tsx')
+  const kitPage = read('app/(dashboard)/social-launch-kit/page.tsx') + read('components/launch-kit/LaunchKit.tsx')
   check('the Group card asks the niche first, and each made niche is a tab', /Which niche is this Group for\?/.test(kitPage) && /k\.startsWith\('facebook_group:'\)/.test(kitPage) && /get\('niche'\)/.test(kitPage))
   check('a made niche Group goes into Meta Hub with its niche', /group: \{ name: kit\.names\[0\][\s\S]{0,80}niche, keywords/.test(kitPage))
-  check('Meta Hub sends the niche to the Launch Kit', /\/social-launch-kit\?niche=\$\{encodeURIComponent/.test(page))
+  check('the Launch Kit cards are one component the page and Meta Hub share', /<LaunchKit \/>/.test(kitPage) && /export default function LaunchKit\(/.test(read('components/launch-kit/LaunchKit.tsx')))
+}
+
+// ── Stay in Meta Hub: make, connect and come back without leaving ─────────
+{
+  check('Meta Hub makes the Page and the niche Groups itself, with the Launch Kit inside', /<LaunchKit only=\{\['facebook'\]\} embedded \/>/.test(page) && /<LaunchKit only=\{\['facebook_group'\]\} embedded onGroupSaved=/.test(page))
+  check('a niche Group saved in the kit shows in the list at once', /onGroupSaved=\{\(\) => \{ void load\(\) \}\}/.test(page) && /onSaved\?\.\(\)/.test(read('components/launch-kit/LaunchKit.tsx')))
+  check('connecting the Page comes back to Meta Hub', /\/api\/auth\/facebook\?return=meta/.test(page) && /searchParams\.get\('return'\) === 'meta'/.test(read('app/api/auth/facebook/route.ts')) && /fb_return'\)\?\.value === 'meta' \? `\$\{appUrl\}\/meta\?fb_connected=1`/.test(read('app/api/auth/facebook/callback/route.ts')))
+  check('Meta Hub never navigates away: every other link opens a new tab', !/<Link /.test(page) && (page.match(/<a href="\/(?!api\/auth\/facebook\?return=meta)[^"]*"(?![^>]*target="_blank")/g) ?? []).length === 0)
+  check('coming back to the tab refreshes the Page, Groups, SCOUT and posts', /const onFocus = \(\) => \{\s*void load\(\); void loadHub\(\)\s*requestFacebookAccess\(false\)/.test(page))
 }
 
 if (failures.length) {

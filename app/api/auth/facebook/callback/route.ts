@@ -96,7 +96,10 @@ export async function GET(request: NextRequest) {
     // otherwise the old failures stay the newest outcomes and it keeps nagging.
     await clearChannelFailures(supabase, user.id, 'facebook')
     await clearConnectionHealth(supabase, user.id, 'facebook')
-    return NextResponse.redirect(`${setupUrl}?fb_connected=1`)
+    // Started from Meta Hub: back to Meta Hub, where step 1 now shows a tick.
+    const res = NextResponse.redirect(request.cookies.get('fb_return')?.value === 'meta' ? `${appUrl}/meta?fb_connected=1` : `${setupUrl}?fb_connected=1`)
+    res.cookies.delete('fb_return')
+    return res
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.redirect(`${setupUrl}?fb_error=${encodeURIComponent(msg)}`)

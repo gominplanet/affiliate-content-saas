@@ -20,7 +20,6 @@
 // and a Page Reel whose first line is "Get it here" and that Group post.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Check, Loader2, FlaskConical, Trash2, ExternalLink, ShieldCheck, ChevronDown, Pencil } from 'lucide-react'
@@ -29,6 +28,7 @@ import { requestFacebookAccess } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 import ClipFactory from '@/components/clip-factory/ClipFactory'
+import LaunchKit from '@/components/launch-kit/LaunchKit'
 import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
@@ -128,6 +128,9 @@ function MetaHub() {
   const [add, setAdd] = useState({ name: '', url: '', niche: '', keywords: '' })
   const [editing, setEditing] = useState<{ url: string; name: string; niche: string; keywords: string } | null>(null)
   const [howTo, setHowTo] = useState(false)
+  // The Launch Kit, inside Meta Hub: make the Page (step 1) or a niche Group (step 2).
+  const [makePage, setMakePage] = useState(false)
+  const [makeGroup, setMakeGroup] = useState(false)
   const [access, setAccess] = useState<Access>('checking')
   const [asking, setAsking] = useState(false)
   const [hub, setHub] = useState<Hub | null>(null)
@@ -158,11 +161,27 @@ function MetaHub() {
 
   useEffect(() => { load(); loadHub() }, [load, loadHub])
   // Back from the Facebook tab: show where the new post landed.
+  // STAY IN META HUB: anything opened in another tab (Facebook, the SCOUT
+  // store, Connect Socials, the Blog Post Generator) shows up here the moment
+  // the creator comes back: the Page, the Groups, SCOUT and what got posted.
   useEffect(() => {
-    const onFocus = () => { void loadHub() }
+    const onFocus = () => {
+      void load(); void loadHub()
+      requestFacebookAccess(false).then((r) => setAccess(r.state)).catch(() => {})
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [loadHub])
+  }, [load, loadHub])
+  // Back from connecting the Page on Facebook (/api/auth/facebook?return=meta).
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      if (q.get('fb_connected') !== '1') return
+      toast.success('Your Page is connected')
+      q.delete('fb_connected')
+      window.history.replaceState(null, '', `/meta${q.toString() ? `?${q}` : ''}`)
+    } catch { /* fine */ }
+  }, [])
   // Several Pages (Pro): the review window offers a choice of Page.
   useEffect(() => {
     if (tier !== 'pro' && tier !== 'admin') return
@@ -266,17 +285,25 @@ function MetaHub() {
         {s.page ? (
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
             Connected: <strong style={{ color: 'var(--text)' }}>{s.page.name || 'your Page'}</strong>. Every Reel goes on this one Page, whatever its niche.{' '}
-            <Link href="/connect-socials" className="underline">Change it</Link>
+            <a href="/connect-socials" target="_blank" rel="noopener noreferrer" className="underline">Change it</a>
           </p>
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-              One Page is enough for all your niches. MVP posts your Reels on it for you. Connect it first.
+              One Page is enough for all your niches. MVP posts your Reels on it for you. Connect it first: Facebook asks you to allow MVP, then brings you straight back here.
             </p>
             <div className="flex gap-2 flex-wrap">
-              <Link href="/connect-socials" className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white" style={{ background: FB }}>Connect your Page</Link>
-              <Link href="/social-launch-kit" className="px-3 py-1.5 rounded-lg text-[13px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>No Page yet? Make one</Link>
+              <a href="/api/auth/facebook?return=meta" className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white" style={{ background: FB }}>Connect your Page</a>
+              <button type="button" onClick={() => setMakePage((v) => !v)} className="px-3 py-1.5 rounded-lg text-[13px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {makePage ? 'Hide the Page kit' : 'No Page yet? Make one here'}
+              </button>
             </div>
+            {makePage && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>MVP writes your Page&apos;s name, bio, category, first post, cover and profile picture. Create the Page on Facebook with them, then press Connect your Page above.</p>
+                <LaunchKit only={['facebook']} embedded />
+              </div>
+            )}
           </div>
         )}
       </Step>
@@ -324,11 +351,24 @@ function MetaHub() {
             ))}
           </ul>
         )}
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={() => setMakeGroup((v) => !v)} className="px-3 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: FB }}>
+            {makeGroup ? 'Hide the Group kit' : 'Make a new niche Group'}
+          </button>
+        </div>
+        {makeGroup && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+              Pick the niche. MVP writes the Group&apos;s name, web address, rules, welcome post and cover. Create it on Facebook from your Page, set it to Public, then paste its link at the bottom of the kit and it lands in your list above.
+            </p>
+            <LaunchKit only={['facebook_group']} embedded onGroupSaved={() => { void load() }} />
+          </div>
+        )}
         <form className="rounded-lg border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }} onSubmit={async (e) => {
           e.preventDefault()
           if (await post({ group: add }, 'Group saved')) setAdd({ name: '', url: '', niche: '', keywords: '' })
         }}>
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{s.groups.length ? 'Add another niche Group' : 'Add your first Group'}</p>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Already have a Group? Add it</p>
           <NicheChips value={add.niche} onPick={(n) => setAdd({ ...add, niche: n, keywords: add.keywords.trim() ? add.keywords : nicheWords(n) })} />
           <div className="flex gap-2 flex-wrap">
             <input value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} placeholder="Group name"
@@ -352,10 +392,10 @@ function MetaHub() {
         {howTo && (
           <ol className="text-[12.5px] leading-relaxed list-decimal pl-5 flex flex-col gap-1" style={{ color: 'var(--text-soft)' }}>
             <li>Open your Page on Facebook, go to <strong>Groups</strong> and press <strong>Create group</strong>, so the Group belongs to your Page.</li>
-            <li>Name it after the niche, like &quot;Kitchen Deals and Finds&quot;. Or let the <Link href={add.niche.trim() ? `/social-launch-kit?niche=${encodeURIComponent(add.niche.trim())}` : '/social-launch-kit#kit-facebook_group'} className="underline">Social Launch Kit</Link> write the name, rules, welcome post and cover for {add.niche.trim() ? `your ${add.niche.trim()} Group` : 'the niche you pick'}.</li>
+            <li>Name it after the niche, like &quot;Kitchen Deals and Finds&quot;. Or press <button type="button" onClick={() => setMakeGroup(true)} className="underline font-semibold">Make a new niche Group</button> and MVP writes the name, rules, welcome post and cover for you.</li>
             <li>Set privacy to <strong>Public</strong>. Amazon has to be able to see where your links are.</li>
             <li>Add the Group&apos;s address to your website list in Amazon Associates before your first link.</li>
-            <li>Paste the Group&apos;s address above, pick its niche, and save. Repeat for each niche.</li>
+            <li>Paste the Group&apos;s address in the kit (or under Already have a Group), and it is saved with its niche. Repeat for each niche.</li>
           </ol>
         )}
       </Step>
@@ -445,7 +485,7 @@ function MetaHub() {
         </p>
         {!hub && <p className="text-[13px] flex items-center gap-2" style={{ color: 'var(--text-faint)' }}><Loader2 size={14} className="animate-spin" /> Gathering your reviews…</p>}
         {hub && (hub.reviews.length === 0 ? (
-          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>No published reviews yet. Write one from a video in the <Link href="/content" className="underline">Blog Post Generator</Link>.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>No published reviews yet. Write one from a video in the <a href="/content" target="_blank" rel="noopener noreferrer" className="underline">Blog Post Generator</a>; it opens in a new tab and shows up here when you come back.</p>
         ) : (
           <ul className="flex flex-col divide-y" style={{ borderColor: 'var(--border)' }}>
             {hub.reviews.map((r) => (
@@ -520,7 +560,7 @@ function MetaHub() {
       </section>
 
       <p className="text-[12px] pb-4" style={{ color: 'var(--text-faint)' }}>
-        Want the why behind all this? Read <a href="/freeguide#facebook" className="underline">Module 9 of the Free Guide</a>.
+        Want the why behind all this? Read <a href="/freeguide#facebook" target="_blank" rel="noopener noreferrer" className="underline">Module 9 of the Free Guide</a>.
       </p>
 
       {/* A review, posted from here: the same Group-first window as Social Push. */}

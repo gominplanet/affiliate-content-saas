@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 
-export async function GET() {
+export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   // Read the session (no DB query) so the reviewer test account / admins can
   // start the OAuth flow while Meta is gated for the public.
@@ -45,5 +45,11 @@ export async function GET() {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('state', user.id)
 
-  return NextResponse.redirect(url.toString())
+  const res = NextResponse.redirect(url.toString())
+  // ?return=meta (from Meta Hub): the callback brings the creator back there.
+  // Only this one known page is accepted, never an address from the request.
+  if (new URL(request.url).searchParams.get('return') === 'meta') {
+    res.cookies.set('fb_return', 'meta', { httpOnly: true, sameSite: 'lax', secure: true, path: '/', maxAge: 15 * 60 })
+  }
+  return res
 }

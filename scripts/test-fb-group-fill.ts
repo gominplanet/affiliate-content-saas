@@ -90,7 +90,7 @@ check('the Launch Kit offers a Facebook Group', /facebook_group: \{/.test(LK) &&
 check('and its last step connects it to SCOUT and Amazon', /Brand Profile under Facebook Groups so Fill with SCOUT/.test(LK) && /Associates website list/.test(LK))
 const GEN = read('app/api/social-launch-kit/generate/route.ts')
 check('the kit writes group rules and membership questions', /"rules": exactly/.test(GEN) && /"questions": exactly/.test(GEN))
-const PG = read('app/(dashboard)/social-launch-kit/page.tsx')
+const PG = read('components/launch-kit/LaunchKit.tsx')
 check('a platform with no profile picture shows no avatar slot', /\{spec\.avatar && \(/.test(PG))
 
 if (failures.length) {
