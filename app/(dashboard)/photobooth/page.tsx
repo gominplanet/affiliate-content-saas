@@ -23,6 +23,7 @@ import {
   Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2, Trash2,
   Upload, X, CheckCircle,
 } from 'lucide-react'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 interface FaceModel {
   id: string
@@ -317,7 +318,9 @@ export default function PhotoboothPage() {
     if (!faceId) { setGenError('Pick a face first.'); return }
     setGenerating(true); setGenError(null)
     try {
-      const res = await fetch('/api/photobooth', {
+      // Same face, look and expression already in the album: asked first
+      // (lib/already-made-client), so a repeat is a choice, not a charge.
+      const res = await fetchUnlessMade('/api/photobooth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ faceModelId: faceId, style, expression, customPrompt: customPrompt.trim() || undefined, size }),
       })

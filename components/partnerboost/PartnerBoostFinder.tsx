@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw, MessageCircle, SlidersHorizontal } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const CYAN = '#0E7490'
 
@@ -141,7 +142,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
   async function generate(m: Match) {
     setGen((g) => ({ ...g, [m.key]: { loading: true } }))
     try {
-      const res = await fetch('/api/walmart/generate', {
+      const res = await fetchUnlessMade('/api/walmart/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           product: {

@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark, MessageCircle, SlidersHorizontal } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const CYAN = '#0E7490'
 
@@ -126,7 +127,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
     setOptionsFor(null)
     setGen((g) => ({ ...g, [m.asin]: { loading: true } }))
     try {
-      const res = await fetch('/api/levanta/generate', {
+      const res = await fetchUnlessMade('/api/levanta/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

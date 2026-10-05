@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import WalmartQuickPostModal, { type WalmartQuickPostItem } from '@/components/walmart/WalmartQuickPostModal'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const WM_BLUE = '#0071CE'
 
@@ -133,7 +134,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
   const generatePost = async (o: Offer) => {
     setGenerating(o.key)
     try {
-      const res = await fetch('/api/walmart/generate', {
+      const res = await fetchUnlessMade('/api/walmart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

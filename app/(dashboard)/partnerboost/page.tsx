@@ -25,6 +25,7 @@ import { normalizeTier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { Loader2, RefreshCw, ExternalLink, Copy, Lock, Store, CheckCircle2, Clock, ChevronDown, Wand2, Package } from 'lucide-react'
 import { toast } from 'sonner'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const PB_DASHBOARD = 'https://app.partnerboost.com/'
 
@@ -180,7 +181,7 @@ export default function WalmartPBPage() {
   const generatePost = async (b: Brand, pr: WMProduct, key: string) => {
     setGenerating(key)
     try {
-      const res = await fetch('/api/walmart/generate', {
+      const res = await fetchUnlessMade('/api/walmart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url, network, draft: !publishLive }),

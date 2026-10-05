@@ -109,6 +109,23 @@ async function listShots(supabase: any, userId: string): Promise<PersistedShot[]
   return out
 }
 
+/** The newest saved shot of this face in this look and expression, or null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function findShot(supabase: any, userId: string, faceId: string, style: string, expression: string): Promise<{ path: string; url: string } | null> {
+  try {
+    const folder = shotsFolder(userId)
+    const { data: files } = await supabase.storage.from(SHOTS_BUCKET).list(folder, {
+      limit: 200, sortBy: { column: 'created_at', order: 'desc' },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hit = ((files ?? []) as any[]).find((f) => f?.name && String(f.name).startsWith(`${faceId}__${style}__${expression}__`))
+    if (!hit) return null
+    const path = `${folder}/${hit.name}`
+    const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
+    return signed?.signedUrl ? { path, url: signed.signedUrl } : null
+  } catch { return null }
+}
+
 /** Keep only the newest SHOTS_KEEP_PER_FACE shots for ONE face; delete older. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function pruneShots(supabase: any, userId: string, faceId: string): Promise<void> {
@@ -194,8 +211,26 @@ export async function POST(request: Request) {
       expression?: string
       customPrompt?: string
       size?: '1024x1024' | '1024x1536' | '1536x1024'
+      /** Make another even though this face already has this look. */
+      again?: boolean
     }
     if (!body.faceModelId) return NextResponse.json({ error: 'Pick a face first.' }, { status: 400 })
+
+    // ALREADY IN THE ALBUM (lib/made-before). The same face in the same look
+    // and expression is a shot MVP already made: hand it back before paying
+    // for another. A custom prompt makes a different shot, so it is not stopped.
+    if (!body.again && !(body.customPrompt || '').trim()) {
+      const sKey = body.style && STYLES[body.style] ? body.style : 'studio'
+      const eKey = (body.expression && EXPRESSIONS[body.expression]) ? body.expression : 'neutral'
+      const have = await findShot(supabase, user.id, body.faceModelId, sKey, eKey)
+      if (have) {
+        return NextResponse.json({
+          alreadyMade: true, url: have.url, path: have.path, style: sKey,
+          error: 'This face already has a shot in this look and expression. It is in your album.',
+          keptMessage: 'Kept the shot you already have; it is in your album below. Nothing new was made.',
+        }, { status: 409 })
+      }
+    }
 
     // ── Load the face's reference photos ──────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

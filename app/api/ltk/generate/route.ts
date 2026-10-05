@@ -24,6 +24,7 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
+import { partnerKey, partnerMeta, partnerAlreadyMade } from '@/lib/partner-made-before'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     const daily = await partnerPostLimit(user.id, tier)
     if (daily) return daily
 
-    const body = await request.json() as { ltkUrl?: string; productName?: string; description?: string; imageUrl?: string; widgetCode?: string; draft?: boolean }
+    const body = await request.json() as { ltkUrl?: string; productName?: string; description?: string; imageUrl?: string; widgetCode?: string; draft?: boolean; again?: boolean }
     const ltkUrl = (body.ltkUrl || '').trim()
     const widgetCode = (body.widgetCode || '').trim()
     const productName = (body.productName || '').trim()
@@ -68,6 +69,10 @@ export async function POST(request: NextRequest) {
     if (!ltkUrl && !widgetCode) {
       return NextResponse.json({ ok: false, error: 'Add your LTK link, your LTK widget embed code, or both.' }, { status: 400 })
     }
+    // Already posted this LTK link (or product)? Hand it back before writing.
+    const madeKey = partnerKey('ltk', ltkUrl || productName)
+    const made = await partnerAlreadyMade(supabase, user.id, madeKey, body.again)
+    if (made) return made
     if (!productName) {
       return NextResponse.json({ ok: false, error: 'A product name is required (it titles the post).' }, { status: 400 })
     }
@@ -223,6 +228,7 @@ export async function POST(request: NextRequest) {
       status: isDraft ? 'draft' : 'published',
       post_type: 'review',
       wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
+      deal_meta: partnerMeta('ltk', madeKey),
       published_at: isDraft ? null : new Date().toISOString(),
     })
     if (saveErr) {

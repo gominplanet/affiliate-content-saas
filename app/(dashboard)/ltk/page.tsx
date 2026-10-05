@@ -15,6 +15,7 @@ import { LtkGuide } from '@/components/guide/tool-guides'
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const PINK = 'rgba(236,72,153,0.30)' // LTK skews fashion/lifestyle — warmer accent
 
@@ -69,7 +70,7 @@ export default function LtkPage() {
     if (!canSubmit) return
     setBusy(true); setResult(null)
     try {
-      const res = await fetch('/api/ltk/generate', {
+      const res = await fetchUnlessMade('/api/ltk/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -11,6 +11,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { tidyMade, madeLabel, type MadeItem } from '../lib/made-before'
+import { partnerKey } from '../lib/partner-made-before'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const failures: string[] = []
@@ -62,6 +63,24 @@ for (const f of ['components/amazon/PinterestComposer.tsx', 'components/amazon/P
   check(`${f}: offers the design of its own shape`, /<MadeBefore asin=\{resolvedAsin\} only=\{\['design'\]\} formats=/.test(c))
   check(`${f}: no longer saves its design over the 16:9 thumbnail`, !/saveProductImage\(/.test(c))
 }
+
+// ── Partner posts and Photobooth: the same thing is never paid for twice ──
+check('an LTK link keys the same with or without query or trailing slash', partnerKey('ltk', 'https://www.liketk.it/4abc/?x=1') === partnerKey('ltk', 'https://liketk.it/4abc'))
+check('an ASIN keys case-insensitively', partnerKey('levanta', 'b0abc12345') === partnerKey('levanta', 'B0ABC12345'))
+for (const x of ['ltk', 'levanta', 'walmart', 'wayward']) {
+  const r = read(`app/api/${x}/generate/route.ts`)
+  const at = r.indexOf('await partnerAlreadyMade(')
+  check(`${x}: an earlier post for the same product is handed back before writing`, at > 0 && at < r.search(/messages\.create\(|buildCampaignHero\(|createAnthropicClient\(/))
+  check(`${x}: each new post is stamped with its key`, /key: madeKey|partnerMeta\('(ltk|levanta|wayward)', madeKey\)/.test(r))
+}
+const CALLERS = ['app/(dashboard)/ltk/page.tsx', 'app/(dashboard)/wayward/page.tsx', 'app/(dashboard)/partnerboost/page.tsx', 'app/(dashboard)/levanta/page.tsx',
+  'components/partnerboost/PartnerBoostSaved.tsx', 'components/partnerboost/PartnerBoostFinder.tsx', 'components/walmart/WalmartOffers.tsx',
+  'components/levanta/LevantaFinder.tsx', 'components/levanta/LevantaSaved.tsx', 'app/(dashboard)/photobooth/page.tsx']
+for (const f of CALLERS) check(`${f}: asks before paying for a repeat`, /await fetchUnlessMade\('\/api\//.test(read(f)) && !/await fetch\('\/api\/(ltk|levanta|walmart|wayward)\/generate'/.test(read(f)))
+const CL = read('lib/already-made-client.ts')
+check('a kept earlier one comes back as a message saying it was kept', /Kept the post you already have/.test(CL) && /again: true/.test(CL))
+const PB = read('app/api/photobooth/route.ts')
+check('Photobooth hands back a shot of the same face, look and expression', /await findShot\(supabase, user\.id, body\.faceModelId, sKey, eKey\)/.test(PB) && PB.indexOf('await findShot(') < PB.indexOf('generateWithReferences('))
 
 const PAGES: Array<[string, RegExp]> = [
   ['app/(dashboard)/amazon/thumbnails/page.tsx', /<MadeBefore asin=\{normalizeAsinInput\(product\)\}[\s\S]{0,200}onUseImage=/],

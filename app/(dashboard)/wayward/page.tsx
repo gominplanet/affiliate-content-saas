@@ -13,6 +13,7 @@ import {
   Bookmark, BookmarkCheck, FileText, ClipboardList, Tag, ArrowDownWideNarrow, X, Send,
 } from 'lucide-react'
 import WaywardQuickPostModal from '@/components/wayward/WaywardQuickPostModal'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const PURPLE = '#7C3AED'
 
@@ -166,7 +167,7 @@ export default function WaywardPage() {
     setGenAsin(p.asin)
     toast.loading('Writing & publishing…', { id: `gen-${p.asin}` })
     try {
-      const res = await fetch('/api/wayward/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }) })
+      const res = await fetchUnlessMade('/api/wayward/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }) })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Generation failed')
       toast.success('Post published', { id: `gen-${p.asin}`, action: data.wordpressUrl ? { label: 'View', onClick: () => window.open(data.wordpressUrl, '_blank') } : undefined })

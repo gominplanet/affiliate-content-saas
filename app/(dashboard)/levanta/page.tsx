@@ -25,6 +25,7 @@ import {
   ShoppingBag, RefreshCw, Loader2, ExternalLink,
   CheckCircle2, Clock, Lock, Sparkles,
 } from 'lucide-react'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const LEVANTA_DASHBOARD = 'https://app.levanta.io/'
 const CYAN = '#0E7490'
@@ -125,7 +126,7 @@ export default function LevantaPage() {
     setOptionsFor(null)
     setGen((m) => ({ ...m, [p.asin]: { loading: true } }))
     try {
-      const res = await fetch('/api/levanta/generate', {
+      const res = await fetchUnlessMade('/api/levanta/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

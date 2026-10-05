@@ -32,6 +32,7 @@ import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
+import { partnerKey, partnerMeta, partnerAlreadyMade } from '@/lib/partner-made-before'
 import { type Tier, normalizeTier, tierAllowsSocial } from '@/lib/tier'
 import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
@@ -93,6 +94,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as {
       product?: LevantaProductInput
       draft?: boolean
+      again?: boolean
       options?: { format?: 'review' | 'guide' | 'listicle'; length?: 'standard' | 'deep'; heroStyle?: 'scene' | 'photo'; socials?: string[] }
     }
     const opts = body.options || {}
@@ -101,6 +103,9 @@ export async function POST(request: NextRequest) {
     if (!asin || !isValidAsin(asin)) {
       return NextResponse.json({ ok: false, error: 'A valid Amazon ASIN is required.' }, { status: 400 })
     }
+    const madeKey = partnerKey('levanta', asin)
+    const made = await partnerAlreadyMade(supabase, user.id, madeKey, body.again)
+    if (made) return made
     const marketplace = p.marketplace || 'amazon.com'
 
     // ── WordPress creds (decrypted) + live proxy secret ──────────────────────
@@ -289,6 +294,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id, title, slug, content, excerpt,
         status: status === 'draft' ? 'draft' : 'published',
         post_type: 'review', wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
+        deal_meta: partnerMeta('levanta', madeKey),
         published_at: status === 'draft' ? null : new Date().toISOString(),
       }).select('id').single()
       if (bpErr) console.error('[levanta] blog_posts insert failed:', bpErr.message)
