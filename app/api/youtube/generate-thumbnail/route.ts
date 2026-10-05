@@ -1036,7 +1036,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations')
-      .select('tier,subscription_period_start,subscription_period_end,amazon_associates_tag')
+      .select('*') // '*' so limits_cohort (migration 405) is read when present
       .eq('user_id', user.id)
       .single()
     const tier = normalizeTier(tierRow?.tier)
@@ -1532,10 +1532,11 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       else {
         // A lowered cap lands on the member's NEXT billing window (effectiveCap).
         const winStart = billingWindow({ periodStart: tierRow?.subscription_period_start ?? null, periodEnd: tierRow?.subscription_period_end ?? null }).startISO
-        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart); capFeatures = ['amazon_pin']; capLabel = 'pins' }
-        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
-        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
-        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+        const cohort = (tierRow as { limits_cohort?: string | null } | null)?.limits_cohort
+        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart, cohort); capFeatures = ['amazon_pin']; capLabel = 'pins' }
+        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart, cohort); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
+        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart, cohort); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
+        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart, cohort); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
       }
       // A ZERO allowance is not a used-up allowance. Creator can now open the
       // Amazon hub (its Thumbnail Generator and Research run on Creator's own

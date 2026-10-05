@@ -506,10 +506,12 @@ export const TIERS = {
      *  the Amazon tier that is expected and this is the backstop. A real Pro
      *  writes about 30 posts a month, not 100. */
     monthlyAiSpendCeilingUsd: 130 as number | null,
-    /** Shared counter of generations a month (200 -> 100 on 2026-06-14,
-     *  100 -> 60 on 2026-10-05). At the measured $0.69 a post, the full
-     *  allowance is about $41. */
-    postsPerMonth: 60,
+    /** Shared counter of generations a month (200 -> 100 on 2026-06-14).
+     *  Briefly 60 on 2026-10-05, then back to 100 the same day (Seb): the
+     *  extra 40 posts cost $27.60 maxed (40 x $0.69 measured), paid for by
+     *  Find moments moving from 10 a day to 60 a month (lib/find-moments-limit),
+     *  which saves $48 maxed. */
+    postsPerMonth: 100,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
     // Pro must be a superset of Amazon on EVERY cap under the two-plan
@@ -566,7 +568,7 @@ export const TIERS = {
     topicHubs: true,
     refreshImages: true,
     rebuildFromVideo: true,
-    basePosts: 60,
+    basePosts: 100,
     bonusPosts: 0,
     /** Pro multi-site: up to 10 WP sites. */
     sites: 10,
@@ -803,33 +805,48 @@ export function allowedGenerationsPerMonth(tier: Tier): number | null {
 // The 2026-10-05 changes (Seb: price on a fully used plan) skipped that rule,
 // and a Pro member 54 generations into his month watched his cap drop from
 // 100 to 60 overnight. These are the values each lowered cap had before.
-// Self-expiring: once every window that began before CAP_STEPDOWN_ISO has
-// rolled over (by about 2026-11-06), this table can be emptied.
+// Seb, same day: Pro members from before the change keep the old caps for
+// good (LEGACY_PRO_COHORT below), so the Pro row here is permanent. The other
+// rows only matter until every window that began before CAP_STEPDOWN_ISO has
+// rolled over (by about 2026-11-06).
 export const CAP_STEPDOWN_ISO = '2026-10-06T00:00:00.000Z'
 export type SteppedCap =
   | 'postsPerMonth' | 'thumbnailsPerMonth' | 'pinsPerMonth' | 'igPostsPerMonth'
   | 'facebookPostsPerMonth' | 'assistantMessagesPerMonth' | 'collabsPerMonth' | 'xPostsPerMonth'
 const PREV_CAPS: Partial<Record<Tier, Partial<Record<SteppedCap, number>>>> = {
-  pro: { postsPerMonth: 100, thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100 },
+  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100 },
   amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, facebookPostsPerMonth: 120, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
 }
 
-/** The cap in force for a billing window that began at windowStartISO: the
- *  previous (higher) cap when the window predates the step-down, else the
- *  current one. `current` is the cap the caller would otherwise use (the
- *  TIERS value, or X_MONTHLY_CAP for X). Pure. */
-export function effectiveCap(tier: Tier, key: SteppedCap, current: number | null, windowStartISO: string | null | undefined): number | null {
+/** Pro members who were on Pro before the 2026-10-05 change keep these caps
+ *  for good (Seb, 2026-10-05). Migration 405 marks them in
+ *  integrations.limits_cohort. */
+export const LEGACY_PRO_COHORT = 'pro-before-2026-10-06'
+
+/** The cap in force for this member and this billing window. `current` is the
+ *  cap the caller would otherwise use (the TIERS value, or X_MONTHLY_CAP for
+ *  X). The older, higher cap applies when:
+ *    - the member is a Pro member from before the change (cohort), for good, or
+ *    - the billing window began before the change (anyone else, this window only).
+ *  `cohort` is integrations.limits_cohort; read the row with select('*') so a
+ *  database without migration 405 simply has none. Pure. */
+export function effectiveCap(
+  tier: Tier, key: SteppedCap, current: number | null,
+  windowStartISO: string | null | undefined, cohort?: string | null,
+): number | null {
   if (current === null) return null
-  const prev = PREV_CAPS[normalizeTier(tier)]?.[key]
-  if (prev != null && windowStartISO && windowStartISO < CAP_STEPDOWN_ISO && prev > current) return prev
+  const t = normalizeTier(tier)
+  const prev = PREV_CAPS[t]?.[key]
+  if (prev == null || prev <= current) return current
+  if (t === 'pro' && cohort === LEGACY_PRO_COHORT) return prev
+  if (windowStartISO && windowStartISO < CAP_STEPDOWN_ISO) return prev
   return current
 }
 
-/** The generation cap in force for a billing window that began at
- *  windowStartISO (see effectiveCap). */
-export function effectivePostCap(tier: Tier, windowStartISO: string): number | null {
+/** The generation cap in force (see effectiveCap). */
+export function effectivePostCap(tier: Tier, windowStartISO: string, cohort?: string | null): number | null {
   const t = normalizeTier(tier)
-  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO)
+  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO, cohort)
 }
 
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
@@ -1051,7 +1068,7 @@ export async function checkUsageLimit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await supabase
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' so limits_cohort (migration 405) is read when present
     .eq('user_id', userId)
     .single()
 
@@ -1074,9 +1091,8 @@ export async function checkUsageLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // Transitional: users keep their pre-2026-06-14 cap until their current
-  // billing window rolls over (see effectivePostCap).
-  const monthlyCap = effectivePostCap(tier, startISO)
+  // Lowered caps: current Pro members keep theirs, others from next window.
+  const monthlyCap = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
 
   // The RPC's bigint params can't be null; null in our tier config means
   // "no cap" (admin). Coerce to a number bigger than any real monthly
@@ -1362,7 +1378,7 @@ export async function checkGenerationLimit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await supabase
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' so limits_cohort (migration 405) is read when present
     .eq('user_id', userId)
     .single()
   const tier = normalizeTier(ig?.tier)
@@ -1377,7 +1393,7 @@ export async function checkGenerationLimit(
 
   // A lowered cap lands on the next billing window, never mid-cycle (see
   // effectiveCap).
-  const limit = effectivePostCap(tier, startISO)
+  const limit = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
   // null = unlimited (admin only — handled above; this is a safety net).
   if (limit === null) return { allowed: true }
 

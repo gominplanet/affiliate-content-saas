@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: intRow }, { data: brand }] = await Promise.all([
-      supabase.from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', ownerId).single(),
+      supabase.from('integrations').select('*').eq('user_id', ownerId).single(), // '*' reads limits_cohort (migration 405) when present
       supabase.from('brand_profiles').select('*').eq('user_id', ownerId).single(),
     ])
     const tier = normalizeTier(intRow?.tier)
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
     })
     // A lowered cap lands on the member's NEXT billing window (effectiveCap).
-    const collabCap = effectiveCap(tier, 'collabsPerMonth', TIERS[tier].collabsPerMonth, startISO)
+    const collabCap = effectiveCap(tier, 'collabsPerMonth', TIERS[tier].collabsPerMonth, startISO, (intRow as Record<string, unknown> | null)?.limits_cohort as string | null)
     if (collabCap !== null) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { count } = await supabase

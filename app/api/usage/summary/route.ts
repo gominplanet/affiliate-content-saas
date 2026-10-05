@@ -56,7 +56,7 @@ export async function GET() {
   const sb = supabase as any
   const { data: ig } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end,legacy_creator_newsletter')
+    .select('*') // '*' reads limits_cohort (migration 405) when present
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -131,7 +131,8 @@ export async function GET() {
   const refPlan = isAdminPreview ? TIERS.amazon : plan
   // The cap in force for THIS window: a cap lowered after the window began
   // still shows (and is enforced at) its old value until the next one.
-  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO))
+  const cohort = (ig?.limits_cohort as string | null | undefined) ?? null
+  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO, cohort))
   const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
 
   try {
@@ -154,7 +155,7 @@ export async function GET() {
       // tier (no count cap), and metadata has its OWN cap, shown as its own
       // bucket below. Before, the meter summed all three and over-reported —
       // a user could see "20/20" while the real blog gate still had room.
-      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
+      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig?.limits_cohort as string | null | undefined) ?? null)
       const blog = await countRows('blog_posts', 'published_at')
       push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog, genLimit)
       // Thumbnails are their OWN enforced cap on every tier (shared by co-pilot

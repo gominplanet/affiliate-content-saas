@@ -33,7 +33,7 @@ export async function GET() {
   const sb = supabase as any
   const { data: ig } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' reads limits_cohort (migration 405) when present
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -47,7 +47,7 @@ export async function GET() {
   })
   // Trial → lifetime allowance (count everything). Paid → grandfather-aware
   // monthly cap counted within the billing window. Admin → effectivePostCap null.
-  const limit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
+  const limit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
   const windowStart = lifetime ? null : startISO
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

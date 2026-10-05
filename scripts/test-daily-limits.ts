@@ -13,14 +13,16 @@
  */
 import { readFileSync } from 'node:fs'
 import { utcDayStart, PARTNER_POSTS_PER_DAY } from '../lib/partner-post-limit'
-import { FIND_MOMENTS_PER_DAY } from '../lib/find-moments-limit'
+import { FIND_MOMENTS_PER_MONTH, FIND_MOMENTS_PER_DAY_LEGACY, findMomentsAllowance } from '../lib/find-moments-limit'
+import { LEGACY_PRO_COHORT } from '../lib/tier'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
 
 check('one partner post a day', PARTNER_POSTS_PER_DAY === 1)
-check('ten Find moments a day', FIND_MOMENTS_PER_DAY === 10)
+check('new members: 60 Find moments a month', FIND_MOMENTS_PER_MONTH === 60 && findMomentsAllowance(null).per === 'month')
+check('Pro members from before: 10 a day, kept for good', FIND_MOMENTS_PER_DAY_LEGACY === 10 && findMomentsAllowance(LEGACY_PRO_COHORT).per === 'day')
 check('the day starts at midnight UTC', utcDayStart(new Date('2026-10-05T23:59:00-07:00')).toISOString() === '2026-10-06T00:00:00.000Z')
 
 const P = read('lib/partner-post-limit.ts')
@@ -60,4 +62,4 @@ if (failures.length) {
   console.error('❌ daily-limits guard failed:\n  - ' + failures.join('\n  - '))
   process.exit(1)
 }
-console.log('✓ daily-limits guard passed (1 partner post, 10 Find moments a day; assistant prompt cached)')
+console.log('✓ daily-limits guard passed (1 partner post a day, Find moments 60 a month or 10 a day for earlier Pro members; assistant prompt cached)')
