@@ -44,7 +44,7 @@ export default function AdminCcImportPage() {
   const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
   const [backfillDone, setBackfillDone] = useState(false)
   // Server-side background drain (cron): status + start/stop.
-  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean } | null>(null)
+  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean; hidden?: number; hideSkipped?: string } | null>(null)
   const [bgStarting, setBgStarting] = useState(false)
   // One-click auto-load: SCOUT downloads Amazon's two exports itself (no manual
   // ZIP download + upload).
@@ -127,6 +127,22 @@ export default function AdminCcImportPage() {
       setErr(e instanceof Error ? e.message : 'Could not start the background merge.')
     } finally { setBgStarting(false) }
   }, [bgStarting, loadCounts, addOnly])
+
+  // Mark campaigns missing from the upload already merged as full (cron +
+  // migration 403). Nothing is deleted; a later upload or live refresh reopens.
+  const hideMissing = useCallback(async () => {
+    if (bgStarting) return
+    setBgStarting(true); setErr(null)
+    try {
+      const r = await fetch('/api/admin/import-cc-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'hide-missing', addOnly: true, confirm: true }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not start hiding the missing campaigns.')
+      toast.success(d.message || 'Hiding campaigns missing from this upload in the background.')
+      await loadCounts()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start hiding the missing campaigns.')
+    } finally { setBgStarting(false) }
+  }, [bgStarting, loadCounts])
 
   const stopBackground = useCallback(async () => {
     try {
@@ -456,6 +472,14 @@ export default function AdminCcImportPage() {
           style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        {addOnly && counts?.hasStaged && !drain?.active && (
+          <button onClick={hideMissing} disabled={merging || bgStarting}
+            title="Mark campaigns that are not in this upload as full. Nothing is deleted."
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            Hide campaigns missing from this upload
+          </button>
+        )}
       </div>
 
       {/* Background-drain status — the cron owns the work; the tab can be closed. */}
@@ -464,14 +488,18 @@ export default function AdminCcImportPage() {
           <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-              {drain.phase === 'purge'
+              {drain.phase === 'hide' || (drain.phase === 'purge' && drain.mode === 'add-only')
+                ? 'Marking campaigns missing from this upload as full. Nothing is deleted. You can close this tab.'
+                : drain.phase === 'purge'
                 ? 'Merge done, cleaning up campaigns that fell out of the CSV. You can close this tab.'
                 : drain.mode === 'add-only'
                   ? 'Adding in the background, removing nothing. You can close this tab.'
                   : 'Merging in the background. You can close this tab.'}
             </p>
             <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              {drain.phase === 'purge'
+              {drain.phase === 'hide' || (drain.phase === 'purge' && drain.mode === 'add-only')
+                ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> catalogue campaigns, marked <b>{Number(drain.hidden ?? 0).toLocaleString()}</b> full. Amazon&rsquo;s export leaves out campaigns that can no longer be joined; any that come back in a later upload reopen by themselves.</>
+                : drain.phase === 'purge'
                 ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> campaigns{typeof drain.purged === 'number' && drain.purged > 0 ? `, removed ${drain.purged.toLocaleString()}` : ''}. This final sweep walks the whole catalog once (a few minutes) — most stay, so the number to watch is &ldquo;Checked&rdquo;, not &ldquo;removed&rdquo;.</>
                 : <>Merged <b>{Number(drain.upserted ?? 0).toLocaleString()}</b> so far. A cron continues every minute until done. Staged / Live counts above update live.</>}
             </p>
@@ -491,7 +519,11 @@ export default function AdminCcImportPage() {
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
             <b style={{ color: '#1f8a3a' }}>Background merge finished.</b>{' '}
             {drain.purgeSkipped === true || drain.mode === 'add-only'
-              ? 'Nothing was removed: add-only was ticked, so campaigns missing from the upload were left alone. '
+              ? typeof drain.hidden === 'number' && !drain.hideSkipped
+                ? `Nothing was removed. ${drain.hidden.toLocaleString()} campaigns missing from the upload were marked full, so they no longer show open spots; any that come back in a later upload reopen. `
+                : drain.hideSkipped
+                  ? `Nothing was removed. Campaigns missing from the upload were NOT marked full (${drain.hideSkipped}), so they still show their old spot counts. `
+                  : 'Nothing was removed: add-only was ticked, so campaigns missing from the upload were left alone. '
               : typeof drain.purged === 'number' && drain.purged > 0
                 ? `Removed ${drain.purged.toLocaleString()} fallen-out campaigns. `
                 : 'The cleanup sweep ran and found nothing to remove. '}

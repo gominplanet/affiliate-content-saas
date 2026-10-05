@@ -14,6 +14,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { liveSpotTerms } from '../lib/cc-live-spots'
+import { ccShouldHideMissing, describeCcMergeOutcome } from '../lib/cc-merge-mode'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const failures: string[] = []
@@ -58,6 +59,20 @@ check('Smart-Scan refreshes live spots for what it scanned and shows the outcome
 const IL = read('app/api/campaigns/ingest-live/route.ts')
 check('ingest-live no longer writes the generated rep_asin or a missing updated_at', !/rep_asin:/.test(IL) && !/updated_at:/.test(IL))
 check('a field Amazon left out keeps its value; rows that cannot be stored are skipped, counted', /if \(empty && old\[k\] != null\) m\[k\] = old\[k\]/.test(IL) && /skipped\+\+/.test(IL) && /return NextResponse\.json\(\{ ok: true, upserted, skipped, failed, nowFull \}\)/.test(IL))
+
+// ── Campaigns missing from Amazon's export are marked full, never deleted ─────
+{
+  check('a real export hides what it left out; a partial upload or replace mode does not', ccShouldHideMissing('add-only', 352257) && !ccShouldHideMissing('add-only', 40000) && !ccShouldHideMissing('add-only', null) && !ccShouldHideMissing('replace', 900000))
+  const M = read('supabase/migrations/403_cc_hide_missing.sql')
+  check('migration 403 sets open spots to 0 on rows not in staging, and deletes nothing', /SET available_slot = 0/.test(M) && /c\.available_slot > 0/.test(M) && /NOT EXISTS \(\s*SELECT 1 FROM cc_campaign_catalog_import/.test(M) && !/DELETE/i.test(M.replace(/--[^\n]*/g, '')))
+  const D = read('app/api/cron/drain-cc-import/route.ts')
+  check('the background drain runs the hide pass after an add-only merge, and says when it skipped it', /phase = 'hide'/.test(D) && /rpc\('hide_cc_missing_cursor'/.test(D) && /hideSkipped: 'run migration 403'/.test(D) && /'upload looks partial'/.test(D))
+  const A = read('app/api/admin/import-cc-catalog/route.ts')
+  check('a foreground add-only merge hands off to the hide pass; "hide missing" works on the merged upload', /if \(ccShouldHideMissing\(mode, stagedNow\)\)/.test(A) && /mode === 'hide-missing'/.test(A))
+  const P = read('app/(dashboard)/admin/cc-import/page.tsx')
+  check('the admin page shows how many were marked full, or that it was skipped and why', /Hide campaigns missing from this upload/.test(P) && /campaigns missing from the upload were marked full/.test(P) && /were NOT marked full/.test(P))
+  check('the merge result says the hide is running', /being marked full in the background/.test(describeCcMergeOutcome({ mode: 'add-only', upserted: 10, purged: 0, hiding: true })))
+}
 
 if (failures.length) {
   console.error('❌ cc-full guard failed:\n  - ' + failures.join('\n  - '))
