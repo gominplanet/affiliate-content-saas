@@ -102,7 +102,38 @@ export async function GET() {
     kind: p.kind, title: p.title, groupPostUrl: p.group_post_url, pagePostUrl: p.page_post_url, at: p.created_at,
   }))
 
-  return NextResponse.json({ ok: true, on: true, recorded, reviews, clips, videos, history, disclaimer: (brand?.affiliate_disclaimer as string | null) ?? null })
+  // IN THE GROUP, NOT ON THE PAGE YET: Group posts whose Page post never went
+  // out (Facebook refused it, the tab closed, an older SCOUT). Newest first, one
+  // per Group post, and gone once any push for that Group post reached the Page.
+  const onPage = new Set(pushes.filter((p) => p.group_post_url && p.page_post_url).map((p) => p.group_post_url as string))
+  const seenGroupPost = new Set<string>()
+  const pending = pushes.filter((p) => {
+    const g = p.group_post_url
+    if (!g || p.page_post_url || onPage.has(g) || seenGroupPost.has(g)) return false
+    seenGroupPost.add(g)
+    return true
+  }).slice(0, 25)
+  // The thumbnail a review's Page post carries: its video's, when it has one.
+  const blogIds = pending.filter((p) => p.kind === 'blog' && p.source_id).map((p) => p.source_id as string)
+  const thumbs = new Map<string, string>()
+  if (blogIds.length) {
+    const { data: bp } = await db.from('blog_posts').select('id,video_id').eq('user_id', user.id).in('id', blogIds)
+    const vids = ((bp ?? []) as Array<{ id: string; video_id: string | null }>).filter((r) => r.video_id)
+    if (vids.length) {
+      const { data: vv } = await db.from('youtube_videos').select('id,thumbnail_url').eq('user_id', user.id).in('id', vids.map((r) => r.video_id))
+      const t = new Map(((vv ?? []) as Array<{ id: string; thumbnail_url: string | null }>).map((v) => [v.id, v.thumbnail_url]))
+      for (const r of vids) { const u = t.get(r.video_id as string); if (u) thumbs.set(r.id, u) }
+    }
+  }
+  const unfinished = pending.map((p) => ({
+    kind: p.kind, title: p.title, sourceId: p.source_id, videoId: p.video_id, groupUrl: p.group_url,
+    groupPostUrl: p.group_post_url as string, at: p.created_at,
+    // A clip's Page Reel needs the clip itself: its address is the source id.
+    clipUrl: p.kind === 'clip' && p.source_id && /^https:\/\//i.test(p.source_id) ? p.source_id : null,
+    imageUrl: p.kind === 'blog' && p.source_id ? thumbs.get(p.source_id) ?? null : null,
+  }))
+
+  return NextResponse.json({ ok: true, on: true, recorded, reviews, clips, videos, history, unfinished, disclaimer: (brand?.affiliate_disclaimer as string | null) ?? null })
 }
 
 export async function POST(req: Request) {
@@ -110,7 +141,8 @@ export async function POST(req: Request) {
   if ('res' in g) return g.res
   const { user, admin } = g
   const b = await req.json().catch(() => ({})) as Record<string, unknown>
-  const kind = b.kind === 'blog' || b.kind === 'clip' ? b.kind : null
+  // 'post': a Group post made outside MVP, shared on the Page from Meta Hub.
+  const kind = b.kind === 'blog' || b.kind === 'clip' || b.kind === 'post' ? b.kind : null
   if (!kind) return NextResponse.json({ error: 'Which kind of post?' }, { status: 400 })
   const str = (v: unknown, n = 500) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null)
   const fb = (v: unknown) => { const s = str(v); return s && /^https:\/\/(www\.|web\.|m\.)?facebook\.com\//i.test(s) ? s : null }

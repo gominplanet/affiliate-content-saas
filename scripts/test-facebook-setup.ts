@@ -85,7 +85,7 @@ check('creators with no Group are nudged to set one up', /Set up your deals Grou
 check('Social Push turns it on with the Labs switch', /groupFirst: canUsePreview\('facebook_setup', userTier\)/.test(read('app/(dashboard)/content/page.tsx')))
 
 // ── The Meta page and its switch ────────────────────────────────────────────
-check('one switch, admin while tested', /facebook_setup: 'admin'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
+check('one switch, open to Pro first', /facebook_setup: 'labs'/.test(read('lib/labs-preview.ts')) && /export function facebookSetupEnabled/.test(read('lib/facebook-link-budget.ts')))
 check('the setup route only accepts real Group links', /isFacebookGroupLink/.test(read('app/api/facebook/setup/route.ts')))
 const page = read('app/(dashboard)/meta/page.tsx')
 check('the Meta page says how Facebook works in plain words', /Your Group holds the link\. Your Page points to it\./.test(page))
@@ -217,6 +217,18 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('connecting the Page comes back to Meta Hub', /\/api\/auth\/facebook\?return=meta/.test(page) && /searchParams\.get\('return'\) === 'meta'/.test(read('app/api/auth/facebook/route.ts')) && /fb_return'\)\?\.value === 'meta' \? `\$\{appUrl\}\/meta\?fb_connected=1`/.test(read('app/api/auth/facebook/callback/route.ts')))
   check('Meta Hub never navigates away: every other link opens a new tab', !/<Link /.test(page) && (page.match(/<a href="\/(?!api\/auth\/facebook\?return=meta)[^"]*"(?![^>]*target="_blank")/g) ?? []).length === 0)
   check('coming back to the tab refreshes the Page, Groups, SCOUT and posts', /const onFocus = \(\) => \{\s*void load\(\); void loadHub\(\)\s*requestFacebookAccess\(false\)/.test(page))
+}
+
+// ── Pro first, and Group posts left without their Page post ──────────────
+{
+  check('Meta Hub opens to Pro on the same switch as Social Push', /label: 'Meta Hub', gate: previewOpenToPro\('facebook_setup'\) \? isPro : isAdmin/.test(read('components/layout/DashboardShellV2.tsx')) && /canUsePreview\('facebook_setup', tier\)/.test(page) && !/tier !== 'admin'\) router\.replace/.test(page))
+  const hubR = read('app/api/facebook/hub/route.ts')
+  check('the hub lists Group posts whose Page post never went out, one per post, gone once it did', /const onPage = new Set/.test(hubR) && /if \(!g \|\| p\.page_post_url \|\| onPage\.has\(g\) \|\| seenGroupPost\.has\(g\)\) return false/.test(hubR))
+  const U = read('components/meta/UnfinishedGroupPosts.tsx')
+  check('one press finishes each: review to a Page post, clip to a Page Reel, both recorded', /\/api\/blog\/facebook-group-teaser/.test(U) && /\/api\/clip-factory\/facebook-reel/.test(U) && /Get it here 👉 \$\{it\.groupPostUrl\}/.test(U) && (U.match(/await record\(/g) ?? []).length >= 3)
+  check('a Group post made outside MVP can be pasted and shared', /Posted in a Group outside MVP\? Share it on your Page/.test(U) && /kind: 'post'/.test(U) && /b\.kind === 'post'/.test(hubR))
+  check('a failure stays on screen with its reason', /phase: 'failed', text: e instanceof Error \? e\.message/.test(U))
+  check('Meta Hub shows it', /<UnfinishedGroupPosts items=\{hub\.unfinished \?\? \[\]\}/.test(page))
 }
 
 if (failures.length) {

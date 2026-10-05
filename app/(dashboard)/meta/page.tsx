@@ -24,11 +24,13 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Check, Loader2, FlaskConical, Trash2, ExternalLink, ShieldCheck, ChevronDown, Pencil } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canUsePreview } from '@/lib/labs-preview'
 import { requestFacebookAccess } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 import ClipFactory from '@/components/clip-factory/ClipFactory'
 import LaunchKit from '@/components/launch-kit/LaunchKit'
+import UnfinishedGroupPosts, { type UnfinishedPost } from '@/components/meta/UnfinishedGroupPosts'
 import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
@@ -39,6 +41,8 @@ type Hub = {
   clips: Array<Place & { id: string; title: string; videoId: string; videoTitle: string | null; url: string; seconds: number; createdAt: string }>
   videos: Array<{ id: string; title: string; thumbnailUrl: string | null; publishedAt: string | null }>
   history: Array<{ kind: string; title: string | null; groupPostUrl: string | null; pagePostUrl: string | null; at: string }>
+  /** Group posts whose Page post never went out (app/api/facebook/hub). */
+  unfinished?: UnfinishedPost[]
   disclaimer: string | null
 }
 
@@ -98,9 +102,11 @@ function Step({ n, title, done, summary, open, onToggle, children }: {
 export default function MetaHubPage() {
   const tier = useEffectiveTier()
   const router = useRouter()
-  // Admin while it is tested (lib/labs-preview facebook_setup).
-  useEffect(() => { if (tier !== null && tier !== 'admin') router.replace('/dashboard') }, [tier, router])
-  if (tier !== 'admin') return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
+  // Pro and admin (lib/labs-preview facebook_setup, the same switch as the
+  // Group-first post in Social Push).
+  const open = tier !== null && canUsePreview('facebook_setup', tier)
+  useEffect(() => { if (tier !== null && !canUsePreview('facebook_setup', tier)) router.replace('/dashboard') }, [tier, router])
+  if (!open) return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
   return <MetaHub />
 }
 
@@ -504,6 +510,11 @@ function MetaHub() {
         ))}
         {!groupDone && hub && <p className="text-[12px]" style={{ color: WARN }}>Save a Group in step 2 first: every review puts its link in a Group.</p>}
       </Step>
+
+      {/* IN THE GROUP, NOT ON THE PAGE YET: finish each in one press. */}
+      {hub && hub.recorded && (
+        <UnfinishedGroupPosts items={hub.unfinished ?? []} groups={s.groups} pageName={s.page?.name ?? null} onDone={() => { void loadHub() }} />
+      )}
 
       {/* WHAT WENT OUT */}
       {hub && hub.history.length > 0 && (

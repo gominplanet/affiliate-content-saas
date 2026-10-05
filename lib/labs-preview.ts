@@ -57,11 +57,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // so an upload costs nothing from the shared daily quota. Admin only while
   // it is tested (Seb, 2026-10-02: "we need to rely on scout").
   studio_upload: 'admin',
-  // Facebook setup: one page for Page, Group and SCOUT, and MVP counting the
-  // Page's outside-link posts against Meta's monthly limit. Admin while it is
-  // tested (Seb, 2026-10-03: "both plans go ahead"); then it opens to Amazon
-  // and Pro alike through facebookSetupEnabled, not to Pro alone.
-  facebook_setup: 'admin',
+  // Meta Hub (Page, niche Groups, SCOUT, Reels, reviews) and the Group-first
+  // Facebook post in Social Push, one switch for both. Open to Pro first (Seb,
+  // 2026-10-05: "pro first"); the Amazon plan keeps the direct Page post.
+  facebook_setup: 'labs',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {
