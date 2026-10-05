@@ -11,6 +11,7 @@
  * change from the user's side.
  */
 
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import type { Metadata } from 'next'
 import { freeTrialHighlights } from '@/lib/free-trial'
 import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send } from 'lucide-react'
@@ -318,6 +319,9 @@ export default async function PricingPage({
           </div>
         )
       })()}
+
+      {/* Prices go up for new members on November 1; the lock and countdown. */}
+      <PriceLockCountdown className="mb-8" />
 
       <div id="plans" className={`grid gap-5 w-full mx-auto scroll-mt-8 items-start ${PLAN_GRID[plans.length] ?? PLAN_GRID[4]}`}>
         {plans.map((plan) => (

@@ -230,7 +230,7 @@
     "test:post-site": "tsx scripts/test-post-site.ts",
     "test:graduated": "tsx scripts/test-graduated.ts",
     "test:nav-by-job": "tsx scripts/test-nav-by-job.ts",
-    "test:new-member-prices": "tsx scripts/test-new-member-prices.ts && NEXT_PUBLIC_NEW_MEMBER_PRICES=on tsx scripts/test-new-member-prices.ts"
+    "test:new-member-prices": "tsx scripts/test-new-member-prices.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

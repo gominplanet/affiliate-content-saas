@@ -155,7 +155,10 @@ const days = (n: number) => n * 24 * 60 * 60 * 1000
     /export const ANNUAL_PRICE_ID_LIST/.test(STRIPE),
     'PRICE_IDS takes the FIRST id as what a new buyer pays; an annual id in front of it would charge everybody a year up front')
   check('there is an honest answer for a tier with no annual price',
-    /export function annualPriceIdFor/.test(STRIPE) && /list\.length > 0 \? list\[0\]! : null/.test(STRIPE))
+    // Since the November 1 change it asks newBuyerPriceId, which answers null
+    // when no id is set for that tier and interval (before or after the date).
+    /export function annualPriceIdFor\(tier: string\): string \| null \{\s*return newBuyerPriceId\(tier, 'year'\)/.test(STRIPE)
+      && /return NEW_PRICE_ID_LIST\[tier\]\[interval\]\[0\] \?\? null/.test(STRIPE) && /return list\?\.\[0\] \?\? null/.test(STRIPE))
 }
 
 // ── checkout charges yearly only when yearly exists ─────────────────────────

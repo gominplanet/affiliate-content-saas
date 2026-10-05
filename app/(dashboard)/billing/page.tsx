@@ -7,7 +7,7 @@ import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
-import { TIERS, normalizeTier, SELLABLE_TIERS, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
 
 export default function BillingPage() {
@@ -33,7 +33,7 @@ export default function BillingPage() {
   // What this member is really charged, from their live Stripe subscription.
   // Members who joined before a price change keep their old price, so the
   // new-member price in lib/tier is never shown as theirs.
-  const [paying, setPaying] = useState<{ amountUsd: number; interval: 'month' | 'year' } | null>(null)
+  const [paying, setPaying] = useState<{ amountUsd: number; interval: 'month' | 'year'; lockedIn?: boolean } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -176,7 +176,9 @@ export default function BillingPage() {
     limit: (TIERS[t].postsPerMonth ?? 0) > 0
       ? `${TIERS[t].postsPerMonth} posts / month`
       : `${TIERS[t].thumbnailsPerMonth} designs / month`,
-    price: TIERS[t].price,
+    // A member who joined before the November 1 change switches plans at the
+    // price they locked in, which is what checkout charges them (lib/stripe).
+    price: paying?.lockedIn && (t === 'amazon' || t === 'pro') ? PRICES_BEFORE[t].month : TIERS[t].price,
     regularPrice: TIERS[t].regularPrice,
   }))
 

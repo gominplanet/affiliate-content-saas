@@ -8,6 +8,7 @@
 // Route is /amazon-influencer (NOT /amazon) on purpose: /amazon/* is the
 // in-dashboard tool group, and a public /amazon page would collide with it.
 
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import NextImage from 'next/image'
@@ -87,6 +88,9 @@ const OTHER_TIERS = SELLABLE_TIERS
   .filter((t) => t !== 'amazon' && OTHER_BLURBS[t])
   .map((t) => ({ name: TIERS[t].label, price: `$${TIERS[t].price}`, blurb: OTHER_BLURBS[t] as string }))
 
+// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+export const revalidate = 600
+
 export default function AmazonInfluencerPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-[#0b0b0d] text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -151,6 +155,8 @@ export default function AmazonInfluencerPage() {
             <span className="line-through">${AMZ.regularPrice}</span> · save ${AMZ_SAVING} for life
           </p>
           {SALES_PAUSED && <p className="mt-4 text-sm text-[#ff9500]">{SALES_PAUSED_MESSAGE}</p>}
+          {/* Prices go up for new members on November 1; the lock and countdown. */}
+          <PriceLockCountdown className="mt-8 text-left" />
         </div>
       </section>
 

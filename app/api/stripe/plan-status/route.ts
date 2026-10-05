@@ -16,7 +16,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe } from '@/lib/stripe'
+import { getStripe, isLockedInPrice } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 
 export async function GET() {
@@ -35,8 +35,10 @@ export async function GET() {
     const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 })
     const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
     const livePrice = live?.items?.data?.[0]?.price
+    // lockedIn: on a price from before the November 1 change, so plan changes
+    // keep that price level (lib/stripe planChangePriceId).
     const paying = livePrice?.unit_amount != null
-      ? { amountUsd: livePrice.unit_amount / 100, interval: livePrice.recurring?.interval === 'year' ? 'year' : 'month' }
+      ? { amountUsd: livePrice.unit_amount / 100, interval: livePrice.recurring?.interval === 'year' ? 'year' : 'month', lockedIn: isLockedInPrice(livePrice.id) }
       : null
     if (!live?.schedule) return NextResponse.json({ pendingDowngrade: null, paying })
 

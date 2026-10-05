@@ -16,7 +16,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, planChangePriceId } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -41,9 +41,12 @@ export async function POST(request: NextRequest) {
     const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
     const item = live?.items.data[0]
     if (!live || !item) return NextResponse.json({ kind: 'new' })
-    if (item.price?.id === priceId) return NextResponse.json({ kind: 'same' })
+    // Same price checkout would use: a member from before the November 1
+    // change keeps that price level on the other plan (lib/stripe).
+    const changePriceId = planChangePriceId(tier, item.price?.recurring?.interval === 'year' ? 'year' : 'month', item.price?.id) ?? priceId
+    if (item.price?.id === changePriceId) return NextResponse.json({ kind: 'same' })
 
-    const newPrice = await stripe.prices.retrieve(priceId)
+    const newPrice = await stripe.prices.retrieve(changePriceId)
     const nextPrice = (newPrice.unit_amount ?? 0) / 100
     const isUpgrade = (newPrice.unit_amount ?? 0) > (item.price?.unit_amount ?? 0)
 
@@ -68,7 +71,7 @@ export async function POST(request: NextRequest) {
         customer: customerId,
         subscription: live.id,
         subscription_details: {
-          items: [{ id: item.id, price: priceId }],
+          items: [{ id: item.id, price: changePriceId }],
           proration_behavior: 'always_invoice',
           proration_date: Math.floor(Date.now() / 1000),
         },

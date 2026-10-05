@@ -29,6 +29,7 @@
 // of them understating the plan, and scripts/test-sales-page-facts exists
 // because of it.
 
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import type { Metadata } from 'next'
 import NextImage from 'next/image'
 import {
@@ -141,6 +142,9 @@ const FAQ: { q: string; a: string }[] = [
   },
 ]
 
+// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+export const revalidate = 600
+
 export default function RunYourStorefrontPage() {
   const hasProof = TESTIMONIALS.length > 0
   return (
@@ -172,6 +176,8 @@ export default function RunYourStorefrontPage() {
             <Cta />
             <CtaSubtext />
           </div>
+          {/* Prices go up for new members on November 1; the lock and countdown. */}
+          <PriceLockCountdown tone="light" className="mt-10 text-left" />
         </div>
       </section>
 

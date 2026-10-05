@@ -17,6 +17,7 @@
  * advertised number stops matching the one the server enforces.
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { TIERS } from '@/lib/tier'
 import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
@@ -104,6 +105,9 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--accent-text' as string]: '#7C3AED',
 }
 
+
+// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+export const revalidate = 600
 
 export default function LandingPreview() {
   // Light mode only — bright, high-contrast sales page. Sections that need
@@ -339,6 +343,8 @@ function PricingSection() {
         style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.22) 0%, rgba(192,38,211,0.10) 45%, transparent 70%)' }}
       />
       <div className="max-w-6xl mx-auto relative">
+        {/* Prices go up for new members on November 1; the lock and countdown. */}
+        <PriceLockCountdown tone="dark" className="mb-10" />
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
