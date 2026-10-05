@@ -272,6 +272,13 @@ export const TIERS = {
   // (nextTierFor), so it never appears as an upgrade target for a blog or
   // script cap. Blog is the reason to buy Pro.
   amazon:  {
+    // MAXED-OUT COST (2026-10-05, Seb). A plan must cost less than its price when
+    // ONE user uses every allowance to the full, not on average. Lowered:
+    // thumbnails 250 -> 200, designs 420 -> 320 (pins 115, IG 115, FB 90, the old
+    // proportions), assistant 600 -> 300, collabs 60 -> 30. Photobooth and the
+    // daily CC digest unchanged. Maxed: about $16 thumbnails + $22 designs + $6
+    // assistant + $3.60 collabs + $2.28 Photobooth + ~$2 digest/captions = ~$52,
+    // against $99.
     label: 'Amazon',
     price: 99,
     regularPrice: 179,
@@ -302,7 +309,7 @@ export const TIERS = {
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
     /** Creator Connections collabs — storefront creators land brand deals. */
-    collabsPerMonth: 60 as number | null,
+    collabsPerMonth: 30 as number | null,
     /** The headline feature: Art Director thumbnails at medium quality.
      *
      *  Raised from 200 on 2026-09-14. At 2 designs per video this carries 125
@@ -315,7 +322,7 @@ export const TIERS = {
      *  prose was the more confident of the two. The value below is the only
      *  answer, the pricing page reads it, and scripts/test-sales-page-facts
      *  holds that page to reading it. */
-    thumbnailsPerMonth: 250 as number | null,
+    thumbnailsPerMonth: 200 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
@@ -329,9 +336,9 @@ export const TIERS = {
      *  The NEW numbers are deliberately not repeated here either. This comment
      *  used to claim three figures that none of the three literals below
      *  matched, describing a plan nobody was on. Read the three lines. */
-    pinsPerMonth: 150 as number | null,
-    igPostsPerMonth: 150 as number | null,
-    facebookPostsPerMonth: 120 as number | null,
+    pinsPerMonth: 115 as number | null,
+    igPostsPerMonth: 115 as number | null,
+    facebookPostsPerMonth: 90 as number | null,
     /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
@@ -355,7 +362,7 @@ export const TIERS = {
     /** Two face models (1 -> 2, 2026-09-14), up to 20 selfies each. */
     maxFaces: 2 as number | null,
     blogImagesPerPost: 0,
-    assistantMessagesPerMonth: 600 as number | null,
+    assistantMessagesPerMonth: 300 as number | null,
     newsletterSubscribers: 0 as number | null,
     newsletterBroadcastsPerMonth: 0 as number | null,
     newsletterScheduling: false,
