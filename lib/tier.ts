@@ -308,8 +308,9 @@ export const TIERS = {
     /** No blog, and `sites: 0` below is why. Thumbnails have their own cap. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
-    /** Creator Connections collabs — storefront creators land brand deals. */
-    collabsPerMonth: 30 as number | null,
+    /** Brand Deals collab emails. 60 -> 30 -> 15 on 2026-10-05 (Seb): two
+     *  members had ever used them and none in the last 30 days. */
+    collabsPerMonth: 15 as number | null,
     /** The headline feature: Art Director thumbnails at medium quality.
      *
      *  Raised from 200 on 2026-09-14. At 2 designs per video this carries 125
@@ -513,7 +514,9 @@ export const TIERS = {
      *  which saves $48 maxed. */
     postsPerMonth: 100,
     lifetimeMax: null as number | null,
-    collabsPerMonth: 100 as number | null,
+    // Brand Deals collab emails: 100 -> 30 on 2026-10-05 (Seb, usage data:
+    // two members ever, none in 30 days). Pro members from before keep 100.
+    collabsPerMonth: 30 as number | null,
     // Pro must be a superset of Amazon on EVERY cap under the two-plan
     // structure. Pro renders at HIGH quality ($0.19 plus about $0.03 of
     // art-director text), which makes this the costliest cap on the plan.
@@ -814,7 +817,7 @@ export type SteppedCap =
   | 'postsPerMonth' | 'thumbnailsPerMonth' | 'pinsPerMonth' | 'igPostsPerMonth'
   | 'facebookPostsPerMonth' | 'assistantMessagesPerMonth' | 'collabsPerMonth' | 'xPostsPerMonth'
 const PREV_CAPS: Partial<Record<Tier, Partial<Record<SteppedCap, number>>>> = {
-  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100 },
+  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100, collabsPerMonth: 100 },
   amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, facebookPostsPerMonth: 120, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
 }
 

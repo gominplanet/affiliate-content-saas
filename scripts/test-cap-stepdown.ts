@@ -23,6 +23,10 @@ check('Pro is 100 generations for everyone (back up from 60 the same day)', TIER
 check('a Pro member from before keeps the old thumbnail cap for good, in any window',
   effectiveCap('pro', 'thumbnailsPerMonth', TIERS.pro.thumbnailsPerMonth, after, LEGACY_PRO_COHORT) === 300)
 check('a new Pro member gets the new thumbnail cap', effectiveCap('pro', 'thumbnailsPerMonth', TIERS.pro.thumbnailsPerMonth, after, null) === TIERS.pro.thumbnailsPerMonth)
+check('collab emails: new Pro 30, new Amazon 15, earlier Pro members keep 100',
+  TIERS.pro.collabsPerMonth === 30 && TIERS.amazon.collabsPerMonth === 15 &&
+  effectiveCap('pro', 'collabsPerMonth', TIERS.pro.collabsPerMonth, after, LEGACY_PRO_COHORT) === 100 &&
+  effectiveCap('pro', 'collabsPerMonth', TIERS.pro.collabsPerMonth, after, null) === 30)
 check('the Pro mark does nothing on another plan', effectiveCap('amazon', 'collabsPerMonth', TIERS.amazon.collabsPerMonth, after, LEGACY_PRO_COHORT) === TIERS.amazon.collabsPerMonth)
 check('Pro thumbnails, pins, X keep their old caps for that window',
   effectiveCap('pro', 'thumbnailsPerMonth', TIERS.pro.thumbnailsPerMonth, before) === 300 &&
