@@ -23,6 +23,8 @@
  * has bRoll + tips) still render via fallbacks below.
  */
 import { useCallback, useEffect, useState } from 'react'
+import MadeBefore from '@/components/product/MadeBefore'
+import { normalizeAsinInput } from '@/lib/asin'
 import PageHero from '@/components/layout/PageHero'
 import { ScriptwriterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -305,6 +307,13 @@ export default function ScriptPage() {
               placeholder="Amazon ASIN (B08TT4YHG1), Amazon URL, Geniuslink, or any product page URL"
               className="w-full text-sm px-3 py-2.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7] mb-4"
             />
+            {/* A script already written for this product: open it instead of
+                paying for the same one again (lib/made-before). */}
+            <div className="mb-4 empty:hidden">
+              <MadeBefore asin={normalizeAsinInput(input)} only={['script']}
+                heading="You already have a script for this product. Open it, or write a new one below."
+                onLoad={(it) => { if (it.id) openRecent(it.id) }} />
+            </div>
 
             <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Style</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">

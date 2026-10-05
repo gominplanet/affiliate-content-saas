@@ -890,8 +890,7 @@ export async function POST(request: Request) {
   } catch { /* unreadable body is the handler's problem, not ours */ }
 
   const memo: ImageMemo = { db: null, userId: null, asin: null }
-  let productTitle: string | null = null
-  try { productTitle = String((await request.clone().json() as { productTitle?: string }).productTitle || '') || null } catch { /* none */ }
+  const { productTitle, format, surface } = await peekMemoryFields(request)
   const res0 = await generateThumbnail(request, memo)
   const res = await withoutStoreLogos(res0, memo.userId, productTitle)
 
@@ -900,6 +899,7 @@ export async function POST(request: Request) {
   // would remember a thumbnail without the creator's title on it — the one
   // image they never chose. The client saves the finished one instead.
   if (defer) return res
+  if (format !== 'landscape') return res
   if (res.status !== 200 || !memo.db || !memo.userId || !memo.asin) return res
   let body: Record<string, unknown>
   try {
@@ -912,13 +912,33 @@ export async function POST(request: Request) {
 
   const saved = await rememberProductImageFromUrl({
     db: memo.db, userId: memo.userId, asin: memo.asin, imageUrl: url,
-    surface: 'YouTube Co-Pilot',
+    surface,
     modelUsed: typeof body.modelUsed === 'string' ? body.modelUsed : null,
   })
   // Report the result, not the attempt. `savedForProduct` is the ASIN it is now
   // filed under, or null — a screen that says "saved" for a write that did not
   // happen is the failure this repo keeps re-finding.
   return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+/**
+ * WHICH PICTURE THIS IS. The product's remembered image is its 16:9 thumbnail.
+ * Pins, Instagram and Facebook designs and Shorts covers came through the
+ * wrapper too and replaced it, every one labelled "YouTube Co-Pilot", so a pin
+ * made last week could quietly become the picture offered on the next
+ * thumbnail. Only the landscape thumbnail is remembered from here; the
+ * composers remember their own designs after publishing, under their own label.
+ * `memorySurface` names where it was made ("Liftoff", "Thumbnail Generator").
+ */
+async function peekMemoryFields(request: Request): Promise<{ productTitle: string | null; format: string; surface: string | null }> {
+  try {
+    const b = await request.clone().json() as { productTitle?: string; format?: string; memorySurface?: string }
+    return {
+      productTitle: String(b.productTitle || '') || null,
+      format: typeof b.format === 'string' && b.format ? b.format : 'landscape',
+      surface: typeof b.memorySurface === 'string' && b.memorySurface.trim() ? b.memorySurface.trim().slice(0, 40) : null,
+    }
+  } catch { return { productTitle: null, format: 'landscape', surface: null } }
 }
 
 /**

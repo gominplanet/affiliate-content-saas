@@ -7,6 +7,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import MadeBefore from '@/components/product/MadeBefore'
+import { normalizeAsinInput } from '@/lib/asin'
 import Link from 'next/link'
 import { Sparkles, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
@@ -44,6 +46,8 @@ export default function AmazonThumbnailsPage() {
     expressionVerified?: boolean | null; expressionRetried?: boolean
     refsHeadOnly?: boolean; headCropNote?: string | null
     framingUsed?: 'bust' | 'full'; framingNote?: string | null
+    /** Set when this is a thumbnail MVP already made, reused rather than rendered. */
+    reused?: string
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
@@ -105,6 +109,8 @@ export default function AmazonThumbnailsPage() {
     const body: Record<string, unknown> = {
       videoTitle: headline.trim() || 'Product spotlight',
       textMode: 'graphic',
+      // Filed under this page in the product's image memory.
+      memorySurface: 'Thumbnail Generator',
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       ...(headline.trim() ? { customHeadline: headline.trim() } : {}),
@@ -205,6 +211,18 @@ export default function AmazonThumbnailsPage() {
             className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]"
           />
         </label>
+
+        {/* A thumbnail MVP already made for this product: reuse it for free
+            instead of designing it again (lib/made-before). */}
+        <div className="empty:hidden">
+          <MadeBefore asin={normalizeAsinInput(product)} only={['thumbnail', 'liftoff', 'instagram']}
+            heading="MVP already made thumbnails for this product. Reuse one for free, or design a new one below."
+            onUseImage={(url, it) => {
+              setError(null)
+              setResult({ url, hook: '', reused: it.label })
+              setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 60)
+            }} />
+        </div>
 
         {/* Mode toggle */}
         <div className="flex flex-col gap-2">
@@ -331,6 +349,7 @@ export default function AmazonThumbnailsPage() {
                 and saved from a blob now, and says so when it cannot. */}
             <DownloadDesign url={result.url} filename="mvp-thumbnail.jpg" />
             {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.hook}</span>}
+            {result.reused && <span className="text-xs text-[#86868b]">Reused, nothing new was made: {result.reused}</span>}
           </div>
 
           {/* WHAT WENT IN. If the garment in the render is not the garment on

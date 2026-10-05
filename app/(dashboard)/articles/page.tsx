@@ -159,7 +159,7 @@ export default function ArticlesPage() {
     setSections(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
   }
 
-  async function run(publish: boolean) {
+  async function run(publish: boolean, again = false) {
     const cleaned = topic.trim()
     if (!cleaned) { toast.error('Type a topic first'); return }
     if (sections.length === 0) { toast.error('Pick at least one section to include'); return }
@@ -170,9 +170,19 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset' }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset', again }),
       })
       const j = await r.json()
+      // MVP already wrote this topic: offer the existing one before paying for
+      // a new one, and keep writing a new one a click away (lib/made-before).
+      if (r.status === 409 && j.alreadyMade) {
+        toast.message(j.error || 'You already have an article on this topic.', {
+          action: { label: 'Write a new one', onClick: () => { void run(publish, true) } },
+          cancel: j.url ? { label: 'Open it', onClick: () => window.open(j.url, '_blank') } : undefined,
+          duration: 20_000,
+        })
+        return
+      }
       if (!r.ok) throw new Error(j.error || 'Generation failed')
       if (publish) {
         toast.success(`Published "${j.title}"`, {

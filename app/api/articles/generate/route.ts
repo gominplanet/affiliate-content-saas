@@ -271,6 +271,8 @@ export async function POST(req: Request) {
 
   // ── Parse body ──────────────────────────────────────────────────────────
   let body: {
+    /** Write a new article even though one on this topic exists. */
+    again?: boolean
     topic?: string
     angle?: string
     sections?: string[]
@@ -379,6 +381,34 @@ export async function POST(req: Request) {
     const art = await checkArticlesUsage(supabase, user.id)
     if (!art.allowed) {
       return NextResponse.json({ error: art.reason, limitReached: true, cap: 'articles', currentTier: art.tier, upgrade: art.upgrade }, { status: 429 })
+    }
+  }
+
+  // ── ALREADY WRITTEN (lib/made-before) ──────────────────────────────────
+  // An article on this exact topic already published: say so and hand it back
+  // before paying for the writer again, preview included (~$0.20). The creator
+  // can still ask for a new one ("again"). Publishing a reviewed preview sends
+  // its own html and runs no writer, so it is not stopped here.
+  const sendsOwnHtml = publish && typeof body.html === 'string' && body.html.trim().length > 300
+  if (!body.again && !sendsOwnHtml && (body.topic || '').trim()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: before } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_url, title, created_at')
+      .eq('user_id', user.id)
+      .eq('post_type', 'article')
+      .ilike('seo_keyword', (body.topic || '').trim().replace(/[%_]/g, ''))
+      .not('wordpress_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (before?.wordpress_url) {
+      return NextResponse.json({
+        alreadyMade: true,
+        url: before.wordpress_url as string,
+        title: (before.title as string) || (body.topic || '').trim(),
+        error: `You already have an article on this topic: "${(before.title as string) || (body.topic || '').trim()}". Open it, or choose to write a new one.`,
+      }, { status: 409 })
     }
   }
 

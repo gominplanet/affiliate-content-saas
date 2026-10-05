@@ -48,6 +48,7 @@ import {
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 import { amazonProductUrlRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
+import MadeBefore from '@/components/product/MadeBefore'
 
 // COST CONTROL (2026-06-12): master switch for every multi-video bulk
 // GENERATION action (bulk generate, bulk schedule, bulk rewrite). Off by
@@ -1516,6 +1517,17 @@ const VideoCard = memo(function VideoCardImpl({
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 mb-2.5">
               Everything below <span className="font-semibold text-[#7C3AED]">Generate post</span> is optional. Hit Generate post and we handle the rest.
             </p>
+          )}
+          {/* ALREADY WRITTEN ABOUT THIS PRODUCT. Another video of the same
+              product may already have its post; say so before a new one is
+              paid for, so the creator can link or update that one instead
+              (lib/made-before). */}
+          {(!post && genPanelOpen) && (
+            <div className="mb-2.5 empty:hidden">
+              <MadeBefore asin={(video.asin as string | null) ?? null} video={(video.youtube_video_id as string | null) ?? null}
+                only={['blog', 'deal', 'campaign']}
+                heading="You already have a post about this product. Open it to reuse or update it, or write a new one." />
+            </div>
           )}
           {/* Fresh Generate-now panel → stack every option vertically so it reads
               as a short checklist. Post-exists rows keep the compact horizontal

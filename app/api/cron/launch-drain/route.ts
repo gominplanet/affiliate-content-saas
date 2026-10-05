@@ -24,6 +24,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
+import { recallProductImage } from '@/lib/product-image-memory'
+import { reuseLabel } from '@/lib/product-image-label'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
 import { ctaStickerAllowed, ctaTopLeft, type CtaPreset, liftoffMarkets } from '@/lib/launch-batch'
@@ -533,6 +535,9 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       if (own) preset = { ...batchPreset, face: own }
     }
     let usedPlain = false
+    // A thumbnail reused from the product's memory rather than rendered now.
+    let usedSaved = false
+    let savedLabel = ''
     // WHY it fell back, kept so the row can say it. "Could not be applied" is
     // true of a timeout, a missing face and a spend cap alike, and none of
     // those has the same answer.
@@ -555,7 +560,16 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
             // NOT WHEN THE PLAN SAID NO. A refusal for the thumbnail allowance or
             // the spend ceiling is an answer, and the plain image would have
             // been a second render the plan had just refused.
-            if (branded.limited) {
+            // REUSE BEFORE RENDERING. A thumbnail MVP already made for this
+            // product (lib/product-image-memory) costs nothing and is a design
+            // the creator already had; a new plain render costs a thumbnail.
+            // Used even when the plan said no, since it renders nothing.
+            const saved = await recallProductImage(sb, it.user_id, asin).catch(() => null)
+            if (saved?.imageUrl) {
+              patch.thumbnail_url = saved.imageUrl; usedSaved = true
+              const l = reuseLabel(saved)
+              savedLabel = `${l.text}.${l.note ? ` ${l.note}` : ''}`
+            } else if (branded.limited) {
               /* plainWhy already carries the route's own words */
             } else if (left() > 75_000) {
               const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
@@ -575,7 +589,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     ])
 
     if (patch.thumbnail_url) {
-      patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
+      patch.thumbnail_source = usedSaved ? 'saved' : usedPlain ? 'plain' : 'styled'
       if (usedPlain) plain++
     }
     const haveBranded = patch.thumbnail_url || it.thumbnail_url
@@ -584,7 +598,9 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       // The fallback keeps its sentence. Clearing `reason` on the way to
       // 'prepared' would erase the one place the creator could read that this
       // thumbnail is not the look they chose.
-      patch.reason = usedPlain
+      patch.reason = usedSaved
+        ? `Your chosen look could not be applied, so MVP used the thumbnail it already made for this product instead of making a new one. ${savedLabel} ${plainWhy}`.trim()
+        : usedPlain
         ? `Your chosen look could not be applied, so this is the plain product thumbnail. ${plainWhy}`.trim()
         : null
       done++
@@ -750,6 +766,8 @@ async function styledThumbnail(
         // clean 1280x720 with safe margins. Anything else is a different image
         // from the same controls.
         textMode: 'graphic',
+        // Filed under Liftoff in the product's image memory.
+        memorySurface: 'Liftoff',
         ...presetToRequestFields(preset),
       },
     })

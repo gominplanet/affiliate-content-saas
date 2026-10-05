@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import MadeBefore from '@/components/product/MadeBefore'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { CollaborationsGuide } from '@/components/guide/tool-guides'
@@ -334,6 +335,16 @@ export default function CollaborationsPage() {
           <div>
             <label className={lbl}>Brand website <span className="text-[#86868b]">(optional)</span></label>
             <input value={brandUrl} onChange={e => setBrandUrl(e.target.value)} placeholder="brand.com — so Brand Hub links to them" className="input-field text-sm w-full" />
+          </div>
+          {/* An email already written to this brand: reuse it instead of paying
+              to write it again (lib/made-before). */}
+          <div className="sm:col-span-2 empty:hidden">
+            <MadeBefore brand={brandName} only={['collab']}
+              heading="You already wrote to this brand. Load that email to reuse or edit it, or write a new one."
+              onLoad={(it) => {
+                const row = history.find((h) => h.id === it.id)
+                if (row?.generated_email) { setEmailBody(row.generated_email); setSubject('') }
+              }} />
           </div>
           <div className="sm:col-span-2">
             <label className={lbl}>Product name or ASIN <span className="text-[#86868b]">(the specific product you want to pitch)</span></label>

@@ -61,7 +61,8 @@ interface Item {
   /** This video's own face, or null to follow the batch (migration 371). */
   thumbnail_face?: { kind: string; faceId?: string } | null
   thumbnail_url: string | null
-  /** 'styled' (the batch look applied) or 'plain' (it did not). */
+  /** 'styled' (the batch look applied), 'plain' (it did not), 'saved' (the
+   *  product's earlier thumbnail was reused instead of rendering), 'creator'. */
   thumbnail_source: string | null
   /** The youtube_videos row this became, once it reached YouTube. The upload
    *  scope is built from these, so a batch can only ever deliver its own. */
@@ -2478,6 +2479,9 @@ export default function LaunchBoard() {
                         way looked identical to one built the right way. */}
                     {it.thumbnail_source === 'plain' && (
                       <> · <span style={{ color: '#d97706' }}>plain look</span></>
+                    )}
+                    {it.thumbnail_source === 'saved' && (
+                      <> · <span style={{ color: '#d97706' }}>reused your earlier thumbnail</span></>
                     )}
                     {/* WHOSE TITLE THIS IS. A file name and a written title
                         look the same on a row, and one of them went to
