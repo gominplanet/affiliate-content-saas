@@ -26,6 +26,7 @@
 import { NextResponse } from 'next/server'
 import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
+import { newsletterRetired } from '@/lib/newsletter-retired'
 import {
   createResendDomain,
   getResendDomain,
@@ -53,6 +54,8 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const retired = await newsletterRetired(supabase, user.id)
+  if (retired) return retired
   const denied = await denyNewsletterWrite(user.id)
   if (denied) return denied
 
@@ -123,6 +126,8 @@ export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const retired = await newsletterRetired(supabase, user.id)
+  if (retired) return retired
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await supabase
@@ -178,6 +183,8 @@ export async function DELETE() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const retired = await newsletterRetired(supabase, user.id)
+  if (retired) return retired
   const denied = await denyNewsletterWrite(user.id)
   if (denied) return denied
 

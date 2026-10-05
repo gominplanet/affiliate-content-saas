@@ -24,6 +24,7 @@
 
 import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
 import { previewOpenToPro } from '@/lib/labs-preview'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -574,7 +575,9 @@ export default function DashboardShellV2({
         // the same address. Beside Deals Hub, which makes them. Out of Labs 2026-09, Pro.
         { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended Deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'New' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
-        { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
+        // Retired for members 2026-10-05 (lib/feature-flags NEWSLETTER_FOR_MEMBERS);
+        // admin keeps it, and the page tells anyone else it has been retired.
+        { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter', gate: NEWSLETTER_FOR_MEMBERS || effectiveTier === 'admin' },
         // Shop Burner retired 2026-08 → /instagram-burner redirects to
         // /clip-factory, which now hosts the single-clip flow AND the ported
         // batch/schedule mode.
@@ -801,7 +804,7 @@ export default function DashboardShellV2({
   // order untouched.
   const amazonView = effectiveTier === 'amazon'
   // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
-  // their plan (blog / YouTube / newsletter / SEO / blog-tools) gets the upgrade
+  // their plan (blog / YouTube / SEO / blog-tools) gets the upgrade
   // panel instead of the page. Denylist of PATH PREFIXES rather than an
   // allowlist, so account/billing/admin/support + every Amazon and shared
   // research-deal tool stay reachable by default (locking billing would trap the
@@ -824,7 +827,9 @@ export default function DashboardShellV2({
     { prefix: '/idea-lists', label: 'Idea Lists' },
     { prefix: '/deals', label: 'Deals Hub' },
     { prefix: '/script', label: 'Scriptwriter' },
-    { prefix: '/newsletter', label: 'Newsletter' },
+    // While the member newsletter is retired there is nothing to upgrade to,
+    // so the page shows its retired notice instead of an upsell.
+    ...(NEWSLETTER_FOR_MEMBERS ? [{ prefix: '/newsletter', label: 'Newsletter' }] : []),
     { prefix: '/ads', label: 'Ads' },
     { prefix: '/seo', label: 'SEO & Indexing' },
     { prefix: '/pulse', label: 'Pulse' },

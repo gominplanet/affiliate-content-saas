@@ -55,6 +55,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { canUseDealRadar, canSeeNav } from '@/lib/feature-access'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
@@ -357,7 +358,10 @@ export default async function DashboardPage() {
             {!DEALS_HUB_PAUSED && (
               <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" accent="#EC4899" />
             )}
-            <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
+            {/* Retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS); admin keeps it. */}
+            {(NEWSLETTER_FOR_MEMBERS || tier === 'admin') && (
+              <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
+            )}
           </div>
         </section>
 

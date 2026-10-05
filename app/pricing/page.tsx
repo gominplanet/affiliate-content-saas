@@ -64,9 +64,8 @@ const PLAN_GRID: Record<number, string> = {
 // somebody else's numbers and nothing in this repo can derive them. Ours are
 // read from TIERS, and both the total and the saving are summed at render.
 const BUNDLE_STACKS: Partial<Record<Tier, [string, number][]>> = {
-  // The storefront stack. No AI writer, no SEO tool and no newsletter,
-  // because this plan does not write blog posts (postsPerMonth is 0) and has
-  // no newsletter, so it does not replace them.
+  // The storefront stack. No AI writer and no SEO tool, because this plan
+  // does not write blog posts (postsPerMonth is 0), so it does not replace them.
   amazon: [
     ['thumbnailcreator.com (Creator)', 41],
     ['Jungle Scout (product research)', 49],
@@ -81,7 +80,8 @@ const BUNDLE_STACKS: Partial<Record<Tier, [string, number][]>> = {
     ['Frase (SEO research + content briefs)', 97],
     ['thumbnailcreator.com (Creator)', 41],
     ['OpusClip Pro (vertical clips)', 29],
-    ['Beehiiv Scale (newsletter)', 43],
+    // No newsletter tool: the member newsletter is retired (lib/feature-flags
+    // NEWSLETTER_FOR_MEMBERS), so MVP does not replace one.
     ['Lasso Pro (affiliate analytics)', 29],
   ],
 }
@@ -142,7 +142,7 @@ const plans: PlanExt[] = [
     features: [
       '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
       `${TIERS.pro.postsPerMonth} full reviews per month (blog + thumbnail + metadata bundle)`,
-      `Everything in the Amazon Influencer plan too: ${TIERS.pro.pinsPerMonth} ready-to-post pins, ${TIERS.pro.igPostsPerMonth} Reels covers & ${TIERS.pro.facebookPostsPerMonth} Facebook designs / month, ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month + Creator Connections brand deals`,
+      `Everything in the Amazon Influencer plan too: ${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Reels covers / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month + Creator Connections brand deals`,
       'Adds X (Twitter) auto-post on top of the Amazon plan, plus TikTok the moment it clears platform review',
       'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
       'Comparison posts: head-to-head ranked review with a named winner',
@@ -156,7 +156,6 @@ const plans: PlanExt[] = [
       `${TIERS.pro.maxFaces} saved faces, Photobooth ${TIERS.pro.photoboothPerMonth} / month`,
       `Video Script & Shot List (${TIERS.pro.scriptsPerMonth} / month)`,
       `Brand Deals: ${TIERS.pro.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
-      `Newsletter: ${(TIERS.pro.newsletterSubscribers ?? 0).toLocaleString()} subscribers, ${TIERS.pro.newsletterBroadcastsPerMonth} broadcasts / month (weekly) + A/B subject lines + segmented sends`,
       'One-click Publish All: site + every connected social in one shot',
       `MVP Help Desk: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
       'Priority generation queue + priority support',
@@ -491,7 +490,7 @@ export default async function PricingPage({
                 Hardcoding them is what let that happen, so they are read now. */}
             {[
               { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: `${TIERS.amazon.thumbnailsPerMonth} / month`, desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
-              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${TIERS.amazon.pinsPerMonth} pins · ${TIERS.amazon.igPostsPerMonth} Reels · ${TIERS.amazon.facebookPostsPerMonth} FB`, desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
+              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${TIERS.amazon.pinsPerMonth} pins · ${TIERS.amazon.igPostsPerMonth} Reels · Facebook too`, desc: 'Finished Pinterest pins and Instagram Reels covers, laid out and captioned for you, and Facebook posts that reuse them at no extra cost. No Canva, no templates to fight. Post them as they are.' },
               { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: 'Unlimited browse', desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP sends you a fresh digest of campaigns auto-matched to your content and research, done for you, so you never miss a fit.' },
               { icon: <MessageSquare size={20} />, title: 'Outreach written for you', tag: 'Unlimited', desc: 'MVP writes a personalised pitch from your brand profile and takes you straight to that brand\u2019s message box on Amazon. Draft as many as you like, message brands in bulk, and save the angles that work as reusable templates.' },
               { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products actually worth posting before you spend a design on them.' },
@@ -537,8 +536,8 @@ export default async function PricingPage({
           against a $99 charge: right until something moves, silent after.
 
           THE AMAZON STACK IS DELIBERATELY SHORT. That plan does not write
-          blog posts (postsPerMonth is 0) and has no newsletter, so it does
-          not replace an AI writer, an SEO tool or Beehiiv, and padding it
+          blog posts (postsPerMonth is 0), so it does not replace an AI
+          writer or an SEO tool, and padding it
           with them would be the manipulative version of this section. Four
           real tools and a $39 saving is a weaker pitch than Pro's, and it is
           the true one. Every tool and price here already appeared in the Pro
@@ -555,7 +554,7 @@ export default async function PricingPage({
           <p className="mt-3 text-sm text-[#6e6e73] dark:text-[#ebebf0] max-w-xl mx-auto">
             Other tools each do one thing. Amazon replaces the stack a storefront runs on;
             Pro replaces that plus the whole pipeline from one video to a blog, scripts and
-            a newsletter, all in your voice.
+            social posts, all in your voice.
           </p>
         </div>
 
@@ -610,7 +609,7 @@ export default async function PricingPage({
         </div>
 
         <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-5 max-w-3xl mx-auto">
-          Each tool&apos;s own published price at the equivalent feature tier, so you can check every line. MVP also handles parts none of these do: fact-grounded blog, comparison &amp; buying-guide content built to rank, brand-pitch emails, a newsletter with list management, and the YouTube Co-Pilot metadata sync.
+          Each tool&apos;s own published price at the equivalent feature tier, so you can check every line. MVP also handles parts none of these do: fact-grounded blog, comparison &amp; buying-guide content built to rank, brand-pitch emails, and the YouTube Co-Pilot metadata sync.
         </p>
       </section>
 
@@ -637,7 +636,7 @@ export default async function PricingPage({
             },
             {
               title: 'One video → nine outputs',
-              body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a newsletter draft, a script for the next video, and native posts to your connected social channels &mdash; LinkedIn, Facebook, Instagram, Threads, Bluesky, Telegram, Pinterest and X (channels vary by plan). End-to-end, in one run.',
+              body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a script for the next video, and native posts to your connected social channels &mdash; LinkedIn, Facebook, Instagram, Threads, Bluesky, Telegram, Pinterest and X (channels vary by plan). End-to-end, in one run.',
             },
             {
               title: 'Trained on YOUR voice, not a generic AI voice',

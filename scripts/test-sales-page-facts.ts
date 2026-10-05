@@ -85,7 +85,8 @@ const split = strip(SPLIT)
     ['thumbnailsPerMonth', 'thumbnails'],
     ['pinsPerMonth', 'pins'],
     ['igPostsPerMonth', 'Reels'],
-    ['facebookPostsPerMonth', 'Facebook designs'],
+    // Facebook designs are no longer a counted allowance (2026-10-05): Facebook
+    // reuses the thumbnail or Instagram design, so there is no number to print.
     ['dealsPerMonth', 'posts published'],
     ['maxFaces', 'face models'],
     ['photoboothPerMonth', 'headshots'],

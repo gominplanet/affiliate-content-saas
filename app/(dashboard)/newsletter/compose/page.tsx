@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { NewsletterRetiredNotice, useNewsletterRetired } from '@/components/newsletter/NewsletterRetiredNotice'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -81,7 +82,17 @@ interface Draft {
   }
 }
 
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS):
+// anyone but admin gets a short notice, and the tool below never mounts, so
+// none of its API calls are made.
 export default function NewsletterComposePage() {
+  const retired = useNewsletterRetired()
+  if (retired === 'loading') return null
+  if (retired) return <NewsletterRetiredNotice />
+  return <NewsletterComposeTool />
+}
+
+function NewsletterComposeTool() {
   const [posts, setPosts] = useState<PickablePost[]>([])
   const [postsLoading, setPostsLoading] = useState(true)
   const [pickedIds, setPickedIds] = useState<string[]>([])

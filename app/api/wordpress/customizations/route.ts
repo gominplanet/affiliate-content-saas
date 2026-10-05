@@ -5,6 +5,7 @@ import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -44,9 +45,13 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingRow } = await supabase
     .from('integrations')
-    .select('blog_customizations')
+    .select('blog_customizations, tier')
     .eq('user_id', ownerId)
     .maybeSingle()
+  // The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS):
+  // unless the owner is admin, every save pushes the signup form switched off,
+  // so no member blog renders a form for a list nobody can send to.
+  const newsletterOn = NEWSLETTER_FOR_MEMBERS || (existingRow as { tier?: string } | null)?.tier === 'admin'
   const existing = (existingRow?.blog_customizations && typeof existingRow.blog_customizations === 'object')
     ? existingRow.blog_customizations as Record<string, unknown>
     : {}
@@ -154,7 +159,7 @@ export async function POST(req: Request) {
           .eq('user_id', ownerId)
           .eq('status', 'active'),
       ])
-      const nlEnabled = !!nlRow?.enabled
+      const nlEnabled = newsletterOn && !!nlRow?.enabled
       const nlSenderName = (nlRow?.sender_name as string | null)?.trim() || null
       const nlCtaTitle = (nlRow?.cta_title as string | null)?.trim() || null
       const nlCtaSubtitle = (nlRow?.cta_subtitle as string | null)?.trim() || null
@@ -209,7 +214,7 @@ export async function POST(req: Request) {
           inlineMidArticle: (() => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const ni = (customizations as any)?.newsletterInline
-            if (!ni || typeof ni !== 'object') {
+            if (!newsletterOn || !ni || typeof ni !== 'object') {
               return { enabled: false, afterParagraph: 3, title: '', subtitle: '', button: '' }
             }
             return {

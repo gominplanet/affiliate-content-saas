@@ -18,6 +18,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { newsletterRetired } from '@/lib/newsletter-retired'
 import { applySegmentFilter, type SegmentFilter, type NewsletterRecipient } from '@/lib/newsletter-send'
 import { tierHas } from '@/lib/tier'
 import { normalizeTier } from '@/lib/tier'
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const retired = await newsletterRetired(supabase, user.id)
+  if (retired) return retired
 
   // Tier gate — matches /api/newsletter/send. Non-Pro callers get 402 so
   // the UI can surface the upgrade CTA inline rather than showing a stale

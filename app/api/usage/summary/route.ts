@@ -22,6 +22,7 @@
  * empty bucket list — the meter hides rather than showing a wrong number.
  */
 import { NextResponse } from 'next/server'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
   TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
@@ -189,7 +190,7 @@ export async function GET() {
       countFeatures([META_FEATURE]),                                          // billing window (own cap)
       countFeatures(PRIMARY_FEATURE.instagramAi),                               // billing window
       countSince('video_scripts', 'created_at', calStartISO),                 // calendar month
-      countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
+      NEWSLETTER_FOR_MEMBERS ? countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']) : Promise.resolve(0),
       countCascade(),                                                         // calendar month, distinct posts
       countRows('blog_posts', 'created_at', { col: 'post_type', val: 'article' }), // own cap (billing window)
     ])
@@ -209,8 +210,12 @@ export async function GET() {
     push('igai', 'IG AI images', preview(igAi, 22), refPlan.instagramAiThumbnailsPerMonth)
     // Newsletter cap can be raised for legacy Creator accounts — use the same
     // helper the send gate uses so the meter matches the enforced number.
-    push('newsletter', 'Newsletters', preview(broadcasts, 2),
-      allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
+    // No bar at all while the member newsletter is retired (lib/feature-flags
+    // NEWSLETTER_FOR_MEMBERS), legacy Creator caps included.
+    if (NEWSLETTER_FOR_MEMBERS) {
+      push('newsletter', 'Newsletters', preview(broadcasts, 2),
+        allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
+    }
     push('cascade', 'Scheduled', preview(cascade, 12), refPlan.cascadeOnlySchedulesPerMonth)
     push('articles', 'Articles', preview(articles, 3), refPlan.articlesPerMonth)
   } catch {

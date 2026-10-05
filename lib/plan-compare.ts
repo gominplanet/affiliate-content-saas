@@ -74,8 +74,8 @@ export function planCompareRows(): CompareRow[] {
     },
     {
       label: 'Ready-to-post designs',
-      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Reels · ${n(A.facebookPostsPerMonth)} Facebook`,
-      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Reels · ${n(P.facebookPostsPerMonth)} Facebook`,
+      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Reels · Facebook reuses them`,
+      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Reels · Facebook reuses them`,
     },
     {
       label: 'Publishes to',
@@ -156,7 +156,7 @@ export function trackCards(): TrackCard[] {
       // old title turned this door away from everybody who has not started yet,
       // which is the group the product is best at serving.
       title: 'I want a site of my own',
-      blurb: 'Turn your videos and product links into full written reviews on your own site, with thumbnails, metadata, scripts, a newsletter and social posts, all in your voice. No site yet? MVP builds you one.',
+      blurb: 'Turn your videos and product links into full written reviews on your own site, with thumbnails, metadata, scripts and social posts, all in your voice. No site yet? MVP builds you one.',
       tell: 'Bring a WordPress site or let MVP set one up for you. Either way, this is your plan.',
       // THE CHEAPEST PLAN SOMEONE CAN ACTUALLY BUY on this track, read from
       // SELLABLE_TIERS. It said "From $49", which is Creator: a frozen tier that

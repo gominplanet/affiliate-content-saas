@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // AmazonUpgradeGate — the upsell panel an Amazon Influencer sees when they open
-// anything outside their plan (blog, YouTube, newsletter, SEO, etc.). Rendered
+// anything outside their plan (blog, YouTube, SEO, etc.). Rendered
 // by DashboardShellV2 in place of the page body whenever an amazon-tier user is
 // on a locked path (see AMAZON_LOCKED_PREFIXES), so it covers every entry point
 // — sidebar click, dashboard card, or a pasted deep link — from one place.
@@ -22,7 +22,6 @@ const UNLOCKS: string[] = [
   'Publish full product-review blog posts to your own WordPress site, in your voice',
   'Turn any YouTube video into a blog, thumbnails, scripts and social posts',
   'Comparison posts and buying guides that rank products and win search',
-  'A newsletter to your own list, with scheduling and segments',
   'SEO and indexing tools to get every post found on Google',
 ]
 

@@ -22,7 +22,7 @@ import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import {
-  FileText, Image as ImageIcon, Mail, Scale, Calendar,
+  FileText, Image as ImageIcon, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
   Twitter, Cloud, Send, Linkedin, Facebook, Instagram, AtSign,
   Globe, TrendingUp, Wand2,
@@ -525,7 +525,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Creator Connections finder + daily picked-for-you campaign digest',
       'Shoppable Link-in-Bio page',
       `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
-      `${TIERS.amazon.pinsPerMonth} Pinterest, ${TIERS.amazon.igPostsPerMonth} Instagram & ${TIERS.amazon.facebookPostsPerMonth} Facebook designs / month`,
+      `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'Auto-post to Pinterest, Instagram & Facebook with AI captions + your affiliate link',
       `${TIERS.amazon.dealsPerMonth} deal / product posts / month`,
       `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots — your face on every design`,
@@ -560,13 +560,12 @@ const PRICING_TIERS: PricingTier[] = [
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
       '🎬 Clip Factory — turn long videos into ready-to-post shorts',
       `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
-      `${TIERS.pro.pinsPerMonth} Pinterest, ${TIERS.pro.igPostsPerMonth} Instagram & ${TIERS.pro.facebookPostsPerMonth} Facebook designs / month`,
+      `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
       'Multi-account social + one-click Publish All',
       `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Virtual Assistant seats`,
       'Multiple YouTube channels — one per site, or pull from any',
       `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} Brand Deals outreach emails drafted / month`,
-      `Newsletter — ${(TIERS.pro.newsletterSubscribers ?? 0).toLocaleString()} subs, weekly + A/B + segments`,
       `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
     ],
     cta: 'Go Pro',
@@ -1047,7 +1046,7 @@ interface Stat {
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
   { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter, script + social fan-out' },
+  { value: '9', label: 'outputs per video', detail: 'blog, comparison, buying guide, thumbnail, script + social fan-out' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
 ]
 
@@ -1463,7 +1462,6 @@ function ProductMock() {
     { icon: <Scale size={13} />, label: 'Comparison' },
     { icon: <Bookmark size={13} />, label: 'Buying guide' },
     { icon: <ImageIcon size={13} />, label: 'Thumbnail' },
-    { icon: <Mail size={13} />, label: 'Newsletter' },
     { icon: <Instagram size={13} />, label: 'Instagram' },
     { icon: <Facebook size={13} />, label: 'Facebook' },
     { icon: <Pin size={13} />, label: 'Pinterest' },

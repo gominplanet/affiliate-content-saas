@@ -39,11 +39,13 @@ const row = (label: string) => rows.find(r => r.label === label)
     `${thumbs!.amazon} vs plan ${A.thumbnailsPerMonth}`)
 
   const designs = row('Ready-to-post designs')
-  check('the designs row states all three Amazon caps',
+  // Facebook is no longer a counted design (2026-10-05): it reuses the product's
+  // pictures, and the row says so instead of a number.
+  check('the designs row states both Amazon design caps and that Facebook reuses them',
     designs!.amazon.includes(String(A.pinsPerMonth))
     && designs!.amazon.includes(String(A.igPostsPerMonth))
-    && designs!.amazon.includes(String(A.facebookPostsPerMonth)),
-    `${designs!.amazon} vs plan ${A.pinsPerMonth}/${A.igPostsPerMonth}/${A.facebookPostsPerMonth}`)
+    && /Facebook reuses them/.test(designs!.amazon),
+    `${designs!.amazon} vs plan ${A.pinsPerMonth}/${A.igPostsPerMonth}`)
 
   // NO NUMBER IN THIS TABLE THAT THE PLAN DOES NOT GRANT.
   //

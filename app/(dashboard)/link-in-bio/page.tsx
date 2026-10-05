@@ -656,7 +656,7 @@ function ShopPageGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Palette size={18} />,
       title: 'Make it yours',
-      body: <>Your <strong>logo or headshot imports straight from your blog</strong> — no re-uploading. Pick a theme, add a short bio line, and your connected social accounts show up automatically as a tidy row of icon pills under your name. Your other brand links (YouTube, newsletter, site) sit right below.</>,
+      body: <>Your <strong>logo or headshot imports straight from your blog</strong>, no re-uploading. Pick a theme, add a short bio line, and your connected social accounts show up automatically as a tidy row of icon pills under your name. Your other brand links (YouTube, site) sit right below.</>,
     },
     {
       icon: <Link2 size={18} />,

@@ -28,6 +28,55 @@
 import { APP_SEARCH_INDEX } from './app-search-index'
 import { TIERS, SELLABLE_TIERS, type Tier } from './tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from './usage-cap'
+import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
+// so the assistant is told that instead of how to use it, and never offers it.
+// The full section is kept for the day the switch goes back on.
+const NEWSLETTER_RETIRED_GUIDE = `## NEWSLETTER (RETIRED)
+
+The Newsletter tool has been retired and is not part of any plan. If a user
+asks about it, say plainly that it has been retired. Never suggest it, link to
+/newsletter, or quote a subscriber or send limit.`
+
+const NEWSLETTER_GUIDE = `## NEWSLETTER
+
+URL: /newsletter · Sidebar: Create → Newsletter
+
+A built-in email list. Subscribers opt in via forms on the user's blog.
+
+### Subscriber management
+URL: /newsletter — view, tag, export, delete subscribers.
+Tags are user-defined free-text labels (e.g. "paying", "lead", "archived")
+used for segmenting later.
+
+### Composing + sending
+URL: /newsletter/compose — pick a recent blog post, customize the email,
+hit Send. The newsletter pulls the post's title + hero image + intro and
+formats them for email.
+
+### Pro features
+- **Segmented sends** — narrow by source / signup date range / tags.
+  Live preview shows "Matches 47 of 312 active subscribers" before
+  sending.
+- **A/B subject lines** — two subjects, split-test, winner sends to the
+  rest. Pro-only.
+- **Scheduling** — schedule a broadcast for a future time. Pro.
+
+### Tier caps for newsletter (current)
+- Trial: locked (FeatureLockedCard shown)
+- Pro: ${proNewsletter()}
+
+### Legacy Creator grandfathering
+NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
+and no screen offers them. Never suggest either as an upgrade; the only
+plans anyone can buy are Free Trial, Amazon and Pro. This section exists
+so that if an EXISTING Creator subscriber asks why their numbers differ,
+the answer is right rather than absent.
+Creator users who were paying when the cap was lowered (2026-06-04)
+keep the OLD numbers: 1,000 subs + 4 sends/month. A grandfather banner
+on /newsletter and /billing explains this. Cancel + re-subscribe = new
+caps apply.`
 
 const FEATURE_GUIDE = `
 # MVP AFFILIATE — FEATURE GUIDE (for assistant grounding)
@@ -196,44 +245,7 @@ layout. Keeps the URL, replaces everything else.
 
 ---
 
-## NEWSLETTER
-
-URL: /newsletter · Sidebar: Create → Newsletter
-
-A built-in email list. Subscribers opt in via forms on the user's blog.
-
-### Subscriber management
-URL: /newsletter — view, tag, export, delete subscribers.
-Tags are user-defined free-text labels (e.g. "paying", "lead", "archived")
-used for segmenting later.
-
-### Composing + sending
-URL: /newsletter/compose — pick a recent blog post, customize the email,
-hit Send. The newsletter pulls the post's title + hero image + intro and
-formats them for email.
-
-### Pro features
-- **Segmented sends** — narrow by source / signup date range / tags.
-  Live preview shows "Matches 47 of 312 active subscribers" before
-  sending.
-- **A/B subject lines** — two subjects, split-test, winner sends to the
-  rest. Pro-only.
-- **Scheduling** — schedule a broadcast for a future time. Pro.
-
-### Tier caps for newsletter (current)
-- Trial: locked (FeatureLockedCard shown)
-- Pro: ${proNewsletter()}
-
-### Legacy Creator grandfathering
-NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
-and no screen offers them. Never suggest either as an upgrade; the only
-plans anyone can buy are Free Trial, Amazon and Pro. This section exists
-so that if an EXISTING Creator subscriber asks why their numbers differ,
-the answer is right rather than absent.
-Creator users who were paying when the cap was lowered (2026-06-04)
-keep the OLD numbers: 1,000 subs + 4 sends/month. A grandfather banner
-on /newsletter and /billing explains this. Cancel + re-subscribe = new
-caps apply.
+${NEWSLETTER_FOR_MEMBERS ? NEWSLETTER_GUIDE : NEWSLETTER_RETIRED_GUIDE}
 
 ---
 
@@ -325,10 +337,6 @@ write access to push generated metadata back.
 ### Multi-account social (Pro)
 Pro users can connect multiple Facebook Pages or Instagram accounts and
 pick which one each post fans out to.
-
-### Newsletter as a "channel"
-The newsletter is treated like a social channel for fan-out purposes
-on the publish flow.
 
 ### Amazon affiliate links on Facebook — is it allowed? (common question)
 Yes — it's a myth that you can't. Amazon Associates ALLOWS affiliate links
@@ -684,19 +692,19 @@ clearing.
 **"My domain shows DNS propagating"** — Wait 15-30 min, refresh. Most
 domains resolve within an hour of Hostinger sign-up.
 
-**"Can I import subscribers from ConvertKit / Substack / Mailchimp?"** —
+${NEWSLETTER_FOR_MEMBERS ? `**"Can I import subscribers from ConvertKit / Substack / Mailchimp?"** —
 Yes. /newsletter has a CSV import. Takes the first column of
 every line + a possible header row.
 
-**"How do I disconnect a WordPress site without losing my posts?"** —
+` : ''}**"How do I disconnect a WordPress site without losing my posts?"** —
 Click the trash icon on the site in /setup. It removes the connection
 from MVP only; the WordPress posts stay on the WordPress site.
 
-**"How do I tag subscribers?"** — /newsletter, click a row,
+${NEWSLETTER_FOR_MEMBERS ? `**"How do I tag subscribers?"** — /newsletter, click a row,
 add tags. Tags are free-text — anything you want (e.g. "paying", "lead").
 Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 
-**"My Trial is over — what now?"** — Pick Creator, Studio, or Pro on
+` : ''}**"My Trial is over, what now?"** Pick Amazon ($${TIERS.amazon.price} a month) or Pro on
 /billing. Stripe checkout. Tier updates immediately on webhook.
 
 **"Can I connect more than one WordPress site?"** Yes on Pro (up to ${TIERS.pro.sites}).
@@ -757,9 +765,9 @@ links carry rel="sponsored nofollow" (the correct SEO + disclosure signal).
 Reviews are written only from what's actually in your video and the real product
 details, never fabricated experiences or made-up numbers.
 
-**"Can I put my Amazon affiliate link in my newsletter / emails?"** Amazon's
+**"Can I put my Amazon affiliate link in my emails?"** Amazon's
 Operating Agreement does NOT allow Amazon affiliate links inside emails. Best
-practice: point your newsletter at your blog POST (which carries the affiliate
+practice: point any email you send at your blog POST (which carries the affiliate
 link) rather than linking straight to Amazon. Linking to your own site is always
 fine.
 
@@ -874,14 +882,16 @@ function plansBlock(): string {
     const rows = [
       line('Generations per month (blog + thumbnail + metadata share one bucket)', t.postsPerMonth, 'per month'),
       t.thumbnailsPerMonth ? `- Art Director thumbnails: ${n(t.thumbnailsPerMonth, 'per month')}` : null,
-      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins, ${t.igPostsPerMonth} Reels covers, ${t.facebookPostsPerMonth} Facebook per month` : null,
+      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins and ${t.igPostsPerMonth} Reels covers per month. Facebook posts reuse the product's thumbnail or Instagram design, so they use none of these` : null,
       line('Video scripts', t.scriptsPerMonth, 'per month'),
       line('Photobooth headshots', t.photoboothPerMonth, 'per month'),
       line('Creator Connections outreach', t.collabsPerMonth, 'per month'),
       line('Instagram AI thumbnails', t.instagramAiThumbnailsPerMonth, 'per month'),
       line('Face training slots', t.maxFaces, plural(t.maxFaces, 'slot', 'slots')),
       line('WordPress sites', t.sites, plural(t.sites, 'site', 'sites')),
-      t.newsletterSubscribers
+      // Retired for members (NEWSLETTER_FOR_MEMBERS): no line at all, so no
+      // plan, legacy ones included, is described as having a newsletter.
+      !NEWSLETTER_FOR_MEMBERS ? null : t.newsletterSubscribers
         ? `- Newsletter: ${t.newsletterSubscribers.toLocaleString('en-US')} subscribers, ${n(t.newsletterBroadcastsPerMonth, `${plural(t.newsletterBroadcastsPerMonth, 'send', 'sends')} per month`)}`
         : '- Newsletter: not on this plan',
       line('Help Desk messages', t.assistantMessagesPerMonth, 'per month'),
@@ -909,8 +919,7 @@ right and something needs reporting. Say so rather than explaining the gap away.
 
 ### Free Trial (free)
 - 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card required.
-- Help Desk messages: ${TIERS.trial.assistantMessagesPerMonth} per month
-- Newsletter: not on this plan
+- Help Desk messages: ${TIERS.trial.assistantMessagesPerMonth} per month${NEWSLETTER_FOR_MEMBERS ? '\n- Newsletter: not on this plan' : ''}
 
 ## PLANS ON SALE TODAY
 

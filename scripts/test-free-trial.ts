@@ -402,7 +402,8 @@ const check = (name: string, cond: boolean, detail?: string) => {
     thumbnailsPerMonth: TIERS.amazon.thumbnailsPerMonth,
     pinsPerMonth: TIERS.amazon.pinsPerMonth,
     igPostsPerMonth: TIERS.amazon.igPostsPerMonth,
-    facebookPostsPerMonth: TIERS.amazon.facebookPostsPerMonth,
+    // facebookPostsPerMonth left out: Facebook reuses the product's existing
+    // pictures (2026-10-05), so the card says so instead of printing a cap.
     collabsPerMonth: TIERS.amazon.collabsPerMonth,
     dealsPerMonth: TIERS.amazon.dealsPerMonth,
     maxFaces: TIERS.amazon.maxFaces,

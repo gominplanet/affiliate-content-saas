@@ -16,7 +16,7 @@ import type { ReactNode } from 'react'
 import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
 import {
   Wand2, PackageSearch, Share2, Handshake, Radar, UserSquare,
-  FileText, Youtube, Scale, Mail, TrendingUp, Check, ArrowRight, Sparkles,
+  FileText, Youtube, Scale, TrendingUp, Check, ArrowRight, Sparkles,
 } from 'lucide-react'
 
 const ACCENT = '#C2410C' // Amazon-hub orange (sidebar + /pricing)
@@ -34,7 +34,6 @@ const UPGRADE: { icon: ReactNode; title: string; desc: string }[] = [
   { icon: <FileText size={16} />, title: 'A real blog', desc: 'Publish full product-review posts to your own WordPress site, in your voice.' },
   { icon: <Youtube size={16} />, title: 'YouTube engine', desc: 'Turn any video into a blog, thumbnails, scripts and a week of social posts.' },
   { icon: <Scale size={16} />, title: 'Comparisons & guides', desc: 'Head-to-head ranked posts and buying guides that win search.' },
-  { icon: <Mail size={16} />, title: 'Newsletter', desc: 'Your own list, with scheduling and segments.' },
   { icon: <TrendingUp size={16} />, title: 'SEO & indexing', desc: 'Get every post found on Google, faster.' },
 ]
 
@@ -107,8 +106,8 @@ export default function AmazonDashboard({ firstName, today }: { firstName: strin
           <div className="rounded-2xl border p-6 h-[calc(100%-2rem)] flex flex-col" style={{ borderColor: `${ACCENT}55`, background: `linear-gradient(180deg, ${ACCENT}14, ${ACCENT}05)` }}>
             <p className="text-[13.5px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
               You&apos;ve got the storefront covered. The full MVP plans add a whole content engine on
-              top of everything you already have, so one product can become a blog post, a video, a
-              newsletter and a week of social, not just a design.
+              top of everything you already have, so one product can become a blog post, a video and a
+              week of social, not just a design.
             </p>
             <ul className="space-y-3 flex-1">
               {UPGRADE.map((u) => (

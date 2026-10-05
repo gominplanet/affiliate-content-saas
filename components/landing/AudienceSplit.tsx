@@ -29,7 +29,7 @@ import { TIERS } from '@/lib/tier'
 import NextImage from 'next/image'
 import {
   ShoppingBag, Rocket, Wand2, Share2, BadgePercent, Radar, UserSquare, Store,
-  FileText, Youtube, Scale, Mail, TrendingUp, ArrowRight,
+  FileText, Youtube, Scale, TrendingUp, ArrowRight,
 } from 'lucide-react'
 
 type Panel = {
@@ -83,7 +83,7 @@ const PANELS: Panel[] = [
     icon: <Rocket size={22} />,
     logo: '/png/mvp-affiliate-pro.png',
     headline: 'The whole content pipeline,\nin your voice.',
-    blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, a newsletter and a week of social, all written in your own voice.',
+    blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, scripts and a week of social, all written in your own voice.',
     // Read, like the Amazon panel above. These were typed as $49 / $99 against a
     // real Pro price of $199 / $399, which is the kind of wrong that only
     // survives in a component nobody renders.
@@ -96,7 +96,6 @@ const PANELS: Panel[] = [
       { icon: <FileText size={16} />, text: 'Full product-review blog on your WordPress, in your voice' },
       { icon: <Youtube size={16} />, text: 'YouTube video → blog, thumbnails, scripts & social posts' },
       { icon: <Scale size={16} />, text: 'Comparison posts & buying guides that win search' },
-      { icon: <Mail size={16} />, text: 'Your own newsletter, with scheduling & segments' },
       { icon: <Store size={16} />, text: 'Auto-post to 9+ networks, plus the full Amazon storefront toolkit' },
     ],
   },

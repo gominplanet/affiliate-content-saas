@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
+import { newsletterRetired } from '@/lib/newsletter-retired'
 import { normalizeTier, allowedNewsletterSubscribers } from '@/lib/tier'
 import { EMAIL_RE, normaliseEmail } from '@/lib/newsletter'
 
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const retired = await newsletterRetired(supabase, user.id)
+  if (retired) return retired
   const denied = await denyNewsletterWrite(user.id)
   if (denied) return denied
 

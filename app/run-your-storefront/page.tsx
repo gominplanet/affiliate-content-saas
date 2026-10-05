@@ -84,7 +84,7 @@ const MAKES: { icon: React.ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <LayoutTemplate size={18} />,
-    title: `${TIERS.amazon.pinsPerMonth} pins, ${TIERS.amazon.igPostsPerMonth} Reels covers, ${TIERS.amazon.facebookPostsPerMonth} Facebook designs`,
+    title: `${TIERS.amazon.pinsPerMonth} pins and ${TIERS.amazon.igPostsPerMonth} Reels covers, posted to Facebook too`,
     body: 'Shoppable designs for every surface your storefront traffic comes from, made and scheduled rather than briefed.',
   },
   {

@@ -120,7 +120,7 @@ export default async function Image() {
                 display: 'flex',
               }}
             >
-              Blog posts that rank, comparisons, thumbnails, newsletter, brand pitches — plus Amazon Deal Radar & a shoppable Shop page. Fact-grounded, every time.
+              Blog posts that rank, comparisons, thumbnails and brand pitches, plus Amazon Deal Radar & a shoppable Shop page. Fact-grounded, every time.
             </div>
 
             {/* CTA row */}

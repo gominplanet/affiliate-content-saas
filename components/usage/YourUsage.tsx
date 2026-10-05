@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 
 interface Bucket { key: string; label: string; used: number; limit: number | null; remaining: number | null }
 interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; lifetime: boolean }
@@ -113,7 +114,11 @@ export default function YourUsage() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  const monthly = (summary?.buckets ?? []).filter((b): b is Bucket & { limit: number } => typeof b.limit === 'number' && b.limit > 0)
+  // No newsletter bar while the member newsletter is retired
+  // (lib/feature-flags NEWSLETTER_FOR_MEMBERS); the summary route leaves it out too.
+  const monthly = (summary?.buckets ?? [])
+    .filter((b) => NEWSLETTER_FOR_MEMBERS || b.key !== 'newsletter')
+    .filter((b): b is Bucket & { limit: number } => typeof b.limit === 'number' && b.limit > 0)
   const all = [
     ...monthly.map((b) => ({ label: b.label, lvl: levelOf(b.used, b.limit) })),
     ...(daily ?? []).map((b) => ({ label: b.label, lvl: levelOf(b.used, b.limit) })),

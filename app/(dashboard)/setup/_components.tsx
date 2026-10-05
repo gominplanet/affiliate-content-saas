@@ -887,7 +887,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#7C3AED', color: '#fff' }}>Under review</span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-                <strong>TikTok</strong> is currently going through the official approval process. It&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Pinterest, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
+                <strong>TikTok</strong> is currently going through the official approval process. It&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Pinterest, Bluesky, Twitter, Telegram, YouTube) works as normal.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[

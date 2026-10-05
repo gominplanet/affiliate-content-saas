@@ -249,7 +249,7 @@ export default function AgencyPage() {
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, brand profile, integrations, API keys, or this settings page."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Newsletter access controlled per VA; other scopes recorded for each person',
+          'Social publishing controlled per VA; other scopes recorded for each person',
           'VAs work under your account (single subscription, multiple logins)',
           'Revoke access instantly — no downtime',
           'Owner-only routes: billing, brand profile, integrations, WordPress, API keys',
@@ -277,7 +277,7 @@ export default function AgencyPage() {
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, integrations or API keys."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Newsletter access controlled per VA; other scopes recorded for each person',
+          'Social publishing controlled per VA; other scopes recorded for each person',
           'Revoke access instantly',
         ]}
         requiredTier="pro"

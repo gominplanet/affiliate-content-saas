@@ -40,7 +40,9 @@
 //   - API access + White-label: still Pro-only but HIDDEN from nav until
 //     real demand surfaces (route + page stay alive).
 //   - Priority queue + Discord priority support: Studio + Pro.
-export type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
+import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+
+export type Tier ='trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
 export const DEFAULT_TIER: Tier = 'trial'
@@ -113,7 +115,7 @@ export const TIERS = {
      *  ever loses its pool falls closed rather than open. */
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
-    facebookPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Five ready-to-post designs, POOLED across pins / Instagram / Facebook.
      *  The free loop is "make a design and hold it", not "make a pin, and
      *  separately make a story", so one pool is the honest shape. Null on every
@@ -210,7 +212,7 @@ export const TIERS = {
     dealsPerMonth: null as number | null,
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
-    facebookPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -220,9 +222,10 @@ export const TIERS = {
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
     /** Taster newsletter: 500 subs, 1 send/mo. Subs at the cap = upsell
-     *  pull to Studio (5k subs). */
-    newsletterSubscribers: 500 as number | null,
-    newsletterBroadcastsPerMonth: 1 as number | null,
+     *  pull to Studio (5k subs). 0 while the member newsletter is retired
+     *  (NEWSLETTER_FOR_MEMBERS), so Pro stays a superset of this plan. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 500 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 1 : 0) as number | null,
     newsletterScheduling: false,
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
@@ -339,7 +342,7 @@ export const TIERS = {
      *  matched, describing a plan nobody was on. Read the three lines. */
     pinsPerMonth: 115 as number | null,
     igPostsPerMonth: 115 as number | null,
-    facebookPostsPerMonth: 90 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
@@ -428,7 +431,7 @@ export const TIERS = {
     // clearing an old back-catalog want to run a lot of them early on.
     metadataGensPerMonth: 100 as number | null,
     /** IG AI thumbnails open to Studio (30→25, 2026-08-22 cap-fit). */
-    instagramAiThumbnailsPerMonth: 25 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null, // retired 2026-10-05 (lib/ig-ai-images)
     /** Deals draw from Studio's shared content pool (postsPerMonth: 45), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
@@ -438,7 +441,7 @@ export const TIERS = {
     // 200→90, IG 120→70, FB 100→45) so the whole plan maxed still fits $90.
     pinsPerMonth: 90 as number | null,
     igPostsPerMonth: 70 as number | null,
-    facebookPostsPerMonth: 45 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -447,11 +450,12 @@ export const TIERS = {
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 400 as number | null,
-    /** Weekly newsletter cadence: 5k subs, 4 sends/mo. */
-    newsletterSubscribers: 5000 as number | null,
-    newsletterBroadcastsPerMonth: 4 as number | null,
+    /** Weekly newsletter cadence: 5k subs, 4 sends/mo. 0 while the member
+     *  newsletter is retired (NEWSLETTER_FOR_MEMBERS), so Pro stays a superset. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 5000 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 4 : 0) as number | null,
     /** Scheduling opens to Studio. A/B + Segments stay Pro-only. */
-    newsletterScheduling: true,
+    newsletterScheduling: NEWSLETTER_FOR_MEMBERS,
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
     scriptsPerMonth: 30 as number | null,
@@ -525,7 +529,7 @@ export const TIERS = {
     // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
     // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
     metadataGensPerMonth: 200 as number | null,
-    instagramAiThumbnailsPerMonth: 40 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null, // retired 2026-10-05 (lib/ig-ai-images)
     /** Deals draw from Pro's shared content pool (postsPerMonth: 100), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
@@ -543,7 +547,7 @@ export const TIERS = {
     // nobody and the headroom cost ceiling rather than buying goodwill.
     pinsPerMonth: 145 as number | null,
     igPostsPerMonth: 145 as number | null,
-    facebookPostsPerMonth: 110 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -552,17 +556,14 @@ export const TIERS = {
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
     assistantMessagesPerMonth: 800 as number | null,
-    /** Weekly cadence: 10k subs, 4 sends/mo. Lowered 8 → 4 (2026-06-14): at
-     *  10k subs, 8 sends = 80k Resend emails/mo (~$30) — a real cash cost that
-     *  sits OUTSIDE the AI-spend ceiling. 4 sends (weekly) is still generous
-     *  and roughly halves that bill. */
-    newsletterSubscribers: 10000 as number | null,
-    newsletterBroadcastsPerMonth: 4 as number | null,
-    /** Pro newsletter unlocks: Scheduling (inherited), A/B subject lines,
-     *  Segmented sends (segment-builder UI is a follow-up task). */
-    newsletterScheduling: true,
-    newsletterABTesting: true,
-    newsletterSegmentedSends: true,
+    /** Newsletter retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS, zero sends ever), so Pro includes none.
+     *  With the switch back on: 10k subs, 4 sends/mo, Scheduling, A/B subject
+     *  lines and Segmented sends, as before. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 10000 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 4 : 0) as number | null,
+    newsletterScheduling: NEWSLETTER_FOR_MEMBERS,
+    newsletterABTesting: NEWSLETTER_FOR_MEMBERS,
+    newsletterSegmentedSends: NEWSLETTER_FOR_MEMBERS,
     scriptsPerMonth: 120 as number | null,
     articlesPerMonth: 15 as number | null,
     /** Pro content-type gates. */
@@ -766,7 +767,8 @@ export function allowedNewsletterSubscribers(
   opts?: { legacyCreatorNewsletter?: boolean },
 ): number | null {
   const t = normalizeTier(tier)
-  if (opts?.legacyCreatorNewsletter && t === 'creator') return 1000
+  // No grandfathered list while the member newsletter is retired.
+  if (NEWSLETTER_FOR_MEMBERS && opts?.legacyCreatorNewsletter && t === 'creator') return 1000
   return TIERS[t].newsletterSubscribers
 }
 
@@ -782,7 +784,7 @@ export function allowedNewsletterBroadcasts(
   opts?: { legacyCreatorNewsletter?: boolean },
 ): number | null {
   const t = normalizeTier(tier)
-  if (opts?.legacyCreatorNewsletter && t === 'creator') return 4
+  if (NEWSLETTER_FOR_MEMBERS && opts?.legacyCreatorNewsletter && t === 'creator') return 4
   return TIERS[t].newsletterBroadcastsPerMonth
 }
 
@@ -817,8 +819,8 @@ export type SteppedCap =
   | 'postsPerMonth' | 'thumbnailsPerMonth' | 'pinsPerMonth' | 'igPostsPerMonth'
   | 'facebookPostsPerMonth' | 'assistantMessagesPerMonth' | 'collabsPerMonth' | 'xPostsPerMonth'
 const PREV_CAPS: Partial<Record<Tier, Partial<Record<SteppedCap, number>>>> = {
-  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100, collabsPerMonth: 100 },
-  amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, facebookPostsPerMonth: 120, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
+  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, xPostsPerMonth: 100, collabsPerMonth: 100 },
+  amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
 }
 
 /** Pro members who were on Pro before the 2026-10-05 change keep these caps

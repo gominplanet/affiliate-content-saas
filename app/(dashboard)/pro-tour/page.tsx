@@ -33,8 +33,8 @@ export default function ProTourPage() {
             Everything Pro unlocks on MVP Affiliate today
           </h1>
           <p className="text-[15px] leading-relaxed max-w-3xl" style={{ color: 'var(--text-soft)' }}>
-            If you&apos;re running review content as a real business — multiple sites, a team, a growing newsletter,
-            brand deals — you&apos;ve outgrown the &quot;one tool per job&quot; approach. This is the full tour of what&apos;s
+            If you&apos;re running review content as a real business, with multiple sites, a team and brand deals,
+            you&apos;ve outgrown the &quot;one tool per job&quot; approach. This is the full tour of what&apos;s
             shipped on Pro right now. No roadmap, no &quot;coming soon.&quot; Just what works today.
           </p>
         </header>

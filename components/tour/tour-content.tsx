@@ -27,7 +27,7 @@ import Link from 'next/link'
 // match none of them.
 import { TIERS } from '@/lib/tier'
 import {
-  FileText, Youtube, Search, Mail, Handshake,
+  FileText, Youtube, Search, Handshake,
   Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
   Radar, ShoppingBag, Scissors, FlaskConical,
   ArrowRight, CheckCircle2, ArrowUpRight,
@@ -46,7 +46,6 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'linkbio',      label: 'Link in Bio — Shop page ⚡ new' },
   { id: 'clips',        label: 'Clip Factory — Shorts 🧪 Labs' },
   { id: 'seo',          label: 'SEO that moves rank' },
-  { id: 'newsletter',   label: 'Newsletter' },
   { id: 'collabs',      label: 'Brand outreach' },
   { id: 'finders',      label: 'Source & Earn — product finders' },
   { id: 'deals',        label: 'Deals Hub' },
@@ -176,9 +175,9 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             product reference image first (Amazon&apos;s main image is often a lifestyle collage with props), then render fresh.
           </p>
           <p>
-            <strong>Schedule + cascade.</strong> Pick a future date, MVP queues the post, drafts the newsletter,
-            schedules the WordPress publish, fires IndexNow when it goes live, and appends the YouTube description
-            backlink — all on the same timer. Bulk-schedule a week&apos;s worth of videos in one shot.
+            <strong>Schedule + cascade.</strong> Pick a future date, MVP queues the post, schedules the WordPress
+            publish, fires IndexNow when it goes live, and appends the YouTube description backlink, all on the same
+            timer. Bulk-schedule a week&apos;s worth of videos in one shot.
           </p>
           <p>
             <strong>Rebuild legacy posts.</strong> If you have old WP posts from before MVP, point a YouTube video at
@@ -327,7 +326,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             <li>
               <strong>Your brand, ported automatically.</strong> Your logo/avatar imports from your blog, your connected
               social accounts show up as a tidy row of centered icon pills, and your other brand links (YouTube channel,
-              newsletter, site) sit right under the header.
+              site) sit right under the header.
             </li>
             <li>
               <strong>Publish + track.</strong> Toggle the page live, share the one link everywhere, and watch the clicks
@@ -411,39 +410,6 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
           </ul>
           {isApp && <SectionCta href="/seo" label="Open the SEO hub" />}
-        </Section>
-
-        {/* ── 4. Newsletter ────────────────────────────────────────── */}
-        <Section id="newsletter" icon={<Mail size={18} />} title="Newsletter (Resend + custom domain)">
-          <p>
-            Newsletter on Pro is a real owned-audience play, not a token feature. When the algorithm changes, the list
-            you own is the audience that stays.
-          </p>
-          <ul>
-            <li>
-              Connect your custom domain to Resend in one wizard. MVP creates the Resend domain, surfaces the exact DNS
-              records you need to paste, then polls until verification — auto-confirming the moment your DNS propagates.
-            </li>
-            <li>Capped subscriber list well into the tens of thousands.</li>
-            <li>
-              <strong>Compose:</strong> live preview as you type, segment picker, A/B subject line testing, schedule
-              send for any future date.
-            </li>
-            <li>
-              <strong>Auto-embed:</strong> the MVP theme renders your signup form on the homepage and in the sidebar of
-              every post automatically — no shortcode pasting. Mid-article inline form is configurable per blog from
-              Customize.
-            </li>
-            <li>
-              <strong>Segment builder:</strong> target subscribers by source, signup date, or behavioral tags. Send the
-              new-grill review only to people who signed up via your grill posts.
-            </li>
-            <li>
-              Sender name override and per-placement CTA copy so the homepage form, the sidebar, and the mid-article
-              inline form can each have different framing.
-            </li>
-          </ul>
-          {isApp && <SectionCta href="/newsletter" label="Open Newsletter" />}
         </Section>
 
         {/* ── 5. Brand outreach ────────────────────────────────────── */}
@@ -555,7 +521,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <ul>
             <li>
               Connect up to 10 sites. Each lives as its own entry in your Pro account with its own credentials, its own
-              Geniuslink group, its own brand profile data flowing through, its own newsletter, its own Customize settings.
+              Geniuslink group, its own brand profile data flowing through, its own Customize settings.
             </li>
             <li>
               <strong>Multiple YouTube channels.</strong> Connect more than one channel, set a default channel per blog,
@@ -568,7 +534,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               Set a default site and use the site picker on every content surface (Library, Co-Pilot, Comparison,
-              Newsletter, SEO) to route work to a specific site.
+              SEO) to route work to a specific site.
             </li>
             <li>
               Per-site SEO dashboard — your SEO hub shows posts from all sites with their site name as a column, so a
@@ -628,7 +594,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               your readers narrow products by their actual constraints.
             </li>
             <li>
-              Sticky TOC, in-article newsletter signup, footer customization, header banner, schema enrichment, OG
+              Sticky TOC, footer customization, header banner, schema enrichment, OG
               image generation, IndexNow ping, LiteSpeed cache integration on save.
             </li>
           </ul>
@@ -690,8 +656,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               cascade leg failed, with a one-click retry.
             </li>
             <li>
-              <strong>Schedule cascade:</strong> link a post&apos;s schedule to its newsletter send — they all fire at the
-              same timestamp.
+              <strong>Schedule cascade:</strong> link a post&apos;s schedule to its social posts, and they all fire
+              from the same master time.
             </li>
             <li>
               <strong>In-app notification bell:</strong> every failed job, every approval needed, every scheduling
@@ -713,8 +679,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </h2>
           <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
             The {TIERS.amazon.label} plan gets you the storefront: thumbnails, designs, brand deals. {TIERS.pro.label} gets
-            you the <em>business</em> on top of it. Multiple sites, a team, a real
-            newsletter, brand-deal pipeline, performance analytics that drive your editorial calendar, the infrastructure
+            you the <em>business</em> on top of it. Multiple sites, a team, a
+            brand-deal pipeline, performance analytics that drive your editorial calendar, the infrastructure
             to run all of it from one dashboard.
           </p>
           <p className="text-[14px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>

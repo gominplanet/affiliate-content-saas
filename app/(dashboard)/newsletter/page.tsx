@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { NewsletterRetiredNotice, useNewsletterRetired } from '@/components/newsletter/NewsletterRetiredNotice'
 import { NewsletterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
@@ -93,7 +94,17 @@ interface SubscriberRow {
 }
 interface Counts { active: number; pending: number; unsubscribed: number }
 
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS):
+// anyone but admin gets a short notice, and the tool below never mounts, so
+// none of its API calls are made.
 export default function NewsletterPage() {
+  const retired = useNewsletterRetired()
+  if (retired === 'loading') return null
+  if (retired) return <NewsletterRetiredNotice />
+  return <NewsletterTool />
+}
+
+function NewsletterTool() {
   const { confirm, ConfirmHost } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [savingField, setSavingField] = useState<string | null>(null)

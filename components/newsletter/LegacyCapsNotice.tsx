@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 
 const DISMISS_KEY = 'mvp-legacy-creator-newsletter-dismiss'
 
@@ -23,6 +24,9 @@ export function LegacyCapsNotice() {
   const [tier, setTier] = useState<string | null>(null)
 
   useEffect(() => {
+    // Nothing to say about newsletter caps while the member newsletter is
+    // retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS).
+    if (!NEWSLETTER_FOR_MEMBERS) return
     let cancelled = false
     ;(async () => {
       const supabase = createBrowserClient()

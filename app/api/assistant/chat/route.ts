@@ -55,7 +55,7 @@ features.
 
 FORMATTING: Use markdown. When you mention an in-app page, format it
 as a markdown link the user can click — e.g. **[Face Training](/face-training)**
-or **[Newsletter compose](/newsletter/compose)**. When you mention
+or **[Brand Profile](/brand)**. When you mention
 external URLs (Amazon, Hostinger, etc.), use the full https:// URL
 inside the link as well. Use **bold** for key actions, bullets for
 lists of steps, and \`/path\` inline code only when literally telling

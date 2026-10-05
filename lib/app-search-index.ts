@@ -11,6 +11,8 @@
 // components/layout/DashboardShellV2.tsx — nav is the source of truth for
 // routes; this adds the section-level shortcuts nav can't express.
 
+import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+
 export interface AppSearchEntry {
   /** Display name shown in the results list. */
   label: string
@@ -56,7 +58,8 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'MVP x LTK', href: '/ltk', group: 'Create', keywords: 'ltk liketoknowit shopltk rewardstyle link post' },
   { label: 'Deals Hub', href: '/deals', group: 'Create', keywords: 'deals sale prime day discount occasion' },
   { label: 'Scriptwriter', href: '/script', group: 'Create', keywords: 'script video script write scriptwriter' },
-  { label: 'Newsletter', href: '/newsletter', group: 'Create', keywords: 'newsletter email broadcast subscribers compose segments a/b subject' },
+  // Retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS), so not offered by search.
+  ...(NEWSLETTER_FOR_MEMBERS ? [{ label: 'Newsletter', href: '/newsletter', group: 'Create', keywords: 'newsletter email broadcast subscribers compose segments a/b subject' }] : []),
 
   // ── Source & Earn ────────────────────────────────────────────────────────
   { label: 'AMZ Product Finder', href: '/amz-finder', group: 'Source & Earn', keywords: 'amazon product finder creator connections campaigns epc smart scan find products commission' },

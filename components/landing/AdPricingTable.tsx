@@ -43,7 +43,6 @@ function capsFor(tier: PaidTier): string[] {
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
         ['Pinterest pins a month', t.pinsPerMonth],
         ['Reels covers a month', t.igPostsPerMonth],
-        ['Facebook designs a month', t.facebookPostsPerMonth],
         ['brand-deal messages a month', t.collabsPerMonth],
         ['face models', t.maxFaces],
       ]
@@ -52,7 +51,6 @@ function capsFor(tier: PaidTier): string[] {
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
         ['video scripts a month', t.scriptsPerMonth],
         ['WordPress sites', t.sites],
-        ['newsletter subscribers', t.newsletterSubscribers],
         ['virtual assistant seats', t.vaSeats],
       ]
   return rows.filter(([, v]) => v !== 0).map(([label, v]) => `${n(v)} ${label}`)

@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { CustomizeGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   RefreshCw, Sparkles, AlertCircle, Check,
@@ -269,6 +271,12 @@ export default function CustomizePage() {
   // comment opt-in can be turned on in the same place). null = still loading.
   const [newsletterOn, setNewsletterOn] = useState<boolean | null>(null)
   const [newsletterSaving, setNewsletterSaving] = useState(false)
+  // The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
+  // so its two controls here (the comment opt-in and the mid-article form) are
+  // hidden unless the viewer is admin. The customizations route also pushes
+  // the form switched off, so a stale saved toggle cannot bring it back.
+  const viewerTier = useEffectiveTier()
+  const showNewsletter = NEWSLETTER_FOR_MEMBERS || viewerTier === 'admin'
   // Installed WP plugin version — Connection-only needs 1.0.93+ to take effect, so
   // the card can tell the creator whether any WordPress step is required.
   // undefined = still checking, null = couldn't read (assume needs update).
@@ -854,7 +862,7 @@ export default function CustomizePage() {
                 : <ToggleLeft size={28} />}
             </button>
           </div>
-          {data.layout.enableComments && (
+          {showNewsletter && data.layout.enableComments && (
             <label className="flex items-start gap-3 p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)] cursor-pointer">
               <input
                 type="checkbox"
@@ -926,7 +934,7 @@ export default function CustomizePage() {
         </Section>
 
         {/* Mid-article newsletter form */}
-        <Section
+        {showNewsletter && <Section
           title="Mid-article newsletter form"
           description="Capture emails mid-read while attention is highest. Inserts an inline subscribe form after the Nth paragraph of every single review post. Best converting placement for affiliate sites — typically 1-3% of readers vs <0.5% sidebar-only."
         >
@@ -1000,7 +1008,7 @@ export default function CustomizePage() {
               </>
             )}
           </div>
-        </Section>
+        </Section>}
 
         {/* "Work with brands" banner settings moved to the Brand Inquiries page
             (Collaborate → Brand Inquiries), co-located with the inbox they feed.
