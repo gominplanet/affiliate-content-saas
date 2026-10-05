@@ -95,6 +95,22 @@ export function studioDid(raw: unknown, saved: boolean): StudioDid {
   return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), thumbVerified: o.thumbVerified === true, playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
 }
 
+/** Did SCOUT see Paid promotion ticked in Studio, read back from Studio's own
+ *  saved state (a step's readBack.paidPromotion, the last one that answered).
+ *  Used when YouTube's API cannot be asked (its daily quota is used up), so a
+ *  video SCOUT disclosed is not held private on a read that never happened.
+ *  An API read that answers still decides. Pure. */
+export function scoutSawPaidPromotion(raw: unknown): boolean {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as { steps?: unknown }
+  const steps = Array.isArray(o.steps) ? o.steps as Array<{ readBack?: Record<string, unknown> }> : []
+  let seen: boolean | null = null
+  for (const st of steps) {
+    const v = st?.readBack?.paidPromotion
+    if (v === true || v === false) seen = v
+  }
+  return seen === true
+}
+
 /** Read back from YouTube, did SCOUT's schedule hold: private, with the time
  *  asked for (within two minutes). Pure. */
 export function scheduleHeld(did: StudioDid | null, read: { privacyStatus: string | null; publishAt: string | null } | null, planned: string): boolean {

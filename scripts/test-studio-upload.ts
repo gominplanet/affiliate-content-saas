@@ -7,7 +7,7 @@
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
 import { storeStudioRun, readStudioRun, studioRunSettled, studioRunHeadline } from '../lib/studio-finish'
-import { apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+import { scoutSawPaidPromotion, apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -168,6 +168,20 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('and gives SCOUT its day on older videos', /leaveCommentToScout\(scoutUsers\.has\(r\.user_id\), r\.publish_at, now, r\.created_at\)/.test(cron))
   check('SCOUT is handed older videos as well as new uploads',
     /\.or\(`publish_at\.is\.null,publish_at\.lte\.\$\{now\}`\)/.test(read('app/api/youtube/first-comment/scout/route.ts')))
+}
+
+// ── 2026-10-05: a used-up quota is not "paid promotion missing" ────────────
+// Every SCOUT-disclosed video was held private on a day the API read failed.
+{
+  check('SCOUT\'s Studio reading of Paid promotion is read from its steps (the last answer wins)',
+    scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }, { step: 'visibility', readBack: { paidPromotion: false } }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true }] }) && !scoutSawPaidPromotion(null))
+  const dr = read('app/api/cron/launch-drain/route.ts')
+  check('it counts only when YouTube could not be asked; an API answer still decides',
+    /const apiBlind = readBack == null/.test(dr)
+    && /const paidConfirmed = !disclose \|\| readBack\?\.paidPromotion === true \|\| \(apiBlind && studioPaidByItem\.has\(it\.id\)\)/.test(dr))
+  check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(apiBlind \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
 }
 
 if (failures.length) {

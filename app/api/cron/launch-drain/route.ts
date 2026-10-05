@@ -37,7 +37,7 @@ import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting, studioDid, scheduleHeld, type StudioDid } from '@/lib/studio-upload'
+import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting, studioDid, scheduleHeld, scoutSawPaidPromotion, type StudioDid } from '@/lib/studio-upload'
 import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
@@ -885,11 +885,13 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   // 399), read on its own: on any error the map is empty and every step goes
   // through the API, as it did before.
   const studioByItem = new Map<string, StudioDid>()
+  const studioPaidByItem = new Set<string>()
   {
     const { data: sRows, error: sErr } = await sb.from('launch_items')
       .select('id,studio_upload').in('id', items.map((i: { id: string }) => i.id)).not('studio_upload', 'is', null)
     if (!sErr) for (const r of (sRows ?? []) as Array<{ id: string; studio_upload: Record<string, unknown> | null }>) {
       if (r.studio_upload) studioByItem.set(r.id, studioDid(r.studio_upload, r.studio_upload.visibility != null))
+      if (r.studio_upload && scoutSawPaidPromotion(r.studio_upload)) studioPaidByItem.add(r.id)
     }
   }
 
@@ -1308,14 +1310,22 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       try { readBack = await yt.readDisclosures(videoId) } catch (re) {
         discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
       }
-      const paidConfirmed = !disclose || readBack?.paidPromotion === true
+      // WHEN YOUTUBE CANNOT BE ASKED, STUDIO'S OWN READING COUNTS. On a day
+      // the shared quota is used up the read above fails, and every video SCOUT
+      // had disclosed and scheduled in Studio was held private on a read that
+      // never happened (Seb, 2026-10-05: "it did the same thing" on every
+      // retry). SCOUT reads Paid promotion and the schedule back from Studio's
+      // saved state at no quota; that answers when the API cannot. An API read
+      // that does answer still decides, both ways.
+      const apiBlind = readBack == null
+      const paidConfirmed = !disclose || readBack?.paidPromotion === true || (apiBlind && studioPaidByItem.has(it.id))
       // SCHEDULED BY SCOUT FOR ITS OWN TIME, read back from YouTube: still
       // private with that time, or already public because the time came
       // before this run reached it. Either way the slot was kept, not missed.
       const viaStudio = studioByItem.get(it.id) ?? null
       const studioOnTime = !!viaStudio && viaStudio.visibility === 'schedule' && !!viaStudio.publishAt
         && Math.abs(Date.parse(viaStudio.publishAt) - Date.parse(String(it.planned_publish_at))) <= 120_000
-        && (scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
+        && (apiBlind || scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
       if (studioOnTime && paidConfirmed) missed = false
       let heldBack: string | null = null
       if (!missed && !paidConfirmed) {
