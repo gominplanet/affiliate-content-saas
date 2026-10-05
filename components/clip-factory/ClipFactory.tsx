@@ -236,6 +236,13 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   const [badgeWidthPct, setBadgeWidthPct] = useState<number>(0.42)
   const [product, setProduct] = useState('')
   const [productName, setProductName] = useState('')
+  // Where an auto-filled product came from ('file' | 'video'), said on screen
+  // so a guessed product never looks like one the creator typed; and the
+  // creator's recent products, for one-tap picks (product-guess).
+  const [productGuessFrom, setProductGuessFrom] = useState<string | null>(null)
+  const [recentProducts, setRecentProducts] = useState<Array<{ product: string; productName: string | null }>>([])
+  const productRef = useRef(''); productRef.current = product
+  const productNameRef = useRef(''); productNameRef.current = productName
   const [burning, setBurning] = useState(false)
   const [burnedUrl, setBurnedUrl] = useState<string | null>(null)
   const [composedCaption, setComposedCaption] = useState<string>('')
@@ -535,6 +542,45 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
     } catch (e) { toast.error(errText(e)) }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }, [supabase])
+
+  // FILL THE PRODUCT IN (Alejandro, 2026-10-05: "there is no way to have this
+  // auto completed?"). On reaching Enhance with an empty product, ask MVP what
+  // it already knows: an ASIN in the file name, the picked Short's own product,
+  // and the name MVP already wrote down for that ASIN. Never over what the
+  // creator typed. Their recent products come back too, as one-tap picks.
+  useEffect(() => {
+    if (stage !== 'enhance' || !clip) return
+    const q = new URLSearchParams()
+    if (clip.sourceVideoId) q.set('video', clip.sourceVideoId)
+    else if (clip.title) q.set('file', clip.title)
+    let cancelled = false
+    fetch(`/api/clip-factory/product-guess?${q.toString()}`, { signal: AbortSignal.timeout(15_000) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return
+        setRecentProducts(Array.isArray(d?.recent) ? d.recent : [])
+        if (d?.product && !productRef.current.trim()) { setProduct(d.product); setProductGuessFrom(d.from || null) }
+        if (d?.productName && !productNameRef.current.trim()) setProductName(d.productName)
+      })
+      .catch(() => { /* the fields stay as they are */ })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, clip?.url])
+
+  // A typed or pasted ASIN with no name yet: fill the name MVP already has.
+  useEffect(() => {
+    const asin = /^[A-Z0-9]{10}$/i.test(product.trim()) ? product.trim().toUpperCase() : null
+    if (!asin || productName.trim()) return
+    let cancelled = false
+    const t = setTimeout(() => {
+      fetch(`/api/clip-factory/product-guess?asin=${asin}`, { signal: AbortSignal.timeout(15_000) })
+        .then((r) => r.json())
+        .then((d) => { if (!cancelled && d?.productName && !productNameRef.current.trim()) setProductName(d.productName) })
+        .catch(() => { /* stays empty */ })
+    }, 500)
+    return () => { cancelled = true; clearTimeout(t) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product])
 
   // Live follow-up hands a finished vertical clip over as a draft:
   // /clip-factory?liveClip=<our storage URL>&product=<ASIN>&name=<title>.
@@ -1263,8 +1309,28 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                 <p className="text-[11px] text-[#9a5d00] dark:text-[#ffcf8f]/85 mt-0.5 mb-2.5 leading-relaxed">
                   This short didn&apos;t come from a scripted video, so we need the ASIN or affiliate link to write a proper caption with your link and hashtags. Without it the caption comes out empty.
                 </p>
-                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                <input value={product} onChange={e => { setProduct(e.target.value); setProductGuessFrom(null) }} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
                 <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                {productGuessFrom && product.trim() && (
+                  <p className="text-[11px] text-[#9a5d00] dark:text-[#ffcf8f] mt-1.5">
+                    Filled in from {productGuessFrom === 'file' ? 'the file name' : productGuessFrom === 'video' ? 'the video' : 'what you typed'}. Check it is the right product.
+                  </p>
+                )}
+                {recentProducts.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[11px] font-semibold text-[#9a5d00] dark:text-[#ffcf8f] mb-1">Or pick one of your recent products</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {recentProducts.map((r) => (
+                        <button key={r.product} type="button"
+                          onClick={() => { setProduct(r.product); setProductName(r.productName || ''); setProductGuessFrom(null) }}
+                          className={`max-w-[220px] truncate rounded-full border px-2.5 py-1 text-[11px] font-medium ${product.trim().toUpperCase() === r.product ? 'border-[#7C3AED] bg-[#7C3AED] text-white' : 'border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]'}`}
+                          title={r.productName ? `${r.productName} (${r.product})` : r.product}>
+                          {r.productName || r.product}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div>
