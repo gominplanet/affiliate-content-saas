@@ -40,6 +40,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [faceId, setFaceId] = useState('')
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [reusedNote, setReusedNote] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
@@ -149,6 +150,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No design came back. Try again.')
       setThumbUrl(url)
+      // Facebook reuses the product's thumbnail or Instagram design rather than
+      // designing a new one; say so, so a reused picture never passes for new.
+      setReusedNote(typeof data.reusedNote === 'string' ? data.reusedNote : null)
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
@@ -283,9 +287,14 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
-          {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
+          {genBusy ? <><Loader2 size={16} className="animate-spin" /> {network === 'facebook' ? 'Getting the picture…' : 'Designing…'}</> : <><Wand2 size={16} /> {network === 'facebook' ? 'Use this product\'s picture' : thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
         </button>
         {genError && <p className="text-[13px] text-[#b91c1c] dark:text-[#f87171] flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5" />{genError}</p>}
+        {network === 'facebook' && !genError && (
+          <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+            {reusedNote || 'Facebook uses the thumbnail or Instagram design you already have for this product. With neither, MVP makes the product\'s thumbnail once and reuses it everywhere.'}
+          </p>
+        )}
       </div>
 
       {thumbUrl && (

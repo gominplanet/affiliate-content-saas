@@ -217,7 +217,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
         {!defaultOpen && <button onClick={() => setOpen(false)} className="text-[11px] hover:underline" style={{ color: 'var(--text-soft)' }}>Hide</button>}
       </div>
       <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-        One product → a Pinterest pin, an Instagram story (with link-in-bio) and a Facebook post, all from one shared design. Tick the networks you want; MVP remembers your choice. Fine-tune any of them in the tabs below instead.
+        One product → a Pinterest pin, an Instagram story (with link-in-bio) and a Facebook post. Facebook reuses the thumbnail or Instagram design you already have for the product, so it costs nothing extra. Tick the networks you want; MVP remembers your choice. Fine-tune any of them in the tabs below instead.
       </p>
 
       {!hideProductInput && (

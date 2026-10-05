@@ -25,6 +25,7 @@ import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-ima
 import { asinPathRegex } from '@/lib/asin'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+import { INSTAGRAM_AI_IMAGES } from '@/lib/ig-ai-images'
 import { spendGate } from '@/lib/ai-spend'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -287,6 +288,11 @@ export async function POST(request: Request) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     const tier = (intRow?.tier as Tier) ?? 'trial'
+    // Retired (lib/ig-ai-images): refused before anything is rendered, for
+    // everyone but admin, with the reason and the way that replaced it.
+    if (!INSTAGRAM_AI_IMAGES && tier !== 'admin') {
+      return NextResponse.json({ error: 'Instagram AI images have been retired. Post the video itself to Instagram from Clip Factory, or compose the post from your YouTube thumbnail.', retired: true }, { status: 410 })
+    }
     // Tier restructure 2026-06-04: IG AI thumbnails opened to Studio
     // (30/mo) on top of Pro (100/mo). Trial + Creator still blocked.
     // (Was previously Pro-only — but the tier matrix puts Studio at

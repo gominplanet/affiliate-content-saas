@@ -1,0 +1,148 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// ONE quick-post window for the partner retailers (Walmart, Wayward). They
+// were two copies of the same window that differed only in the route they
+// call, the item fields they send and one sentence of copy, so a fix to one
+// was a fix the other quietly missed. Each retailer keeps its own route, which
+// mints that retailer's link; posting itself is the shared engine behind every
+// quick post (lib/deal-social-publish).
+
+'use client'
+
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
+import PlatformPicker from '@/components/social/PlatformPicker'
+
+interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
+
+const QUICK_PLATFORMS: { key: string; label: string }[] = [
+  { key: 'twitter', label: 'X' },
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'threads', label: 'Threads' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'telegram', label: 'Telegram' },
+  { key: 'bluesky', label: 'Bluesky' },
+]
+
+export default function PartnerQuickPostModal({
+  name, imageUrl, endpoint, payload, linkLabel, captionPlaceholder, onClose, initialCaption = '',
+}: {
+  /** What is being posted, as the card shows it. */
+  name: string
+  imageUrl: string | null
+  /** The retailer's own route (it mints that retailer's link). */
+  endpoint: string
+  /** The item fields that route needs; platforms and caption are added here. */
+  payload: Record<string, unknown>
+  /** "Your Walmart affiliate link", said under the caption box. */
+  linkLabel: string
+  captionPlaceholder?: string
+  onClose: () => void
+  initialCaption?: string
+}) {
+  // Only the creator's CONNECTED socials open ticked. This used to select all
+  // six, so anyone connected to one network unticked five before every post,
+  // and forgetting meant five red "failed" rows for five accounts that were
+  // never connected. See components/social/useConnectedPlatforms.
+  const conn = useConnectedPlatforms()
+  const [selected, setSelected] = useSelectedPlatforms(QUICK_PLATFORMS.map((p) => p.key), conn)
+  const [caption, setCaption] = useState(initialCaption)
+  const [posting, setPosting] = useState(false)
+  const [results, setResults] = useState<PostResult[] | null>(null)
+  const [linkNote, setLinkNote] = useState<string | null>(null)
+
+  const toggle = (key: string) => setSelected((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  const post = async () => {
+    if (selected.size === 0) { toast.error('Pick at least one destination.'); return }
+    setPosting(true); setResults(null); setLinkNote(null)
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(120_000),
+        body: JSON.stringify({ ...payload, platforms: [...selected], caption: caption.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok && !Array.isArray(data.results)) { toast.error(data.error || 'Could not post.'); return }
+      const posted = data.results as PostResult[]
+      setResults(posted)
+      const note = typeof data.geniuslinkNote === 'string' ? data.geniuslinkNote : null
+      setLinkNote(note)
+      const okCount = posted.filter((r) => r.ok).length
+      if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
+      if (data.caption && !caption) setCaption(data.caption)
+      if (okCount > 0 && okCount === posted.length && !note) setTimeout(onClose, 900)
+    } catch {
+      toast.error('Could not post.')
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => { if (!posting) onClose() }}>
+      <div className="bg-white dark:bg-[#16161a] rounded-xl border shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2 font-semibold"><Send size={16} /> Quick post to socials</div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><CloseIcon size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="flex gap-3">
+            {imageUrl && <img src={imageUrl} alt="" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />}
+            <div className="text-sm font-medium line-clamp-3">{name}</div>
+          </div>
+
+          <PlatformPicker
+            options={QUICK_PLATFORMS} selected={selected} onToggle={toggle}
+            known={conn.known} connected={conn.connected}
+          />
+
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>
+            <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3}
+              placeholder={captionPlaceholder || "We'll write a price-safe caption for you, or type your own…"}
+              className="w-full text-sm rounded-lg border bg-background p-2.5 resize-none" />
+            <p className="text-[11px] text-muted-foreground mt-1">{linkLabel} and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.</p>
+          </div>
+
+          {results && (
+            <div className="space-y-1.5">
+              {results.map((r) => (
+                <div key={r.platform} className="flex items-center gap-2 text-sm">
+                  {r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
+                  <span className="capitalize font-medium">{QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform}</span>
+                  {r.ok
+                    ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a> : <span className="text-xs text-muted-foreground">posted</span>)
+                    : <span className="text-xs text-red-600">{r.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {linkNote && (
+            <div className="flex items-start gap-2 text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              {/* Printed as written. This used to be wrapped in "we couldn't shorten via
+                  Geniuslink", which then framed notes that had nothing to do with
+                  Geniuslink, or with shortening: a pin explaining that it points at
+                  the shop page was announced as a Geniuslink failure. The note is a
+                  complete sentence at its source. */}
+              <span>{linkNote}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 p-4 border-t">
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+          <Button size="sm" onClick={post} disabled={posting || selected.size === 0}>
+            {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -26,6 +26,7 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 import { effectiveTier } from '@/lib/view-as'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
+import { INSTAGRAM_AI_IMAGES } from '@/lib/ig-ai-images'
 
 // ── Instagram Publish modal ───────────────────────────────────────────────────
 // Opens when the user clicks the Instagram pill on a video card. Walks them
@@ -165,7 +166,9 @@ export function InstagramPublishModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const aiIsPro = aiTier === 'pro' || aiTier === 'admin'
+  // Retired for everyone (lib/ig-ai-images): with the switch off, the AI path
+  // never shows and every landscape video composes from its thumbnail.
+  const aiIsPro = INSTAGRAM_AI_IMAGES && (aiTier === 'pro' || aiTier === 'admin')
 
   /** Fire the IG-native AI image generation. On success, the returned
    *  imageUrl is wired into existingUrl so the rest of the modal treats

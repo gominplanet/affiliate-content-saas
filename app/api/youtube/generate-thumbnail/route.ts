@@ -7,7 +7,7 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { verifyProductMatch } from '@/lib/product-image'
 import { asinFromAmazonUrl } from '@/lib/product-link'
-import { rememberProductImageFromUrl } from '@/lib/product-image-memory'
+import { rememberProductImageFromUrl, recallProductImage } from '@/lib/product-image-memory'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
@@ -30,7 +30,7 @@ import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from 
 import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
 import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
-import { rememberDesign, isDesignFormat } from '@/lib/design-memory'
+import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import {
@@ -883,6 +883,10 @@ type SupabaseLike = any
  * MVP made the image; MVP should remember it.
  */
 export async function POST(request: Request) {
+  // Facebook reuses what exists instead of designing (facebookFromWhatExists).
+  const fb = await facebookFromWhatExists(request)
+  if (fb.reused) return fb.reused
+  request = fb.request
   // Read the flag off a CLONE — the handler still needs the body stream.
   let defer = false
   try {
@@ -922,6 +926,49 @@ export async function POST(request: Request) {
   // filed under, or null — a screen that says "saved" for a write that did not
   // happen is the failure this repo keeps re-finding.
   return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+/**
+ * FACEBOOK REUSES, IT DOES NOT DESIGN (Seb, 2026-10-05). No member had ever
+ * made a Facebook design, and a product that already has a thumbnail or an
+ * Instagram design has a perfectly good Facebook picture. So a request for a
+ * Facebook design gets, in order: the product's remembered 16:9 thumbnail, its
+ * Instagram design, its Instagram story. Nothing is rendered or counted, and the
+ * answer says what was reused. With nothing to reuse, the product's 16:9
+ * thumbnail is made instead (counted as a thumbnail, and remembered, so the
+ * next Facebook post and every other surface reuse it).
+ */
+async function facebookFromWhatExists(request: Request): Promise<{ reused: Response | null; request: Request }> {
+  let b: Record<string, unknown>
+  try { b = await request.clone().json() as Record<string, unknown> } catch { return { reused: null, request } }
+  if (b.format !== 'fb') return { reused: null, request }
+  const asin = (typeof b.asin === 'string' && /^[A-Z0-9]{10}$/i.test(b.asin.trim()) ? b.asin.trim().toUpperCase() : null)
+    || (typeof b.productUrl === 'string' ? asinFromAmazonUrl(b.productUrl) : null)
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && asin) {
+      const thumb = await recallProductImage(supabase, user.id, asin)
+      const design = thumb ? null
+        : (await recallDesigns(supabase, user.id, asin, 'ig'))[0] || (await recallDesigns(supabase, user.id, asin, 'story'))[0] || null
+      const url = thumb?.imageUrl || design?.imageUrl
+      if (url) {
+        const what = thumb ? 'thumbnail' : 'Instagram design'
+        return {
+          reused: NextResponse.json({
+            thumbnailUrl: url, thumbnailUrls: [url], reusedFrom: what,
+            reusedNote: `Reused your ${what} for this product. Nothing new was made.`,
+          }, { status: 200 }),
+          request,
+        }
+      }
+    }
+  } catch { /* fall through to making the thumbnail */ }
+  const next = new Request(request.url, {
+    method: 'POST', headers: request.headers,
+    body: JSON.stringify({ ...b, format: 'landscape', memorySurface: (b.memorySurface as string) || 'Facebook' }),
+  })
+  return { reused: null, request: next }
 }
 
 /** Keep a non-thumbnail design against its product and format, and say so. */
