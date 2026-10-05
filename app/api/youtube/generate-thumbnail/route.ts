@@ -30,6 +30,7 @@ import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from 
 import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
 import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
+import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import {
   normalizeFraming, normalizeBuild, normalizeHeight, resolveFraming, framingLine, framingNote,
@@ -825,6 +826,10 @@ async function matchFaceModelToFrame<T extends { name: string; source_images: st
  * picked something. Best-effort: on any failure the caller keeps the original
  * selfies and the design comes out exactly as it does today.
  */
+/** The expression portrait always renders at medium (below), so it bills at
+ *  medium whatever quality the design itself uses. */
+const PORTRAIT_COST_MODEL = 'gpt-image-1-medium'
+
 async function generateExpressionPortrait(opts: {
   refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
   /** Built by lib/expression-portrait, where it can be read and tested. */
@@ -2088,6 +2093,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         // Whether the posed portrait actually showed the expression, and whether
         // it took a second attempt. Surfaced so a wrong face is attributable.
         let expressionVerified: boolean | null = null
+        let portraitFromCache = false
         let expressionRetried = false
         // Whether the creator's own clothes were cropped out of the identity
         // references. Only meaningful when the product is worn, and reported
@@ -2251,11 +2257,24 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
           ]
           const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
-          let posed = portraitPrompt ? await generateExpressionPortrait({
+          // A portrait already made from these exact selfies, for this
+          // expression and this prompt, and checked when it was made: use it
+          // and render nothing (lib/expression-portrait-cache).
+          const cachePath = portraitPrompt ? portraitCachePath({
+            userId: user.id, refs: portraitRefs.map((r) => r.data), expressionKey, prompt: portraitPrompt, model: gfxModelOverride,
+          }) : null
+          const cached = cachePath ? await readCachedPortrait(cachePath) : null
+          // Every portrait rendered counts as one design against the plan's
+          // allowance (the same feature as this design, so the same cap), and
+          // is billed at medium, the quality it always renders at.
+          const recordPortrait = () => recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: PORTRAIT_COST_MODEL, images: 1 })
+          let posed = cached ?? (portraitPrompt ? await generateExpressionPortrait({
             refs: portraitRefs,
             promptText: portraitPrompt,
             imageModel: gfxModelOverride,
-          }) : null
+          }) : null)
+          if (posed && !cached) recordPortrait()
+          if (cached) { expressionVerified = true; portraitFromCache = true }
 
           // LOOK AT IT. The design step copies this face, so a portrait that
           // came back with the polite smile these models default to makes a
@@ -2263,9 +2282,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           // exact failure that took an afternoon to find, because nobody could
           // see this intermediate image. A fraction of a cent to check,
           // against $0.06 to render it again: the cheapest guard here, on the
-          // one image everything downstream depends on.
+          // one image everything downstream depends on. A kept portrait was
+          // checked when it was made, so it is not checked again.
           const expressionDesc = expressionDescription(expressionKey)
-          if (posed && portraitPrompt && expressionDesc) {
+          if (posed && !cached && portraitPrompt && expressionDesc) {
             const v = await portraitShowsExpression({
               portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
               politeSmileIsWrong: politeSmileIsWrong(expressionKey),
@@ -2281,20 +2301,15 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               if (retry) {
                 posed = retry
                 expressionRetried = true
-                // SAME CHAIN AS EVERY OTHER RENDER SITE. These two were missed
-                // when the quality-aware billing landed, and were wrong in both
-                // directions: `'gpt-image'` is not in PRICING, so the hero path
-                // fell to IMAGE_COST_FALLBACK ($0.04) against a ~$0.19 render,
-                // while the social path recorded 'gpt-image-1' ($0.19) for a
-                // picture rendered at medium (~$0.06). gfxRecordOverride has to
-                // come FIRST: it is the one that knows the quality actually used.
-                recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
+                recordPortrait()
                 expressionVerified = (await portraitShowsExpression({
                   portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
                   politeSmileIsWrong: politeSmileIsWrong(expressionKey),
                 })).match
               }
             }
+            // Keep it only when the check said it matches.
+            if (posed && expressionVerified === true && cachePath) await writeCachedPortrait(cachePath, posed)
           }
           if (posed) {
             // The new portrait leads. One original selfie stays behind it as a
@@ -2304,7 +2319,6 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             photoBytes = posed
             extraPhotoBytes = [anchor]
             expressionInReference = true
-            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
           }
         }
 
@@ -2771,6 +2785,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           expressionViaPortrait: expressionInReference,
           expressionVerified,
           expressionRetried,
+          expressionPortraitReused: portraitFromCache,
           garmentMatch: garment.check ? garment.check.match : null,
           garmentNote: garment.check && garment.check.match === false ? garment.check.reason : null,
           garmentRetried: garment.retried,

@@ -25,7 +25,7 @@ import { NextResponse } from 'next/server'
 import {
   TIERS, billingWindow, effectivePostCap, allowedNewsletterBroadcasts, normalizeTier, type Tier,
 } from '@/lib/tier'
-import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -183,7 +183,7 @@ export async function GET() {
       countRows('collaborations', 'created_at'),                              // billing window
       countRows('blog_posts', 'published_at', { col: 'post_type', val: 'deal' }),
       countFeatures([META_FEATURE]),                                          // billing window (own cap)
-      countFeatures(['ig_ai_thumbnail_image']),                               // billing window
+      countFeatures(PRIMARY_FEATURE.instagramAi),                               // billing window
       countSince('video_scripts', 'created_at', calStartISO),                 // calendar month
       countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
       countCascade(),                                                         // calendar month, distinct posts

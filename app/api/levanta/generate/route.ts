@@ -31,6 +31,7 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
+import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
 import { type Tier, normalizeTier, tierAllowsSocial } from '@/lib/tier'
 import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
@@ -80,6 +81,9 @@ export async function POST(request: NextRequest) {
     // Monthly AI-spend circuit breaker.
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
+    // One LTK, Levanta, Walmart or Wayward post a day (lib/partner-post-limit).
+    const daily = await partnerPostLimit(user.id, tier)
+    if (daily) return daily
 
     const token = await getExternalKey(supabase, user.id, 'levanta')
     if (!token) {
@@ -344,6 +348,7 @@ export async function POST(request: NextRequest) {
     })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
+    recordPartnerPost(user.id, tier)
     return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', affiliateUrl, cloaked, linkSource, title })
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })

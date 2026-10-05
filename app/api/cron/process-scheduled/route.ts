@@ -25,7 +25,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
-import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
+import { checkXPostCap, xCapMessage } from '@/lib/x-cap'
+import { postToXWithOneRetry, xPostKey, XPostError, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
@@ -326,7 +327,10 @@ export async function GET(request: Request) {
       // the dead-channel streak (it never lands as 'failed').
       const attempts = (row.retry_count ?? 0)
       const isTransient = TRANSIENT_RE.test(rawMsg)
-      if (isTransient && attempts < MAX_PUBLISH_RETRIES) {
+      // An X post that reached X has had its one re-attempt already
+      // (lib/x-retry); requeueing it would be a third paid request.
+      const xAlreadyRetried = err instanceof XPostError && (err.sent || err.dropped)
+      if (isTransient && attempts < MAX_PUBLISH_RETRIES && !xAlreadyRetried) {
         console.warn('[cron/process-scheduled] transient publish error — requeueing', { id: row.id, platform: row.platform, attempt: attempts + 1, error: msg })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (admin as any)
@@ -674,12 +678,14 @@ async function publishOne(
         catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
       }
 
-      // Monthly X post cap (X is the only paid-per-post channel). Reserve a slot
-      // ATOMICALLY before posting so several X posts in one tick can't all pass a
-      // stale count and overspend. Over cap → fail this post with a clear reason.
-      // Refund the reservation if the tweet fails so a blip doesn't burn a slot.
-      const xres = await reserveXPost(admin, row.user_id)
-      if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
+      // Monthly X cap and the one-re-attempt rule, checked BEFORE the image
+      // upload, which is itself a request to X. The atomic reservation still
+      // happens per request inside postToXWithOneRetry.
+      const xcap = await checkXPostCap(admin, row.user_id)
+      if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
+      if (await xFailedAttempts(row.user_id, xPostKey('scheduled', row.id)) >= X_ATTEMPTS_PER_POST) {
+        throw new XPostError(xDroppedMessage(), false, true)
+      }
 
       // Cap the body so the trailing link always survives — an un-capped
       // `${body} ${url}` on a near-280-char body pushed the tweet over the limit
@@ -696,32 +702,23 @@ async function publishOne(
         || (await fetchOgImage(url))
         || null
       let xMedia = await resolveXMedia({ accessToken: accessToken!, imageUrl: xImage, grantedScopes: twScopes })
-      let result
-      try {
-        try {
-          result = await createTweet(accessToken!, finalText, xMedia.mediaIds)
-        } catch (e) {
-          // Reactive refresh: a 401 means the access token is dead even though
-          // expiry looked fine (missing/stale expiry, or token revoked then
-          // re-issued). Refresh once and retry before giving up.
-          const msg = e instanceof Error ? e.message : String(e)
-          if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
+      // ONE RE-ATTEMPT, THEN DROPPED (lib/x-retry). X bills every request, so a
+      // scheduled X post gets its first try and a single re-attempt a few
+      // seconds later, never more: not the transient requeue below, not a
+      // second click. The helper reserves a cap slot per request and refunds a
+      // failure. On the re-attempt after a 401 the token is refreshed first and
+      // the image re-resolved: a 401 means the token was already dead when the
+      // upload ran, so xMedia is a 401 note, not a media id.
+      const result = await postToXWithOneRetry({
+        supabase: admin, userId: row.user_id, key: xPostKey('scheduled', row.id),
+        tweet: async (previous) => {
+          if (previous && /\b401\b|unauthorized/i.test(previous) && refreshToken) {
             accessToken = await doRefresh()
-            // Re-resolve the image too. A 401 on the tweet means the token was
-            // already dead when the upload ran, so xMedia is almost certainly a
-            // 401 note rather than a media id; reusing it would post the retry
-            // without a picture and then report a scope problem that was really
-            // an expired token.
             xMedia = await resolveXMedia({ accessToken, imageUrl: xImage, grantedScopes: twScopes })
-            result = await createTweet(accessToken, finalText, xMedia.mediaIds)
-          } else {
-            throw e
           }
-        }
-      } catch (e) {
-        await refundXPost(admin, xres.reservationId) // tweet failed → don't burn the slot
-        throw e
-      }
+          return createTweet(accessToken!, finalText, xMedia.mediaIds)
+        },
+      })
       // Success: the reservation already counted this post (no recordXPost).
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))

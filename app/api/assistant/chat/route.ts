@@ -35,11 +35,15 @@ function buildSystemPrompt(
   recentPostTitles: string[],
   recentCampaigns: string[],
   memory: string,
-): string {
+): { stable: string; personal: string } {
   const name = (brand?.author_name as string) || (brand?.name as string) || ''
   const niches = ((brand?.niches as string[]) || []).join(', ')
   const tone = ((brand?.tone as string[]) || []).join(', ')
-  return `You are the MVP Help Desk — the in-app guide for MVP Affiliate (mvpaffiliate.io). Half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income. When users ask "what are you" or "who are you", introduce yourself as the MVP Help Desk.
+  // Two parts. STABLE is the same for every user and every message (the
+  // product guide is most of it, ~15k tokens), so it is sent with a cache mark
+  // and read back at a tenth of the price on every later message. PERSONAL is
+  // this user's brand, recent posts and memory, sent fresh each time.
+  const stable = `You are the MVP Help Desk — the in-app guide for MVP Affiliate (mvpaffiliate.io). Half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income. When users ask "what are you" or "who are you", introduce yourself as the MVP Help Desk.
 
 WHAT MVP AFFILIATE DOES — full feature guide below. Treat this as
 authoritative: when a user asks how to do something in MVP, answer
@@ -75,8 +79,9 @@ HOW TO BEHAVE:
 - Be concise and actionable. Prefer specific steps ("Go to YouTube Co-Pilot → …") over generic advice.
 - For affiliate strategy questions, give concrete, experienced guidance (niches, what converts, posting cadence, how to land brand deals).
 - Never invent features the platform doesn't have. If something isn't possible in MVP Affiliate, say so plainly and suggest the closest real workflow.
-- Never use the word "honest". Don't fabricate stats.
-${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}${memory ? `\n\nLONG-TERM MEMORY (what you've learned about this user across past chats + anything they imported — treat as known background, don't recite it back verbatim):\n${memory}` : ''}`
+- Never use the word "honest". Don't fabricate stats.`
+  const personal = `${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}${memory ? `\n\nLONG-TERM MEMORY (what you've learned about this user across past chats + anything they imported — treat as known background, don't recite it back verbatim):\n${memory}` : ''}`
+  return { stable, personal: personal.trim() }
 }
 
 export async function POST(request: Request) {
@@ -163,10 +168,17 @@ export async function POST(request: Request) {
     async start(controller) {
       let full = ''
       try {
+        const sys = buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns, memory)
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 1200,
-          system: buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns, memory),
+          // The stable guide is cached (cache_control), so a message reads
+          // it back at about a tenth of the price; the user's own context
+          // follows it uncached.
+          system: [
+            { type: 'text' as const, text: sys.stable, cache_control: { type: 'ephemeral' as const } },
+            ...(sys.personal ? [{ type: 'text' as const, text: sys.personal }] : []),
+          ],
           messages: [...priorMsgs, { role: 'user', content: message }],
         })
         stream.on('text', (t: string) => { full += t; controller.enqueue(encoder.encode(t)) })

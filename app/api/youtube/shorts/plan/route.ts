@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
+import { findMomentsLimit, recordFindMoments } from '@/lib/find-moments-limit'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchTranscriptCues, cuesToText, normalizeCues, parseSrtCues } from '@/lib/shorts-transcript'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
@@ -93,6 +94,12 @@ export async function POST(request: Request) {
       cues?: Array<{ text?: string; offset?: number; duration?: number }>
       /** The whole video as one clip, no moments picked (Labs whole_video). */
       whole?: boolean
+    }
+    // Ten searches for moments a day (lib/find-moments-limit). Posting the
+    // whole video is not a search and is not counted.
+    if ((body as { whole?: boolean }).whole !== true) {
+      const daily = await findMomentsLimit(user.id, tier)
+      if (daily) return daily
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -356,6 +363,8 @@ export async function POST(request: Request) {
       excludeRanges,
       telemetry: { userId: user.id, tier },
     })
+    // A search that found moments counts toward today's ten.
+    if (clips.length > 0) recordFindMoments(user.id, tier)
     if (clips.length === 0) {
       return NextResponse.json({ error: 'No strong Short-worthy moments were found in this video.', noClips: true }, { status: 422 })
     }

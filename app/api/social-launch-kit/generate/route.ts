@@ -22,6 +22,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { LAUNCH_PLATFORMS, kitSlot, cleanNiche, NICHE_KIT_PLATFORMS, type LaunchPlatform, type SocialKit } from '@/lib/social-launch-kit'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { getDefaultSite } from '@/lib/wordpress-sites'
+import { nicheKitUsage, nicheKitLimitMessage, recordNicheKit, NICHE_KITS_PER_MONTH } from '@/lib/niche-kit-limit'
 
 export const maxDuration = 120
 
@@ -66,6 +67,15 @@ export async function POST(request: Request) {
         locked: true,
       }, { status: 403 })
     }
+  }
+
+  // Five new niche Group kits a month (lib/niche-kit-limit). Checked after
+  // the already-made lock, so reopening a kit you have never counts.
+  let nicheUsedBefore: number | null = null
+  if (niche && !isAdmin) {
+    const usage = await nicheKitUsage(user.id)
+    nicheUsedBefore = usage.used
+    if (usage.left <= 0) return NextResponse.json({ error: nicheKitLimitMessage(), nicheLimit: true, nicheKits: usage }, { status: 429 })
   }
 
   const gate = await spendGate(user.id, tier)
@@ -198,5 +208,13 @@ Everything must be specific to THIS brand and ${niche ? `the ${niche} niche` : '
     }
   } catch { /* saving is best-effort — never block the response */ }
 
-  return NextResponse.json({ ok: true, platform, slot, kit })
+  // Counted once the kit exists. The answer carries the new count, worked out
+  // from the one taken before, since the row just written may not be readable yet.
+  let nicheKits: { used: number; limit: number; left: number } | undefined
+  if (niche && nicheUsedBefore !== null) {
+    recordNicheKit(user.id, tier)
+    const used = nicheUsedBefore + 1
+    nicheKits = { used, limit: NICHE_KITS_PER_MONTH, left: Math.max(0, NICHE_KITS_PER_MONTH - used) }
+  }
+  return NextResponse.json({ ok: true, platform, slot, kit, nicheKits })
 }

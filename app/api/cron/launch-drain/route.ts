@@ -552,7 +552,12 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
             plainWhy = branded.why
             // THE FALLBACK IS RECORDED, NOT HIDDEN, and only attempted with time
             // left to save it; otherwise the next firing tries the look again.
-            if (left() > 75_000) {
+            // NOT WHEN THE PLAN SAID NO. A refusal for the thumbnail allowance or
+            // the spend ceiling is an answer, and the plain image would have
+            // been a second render the plan had just refused.
+            if (branded.limited) {
+              /* plainWhy already carries the route's own words */
+            } else if (left() > 75_000) {
               const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
               if (basic) { patch.thumbnail_url = basic; usedPlain = true }
             }
@@ -730,7 +735,7 @@ async function videoMetadata(
  */
 async function styledThumbnail(
   userId: string, title: string, asin: string, preset: ThumbnailPreset,
-): Promise<{ url: string | null; why: string }> {
+): Promise<{ url: string | null; why: string; limited?: boolean }> {
   const started = Date.now()
   const secs = () => Math.round((Date.now() - started) / 1000)
   try {
@@ -753,9 +758,10 @@ async function styledThumbnail(
       // on (no saved face, a spend cap, an ASIN it cannot fetch), and throwing
       // all of them away left one sentence that fitted every cause equally
       // badly and pointed at none of them.
-      const body = await res.json().catch(() => ({})) as { error?: string }
+      const body = await res.json().catch(() => ({})) as { error?: string; capExceeded?: boolean; spendCapped?: boolean; limitReached?: boolean }
       const said = String(body.error || '').trim().slice(0, 160)
-      return { url: null, why: said || `the thumbnail service answered ${res.status} after ${secs()}s` }
+      const limited = res.status === 429 || !!body.capExceeded || !!body.spendCapped || !!body.limitReached
+      return { url: null, why: said || `the thumbnail service answered ${res.status} after ${secs()}s`, limited }
     }
     const j = await res.json().catch(() => ({})) as { thumbnailUrl?: string; thumbnailUrls?: string[] }
     const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)

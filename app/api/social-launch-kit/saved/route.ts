@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getDefaultSite } from '@/lib/wordpress-sites'
+import { nicheKitUsage } from '@/lib/niche-kit-limit'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -40,5 +41,7 @@ export async function GET() {
       avatarUrl: r.avatar_url ?? undefined,
     }
   }
-  return NextResponse.json({ ok: true, saved, isAdmin })
+  // The month's niche Group kit allowance, so the page can say it up front.
+  const nicheKits = isAdmin ? null : await nicheKitUsage(user.id)
+  return NextResponse.json({ ok: true, saved, isAdmin, nicheKits })
 }

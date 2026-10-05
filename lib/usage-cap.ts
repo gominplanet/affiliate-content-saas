@@ -20,13 +20,17 @@ export const PRIMARY_FEATURE = {
    *  gpt-image-1 (face), Kontext (product), flux-lora (legacy face), or the
    *  Flux Pro fallback — so summing these feature names = total successful
    *  thumbnail generations. */
-  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_nanobanana_image', 'yt_thumb_ideogram_image'] as string[],
+  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_nanobanana_image', 'yt_thumb_ideogram_image',
+    // The Liftoff / Launchpad product thumbnail (lib/product-thumbnail) is a
+    // thumbnail render too, and counts as one.
+    'product_thumbnail', 'product_thumbnail_clean'] as string[],
   /** Metadata 5-agent swarm; title_strategist runs exactly once per
    *  generation, so counting it = total successful metadata gens. */
   metadata: ['yt_meta_title_strategist'] as string[],
   /** Native Instagram AI image — Pro-only, separately capped from
-   *  YouTube thumbnails (different surface, different aspect ratio). */
-  instagramAi: ['ig_ai_thumbnail_image'] as string[],
+   *  YouTube thumbnails (different surface, different aspect ratio). The
+   *  product-check re-render counts too: every render is one of the allowance. */
+  instagramAi: ['ig_ai_thumbnail_image', 'ig_ai_thumbnail_retry_cost'] as string[],
   /** AI assistant — one row per user message turn. */
   assistant: ['assistant_message'] as string[],
   /** Photobooth headshot — one row per successful generation. */

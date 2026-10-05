@@ -147,6 +147,7 @@ export const PRICING: Record<string, Pricing> = {
   'simple-bake-resvg': { in: 0, out: 0, imageCost: 0 }, // local resvg text bake
   'pinterest-api':     { in: 0, out: 0, imageCost: 0 }, // Pinterest publish, free
   'youtube-data-api':  { in: 0, out: 0, imageCost: 0 }, // YouTube upload, quota not dollars
+  'counter':           { in: 0, out: 0, imageCost: 0 }, // a row that only counts a daily limit (partner posts, Find moments)
 
   // Keepa. Zero DOLLARS per call on purpose, not an oversight: Keepa is a flat
   // subscription and what a lookup actually consumes is the shared Keepa token

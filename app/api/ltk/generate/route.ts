@@ -23,6 +23,7 @@ import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
+import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -50,6 +51,9 @@ export async function POST(request: NextRequest) {
     // Runs Opus + image gen — respect the spend ceiling like every gen route.
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
+    // One LTK, Levanta, Walmart or Wayward post a day (lib/partner-post-limit).
+    const daily = await partnerPostLimit(user.id, tier)
+    if (daily) return daily
 
     const body = await request.json() as { ltkUrl?: string; productName?: string; description?: string; imageUrl?: string; widgetCode?: string; draft?: boolean }
     const ltkUrl = (body.ltkUrl || '').trim()
@@ -239,6 +243,7 @@ export async function POST(request: NextRequest) {
     })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
+    recordPartnerPost(user.id, tier)
     return NextResponse.json({
       ok: true, wordpressUrl: wpPost.link, editUrl, draft: isDraft, title,
       note: saveErr

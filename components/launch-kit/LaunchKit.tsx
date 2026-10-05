@@ -28,6 +28,8 @@ const EMOJI: Record<LaunchPlatform, string> = {
   facebook: '📘', facebook_group: '👥', pinterest: '📌', twitter: '🐦', threads: '🧵', bluesky: '🦋', linkedin: '💼',
 }
 
+type NicheKitCount = { used: number; limit: number; left: number }
+
 export default function LaunchKit({ only, embedded = false, initialNiche, onGroupSaved }: {
   /** Only these platforms (Meta Hub: the Facebook Page or Group). */
   only?: LaunchPlatform[]
@@ -55,6 +57,8 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
   const [refImages, setRefImages] = useState<Record<string, string>>({})
   // Banner style per platform — how much goes on the cover.
   const [bannerStyle, setBannerStyle] = useState<Record<string, 'bold' | 'minimal'>>({})
+  // New niche Group kits this month (five a month, lib/niche-kit-limit).
+  const [nicheKits, setNicheKits] = useState<NicheKitCount | null>(null)
 
   // Hydrate any previously-generated kits on load, so a user's saved copy +
   // images stay on the page across sessions (one saved slot per platform).
@@ -67,6 +71,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
         const data = await res.json()
         if (cancelled) return
         if (typeof data?.isAdmin === 'boolean') setIsAdmin(data.isAdmin)
+        if (data?.nicheKits) setNicheKits(data.nicheKits as NicheKitCount)
         if (!data?.saved) return
         const savedKits: Record<string, SocialKit> = {}
         const savedImages: Record<string, string> = {}
@@ -121,6 +126,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
       const data = await res.json()
       // 403 + no `locked` flag = the plan gate (show upgrade banner). 403 + locked
       // = one-generation-per-account regen lock (just toast; button is hidden).
+      if (data?.nicheKits) setNicheKits(data.nicheKits as NicheKitCount)
       if (!res.ok) { if (res.status === 403 && !data.locked) setLocked(true); toast.error(data.error || 'Generation failed.'); return }
       setKits(prev => ({ ...prev, [data.slot || slot]: data.kit as SocialKit }))
       toast.success(`${niche ? `${niche} ` : ''}${LAUNCH_PLATFORM_LIST.find(p => p.id === platform)?.label} kit ready`)
@@ -200,7 +206,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
             onBannerStyle={(s) => setBannerStyle(prev => ({ ...prev, [slot]: s }))}
             onGenerateKit={() => generateKit(spec.id, niche)}
             generateLabel={niche ? `Generate ${niche} Group kit` : undefined}
-            nicheBar={isGroup ? <GroupNicheBar niche={groupNiche} onNiche={setGroupNiche} kits={kits} /> : undefined}
+            nicheBar={isGroup ? <GroupNicheBar niche={groupNiche} onNiche={setGroupNiche} kits={kits} usage={nicheKits} /> : undefined}
             extra={isGroup && niche && kits[slot] && (embedded || canUsePreview('facebook_setup', gateTier)) ? <SaveGroupToMetaHub niche={niche} kit={kits[slot]} embedded={embedded} onSaved={onGroupSaved} /> : undefined}
             onGenerateImage={(kind) => generateImage(spec.id, kind, niche)}
             onPickRef={(kind, file) => pickRef(`${slot}:${kind}`, file)}
@@ -433,7 +439,7 @@ function PlatformCard({
 // A creator runs one Page and a Group per niche, so they pick the niche and the
 // kit writes the name and everything else for that niche. Each niche keeps its
 // own saved kit, shown here as a tab.
-function GroupNicheBar({ niche, onNiche, kits }: { niche: string; onNiche: (n: string) => void; kits: Record<string, SocialKit> }) {
+function GroupNicheBar({ niche, onNiche, kits, usage }: { niche: string; onNiche: (n: string) => void; kits: Record<string, SocialKit>; usage: NicheKitCount | null }) {
   const made = Object.entries(kits)
     .filter(([k]) => k.startsWith('facebook_group:'))
     .map(([k, v]) => v.niche || k.slice('facebook_group:'.length))
@@ -451,6 +457,15 @@ function GroupNicheBar({ niche, onNiche, kits }: { niche: string; onNiche: (n: s
       <p className="text-[11.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         One Page, one Group per niche. Pick the niche and MVP writes the name, web address, rules, welcome post and cover for that Group. Come back for each new niche.
       </p>
+      {/* The month's allowance, said before the button rather than after a
+          refusal (lib/niche-kit-limit). Admin gets null and sees nothing. */}
+      {usage && (
+        <p className="text-[11.5px] font-semibold" style={{ color: usage.left > 0 ? 'var(--text-soft)' : '#b45309' }}>
+          {usage.left > 0
+            ? `${usage.used} of ${usage.limit} new niche Group kits made this month. ${usage.left} left.`
+            : `All ${usage.limit} new niche Group kits for this month are made. Your kits stay here, you can set up more Groups by hand, and new kits open on the 1st.`}
+        </p>
+      )}
       <div className="flex gap-1.5 flex-wrap">
         {chip('My whole brand', '', !current, !!kits.facebook_group)}
         {made.filter((m) => !NICHE_PRESETS.some(([k]) => nicheSlug(k) === nicheSlug(m))).map((m) => chip(m, m, current === nicheSlug(m), true))}

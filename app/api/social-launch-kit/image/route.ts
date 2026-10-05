@@ -91,7 +91,13 @@ export async function POST(request: Request) {
   if (!isAdmin) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existingKit } = await scope((supabase as any).from('social_launch_kits')
-      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
+      .select('kit, banner_url, avatar_url').eq('user_id', user.id).eq('platform', slot)).maybeSingle()
+    // A niche Group's images come with its kit, and the kit is what counts
+    // toward the five a month (lib/niche-kit-limit). Without this, covers for
+    // any number of niches could be made without ever making a kit.
+    if (niche && !existingKit?.kit) {
+      return NextResponse.json({ error: `Make the ${niche} Group kit first, then its cover and icon.` }, { status: 400 })
+    }
     const already = kind === 'banner' ? existingKit?.banner_url : existingKit?.avatar_url
     if (already) {
       return NextResponse.json({

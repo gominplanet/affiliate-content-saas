@@ -13,7 +13,8 @@ import {
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { fetchOgImage } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { checkXPostCap, reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
+import { checkXPostCap, xCapMessage } from '@/lib/x-cap'
+import { postToXWithOneRetry, xPostKey, XPostError, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -219,11 +220,12 @@ Return ONLY the tweet text.`,
     }
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────
-    // Reserve a slot atomically right before posting (the early check above is
-    // just for a fast over-cap 429 before we spend a caption). Refund on failure.
-    const xres = await reserveXPost(supabase, user.id)
-    if (!xres.ok) {
-      return NextResponse.json({ error: xCapMessage(xres.resetLabel), limitReached: true }, { status: 429 })
+    // One re-attempt per post, then MVP drops it (lib/x-retry): X bills every
+    // request, failed ones too. Checked here, before the image upload (also a
+    // request to X); the cap slot is reserved per request inside the helper.
+    const xKey = xPostKey('blog', postId!)
+    if (await xFailedAttempts(user.id, xKey) >= X_ATTEMPTS_PER_POST) {
+      return NextResponse.json({ error: xDroppedMessage(), xDropped: true }, { status: 409 })
     }
 
     // ── 5a. The picture ────────────────────────────────────────────────────
@@ -261,13 +263,33 @@ Return ONLY the tweet text.`,
       ?? pick(await fetchOgImage(post.wordpress_url as string))
       ?? pick(post.hero_source_url)
 
-    const media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
+    let media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
 
     let tweet
     try {
-      tweet = await createTweet(accessToken, finalText, media.mediaIds)
+      tweet = await postToXWithOneRetry({
+        supabase, userId: user.id, key: xKey,
+        // On the re-attempt after a 401, refresh the token first: sending the
+        // same dead token again would be a charge for a known answer.
+        tweet: async (previous) => {
+          if (previous && /\b401\b|unauthorized/i.test(previous) && integration.twitter_refresh_token) {
+            const r = await refreshAccessToken(integration.twitter_refresh_token)
+            accessToken = r.access_token
+            await supabase.from('integrations').update(encryptIntegrationWrite({
+              twitter_access_token: r.access_token,
+              twitter_refresh_token: r.refresh_token ?? integration.twitter_refresh_token,
+              twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
+            })).eq('user_id', user.id)
+            media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
+          }
+          return createTweet(accessToken, finalText, media.mediaIds)
+        },
+      })
     } catch (e) {
-      await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
+      if (e instanceof XPostError && /X posts for this billing period/.test(e.message)) {
+        return NextResponse.json({ error: e.message, limitReached: true }, { status: 429 })
+      }
+      if (e instanceof XPostError) return NextResponse.json({ error: e.message, xDropped: e.dropped }, { status: 502 })
       throw e
     }
     // The reservation already counted this post (no recordXPost).

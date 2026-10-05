@@ -120,6 +120,9 @@ export function ShortsCreatePanel({
       })
       const data = await safeJson(res)
       if (!res.ok) {
+        // The daily find-moments limit is not a plan wall, so no upgrade
+        // prompt: just the reason and when it resets (lib/find-moments-limit).
+        if (data.limitReached && data.cap === 'shorts_find') throw new Error(data.error || 'You have reached today\'s limit for finding moments.')
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         // NO CAPTIONS: GET THE VIDEO, DON'T STOP. YouTube sometimes will not
         // hand over the captions; a creator then read "bring the video in"

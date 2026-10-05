@@ -681,7 +681,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // answer, and the sentence pointed at none of them.
   {
     check('the styled call carries its reason back',
-      /Promise<\{ url: string \| null; why: string \}>/.test(DRAIN),
+      /Promise<\{ url: string \| null; why: string(; limited\?: boolean)? \}>/.test(DRAIN),
       'returning null throws away the one fact that makes the failure fixable')
     // READ OFF THE RESPONSE, not just referenced. The first version matched
     // `body.error` two lines below, so gutting the line that actually reads the
@@ -692,6 +692,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('a timeout names itself',
       /timed out|timedOut/.test(DRAIN) && /took longer than/.test(DRAIN),
       'a timeout is the one cause whose fix is a number in this file, not anything the creator can do')
+    // A refusal by the plan (thumbnail allowance, spend ceiling) is not
+    // followed by the plain fallback, which would be the render it refused.
+    check('no fallback render after the plan said no',
+      /if \(branded\.limited\) \{[\s\S]{0,120}\} else if \(left\(\) > 75_000\) \{\s*const basic = await buildProductThumbnail/.test(DRAIN),
+      'the plain thumbnail had no ceiling and ran exactly when the designed one hit it')
     check('and the row carries it',
       /\$\{plainWhy\}/.test(DRAIN),
       'a reason kept in a variable and never written is a reason nobody reads')

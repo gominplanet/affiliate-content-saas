@@ -486,13 +486,16 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
         if (imageUrl && productImageUrl) {
           const verdict = await verifyProductMatch(productImageUrl, imageUrl, productTitle || (video.title as string), { userId: user.id, tier })
           if (!verdict.match) {
-            const retry = await composeWithGptImage({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+            // The retry is told what was wrong, so it has a reason to come out
+            // different. A second render with the same prompt was a second
+            // roll of the same dice.
+            const fix = `\n\nTHE PREVIOUS RENDER GOT THE PRODUCT WRONG: ${verdict.reason}. Match the product reference exactly this time: its true shape, colour and parts.`
+            const retry = await composeWithGptImage({ prompt: igPrompt + fix, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
             if (retry[0]) {
               imageUrl = retry[0]
-              // Cost-only feature so the QC retry's real spend is still tracked
-              // WITHOUT advancing the monthly cap — `ig_ai_thumbnail_image` must
-              // appear exactly once per delivered image (see PRIMARY_FEATURE in
-              // lib/usage-cap.ts), else one image would burn two of the cap.
+              // A render is a render: the QC retry counts against the monthly
+              // Instagram allowance (PRIMARY_FEATURE.instagramAi lists this
+              // feature), as Seb asked on 2026-10-05, and its cost is tracked.
               recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_retry_cost', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
             }
           }

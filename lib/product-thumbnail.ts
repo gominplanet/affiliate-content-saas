@@ -13,6 +13,28 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { spendGate } from '@/lib/ai-spend'
+import { normalizeTier, TIERS } from '@/lib/tier'
+
+/** Is there room on the plan for one more thumbnail? This image counts as a
+ *  thumbnail (PRIMARY_FEATURE.thumbnail lists its features), so it obeys the
+ *  same monthly allowance and the same spend ceiling as a designed one. Before
+ *  this it was the one render with no ceiling at all: the Liftoff drain made
+ *  it exactly when the designed thumbnail had been refused, cap included. */
+export async function productThumbnailAllowed(sb: Sb, userId: string, rawTier: unknown): Promise<{ ok: boolean; why: string }> {
+  try {
+    const tier = normalizeTier(rawTier)
+    if (tier === 'admin') return { ok: true, why: '' }
+    if (await spendGate(userId, tier)) return { ok: false, why: 'the monthly AI spend ceiling is reached' }
+    const limit = TIERS[tier]?.thumbnailsPerMonth ?? null
+    const { data: row } = await sb.from('integrations').select('subscription_period_start,subscription_period_end').eq('user_id', userId).maybeSingle()
+    const cap = await checkUsageCap(sb, userId, [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic'], limit,
+      (row?.subscription_period_start as string | null) ?? null, (row?.subscription_period_end as string | null) ?? null)
+    if (cap?.exceeded) return { ok: false, why: `all ${limit} thumbnails on the plan are used this period${cap.resetLabel ? ` (resets ${cap.resetLabel})` : ''}` }
+    return { ok: true, why: '' }
+  } catch { return { ok: true, why: '' } } // a counting hiccup never blocks
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -50,6 +72,7 @@ export async function buildProductThumbnail(
 ): Promise<string | null> {
   const withText = opts.withText !== false
   try {
+    if (!(await productThumbnailAllowed(sb, opts.userId, opts.tier)).ok) return null
     const product = await fetchAmazonProduct(opts.asin).catch(() => null)
     // Feed the model the REAL product photos (main + one more angle) so it
     // reproduces the actual item, not a generic stand-in. Falls back to the
