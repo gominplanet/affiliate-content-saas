@@ -181,6 +181,11 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('it counts only when YouTube could not be asked; an API answer still decides',
     /const apiBlind = readBack == null/.test(dr)
     && /const paidConfirmed = !disclose \|\| readBack\?\.paidPromotion === true \|\| \(apiBlind && studioPaidByItem\.has\(it\.id\)\)/.test(dr))
+  const rl = read('lib/launch-release.ts')
+  check('a held video is released on SCOUT\'s Studio reading when the quota is used up, with no YouTube call',
+    /if \(!\/quota\|dailyLimitExceeded\/i\.test\(said\)\) throw e/.test(rl)
+    && /if \(raw && scoutSawPaidPromotion\(raw\) && scoutScheduled\)/.test(rl)
+    && /return \{ state: 'waiting', why: 'youtube-quota' \}/.test(rl))
   check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(apiBlind \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
 }
 

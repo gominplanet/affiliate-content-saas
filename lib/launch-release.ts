@@ -22,6 +22,7 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 // The reason a held video carries, shared with the page's own rules.
 import { HELD_FOR_PAID_PROMOTION } from '@/lib/launch-batch'
+import { studioDid, scoutSawPaidPromotion } from '@/lib/studio-upload'
 export { HELD_FOR_PAID_PROMOTION }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,7 +47,7 @@ export function missedWhen(iso: string, timezone: string | null): string {
 export type ReleaseResult =
   | { state: 'scheduled'; at: string }
   | { state: 'published' }
-  | { state: 'waiting'; why: 'no-login' | 'not-yet' }
+  | { state: 'waiting'; why: 'no-login' | 'not-yet' | 'youtube-quota' }
   | { state: 'late' }
 
 export async function releaseHeld(sb: Sb, it: {
@@ -60,7 +61,35 @@ export async function releaseHeld(sb: Sb, it: {
     return { state: 'waiting', why: 'no-login' }
   }
   const yt = new YouTubeOAuthService(token)
-  const rb = await yt.readDisclosures(videoId)
+  // WHEN YOUTUBE CANNOT BE ASKED, STUDIO'S OWN READING COUNTS (2026-10-05).
+  // On a day the shared quota is used up this read fails, and a video SCOUT
+  // had disclosed and scheduled in Studio stayed held on a read that never
+  // happened. SCOUT reads Paid promotion and the schedule back from Studio's
+  // saved state; that releases it here, with no YouTube call at all. A read
+  // that does answer still decides, as below.
+  let rb: Awaited<ReturnType<typeof yt.readDisclosures>>
+  try {
+    rb = await yt.readDisclosures(videoId)
+  } catch (e) {
+    const said = e instanceof Error ? e.message : String(e)
+    if (!/quota|dailyLimitExceeded/i.test(said)) throw e
+    const { data: row } = await sb.from('launch_items').select('studio_upload').eq('id', it.id).maybeSingle()
+    const raw = row?.studio_upload ?? null
+    const did = raw ? studioDid(raw, (raw as { visibility?: unknown }).visibility != null) : null
+    const planned = String(it.planned_publish_at || '')
+    const scoutScheduled = !!did && did.visibility === 'schedule' && !!did.publishAt
+      && Date.parse(did.publishAt) > Date.now()
+      && (!planned || Math.abs(Date.parse(did.publishAt) - Date.parse(planned)) <= 120_000)
+    if (raw && scoutSawPaidPromotion(raw) && scoutScheduled) {
+      await sb.from('launch_items').update({ state: 'scheduled', publish_at: did!.publishAt, reason: null, updated_at: stamp() }).eq('id', it.id)
+      await commentFollows(sb, it.user_id, videoId, did!.publishAt!)
+      return { state: 'scheduled', at: did!.publishAt! }
+    }
+    // Not something SCOUT confirmed: it waits for the allowance, and says so
+    // rather than "YouTube did not confirm", which it never got to ask.
+    await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
+    return { state: 'waiting', why: 'youtube-quota' }
+  }
   // WHAT YOUTUBE SAYS COMES FIRST. The held message tells the creator they
   // can finish in Studio; if they did, the row follows YouTube rather than
   // overwriting it. Public is public; a time set in Studio is the time.
