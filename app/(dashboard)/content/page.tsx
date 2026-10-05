@@ -896,6 +896,8 @@ const VideoCard = memo(function VideoCardImpl({
   // actions below. Only meaningful before a post exists / before a schedule is
   // pending; those states show their own rows.
   const [genPanelOpen, setGenPanelOpen] = useState(false)
+  // An earlier post about the same product to build this one on (made-before).
+  const [basedOnPostId, setBasedOnPostId] = useState<string | null>(null)
   // Connected social channels for the cascade list. Only the channels
   // the cron worker can publish to are included (no IG/Pinterest/TikTok
   // — they use their own direct-publish routes).
@@ -1526,14 +1528,18 @@ const VideoCard = memo(function VideoCardImpl({
             <div className="mb-2.5 empty:hidden">
               <MadeBefore asin={(video.asin as string | null) ?? null} video={(video.youtube_video_id as string | null) ?? null}
                 only={['blog', 'deal', 'campaign']}
-                heading="You already have a post about this product. Open it to reuse or update it, or write a new one." />
+                buildOnId={basedOnPostId}
+                onBuildOn={(it) => setBasedOnPostId((cur) => (cur === it.id ? null : it.id))}
+                heading={basedOnPostId
+                  ? 'Building on your earlier post: its facts carry over, the new post is written fresh for this video and links back to it.'
+                  : 'You already have a post about this product. Open it, build the new one on it (it reuses the research), or write a new one.'} />
             </div>
           )}
           {/* Fresh Generate-now panel → stack every option vertically so it reads
               as a short checklist. Post-exists rows keep the compact horizontal
               tool row (Generate / Category / Edit / Delete). */}
           <div className={(!post && genPanelOpen) ? 'flex flex-col items-start gap-2.5' : 'flex items-center gap-x-4 gap-y-1.5 flex-wrap'}>
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImagesTouched} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} basedOnPostId={basedOnPostId} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImagesTouched} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}

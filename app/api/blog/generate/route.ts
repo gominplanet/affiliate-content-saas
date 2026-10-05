@@ -54,6 +54,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { researchKeyword } from '@/lib/keyword-research'
+import { earlierPostSource } from '@/lib/earlier-work'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
@@ -279,6 +280,10 @@ async function handleGenerate(request: Request) {
     /** Set by the daily auto-pilot. Its posts go out with nobody looking, so
      *  they are the ones the quality gate holds as drafts. */
     autopilot?: boolean
+    /** Build on a post MVP already wrote about this product (lib/made-before):
+     *  its facts go to the writer as source material and the paid web
+     *  research is skipped. The new post is still written fresh. */
+    basedOnPostId?: string
   }
   const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
   // An admin repair of a live post (app/api/admin/rebuild-posts). Honoured
@@ -1151,8 +1156,13 @@ async function handleGenerate(request: Request) {
   //  here was redundant AND expensive (it was the $28/mo, ~36k-input-tokens/call
   //  `blog_web_product_search` line). Only run it for NON-Amazon products
   //  (direct-store links) where we have no listing to fall back on.
+  // ── 5.89. BUILD ON WHAT IS ALREADY WRITTEN (Seb, 2026-10-05). A post MVP
+  //          already published about this product carries its researched
+  //          facts. Handed to the writer as source material, it replaces the
+  //          paid web research below, and the new post links back to it.
+  const earlier = await earlierPostSource(supabase, user.id, body.basedOnPostId, 'This new post is about a different video, so take the angle this video takes.')
   let productResearch: string | null = null
-  if (!asinOverride && (tier === 'creator' || tier === 'pro' || tier === 'admin')) {
+  if (!earlier && !asinOverride && (tier === 'creator' || tier === 'pro' || tier === 'admin')) {
     const pUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (pUrl) {
       // HARD TIME BUDGET: research is best-effort enrichment, but the
@@ -1173,6 +1183,8 @@ async function handleGenerate(request: Request) {
       )
     }
   }
+
+  if (earlier) productResearch = productResearch ? `${productResearch}\n\n${earlier}` : earlier
 
   // ── 5.94. MVP's own product signals, for the writer.
   //
@@ -3461,3 +3473,4 @@ function extractGeniuslinkCode(text: string | null | undefined): string | null {
   const m = text.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)
   return m ? m[1] : null
 }
+

@@ -67,8 +67,11 @@ const GENERATE_ABORT_MS = 840_000 // 14 min (> MAX_POLL_MS 13 min)
 
 export function GenerateButton({
   videoId, existingPost, userTier, blogImagePref, onDone,
-  includeImages: includeImagesProp, onIncludeImagesChange, siteId,
+  includeImages: includeImagesProp, onIncludeImagesChange, siteId, basedOnPostId,
 }: {
+  /** Build on a post MVP already wrote about this product: its facts become
+   *  the writer's source material and the paid web research is skipped. */
+  basedOnPostId?: string | null
   videoId: string
   /** Multi-site (Pro): the blog this generation targets. Passed into the
    *  generate request so a fresh post lands on the chosen site. Omitted/null
@@ -280,6 +283,7 @@ export function GenerateButton({
             includeImages,
             ...(artThumb ? { artDirectorThumbnail: true } : {}),
             ...(siteId ? { siteId } : {}),
+            ...(basedOnPostId && !existingPost ? { basedOnPostId } : {}),
             ...(includeImages && userImages.some(Boolean) ? { userImageUrls: userImages.filter((u): u is string => !!u) } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),

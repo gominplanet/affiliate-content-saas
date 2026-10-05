@@ -106,6 +106,8 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
+  // MVP already wrote this topic: the earlier article, offered back (made-before).
+  const [already, setAlready] = useState<{ url: string | null; title: string; postId: string | null; publish: boolean } | null>(null)
   const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null; voiceUsed?: boolean; voiceWhy?: { fingerprint: string | null; usedLearn: boolean; usedSample: boolean; usedAvoid: number } | null } | null>(null)
   const [voiceWhyOpen, setVoiceWhyOpen] = useState(false)
 
@@ -159,7 +161,8 @@ export default function ArticlesPage() {
     setSections(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
   }
 
-  async function run(publish: boolean, again = false) {
+  async function run(publish: boolean, again = false, basedOnPostId?: string) {
+    setAlready(null)
     const cleaned = topic.trim()
     if (!cleaned) { toast.error('Type a topic first'); return }
     if (sections.length === 0) { toast.error('Pick at least one section to include'); return }
@@ -170,17 +173,13 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset', again }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset', again, ...(basedOnPostId ? { basedOnPostId } : {}) }),
       })
       const j = await r.json()
       // MVP already wrote this topic: offer the existing one before paying for
       // a new one, and keep writing a new one a click away (lib/made-before).
       if (r.status === 409 && j.alreadyMade) {
-        toast.message(j.error || 'You already have an article on this topic.', {
-          action: { label: 'Write a new one', onClick: () => { void run(publish, true) } },
-          cancel: j.url ? { label: 'Open it', onClick: () => window.open(j.url, '_blank') } : undefined,
-          duration: 20_000,
-        })
+        setAlready({ url: j.url ?? null, title: j.title || cleaned, postId: j.postId ?? null, publish })
         return
       }
       if (!r.ok) throw new Error(j.error || 'Generation failed')
@@ -655,6 +654,30 @@ export default function ArticlesPage() {
           <p className="text-xs" style={{ color: 'var(--text-2)' }}>
             Researching the topic and writing the article. This usually takes 30 to 90 seconds.
           </p>
+        )}
+        {/* MVP ALREADY WROTE THIS TOPIC. Nothing was spent; the creator picks:
+            open the earlier one, build a new one on its research (fewer
+            searches), or write a new one from scratch. */}
+        {already && (
+          <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 p-3 flex flex-col gap-2">
+            <p className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>
+              You already have an article on this topic: &ldquo;{already.title}&rdquo;. Nothing was written yet.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {already.url && (
+                <a href={already.url} target="_blank" rel="noopener noreferrer"
+                  className="rounded-md border px-2.5 py-1 text-[12px] font-medium hover:bg-accent">Open it</a>
+              )}
+              {already.postId && (
+                <button type="button" onClick={() => { const a = already; void run(a.publish, true, a.postId ?? undefined) }}
+                  className="rounded-md border border-[#7C3AED]/40 px-2.5 py-1 text-[12px] font-medium text-[#7C3AED] hover:bg-[#7C3AED]/10">
+                  Build a new one on it
+                </button>
+              )}
+              <button type="button" onClick={() => { const a = already; void run(a.publish, true) }}
+                className="rounded-md border px-2.5 py-1 text-[12px] font-medium hover:bg-accent">Write a new one from scratch</button>
+            </div>
+          </div>
         )}
       </form>
 

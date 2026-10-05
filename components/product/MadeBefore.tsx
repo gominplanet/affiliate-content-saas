@@ -46,8 +46,12 @@ export function useMadeBefore(q: { asin?: string | null; video?: string | null; 
 }
 
 export default function MadeBefore({
-  asin, video, brand, only, onUseImage, onLoad, heading,
+  asin, video, brand, only, onUseImage, onLoad, onBuildOn, buildOnId, heading,
 }: {
+  /** Start the new piece from this one: its facts carried over, written fresh. */
+  onBuildOn?: (item: MadeItem) => void
+  /** The item currently being built on, shown as chosen. */
+  buildOnId?: string | null
   asin?: string | null
   video?: string | null
   brand?: string | null
@@ -87,6 +91,12 @@ export default function MadeBefore({
               <button type="button" onClick={() => onLoad(it)}
                 className="shrink-0 rounded-md border border-[#7C3AED]/40 px-2 py-1 text-[11px] font-medium text-[#7C3AED] hover:bg-[#7C3AED]/10">
                 Load it
+              </button>
+            )}
+            {onBuildOn && it.id && (it.kind === 'blog' || it.kind === 'deal' || it.kind === 'campaign' || it.kind === 'script') && (
+              <button type="button" onClick={() => onBuildOn(it)}
+                className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium ${buildOnId === it.id ? 'border-[#7C3AED] bg-[#7C3AED] text-white' : 'border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/10'}`}>
+                {buildOnId === it.id ? 'Building on this' : 'Build on it'}
               </button>
             )}
             {it.url && (

@@ -124,6 +124,8 @@ function fmtDuration(sec: number): string {
 export default function ScriptPage() {
   const { confirm, ConfirmHost } = useConfirm()
   const [input, setInput] = useState('')
+  // An earlier script for this product to build the new one on (made-before).
+  const [basedOnScriptId, setBasedOnScriptId] = useState<string | null>(null)
   const [style, setStyle] = useState<Style>('hands_on')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -186,7 +188,7 @@ export default function ScriptPage() {
       const r = await fetch('/api/script/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: input.trim(), style }),
+        body: JSON.stringify({ input: input.trim(), style, ...(basedOnScriptId ? { basedOnScriptId } : {}) }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Generation failed')
@@ -311,7 +313,11 @@ export default function ScriptPage() {
                 paying for the same one again (lib/made-before). */}
             <div className="mb-4 empty:hidden">
               <MadeBefore asin={normalizeAsinInput(input)} only={['script']}
-                heading="You already have a script for this product. Open it, or write a new one below."
+                heading={basedOnScriptId
+                  ? 'Building on your earlier script: its facts carry over, the new one takes a different hook and structure.'
+                  : 'You already have a script for this product. Open it, build a new one on it, or write a new one below.'}
+                buildOnId={basedOnScriptId}
+                onBuildOn={(it) => setBasedOnScriptId((cur) => (cur === it.id ? null : it.id))}
                 onLoad={(it) => { if (it.id) openRecent(it.id) }} />
             </div>
 

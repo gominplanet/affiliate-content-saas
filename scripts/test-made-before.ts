@@ -41,7 +41,17 @@ check('and says so on the row', /thumbnail_source = usedSaved \? 'saved'/.test(D
 
 const A = read('app/api/articles/generate/route.ts')
 check('a topic already written is handed back before the writer runs', /alreadyMade: true/.test(A) && A.indexOf('alreadyMade: true') < A.indexOf('Build the writer prompt'))
-check('and the creator can still ask for a new one', /if \(!body\.again && !sendsOwnHtml/.test(A) && /run\(publish, true\)/.test(read('app/(dashboard)/articles/page.tsx')))
+check('and the creator can still ask for a new one', /if \(!body\.again && !sendsOwnHtml/.test(A) && /run\(a\.publish, true\)/.test(read('app/(dashboard)/articles/page.tsx')))
+
+// ── Build on earlier work (lib/earlier-work) ───────────────────────────────
+const E = read('lib/earlier-work.ts')
+check('only the creator\'s own earlier piece is read', (E.match(/\.eq\('user_id', userId\)/g) ?? []).length >= 2)
+check('the writer is told to write fresh, never copy a sentence', /never copy a sentence/.test(E))
+const B = read('app/api/blog/generate/route.ts')
+check('a blog post built on an earlier one skips the paid web research', /if \(!earlier && !asinOverride/.test(B))
+check('the blog button sends which post to build on', /basedOnPostId && !existingPost \? \{ basedOnPostId \}/.test(read('components/content/GenerateButton.tsx')))
+check('an article built on an earlier one skips the coverage search and halves the writer searches', /\(isRepublish \|\| earlier\) \? \[\]/.test(A) && /max_uses: earlier \? 2 : 4/.test(A))
+check('a script can be built on an earlier one', /earlierScriptSource\(supabase, user\.id, body\.basedOnScriptId\)/.test(read('app/api/script/generate/route.ts')))
 
 const PAGES: Array<[string, RegExp]> = [
   ['app/(dashboard)/amazon/thumbnails/page.tsx', /<MadeBefore asin=\{normalizeAsinInput\(product\)\}[\s\S]{0,200}onUseImage=/],

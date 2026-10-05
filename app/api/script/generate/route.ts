@@ -35,6 +35,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { earlierScriptSource } from '@/lib/earlier-work'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { toUserMessage } from '@/lib/friendly-error'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { input?: string; style?: string }
+  let body: { input?: string; style?: string; basedOnScriptId?: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const input = (body.input || '').trim().slice(0, 500)
@@ -342,13 +343,17 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
   }` : ''}
 }`
 
+  // Building on a script MVP already wrote for this product (lib/earlier-work):
+  // its facts carry over, the new one takes a different hook and structure.
+  const earlierScript = await earlierScriptSource(supabase, user.id, body.basedOnScriptId)
+
   let parsed: ScriptPayload
   try {
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 5500,
-      messages: [{ role: 'user', content: promptBody }],
+      messages: [{ role: 'user', content: earlierScript ? `${promptBody}\n\n${earlierScript}` : promptBody }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier: usage.tier, feature: 'script_generate', model: 'claude-sonnet-4-6' })
     const raw = (msg.content[0] as { type: string; text: string }).text.trim()

@@ -27,6 +27,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { toUserMessage } from '@/lib/friendly-error'
+import { earlierPostSource } from '@/lib/earlier-work'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
@@ -273,6 +274,10 @@ export async function POST(req: Request) {
   let body: {
     /** Write a new article even though one on this topic exists. */
     again?: boolean
+    /** Build on an article or post MVP already wrote (lib/earlier-work): its
+     *  research carries over, so the coverage search is skipped and the
+     *  writer gets fewer searches. Written fresh all the same. */
+    basedOnPostId?: string
     topic?: string
     angle?: string
     sections?: string[]
@@ -407,6 +412,7 @@ export async function POST(req: Request) {
         alreadyMade: true,
         url: before.wordpress_url as string,
         title: (before.title as string) || (body.topic || '').trim(),
+        postId: (before.id as string) ?? null,
         error: `You already have an article on this topic: "${(before.title as string) || (body.topic || '').trim()}". Open it, or choose to write a new one.`,
       }, { status: 409 })
     }
@@ -460,7 +466,9 @@ ${inlineReviews.map(r => `- ${r.title} — ${r.url}`).join('\n')}
   const client = createAnthropicClient()
   // Competitor term coverage — the terms the top-ranking pages cover, fed to the
   // writer and scored after. Skipped on a preview-republish (reuses exact bytes).
-  const mustCoverTerms = isRepublish ? [] : await researchCoverageTerms(client, topic, { userId: user.id, tier })
+  // Building on earlier work: its research stands in for the coverage search.
+  const earlier = isRepublish ? null : await earlierPostSource(supabase, user.id, body.basedOnPostId, 'This new article takes the angle and topic given below, so cover what the earlier one did not.')
+  const mustCoverTerms = (isRepublish || earlier) ? [] : await researchCoverageTerms(client, topic, { userId: user.id, tier })
   const coverageBlock = mustCoverTerms.length ? `
 ═══════════════════════════════════════
 COMPETITOR COVERAGE — the pages ranking for this topic consistently cover these subtopics and terms. Address the RELEVANT ones naturally (skip any that don't fit the angle; never keyword-stuff):
@@ -535,6 +543,7 @@ TOPIC: ${topic}
 ${angle ? `\nTHE WRITER'S ANGLE / OPINION (make the article reflect this point of view): ${angle}` : ''}
 ${keywords ? `\nKEYWORDS to work in naturally (for SEO, no stuffing): ${keywords}` : ''}
 ${notes ? `\nEXTRA NOTES from the writer: ${notes}` : ''}
+${earlier ? `\n${earlier}\n` : ''}
 
 ${voiceBlock ? `WRITE IN THE CREATOR'S OWN VOICE (below). This is the whole point of the article sounding like them, so it OVERRIDES any generic tone and must hold across every section, headings included.\n${voiceBlock}` : `TONE: ${TONE_GUIDE[tone]}`}
 LENGTH: ${LENGTH_WORDS[length]}
@@ -614,7 +623,8 @@ ${repetitionBlock ? `\n${repetitionBlock}` : ''}`
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 } as any],
+      // Two searches, not four, when an earlier piece already carries the research.
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: earlier ? 2 : 4 } as any],
       messages: [{ role: 'user', content: writerPrompt }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'article_generate', model: 'claude-sonnet-4-6' })
