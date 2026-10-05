@@ -29,7 +29,7 @@ import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
-import { planShorts } from '@/lib/shorts-planner'
+import { planShorts, reelWindow } from '@/lib/shorts-planner'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
@@ -342,8 +342,15 @@ export async function POST(request: Request) {
     }
 
     const anthropic = createAnthropicClient()
+    // Meta Hub asks for Reels: longer, complete segments sized to the source
+    // (lib/shorts-planner reelWindow), capped at Facebook's 90s Page Reel limit.
+    const reel = (body as { format?: string }).format === 'reel'
+    const sourceSec = Number(video.duration_seconds) || (cues.length ? cues[cues.length - 1].end : 0)
+    const lengths = reel ? reelWindow(sourceSec) : {}
     const clips = await planShorts(anthropic, {
       cues, videoTitle, niches, tone, voiceBlock,
+      ...lengths,
+      format: reel ? 'reel' : 'short',
       count: Math.min(10, Math.max(1, Number(body.count) || 5)),
       sourceDescription,
       excludeRanges,

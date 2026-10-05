@@ -40,6 +40,9 @@ export interface PlanOpts {
   /** Clip length bounds in seconds. Defaults 15–30 (YouTube Shorts sweet spot). */
   minSec?: number
   maxSec?: number
+  /** 'reel': a Facebook Reel from Meta Hub. Longer, and each clip a complete
+   *  segment (setup, demo, payoff) rather than a 15–30s hook. */
+  format?: 'short' | 'reel'
   /** The source video's own description (from YouTube). Gives the model the
    *  product name + the creator's framing so hooks/captions/hashtags land the
    *  product, not just generic angles. */
@@ -52,6 +55,21 @@ export interface PlanOpts {
 }
 
 interface Hotspot { startSec: number; endSec: number; score: number }
+
+/** Facebook's limit for a Page Reel published through its API (Reels
+ *  Publishing API: 3 to 90 seconds). The Group copy goes up through Facebook
+ *  itself and could be longer, but the Page Reel has to fit. */
+export const FACEBOOK_REEL_API_MAX_SEC = 90
+
+/** How long a Reel clip should be, from the source video's length. A longer
+ *  video has room for a moment that makes sense on its own: over 3 minutes,
+ *  45 to 90 seconds; over 90 seconds, 30 to 60; else the Shorts 15 to 30. Pure. */
+export function reelWindow(sourceSec: number | null | undefined): { minSec: number; maxSec: number } {
+  const d = Number(sourceSec) || 0
+  if (d >= 180) return { minSec: 45, maxSec: FACEBOOK_REEL_API_MAX_SEC }
+  if (d >= 90) return { minSec: 30, maxSec: 60 }
+  return { minSec: 15, maxSec: 30 }
+}
 
 function mmss(sec: number): string {
   const s = Math.max(0, Math.round(sec))
@@ -188,7 +206,9 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
   const cues = opts.cues || []
   if (cues.length === 0) return []
   const minSec = Math.max(5, opts.minSec ?? 15)
-  const maxSec = Math.min(60, opts.maxSec ?? 30)
+  const maxSec = Math.min(FACEBOOK_REEL_API_MAX_SEC, opts.maxSec ?? 30)
+  const reel = opts.format === 'reel'
+  const unit = reel ? 'Facebook Reels' : 'Shorts'
   const count = Math.min(10, Math.max(1, opts.count ?? 5))
   const niches = opts.niches || 'general'
   const tone = opts.tone || 'conversational, energetic'
@@ -216,7 +236,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
   const timestamped = cuesToTimestampedText(promptCues)
 
   const system =
-    'You are a short-form video editor who cuts viral 15–30s vertical Shorts out of long YouTube videos. ' +
+    `You are a short-form video editor who cuts ${minSec}–${maxSec}s vertical ${unit} out of long YouTube videos. ` +
     'You are given a timestamped transcript. Your ONLY job is to pick the strongest self-contained moments and ' +
     'write a hook + caption for each — you must NOT invent or paraphrase anything the speaker says; the on-screen ' +
     'subtitles are taken verbatim from the transcript later. Return ONLY valid JSON.'
@@ -234,9 +254,15 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     (desc ? `VIDEO DESCRIPTION (for product + context — use it to make hooks, captions and hashtags land the product; do NOT quote it as a subtitle):\n${desc}\n\n` : '') +
     `Timestamps below are [mm:ss]; seconds = minutes*60 + seconds.\n\n` +
     `TRANSCRIPT:\n${timestamped}\n\n` +
-    `Pick the ${count} BEST moments to cut as standalone Shorts. A great Short moment is: a strong hook or ` +
+    `Pick the ${count} BEST moments to cut as standalone ${unit}. A great moment is: a strong hook or ` +
     `bold claim, a surprising result/number, a mini-story with a payoff, a before/after, a hot take, or a clear ` +
     `tip — something that makes sense with NO other context. Each clip MUST be ${minSec}–${maxSec} seconds long.\n\n` +
+    (reel
+      ? `These are Facebook Reels that send viewers to buy the product, so each clip must be a COMPLETE segment, ` +
+        `not a teaser: open on the hook or the problem, show or explain the product doing its job, and end on the ` +
+        `result or verdict. Start at the beginning of a sentence and end after a finished thought, never mid-sentence. ` +
+        `A viewer who sees only this clip should understand what the product is and why it is worth buying.\n\n`
+      : '') +
     `Rules:\n` +
     `- startSec/endSec are integer SECONDS on the video timeline; endSec-startSec must be ${minSec}–${maxSec}.\n` +
     `- Clips must NOT overlap. Spread them across the video.\n` +

@@ -50,8 +50,10 @@ async function safeJson(res: Response): Promise<any> {
 }
 
 export function ShortsCreatePanel({
-  videoId, youtubeVideoId, videoTitle, onUseClip, allowWhole = false,
+  videoId, youtubeVideoId, videoTitle, onUseClip, allowWhole = false, reel = false,
 }: {
+  /** Meta Hub: Facebook Reels, longer complete moments (lib/shorts-planner reelWindow). */
+  reel?: boolean
   /** Offer "Post the whole video" (Labs whole_video). */
   allowWhole?: boolean
   videoId: string
@@ -114,7 +116,7 @@ export function ShortsCreatePanel({
       }
       const res = await fetch('/api/youtube/shorts/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}), ...(whole ? { whole: true } : {}) }),
+        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}), ...(whole ? { whole: true } : {}), ...(reel ? { format: 'reel' } : {}) }),
       })
       const data = await safeJson(res)
       if (!res.ok) {
@@ -147,7 +149,7 @@ export function ShortsCreatePanel({
     } finally {
       setPlanning(false)
     }
-  }, [videoId, youtubeVideoId])
+  }, [videoId, youtubeVideoId, reel])
 
 
   // YouTube refused the download, now or on an earlier visit (the failed
@@ -313,8 +315,9 @@ export function ShortsCreatePanel({
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-md">
-          <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{videoTitle}</span> — we find the strongest
-          15–30s moments and cut them for you. Subtitles are word-for-word from what you actually said.
+          <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{videoTitle}</span>: {reel
+            ? <>we find complete moments that make sense on their own (up to 90 seconds on a video over 3 minutes, Facebook&apos;s limit for Page Reels) and cut them for you.</>
+            : <>we find the strongest 15 to 30 second moments and cut them for you.</>} Subtitles are word-for-word from what you actually said.
         </p>
         <div className="shrink-0 flex flex-wrap items-center gap-2">
         {allowWhole && (

@@ -925,6 +925,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                 youtubeVideoId={selectedVideo.youtubeVideoId}
                 videoTitle={selectedVideo.title}
                 allowWhole={canUsePreview('whole_video', tier)}
+                reel={facebookOnly}
                 onUseClip={(c) => {
                   setClipSource('created')
                   setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec, sourceVideoId: selectedVideo.id })
