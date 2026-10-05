@@ -15,16 +15,18 @@
  * cache — so the next connect starts clean and the newly authorized channel
  * becomes the default + content source.
  *
- * We deliberately do NOT delete youtube_videos: those rows are referenced by
+ * We deliberately do NOT delete youtube_videos rows: they are referenced by
  * scheduled posts, shorts and quality checks (ON DELETE CASCADE), so wiping them
- * on a disconnect would destroy unrelated work. The content list is scoped to
- * the connected channel instead.
+ * on a disconnect would destroy unrelated work. Their YouTube fields (title,
+ * description, views, transcript) are emptied instead, as YouTube's policies
+ * require (lib/youtube-retention).
  */
 import { NextResponse } from 'next/server'
 import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { clearYouTubeData } from '@/lib/youtube-retention'
 
 export async function POST() {
   const supabase = await createServerClient()
@@ -88,6 +90,12 @@ export async function POST() {
   // 3. Drop the per-user sync cache so the next Sync re-pulls fresh from the
   //    newly connected channel instead of serving the old channel's cached page.
   try { await sb.from('youtube_sync_cache').delete().eq('user_id', user.id) } catch { /* best-effort */ }
+
+  // YOUTUBE DATA GOES WITH THE CONNECTION (YouTube API Developer Policies,
+  // within 7 days of a disconnect): the stored YouTube fields of every video
+  // are emptied now. The rows stay, holding only the video id, because
+  // scheduled posts, clips and blog posts point at them (lib/youtube-retention).
+  try { await clearYouTubeData(sb, user.id) } catch (e) { console.error('[youtube disconnect] clear data failed:', e instanceof Error ? e.message : e) }
 
   return NextResponse.json({ ok: true })
 }
