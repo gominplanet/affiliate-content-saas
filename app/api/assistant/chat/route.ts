@@ -20,7 +20,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 import { MVP_FEATURES_DOC } from '@/lib/assistant-features-doc'
@@ -102,7 +102,9 @@ export async function POST(request: Request) {
   const tier = normalizeTier(intRow?.tier)
 
   // ── Cap gate ──────────────────────────────────────────────────────────────
-  const cap = TIERS[tier].assistantMessagesPerMonth
+  // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+  const cap = effectiveCap(tier, 'assistantMessagesPerMonth', TIERS[tier].assistantMessagesPerMonth,
+    billingWindow({ periodStart: (intRow?.subscription_period_start as string | null) ?? null, periodEnd: (intRow?.subscription_period_end as string | null) ?? null }).startISO)
   const capCheck = await checkUsageCap(
     sb, user.id, PRIMARY_FEATURE.assistant, cap,
     (intRow?.subscription_period_start as string | null) ?? null,

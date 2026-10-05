@@ -1327,11 +1327,16 @@ export default function DashboardShellV2({
           >
             <Menu size={18} />
           </button>
-          {!amazonView && <div className="hidden sm:block min-w-0"><SiteSwitcherChip currentHostname={wpHostname} /></div>}
+          {/* NEVER SHRINK THE CHIP. The phone layout gave its wrapper min-w-0,
+              so on a crowded topbar it shrank to nothing while its text stayed
+              visible, and the search box slid over it and took every click:
+              a Pro member's blog switcher "stopped working". The chip keeps its
+              width; the search box is what gives way. */}
+          {!amazonView && <div className="hidden sm:block flex-shrink-0"><SiteSwitcherChip currentHostname={wpHostname} /></div>}
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
-          <div className="min-w-0 flex-1 md:flex-none"><TopbarSearch isAdmin={isAdmin} /></div>
+          <div className="min-w-0 flex-1 md:flex-initial md:basis-72"><TopbarSearch isAdmin={isAdmin} /></div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Week recap: flashes until this week's recap is opened. */}

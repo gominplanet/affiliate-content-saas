@@ -19,7 +19,7 @@
  * to 'x_post_failed' (see refundXPost) so the slot comes back but the money we
  * actually spent does not disappear from the books.
  */
-import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
+import { normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE, X_MONTHLY_CAP } from '@/lib/usage-cap'
 import { recordUsage } from '@/lib/ai-usage'
 
@@ -42,6 +42,8 @@ export interface XReserveResult {
    *  null when nothing was reserved (over cap, admin-unlimited, or a metering
    *  hiccup where we fail open). */
   reservationId: string | null
+  /** The cap in force for this window (null = unlimited). */
+  limit?: number | null
 }
 
 /**
@@ -59,7 +61,9 @@ export async function checkXPostCap(
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId).maybeSingle()
   const tier = normalizeTier(data?.tier) as Tier
-  const limit = tier === 'admin' ? null : X_MONTHLY_CAP
+  // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+  const winStart = billingWindow({ periodStart: (data?.subscription_period_start as string | null) ?? null, periodEnd: (data?.subscription_period_end as string | null) ?? null }).startISO
+  const limit = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, winStart)
   const check = await checkUsageCap(
     supabase, userId, PRIMARY_FEATURE.x, limit,
     (data?.subscription_period_start as string | null) ?? null,
@@ -97,11 +101,11 @@ export async function reserveXPost(
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId).maybeSingle()
   const tier = normalizeTier(data?.tier) as Tier
-  const cap = tier === 'admin' ? null : X_MONTHLY_CAP
   const { startISO, resetLabel } = billingWindow({
     periodStart: (data?.subscription_period_start as string | null) ?? null,
     periodEnd: (data?.subscription_period_end as string | null) ?? null,
   })
+  const cap = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, startISO)
   try {
     const { data: rid, error } = await supabase.rpc('claim_x_post', {
       p_user_id: userId, p_cap: cap, p_since: startISO, p_tier: tier,
@@ -109,13 +113,13 @@ export async function reserveXPost(
     if (error) {
       // Fail open — don't block a paid post on a metering hiccup.
       console.warn('[x-cap] claim_x_post RPC error, failing open:', error.message)
-      return { ok: true, reservationId: null, tier, resetLabel }
+      return { ok: true, reservationId: null, tier, resetLabel, limit: cap }
     }
-    if (!rid) return { ok: false, reservationId: null, tier, resetLabel } // over cap
-    return { ok: true, reservationId: rid as string, tier, resetLabel }
+    if (!rid) return { ok: false, reservationId: null, tier, resetLabel, limit: cap } // over cap
+    return { ok: true, reservationId: rid as string, tier, resetLabel, limit: cap }
   } catch (e) {
     console.warn('[x-cap] reserveXPost threw, failing open:', e instanceof Error ? e.message : e)
-    return { ok: true, reservationId: null, tier, resetLabel }
+    return { ok: true, reservationId: null, tier, resetLabel, limit: cap }
   }
 }
 
@@ -163,6 +167,6 @@ export async function refundXPost(
 }
 
 /** Friendly over-cap message for a surfaced error. */
-export function xCapMessage(resetLabel: string): string {
-  return `You've used all ${X_MONTHLY_CAP} X posts for this billing period.${resetLabel ? ` Resets ${resetLabel}.` : ''}`
+export function xCapMessage(resetLabel: string, limit: number = X_MONTHLY_CAP): string {
+  return `You've used all ${limit} X posts for this billing period.${resetLabel ? ` Resets ${resetLabel}.` : ''}`
 }

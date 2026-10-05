@@ -793,26 +793,43 @@ export function allowedGenerationsPerMonth(tier: Tier): number | null {
   return TIERS[normalizeTier(tier)].postsPerMonth
 }
 
-// ── Transitional post-cap step-down (2026-06-14) ───────────────────────────
-// Studio 60→45 and Pro 200→100. To roll the lower caps out "to everyone on
-// their next cycle" — NO mid-cycle cut-off, NO permanent grandfather — a user
-// keeps their OLD cap for any billing window that STARTED before this
-// timestamp; the new (lower) cap takes effect from their next window onward.
-// New signups get the new cap immediately (their first window starts after
-// this date). Self-expiring: once every pre-change window has rolled over
-// (~by 2026-07-31), delete PREV_POST_CAPS + this helper and inline
-// TIERS[tier].postsPerMonth at the two call sites.
-const POST_CAP_STEPDOWN_ISO = '2026-06-14T00:00:00.000Z'
-const PREV_POST_CAPS: Partial<Record<Tier, number>> = { studio: 60, pro: 200 }
+// ── Lowered caps land on the NEXT billing window, never mid-cycle ──────────
+//
+// The rule since the 2026-06-14 step-down: when a cap goes down, a member
+// keeps the old one for any billing window that STARTED before the change,
+// and the new one applies from their next window. New signups get the new cap
+// at once. No mid-cycle cut-off, and no permanent grandfathering either.
+//
+// The 2026-10-05 changes (Seb: price on a fully used plan) skipped that rule,
+// and a Pro member 54 generations into his month watched his cap drop from
+// 100 to 60 overnight. These are the values each lowered cap had before.
+// Self-expiring: once every window that began before CAP_STEPDOWN_ISO has
+// rolled over (by about 2026-11-06), this table can be emptied.
+export const CAP_STEPDOWN_ISO = '2026-10-06T00:00:00.000Z'
+export type SteppedCap =
+  | 'postsPerMonth' | 'thumbnailsPerMonth' | 'pinsPerMonth' | 'igPostsPerMonth'
+  | 'facebookPostsPerMonth' | 'assistantMessagesPerMonth' | 'collabsPerMonth' | 'xPostsPerMonth'
+const PREV_CAPS: Partial<Record<Tier, Partial<Record<SteppedCap, number>>>> = {
+  pro: { postsPerMonth: 100, thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, facebookPostsPerMonth: 150, xPostsPerMonth: 100 },
+  amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, facebookPostsPerMonth: 120, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
+}
+
+/** The cap in force for a billing window that began at windowStartISO: the
+ *  previous (higher) cap when the window predates the step-down, else the
+ *  current one. `current` is the cap the caller would otherwise use (the
+ *  TIERS value, or X_MONTHLY_CAP for X). Pure. */
+export function effectiveCap(tier: Tier, key: SteppedCap, current: number | null, windowStartISO: string | null | undefined): number | null {
+  if (current === null) return null
+  const prev = PREV_CAPS[normalizeTier(tier)]?.[key]
+  if (prev != null && windowStartISO && windowStartISO < CAP_STEPDOWN_ISO && prev > current) return prev
+  return current
+}
 
 /** The generation cap in force for a billing window that began at
- *  windowStartISO: the previous (higher) cap if that window predates the
- *  2026-06-14 step-down, otherwise the current TIERS cap. */
+ *  windowStartISO (see effectiveCap). */
 export function effectivePostCap(tier: Tier, windowStartISO: string): number | null {
   const t = normalizeTier(tier)
-  const prev = PREV_POST_CAPS[t]
-  if (prev != null && windowStartISO < POST_CAP_STEPDOWN_ISO) return prev
-  return TIERS[t].postsPerMonth
+  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO)
 }
 
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
@@ -1358,9 +1375,8 @@ export async function checkGenerationLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // Transitional: honor the user's pre-2026-06-14 cap until their current
-  // billing window rolls over (see effectivePostCap), so the lower caps land
-  // on the next cycle rather than mid-cycle.
+  // A lowered cap lands on the next billing window, never mid-cycle (see
+  // effectiveCap).
   const limit = effectivePostCap(tier, startISO)
   // null = unlimited (admin only — handled above; this is a safety net).
   if (limit === null) return { allowed: true }

@@ -23,7 +23,7 @@
  */
 import { NextResponse } from 'next/server'
 import {
-  TIERS, billingWindow, effectivePostCap, allowedNewsletterBroadcasts, normalizeTier, type Tier,
+  TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
@@ -129,6 +129,9 @@ export async function GET() {
   // visual. Real usage still wins if higher; paid tiers always use real counts.
   const isAdminPreview = tier === 'admin'
   const refPlan = isAdminPreview ? TIERS.amazon : plan
+  // The cap in force for THIS window: a cap lowered after the window began
+  // still shows (and is enforced at) its old value until the next one.
+  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO))
   const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
 
   try {
@@ -140,10 +143,10 @@ export async function GET() {
         countFeatures(['amazon_ig']),
         countFeatures(['amazon_fb']),
       ])
-      push('thumbnails', 'Thumbnails', preview(thumb, 128), refPlan.thumbnailsPerMonth)
-      push('pins', 'Pins', preview(pin, 110), refPlan.pinsPerMonth)
-      push('instagram', 'Instagram', preview(igCount, 74), refPlan.igPostsPerMonth)
-      push('facebook', 'Facebook', preview(fb, 28), refPlan.facebookPostsPerMonth)
+      push('thumbnails', 'Thumbnails', preview(thumb, 128), ec('thumbnailsPerMonth', refPlan.thumbnailsPerMonth))
+      push('pins', 'Pins', preview(pin, 110), ec('pinsPerMonth', refPlan.pinsPerMonth))
+      push('instagram', 'Instagram', preview(igCount, 74), ec('igPostsPerMonth', refPlan.igPostsPerMonth))
+      push('facebook', 'Facebook', preview(fb, 28), ec('facebookPostsPerMonth', refPlan.facebookPostsPerMonth))
     } else {
       // Generations = NEW content pieces only (blog_posts rows in the window),
       // matching the gate (RPC 131). Thumbnails + metadata are intentionally NOT
@@ -157,11 +160,11 @@ export async function GET() {
       // Thumbnails are their OWN enforced cap on every tier (shared by co-pilot
       // + blog heroes, both counted here) — show it so users see where they are.
       const thumb = await countFeatures(THUMB_FEATURES)
-      push('thumbnails', 'Thumbnails', thumb, plan.thumbnailsPerMonth)
+      push('thumbnails', 'Thumbnails', thumb, ec('thumbnailsPerMonth', plan.thumbnailsPerMonth))
       if (tier === 'pro') {
         const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
-        push('x', 'X posts', x, X_MONTHLY_CAP)
+        push('x', 'X posts', x, ec('xPostsPerMonth', X_MONTHLY_CAP))
       }
       // Amazon-style designed social graphics — now finite + metered on Studio
       // and Pro too, so show their bars (Amazon renders these in the branch
@@ -169,9 +172,9 @@ export async function GET() {
       const [pin, igCount, fb] = await Promise.all([
         countFeatures(['amazon_pin']), countFeatures(['amazon_ig']), countFeatures(['amazon_fb']),
       ])
-      push('pins', 'Pins', pin, plan.pinsPerMonth)
-      push('instagram', 'Instagram', igCount, plan.igPostsPerMonth)
-      push('facebook', 'Facebook', fb, plan.facebookPostsPerMonth)
+      push('pins', 'Pins', pin, ec('pinsPerMonth', plan.pinsPerMonth))
+      push('instagram', 'Instagram', igCount, ec('igPostsPerMonth', plan.igPostsPerMonth))
+      push('facebook', 'Facebook', fb, ec('facebookPostsPerMonth', plan.facebookPostsPerMonth))
     }
 
     // ── Shared extra caps (shown on any tier where the cap is finite) ──
@@ -195,8 +198,8 @@ export async function GET() {
     if (TIERS[tier]?.postsPerMonth === 0 || isAdminPreview) {
       push('deals', 'Deals', preview(deals, 45), refPlan.dealsPerMonth)
     }
-    push('collabs', 'Collabs', preview(collabs, 30), refPlan.collabsPerMonth)
-    push('assistant', 'Ask Me', preview(asst, 288), refPlan.assistantMessagesPerMonth)
+    push('collabs', 'Collabs', preview(collabs, 30), ec('collabsPerMonth', refPlan.collabsPerMonth))
+    push('assistant', 'Ask Me', preview(asst, 288), ec('assistantMessagesPerMonth', refPlan.assistantMessagesPerMonth))
     push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
     // Metadata has its own enforced cap (was previously hidden inside the
     // Generations sum, which both over-reported generations AND hid this cap).

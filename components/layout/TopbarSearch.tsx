@@ -86,7 +86,7 @@ export default function TopbarSearch({ isAdmin = false }: { isAdmin?: boolean })
   }
 
   return (
-    <div ref={boxRef} className="relative hidden md:block w-72">
+    <div ref={boxRef} className="relative hidden md:block w-full max-w-72">
       <div
         className="flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}

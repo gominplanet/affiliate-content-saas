@@ -12,7 +12,7 @@ import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { pooledDesignCap, freeTrialImageBlock, freeTrialExpiredBlock, freeTrialWindow } from '@/lib/free-trial'
 import { accountSignupISO } from '@/lib/free-trial-signup'
 import { spendGate } from '@/lib/ai-spend'
@@ -1529,10 +1529,14 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         capFeatures = ['amazon_pin', 'amazon_ig', 'amazon_fb']
         capLabel = 'ready-to-post designs'
       }
-      else if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
-      else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
-      else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
-      else { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      else {
+        // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+        const winStart = billingWindow({ periodStart: tierRow?.subscription_period_start ?? null, periodEnd: tierRow?.subscription_period_end ?? null }).startISO
+        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart); capFeatures = ['amazon_pin']; capLabel = 'pins' }
+        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
+        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
+        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      }
       // A ZERO allowance is not a used-up allowance. Creator can now open the
       // Amazon hub (its Thumbnail Generator and Research run on Creator's own
       // limits), and its pin/Instagram/Facebook allowance is 0, so the cap

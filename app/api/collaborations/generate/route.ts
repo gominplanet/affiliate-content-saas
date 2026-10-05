@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, billingWindow, effectiveCap, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -54,12 +54,13 @@ export async function POST(request: Request) {
     // (lib/tier.ts). null = unlimited (admin). Window honors the user's
     // actual Stripe billing cycle when present, falls back to calendar
     // month otherwise — same logic the dashboard's usage card uses.
-    const collabCap = TIERS[tier].collabsPerMonth
+    const { startISO, resetLabel } = billingWindow({
+      periodStart: (intRow as Record<string, unknown> | null)?.subscription_period_start as string | null,
+      periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
+    })
+    // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+    const collabCap = effectiveCap(tier, 'collabsPerMonth', TIERS[tier].collabsPerMonth, startISO)
     if (collabCap !== null) {
-      const { startISO, resetLabel } = billingWindow({
-        periodStart: (intRow as Record<string, unknown> | null)?.subscription_period_start as string | null,
-        periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
-      })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { count } = await supabase
         .from('collaborations')

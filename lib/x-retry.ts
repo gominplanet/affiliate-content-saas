@@ -107,7 +107,7 @@ export async function postToXWithOneRetry<T>(o: {
   let sent = false
   for (;;) {
     const res = await reserveXPost(o.supabase, o.userId)
-    if (!res.ok) throw new XPostError(xCapMessage(res.resetLabel), sent, false)
+    if (!res.ok) throw new XPostError(xCapMessage(res.resetLabel, res.limit ?? undefined), sent, false)
     try {
       return await o.tweet(previous)
     } catch (e) {
