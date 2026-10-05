@@ -30,6 +30,7 @@ import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from 
 import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
 import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
+import { rememberDesign, isDesignFormat } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import {
@@ -899,8 +900,10 @@ export async function POST(request: Request) {
   // would remember a thumbnail without the creator's title on it — the one
   // image they never chose. The client saves the finished one instead.
   if (defer) return res
-  if (format !== 'landscape') return res
   if (res.status !== 200 || !memo.db || !memo.userId || !memo.asin) return res
+  // Pins, Instagram, Facebook, stories and Shorts covers go to the design
+  // memory, one per format (lib/design-memory), never over the thumbnail.
+  if (format !== 'landscape') return rememberDesignIn(res, memo, format, surface)
   let body: Record<string, unknown>
   try {
     body = await res.clone().json() as Record<string, unknown>
@@ -919,6 +922,21 @@ export async function POST(request: Request) {
   // filed under, or null — a screen that says "saved" for a write that did not
   // happen is the failure this repo keeps re-finding.
   return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+/** Keep a non-thumbnail design against its product and format, and say so. */
+async function rememberDesignIn(res: Response, memo: ImageMemo, format: string, surface: string | null): Promise<Response> {
+  if (!isDesignFormat(format) || !memo.db || !memo.userId || !memo.asin) return res
+  let body: Record<string, unknown>
+  try { body = await res.clone().json() as Record<string, unknown> } catch { return res }
+  const url = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls[0] : null) || body.thumbnailUrl
+  if (typeof url !== 'string' || !url) return res
+  const saved = await rememberDesign({
+    db: memo.db, userId: memo.userId, asin: memo.asin, format, imageUrl: url, surface,
+    modelUsed: typeof body.modelUsed === 'string' ? body.modelUsed : null,
+  })
+  // The result, not the attempt: the format it is now kept under, or null.
+  return NextResponse.json({ ...body, savedDesignFor: saved ? { asin: memo.asin, format } : null }, { status: 200 })
 }
 
 /**

@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
-import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
+import MadeBefore from '@/components/product/MadeBefore'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
@@ -185,13 +186,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       // Tell the queue on this page to reload, so a post they just scheduled
       // appears in the list right below instead of after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
-      // Publishing is the approval. Remember the design against the product so
-      // the next surface can offer it back. Skipped when this WAS the recalled
-      // image — re-uploading identical bytes buys nothing.
-      if (!usingSaved && thumbUrl) {
-        const a = /^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : asinFromAmazonUrl(raw)
-        if (a) void saveProductImage({ asin: a, imageUrl: thumbUrl, surface: cfg.label })
-      }
+      // The design itself was kept as this product's Instagram or Facebook
+      // design when it was made (lib/design-memory), and is NOT saved over the
+      // product's 16:9 thumbnail, where it became the next YouTube thumbnail.
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Post failed. Try again.')
     } finally { setPubBusy(false) }
@@ -268,6 +265,12 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
           </>
         )}
         <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
+        {/* A design of this exact shape MVP already made: post it again for free. */}
+        <div className="empty:hidden">
+          <MadeBefore asin={resolvedAsin} only={['design']} formats={[cfg.format]}
+            heading={`You already have a ${cfg.label} design for this product. Reuse it for free, or design a new one.`}
+            onUseImage={(url) => { setThumbUrl(url); setUsingSaved(true); if (product.trim()) writeCaption(product.trim()) }} />
+        </div>
         {saved && (
           <SavedProductImage
             saved={saved}

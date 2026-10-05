@@ -46,7 +46,7 @@ export function useMadeBefore(q: { asin?: string | null; video?: string | null; 
 }
 
 export default function MadeBefore({
-  asin, video, brand, only, onUseImage, onLoad, onBuildOn, buildOnId, heading,
+  asin, video, brand, only, formats, onUseImage, onLoad, onBuildOn, buildOnId, heading,
 }: {
   /** Start the new piece from this one: its facts carried over, written fresh. */
   onBuildOn?: (item: MadeItem) => void
@@ -57,6 +57,8 @@ export default function MadeBefore({
   brand?: string | null
   /** Show only these kinds (a script page shows scripts, not deal posts). */
   only?: MadeItem['kind'][]
+  /** For designs, only these shapes (a pin composer shows pins). */
+  formats?: string[]
   /** Use a picture MVP already made instead of rendering a new one. */
   onUseImage?: (url: string, item: MadeItem) => void
   /** Load a saved script or email back into the page. */
@@ -64,7 +66,9 @@ export default function MadeBefore({
   heading?: string
 }) {
   const all = useMadeBefore({ asin, video, brand })
-  const items = only ? all.filter((i) => only.includes(i.kind)) : all
+  const items = all
+    .filter((i) => !only || only.includes(i.kind))
+    .filter((i) => !formats || i.kind !== 'design' || formats.includes(i.format || ''))
   if (!items.length) return null
   return (
     <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 p-3">

@@ -10,6 +10,7 @@
 // writes its outputs to, so nothing new is stored:
 //
 //   product_images     the product's remembered thumbnail
+//   product_designs    its pins, Instagram, Facebook, story and Shorts designs
 //   youtube_videos     video thumbnails, Co-Pilot titles, Instagram AI images
 //   blog_posts         blog posts (by video), deal posts (deal_meta.asin)
 //   campaigns          Creator Campaign posts
@@ -21,8 +22,9 @@
 // renamed, costs that row of the answer and never the rest. Newest first.
 
 import { isAsin } from '@/lib/product-image-label'
+import { DESIGN_FORMAT_LABEL } from '@/lib/design-formats'
 
-export type MadeKind = 'thumbnail' | 'blog' | 'deal' | 'campaign' | 'liftoff' | 'script' | 'collab' | 'copilot' | 'instagram'
+export type MadeKind = 'thumbnail' | 'design' | 'blog' | 'deal' | 'campaign' | 'liftoff' | 'script' | 'collab' | 'copilot' | 'instagram'
 
 export interface MadeItem {
   kind: MadeKind
@@ -36,12 +38,14 @@ export interface MadeItem {
   at: string | null
   /** The row it came from, for a screen that loads it back (a script, an email). */
   id: string | null
+  /** A design's shape: pin, ig, fb, story, short (lib/design-memory). */
+  format?: string
 }
 
 export interface MadeQuery { asin?: string | null; youtubeVideoId?: string | null; brand?: string | null }
 
 const KIND_LABEL: Record<MadeKind, string> = {
-  thumbnail: 'Thumbnail', blog: 'Blog post', deal: 'Deal post', campaign: 'Campaign post',
+  thumbnail: 'Thumbnail', design: 'Design', blog: 'Blog post', deal: 'Deal post', campaign: 'Campaign post',
   liftoff: 'Liftoff thumbnail', script: 'Script', collab: 'Collab email', copilot: 'YouTube title and description',
   instagram: 'Instagram image',
 }
@@ -96,6 +100,15 @@ export async function madeBefore(db: Db, userId: string, q: MadeQuery): Promise<
       if (!asin) return
       const { data } = await db.from('product_images').select('*').eq('user_id', userId).eq('asin', asin).maybeSingle()
       if (data?.image_url) items.push({ kind: 'thumbnail', label: madeLabel('thumbnail', s(data.surface) ? `from ${data.surface}` : null), url: null, imageUrl: data.image_url, at: data.approved_at || data.created_at || null, id: null })
+    }),
+    tryRead(async () => {
+      if (!asin) return
+      const { data } = await db.from('product_designs').select('*').eq('user_id', userId).eq('asin', asin).order('created_at', { ascending: false }).limit(10)
+      for (const d of data ?? []) {
+        const f = String(d.format || '')
+        const name = (DESIGN_FORMAT_LABEL as Record<string, string>)[f] || 'Design'
+        items.push({ kind: 'design', label: name, url: null, imageUrl: s(d.image_url), at: d.created_at ?? null, id: null, format: f })
+      }
     }),
     tryRead(async () => {
       for (const v of videos) {
