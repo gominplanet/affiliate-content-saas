@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
-import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
+import { priceMismatch } from '@/lib/price-guard'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
@@ -101,6 +102,9 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   const stripe = getStripe()
+  // The Stripe price must charge what the page showed (lib/price-guard).
+  const mismatch = await priceMismatch(stripe, priceId, tier as Tier, annualId ? 'year' : 'month', 'checkout')
+  if (mismatch) return NextResponse.json({ error: mismatch.error }, { status: mismatch.status })
   const approvedCoupon = await couponToApply(stripe, couponId, 'checkout')
 
   // Meta match-quality signals. `_fbp` is the pixel's browser id and `_fbc`
@@ -173,9 +177,15 @@ export async function POST(request: NextRequest) {
           } catch { /* already released or completed — fine */ }
         }
 
-        // Already on this price → no plan change to make. Apply the discount
+        // Already on this plan → no plan change to make. Apply the discount
         // on its own if they supplied one, rather than saying nothing happened.
-        if (item.price?.id === priceId) {
+        // "This plan" is ANY price the tier has had at the same interval, not
+        // just today's: a member who joined Pro at $199 and re-selects Pro (to
+        // cancel a queued downgrade, say) keeps $199 rather than being moved to
+        // the $299 new-member price as if it were an upgrade.
+        const tierIds = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST] ?? []
+        const sameInterval = (item.price?.recurring?.interval ?? 'month') === (annualId ? 'year' : 'month')
+        if (item.price?.id === priceId || (sameInterval && !!item.price?.id && tierIds.includes(item.price.id))) {
           if (promotionCodeId) {
             await stripe.subscriptions.update(live.id, {
               discounts: [{ promotion_code: promotionCodeId }],

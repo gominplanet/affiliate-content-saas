@@ -71,6 +71,23 @@ export function normalizeTier(raw: unknown): Tier {
 
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram' | 'tiktok'
 
+// ── PRICES FOR NEW MEMBERS ─────────────────────────────────────────────────
+// Seb, 2026-10-05: Amazon $139 and Pro $299 for new members, yearly $1,399 and
+// $2,999 (about two months free, as before). Members who joined earlier keep
+// the Stripe price they pay; the billing page shows that real amount
+// (api/stripe/plan-status), never this table.
+//
+// ONE SWITCH, so the price on the page and the price Stripe charges move in
+// the same deploy. A Vercel env change only lands on the next deploy, so the
+// switch goes on together with the new price ids being placed FIRST in
+// STRIPE_PRICE_AMAZON / _PRO / _AMAZON_ANNUAL / _PRO_ANNUAL. If the two ever
+// disagree anyway, checkout refuses rather than charging a price the page did
+// not show (lib/price-guard).
+export const NEW_MEMBER_PRICES_LIVE = process.env.NEXT_PUBLIC_NEW_MEMBER_PRICES === 'on'
+export const NEW_MEMBER_PRICES = { amazon: { month: 139, year: 1399 }, pro: { month: 299, year: 2999 } } as const
+const PRICES_BEFORE = { amazon: { month: 99, year: 999 }, pro: { month: 199, year: 1999 } } as const
+const LIVE_PRICES = NEW_MEMBER_PRICES_LIVE ? NEW_MEMBER_PRICES : PRICES_BEFORE
+
 export const TIERS = {
   trial:   {
     label: 'Free',
@@ -283,13 +300,14 @@ export const TIERS = {
     // assistant + $3.60 collabs + $2.28 Photobooth + ~$2 digest/captions = ~$52,
     // against $99.
     label: 'Amazon',
-    price: 99,
+    // New-member price: see NEW_MEMBER_PRICES above.
+    price: LIVE_PRICES.amazon.month as number,
     regularPrice: 179,
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
      *  appear, so a price shown here can never be one Stripe cannot charge. */
-    annualPrice: 999 as number | null,
+    annualPrice: LIVE_PRICES.amazon.year as number | null,
     /** Every render on this tier is gpt-image at MEDIUM quality (~$0.06), not
      *  $0.19: gfxQuality in generate-thumbnail is tier-gated and high is the Pro
      *  perk. Until 2026-09-14 the telemetry logged the model name rather than
@@ -490,13 +508,14 @@ export const TIERS = {
     // old proportions, still above Amazon's), X 100 -> 75 (lib/usage-cap), and
     // dubs are gone entirely (lib/markets DUBS_ENABLED).
     label: 'Pro',
-    price: 199,
+    // New-member price: see NEW_MEMBER_PRICES above.
+    price: LIVE_PRICES.pro.month as number,
     regularPrice: 399,
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
      *  appear, so a price shown here can never be one Stripe cannot charge. */
-    annualPrice: 1999 as number | null,
+    annualPrice: LIVE_PRICES.pro.year as number | null,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
      *  185 -> 130 on 2026-09-14, on measured costs rather than estimates.
      *

@@ -30,6 +30,10 @@ export default function BillingPage() {
   const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null } | null>(null)
   // A queued end-of-period downgrade (Stripe schedule), if any — shown as a note.
   const [pendingDowngrade, setPendingDowngrade] = useState<{ tier: string; effectiveAt: number } | null>(null)
+  // What this member is really charged, from their live Stripe subscription.
+  // Members who joined before a price change keep their old price, so the
+  // new-member price in lib/tier is never shown as theirs.
+  const [paying, setPaying] = useState<{ amountUsd: number; interval: 'month' | 'year' } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +89,7 @@ export default function BillingPage() {
       try {
         const ps = await fetch('/api/stripe/plan-status').then(r => (r.ok ? r.json() : null))
         setPendingDowngrade(ps?.pendingDowngrade ?? null)
+        setPaying(ps?.paying ?? null)
       } catch { /* non-fatal — just don't show the note */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
@@ -371,7 +376,7 @@ export default function BillingPage() {
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{currentTier.label}</p>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
                   {limit ? `${limit} posts / ${currentTier.lifetimeMax ? 'lifetime' : 'month'}` : 'Unlimited'}
-                  {currentTier.price > 0 ? ` · $${currentTier.price}/month` : ''}
+                  {paying ? ` · $${paying.amountUsd.toLocaleString('en-US')}/${paying.interval}` : ''}
                 </p>
               </div>
             </div>

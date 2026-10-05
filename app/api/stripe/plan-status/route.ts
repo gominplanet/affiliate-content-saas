@@ -8,6 +8,11 @@
  * they clicked it. Returns { pendingDowngrade: { tier, effectiveAt } | null }.
  *
  * effectiveAt is unix seconds (the current period end / phase-2 start).
+ *
+ * Also returns `paying`: what this member is actually charged ({ amountUsd,
+ * interval }, from the live subscription's price, after no discounts). The
+ * billing page shows that, not the new-member price in lib/tier, because a
+ * member who joined Pro at $199 still pays $199 after Pro went to $299.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -24,31 +29,36 @@ export async function GET() {
     const { data: ig } = await (supabase as any)
       .from('integrations').select('stripe_customer_id').eq('user_id', user.id).maybeSingle()
     const customerId: string | null = ig?.stripe_customer_id ?? null
-    if (!customerId) return NextResponse.json({ pendingDowngrade: null })
+    if (!customerId) return NextResponse.json({ pendingDowngrade: null, paying: null })
 
     const stripe = getStripe()
     const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 })
     const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
-    if (!live?.schedule) return NextResponse.json({ pendingDowngrade: null })
+    const livePrice = live?.items?.data?.[0]?.price
+    const paying = livePrice?.unit_amount != null
+      ? { amountUsd: livePrice.unit_amount / 100, interval: livePrice.recurring?.interval === 'year' ? 'year' : 'month' }
+      : null
+    if (!live?.schedule) return NextResponse.json({ pendingDowngrade: null, paying })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const schedId = typeof live.schedule === 'string' ? live.schedule : (live.schedule as any).id
     const sched = await stripe.subscriptionSchedules.retrieve(schedId)
     if (sched.status !== 'active' && sched.status !== 'not_started') {
-      return NextResponse.json({ pendingDowngrade: null })
+      return NextResponse.json({ pendingDowngrade: null, paying })
     }
     const targetTier = (sched.metadata?.mvp_downgrade_to as Tier | undefined) || null
     const nowSec = Math.floor(Date.now() / 1000)
     // The next phase that hasn't started yet is the queued downgrade.
     const nextPhase = (sched.phases || []).find(p => (p.start_date ?? 0) > nowSec)
-    if (!targetTier || !nextPhase) return NextResponse.json({ pendingDowngrade: null })
+    if (!targetTier || !nextPhase) return NextResponse.json({ pendingDowngrade: null, paying })
 
     return NextResponse.json({
       pendingDowngrade: { tier: targetTier, effectiveAt: nextPhase.start_date },
+      paying,
     })
   } catch (err) {
     // Best-effort — never break the billing page over a Stripe hiccup.
     console.error('[plan-status]', err instanceof Error ? err.message : err)
-    return NextResponse.json({ pendingDowngrade: null })
+    return NextResponse.json({ pendingDowngrade: null, paying: null })
   }
 }

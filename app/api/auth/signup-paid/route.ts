@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
+import { priceMismatch } from '@/lib/price-guard'
 import { couponToApply } from '@/lib/coupon-guard'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
@@ -68,6 +69,11 @@ export async function POST(request: NextRequest) {
     )
     return NextResponse.json({ error: 'Billing for this plan is temporarily unavailable. Our team has been alerted — please try again shortly or contact support.' }, { status: 503 })
   }
+
+  // And it must charge the price the page showed (lib/price-guard). Checked
+  // BEFORE the account exists, so a refused buyer is not left half signed up.
+  const mismatch = await priceMismatch(getStripe(), priceId, tier as Tier, 'month', 'paid signup')
+  if (mismatch) return NextResponse.json({ error: mismatch.error }, { status: mismatch.status })
 
   const admin = createAdminClient()
 
