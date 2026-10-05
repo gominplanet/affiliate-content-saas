@@ -24,6 +24,11 @@
 // somebody deciding what to pay for.
 
 import { SELLABLE_TIERS, TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 
 const n = (v: number | null | undefined, fallback = 'unlimited') => (v == null ? fallback : String(v))
 
@@ -46,7 +51,7 @@ export function planCompareRows(): CompareRow[] {
   return [
     {
       label: 'Who it is for',
-      amazon: 'You post Amazon products to your storefront and socials',
+      amazon: 'You post Amazon products and review videos to your storefront and socials',
       ladder: 'You publish reviews on a site of your own, with or without a YouTube channel',
       decisive: true,
     },
@@ -79,9 +84,48 @@ export function planCompareRows(): CompareRow[] {
     },
     {
       label: 'Publishes to',
-      amazon: `${A.socials.length} networks: Facebook, Instagram and Pinterest`,
+      // YouTube is in here since Seb, 2026-10-05, and is optional: the plan
+      // still asks for no channel to start ("Nothing to connect" above).
+      amazon: `Your Amazon storefront, ${AMAZON_YOUTUBE_CHANNELS} YouTube channel if you connect one, and ${A.socials.length} networks: Facebook, Instagram and Pinterest`,
       ladder: `Your blog, plus ${P.socials.length} networks`,
       decisive: true,
+    },
+    // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+    // members). Each Amazon number is the constant the route enforces.
+    {
+      label: 'Bulk Amazon upload',
+      amazon: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and to YouTube when connected`,
+      ladder: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront and YouTube`,
+    },
+    {
+      label: 'YouTube channels',
+      amazon: `${AMAZON_YOUTUBE_CHANNELS}, optional`,
+      ladder: `${n(P.youtubeChannels)}`,
+    },
+    {
+      label: 'YouTube Co-Pilot (titles, descriptions, tags)',
+      amazon: `${AMAZON_COPILOT_RUNS_PER_MONTH} runs a month`,
+      ladder: `${n(P.metadataGensPerMonth)} runs a month`,
+    },
+    {
+      label: 'Pinned and On sale comments on your videos',
+      amazon: 'Included',
+      ladder: 'Included',
+    },
+    {
+      label: 'Amazon Live prep and follow-up',
+      amazon: `Up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month`,
+      ladder: 'Included',
+    },
+    {
+      label: 'Clip Factory',
+      amazon: `${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month, posted to Instagram and Facebook Reels`,
+      ladder: 'Included, also to TikTok and YouTube Shorts',
+    },
+    {
+      label: 'Deal posts from Deal Radar',
+      amazon: `Up to ${n(A.dealsPerMonth)} a month to Pinterest, Facebook, an Instagram card and Story`,
+      ladder: P.dealsPerMonth == null ? 'From your monthly generations' : `Up to ${P.dealsPerMonth} a month`,
     },
     {
       label: 'Messaging brands on Creator Connections',
@@ -141,9 +185,11 @@ export function trackCards(): TrackCard[] {
   return [
     {
       key: 'amazon',
-      eyebrow: 'No website · no YouTube',
+      // "no YouTube" came off on 2026-10-05 (Seb): the plan now includes one
+      // YouTube channel, Co-Pilot and Clip Factory. A channel is still optional.
+      eyebrow: 'No website needed · YouTube optional',
       title: 'I post Amazon products',
-      blurb: 'Turn any product link into a finished thumbnail or a ready-to-post design with your face on it, publish it to Facebook, Instagram and Pinterest, and get matched to paid brand deals.',
+      blurb: 'Turn any product link into a finished thumbnail or a ready-to-post design with your face on it, upload review videos to your storefront in bulk, cut them into Reels, publish to Facebook, Instagram and Pinterest, and get matched to paid brand deals.',
       tell: 'If you do not have a blog and do not want one, this is your plan.',
       price: `$${TIERS.amazon.price} a month`,
       href: '/amazon-influencer',

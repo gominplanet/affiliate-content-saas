@@ -29,7 +29,7 @@ import { TIERS } from '@/lib/tier'
 import NextImage from 'next/image'
 import {
   ShoppingBag, Rocket, Wand2, Share2, BadgePercent, Radar, UserSquare, Store,
-  FileText, Youtube, Scale, TrendingUp, ArrowRight,
+  FileText, Youtube, Scale, TrendingUp, ArrowRight, Upload,
 } from 'lucide-react'
 
 type Panel = {
@@ -58,8 +58,10 @@ const PANELS: Panel[] = [
     forWho: 'You sell on your Amazon storefront and socials',
     icon: <ShoppingBag size={22} />,
     logo: '/png/mvp-affiliate-amz.png',
-    headline: 'No blog. No YouTube.\nJust your storefront.',
-    blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals.',
+    // "No YouTube" came off on 2026-10-05 (Seb): the plan now includes one
+    // YouTube channel, Co-Pilot and Clip Factory. A channel stays optional.
+    headline: 'No blog needed.\nJust your storefront.',
+    blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, upload review videos in bulk, cut them into Reels, publish everywhere at once, and land paid brand deals.',
     // From TIERS, not typed in. These read $79 / $129 against a real 99 / 179,
     // so the landing page quoted a price Stripe does not charge.
     price: `$${TIERS.amazon.price}`,
@@ -73,13 +75,14 @@ const PANELS: Panel[] = [
       { icon: <BadgePercent size={16} />, text: 'Creator Connections: a daily brand-deal digest matched to you' },
       { icon: <Radar size={16} />, text: 'Amazon product research + live, verified Deal Radar' },
       { icon: <UserSquare size={16} />, text: 'Your own face on every design' },
+      { icon: <Upload size={16} />, text: 'Bulk Amazon upload, YouTube Co-Pilot and Clip Factory Reels' },
     ],
   },
   {
     accent: '#7C3AED',
     tint: 'rgba(124,58,237,',
     eyebrow: 'Creators & Marketers · full suite',
-    forWho: 'You have a blog or a YouTube channel',
+    forWho: 'You want a blog of your own',
     icon: <Rocket size={22} />,
     logo: '/png/mvp-affiliate-pro.png',
     headline: 'The whole content pipeline,\nin your voice.',

@@ -405,10 +405,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // Shown as "Bulk Amazon upload" since the menu was regrouped by job (2026-10-05).
   check('the page is in the nav',
     /href: '\/liftoff'[^\n]*label: 'Bulk Amazon upload'/.test(NAV))
-  check('and it is out of Labs, in Make videos, still Pro only',
+  // Pro and, since 2026-10-05 (Seb: the six Amazon additions), the Amazon plan.
+  check('and it is out of Labs, in Make videos, Pro and Amazon only',
     inOrder(NAV, "label: 'Make videos'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
-    && /href: '\/liftoff'[^\n]*gate: isPro/.test(NAV),
-    'Liftoff graduated: it belongs with the video tools, and it is a Pro feature')
+    && /href: '\/liftoff'[^\n]*gate: hasVideoTools\(effectiveTier\)/.test(NAV),
+    'Liftoff graduated: it belongs with the video tools, on the plans whose routes accept it')
 }
 
 // ── the migrations ──────────────────────────────────────────────────────────

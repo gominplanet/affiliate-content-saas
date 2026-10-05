@@ -81,6 +81,7 @@ export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitte
 export { NEW_MEMBER_PRICES, PRICES_BEFORE, PRICE_CHANGE_AT, newPricesLive } from './price-schedule'
 
 import { livePrice } from './price-schedule'
+import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS } from './amazon-plan'
 
 export const TIERS = {
   trial:   {
@@ -355,8 +356,9 @@ export const TIERS = {
     pinsPerMonth: 115 as number | null,
     igPostsPerMonth: 115 as number | null,
     facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
-    /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
-    metadataGensPerMonth: 0 as number | null,
+    /** YouTube Co-Pilot runs: 100 since 2026-10-05, when the Amazon plan got
+     *  one YouTube channel (lib/amazon-plan AMAZON_COPILOT_RUNS_PER_MONTH). */
+    metadataGensPerMonth: AMAZON_COPILOT_RUNS_PER_MONTH as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Deal / product social posts (their core publishing action). 60 -> 150 on
      *  2026-09-14: at 60 it was the second wall after Facebook, and a creator
@@ -395,7 +397,7 @@ export const TIERS = {
     bonusPosts: 0,
     /** No WordPress, no YouTube — onboards without either. */
     sites: 0,
-    youtubeChannels: 0,
+    youtubeChannels: AMAZON_YOUTUBE_CHANNELS, // since 2026-10-05 (lib/amazon-plan)
     /** Only the three visual networks Amazon influencers push to. */
     socials: ['facebook', 'pinterest', 'instagram'] as readonly Social[],
     multiAccountSocial: false,

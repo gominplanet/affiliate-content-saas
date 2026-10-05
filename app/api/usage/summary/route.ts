@@ -26,7 +26,7 @@ import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
   TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
-import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -149,6 +149,8 @@ export async function GET() {
       push('pins', 'Pins', preview(pin, 110), ec('pinsPerMonth', refPlan.pinsPerMonth))
       push('instagram', 'Instagram', preview(igCount, 74), ec('igPostsPerMonth', refPlan.igPostsPerMonth))
       push('facebook', 'Facebook', preview(fb, 28), ec('facebookPostsPerMonth', refPlan.facebookPostsPerMonth))
+      // Clip Factory joined the Amazon plan on 2026-10-05, with its own cap.
+      if (tier === 'amazon') push('shorts', 'Clips', await countFeatures(['shorts_render']), shortsCapFor('amazon'))
     } else {
       // Generations = NEW content pieces only (blog_posts rows in the window),
       // matching the gate (RPC 131). Thumbnails + metadata are intentionally NOT

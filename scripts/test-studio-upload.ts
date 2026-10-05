@@ -150,7 +150,8 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
 // videos too, and the API may post at most a daily share of them per account.
 {
   const now = Date.parse('2026-10-05T20:00:00Z')
-  check('Studio uploads are open to Pro and admin', usesStudioUpload('pro') && usesStudioUpload('admin') && !usesStudioUpload('amazon') && !usesStudioUpload('trial'))
+  // The Amazon plan too, since it got Bulk Amazon upload on 2026-10-05.
+  check('Studio uploads are open to Pro, Amazon and admin', usesStudioUpload('pro') && usesStudioUpload('admin') && usesStudioUpload('amazon') && !usesStudioUpload('trial'))
   check('an older video is left to SCOUT for a day first',
     leaveCommentToScout(true, null, now, new Date(now - 3_600_000).toISOString())
     && !leaveCommentToScout(true, null, now, new Date(now - SCOUT_BACKLOG_GRACE_MS - 1).toISOString())

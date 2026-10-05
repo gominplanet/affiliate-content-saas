@@ -338,6 +338,22 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
   let budget = IMAGES
   const now = () => new Date().toISOString()
 
+  // AMAZON-ONLY BATCHES WRITE NO YOUTUBE TEXT. The description is where the
+  // YouTube affiliate link goes; a batch that never reaches YouTube does not
+  // need one, and asking Co-Pilot for it spent a run per video (and on the
+  // Amazon plan, before 2026-10-05, was refused every time and retried until
+  // it gave up). Read once per batch; a database without the column is a
+  // batch that goes to YouTube, as before.
+  const amazonOnlyByBatch = new Map<string, boolean>()
+  const isAmazonOnly = async (batchId: string): Promise<boolean> => {
+    const cached = amazonOnlyByBatch.get(batchId)
+    if (cached !== undefined) return cached
+    const { data: b, error: bErr } = await sb.from('launch_batches').select('send_to_youtube').eq('id', batchId).maybeSingle()
+    const only = !bErr && b?.send_to_youtube === false
+    amazonOnlyByBatch.set(batchId, only)
+    return only
+  }
+
   // The batch's chosen look, read once per batch rather than once per video.
   const presetByBatch = new Map<string, ThumbnailPreset>()
   const loadPreset = async (batchId: string): Promise<ThumbnailPreset> => {
@@ -420,7 +436,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // only into a row that still has no description, and the title only while
     // the creator has not typed one, so nothing they wrote during this firing
     // is replaced by it.
-    let haveDescription = !!String(it.description || '').trim()
+    let haveDescription = !!String(it.description || '').trim() || await isAmazonOnly(String(it.batch_id))
     let metaTried = false
     // The YouTube title, as a hint for the Amazon title writer. `title` stays
     // the hook the thumbnail is built from.

@@ -19,6 +19,11 @@
  */
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
@@ -180,7 +185,7 @@ export default function LandingPreview() {
   )
 }
 
-/** Amazon-only router — the "no blog, no YouTube" buyer. Replaces the old
+/** Amazon-only router — the "no blog" buyer. Replaces the old
  *  pre-hero two-panel splitter with two light touchpoints: a slim strip under
  *  the hero, and a callout at the pricing decision point. Both deep-link to the
  *  Amazon plan's own sales page. */
@@ -191,7 +196,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
         <p className="max-w-3xl mx-auto text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           Not building a blog? The{' '}
           <a href="/amazon-influencer" className="font-bold" style={{ color: '#EA580C' }}>Amazon storefront plan</a>{' '}
-          covers thumbnails, designs, storefront and brand deals only, from ${TIERS.amazon.price}/mo.
+          covers thumbnails, designs, review videos, storefront and brand deals, from ${TIERS.amazon.price}/mo.
         </p>
       </section>
     )
@@ -199,7 +204,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
   return (
     <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(192,38,211,0.06))', borderBottom: '1px solid var(--border)' }}>
       <div className="max-w-6xl mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-center gap-x-4 gap-y-1.5 flex-wrap text-center text-[13.5px]">
-        <b style={{ color: 'var(--text)' }}>Not building a blog or YouTube?</b>
+        <b style={{ color: 'var(--text)' }}>Not building a blog?</b>
         <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from ${TIERS.amazon.price}/mo.</span>
         <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#EA580C' }}>
           See the Amazon plan <ArrowRight size={13} />
@@ -533,8 +538,15 @@ const PRICING_TIERS: PricingTier[] = [
       `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
       `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'Auto-post to Pinterest, Instagram & Facebook with AI captions + your affiliate link',
-      `${TIERS.amazon.dealsPerMonth} deal / product posts / month`,
-      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots — your face on every design`,
+      `${TIERS.amazon.dealsPerMonth} deal posts / month from Deal Radar to Pinterest, Facebook and an Instagram card and Story`,
+      // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+      // members). Numbers from lib/amazon-plan, the constants the routes enforce.
+      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and YouTube when connected`,
+      `${AMAZON_YOUTUBE_CHANNELS} YouTube channel with YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs / month`,
+      'Pinned and On sale comments on your YouTube videos',
+      `Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`,
+      `Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips / month to Instagram and Facebook Reels`,
+      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots: your face on every design`,
       `Brand Deals: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
       `${TIERS.amazon.assistantMessagesPerMonth} AI assistant messages / month`,
       'Priority generation queue + priority support',
@@ -542,7 +554,8 @@ const PRICING_TIERS: PricingTier[] = [
       // obvious from context. As one of two headline plans it is not, and
       // somebody buying a $99 plan expecting a blog churns in week one. The
       // cheapest refund to prevent is the one you talk a person out of.
-      '✕ No blog, no WordPress, no YouTube — that is Pro',
+      // "no YouTube" came off on 2026-10-05 (Seb): YouTube is optional now.
+      '✕ No blog or WordPress, and no TikTok, X or Threads. That is Pro',
     ],
     cta: 'Start storefront',
   },
@@ -562,15 +575,15 @@ const PRICING_TIERS: PricingTier[] = [
     },
     features: [
       'Everything in Amazon, plus:',
-      `📝 The blog — ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
+      `📝 The blog: ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
-      '🎬 Clip Factory — turn long videos into ready-to-post shorts',
+      '🎬 Clip Factory posting to TikTok and YouTube Shorts too',
       `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
       'Multi-account social + one-click Publish All',
       `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
-      'Multiple YouTube channels — one per site, or pull from any',
+      `Up to ${TIERS.pro.youtubeChannels} YouTube channels, one per site, or pull from any`,
       `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} Brand Deals outreach emails drafted / month`,
       `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
     ],

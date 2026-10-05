@@ -12,6 +12,7 @@
  * generation itself fires multiple model calls.
  */
 import { billingWindow } from '@/lib/tier'
+import { AMAZON_CLIPS_PER_MONTH } from '@/lib/amazon-plan'
 
 /** Primary ai_usage.feature name that appears once per high-level
  *  generation event. Used as the counter for cap checks. */
@@ -77,6 +78,14 @@ export const PRIMARY_FEATURE = {
  * scripts/test-assistant-facts + scripts/test-shorts-cap hold them to it.
  */
 export const SHORTS_MONTHLY_CAP = 150
+
+/** Finished clips a plan may render per billing period: Pro 150, the Amazon
+ *  plan 50 since it got Clip Factory on 2026-10-05 (lib/amazon-plan), admin
+ *  unlimited. Every surface that states or enforces the cap asks this. */
+export function shortsCapFor(tier: string): number | null {
+  if (tier === 'admin') return null
+  return tier === 'amazon' ? AMAZON_CLIPS_PER_MONTH : SHORTS_MONTHLY_CAP
+}
 
 /** X posts a Pro user can publish per billing period (admin = unlimited). X is
  *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$15

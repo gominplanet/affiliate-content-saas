@@ -15,6 +15,7 @@ import { creatorVoiceBlock, CREATOR_VOICE_COLUMNS } from '@/lib/creator-voice'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { coveredProducts, findSales, saleLabel } from '@/lib/covered-sales'
 import { assemblePlan, buildLivePrompt, LIVE_MAX_PRODUCTS, type LiveProductInput } from '@/lib/live-plan'
+import { amazonLiveLimit } from '@/lib/amazon-live-limit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -28,10 +29,13 @@ export async function POST(req: Request) {
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intg?.tier)
   if (!canUsePreview('amazon_live', tier)) {
-    return NextResponse.json({ error: 'Amazon Live Prep is part of Pro.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Amazon Live Prep is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const blocked = await spendGate(user.id, tier)
   if (blocked) return blocked
+  // The Amazon plan: 4 shows a month (lib/amazon-live-limit).
+  const showCap = await amazonLiveLimit(user.id, tier, 'plan')
+  if (showCap) return showCap
 
   const body = await req.json().catch(() => ({})) as { title?: string; minutes?: number; asins?: string[]; notes?: string; titles?: Record<string, string> }
   const asins = [...new Set((body.asins ?? []).map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]

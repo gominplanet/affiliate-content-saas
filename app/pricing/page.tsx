@@ -14,7 +14,7 @@
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import type { Metadata } from 'next'
 import { freeTrialHighlights } from '@/lib/free-trial'
-import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send } from 'lucide-react'
+import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send, Upload, Youtube, Pin, Radio, Scissors } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
 import { CheckoutButton } from './CheckoutButton'
@@ -22,6 +22,11 @@ import { annualOfferFor } from '@/lib/stripe'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { TrackPicker, TrackCompare } from '@/components/pricing/TrackPicker'
 import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
@@ -151,7 +156,7 @@ const plans: PlanExt[] = [
       'Rebuild-from-video: re-write any legacy WordPress post from its source video',
       'Multi-account social: choose which connected account each post publishes to',
       `Up to ${TIERS.pro.sites} WordPress sites on one subscription`,
-      'Multiple YouTube channels — set a default channel per blog, or pull from any channel onto any blog',
+      `Up to ${TIERS.pro.youtubeChannels} YouTube channels: set a default channel per blog, or pull from any channel onto any blog`,
       `Up to ${TIERS.pro.vaSeats} Team seats for your VAs, each with its own permissions`,
       'Deals Hub: deal posts draw from your monthly generations, with countdown banners + Amazon CSV bulk import',
       `${TIERS.pro.maxFaces} saved faces, Photobooth ${TIERS.pro.photoboothPerMonth} / month`,
@@ -434,13 +439,13 @@ export default async function PricingPage({
 
       {/* ───────────────────────────────────────────────────────────────────
           Amazon Influencer — a DIFFERENT buyer from the blog ladder above (no
-          blog, no YouTube). Its own card so it reads as an alternative track,
+          blog; YouTube optional since Seb, 2026-10-05). Its own card so it reads as an alternative track,
           not a rung between Creator/Studio/Pro. Orange to match its in-app hub.
           ─────────────────────────────────────────────────────────────── */}
       <section className="mt-16 w-full max-w-6xl px-4">
         <div className="rounded-3xl p-6 sm:p-9" style={{ background: 'linear-gradient(180deg, rgba(234,88,12,0.10), rgba(234,88,12,0.03))', border: '1px solid rgba(234,88,12,0.30)' }}>
           {/* Header + price + CTA. Amazon Influencer is a separate buyer with no
-              blog and no YouTube, so it gets its own explained track rather than
+              blog, so it gets its own explained track rather than
               sitting in the blog-ladder grid above. */}
           {/* CENTRED, and the price is its own full-width band rather than a
               narrow right rail. The number is the thing a buyer is looking for
@@ -449,7 +454,7 @@ export default async function PricingPage({
             <div className="max-w-3xl flex flex-col items-center">
               <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-sm mb-3 mx-auto" />
               <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#C2410C' }}>
-                For Amazon storefront creators · no blog · no YouTube
+                For Amazon storefront creators · no blog needed · YouTube optional
               </p>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
                 Amazon Influencer
@@ -457,10 +462,11 @@ export default async function PricingPage({
               <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0]">
                 One plan for creators who live on their Amazon storefront and socials, not a website.
                 It finds the products, writes the copy, designs the posts with your face on them,
-                publishes them, and opens the door to paid brand deals. Here is exactly what you get.
+                publishes them, uploads your review videos in bulk, turns them into Reels, and opens
+                the door to paid brand deals. Here is exactly what you get.
               </p>
               <p className="mt-3 text-[13px] font-medium rounded-lg px-3 py-2 inline-block" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
-                Already on Pro? This whole toolkit is already included in your plan, on top of the blog + YouTube engine.
+                Already on Pro? This whole toolkit is already included in your plan, on top of the blog engine.
               </p>
             </div>
             <div className="w-full max-w-lg rounded-2xl px-6 py-6 flex flex-col items-center"
@@ -500,7 +506,15 @@ export default async function PricingPage({
               { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products actually worth posting before you spend a design on them.' },
               { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
               { icon: <ShoppingBag size={20} />, title: 'Idea List → Shopping Guide', tag: 'Up to Top 20', desc: 'Point MVP at one of your Amazon idea lists and it checks every product, ranks them by your own sales, demand, live deals and ratings, then writes a full shopping-guide post with your affiliate links and a call-to-action back to the whole list on Amazon.' },
-              { icon: <Send size={20} />, title: 'Publish for you', tag: `${TIERS.amazon.dealsPerMonth} posts / month`, desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
+              { icon: <Send size={20} />, title: 'Deal posts for you', tag: `${TIERS.amazon.dealsPerMonth} posts / month`, desc: 'Turn a Deal Radar find into posts for Pinterest, Facebook and an Instagram card and Story, all at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
+              // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new
+              // Amazon members). Numbers from lib/amazon-plan, the constants the
+              // routes enforce.
+              { icon: <Upload size={20} />, title: 'Bulk Amazon upload', tag: `${BULK_UPLOAD_MAX_VIDEOS} videos at once`, desc: `Upload up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your Amazon storefront through SCOUT, and to YouTube too when you connect a channel.` },
+              { icon: <Youtube size={20} />, title: 'YouTube Co-Pilot', tag: `${AMAZON_COPILOT_RUNS_PER_MONTH} runs / month`, desc: `Connect ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and Co-Pilot writes the titles, descriptions and tags for your videos. A channel is optional; everything else works without one.` },
+              { icon: <Pin size={20} />, title: 'Pinned and On sale comments', tag: 'Included', desc: 'Pin a comment with your product link under each YouTube video. When a product you already reviewed goes on sale, MVP writes a timely On sale comment so an old video earns again.' },
+              { icon: <Radio size={20} />, title: 'Amazon Live prep and follow-up', tag: `${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`, desc: 'Plan the products and talking points before you go live, then get the follow-up done after the show.' },
+              { icon: <Scissors size={20} />, title: 'Clip Factory', tag: `${AMAZON_CLIPS_PER_MONTH} clips / month`, desc: `Find the best moments in your videos (${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments a month) and turn them into up to ${AMAZON_CLIPS_PER_MONTH} vertical clips a month, posted to Instagram and Facebook Reels.` },
               { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: `${TIERS.amazon.maxFaces} models · ${TIERS.amazon.photoboothPerMonth} headshots`, desc: `Add your face models and MVP puts you in the designs. Run the photobooth for ${TIERS.amazon.photoboothPerMonth} studio-quality headshots so your posts look like you, not stock.` },
               { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
             ].map((t) => (

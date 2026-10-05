@@ -34,6 +34,7 @@ import { planShorts, reelWindow } from '@/lib/shorts-planner'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 // Transcription of a longer uploaded video can take a while — give it room.
 export const maxDuration = 300
@@ -69,9 +70,9 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .single()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Shorts Studio is a Pro feature. Upgrade to turn your long videos into ready-to-post Shorts.',
+        error: 'Clip Factory is part of the Amazon and Pro plans. Upgrade to turn your long videos into ready-to-post clips.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

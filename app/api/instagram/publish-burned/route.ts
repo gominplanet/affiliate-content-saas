@@ -21,6 +21,7 @@ import { publishMedia, subscribeToComments } from '@/services/instagram'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { toUserMessage } from '@/lib/friendly-error'
 import { addProductUrlToBio } from '@/lib/link-bio-import'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const maxDuration = 300
 
@@ -38,9 +39,9 @@ export async function POST(request: Request) {
       .select('tier,instagram_user_id,instagram_access_token,instagram_username')
       .eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Instagram publishing is a Pro feature.',
+        error: 'Publishing clips to Instagram is part of the Amazon and Pro plans.',
         limitReached: true, cap: 'instagram_burner', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

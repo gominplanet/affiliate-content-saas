@@ -34,10 +34,15 @@ import type { Metadata } from 'next'
 import NextImage from 'next/image'
 import {
   ArrowRight, Check, X as XIcon, ShieldCheck, Wand2, LayoutTemplate,
-  Handshake, UserSquare,
+  Handshake, UserSquare, Upload, Scissors, Youtube, Radio,
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
@@ -47,7 +52,7 @@ import MetaTrack from '@/components/analytics/MetaTrack'
 export const metadata: Metadata = {
   title: 'Make the assets your storefront needs | MVP Affiliate',
   description:
-    'Thumbnails, shoppable designs, pins, Reels covers and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
+    'Thumbnails, shoppable designs, pins, Reels covers, bulk video uploads, Reels clips and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
   robots: { index: false, follow: false },
 }
 
@@ -98,6 +103,33 @@ const MAKES: { icon: React.ReactNode; title: string; body: string }[] = [
     title: `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} headshots a month`,
     body: 'Your face on the designs without a shoot, so the whole storefront looks like one person made it.',
   },
+  // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+  // members). Numbers from lib/amazon-plan, the constants the routes enforce.
+  {
+    icon: <Upload size={18} />,
+    title: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos uploaded at once`,
+    body: 'Bulk Amazon upload sends a batch of review videos to your storefront through SCOUT, and to YouTube too when you connect a channel.',
+  },
+  {
+    icon: <Scissors size={18} />,
+    title: `${AMAZON_CLIPS_PER_MONTH} clips a month from Clip Factory`,
+    body: `${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments a month pick the best parts of your videos and turn them into vertical clips, posted to Instagram and Facebook Reels.`,
+  },
+  {
+    icon: <Youtube size={18} />,
+    title: `${AMAZON_COPILOT_RUNS_PER_MONTH} YouTube Co-Pilot runs a month`,
+    body: `Titles, descriptions and tags written for your videos on ${AMAZON_YOUTUBE_CHANNELS} YouTube channel, plus pinned and On sale comments under them. The channel is optional.`,
+  },
+  {
+    icon: <Radio size={18} />,
+    title: `Amazon Live prep and follow-up for ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month`,
+    body: 'The lineup and talking points ready before you go live, and the follow-up done after the show.',
+  },
+  {
+    icon: <LayoutTemplate size={18} />,
+    title: `${TIERS.amazon.dealsPerMonth} deal posts a month`,
+    body: 'A Deal Radar find becomes posts for Pinterest, Facebook and an Instagram card and Story, published together.',
+  },
 ]
 
 const OLD_NEW: { old: string; mvp: string }[] = [
@@ -131,6 +163,10 @@ const FAQ: { q: string; a: string }[] = [
   {
     q: 'Do I need a website or a blog?',
     a: 'No. This plan is built for the storefront and the socials around it, with no WordPress involved. If you later decide you want a blog you own, that is a different plan and you can move up without losing anything.',
+  },
+  {
+    q: 'Do I need a YouTube channel?',
+    a: `No. Everything works without one. If you have a channel, you can connect ${AMAZON_YOUTUBE_CHANNELS} and your bulk uploads go to YouTube too, with Co-Pilot titles, descriptions and tags and pinned comments.`,
   },
   {
     q: 'Will the images look like AI made them?',
@@ -204,7 +240,7 @@ export default function RunYourStorefrontPage() {
               What lands in your account every month
             </h2>
           </div>
-          <div className="mt-11 grid sm:grid-cols-2 gap-4">
+          <div className="mt-11 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {MAKES.map((s) => (
               <div key={s.title} className="rounded-2xl border border-black/10 bg-white p-6">
                 <span className="w-9 h-9 rounded-xl flex items-center justify-center text-white mb-3" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>

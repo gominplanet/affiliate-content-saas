@@ -23,7 +23,8 @@
 'use client'
 
 import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
-import { previewOpenToPro } from '@/lib/labs-preview'
+import { previewOpenToPro, canUsePreview } from '@/lib/labs-preview'
+import { hasVideoTools } from '@/lib/amazon-plan'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -525,31 +526,34 @@ export default function DashboardShellV2({
     {
       label: 'Make videos',
       items: [
-        { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
+        // The Amazon plan has its six video additions since 2026-10-05 (Seb):
+        // one YouTube channel and Co-Pilot, Bulk Amazon upload, Clip Factory
+        // with its own allowance, YouTube comments and Amazon Live.
+        { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot', onAmazon: 'included' },
         { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnails', gate: canAmazonHub, onAmazon: 'included' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
-        // Pro only (page + APIs Pro-gated, capped per lib/usage-cap).
-        { href: '/clip-factory', icon: <Scissors size={15} />, label: 'Clip Factory', gate: isPro },
+        // Pro, and the Amazon plan with its own allowance (lib/amazon-plan).
+        { href: '/clip-factory', icon: <Scissors size={15} />, label: 'Clip Factory', gate: hasVideoTools(effectiveTier), onAmazon: 'included' },
         // Was Liftoff: up to ten videos to YouTube and every chosen Amazon
-        // country from one press. Pro and admin.
-        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Bulk Amazon upload', gate: isPro, badge: 'New' },
+        // country from one press. Pro and the Amazon plan.
+        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Bulk Amazon upload', gate: hasVideoTools(effectiveTier), badge: 'New', onAmazon: 'included' },
         // Pinned Comments and Encore (on sale comments) both write the comment
         // under the creator's own videos; Encore edits the pinned one.
         {
-          href: '/first-comments', icon: <Pin size={15} />, label: 'YouTube comments', badge: 'New',
-          gate: (previewOpenToPro('first_comment') ? isPro : isAdmin) || (previewOpenToPro('on_sale') ? isPro : isAdmin),
+          href: '/first-comments', icon: <Pin size={15} />, label: 'YouTube comments', badge: 'New', onAmazon: 'included',
+          gate: canUsePreview('first_comment', effectiveTier) || canUsePreview('on_sale', effectiveTier),
           tabs: [
-            { href: '/first-comments', icon: null, label: 'Pinned comments', gate: previewOpenToPro('first_comment') ? isPro : isAdmin },
-            { href: '/encore', icon: null, label: 'On sale comments', gate: previewOpenToPro('on_sale') ? isPro : isAdmin },
+            { href: '/first-comments', icon: null, label: 'Pinned comments', gate: canUsePreview('first_comment', effectiveTier) },
+            { href: '/encore', icon: null, label: 'On sale comments', gate: canUsePreview('on_sale', effectiveTier) },
           ],
         },
         // Before the show and after it.
         {
-          href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live', badge: 'New',
-          gate: previewOpenToPro('amazon_live') ? isPro : isAdmin,
+          href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live', badge: 'New', onAmazon: 'included',
+          gate: canUsePreview('amazon_live', effectiveTier),
           tabs: [
-            { href: '/amazon-live', icon: null, label: 'Prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin },
-            { href: '/live-followup', icon: null, label: 'Follow-up', gate: previewOpenToPro('live_followup') ? isPro : isAdmin },
+            { href: '/amazon-live', icon: null, label: 'Prep', gate: canUsePreview('amazon_live', effectiveTier) },
+            { href: '/live-followup', icon: null, label: 'Follow-up', gate: canUsePreview('live_followup', effectiveTier) },
           ],
         },
       ],
@@ -617,14 +621,15 @@ export default function DashboardShellV2({
       label: 'Your setup',
       items: [
         // Everything MVP posts to or reads from. The Amazon plan connects its
-        // networks inside Social designs (see AMAZON_LOCKED_PREFIXES).
+        // social networks inside Social designs (see AMAZON_LOCKED_PREFIXES)
+        // and its one YouTube channel here.
         {
-          href: '/setup', icon: <Plug size={15} />, label: 'Connections',
+          href: amazonView ? '/connect-youtube' : '/setup', icon: <Plug size={15} />, label: 'Connections', onAmazon: 'included',
           tabs: [
-            { href: '/setup', icon: null, label: 'Blog' },
+            { href: '/setup', icon: null, label: 'Blog', gate: !amazonView },
             { href: '/connect-youtube', icon: null, label: 'YouTube' },
-            { href: '/connect-socials', icon: null, label: 'Socials' },
-            { href: '/external-integrations', icon: null, label: 'Other tools', gate: canUseFinders },
+            { href: '/connect-socials', icon: null, label: 'Socials', gate: !amazonView },
+            { href: '/external-integrations', icon: null, label: 'Other tools', gate: canUseFinders && !amazonView },
           ],
         },
         {
@@ -723,12 +728,9 @@ export default function DashboardShellV2({
     // them there instead of showing the generic upsell.
     { prefix: '/connect-socials', label: 'Connect your socials', redirect: { href: '/amazon/social', cta: 'Go to Social designs', body: 'On the Amazon plan you connect your approved networks (Facebook, Pinterest and Instagram) right inside Social designs, where you also publish your designs. Connect them there in one place.' } },
     { prefix: '/setup', label: 'Blog connection' },
-    { prefix: '/connect-youtube', label: 'YouTube' },
     { prefix: '/learn', label: 'Writing voice' },
     { prefix: '/customize', label: 'Blog design' },
-    { prefix: '/co-pilot', label: 'YouTube Co-Pilot' },
     { prefix: '/content', label: 'Blog posts' },
-    { prefix: '/clip-factory', label: 'Clip Factory' },
     { prefix: '/comparison', label: 'Comparisons' },
     { prefix: '/buying-guides', label: 'Buying Guides' },
     { prefix: '/idea-lists', label: 'Idea lists' },

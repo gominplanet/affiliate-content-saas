@@ -8,6 +8,8 @@
 //                        moving from 10 a day (up to 300 a month, $60 maxed)
 //                        to 60 a month is what pays for keeping Pro at 100
 //                        generations.
+//   The Amazon plan      20 a month (lib/amazon-plan), since it got Clip
+//                        Factory on 2026-10-05.
 //   Pro members from     10 a day, the limit set the same morning, since they
 //   before that day      keep their limits for good (migration 405 cohort).
 //
@@ -20,13 +22,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { recordUsage } from '@/lib/ai-usage'
 import { normalizeTier, billingWindow, LEGACY_PRO_COHORT } from '@/lib/tier'
 import { utcDayStart } from '@/lib/partner-post-limit'
+import { AMAZON_FIND_MOMENTS_PER_MONTH } from '@/lib/amazon-plan'
 
 export const FIND_MOMENTS_PER_MONTH = 60
 export const FIND_MOMENTS_PER_DAY_LEGACY = 10
 export const FIND_MOMENTS_FEATURE = 'shorts_find'
 
 /** Which allowance a member is on. Pure. */
-export function findMomentsAllowance(cohort: string | null | undefined): { limit: number; per: 'day' | 'month' } {
+export function findMomentsAllowance(cohort: string | null | undefined, tier?: string | null): { limit: number; per: 'day' | 'month' } {
+  // The Amazon plan got Clip Factory on 2026-10-05 with its own allowance.
+  if (tier === 'amazon') return { limit: AMAZON_FIND_MOMENTS_PER_MONTH, per: 'month' }
   return cohort === LEGACY_PRO_COHORT
     ? { limit: FIND_MOMENTS_PER_DAY_LEGACY, per: 'day' }
     : { limit: FIND_MOMENTS_PER_MONTH, per: 'month' }
@@ -39,7 +44,7 @@ export async function findMomentsLimit(userId: string, rawTier: unknown): Promis
     const db = createAdminClient() as any
     // '*' so limits_cohort (migration 405) is read when present.
     const { data: row } = await db.from('integrations').select('*').eq('user_id', userId).maybeSingle()
-    const { limit, per } = findMomentsAllowance(row?.limits_cohort as string | null | undefined)
+    const { limit, per } = findMomentsAllowance(row?.limits_cohort as string | null | undefined, normalizeTier(rawTier))
     const win = billingWindow({ periodStart: row?.subscription_period_start ?? null, periodEnd: row?.subscription_period_end ?? null })
     const since = per === 'day' ? utcDayStart().toISOString() : win.startISO
     const { count } = await db.from('ai_usage')

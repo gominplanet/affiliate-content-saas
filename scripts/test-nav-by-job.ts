@@ -43,12 +43,15 @@ check('every page from the old menu is still reachable from it', missing.length 
 
 // ── gates moved with their pages ────────────────────────────────────────────
 const row = (href: string) => (nav.match(new RegExp(`href: '${href.replace(/[/?]/g, (c) => `\\${c}`)}'[^\\n]*`)) ?? [''])[0]
-check('Bulk Amazon upload is Pro', /label: 'Bulk Amazon upload', gate: isPro/.test(row('/liftoff')))
-check('Clip Factory is Pro', /gate: isPro/.test(row('/clip-factory')))
+// Since 2026-10-05 (Seb: the Amazon plan gets all six additions) these are
+// Pro and Amazon, through lib/amazon-plan and the labs-preview switch list.
+check('Bulk Amazon upload is Pro and Amazon', /label: 'Bulk Amazon upload', gate: hasVideoTools\(effectiveTier\)[^\n]*onAmazon: 'included'/.test(row('/liftoff')))
+check('Clip Factory is Pro and Amazon', /gate: hasVideoTools\(effectiveTier\), onAmazon: 'included'/.test(row('/clip-factory')))
+check('YouTube Co-Pilot is in the Amazon plan', /label: 'YouTube Co-Pilot', onAmazon: 'included'/.test(row('/co-pilot')))
 check('Hashtag insights is Pro', /label: 'Hashtag insights', gate: isPro/.test(row('/pulse')))
-check('Pinned comments keeps its switch', /label: 'Pinned comments', gate: previewOpenToPro\('first_comment'\) \? isPro : isAdmin/.test(nav))
-check('On sale comments keeps its switch', /label: 'On sale comments', gate: previewOpenToPro\('on_sale'\) \? isPro : isAdmin/.test(nav))
-check('Follow-up keeps its switch', /href: '\/live-followup'[^\n]*gate: previewOpenToPro\('live_followup'\) \? isPro : isAdmin/.test(nav))
+check('Pinned comments keeps its switch', /label: 'Pinned comments', gate: canUsePreview\('first_comment', effectiveTier\)/.test(nav))
+check('On sale comments keeps its switch', /label: 'On sale comments', gate: canUsePreview\('on_sale', effectiveTier\)/.test(nav))
+check('Follow-up keeps its switch', /href: '\/live-followup'[^\n]*gate: canUsePreview\('live_followup', effectiveTier\)/.test(nav))
 check('Recap keeps its switch', /href: '\/brand-recap'[^\n]*gate: previewOpenToPro\('brand_recap'\) \? isPro : isAdmin/.test(nav))
 check('Buying guides keeps its gate', /href: '\/buying-guides'[^\n]*gate: showBuyingGuidesEff/.test(nav))
 check('Blog design still hides for content-only sites', /label: 'Blog design', gate: !contentOnly/.test(nav))
@@ -58,7 +61,7 @@ check('Labs stays admin only', (() => {
   return rows.length > 0 && rows.every((r) => /gate: isAdmin/.test(r))
 })())
 check('a merged row is shown only when one of its tabs is open to this account',
-  /gate: \(previewOpenToPro\('first_comment'\) \? isPro : isAdmin\) \|\| \(previewOpenToPro\('on_sale'\) \? isPro : isAdmin\)/.test(nav))
+  /gate: canUsePreview\('first_comment', effectiveTier\) \|\| canUsePreview\('on_sale', effectiveTier\)/.test(nav))
 
 // ── merged rows light up and wear their tab bar ─────────────────────────────
 check('a merged row is lit on any of its tabs', /const itemActive = useCallback\([\s\S]{0,200}\(item\.tabs \?\? \[\]\)\.some\(\(t\) => t\.gate !== false && isActive\(t\.href\)\)/.test(S))
@@ -73,7 +76,8 @@ check('a star placed on a page that is now a tab still shows, as its row',
 
 // ── the Amazon plan ─────────────────────────────────────────────────────────
 const AMAZON_INCLUDED = ['/dashboard', '/amazon/thumbnails', '/amazon/social', '/social-launch-kit', '/link-in-bio', '/collaborations',
-  '/brand-inquiries', '/brand', '/photobooth', '/billing', '/assistant', '/tutorials', '/passport']
+  '/brand-inquiries', '/brand', '/photobooth', '/billing', '/assistant', '/tutorials', '/passport',
+  '/co-pilot', '/clip-factory', '/first-comments', '/amazon-live']
 for (const h of AMAZON_INCLUDED) check(`Amazon plan keeps ${h} in its section`, /onAmazon: 'included'/.test(row(h)) || new RegExp(`href: '${h.replace(/\//g, '\\/')}'[\\s\\S]{0,160}onAmazon: 'included'`).test(nav))
 check('Amazon plan opens Product research on its own research page',
   /href: amazonView \? '\/amazon\/research' : '\/amz-finder'[^\n]*onAmazon: 'included'/.test(nav))

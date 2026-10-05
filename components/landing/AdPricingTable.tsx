@@ -27,6 +27,7 @@
 import { useState } from 'react'
 import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
+import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -45,6 +46,11 @@ function capsFor(tier: PaidTier): string[] {
         ['Reels covers a month', t.igPostsPerMonth],
         ['brand-deal messages a month', t.collabsPerMonth],
         ['face models', t.maxFaces],
+        // Seb, 2026-10-05: the video additions, from lib/amazon-plan.
+        ['deal posts a month', t.dealsPerMonth],
+        ['YouTube Co-Pilot runs a month', AMAZON_COPILOT_RUNS_PER_MONTH],
+        ['Clip Factory clips a month, to Instagram and Facebook Reels', AMAZON_CLIPS_PER_MONTH],
+        ['Amazon Live shows a month, prep and follow-up', AMAZON_LIVE_SHOWS_PER_MONTH],
       ]
     : [
         ['published articles a month', t.postsPerMonth],
@@ -56,9 +62,12 @@ function capsFor(tier: PaidTier): string[] {
   return rows.filter(([, v]) => v !== 0).map(([label, v]) => `${n(v)} ${label}`)
 }
 
-const EXTRAS: Record<PaidTier, string> = {
-  amazon: 'Passport geo-links, unlimited and no cost per click',
-  pro: 'Passport geo-links, unlimited and no cost per click',
+const EXTRAS: Record<PaidTier, string[]> = {
+  amazon: [
+    'Bulk Amazon upload: review videos to your storefront, and YouTube when connected',
+    'Passport geo-links, unlimited and no cost per click',
+  ],
+  pro: ['Passport geo-links, unlimited and no cost per click'],
 }
 
 function PlanCard({
@@ -165,7 +174,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       note: showYear
         ? `Saves $${saving.toLocaleString('en-US')} against monthly`
         : (annual ? `Or $${annual.toLocaleString('en-US')} a year` : null),
-      features: [...capsFor(k), EXTRAS[k]],
+      features: [...capsFor(k), ...EXTRAS[k]],
       ctaLabel: `Get ${t.label}`,
       ctaHref: `/signup?tier=${k}&plan=paid&billing=${showYear ? 'annual' : 'monthly'}`,
     }

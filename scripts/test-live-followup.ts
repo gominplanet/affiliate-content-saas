@@ -42,7 +42,9 @@ check('no dashes as sentence breaks in the roundup', !/ [–—-] /.test(roundup
 
 check('open to Pro, not to lower plans', canUsePreview('live_followup', 'pro') && canUsePreview('live_followup', 'admin') && !canUsePreview('live_followup', 'trial'))
 const nav = r('components/layout/DashboardShellV2.tsx')
-check('the menu item follows the Pro switch', /href: '\/live-followup'[^\n]*gate: previewOpenToPro\('live_followup'\) \? isPro : isAdmin/.test(nav))
+// The same switch the routes read (canUsePreview), so the menu never shows a
+// page whose routes refuse. Amazon has it too since 2026-10-05 (Seb).
+check('the menu item follows the switch', /href: '\/live-followup'[^\n]*gate: canUsePreview\('live_followup', effectiveTier\)/.test(nav))
 
 const route = r('app/api/live/followup/route.ts')
 check('the route checks the Labs gate', /canUsePreview\('live_followup'/.test(route))

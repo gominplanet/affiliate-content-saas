@@ -13,7 +13,7 @@ async function gate() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('amazon_live', intg?.tier)) return { error: NextResponse.json({ error: 'Amazon Live Prep is part of Pro.', code: 'tier_not_allowed' }, { status: 403 }) }
+  if (!canUsePreview('amazon_live', intg?.tier)) return { error: NextResponse.json({ error: 'Amazon Live Prep is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { sb: supabase as any, userId: user.id }
 }

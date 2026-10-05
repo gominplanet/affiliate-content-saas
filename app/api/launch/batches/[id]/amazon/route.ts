@@ -25,6 +25,7 @@ import { marketByDomain } from '@/lib/markets'
 import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { LIFTOFF_AMAZON_MARKET } from '@/lib/launch-batch'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -45,8 +46,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
+  if (!hasVideoTools(integ?.tier)) {
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.' }, { status: 403 })
   }
 
   const markets = [LIFTOFF_AMAZON_MARKET].filter((d) => !!marketByDomain(d))

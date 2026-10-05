@@ -29,6 +29,11 @@ import { APP_SEARCH_INDEX } from './app-search-index'
 import { TIERS, SELLABLE_TIERS, type Tier } from './tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from './usage-cap'
 import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from './amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from './launch-batch'
 
 // The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
 // so the assistant is told that instead of how to use it, and never offers it.
@@ -225,14 +230,19 @@ The flagship feature. Workflow:
 4. User reviews, edits if needed, clicks "Push to YouTube" — title +
    description + tags + thumbnail go live on the video.
 
+### On the Amazon plan
+Included: ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and ${AMAZON_COPILOT_RUNS_PER_MONTH} Co-Pilot
+runs a month (titles, descriptions and tags). The Amazon plan has no blog, so
+no blog review is written from the video. Connecting a channel is optional.
+
 ### Thumbnail variants
 The user can pick 1-10 variants per generation. Each variant burns one
 unit from their Generations cap (see TIERS below).
 
-### Face Training (Pro)
+### Face Training (Amazon and Pro)
 Upload 5-20 selfies → MVP trains a LoRA → next thumbnails put the user's
 real face on them. Done in Your setup → Face models (/photobooth; the old
-/face-training link opens the same page). Up to 2 faces on Pro.
+/face-training link opens the same page). Up to ${TIERS.pro.maxFaces} faces on Pro and ${TIERS.amazon.maxFaces} on Amazon.
 
 ### Naming requirement
 Without an ASIN in the video title or filename, the agent can't identify
@@ -308,9 +318,11 @@ a full blog review, publishes to WordPress. ~3-4 min per campaign.
 - Stuck campaigns (10+ min in researching/generating) auto-fail via
   a cron worker so the user can retry
 
-### Why it's Pro-only
-Amazon Creator Connections itself requires Amazon Influencer status,
-which has its own qualifications.
+### Which plan
+Finding and browsing campaigns is on the Amazon plan and Pro. Generating a
+blog review from a campaign needs the blog, which is Pro only. Amazon Creator
+Connections itself requires Amazon Influencer status, which has its own
+qualifications.
 
 ---
 
@@ -538,7 +550,7 @@ ranking and timing unlock.
 
 ## CLIP FACTORY & SHORTS STUDIO
 
-URL: /clip-factory · Sidebar: Make videos → Clip Factory (Pro)
+URL: /clip-factory · Sidebar: Make videos → Clip Factory (Amazon and Pro)
 
 Turn one long YouTube video into vertical short clips with burned-in animated
 captions. Three steps: Create (pick the moments, or let MVP suggest the best
@@ -546,6 +558,10 @@ clips) → Enhance → Publish. Publishing goes to TikTok and Instagram today.
 (YouTube Shorts publishing is fully built and turns on once Google finishes
 verifying our upload permission — set it up, but don't promise it as live yet;
 when it's on, you'll reconnect YouTube once to enable it.)
+
+On the Amazon plan: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month,
+posted to Instagram Reels and Facebook Reels. TikTok and YouTube Shorts
+publishing are Pro only.
 
 ---
 
@@ -664,6 +680,36 @@ This is separate from affiliate income; it's ad revenue on your traffic.
 - **MVP x LTK** (/ltk; Sidebar: Find products → Partner programs → LTK tab) — turn products into LTK-style link posts.
 - **PartnerBoost / Walmart** (/partnerboost; Sidebar: Find products → Partner programs → PartnerBoost and Walmart tab) — find Walmart + DTC brand deals and deep links beyond Amazon, and generate posts from Walmart offers.
 - **MVP x Levanta** (/levanta; Sidebar: Find products → Partner programs → Levanta tab) — Amazon creator network for commissionable brand links.
+
+---
+
+## THE AMAZON PLAN ($${TIERS.amazon.price} a month)
+
+For creators who live on their Amazon storefront and socials. No blog and no
+website. YouTube is optional: everything works without a channel, and one can
+be connected. It includes:
+- Thumbnails, and Pinterest and Instagram social designs (Facebook reuses
+  them), Social Launch Kit, Link in Bio, Passport links.
+- Product research, including Creator Connections campaigns and Deal Radar.
+- Brand pitches (${TIERS.amazon.collabsPerMonth} a month), Brand inbox, Face models, Ask MVP.
+- Bulk Amazon upload (/liftoff, formerly Liftoff): up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at
+  once to their Amazon storefront through SCOUT, and to YouTube too when a
+  channel is connected.
+- ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and YouTube Co-Pilot (/co-pilot): ${AMAZON_COPILOT_RUNS_PER_MONTH} runs a month
+  (titles, descriptions, tags).
+- Pinned comments (/first-comments) and On sale comments (/encore) on their
+  YouTube videos.
+- Amazon Live prep and follow-up (/amazon-live): up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month.
+- Clip Factory (/clip-factory): ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month, posted to
+  Instagram and Facebook Reels (not TikTok, not YouTube Shorts).
+- Deal posts: up to ${TIERS.amazon.dealsPerMonth} a month from Deal Radar, to Pinterest, Facebook, an
+  Instagram card and Story.
+
+Pro only (not on the Amazon plan): the blog and everything that publishes to
+it (blog posts, comparisons, buying guides, articles, ended deals, SEO and
+indexing, ads), the partner networks LTK, Levanta, Walmart and Wayward,
+posting to X, Threads, LinkedIn, Bluesky, Telegram and TikTok, Meta Hub, Team
+seats, and video scripts.
 
 ---
 
@@ -940,6 +986,16 @@ function plansBlock(): string {
       Array.isArray(t.socials) && t.socials.length
         ? `- Publishes to: ${t.socials.join(', ')}`
         : null,
+      // The Amazon plan's video allowances live in lib/amazon-plan, not TIERS
+      // (Seb, 2026-10-05), so they are added here or the table omits them.
+      ...(key === 'amazon' ? [
+        `- YouTube channels: ${AMAZON_YOUTUBE_CHANNELS} (optional)`,
+        `- YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs per month`,
+        `- Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once`,
+        `- Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows per month`,
+        `- Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips per month, to Instagram and Facebook Reels`,
+        `- Deal posts: ${n(t.dealsPerMonth, 'per month')}`,
+      ] : []),
     ].filter(Boolean)
     const price = t.price === 0 ? 'free' : `$${t.price}/mo`
     const annual = t.annualPrice ? `, or $${t.annualPrice}/year` : ''
@@ -969,10 +1025,10 @@ ${legacy}
 
 ## CAPS THAT ARE NOT PER-TIER
 
-These two are fixed for every paid plan, and they are ENFORCED at these
-numbers. They are separate from the generations bucket.
+These two are ENFORCED at these numbers. They are separate from the
+generations bucket.
 
-- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period. Planning and finding clips is free; only a finished render counts.
+- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period on Pro; ${AMAZON_CLIPS_PER_MONTH} clips and ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments on the Amazon plan. Only a finished render counts as a clip.
 - X / Twitter posts: ${X_MONTHLY_CAP} per billing period.
 
 ## NEVER CALCULATE SOMEONE'S REMAINING ALLOWANCE

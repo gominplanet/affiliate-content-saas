@@ -29,6 +29,7 @@ import { resolveClipLinks } from '@/lib/reel-caption'
 import { broadcastIdOf, parseLiveReplayHtml, vttToWordCues, type LiveReplayPage } from '@/lib/amazon-live-page'
 import { fetchAmazonProduct } from '@/services/amazon'
 import type { TranscriptCue } from '@/lib/shorts-types'
+import { amazonLiveLimit } from '@/lib/amazon-live-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,7 +44,7 @@ async function gate(mode: 'read' | 'paid' = 'paid') {
   if (!user) return { error: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of Pro.', upgrade: true }, { status: 403 }) }
+  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of the Amazon and Pro plans.', upgrade: true }, { status: 403 }) }
   // The monthly spend ceiling, like every other paid route. Follow-up runs
   // Whisper on the replay and Claude on the moments, and was the one paid
   // feature with no backstop at all. Reads (GET) pass through: they cost nothing.
@@ -120,6 +121,9 @@ export async function POST(req: NextRequest) {
         if (r.ok) cues = vttToWordCues(await r.text())
       } catch { /* the transcription step remains */ }
     }
+    // The Amazon plan: 4 follow-ups a month (lib/amazon-live-limit).
+    const showCap = await amazonLiveLimit(g.userId, g.tier, 'followup')
+    if (showCap) return showCap
     const { data, error } = await admin.from('live_followups').insert({
       user_id: g.userId, plan_id: planId, replay_url: replayUrl,
       title: ((page.ok && page.data.title) || String(read.title || '')).slice(0, 200) || null,

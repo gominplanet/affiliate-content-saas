@@ -11,6 +11,7 @@ import ToolGuide from '@/components/guide/ToolGuide'
 // The Shorts cap is READ, never typed: this line is what a creator is shown
 // when they ask what their limit is, and it sat at 50 while the constant moved.
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { AMAZON_CLIPS_PER_MONTH } from '@/lib/amazon-plan'
 import {
   ShoppingBag, Sparkles, Search, Tag, ShoppingCart, PenLine, Bookmark, ShieldCheck,
   Youtube, Image as ImageIcon, Type, FileText, Layers, Send, Mail, Link2, Scale,
@@ -587,7 +588,7 @@ export function ShortsStudioGuide() {
         { icon: <Layers size={18} />, title: 'Fine tune before you render', body: <>Use <strong>Edit</strong> on any suggestion to change its start and end time, its on-screen hook or its caption. Save, then render to apply the change.</> },
         { icon: <Type size={18} />, title: 'Captions and layout', body: <>Captions are burned in word for word from what you actually said, timed to your speech; switch them off for a clean clip, or pick a caption style. Choose <strong>Standard</strong> or <strong>Split screen</strong>, then hit <strong>Render Short</strong>.</> },
         { icon: <Send size={18} />, title: 'Post or download', body: <>A finished Short can be downloaded or posted to <strong>TikTok</strong>, <strong>Instagram</strong> or <strong>YouTube</strong> straight from the list. Each button shows when that clip has been posted.</> },
-        { icon: <ShieldCheck size={18} />, title: 'Plan and limits', body: <>Shorts are a Pro feature, capped at <strong>{SHORTS_MONTHLY_CAP} finished Shorts a month</strong>; the counter shows how many you have left. Only use videos you own or have the rights to.</> },
+        { icon: <ShieldCheck size={18} />, title: 'Plan and limits', body: <>Clips are part of the Amazon and Pro plans: <strong>{SHORTS_MONTHLY_CAP} finished clips a month on Pro</strong> and <strong>{AMAZON_CLIPS_PER_MONTH} on Amazon</strong>; the counter shows how many you have left. Only use videos you own or have the rights to.</> },
       ]}
       footerNote={<>Want a shoppable call to action or a product link on the clip? Use <strong className="text-foreground">Clip Factory</strong>, which does the same cutting and adds an Enhance step before publishing.</>}
     />
@@ -610,7 +611,7 @@ export function ClipFactoryGuide() {
         { icon: <Tag size={18} />, title: 'Add a call to action', body: <>In <strong>Enhance</strong>, choose a <strong>CTA box</strong> or <strong>Caption text</strong>, then set where the clip is going and how people buy: <strong>In-app shop</strong> or <strong>Link in bio</strong>. Pick a <strong>Recommended</strong> badge, one from <strong>Gallery</strong> or <strong>My boxes</strong>, or <strong>Make your own</strong> from a few words; drag it on the preview, resize it, and choose how long it shows.</> },
         { icon: <ShoppingBag size={18} />, title: 'Add the product', body: <>Paste an Amazon ASIN, store URL or TikTok Shop link, plus the product name if you like, and MVP writes a suggested caption for it. If <strong>Auto-add products from my posts</strong> is on in Link in Bio, the product lands on your Shop page when you post to TikTok or Instagram. Hit <strong>Burn overlay & continue</strong>, or use <strong>Skip</strong> to publish the clip as is.</> },
         { icon: <Send size={18} />, title: 'Publish from here', body: <>Post the finished clip to <strong>TikTok</strong>, <strong>Instagram</strong> or <strong>YouTube</strong>, or <strong>Download</strong> it. <strong>Choose Reel cover</strong> sets the still frame Instagram shows; YouTube asks for publishing access the first time and adds tags automatically. Each button turns solid and reads Posted once that post goes through.</> },
-        { icon: <ShieldCheck size={18} />, title: 'Ground rules and limits', body: <>Only use your own videos or ones you have the rights to. Rendering is a Pro feature, capped at <strong>{SHORTS_MONTHLY_CAP} finished Shorts a month</strong>; the counter beside the title shows how many you have left and when it resets.</> },
+        { icon: <ShieldCheck size={18} />, title: 'Ground rules and limits', body: <>Only use your own videos or ones you have the rights to. Rendering is part of the Amazon and Pro plans: <strong>{SHORTS_MONTHLY_CAP} finished clips a month on Pro</strong> and <strong>{AMAZON_CLIPS_PER_MONTH} on Amazon</strong>; the counter beside the title shows how many you have left and when it resets.</> },
       ]}
       footerNote={<><strong className="text-foreground">Longer videos are not better here.</strong> Clip Factory works best on tight, spoken review content: pick a video with a face and clear speech.</>}
     />

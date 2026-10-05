@@ -66,9 +66,25 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   facebook_setup: 'labs',
 }
 
+/** Pro features the AMAZON plan has too (Seb, 2026-10-05: "add all six",
+ *  for current and new Amazon members): pinned comments, On sale comments,
+ *  Amazon Live and its follow-up, uploads through SCOUT in Studio, and Clip
+ *  Factory's Reels to Facebook. Only features already open to Pro; one still
+ *  'admin' stays admin. The Amazon plan's own allowances are in lib/amazon-plan. */
+const ALSO_AMAZON: ReadonlySet<PreviewFeature> = new Set<PreviewFeature>([
+  'first_comment', 'on_sale', 'amazon_live', 'live_followup', 'studio_upload',
+  'facebook_reels', 'whole_video', 'liftoff_split', 'comparison', 'shorts_mode',
+])
+
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {
   const tier = normalizeTier(rawTier)
-  return OPEN_TO[feature] === 'admin' ? tier === 'admin' : canSeeNav('labs', tier)
+  if (OPEN_TO[feature] === 'admin') return tier === 'admin'
+  return canSeeNav('labs', tier) || (tier === 'amazon' && ALSO_AMAZON.has(feature))
+}
+
+/** Is this feature open to the Amazon plan as well as Pro. */
+export function previewOpenToAmazon(feature: PreviewFeature): boolean {
+  return OPEN_TO[feature] === 'labs' && ALSO_AMAZON.has(feature)
 }
 
 export function previewOpenToPro(feature: PreviewFeature): boolean {

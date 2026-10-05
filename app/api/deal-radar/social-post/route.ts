@@ -34,6 +34,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { recallProductImage } from '@/lib/product-image-memory'
 import { resolvePostDestination } from '@/lib/post-destination'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { dealPostLimit, recordDealPost } from '@/lib/deal-post-limit'
 
 /**
  * ON SALE NOW REMEMBERS WHAT WAS SHARED, from what the platforms answered:
@@ -98,6 +99,9 @@ export async function POST(request: Request) {
     // Story published via the API can't carry a caption or a tappable link).
     const wantStory = body.story === true
     if (!platforms.length && !wantStory && !wantPinterest) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+    // The Amazon plan's monthly deal posts (lib/deal-post-limit).
+    const dealCap = await dealPostLimit(user.id, tier)
+    if (dealCap) return dealCap
 
     // Resolve the creator's approved image for this product ONCE, here. A
     // scheduled post stores the URL resolved now rather than re-resolving at
@@ -179,6 +183,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: toUserMessage(insErr, 'Could not schedule that post. Please try again.') }, { status: 500 })
       }
       if (body.source === 'on_sale') await recordOnSaleShare(user.id, asin, [], [], when.toISOString())
+      recordDealPost(user.id, tier)
       // Say which image was queued, not which was requested — useSavedImage
       // with nothing saved (or an unapplied migration 331) silently falls back
       // to the product photo, and the caller should be able to tell.
@@ -205,6 +210,7 @@ export async function POST(request: Request) {
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
     if (out.dealEnded && out.results.length === 0) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
     const anyOk = out.results.some((r) => r.ok)
+    if (anyOk) recordDealPost(user.id, tier)
     if (body.source === 'on_sale') {
       await recordOnSaleShare(user.id, asin,
         out.results.filter((r) => r.ok).map((r) => String(r.platform)),

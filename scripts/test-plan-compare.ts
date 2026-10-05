@@ -19,6 +19,8 @@
 // rows that carry the distinction are marked, and they have to stay marked.
 import { SELLABLE_TIERS, TIERS } from '../lib/tier'
 import { planCompareRows, trackCards } from '../lib/plan-compare'
+import * as AMAZON_PLAN from '../lib/amazon-plan'
+import { MAX_ITEMS as BULK_MAX } from '../lib/launch-batch'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -60,9 +62,13 @@ const row = (label: string) => rows.find(r => r.label === label)
   // Amazon column has to be a number this plan actually grants. That catches a
   // typed-in stale figure the same way, and cannot object to a live one.
   {
-    const granted = new Set(
-      Object.values(A).filter((v): v is number => typeof v === 'number').map(String),
-    )
+    // Seb 2026-10-05: the Amazon plan's video allowances live in lib/amazon-plan
+    // (and the bulk upload size in lib/launch-batch), so they are granted too.
+    const granted = new Set([
+      ...Object.values(A).filter((v): v is number => typeof v === 'number').map(String),
+      ...(Object.values(AMAZON_PLAN) as unknown[]).filter((v): v is number => typeof v === 'number').map(String),
+      String(BULK_MAX),
+    ])
     for (const r of rows) {
       // Years, prices and formatted sizes ("1280x720") are not allowances.
       const quoted = (r.amazon.match(/\b\d{2,}\b/g) ?? [])
@@ -123,7 +129,10 @@ const row = (label: string) => rows.find(r => r.label === label)
 
   const needs = row('What you need to start')
   check('the Amazon plan asks for no site', TIERS.amazon.sites === 0)
-  check('and no channel', TIERS.amazon.youtubeChannels === 0)
+  // Seb 2026-10-05: the plan now includes one optional YouTube channel; it
+  // still asks for none to start, which the row below holds.
+  check('and its channel allowance is the one lib/amazon-plan states',
+    TIERS.amazon.youtubeChannels === AMAZON_PLAN.AMAZON_YOUTUBE_CHANNELS)
   check('and the row says nothing to connect',
     /nothing to connect/i.test(needs!.amazon), needs!.amazon)
   // It used to require the ladder row to name WordPress AND YouTube, which held

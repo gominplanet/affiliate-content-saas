@@ -21,6 +21,7 @@ import { buildYouTubeTags } from '@/lib/youtube-tags'
 import type { ClipPlatform } from '@/lib/clip-description'
 import { normalizeTier } from '@/lib/tier'
 import { scrubTitle } from '@/lib/scrub'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intRow?.tier)
-  if (tier !== 'pro' && tier !== 'admin') return NextResponse.json({ error: 'Publishing from Clip Factory is a Pro feature.', tierRequired: 'pro' }, { status: 403 })
+  if (!hasVideoTools(tier)) return NextResponse.json({ error: 'Publishing from Clip Factory is part of the Amazon and Pro plans.', tierRequired: 'pro' }, { status: 403 })
 
   const platform: ClipPlatform = ['tiktok', 'instagram', 'youtube', 'facebook'].includes(String(body.platform)) ? body.platform as ClipPlatform : 'tiktok'
 

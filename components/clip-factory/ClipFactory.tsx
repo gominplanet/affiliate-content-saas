@@ -46,6 +46,7 @@ import {
 import type { Tier } from '@/lib/tier'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { canUsePreview } from '@/lib/labs-preview'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
@@ -169,7 +170,10 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   const supabase = useMemo(() => createBrowserClient(), [])
   const [tier, setTier] = useState<Tier | string>('trial')
   const [gateLoaded, setGateLoaded] = useState(false)
-  const isPro = tier === 'pro' || tier === 'admin'
+  // Pro, admin and (since 2026-10-05) the Amazon plan, with its own allowance.
+  const isPro = hasVideoTools(tier)
+  // The Amazon plan posts clips to Instagram and Facebook, not TikTok.
+  const tiktokOk = tier !== 'amazon'
 
   const [stage, setStage] = useState<Stage>('create')
   const [clip, setClip] = useState<WorkingClip | null>(null)
@@ -219,6 +223,8 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   // "Link in the description" and "Shop below" designs, and its buy path is
   // always the link in the description.
   const [destination, setDestination] = useState<CtaDestination | 'facebook'>('tiktok')
+  // The Amazon plan has no TikTok, so its clips start aimed at Instagram.
+  useEffect(() => { if (!tiktokOk && destination === 'tiktok') setDestination('instagram') }, [tiktokOk, destination])
   const [mode, setMode] = useState<CtaMode>('shop')
   const [stickerId, setStickerId] = useState<string>(PLATFORM_BADGES[0]?.id ?? CTA_STICKERS[0]?.id ?? '')
   // A custom (AI-generated / saved) box URL. When set, it wins over stickerId.
@@ -1154,7 +1160,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Post to</span>
                       <div className="flex gap-1.5">
-                        <button onClick={() => applyDestMode('tiktok', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'tiktok' ? PILL_SEL : PILL_IDLE}`}><Music2 size={12} /> TikTok</button>
+                        {tiktokOk && <button onClick={() => applyDestMode('tiktok', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'tiktok' ? PILL_SEL : PILL_IDLE}`}><Music2 size={12} /> TikTok</button>}
                         <button onClick={() => applyDestMode('instagram', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'instagram' ? PILL_SEL : PILL_IDLE}`}><Instagram size={12} /> Instagram</button>
                         {canUsePreview('facebook_reels', tier) && (
                           <button onClick={() => applyDestMode('facebook', 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'facebook' ? PILL_SEL : PILL_IDLE}`}><Facebook size={12} /> Facebook</button>
