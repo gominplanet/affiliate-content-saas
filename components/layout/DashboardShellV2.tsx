@@ -592,7 +592,8 @@ export default function DashboardShellV2({
         // pooled across MVP per niche.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isPro },
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier), onAmazon: 'included' },
-        { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier) },
+        // The Amazon plan includes Passport (lib/feature-access NAV_ACCESS.passport).
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier), onAmazon: 'included' },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
       ],
     },

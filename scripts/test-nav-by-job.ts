@@ -73,7 +73,7 @@ check('a star placed on a page that is now a tab still shows, as its row',
 
 // ── the Amazon plan ─────────────────────────────────────────────────────────
 const AMAZON_INCLUDED = ['/dashboard', '/amazon/thumbnails', '/amazon/social', '/social-launch-kit', '/link-in-bio', '/collaborations',
-  '/brand-inquiries', '/brand', '/photobooth', '/billing', '/assistant', '/tutorials']
+  '/brand-inquiries', '/brand', '/photobooth', '/billing', '/assistant', '/tutorials', '/passport']
 for (const h of AMAZON_INCLUDED) check(`Amazon plan keeps ${h} in its section`, /onAmazon: 'included'/.test(row(h)) || new RegExp(`href: '${h.replace(/\//g, '\\/')}'[\\s\\S]{0,160}onAmazon: 'included'`).test(nav))
 check('Amazon plan opens Product research on its own research page',
   /href: amazonView \? '\/amazon\/research' : '\/amz-finder'[^\n]*onAmazon: 'included'/.test(nav))
