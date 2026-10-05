@@ -94,6 +94,18 @@ for (const [q, href] of OLD_NAMES) {
   check(`searching "${q}" finds ${href}`, hit)
 }
 
+// ── the page titles follow the new names ────────────────────────────────────
+const CONTENT = readFileSync('app/(dashboard)/content/page.tsx', 'utf8')
+check('the /content title follows its tab (Social Push on the published and scheduled tabs)',
+  /const isSocialTab = activeTab === 'posts' \|\| activeTab === 'scheduled'/.test(CONTENT) && /title=\{isSocialTab \? 'Social Push' : 'Blog posts'\}/.test(CONTENT))
+check('Social Push stays lit on its scheduled queue', /label: 'Social Push', alsoActiveOn: \['\/content\?tab=scheduled'\]/.test(nav)
+  && /return tab !== 'posts' && tab !== 'scheduled'/.test(S))
+const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '')
+for (const p of ['app/pricing/page.tsx', 'app/page.tsx', 'components/tour/tour-content.tsx', 'components/landing/AdPricingTable.tsx', 'components/HelpDeskSidebar.tsx', 'components/guide/tool-guides.tsx']) {
+  const hit = stripComments(readFileSync(p, 'utf8')).match(/[^\n]*(Help Desk|Virtual Assistant|virtual assistant)[^\n]*/)
+  check(`${p} uses the new names (Ask MVP, Team)`, !hit, hit?.[0].trim().slice(0, 120))
+}
+
 // ── copy ────────────────────────────────────────────────────────────────────
 const labels = Array.from(nav.matchAll(/label: '([^']*)'/g)).map((m) => m[1])
 check('no dash punctuation in menu names', labels.every((l) => !/[—–]| - /.test(l)), labels.filter((l) => /[—–]| - /.test(l)).join(', '))

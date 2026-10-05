@@ -30,10 +30,10 @@ export default function VaConnections({ who }: { who: WhoAmI }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl px-4 py-3 text-[13px] leading-relaxed" style={{ background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.3)', color: 'var(--text-soft)' }}>
-        You are a Virtual Assistant on <b style={{ color: 'var(--text)' }}>{owner}</b>&apos;s account.
+        You are a VA on <b style={{ color: 'var(--text)' }}>{owner}</b>&apos;s team.
         {' '}{who.canPublish
           ? 'Everything you post or schedule goes out through their connected accounts below. You never need their social logins.'
-          : 'You can see their connected accounts, but posting is off for you. Ask them to turn on "Publish to socials" for you on the Virtual Assistants page.'}
+          : 'You can see their connected accounts, but posting is off for you. Ask them to turn on "Publish to socials" for you on the Team page.'}
         {' '}Only the owner can connect or disconnect an account, from their own login.
       </div>
       <div className="card rounded-xl p-4 flex flex-col gap-2">

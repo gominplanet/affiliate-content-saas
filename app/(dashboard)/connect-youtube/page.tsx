@@ -67,7 +67,7 @@ export default function ConnectYouTubePage() {
       } else if (decoded === 'va_owner_connects') {
         // A Virtual Assistant: Google sign-in would connect their own empty
         // account, so it is stopped before Google and this says what works.
-        toast.error('You are signed in as a Virtual Assistant, so Google sign-in would connect your own login instead of the account you work in. Use Connect it by link further down this page to add the channel, or ask the account owner to press Connect YouTube once from their login.', { duration: 14000 })
+        toast.error('You are signed in as a VA on someone else’s team, so Google sign-in would connect your own login instead of the account you work in. Use Connect it by link further down this page to add the channel, or ask the account owner to press Connect YouTube once from their login.', { duration: 14000 })
       } else if (decoded === 'same_channel') {
         // Not a failure — Google returned a channel they already had. Tell them
         // how to actually reach the other one.

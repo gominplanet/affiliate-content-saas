@@ -118,7 +118,7 @@ export async function denyNewsletterWrite(callerUserId: string): Promise<NextRes
   const ctx = await resolveAgencyContext(callerUserId)
   if (hasPermission(ctx, 'manage_newsletter')) return null
   return NextResponse.json(
-    { error: 'Your account doesn’t have newsletter access. Ask the account owner to enable “Manage newsletter” for you on the Virtual Assistants page.' },
+    { error: 'Your account doesn’t have newsletter access. Ask the account owner to enable “Manage newsletter” for you on the Team page.' },
     { status: 403 },
   )
 }

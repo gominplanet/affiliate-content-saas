@@ -42,7 +42,7 @@ export type PublishContext = {
   isOwner: boolean
 }
 
-export const VA_NO_PUBLISH_MESSAGE = 'Your account owner has not turned on "Publish to socials" for you. Ask them to switch it on for you on the Virtual Assistants page.'
+export const VA_NO_PUBLISH_MESSAGE = 'Your account owner has not turned on "Publish to socials" for you. Ask them to switch it on for you on the Team page.'
 
 /** mode 'publish' (default) needs "Publish to socials" for a VA; 'view' needs
  *  only an accepted seat. */

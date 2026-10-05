@@ -932,8 +932,8 @@ function plansBlock(): string {
       !NEWSLETTER_FOR_MEMBERS ? null : t.newsletterSubscribers
         ? `- Newsletter: ${t.newsletterSubscribers.toLocaleString('en-US')} subscribers, ${n(t.newsletterBroadcastsPerMonth, `${plural(t.newsletterBroadcastsPerMonth, 'send', 'sends')} per month`)}`
         : '- Newsletter: not on this plan',
-      line('Help Desk messages', t.assistantMessagesPerMonth, 'per month'),
-      line('Virtual Assistant seats', t.vaSeats, plural(t.vaSeats, 'seat', 'seats')),
+      line('Ask MVP messages', t.assistantMessagesPerMonth, 'per month'),
+      line('Team seats', t.vaSeats, plural(t.vaSeats, 'seat', 'seats')),
       // Read, not typed. The old hand-written list carried an asterisk footnote
       // about app-review gates that had drifted out of step with which
       // platforms were actually gated.
@@ -957,7 +957,7 @@ right and something needs reporting. Say so rather than explaining the gap away.
 
 ### Free Trial (free)
 - 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card required.
-- Help Desk messages: ${TIERS.trial.assistantMessagesPerMonth} per month${NEWSLETTER_FOR_MEMBERS ? '\n- Newsletter: not on this plan' : ''}
+- Ask MVP messages: ${TIERS.trial.assistantMessagesPerMonth} per month${NEWSLETTER_FOR_MEMBERS ? '\n- Newsletter: not on this plan' : ''}
 
 ## PLANS ON SALE TODAY
 

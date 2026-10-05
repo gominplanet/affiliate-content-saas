@@ -475,7 +475,7 @@ export function AssistantGuide() {
         { icon: <Brain size={18} />, title: 'Memory across chats', body: <>Open <strong>Memory</strong> to see what MVP remembers about you across all your chats; it updates itself as you talk. <strong>Clear all memory</strong> wipes it.</> },
         { icon: <Upload size={18} />, title: 'Bring what another AI knows', body: <>Under <strong>Import knowledge</strong>, paste notes or use <strong>Upload file</strong> for a text, markdown, JSON or CSV export from another AI tool, then press <strong>Import to memory</strong>. MVP keeps the lasting facts and does not store the raw text.</> },
         { icon: <Inbox size={18} />, title: 'Your saved chats', body: <>Every conversation is saved in your chat list, so you can reopen one or start a <strong>New chat</strong>. Deleting a conversation removes its messages for good.</> },
-        { icon: <Clock size={18} />, title: 'Your monthly messages', body: <>Your plan includes a set number of Help Desk messages each billing period. When you reach it, the chat says so and tells you when it resets.</> },
+        { icon: <Clock size={18} />, title: 'Your monthly messages', body: <>Your plan includes a set number of Ask MVP messages each billing period. When you reach it, the chat says so and tells you when it resets.</> },
       ]}
     />
   )
@@ -668,13 +668,13 @@ export function VirtualAssistantsGuide() {
       guideKey="virtual-assistants"
       version={2}
       icon={<Users size={20} />}
-      title="Your guide to Virtual Assistants"
+      title="Your guide to your Team"
       subtitle="Give a VA their own login without sharing yours."
       sections={[
         { icon: <Users size={18} />, title: 'Delegate without sharing your password', body: <>Invite a VA or contractor and they get their own login on your single Pro subscription. Pro includes up to 3 VA seats, and the page shows how many are in use.</> },
         { icon: <Mail size={18} />, title: 'Send an invite', body: <>Enter their email, set their permissions, add an optional personal note, and press <strong>Send invite</strong>. Invites they have not accepted wait under <strong>Pending invites</strong>, where you can cancel one and invite the same email again later.</> },
         { icon: <Layers size={18} />, title: 'What a VA can see', body: <>VAs work inside your workspace: your videos, posts, WordPress sites, brand voice and face library. What they generate counts against your Pro plan’s usage and AI cost.</> },
-        { icon: <ShieldCheck size={18} />, title: 'What stays yours', body: <>VAs cannot open billing, your WordPress and integrations setup, Customize Blog, API keys, or the Virtual Assistants page, and they cannot read your stored API keys.</> },
+        { icon: <ShieldCheck size={18} />, title: 'What stays yours', body: <>VAs cannot open billing, your WordPress and integrations setup, Blog design, API keys, or the Team page, and they cannot read your stored API keys.</> },
         { icon: <KeyRound size={18} />, title: 'What permissions do today', body: <><strong>Manage newsletter</strong> is enforced: a VA without it cannot send or edit your list. The other five are saved on each VA and shown on the page, but are not yet checked everywhere, so treat them as your intent rather than a lock.</> },
         { icon: <Trash2 size={18} />, title: 'Change or remove access', body: <>Edit a VA’s permissions from their row at any time. Revoke them and they lose access to your workspace immediately; their own account stays open but is no longer linked to yours.</> },
       ]}

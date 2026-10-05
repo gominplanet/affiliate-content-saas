@@ -117,7 +117,7 @@ export function HelpDeskPanel() {
       setMessages(prev => [...prev, { role: 'assistant', content: finalText }])
       setStreaming('')
     } catch (err) {
-      console.error('Help Desk error:', err)
+      console.error('Ask MVP error:', err)
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error — please try again.' }])
     } finally {
       setSending(false)

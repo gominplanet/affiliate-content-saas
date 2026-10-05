@@ -124,7 +124,7 @@ export default function AgencyPage() {
       const res = await fetch('/api/agency')
       if (!res.ok) {
         const body = await res.text().catch(() => '')
-        toast.error(`Could not load Virtual Assistants${body ? `: ${body.slice(0, 120)}` : ''}`)
+        toast.error(`Could not load your team${body ? `: ${body.slice(0, 120)}` : ''}`)
         return
       }
       const data = await res.json()
@@ -132,7 +132,7 @@ export default function AgencyPage() {
     } catch (err) {
       // Network blip / response.json() throws — without this catch the
       // page sat on the paywall card even on Pro because state stayed null.
-      toast.error(err instanceof Error ? err.message : 'Could not load Virtual Assistants')
+      toast.error(err instanceof Error ? err.message : 'Could not load your team')
     } finally {
       setLoading(false)
     }
@@ -191,7 +191,7 @@ export default function AgencyPage() {
 
   async function handleRevokeMember(id: string) {
     if (!(await confirm({
-      title: 'Revoke this Virtual Assistant?',
+      title: 'Remove this VA from your team?',
       description: 'The VA will lose access to your account immediately. Their account stays open but is no longer linked to your workspace.',
       confirmLabel: 'Revoke access',
       destructive: true,
@@ -333,7 +333,7 @@ export default function AgencyPage() {
       {/* Invite form */}
       <div className="border rounded-xl p-5 space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Invite a Virtual Assistant
+          Invite someone to your team
         </h2>
         <div className="space-y-3">
           <input

@@ -563,7 +563,7 @@ const PRICING_TIERS: PricingTier[] = [
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
       'Multi-account social + one-click Publish All',
-      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Virtual Assistant seats`,
+      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
       'Multiple YouTube channels — one per site, or pull from any',
       `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} Brand Deals outreach emails drafted / month`,
       `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,

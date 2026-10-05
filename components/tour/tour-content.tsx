@@ -50,9 +50,9 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'finders',      label: 'Source & Earn — product finders' },
   { id: 'deals',        label: 'Deals Hub' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
-  { id: 'vas',          label: 'Virtual Assistants' },
+  { id: 'vas',          label: 'Team' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
-  { id: 'helpdesk',     label: 'MVP Help Desk' },
+  { id: 'helpdesk',     label: 'Ask MVP' },
   { id: 'api',          label: 'API access' },
   { id: 'misc',         label: 'Tools we built for ourselves' },
 ]
@@ -545,8 +545,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 9. Virtual Assistants ────────────────────────────────── */}
-        <Section id="vas" icon={<Users size={18} />} title="Virtual Assistants">
-          <p>You&apos;re not running this business alone anymore. Pro includes VA seats.</p>
+        <Section id="vas" icon={<Users size={18} />} title="Team">
+          <p>You&apos;re not running this business alone anymore. Pro includes Team seats for your VAs.</p>
           <ul>
             <li>
               Invite a VA by email. They sign up under your account on your single Pro subscription — no separate billing.
@@ -562,7 +562,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               Brand Profile editor, or invite other VAs. Read + content-generation access only.
             </li>
           </ul>
-          {isApp && <SectionCta href="/agency" label="Invite a Virtual Assistant" />}
+          {isApp && <SectionCta href="/agency" label="Invite someone to your team" />}
         </Section>
 
         {/* ── 10. WordPress plugin + theme ─────────────────────────── */}
@@ -602,9 +602,9 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 11. Help Desk ────────────────────────────────────────── */}
-        <Section id="helpdesk" icon={<MessageSquare size={18} />} title="MVP Help Desk">
+        <Section id="helpdesk" icon={<MessageSquare size={18} />} title="Ask MVP">
           <p>
-            The MVP Help Desk knows your account, your features, your brand, your voice, your recent posts, your
+            Ask MVP knows your account, your features, your brand, your voice, your recent posts, your
             published patterns.
           </p>
           <ul>
@@ -619,12 +619,12 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               dump, MVP normalizes and persists it).
             </li>
             <li>
-              Auto-rolling memory: as you chat over weeks, the Help Desk distills patterns into a persistent memory
+              Auto-rolling memory: as you chat over weeks, Ask MVP distills patterns into a persistent memory
               layer that survives sessions.
             </li>
             <li>Renders markdown, auto-links internal MVP routes, surfaces feature documentation on demand.</li>
           </ul>
-          {isApp && <SectionCta href="/assistant" label="Open Help Desk" />}
+          {isApp && <SectionCta href="/assistant" label="Open Ask MVP" />}
         </Section>
 
         {/* ── 12. API ──────────────────────────────────────────────── */}

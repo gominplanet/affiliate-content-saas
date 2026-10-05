@@ -4350,23 +4350,26 @@ export default function ContentPage() {
     })
   }, [recentMatched, hideShared, sharedRequired, posts])
 
+  const isSocialTab = activeTab === 'posts' || activeTab === 'scheduled'
   return (
     <>
       <PageHero
         guide={<ContentGuide />}
-        title="Blog posts"
+        // The title follows the tab: the published and scheduled tabs are what
+        // the sidebar calls Social Push, the video tabs are Blog posts.
+        title={isSocialTab ? 'Social Push' : 'Blog posts'}
         subtitle={<>{
           loading ? 'Loading…' :
           activeTab === 'scheduled'
             ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
             : activeTab === 'posts'
-            ? `This is your whole live blog, not a list of drafts. Every published article shows here so you can push it out to your connected socials (Facebook, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest) from its card — re-share any post, any time. Use "Hide shared" to tuck away ones you've already sent everywhere. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
+            ? `This is your whole live blog, not a list of drafts. Every published article shows here so you can push it out to your connected socials (Facebook, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest) from its card. Re-share any post, any time. Use "Hide shared" to tuck away ones you've already sent everywhere. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
               ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
                 ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
-        }<span className="block mt-1 text-[12px]">Formerly Blog Post Generator.</span></>}
+        }{!isSocialTab && <span className="block mt-1 text-[12px]">Formerly Blog Post Generator.</span>}</>}
         actions={
           <div className="flex items-center gap-2">
             <SitePicker value={siteId} onChange={setSiteId} compact />

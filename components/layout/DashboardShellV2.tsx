@@ -109,6 +109,9 @@ interface NavItemDef {
   /** Amazon plan: 'included' rows stay in their section, 'inside' rows are
    *  reached from within another page, anything else goes to More with Pro. */
   onAmazon?: 'included' | 'inside'
+  /** Other addresses that light this row without being tabs of it (a page's
+   *  own tab that belongs to this row, e.g. Social Push's scheduled queue). */
+  alsoActiveOn?: string[]
 }
 
 interface NavGroupDef {
@@ -580,7 +583,7 @@ export default function DashboardShellV2({
       label: 'Share',
       items: [
         // The "Published Posts & Social Push" tab of /content.
-        { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
+        { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push', alsoActiveOn: ['/content?tab=scheduled'] },
         // Was Social Influencer: pins, Instagram posts and stories for a product.
         { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social designs', gate: canAmazonHub, onAmazon: 'included' },
         { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders, onAmazon: 'included' },
@@ -824,12 +827,13 @@ export default function DashboardShellV2({
       }
       return true
     }
-    // Blog Post Generator (/content) vs Social Push (/content?tab=posts): don't
-    // light up the base item when the Social-Push tab is the active one.
+    // Blog posts (/content) vs Social Push (/content?tab=posts and its
+    // scheduled queue): don't light the base item on Social Push's tabs.
     if (href === '/content') {
       if (pathname !== '/content') return false
       if (typeof window !== 'undefined') {
-        return new URLSearchParams(window.location.search).get('tab') !== 'posts'
+        const tab = new URLSearchParams(window.location.search).get('tab')
+        return tab !== 'posts' && tab !== 'scheduled'
       }
       return true
     }
@@ -839,7 +843,8 @@ export default function DashboardShellV2({
 
   // A merged row (Brand campaigns, Connections...) is lit on any of its tabs.
   const itemActive = useCallback(
-    (item: NavItemDef) => isActive(item.href) || (item.tabs ?? []).some((t) => t.gate !== false && isActive(t.href)),
+    (item: NavItemDef) => isActive(item.href) || (item.tabs ?? []).some((t) => t.gate !== false && isActive(t.href))
+      || (item.alsoActiveOn ?? []).some(isActive),
     [isActive],
   )
   // The row whose tab bar this page wears: one of its open tabs is this page

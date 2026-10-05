@@ -85,8 +85,8 @@ const SRC = readFileSync('lib/assistant-features-doc.ts', 'utf8')
       ['Video scripts', t.scriptsPerMonth],
       ['Art Director thumbnails', t.thumbnailsPerMonth],
       ['WordPress sites', t.sites],
-      ['Virtual Assistant seats', t.vaSeats],
-      ['Help Desk messages', t.assistantMessagesPerMonth],
+      ['Team seats', t.vaSeats],
+      ['Ask MVP messages', t.assistantMessagesPerMonth],
     ]
     for (const [label, value] of numbered) {
       if (!value) continue  // 0 / null means the row is not rendered at all
