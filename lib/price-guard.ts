@@ -6,8 +6,8 @@
 // annualPrice). The price they are charged is whatever Stripe price id sits
 // first in STRIPE_PRICE_<TIER>[_ANNUAL]. Those are set in two different
 // places, by hand, and a price change moves both (2026-10-05: Amazon $99 to
-// $139, Pro $199 to $299). In the gap between one moving and the other, a
-// checkout would bill $99 under a $139 button, or $299 under a $199 one.
+// $159, Pro $199 to $299). In the gap between one moving and the other, a
+// checkout would bill $99 under a $159 button, or $299 under a $199 one.
 //
 // So before checkout starts, the Stripe price's list amount is compared with
 // the price on the page. A mismatch refuses the checkout with a plain message

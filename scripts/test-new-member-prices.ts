@@ -3,8 +3,8 @@
 // NEW MEMBERS PAY THE NEW PRICE, EVERYONE ELSE KEEPS THEIRS, AND NOBODY IS
 // CHARGED A PRICE THE PAGE DID NOT SHOW.
 //
-// Seb, 2026-10-05: Amazon $139 and Pro $299 for new members only. Yearly
-// follows at about two months free ($1,399 and $2,999). Stripe prices are
+// Seb, 2026-10-05: Amazon $159 and Pro $299 for new members only, yearly
+// $1,590 and $2,990 (the Stripe prices Seb created). Stripe prices are
 // immutable, so the new prices are new Stripe price ids placed FIRST in the
 // env lists, with the old ids kept after them so renewals still map.
 //
@@ -19,12 +19,12 @@ const r = (p: string) => readFileSync(p, 'utf8')
 
 // ── the prices ──────────────────────────────────────────────────────────────
 // Run twice by the build: with the Vercel switch off (today's prices) and on.
-check('the new-member prices are Amazon $139 / $1,399 and Pro $299 / $2,999',
-  NEW_MEMBER_PRICES.amazon.month === 139 && NEW_MEMBER_PRICES.amazon.year === 1399
-  && NEW_MEMBER_PRICES.pro.month === 299 && NEW_MEMBER_PRICES.pro.year === 2999)
+check('the new-member prices are Amazon $159 / $1,590 and Pro $299 / $2,990',
+  NEW_MEMBER_PRICES.amazon.month === 159 && NEW_MEMBER_PRICES.amazon.year === 1590
+  && NEW_MEMBER_PRICES.pro.month === 299 && NEW_MEMBER_PRICES.pro.year === 2990)
 check('the switch is the one Vercel env var', /export const NEW_MEMBER_PRICES_LIVE = process\.env\.NEXT_PUBLIC_NEW_MEMBER_PRICES === 'on'/.test(r('lib/tier.ts')))
 const want = NEW_MEMBER_PRICES_LIVE
-  ? { a: 139, ay: 1399, p: 299, py: 2999 }
+  ? { a: 159, ay: 1590, p: 299, py: 2990 }
   : { a: 99, ay: 999, p: 199, py: 1999 }
 check(`with the switch ${NEW_MEMBER_PRICES_LIVE ? 'on' : 'off'}, the page shows $${want.a} and $${want.p}`,
   TIERS.amazon.price === want.a && TIERS.amazon.annualPrice === want.ay && TIERS.pro.price === want.p && TIERS.pro.annualPrice === want.py,
@@ -67,4 +67,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✓ new-member-prices: Amazon $139 and Pro $299 for new members, older members keep their price, and checkout refuses a price the page did not show')
+console.log('✓ new-member-prices: Amazon $159 and Pro $299 for new members, older members keep their price, and checkout refuses a price the page did not show')

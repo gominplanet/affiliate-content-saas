@@ -72,8 +72,8 @@ export function normalizeTier(raw: unknown): Tier {
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram' | 'tiktok'
 
 // ── PRICES FOR NEW MEMBERS ─────────────────────────────────────────────────
-// Seb, 2026-10-05: Amazon $139 and Pro $299 for new members, yearly $1,399 and
-// $2,999 (about two months free, as before). Members who joined earlier keep
+// Seb, 2026-10-05: Amazon $159 and Pro $299 for new members, yearly $1,590 and
+// $2,990 (ten months' price, as Seb set them in Stripe). Members who joined earlier keep
 // the Stripe price they pay; the billing page shows that real amount
 // (api/stripe/plan-status), never this table.
 //
@@ -84,7 +84,7 @@ export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitte
 // disagree anyway, checkout refuses rather than charging a price the page did
 // not show (lib/price-guard).
 export const NEW_MEMBER_PRICES_LIVE = process.env.NEXT_PUBLIC_NEW_MEMBER_PRICES === 'on'
-export const NEW_MEMBER_PRICES = { amazon: { month: 139, year: 1399 }, pro: { month: 299, year: 2999 } } as const
+export const NEW_MEMBER_PRICES = { amazon: { month: 159, year: 1590 }, pro: { month: 299, year: 2990 } } as const
 const PRICES_BEFORE = { amazon: { month: 99, year: 999 }, pro: { month: 199, year: 1999 } } as const
 const LIVE_PRICES = NEW_MEMBER_PRICES_LIVE ? NEW_MEMBER_PRICES : PRICES_BEFORE
 
