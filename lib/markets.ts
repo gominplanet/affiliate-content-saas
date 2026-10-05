@@ -73,6 +73,17 @@ export const MARKETS: Market[] = [
  */
 export const UPLOAD_MARKET = 'amazon.com'
 export const UPLOAD_ONLY_REASON = 'MVP uploads to the US store only now. Amazon Global Storefront shows your US videos in the other countries.'
+/**
+ * DUBS ARE OFF, everywhere (Seb, 2026-10-05: "we're not doing dubs at all").
+ * No voice dub, cloned or standard, is made by any route or cron, and no
+ * voice clone is created. One switch, read by lib/tts (the backstop: no
+ * speech is synthesized at all), lib/voice-clone, lib/dub-target, the
+ * coverage drain and the Storefront UI. A market that would have been dubbed
+ * gets the original audio, or is blocked with UPLOAD_ONLY_REASON; nothing
+ * waits on a dub that will never come.
+ */
+export const DUBS_ENABLED = false
+
 export function isUploadMarket(domain: string | null | undefined): boolean {
   return domain === UPLOAD_MARKET
 }

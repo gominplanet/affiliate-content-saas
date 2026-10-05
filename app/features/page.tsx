@@ -104,7 +104,7 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     intro: "A viewer in Berlin who lands on the US store rarely buys. MVP's links fix that, and show you exactly where the money comes from.",
     items: [
       { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link — not just Amazon — cloaks the destination, and lands each click in a per-channel group so you see what YouTube, Pinterest and your blog each earn." },
-      { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your cloned voice and face stay yours.' },
+      { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your face, from Photobooth, stays yours.' },
     ],
   },
 ]

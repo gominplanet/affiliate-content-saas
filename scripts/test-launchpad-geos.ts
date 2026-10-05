@@ -390,8 +390,8 @@ const START = live(read('app/api/global-sync/start/route.ts'))
   check('and whether it actually has one',
     /dubbed: !!r\.video_url/.test(QUEUE))
   check('and flags the case where it wanted one and is not getting it',
-    /audioIsMasterFallback: !!r\.dub && !r\.video_url/.test(QUEUE),
-    'the master fallback is correct for English and for skip-dub, and a silent failure for everything else; they are identical from the URL')
+    /audioIsMasterFallback: DUBS_ENABLED && !!r\.dub && !r\.video_url/.test(QUEUE),
+    'the master fallback is correct for English and for skip-dub, and a silent failure for everything else while dubs are on; with dubs off (lib/markets DUBS_ENABLED) the original audio is the plan')
 
   // The state name promises less than it looks like it promises.
   check('the queue still serves the fallback rather than withholding it',
@@ -482,9 +482,9 @@ const START = live(read('app/api/global-sync/start/route.ts'))
 // The switch itself stays too. It is off nowhere today, and that is exactly why
 // it would rot: a prop with one caller and no test quietly stops working.
 {
-  check('the stage takes dubbing as a prop defaulting to on',
-    /allowDubbing = true/.test(STAGE),
-    'Storefront Sync passes nothing and must keep dubbing')
+  check('the stage takes dubbing as a prop defaulting to the one dubs switch',
+    /allowDubbing = DUBS_ENABLED/.test(STAGE),
+    'Storefront Sync passes nothing, so it follows lib/markets DUBS_ENABLED (off since 2026-10-05)')
   check('no dub is queued when the switch is off',
     /const needDub = allowDubbing \?/.test(STAGE))
   check('and a market that slipped through gets the English master',

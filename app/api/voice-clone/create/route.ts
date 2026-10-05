@@ -5,6 +5,7 @@
 // then creates an ElevenLabs cloned voice and stores it on their brand profile.
 //   body: { youtubeVideoId?, audioUrl?, name?, consent: true }
 //   -> { ok, voiceId } | { error }
+import { DUBS_ENABLED } from '@/lib/markets'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
   if (!['pro', 'admin'].includes(tier)) {
     return NextResponse.json({ error: 'Voice cloning is a Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
+  // Dubs are off (lib/markets DUBS_ENABLED), so voice cloning is too.
+  if (!DUBS_ENABLED) return NextResponse.json({ error: 'Voice dubbing is switched off, so there is no voice to clone.', retired: true }, { status: 410 })
   if (!voiceCloneConfigured()) {
     return NextResponse.json({ error: 'Voice cloning is not switched on yet.' }, { status: 503 })
   }

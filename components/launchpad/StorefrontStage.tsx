@@ -7,6 +7,7 @@
 // (with its own picker).
 'use client'
 
+import { DUBS_ENABLED } from '@/lib/markets'
 import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -52,7 +53,7 @@ const muted = { color: 'var(--text-2)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins, presetThumbnailUrl, allowDubbing = true }: {
+export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins, presetThumbnailUrl, allowDubbing = DUBS_ENABLED }: {
   presetVideoId?: string | null
   presetAsin?: string | null
   /** Video Launchpad restricts to a subset of marketplaces (the English geos).

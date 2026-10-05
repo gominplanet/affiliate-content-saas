@@ -8,17 +8,20 @@
 // the key we already have — so the feature ships now and upgrades with no rework.
 
 import { createOpenAIService } from '@/services/openai'
+import { DUBS_ENABLED } from '@/lib/markets'
 
 export type TtsEngine = 'elevenlabs' | 'openai'
 export interface SpeechResult { buffer: Buffer; contentType: string; engine: TtsEngine }
 
 /** True when at least one TTS engine is configured. */
 export function ttsConfigured(): boolean {
+  if (!DUBS_ENABLED) return false
   return !!(process.env.ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY)
 }
 
 /** True when ElevenLabs (the cloned-voice / premium engine) is available. */
 export function elevenConfigured(): boolean {
+  if (!DUBS_ENABLED) return false
   return !!process.env.ELEVENLABS_API_KEY
 }
 
@@ -55,6 +58,8 @@ async function openaiSpeech(text: string): Promise<SpeechResult> {
  * is, or the text is empty. The result reports which engine actually ran.
  */
 export async function synthesizeSpeech(text: string, opts?: { voiceId?: string }): Promise<SpeechResult | null> {
+  // Dubs are off (lib/markets DUBS_ENABLED): no speech is ever synthesized.
+  if (!DUBS_ENABLED) return null
   if (!text.trim()) return null
   const hasEleven = !!process.env.ELEVENLABS_API_KEY
   const hasOpenAI = !!process.env.OPENAI_API_KEY

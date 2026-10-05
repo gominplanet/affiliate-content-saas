@@ -479,6 +479,11 @@ export const TIERS = {
     prioritySupport: true,
   },
   pro:     {
+    // MAXED-OUT COST (2026-10-05, Seb). Priced on one user using every
+    // allowance in full. Lowered: blog posts 100 -> 60, thumbnails 300 -> 200
+    // (still high quality), designs 550 -> 400 (pins 145, IG 145, FB 110, the
+    // old proportions, still above Amazon's), X 100 -> 75 (lib/usage-cap), and
+    // dubs are gone entirely (lib/markets DUBS_ENABLED).
     label: 'Pro',
     price: 199,
     regularPrice: 399,
@@ -501,21 +506,16 @@ export const TIERS = {
      *  the Amazon tier that is expected and this is the backstop. A real Pro
      *  writes about 30 posts a month, not 100. */
     monthlyAiSpendCeilingUsd: 130 as number | null,
-    /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
-     *  At the measured $0.69 a post, the full 100 is ~$69 — about half the
-     *  ceiling above, so the blog allowance alone can always be spent in full.
-     *  It is the design caps, at Pro's high-quality $0.19 a render, that the
-     *  ceiling actually governs. */
-    postsPerMonth: 100,
+    /** Shared counter of generations a month (200 -> 100 on 2026-06-14,
+     *  100 -> 60 on 2026-10-05). At the measured $0.69 a post, the full
+     *  allowance is about $41. */
+    postsPerMonth: 60,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    // 120 -> 500 (2026-09-14). Under the two-plan structure Pro must be a
-    // superset of Amazon on EVERY cap, and Amazon now carries 400 thumbnails.
-    // At 120 a Pro customer had less than a third of the design allowance of the
-    // plan costing half as much, which is the same contradiction that made
-    // Studio unsellable next to Amazon. Pro still renders at HIGH quality
-    // ($0.19), so this is the cap the spend ceiling governs in practice.
-    thumbnailsPerMonth: 300 as number | null,
+    // Pro must be a superset of Amazon on EVERY cap under the two-plan
+    // structure. Pro renders at HIGH quality ($0.19 plus about $0.03 of
+    // art-director text), which makes this the costliest cap on the plan.
+    thumbnailsPerMonth: 200 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
     // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
     // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
@@ -536,9 +536,9 @@ export const TIERS = {
     // requires. Briefly 250/250/200 on 2026-09-14 before the usage data arrived:
     // measured amazon_pin is FIVE a user a month, so those were sized for
     // nobody and the headroom cost ceiling rather than buying goodwill.
-    pinsPerMonth: 200 as number | null,
-    igPostsPerMonth: 200 as number | null,
-    facebookPostsPerMonth: 150 as number | null,
+    pinsPerMonth: 145 as number | null,
+    igPostsPerMonth: 145 as number | null,
+    facebookPostsPerMonth: 110 as number | null,
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -566,7 +566,7 @@ export const TIERS = {
     topicHubs: true,
     refreshImages: true,
     rebuildFromVideo: true,
-    basePosts: 100,
+    basePosts: 60,
     bonusPosts: 0,
     /** Pro multi-site: up to 10 WP sites. */
     sites: 10,

@@ -27,7 +27,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { MARKETS, marketByDomain } from '@/lib/markets'
+import { MARKETS, marketByDomain, DUBS_ENABLED } from '@/lib/markets'
 
 /** The five stores behind the opt-in check, derived rather than typed. A list
  *  written out here would disagree with lib/markets the first time a market is
@@ -1394,7 +1394,7 @@ export default function LaunchpadPage() {
                 allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
                 defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
                 // Dubbing on, which is what the page has always promised.
-                allowDubbing
+                allowDubbing={DUBS_ENABLED}
                 geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
                 marketAsins={marketAsins}
                 presetThumbnailUrl={thumbUrl}

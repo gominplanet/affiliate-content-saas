@@ -49,6 +49,7 @@
 // only when a creator asks for it, which is why the background caller never
 // gets one: nobody is present to authorize spending a credit.
 
+import { DUBS_ENABLED, UPLOAD_ONLY_REASON } from '@/lib/markets'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordUsage } from '@/lib/ai-usage'
 import { marketByDomain, translateScript } from '@/lib/global-sync'
@@ -95,6 +96,10 @@ export type DubTargetResult =
 
 export async function dubTarget(opts: DubTargetOpts): Promise<DubTargetResult> {
   const { sb, userId, tier, jobId, domain, requestedStandard = false, periodStart = null } = opts
+
+  // Dubs are off (lib/markets DUBS_ENABLED): refused before anything is
+  // written, so no listing is left sitting in 'dubbing'.
+  if (!DUBS_ENABLED) return { ok: false, error: UPLOAD_ONLY_REASON, status: 410 }
 
   const market = marketByDomain(domain)
   if (!jobId || !market) return { ok: false, error: 'jobId and a valid market are required.', status: 400 }

@@ -75,9 +75,9 @@ export const PRIMARY_FEATURE = {
 export const SHORTS_MONTHLY_CAP = 150
 
 /** X posts a Pro user can publish per billing period (admin = unlimited). X is
- *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$20
- *  per Pro user per month. */
-export const X_MONTHLY_CAP = 100
+ *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$15
+ *  per Pro user per month (100 -> 75, Seb 2026-10-05). */
+export const X_MONTHLY_CAP = 75
 
 interface CapCheck {
   used: number

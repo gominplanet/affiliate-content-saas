@@ -20,12 +20,12 @@ import { spendGate } from '@/lib/ai-spend'
 import { ttsConfigured } from '@/lib/tts'
 import { ingestConfigured } from '@/lib/youtube-ingest'
 import { dubTarget } from '@/lib/dub-target'
-import { UPLOAD_ONLY_REASON } from '@/lib/markets'
+import { UPLOAD_ONLY_REASON, DUBS_ENABLED } from '@/lib/markets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const DUBBING_RETIRED = true
+const DUBBING_RETIRED = !DUBS_ENABLED
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
