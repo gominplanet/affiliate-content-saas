@@ -106,11 +106,35 @@ export function scheduleHeld(did: StudioDid | null, read: { privacyStatus: strin
  *  posts it through the API (50 units) instead: late at worst, never lost. */
 export const SCOUT_COMMENT_GRACE_MS = 3 * 3_600_000
 
+/** How long an older video's comment (no publish time: the video is already
+ *  public) is left for SCOUT before the cron may post it through the API. */
+export const SCOUT_BACKLOG_GRACE_MS = 24 * 3_600_000
+
 /** Should the cron leave this comment to SCOUT for now. Pure. */
-export function leaveCommentToScout(scoutUser: boolean, publishAt: string | null, now = Date.now()): boolean {
-  if (!scoutUser || !publishAt) return false
+export function leaveCommentToScout(scoutUser: boolean, publishAt: string | null, now = Date.now(), createdAt?: string | null): boolean {
+  if (!scoutUser) return false
+  if (!publishAt) {
+    // An older video: SCOUT gets a day to post it for free first.
+    const c = Date.parse(String(createdAt || ''))
+    return !isNaN(c) && now - c < SCOUT_BACKLOG_GRACE_MS
+  }
   const t = Date.parse(publishAt)
   return !isNaN(t) && now - t < SCOUT_COMMENT_GRACE_MS
+}
+
+/** Older-video comments the cron may post through YouTube's API per account
+ *  per Pacific day (50 units each, so 1,000 at most). The rest wait for SCOUT
+ *  or the next day. One back catalogue of 151 used 7,550 units on 2026-10-05,
+ *  three quarters of the day every account shares. */
+export const API_BACKLOG_COMMENTS_PER_DAY = 20
+
+/** May the cron post this one through the API right now. Pure. A comment with
+ *  a publish time (a new upload) always may; an older video's only while the
+ *  account is under its daily share and the day is under the reserve line, so
+ *  uploads, thumbnails and new comments keep the rest. */
+export function apiCommentAllowed(publishAt: string | null, postedTodayByAccount: number, dayOverReserve: boolean): boolean {
+  if (publishAt) return true
+  return !dayOverReserve && postedTodayByAccount < API_BACKLOG_COMMENTS_PER_DAY
 }
 
 const STEP_WORDS: Record<string, string> = {

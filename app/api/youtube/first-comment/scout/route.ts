@@ -38,10 +38,13 @@ export async function GET() {
   if (g instanceof NextResponse) return g
   const { user, sb } = g
   const now = new Date().toISOString()
+  // New uploads whose time has come, and older videos (no publish time, the
+  // video is already public), new uploads first. Older videos used to go only
+  // through the API, 50 units each from the quota every account shares.
   const { data, error } = await sb.from('video_first_comments')
     .select('id,youtube_video_id,video_title,text,publish_at,last_error')
-    .eq('user_id', user.id).eq('state', 'waiting').not('publish_at', 'is', null).lte('publish_at', now)
-    .order('publish_at', { ascending: true }).limit(10)
+    .eq('user_id', user.id).eq('state', 'waiting').or(`publish_at.is.null,publish_at.lte.${now}`)
+    .order('publish_at', { ascending: true, nullsFirst: false }).limit(10)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   // Coming up within two hours, so a background pass knows when to come back.
   const { data: soon } = await sb.from('video_first_comments').select('publish_at')

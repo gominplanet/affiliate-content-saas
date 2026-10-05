@@ -7,13 +7,13 @@
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
 import { storeStudioRun, readStudioRun, studioRunSettled, studioRunHeadline } from '../lib/studio-finish'
-import { leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+import { apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
 const read = (p: string) => readFileSync(p, 'utf8')
 
-check('admin only while tested', usesStudioUpload('admin') && !usesStudioUpload('pro') && !usesStudioUpload('free'))
+check('open to Pro and admin (2026-10-05), nobody else', usesStudioUpload('admin') && usesStudioUpload('pro') && !usesStudioUpload('free'))
 check('waiting note reads as waiting', isStudioWaiting(STUDIO_UPLOAD_WAITING) && /^Waiting/.test(STUDIO_UPLOAD_WAITING))
 check('running note is running', isStudioRunning(`${STUDIO_UPLOAD_RUNNING} Try 1 of 3.`) && !isStudioWaiting(STUDIO_UPLOAD_RUNNING))
 check('a YouTube id is 11 characters', cleanVideoId('dQw4w9WgXcQ') === 'dQw4w9WgXcQ' && cleanVideoId('abc') === null && cleanVideoId('<script>xx') === null)
@@ -142,6 +142,31 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   }
   check('Studio\'s Apply is pressed before Schedule, and the date and time read again after it', /const applyBtn = \(\) => findBtn\(\/\^apply\$\/i, dlg, \{ enabled: true \}\)/.test(bg) && bg.indexOf('const applyBtn = ') < bg.indexOf("const ok = await finish(/^schedule$/i") && /Pressed Apply, but Studio then showed/.test(bg))
   check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
+}
+
+// ── 2026-10-05: one back catalogue used the whole shared day ────────────────
+// 151 older-video comments through the API (7,550 units) ran YouTube's daily
+// allowance out for every account by 2 pm Pacific. SCOUT now posts older
+// videos too, and the API may post at most a daily share of them per account.
+{
+  const now = Date.parse('2026-10-05T20:00:00Z')
+  check('Studio uploads are open to Pro and admin', usesStudioUpload('pro') && usesStudioUpload('admin') && !usesStudioUpload('amazon') && !usesStudioUpload('trial'))
+  check('an older video is left to SCOUT for a day first',
+    leaveCommentToScout(true, null, now, new Date(now - 3_600_000).toISOString())
+    && !leaveCommentToScout(true, null, now, new Date(now - SCOUT_BACKLOG_GRACE_MS - 1).toISOString())
+    && !leaveCommentToScout(false, null, now, new Date(now).toISOString()))
+  check('a new upload never waits on the daily share', apiCommentAllowed('2026-10-05T10:00:00Z', 999, true))
+  check('older videos: at most the daily share per account through the API',
+    API_BACKLOG_COMMENTS_PER_DAY === 20 && apiCommentAllowed(null, 19, false) && !apiCommentAllowed(null, 20, false))
+  check('and none once the shared day passes the reserve line', !apiCommentAllowed(null, 0, true))
+  const cron = read('app/api/cron/first-comments/route.ts')
+  check('the cron applies it before posting',
+    /if \(!apiCommentAllowed\(row\.publish_at, byAccount, dayOverReserve\)\) \{ heldBack\+\+; continue \}/.test(cron)
+    && cron.indexOf('apiCommentAllowed(row.publish_at') < cron.indexOf('await postFirstCommentIfPublic(sb, row)')
+    && /const dayOverReserve = !!q && q\.spent >= q\.reserveAt/.test(cron))
+  check('and gives SCOUT its day on older videos', /leaveCommentToScout\(scoutUsers\.has\(r\.user_id\), r\.publish_at, now, r\.created_at\)/.test(cron))
+  check('SCOUT is handed older videos as well as new uploads',
+    /\.or\(`publish_at\.is\.null,publish_at\.lte\.\$\{now\}`\)/.test(read('app/api/youtube/first-comment/scout/route.ts')))
 }
 
 if (failures.length) {

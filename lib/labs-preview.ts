@@ -55,8 +55,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   video_plan: 'admin',
   // Liftoff uploads through SCOUT in YouTube Studio instead of YouTube's API,
   // so an upload costs nothing from the shared daily quota. Admin only while
-  // it is tested (Seb, 2026-10-02: "we need to rely on scout").
-  studio_upload: 'admin',
+  // it is tested (Seb, 2026-10-02: "we need to rely on scout"). Opened to Pro
+  // 2026-10-05 after one back catalogue of API comments used the whole day's
+  // shared quota by 2 pm (Seb: "get scout running and helping out for all
+  // users right away"). Pro members already run SCOUT for the Amazon side.
+  studio_upload: 'labs',
   // Meta Hub (Page, niche Groups, SCOUT, Reels, reviews) and the Group-first
   // Facebook post in Social Push, one switch for both. Open to Pro first (Seb,
   // 2026-10-05: "pro first"); the Amazon plan keeps the direct Page post.

@@ -12,7 +12,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postFirstCommentIfPublic, firstCommentDue, type FirstCommentRow } from '@/lib/first-comments'
-import { usesStudioUpload, leaveCommentToScout } from '@/lib/studio-upload'
+import { usesStudioUpload, leaveCommentToScout, apiCommentAllowed } from '@/lib/studio-upload'
+import { quotaToday } from '@/lib/youtube-quota'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -60,16 +61,32 @@ export async function GET(req: Request) {
     }
   }
   const due = rows0
-    .filter((r) => !leaveCommentToScout(scoutUsers.has(r.user_id), r.publish_at, now))
+    .filter((r) => !leaveCommentToScout(scoutUsers.has(r.user_id), r.publish_at, now, r.created_at))
     .filter((r) => firstCommentDue(r, now)).slice(0, 150)
-  let posted = 0, waiting = 0, failed = 0, gone = 0
+  // OLDER VIDEOS DRIP, NEW UPLOADS DO NOT WAIT (lib/studio-upload
+  // apiCommentAllowed): at most API_BACKLOG_COMMENTS_PER_DAY older-video
+  // comments per account per Pacific day through the API, and none once the
+  // shared day passes the reserve line. Counted from what was posted today.
+  const q = await quotaToday().catch(() => null)
+  const dayOverReserve = !!q && q.spent >= q.reserveAt
+  const dayStart = new Date(Date.now() + (q?.msToReset ?? 0) - 86_400_000).toISOString()
+  const postedToday = new Map<string, number>()
+  {
+    const { data: done } = await sb.from('video_first_comments').select('user_id')
+      .eq('state', 'posted').is('publish_at', null).gte('posted_at', dayStart).limit(5000)
+    for (const d of (done ?? []) as Array<{ user_id: string }>) postedToday.set(d.user_id, (postedToday.get(d.user_id) ?? 0) + 1)
+  }
+  let posted = 0, waiting = 0, failed = 0, gone = 0, heldBack = 0
   for (const row of due) {
     if (Date.now() - started > 270_000) break
+    const byAccount = postedToday.get(row.user_id) ?? 0
+    if (!apiCommentAllowed(row.publish_at, byAccount, dayOverReserve)) { heldBack++; continue }
     const out = await postFirstCommentIfPublic(sb, row)
+    if (out.state === 'posted' && !row.publish_at) postedToday.set(row.user_id, byAccount + 1)
     if (out.state === 'posted') posted++
     else if (out.state === 'failed') failed++
     else if (out.state === 'gone') gone++
     else waiting++
   }
-  return NextResponse.json({ ok: true, waitingTotal: (data ?? []).length, checked: due.length, posted, waiting, failed, gone })
+  return NextResponse.json({ ok: true, waitingTotal: (data ?? []).length, checked: due.length, posted, waiting, failed, gone, heldBack, dayOverReserve })
 }
