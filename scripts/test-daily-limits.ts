@@ -24,7 +24,8 @@ check('ten Find moments a day', FIND_MOMENTS_PER_DAY === 10)
 check('the day starts at midnight UTC', utcDayStart(new Date('2026-10-05T23:59:00-07:00')).toISOString() === '2026-10-06T00:00:00.000Z')
 
 const P = read('lib/partner-post-limit.ts')
-check('partner limit: admin is not limited', /normalizeTier\(rawTier\) === 'admin'\) return null/.test(P))
+check('partner limit: admin is not limited', /if \(tier === 'admin'\) return null/.test(P))
+check('partner posts need a plan with a blog', /\(TIERS\[tier\]\?\.sites \?\? 0\) === 0/.test(P))
 check('partner limit: the refusal says when the next one is available', /The next one is available after midnight UTC/.test(P))
 
 for (const partner of ['ltk', 'levanta', 'walmart', 'wayward']) {
@@ -46,6 +47,11 @@ check('find moments: counted only when moments were found', /if \(clips\.length 
 const SC = read('components/vertical/ShortsCreatePanel.tsx')
 check('find moments: the limit shows as a reason, not an upgrade prompt', /data\.cap === 'shorts_find'\) throw new Error/.test(SC) &&
   SC.indexOf("data.cap === 'shorts_find'") < SC.indexOf('dispatchCapReached(data.error'))
+
+const LF = read('app/api/live/followup/route.ts')
+check('Live follow-up has the spend ceiling on its paid actions', /if \(mode === 'paid'\) \{\s*const blocked = await spendGate\(user\.id, intg\?\.tier\)/.test(LF) && /export async function POST\(req: NextRequest\) \{\s*const g = await gate\(\)/.test(LF))
+check('the Find moments audio pull is booked', /recordUsage\(\{ userId: user\.id, tier, feature: 'shorts_ingest', model: 'youtube-ingest', images: 1 \}\)/.test(PL))
+check('the Launchpad master Whisper run is booked', /feature: 'launchpad_transcribe', model: 'fal-whisper'/.test(read('app/api/launchpad/master/route.ts')))
 
 const A = read('app/api/assistant/chat/route.ts')
 check('assistant: the stable system prompt is cached', /text: sys\.stable, cache_control: \{ type: 'ephemeral'( as const)? \}/.test(A))

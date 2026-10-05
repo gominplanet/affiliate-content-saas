@@ -39,6 +39,7 @@ for (const f of PATHS) {
   check(`${f}: no bare createTweet outside the helper`, (s.match(/createTweet\(/g) ?? []).length === (s.match(/return createTweet\(|tweet: \(\) => createTweet\(/g) ?? []).length)
   check(`${f}: checks the drop before the image upload`, s.indexOf('xFailedAttempts(') > 0 && s.indexOf('xFailedAttempts(') < s.lastIndexOf('resolveXMedia('))
 }
+check('a deal goes to X only on a plan that includes X', /if \(!tierAllowsSocial\(ig\.tier as Tier, 'twitter'\)\) throw new Error/.test(read('lib/deal-social-publish.ts')))
 const C = read('app/api/cron/process-scheduled/route.ts')
 check('the scheduler never requeues an X post that reached X or was dropped', /const xAlreadyRetried = err instanceof XPostError && \(err\.sent \|\| err\.dropped\)/.test(C) && /&& !xAlreadyRetried\) \{/.test(C))
 

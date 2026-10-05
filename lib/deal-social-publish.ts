@@ -21,6 +21,7 @@ import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { postToXWithOneRetry, xPostKey, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { createFacebookService } from '@/services/facebook'
 import { ThreadsService } from '@/services/threads'
@@ -112,6 +113,10 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
     try {
       const link = linkFor(platform)
       if (platform === 'twitter') {
+        // X is a Pro channel (TIERS socials), and the one that costs us per
+        // request. The blog X route checked the plan; this deal path did not,
+        // so a plan without X could still post deals to it.
+        if (!tierAllowsSocial(ig.tier as Tier, 'twitter')) throw new Error('Posting to X is part of the Pro plan.')
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
         // Refresh the token BEFORE reserving the paid slot. A refresh failure

@@ -246,6 +246,9 @@ export async function POST(request: Request) {
     if (cues.length === 0 && youtubeVideoId && ingestConfigured() && transcriptionConfigured()) {
       const audioUrl = await ingestAudio(youtubeVideoId, user.id)
       if (audioUrl) {
+        // The audio pull goes through the metered proxy, like the ingest route,
+        // which records it. This one did not, so it never reached the ceiling.
+        recordUsage({ userId: user.id, tier, feature: 'shorts_ingest', model: 'youtube-ingest', images: 1 })
         cues = await transcribeToCues(audioUrl)
         if (cues.length > 0) {
           cuesFromWhisper = true

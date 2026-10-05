@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordUsage } from '@/lib/ai-usage'
-import { normalizeTier } from '@/lib/tier'
+import { normalizeTier, TIERS } from '@/lib/tier'
 
 export const PARTNER_POSTS_PER_DAY = 1
 export const PARTNER_POST_FEATURE = 'partner_post'
@@ -21,7 +21,14 @@ export function utcDayStart(now = new Date()): Date {
 
 /** A 429 when today's partner post is already made, else null. */
 export async function partnerPostLimit(userId: string, rawTier: unknown): Promise<NextResponse | null> {
-  if (normalizeTier(rawTier) === 'admin') return null
+  const tier = normalizeTier(rawTier)
+  if (tier === 'admin') return null
+  // These are blog posts, and a plan with no blog (Amazon: sites 0) does not
+  // include them. Said here because a downgraded account can still carry an
+  // old WordPress connection that the routes would otherwise publish through.
+  if ((TIERS[tier]?.sites ?? 0) === 0) {
+    return NextResponse.json({ ok: false, error: 'LTK, Levanta, Walmart and Wayward posts publish to your blog, which is part of the Pro plan.', upgrade: true }, { status: 403 })
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await (createAdminClient() as any).from('ai_usage')

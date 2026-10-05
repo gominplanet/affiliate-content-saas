@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
+import { spendGate } from '@/lib/ai-spend'
 import { pickStream, wordsInWindow, composeRoundup, cropXForFace, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
 import { streamAudio, transcribeLive, matchMoments, renderLiveClip, liveFrame, findSpeaker } from '@/lib/live-followup-server'
 import { resolveClipLinks } from '@/lib/reel-caption'
@@ -36,18 +37,25 @@ export const maxDuration = 300
 const COLS = 'id,plan_id,replay_url,title,stream_url,page_asins,duration_sec,audio_url,moments,missing,state,error,created_at,updated_at'
 const missingTable = (m?: string) => /live_followups/.test(m || '') && /does not exist|could not find/i.test(m || '')
 
-async function gate() {
+async function gate(mode: 'read' | 'paid' = 'paid') {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of Pro.', upgrade: true }, { status: 403 }) }
+  // The monthly spend ceiling, like every other paid route. Follow-up runs
+  // Whisper on the replay and Claude on the moments, and was the one paid
+  // feature with no backstop at all. Reads (GET) pass through: they cost nothing.
+  if (mode === 'paid') {
+    const blocked = await spendGate(user.id, intg?.tier)
+    if (blocked) return { error: blocked }
+  }
   return { userId: user.id as string, tier: (intg?.tier as string | null) ?? null }
 }
 
 export async function GET(req: NextRequest) {
-  const g = await gate()
+  const g = await gate('read')
   if ('error' in g) return g.error
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
