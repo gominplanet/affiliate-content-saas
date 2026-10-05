@@ -19,7 +19,7 @@ const TOOLS = [
     href: '/amz-finder',
     icon: PackageSearch,
     title: 'AMZ Research',
-    desc: 'Search the whole Amazon catalogue. Find trending, high-commission products to review, then send them straight to the Thumbnail Generator.',
+    desc: 'Search the whole Amazon catalogue. Find trending, high-commission products to review, then send them straight to Thumbnails.',
   },
   {
     href: '/deal-radar',
@@ -67,7 +67,7 @@ export default function AmazonResearchPage() {
           { title: 'Find a product', body: 'Use AMZ Research to search the whole catalogue by sales, rating, price and commission, and find products worth reviewing.' },
           { title: 'Catch a live deal', body: 'Deal Radar shows real Amazon markdowns with price history, so you post a genuine drop the day it happens, not a fake “was” price.' },
           { title: 'Check brand deals', body: 'CC Campaigns lists Amazon Creator Connections offers, brands paying a bounty on top of commission, ranked by payout and how full the roster is.' },
-          { title: 'Shortlist & make it', body: 'Bookmark the good ones to Saved Campaigns, then send a product straight into the Thumbnail Generator to design the post.' },
+          { title: 'Shortlist & make it', body: 'Bookmark the good ones to your saved campaigns, then send a product straight into Thumbnails to design the post.' },
         ]}
         footnote="Rule of thumb: research is free, so browse as much as you like. Only turn a find into a design and a post once you are sure it is worth it."
       />

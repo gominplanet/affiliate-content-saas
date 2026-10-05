@@ -37,8 +37,8 @@ export default function EpcLibraryPage() {
   return (
     <>
       <PageHero
-        title="EPC Library"
-        subtitle="A catalogue of Amazon Sponsored Products opportunities with their estimated EPC and budget, refreshed by MVP every 48 hours. Turn any one into a blog post or social push, or grab its link."
+        title="Best paying campaigns"
+        subtitle={<>A catalogue of Amazon Sponsored Products opportunities with their estimated EPC and budget, refreshed by MVP every 48 hours. Turn any one into a blog post or social push, or grab its link.<span className="block mt-1 text-[12px]">Formerly EPC Library.</span></>}
       />
       <EpcLibraryPanel tier={tier} />
     </>

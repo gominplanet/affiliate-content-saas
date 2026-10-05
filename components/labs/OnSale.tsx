@@ -598,8 +598,8 @@ export default function OnSale() {
     <div className="max-w-4xl mx-auto">
       <PageHero
         accent={ACCENT}
-        title="Encore"
-        subtitle="Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, Encore writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts."
+        title="On sale comments"
+        subtitle={<>Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, Encore writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts.<span className="block mt-1 text-[12px]">Formerly Encore.</span></>}
       />
 
       {/* HOW IT WORKS, in the order it happens: a real sequence, so numbered. */}

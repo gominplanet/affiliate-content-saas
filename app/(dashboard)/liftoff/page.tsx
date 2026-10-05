@@ -30,8 +30,8 @@ export default async function LiftoffPage({ searchParams }: { searchParams: Prom
     <>
       <PageHero
         guide={<LiftoffGuide />}
-        title="Liftoff"
-        subtitle="Up to ten videos, one press. Choose your CTA and thumbnail look once, give each video its product, then press Launch. MVP burns the CTA, builds every thumbnail, schedules YouTube with paid promotion and AI use set, then sends each video to your US Amazon storefront, and shows you where each one landed."
+        title="Bulk Amazon upload"
+        subtitle={<>Up to ten videos, one press. Choose your CTA and thumbnail look once, give each video its product, then press Launch. MVP burns the CTA, builds every thumbnail, schedules YouTube with paid promotion and AI use set, then sends each video to your US Amazon storefront, and shows you where each one landed.<span className="block mt-1 text-[12px]">Formerly Liftoff.</span></>}
       />
       <div className="pb-28">
         <LaunchBoard />

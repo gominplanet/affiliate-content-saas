@@ -165,7 +165,7 @@ export default function OlderVideos() {
       <PageHero
         accent={ACCENT}
         guide={<PinnedCommentsGuide />}
-        title="Pinned Comments"
+        title="Pinned comments"
         subtitle="A comment from your channel with the product link, pinned to the top of every video, where viewers look first."
       />
       <div className="card p-4 mb-4 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d1d1d6]">

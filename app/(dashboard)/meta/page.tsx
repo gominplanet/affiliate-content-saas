@@ -491,7 +491,7 @@ function MetaHub() {
         </p>
         {!hub && <p className="text-[13px] flex items-center gap-2" style={{ color: 'var(--text-faint)' }}><Loader2 size={14} className="animate-spin" /> Gathering your reviews…</p>}
         {hub && (hub.reviews.length === 0 ? (
-          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>No published reviews yet. Write one from a video in the <a href="/content" target="_blank" rel="noopener noreferrer" className="underline">Blog Post Generator</a>; it opens in a new tab and shows up here when you come back.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>No published reviews yet. Write one from a video in the <a href="/content" target="_blank" rel="noopener noreferrer" className="underline">Blog posts</a>; it opens in a new tab and shows up here when you come back.</p>
         ) : (
           <ul className="flex flex-col divide-y" style={{ borderColor: 'var(--border)' }}>
             {hub.reviews.map((r) => (

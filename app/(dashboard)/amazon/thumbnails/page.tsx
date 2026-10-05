@@ -177,7 +177,7 @@ export default function AmazonThumbnailsPage() {
         <div className="flex items-center gap-2 mb-3">
           <Sparkles size={14} className="text-[#d97706]" />
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
-            Amazon Influencer · Thumbnail Generator
+            Make videos · Thumbnails
           </span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
@@ -195,9 +195,9 @@ export default function AmazonThumbnailsPage() {
           { title: 'Paste a product', body: 'Copy any Amazon product link (or its 10-character ASIN) and paste it in. That is your source, no video needed.' },
           { title: 'Choose who’s in it', body: 'Star your own face in the design, or pick “Product only.” Add your face once under Face Models and it is reused every time.' },
           { title: 'Add a headline (optional)', body: 'Type a punchy line like “WORTH IT?!”, or leave it blank and the Art Director writes one that fits the product.' },
-          { title: 'Generate & use it', body: 'MVP designs the full 1280×720 thumbnail in seconds. Download it, or send it to Social Influencer to post everywhere.' },
+          { title: 'Generate & use it', body: 'MVP designs the full 1280×720 thumbnail in seconds. Download it, or send it to Social designs to post everywhere.' },
         ]}
-        footnote={<>Want your face in designs? Set it up once under <Link href="/photobooth" className="font-semibold" style={{ color: '#d97706' }}>Face Models</Link>. Ready to post? Head to <Link href="/amazon/social" className="font-semibold" style={{ color: '#d97706' }}>Social Influencer</Link>.</>}
+        footnote={<>Want your face in designs? Set it up once under <Link href="/photobooth" className="font-semibold" style={{ color: '#d97706' }}>Face models</Link>. Ready to post? Head to <Link href="/amazon/social" className="font-semibold" style={{ color: '#d97706' }}>Social designs</Link>.</>}
       />
 
       <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 flex flex-col gap-5">

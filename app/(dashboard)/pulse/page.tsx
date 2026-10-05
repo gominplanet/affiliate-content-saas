@@ -13,8 +13,8 @@ export default function PulsePage() {
   return (
     <>
       <PageHero
-        title="Pulse"
-        subtitle="Which hashtags actually earn reach — learned from your posts and pooled across MVP, then fed back into every caption automatically."
+        title="Hashtag insights"
+        subtitle={<>Which hashtags actually earn reach, learned from your posts and pooled across MVP, then fed back into every caption automatically.<span className="block mt-1 text-[12px]">Formerly Pulse.</span></>}
       />
 
       <div className="max-w-3xl space-y-5">

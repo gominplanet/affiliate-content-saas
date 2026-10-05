@@ -80,7 +80,7 @@ export function ContentGuide() {
       guideKey="content"
       version={2}
       icon={<FileText size={20} />}
-      title="Your guide to the Blog Post Generator"
+      title="Your guide to Blog posts"
       subtitle="Turn your YouTube videos, or a product link, into published reviews, then share them."
       sections={[
         { icon: <Youtube size={18} />, title: 'Video to Blog', body: <>Press <strong>Sync videos</strong> to pull in your YouTube videos. Any video on your channel works, even old ones. On a video, choose <strong>Generate now</strong> to set options and write the post, or <strong>Schedule for later</strong> to pick a date, a time and which socials to post to.</> },
@@ -325,7 +325,7 @@ export function VoiceTrainingGuide() {
         { icon: <FileText size={18} />, title: 'The four basics', body: <>Fill in <strong>About You</strong>, <strong>Target Reader</strong>, and <strong>Your Writing Style</strong>, where you paste writing that sounds exactly like you. List anything you never want to read in <strong>Words & Phrases to Avoid</strong>, one per line, and it is kept out of every generated post.</> },
         { icon: <Sparkles size={18} />, title: 'Calibrate your style', body: <>Answer the <strong>Voice calibration</strong> questions (what sounds fake, weak, cringe or trustworthy to you) and pick a side on each line of <strong>Your communicative style</strong>. Then tick the speech patterns and thought process the writing should use; tap a selected option again to clear it.</> },
         { icon: <Lightbulb size={18} />, title: 'Let MVP fill the gaps', body: <>Once you have published a few posts, <strong>Refresh MVP suggestions</strong> reads them and fills in only the fields you left empty. Your own answers are never overwritten.</> },
-        { icon: <PenLine size={18} />, title: 'Where it shows up', body: <>Your voice is used by the Blog Post Generator, Comparisons, Articles, Scriptwriter, Shorts Studio, and the captions MVP writes for your social posts.</> },
+        { icon: <PenLine size={18} />, title: 'Where it shows up', body: <>Your voice is used by Blog posts, Comparisons, Articles, Scriptwriter, Shorts Studio, and the captions MVP writes for your social posts.</> },
       ]}
       footerNote={<><strong className="text-foreground">Press Save in the bar at the bottom.</strong> Your changes apply to the next thing MVP writes for you.</>}
     />
@@ -346,7 +346,7 @@ export function FaceModelsGuide() {
         { icon: <Camera size={18} />, title: 'Add a face', body: <>Click <strong>Add a face</strong>, give it a name, and upload 4 to 20 photos (JPG, PNG or WebP, up to 10 MB each). Use clear, well lit, front facing shots of just you, mix angles and expressions, and aim for 10 or more for a stronger likeness.</> },
         { icon: <Users size={18} />, title: 'How many faces you can keep', body: <>Faces are included on paid plans, and your plan sets how many you can keep, shown next to <strong>Your faces</strong>. You can add more photos to an existing face at any time, up to 20.</> },
         { icon: <Shirt size={18} />, title: 'Pin an outfit', body: <>Set <strong>Outfit in thumbnails</strong> on a face (for example, a white lab coat) and every thumbnail puts you in it. Leave it blank to let MVP vary your outfit.</> },
-        { icon: <Youtube size={18} />, title: 'Where your face is used', body: <>Pick a face in YouTube Co-Pilot under <strong>Who’s in this video?</strong>, in the <strong>Thumbnail Generator</strong>, in Liftoff, and in Instagram and Pinterest image posts. Co-Pilot and the Thumbnail Generator also offer a product-only option.</> },
+        { icon: <Youtube size={18} />, title: 'Where your face is used', body: <>Pick a face in YouTube Co-Pilot under <strong>Who’s in this video?</strong>, in <strong>Thumbnails</strong>, in Bulk Amazon upload, and in Instagram and Pinterest image posts. Co-Pilot and Thumbnails also offer a product-only option.</> },
         { icon: <Rocket size={18} />, title: 'A face per video in Liftoff', body: <>Liftoff sets one face for the whole batch. With two or more faces saved, each upload also asks <strong>Who’s in this video?</strong> so every video gets the right presenter, and any you leave unanswered use the batch’s face.</> },
         { icon: <ImageIcon size={18} />, title: 'Photobooth headshots', body: <>Pick a face, a look (Studio, Office, LinkedIn, Magazine, Cinematic or Outdoor), an expression and a shape, then generate a studio quality headshot for your profiles. Each one takes 1 to 3 minutes, and the page shows how many you have left this month.</> },
         { icon: <Trash2 size={18} />, title: 'Deleting a face', body: <>Deleting a face never changes thumbnails or posts that are already made. It removes the uploaded photos, so that face cannot be used on anything new until you add it again.</> },
@@ -435,7 +435,7 @@ export function BrainstormGuide() {
       sections={[
         { icon: <BarChart3 size={18} />, title: 'Grounded in your data', body: <>This reads your last 90 days: which posts and products earned clicks, which topics pulled traffic. It is not random ideas; it is what your own audience responds to.</> },
         { icon: <Lightbulb size={18} />, title: 'What to make next', body: <>It turns those patterns into concrete next posts: more of a winning angle, a comparison your readers are clearly shopping for, a roundup around a product that is converting.</> },
-        { icon: <PenLine size={18} />, title: 'Act on it', body: <>Take an idea straight into the Blog Post Generator, Comparisons, or Buying Guides and publish it.</> },
+        { icon: <PenLine size={18} />, title: 'Act on it', body: <>Take an idea straight into Blog posts, Comparisons, or Buying guides and publish it.</> },
       ]}
     />
   )
@@ -466,7 +466,7 @@ export function AssistantGuide() {
       guideKey="assistant"
       version={2}
       icon={<MessageCircle size={20} />}
-      title="Your guide to the MVP Help Desk"
+      title="Your guide to Ask MVP"
       subtitle="Ask how to do anything in MVP, or get affiliate strategy advice."
       sections={[
         { icon: <MessageCircle size={18} />, title: 'Two jobs in one', body: <>Ask how any part of MVP works (where a feature lives, how to connect a site), or ask for strategy (what to review next, how to land a brand deal). It answers from MVP’s own feature guide, so its steps match the product.</> },

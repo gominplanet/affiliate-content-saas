@@ -4354,8 +4354,8 @@ export default function ContentPage() {
     <>
       <PageHero
         guide={<ContentGuide />}
-        title="Blog Post Generator"
-        subtitle={
+        title="Blog posts"
+        subtitle={<>{
           loading ? 'Loading…' :
           activeTab === 'scheduled'
             ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
@@ -4366,7 +4366,7 @@ export default function ContentPage() {
               : horizontalVideos.length > 0
                 ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
-        }
+        }<span className="block mt-1 text-[12px]">Formerly Blog Post Generator.</span></>}
         actions={
           <div className="flex items-center gap-2">
             <SitePicker value={siteId} onChange={setSiteId} compact />

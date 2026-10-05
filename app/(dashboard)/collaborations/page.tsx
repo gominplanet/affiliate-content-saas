@@ -267,7 +267,7 @@ export default function CollaborationsPage() {
     return (
       <FeatureLockedCard
         icon={<Handshake size={28} strokeWidth={1.8} />}
-        feature="Brand Deals"
+        feature="Brand pitches"
         description="Drop a brand name. MVP researches their products + storefront, drafts a personalized pitch email that sells your work, and pulls in your real channel stats as proof of distribution. Built on the same playbook a proven brand-outreach pro uses to land deals."
         bullets={[
           'AI researches each brand + the angle that fits your channel',
@@ -286,8 +286,8 @@ export default function CollaborationsPage() {
     <>
       <PageHero
         guide={<CollaborationsGuide />}
-        title="Brand Deals"
-        subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
+        title="Brand pitches"
+        subtitle={<>Fill this out and we&apos;ll research the brand and write a pitch email that sells your work, ready to copy and send.<span className="block mt-1 text-[12px]">Formerly Brand Deals.</span></>}
       />
 
       {/* Saved Outreach Profile — fills every Creator Connections "Message Brand"

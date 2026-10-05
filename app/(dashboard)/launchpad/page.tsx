@@ -1446,7 +1446,7 @@ export default function LaunchpadPage() {
           title="Blog post & social push"
           hint="Unlocks once your video is on its way to your storefronts.">
           <>
-            <p className="text-[12px] mb-3" style={muted}>Your video is live on YouTube and Amazon. Now turn it into a blog post and push it to your socials from the Blog Post Generator, with this video already selected.</p>
+            <p className="text-[12px] mb-3" style={muted}>Your video is live on YouTube and Amazon. Now turn it into a blog post and push it to your socials from Blog posts, with this video already selected.</p>
             <a href={`/content?tab=horizontal${masterId ? `&video=${encodeURIComponent(masterId)}` : ''}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: '#7C3AED' }}>
               <Sparkles size={15} /> Create the blog post &amp; social push

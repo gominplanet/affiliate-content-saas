@@ -245,7 +245,7 @@ export default function AgencyPage() {
     return (
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
-        feature="Virtual Assistants"
+        feature="Team"
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, brand profile, integrations, API keys, or this settings page."
         bullets={[
           'Up to 3 VA seats included with Pro',
@@ -273,7 +273,7 @@ export default function AgencyPage() {
     return (
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
-        feature="Virtual Assistants"
+        feature="Team"
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, integrations or API keys."
         bullets={[
           'Up to 3 VA seats included with Pro',
@@ -295,12 +295,13 @@ export default function AgencyPage() {
     <div className="max-w-3xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users size={22} /> Virtual Assistants
+          <Users size={22} /> Team
           <VirtualAssistantsGuide />
         </h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Invite VAs or contractors to work in your workspace. They get their own login on your
           single Pro subscription. <b>{seatsCopy}</b>.
+          <span className="block mt-1 text-[12px]">Formerly Virtual Assistants.</span>
         </p>
       </div>
 

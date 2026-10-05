@@ -297,7 +297,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
               </a>
             ) : (
               <button onClick={onToggleSave} disabled={!c.repAsin} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50" style={{ background: '#d97706', borderColor: '#d97706' }}
-                title="Save this product to make a social post in Social Influencer">
+                title="Save this product to make a social post in Social designs">
                 <Bookmark size={13} /> Save for a post
               </button>
             )
@@ -824,8 +824,8 @@ export default function CcCampaignsPage() {
   return (
     <>
       <PageHero
-        title="CC Campaigns"
-        subtitle="Every live Creator Connections campaign with the numbers that matter — commission, $ per sale, spots left, whether the brand actually pays out — and one click to turn it into a blog post."
+        title="Brand campaigns"
+        subtitle={<>Every live Creator Connections campaign with the numbers that matter (commission, $ per sale, spots left, whether the brand actually pays out) and one click to turn it into a blog post.<span className="block mt-1 text-[12px]">Formerly CC Campaigns.</span></>}
       />
 
       {locked ? (

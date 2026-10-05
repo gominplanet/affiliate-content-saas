@@ -132,7 +132,7 @@ export function HelpDeskPanel() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10">
         <div>
-          <h2 className="font-semibold text-gray-900 dark:text-white">MVP Help Desk</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">Ask MVP</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">Ask anything about MVP</p>
         </div>
         <button
@@ -199,7 +199,7 @@ export function HelpDeskPanel() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Ask MVP Help Desk..."
+            placeholder="Ask MVP anything..."
             disabled={sending}
             className="flex-1 px-3 py-2 border border-gray-200 dark:border-white/20 rounded-lg bg-white dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#0071E3] disabled:opacity-50"
           />

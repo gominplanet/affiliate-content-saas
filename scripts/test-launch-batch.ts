@@ -402,12 +402,13 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the worker is scheduled',
     /\/api\/cron\/launch-drain/.test(VERCEL),
     'a cron nobody calls is a feature that works only in the repository')
+  // Shown as "Bulk Amazon upload" since the menu was regrouped by job (2026-10-05).
   check('the page is in the nav',
-    /href: '\/liftoff'/.test(NAV) && /label: 'Liftoff'/.test(NAV))
-  check('and it has left Labs for the top of Create, still Pro only',
-    inOrder(NAV, "label: 'Create'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
+    /href: '\/liftoff'[^\n]*label: 'Bulk Amazon upload'/.test(NAV))
+  check('and it is out of Labs, in Make videos, still Pro only',
+    inOrder(NAV, "label: 'Make videos'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
     && /href: '\/liftoff'[^\n]*gate: isPro/.test(NAV),
-    'Liftoff graduated: it belongs in Create, and it is a Pro feature')
+    'Liftoff graduated: it belongs with the video tools, and it is a Pro feature')
 }
 
 // ── the migrations ──────────────────────────────────────────────────────────
@@ -1843,7 +1844,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('the old addresses forward to Liftoff',
       /source: '\/launch', destination: '\/liftoff'/.test(CFG) && /source: '\/launchpad', destination: '\/liftoff'/.test(CFG))
     check('the menu has Liftoff and no Launchpad',
-      /href: '\/liftoff', icon: <Rocket size=\{15\} \/>, label: 'Liftoff'/.test(NAV) && !/href: '\/launchpad'/.test(NAV))
+      /href: '\/liftoff', icon: <Rocket size=\{15\} \/>, label: 'Bulk Amazon upload'/.test(NAV) && !/href: '\/launchpad'/.test(NAV))
     check('an Amazon-only batch is handed to Amazon and never uploaded',
       /if \(amazonOnlyBatches\.has\(it\.batch_id\)\) \{/.test(DRAIN) && /handOverToAmazon\(sb, it, `upload-\$\{it\.id\}`/.test(DRAIN),
       'Launchpad let a creator skip YouTube; retiring it without this would take that away')

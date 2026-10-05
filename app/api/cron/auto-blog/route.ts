@@ -193,6 +193,6 @@ async function notifyPaused(admin: any, userId: string, reason: 'cap' | 'spend')
   await sendEmail({
     to: email,
     subject: 'Auto-pilot paused for this cycle',
-    text: `Heads up: your blog auto-pilot paused because ${why}. It resumes automatically at the start of your next billing cycle. To publish more before then, generate posts manually from the Blog Post Generator, or upgrade your plan for a higher monthly limit.\n\nSeb`,
+    text: `Heads up: your blog auto-pilot paused because ${why}. It resumes automatically at the start of your next billing cycle. To publish more before then, generate posts manually from Blog posts, or upgrade your plan for a higher monthly limit.\n\nSeb`,
   })
 }

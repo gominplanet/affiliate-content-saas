@@ -22,8 +22,8 @@ import {
 const ACCENT = '#C2410C' // Amazon-hub orange (sidebar + /pricing)
 
 const TOOLKIT: { href: string; icon: ReactNode; title: string; desc: string }[] = [
-  { href: '/amazon/thumbnails', icon: <Wand2 size={18} />, title: 'Thumbnail Generator', desc: 'Incredible Amazon video-review thumbnails in one click. 200/mo.' },
-  { href: '/amazon/social', icon: <Share2 size={18} />, title: 'Social Influencer', desc: 'Ready-to-post pins, Reels and Facebook designs, published to all three at once.' },
+  { href: '/amazon/thumbnails', icon: <Wand2 size={18} />, title: 'Thumbnails', desc: 'Incredible Amazon video-review thumbnails in one click. 200/mo.' },
+  { href: '/amazon/social', icon: <Share2 size={18} />, title: 'Social designs', desc: 'Ready-to-post pins, Reels and Facebook designs, published to all three at once.' },
   { href: '/amazon/research', icon: <PackageSearch size={18} />, title: 'Product Research', desc: 'Filter the whole Amazon catalogue by sales, rating, price and competition.' },
   { href: '/cc-campaigns', icon: <Handshake size={18} />, title: 'Creator Connections', desc: 'A daily digest of brand campaigns auto-matched to your content. Land + message deals. 50/mo.' },
   { href: '/deal-radar', icon: <Radar size={18} />, title: 'Deal Radar', desc: 'Live, price-history-verified Amazon deals to post while they are hot.' },

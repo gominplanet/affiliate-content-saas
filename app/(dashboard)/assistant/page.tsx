@@ -206,7 +206,7 @@ export default function AssistantPage() {
 
   return (
     <>
-      <PageHero guide={<AssistantGuide />} title="MVP Help Desk" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
+      <PageHero guide={<AssistantGuide />} title="Ask MVP" subtitle={<>Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche.<span className="block mt-1 text-[12px]">Formerly MVP Help Desk.</span></>} />
 
       <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
         {/* Conversation list */}

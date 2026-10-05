@@ -685,7 +685,7 @@ function SaveDealButton({ deal: d, variant = 'quiet' }: { deal: Deal; variant?: 
           rating: d.rating, hasVideo: d.hasVideo, marketplace: 'us',
         }),
       })
-      if (res.ok) { setSaved(true); toast.success('Saved — make the post in Social Influencer') }
+      if (res.ok) { setSaved(true); toast.success('Saved. Make the post in Social designs') }
       else toast.error('Could not save. Try again.')
     } catch { toast.error('Could not save. Try again.') } finally { setBusy(false) }
   }, [d, saved, busy])
