@@ -50,12 +50,22 @@ export async function POST(request: Request) {
     // undoing the drafts route's own check each time. A video once confirmed
     // public is not taken back to private by a Studio read.
     const knownPublic = new Set<string>()
+    // WHAT IS ALREADY KNOWN IS KEPT. Studio's list has no descriptions, and
+    // this sync wrote every one as empty. "Needs metadata" means no real
+    // description, so every finished private video went back on the to-do list
+    // until YouTube's API refilled them, and on a day its allowance is used up
+    // that is never (2026-10-07: 817 finished videos listed as needing work).
+    // A status SCOUT could not read keeps the saved one too.
+    const knownDesc = new Map<string, string>()
+    const knownStatus = new Map<string, string>()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: prev } = await (supabase as any)
         .from('youtube_video_cache').select('videos').eq('user_id', user.id).maybeSingle()
-      for (const pv of (Array.isArray(prev?.videos) ? prev.videos : []) as Array<{ youtubeVideoId?: string; status?: string }>) {
+      for (const pv of (Array.isArray(prev?.videos) ? prev.videos : []) as Array<{ youtubeVideoId?: string; status?: string; description?: string }>) {
         if (pv?.status === 'public' && pv.youtubeVideoId) knownPublic.add(pv.youtubeVideoId)
+        if (pv?.youtubeVideoId && typeof pv.description === 'string' && pv.description.trim()) knownDesc.set(pv.youtubeVideoId, pv.description)
+        if (pv?.youtubeVideoId && typeof pv.status === 'string' && ALLOWED_STATUS.has(pv.status)) knownStatus.set(pv.youtubeVideoId, pv.status)
       }
     } catch { /* first sync, or the read failed: SCOUT's answer stands */ }
     const now = Date.now()
@@ -70,7 +80,7 @@ export async function POST(request: Request) {
       if (!id || seen.has(id)) continue
       seen.add(id)
       const title = typeof v.title === 'string' ? v.title.slice(0, 300) : ''
-      let status = typeof v.status === 'string' && ALLOWED_STATUS.has(v.status) ? v.status : 'private'
+      let status = typeof v.status === 'string' && ALLOWED_STATUS.has(v.status) ? v.status : (knownStatus.get(id) ?? 'private')
       const at = typeof v.publishAt === 'string' && v.publishAt ? Date.parse(v.publishAt) : NaN
       const future = Number.isFinite(at) && at > now
       // A scheduled time that has passed means YouTube has published it: it
@@ -80,7 +90,7 @@ export async function POST(request: Request) {
       videos.push({
         youtubeVideoId: id,
         title,
-        description: '', // SCOUT's list view has no description; generation fetches it later
+        description: knownDesc.get(id) ?? '', // Studio's list has none: the saved one stays
         thumbnailUrl:
           typeof v.thumbnailUrl === 'string' && v.thumbnailUrl
             ? v.thumbnailUrl.slice(0, 500)
@@ -94,6 +104,23 @@ export async function POST(request: Request) {
       })
     }
     if (videos.length === 0) return NextResponse.json({ error: 'no valid videos' }, { status: 400 })
+    // Still no description: MVP's own record of the video has one when it was
+    // ever synced or written by MVP. Read in chunks; a failure keeps it empty.
+    {
+      const missing = videos.filter((v) => !String(v.description || '').trim()).map((v) => String(v.youtubeVideoId))
+      const fromRecord = new Map<string, string>()
+      for (let i = 0; i < missing.length; i += 200) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: recs } = await (supabase as any).from('youtube_videos').select('youtube_video_id,description')
+            .eq('user_id', user.id).in('youtube_video_id', missing.slice(i, i + 200))
+          for (const r of (recs ?? []) as Array<{ youtube_video_id: string; description: string | null }>) {
+            if (r.description && r.description.trim()) fromRecord.set(r.youtube_video_id, r.description)
+          }
+        } catch { /* left empty: the drafts route fills it when YouTube can be asked */ }
+      }
+      for (const v of videos) { const d = fromRecord.get(String(v.youtubeVideoId)); if (d && !String(v.description || '').trim()) v.description = d.slice(0, 5000) }
+    }
 
     // Preserve any existing uploads_playlist_id so a later forced Data API
     // refresh still resolves the right playlist. Best-effort.

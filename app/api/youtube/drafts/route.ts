@@ -385,7 +385,7 @@ export async function GET(request: Request) {
     // Refresh stale cached descriptions so a video that's since been given a real
     // description on YouTube drops out of "Needs metadata" (the cache never
     // refreshes existing rows' descriptions on its own).
-    const trued = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
+    const { list: trued, checked: statusChecked } = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
     // WHAT WENT LIVE LEAVES THE LIST, and the saved copy learns it too, so it
     // is not shown again as a draft on the next visit.
     const changed = new Map(trued.filter((t, i) => t.status !== drafts[i].status || t.publishAt !== drafts[i].publishAt).map(t => [t.youtubeVideoId, t]))
@@ -402,6 +402,11 @@ export async function GET(request: Request) {
       drafts: await enrichWithPushState(supabase, user.id, current),
       nextPageToken: nextCursor,
       fromCache: usedCache,
+      // YOUTUBE COULD NOT BE ASKED (its daily allowance used up): the statuses
+      // and descriptions are MVP's saved copy, so a video that went public
+      // since still reads Private and sits in Needs metadata. Said on the
+      // page rather than shown as fact.
+      statusUnchecked: !statusChecked,
       includePublished,
     })
   } catch (err) {
@@ -587,7 +592,7 @@ async function runFullScan(
 async function backfillTrueDescriptions(
   yt: ReturnType<typeof createYouTubeOAuthService>,
   drafts: ReturnType<typeof buildDraftVideo>[],
-): Promise<ReturnType<typeof buildDraftVideo>[]> {
+): Promise<{ list: ReturnType<typeof buildDraftVideo>[]; checked: boolean }> {
   // EVERY VIDEO NOT YET PUBLIC, not only the ones with an empty description.
   // The saved list is only ever topped up with new uploads, so a video that
   // was private when first seen stayed "Private, not scheduled" here after it
@@ -597,15 +602,15 @@ async function backfillTrueDescriptions(
   // checked. Fifty per call, one quota unit each, and what is corrected is
   // saved, so the next load has almost nothing left to ask about.
   const suspects = drafts.filter(d => d.youtubeVideoId && d.status !== 'public').slice(0, 1500)
-  if (!suspects.length) return drafts
+  if (!suspects.length) return { list: drafts, checked: true }
   let meta: Record<string, { description: string; status: string; publishAt: string | null }> = {}
   try {
     meta = await yt.getVideoMetaByIds(suspects.map(d => d.youtubeVideoId))
   } catch (err) {
     console.warn('[yt-drafts] description backfill failed (non-fatal):', err instanceof Error ? err.message : String(err))
-    return drafts
+    return { list: drafts, checked: false }
   }
-  return drafts.map(d => {
+  return { checked: true, list: drafts.map(d => {
     const m = meta[d.youtubeVideoId]
     if (!m) return d
     return {
@@ -617,7 +622,7 @@ async function backfillTrueDescriptions(
       // its time no longer has one, and the old time must not linger.
       publishAt: m.publishAt ?? null,
     }
-  })
+  }) }
 }
 
 // Enrich drafts with Co-Pilot push timestamps (best-effort, non-blocking)

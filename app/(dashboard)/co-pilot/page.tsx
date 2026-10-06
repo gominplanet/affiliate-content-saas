@@ -4223,6 +4223,9 @@ export default function StudioPage() {
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
+  // The drafts route could not ask YouTube (its daily allowance used up), so
+  // statuses and descriptions are MVP's saved copy and may be out of date.
+  const [statusUnchecked, setStatusUnchecked] = useState(false)
   // Include published videos. Default OFF → drafts-first (private + unlisted).
   // Two reasons: (a) Co-Pilot's job is to optimize metadata BEFORE you publish,
   // and (b) the /drafts fetch deep-scans pages to surface drafts — defaulting ON
@@ -4416,6 +4419,7 @@ export default function StudioPage() {
         setDrafts(incoming)
       }
       setNextPageToken(data.nextPageToken)
+      if (!append) setStatusUnchecked(data.statusUnchecked === true)
     }
     if (append) setLoadingMore(false)
     else if (!silent) setLoading(false)
@@ -4825,6 +4829,11 @@ export default function StudioPage() {
             </div>
           )}
 
+          {statusUnchecked && (
+            <p className="mb-3 rounded-lg px-3 py-2 text-[12.5px]" style={{ background: 'rgba(217,119,6,0.10)', color: '#b45309' }}>
+              YouTube&apos;s daily API allowance is used up, so MVP could not check these videos with YouTube. Their status and descriptions are MVP&apos;s saved copy and may be out of date: a video you finished or published since can still show here. MVP checks again after midnight Pacific.
+            </p>
+          )}
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {activeQuery
