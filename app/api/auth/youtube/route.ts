@@ -65,7 +65,14 @@ export async function GET(req: Request) {
   const uploadEligible = youtubeUploadEnabled({ tier: intRow?.tier as string | null })
   // Add the upload scope when the viewer is eligible AND either they explicitly
   // asked for it (incremental auth) or the public flag is on (grab it on connect).
-  const addUploadScope = !verifiedOnly && uploadEligible && (wantUpload || youtubeUploadEnabled())
+  // ONLY WHEN ASKED FOR (Seb, 2026-10-07). Google has verified force-ssl but not
+  // youtube.upload, and asking for upload on every connect put the "unverified
+  // app" warning in front of every member and spent the 100-user cap on people
+  // who never upload through the API (both paid plans upload through SCOUT in
+  // Studio). A plain connect now asks only for the verified scope; the upload
+  // scope is added when a member publishes a Short or a Launchpad video
+  // (intent=upload), and only they see the warning.
+  const addUploadScope = !verifiedOnly && uploadEligible && wantUpload
 
   // RANDOM, ONE-TIME STATE (lib/oauth-state). The return path and the
   // "add another channel" flag ride in the httpOnly state cookie, not the URL.
