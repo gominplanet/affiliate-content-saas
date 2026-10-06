@@ -98,7 +98,10 @@ export async function POST(request: Request) {
     // Instagram Story is a separate path (image + baked "link in bio" CTA — a
     // Story published via the API can't carry a caption or a tappable link).
     const wantStory = body.story === true
-    if (!platforms.length && !wantStory && !wantPinterest) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+    // INSTAGRAM ALONE IS A REAL CHOICE. Leaving it out of this check refused an
+    // Instagram-only quick post with "Pick at least one platform." while the
+    // modal showed Instagram ticked.
+    if (!platforms.length && !wantStory && !wantPinterest && !wantInstagram) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
     // The Amazon plan's monthly deal posts (lib/deal-post-limit).
     const dealCap = await dealPostLimit(user.id, tier)
     if (dealCap) return dealCap

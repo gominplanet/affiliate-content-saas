@@ -253,10 +253,12 @@ Return ONLY the post text, no extra commentary.`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase
       .from('blog_posts')
-      .update({ linkedin_post_id: result.id })
+      .update({ linkedin_post_id: result.id || null })
       .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the post.
-    await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
+    // Only with a real id: LinkedIn can answer without one, and a permalink
+    // built from nothing is a link that leads nowhere.
+    if (result.id) await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
     await incrementSocialCount(supabase, postId!, 'linkedin')
 
     return NextResponse.json({

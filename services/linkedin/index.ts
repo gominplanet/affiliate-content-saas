@@ -50,8 +50,7 @@ export class LinkedInService {
       throw new Error(`LinkedIn post failed ${res.status}: ${body.slice(0, 300)}`)
     }
 
-    const data = await res.json() as { id?: string }
-    return { id: data.id ?? 'unknown' }
+    return { id: await postIdFrom(res) }
   }
 
   /**
@@ -131,9 +130,24 @@ export class LinkedInService {
       }),
     })
     if (!res.ok) throw new Error(`LinkedIn image post failed ${res.status}: ${(await res.text()).slice(0, 300)}`)
-    const data = await res.json() as { id?: string }
-    return { id: data.id ?? 'unknown' }
+    return { id: await postIdFrom(res) }
   }
+}
+
+/** The new post's URN from a 2xx ugcPosts response, or '' when LinkedIn gave none.
+ *
+ *  THE HEADER FIRST, AND NEVER A THROW. LinkedIn names the post in X-RestLi-Id and
+ *  may send an empty body; res.json() on that threw AFTER the post was live, so a
+ *  published post was reported failed (and the cron could post it again). The old
+ *  'unknown' fallback was worse in the other direction: it was stored as the post id
+ *  and turned into a permalink that leads nowhere. '' lets callers skip both. */
+async function postIdFrom(res: Response): Promise<string> {
+  const header = res.headers.get('x-restli-id') || res.headers.get('x-linkedin-id') || ''
+  if (header) return header
+  try {
+    const data = JSON.parse(await res.text()) as { id?: string }
+    return typeof data.id === 'string' ? data.id : ''
+  } catch { return '' }
 }
 
 export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<string> {

@@ -789,7 +789,7 @@ async function publishOne(
         result = await linkedin.createPost({ text: postText, ...liArticle })
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id ?? null }).eq('id', row.blog_post_id)
+      await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id || null }).eq('id', row.blog_post_id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const liId = (result as any).id as string | undefined
       if (liId) await recordSocialPermalink(admin, row.blog_post_id, 'linkedin', socialPermalink.linkedin(liId))
