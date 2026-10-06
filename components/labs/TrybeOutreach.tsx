@@ -21,9 +21,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus } from 'lucide-react'
-import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, type TrybeScanPass } from '@/lib/extension-frame'
+import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -59,6 +59,10 @@ interface Brand {
 }
 
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
+/** MVP's copy of every TRYBE brand (shared), and how complete it is. */
+interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; categories: string[] }
+/** The whole list is collected again after this long. */
+const RECOLLECT_MS = 20 * 3600_000
 type Tab = 'find' | 'queue' | 'sent'
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
 
@@ -130,6 +134,7 @@ export default function TrybeOutreach() {
   const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
   const [log, setLog] = useState<LogLine[]>([])
+  const [directory, setDirectory] = useState<Directory | null>(null)
   const stopRef = useRef(false)
   const autoRan = useRef(false)
 
@@ -146,6 +151,7 @@ export default function TrybeOutreach() {
       setSavedKey(prefsKey(c, k))
       setDailyFind(d.settings?.dailyFind !== false)
       setLastFindAt(d.settings?.lastFindAt ?? null)
+      setDirectory(d.directory ?? null)
       return d
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load'); return null }
     finally { setLoading(false) }
@@ -170,6 +176,8 @@ export default function TrybeOutreach() {
   const unsavedNiche = pageKey !== savedKey
   const hasNiche = cats.length > 0 || kws.length > 0
   const canSearchTrybe = scoutAtLeast(scoutVersion, SCOUT_TRYBE_FIND_MIN_VERSION)
+  // 1.41.2: SCOUT collects the whole TRYBE list and MVP searches its own copy.
+  const canHarvest = scoutAtLeast(scoutVersion, SCOUT_TRYBE_HARVEST_MIN_VERSION)
 
   const queue = useMemo(() => brands.filter(b => b.status === 'drafted' && b.draft).sort((a, b) => priority(b) - priority(a)), [brands])
   const found = useMemo(() => brands.filter(b => b.status === 'new' && b.fit_prefs === savedKey).sort((a, b) => priority(b) - priority(a)), [brands, savedKey])
@@ -185,9 +193,10 @@ export default function TrybeOutreach() {
     const seen = new Map<string, number>()
     for (const b of brands) for (const c of b.categories || []) seen.set(c, (seen.get(c) || 0) + 1)
     const fromTrybe = Array.from(seen.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([c]) => c)
-    const all = [...cats, ...fromTrybe, ...CATEGORY_SUGGESTIONS]
+    // The TRYBE category list first, once SCOUT has read it.
+    const all = [...cats, ...(directory?.categories || []), ...fromTrybe, ...(directory?.categories?.length ? [] : CATEGORY_SUGGESTIONS)]
     return all.filter((c, i) => all.findIndex(o => o.toLowerCase() === c.toLowerCase()) === i)
-  }, [brands, cats])
+  }, [brands, cats, directory])
 
   function patch(id: string, p: Partial<Brand>) { setBrands(bs => bs.map(b => b.brand_id === id ? { ...b, ...p } : b)) }
 
@@ -260,27 +269,8 @@ export default function TrybeOutreach() {
     const notes: string[] = []
     setFindNotes([])
     try {
-      setFinding({ stage: canSearchTrybe && hasNiche ? 'SCOUT is searching TRYBE for your keywords and categories' : 'SCOUT is reading TRYBE’s Discover Brands' })
-      const res = await requestTrybeScan(brands.map(b => b.name), SCAN_READ, canSearchTrybe ? kws : [], canSearchTrybe ? cats : [])
-      for (const p of res.passes || []) notes.push(passWords(p))
-      if (!res.ok) {
-        const why: Record<string, string> = {
-          'no-access': 'SCOUT is not allowed on TRYBE yet. Press Allow SCOUT on TRYBE.',
-          'not-signed-in': 'TRYBE opened its sign-in page. Sign in to TRYBE in this browser, then try again.',
-          'discover-not-found': 'SCOUT could not find Discover Brands. TRYBE may have changed the page.',
-          'no-rows': 'SCOUT opened Discover Brands but saw no brand rows on it.',
-          timeout: 'SCOUT ran out of time reading TRYBE. What it read so far is kept.',
-        }
-        notes.push(why[res.error || ''] || `SCOUT could not read TRYBE: ${res.error || 'no answer'}.`)
-      }
-      const got = res.brands || []
-      if (got.length) {
-        const d = await api({ action: 'import', brands: got })
-        notes.push(`SCOUT read ${got.length} brand${got.length === 1 ? '' : 's'}: ${d.added} new to MVP, ${d.already} TRYBE already shows as requested.`)
-      } else if (res.ok) {
-        notes.push(`No brands you have not seen yet (${res.listed ?? 0} listed on TRYBE).`)
-      }
-      if (res.failures?.length) notes.push(`${res.failures.length} could not be opened on TRYBE (${res.failures.slice(0, 3).map(f => f.name).join(', ')}${res.failures.length > 3 ? '...' : ''}).`)
+      if (canHarvest) await collectAndShortlist(notes)
+      else await scanTrybe(notes)
       const d = await load()
       const all: Brand[] = d?.brands || brands
       const key = prefsKey(d?.settings?.categories || cats, d?.settings?.keywords || kws)
@@ -288,7 +278,7 @@ export default function TrybeOutreach() {
       if (toJudge.length) {
         const j = await judge(toJudge)
         notes.push(hasNiche
-          ? `MVP checked ${j.fit + j.no} against your niche: ${j.fit} fit, ${j.no} do not.${j.failed ? ` ${j.failed} could not be checked and are tried again next time.` : ''}`
+          ? `MVP checked ${j.fit + j.no} against your niche from their websites: ${j.fit} fit, ${j.no} do not.${j.failed ? ` ${j.failed} could not be checked and are tried again next time.` : ''}`
           : `${j.fit} listed. Pick categories or keywords so MVP only lists brands that fit.`)
       }
       const after = await load()
@@ -312,6 +302,73 @@ export default function TrybeOutreach() {
       setFinding(null)
       setFindNotes(notes)
     }
+  }
+
+  /** SCOUT 1.41.2+: collect TRYBE's whole list when MVP's copy is a day old,
+   *  then search MVP's copy for the niche. TRYBE's own search is not used: it
+   *  does not find brands by what they sell. */
+  async function collectAndShortlist(notes: string[]) {
+    const last = directory?.lastCollectedAt ? Date.parse(directory.lastCollectedAt) : 0
+    if (!directory?.brands || Date.now() - last > RECOLLECT_MS) {
+      setFinding({ stage: 'SCOUT is collecting every brand on TRYBE, in a tab behind this one' })
+      const h = await requestTrybeHarvest()
+      const items = h.items || []
+      if (!items.length) {
+        const why: Record<string, string> = {
+          'no-access': 'SCOUT is not allowed on TRYBE yet. Press Allow SCOUT on TRYBE.',
+          'not-signed-in': 'TRYBE is signed out in this Chrome. Sign in to TRYBE, then press Find brands again.',
+          'no-brands': 'SCOUT reached TRYBE but its brand list came back empty.',
+          timeout: 'SCOUT ran out of time collecting the TRYBE list.',
+        }
+        notes.push(why[h.error || ''] || `SCOUT could not collect the TRYBE list: ${h.error || 'no answer'}.`)
+        if (directory?.brands) notes.push(`Using MVP's copy from ${directory.lastCollectedAt ? new Date(directory.lastCollectedAt).toLocaleString() : 'earlier'} instead.`)
+      } else {
+        let saved = 0, withSite = 0
+        let keys: string[] = []
+        for (let i = 0; i < items.length; i += 400) {
+          setFinding({ stage: 'Saving the TRYBE brands to MVP', done: i, total: items.length })
+          const d = await api({ action: 'directory', items: items.slice(i, i + 400), ...(i === 0 && h.categories ? { categories: h.categories } : {}) })
+          saved += d.saved || 0; withSite += d.withWebsite || 0
+          if (!keys.length && Array.isArray(d.keys)) keys = d.keys
+        }
+        notes.push(`SCOUT collected ${items.length.toLocaleString()} entries from ${h.pages ?? '?'} of ${h.totalPages ?? '?'} pages (TRYBE lists ${h.total != null ? h.total.toLocaleString() : '?'}). MVP saved ${saved.toLocaleString()} brands, ${withSite.toLocaleString()} with a website.`)
+        if (h.error) notes.push(`SCOUT stopped early: ${h.error}. What it collected is kept.`)
+        if (!saved) notes.push(`MVP could not read the TRYBE entries. Fields TRYBE sent: ${keys.join(', ') || 'none'}.`)
+        else if (!withSite) notes.push(`The TRYBE list carried no websites, so MVP matches on the TRYBE description for now. Fields TRYBE sent: ${keys.join(', ')}.`)
+      }
+    } else {
+      notes.push(`Using MVP's copy of TRYBE (${directory.brands.toLocaleString()} brands, collected ${new Date(directory.lastCollectedAt!).toLocaleString()}).`)
+    }
+    setFinding({ stage: 'Searching MVP’s copy of TRYBE for your niche' })
+    const sl = await api({ action: 'shortlist', limit: SCAN_READ })
+    notes.push(hasNiche
+      ? `${(sl.matched ?? 0).toLocaleString()} brands match your niche in MVP's copy. The best ${sl.added} not seen before go to the fit check.`
+      : `${sl.added} brands taken, highest TRYBE score first. Pick a niche to search by it.`)
+  }
+
+  /** Older SCOUT: read TRYBE's Discover screen brand by brand. */
+  async function scanTrybe(notes: string[]) {
+    setFinding({ stage: canSearchTrybe && hasNiche ? 'SCOUT is searching TRYBE for your keywords and categories' : 'SCOUT is reading TRYBE’s Discover Brands' })
+    const res = await requestTrybeScan(brands.map(b => b.name), SCAN_READ, canSearchTrybe ? kws : [], canSearchTrybe ? cats : [])
+    for (const p of res.passes || []) notes.push(passWords(p))
+    if (!res.ok) {
+      const why: Record<string, string> = {
+        'no-access': 'SCOUT is not allowed on TRYBE yet. Press Allow SCOUT on TRYBE.',
+        'not-signed-in': 'TRYBE opened its sign-in page. Sign in to TRYBE in this browser, then try again.',
+        'discover-not-found': 'SCOUT could not find Discover Brands. TRYBE may have changed the page.',
+        'no-rows': 'SCOUT opened Discover Brands but saw no brand rows on it.',
+        timeout: 'SCOUT ran out of time reading TRYBE. What it read so far is kept.',
+      }
+      notes.push(why[res.error || ''] || `SCOUT could not read TRYBE: ${res.error || 'no answer'}.`)
+    }
+    const got = res.brands || []
+    if (got.length) {
+      const d = await api({ action: 'import', brands: got })
+      notes.push(`SCOUT read ${got.length} brand${got.length === 1 ? '' : 's'}: ${d.added} new to MVP, ${d.already} TRYBE already shows as requested.`)
+    } else if (res.ok) {
+      notes.push(`No brands you have not seen yet (${res.listed ?? 0} listed on TRYBE).`)
+    }
+    if (res.failures?.length) notes.push(`${res.failures.length} could not be opened on TRYBE (${res.failures.slice(0, 3).map(f => f.name).join(', ')}${res.failures.length > 3 ? '...' : ''}).`)
   }
 
   // THE DAILY FIND. Once a day, when this page is opened with SCOUT allowed
@@ -488,7 +545,7 @@ export default function TrybeOutreach() {
         {/* 2. Niche */}
         <div className={card} style={cardStyle}>
           <p className="text-[14px] font-semibold">2. Your niche</p>
-          <p className="text-[12px] mb-3" style={soft}>Pick categories and add keywords. SCOUT searches TRYBE for them, and MVP reads each brand&rsquo;s TRYBE profile and website to check it fits before it is listed.</p>
+          <p className="text-[12px] mb-3" style={soft}>Pick categories and add keywords. MVP searches its own copy of every TRYBE brand by them, including what each brand&rsquo;s website sells, then checks each match fits before it is listed.</p>
           <p className="text-[12px] font-semibold mb-1.5">Categories</p>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {catOptions.map(c => {
@@ -513,8 +570,8 @@ export default function TrybeOutreach() {
               placeholder="e.g. bible journaling, kids crafts" className="rounded-lg border px-2.5 py-1 text-[12px] min-w-[14rem]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
             <button onClick={addKeyword} className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><Plus size={12} /> Add</button>
           </div>
-          {!canSearchTrybe && access === 'granted' && (
-            <p className="text-[12px] mb-2" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s plain list only. SCOUT {SCOUT_TRYBE_FIND_MIN_VERSION} also searches TRYBE for your keywords and categories. MVP still checks every brand against your niche either way.</p>
+          {!canHarvest && access === 'granted' && (
+            <p className="text-[12px] mb-2" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
           )}
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <label className="text-[13px] flex items-center gap-2">Daily cap
@@ -542,7 +599,12 @@ export default function TrybeOutreach() {
               </button>
             </div>
           </div>
-          <p className="text-[12px] mb-3" style={soft}>Be signed in to TRYBE in this browser. SCOUT opens TRYBE in a tab for a few minutes and brings you back here. Best fits first; the top {DAILY_FIND} are ticked.</p>
+          <p className="text-[12px] mb-3" style={soft}>Be signed in to TRYBE in this browser. Best fits first; the top {DAILY_FIND} are ticked.</p>
+          {directory && directory.brands > 0 && (
+            <p className="text-[12px] mb-3" style={soft}>
+              MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
+            </p>
+          )}
           {findNotes.length > 0 && (
             <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
           )}

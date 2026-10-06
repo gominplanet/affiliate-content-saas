@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.41.1'
+export const SCOUT_LATEST_VERSION = '1.41.2'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE Outreach (Labs): SCOUT searches TRYBE for your keywords and categories, and reads every brand on the list instead of one.'
+  'TRYBE Outreach (Labs): SCOUT collects every brand on TRYBE, with its website, so MVP can search them by your niche itself.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -74,6 +74,9 @@ export const SCOUT_TRYBE_MIN_VERSION = '1.41.0'
 /** The oldest SCOUT that searches TRYBE by the creator's keywords and
  *  categories, and reads the whole Discover list (Labs). */
 export const SCOUT_TRYBE_FIND_MIN_VERSION = '1.41.1'
+/** The oldest SCOUT that collects TRYBE's whole brand list for MVP's own
+ *  directory (Labs). */
+export const SCOUT_TRYBE_HARVEST_MIN_VERSION = '1.41.2'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */

@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
+import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -80,6 +81,27 @@ check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.tes
 check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
 check('SCOUT searches the keywords and presses the categories, and reports each pass', /async function trybeSearchInPage\(/.test(BG) && /async function trybeChipInPage\(/.test(BG) && /passes: report/.test(BG))
 check('a category filter is never a brand row', /el\.querySelector\('img'\)\) return false/.test(BG.slice(BG.indexOf('async function trybeChipInPage('))))
+
+// THE DIRECTORY (Seb, 2026-10-06: TRYBE's search "does not work very well";
+// collect every brand and filter it ourselves).
+const entry = { id: 'e93f7da1-e647-46e8-b01e-48dc1f30e52d', brandId: 'c147d498-df8d-47e0-98c9-156bfbfdaea5', brand: { name: 'Spiral Bible', website: 'spiralbible.com', description: 'Bible journaling kits' }, nicheCategories: [{ category: 'Books & Education', emoji: 'x' }], trybeScore: '92' }
+const rd = readDirectoryItem(entry)
+check('a TRYBE entry is read by its brandId, not the entry id', !!rd && rd.brandId === 'c147d498-df8d-47e0-98c9-156bfbfdaea5')
+check('name, website, about and categories are found inside the entry', !!rd && rd.name === 'Spiral Bible' && rd.website === 'https://spiralbible.com/' && rd.about === 'Bible journaling kits' && rd.categories[0] === 'Books & Education' && rd.trybeScore === 92)
+check('a website on TRYBE itself is not a brand website', readDirectoryItem({ brandId: 'abcdef12', name: 'X', website: 'https://jointrybe.com/x' })?.website === null)
+check('an entry with no brand id is dropped', readDirectoryItem({ name: 'X' }) === null)
+const merged = mergeDirectory([{ brandId: 'abcdef12', name: 'X' }, { brandId: 'abcdef12', name: 'X', website: 'x.com' }])
+check('one brand listed twice is one brand, gaps filled', merged.length === 1 && merged[0].website === 'https://x.com/')
+const sb = { name: 'Spiral Bible', categories: ['Books & Education'], about: 'Journaling', siteText: 'faith based gifts', products: ['Bible Journaling Kit'] }
+check('a keyword in a product name matches', nicheScore(sb, [], ['bible']) > 0 && nicheScore(sb, [], ['skateboard']) === 0)
+check('a TRYBE category matches', nicheScore(sb, ['Books & Education'], []) >= 20)
+check('TRYBE category list is read by name', JSON.stringify(readCategories({ data: [{ category: 'Fashion & Apparel', emoji: 'x' }, { category: 'Beauty & Personal Care' }] })) === JSON.stringify(['Fashion & Apparel', 'Beauty & Personal Care']))
+const harvest = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('// In page: one Request to Join'))
+check('collecting the list reads TRYBE pages and never clicks anything', /\/backend\/api\/discovery\/brands\?limit=75&page=/.test(harvest) && !/\.click\(\)/.test(harvest))
+check('collecting runs in a tab behind, not in front', /url: TRYBE_DISCOVER, active: false/.test(harvest))
+check('the directory is shared, written by the server only', /action === 'directory'/.test(ROUTE) && /from\('trybe_directory'\)\.upsert/.test(ROUTE))
+check('the shortlist leaves out brands already on the list', /\.filter\(r => !have\.has\(r\.brand_id\)\)/.test(ROUTE))
+check('websites are read in the background', /researchBrandSite/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
 
 if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
 console.log('trybe-outreach: all checks passed')

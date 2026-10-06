@@ -1060,6 +1060,21 @@ export async function requestTrybeScan(knownNames: string[], max: number, keywor
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
+export interface TrybeHarvestResult {
+  ok: boolean; error?: string | null
+  pages?: number; totalPages?: number | null; total?: number | null
+  /** TRYBE's entries as it wrote them; MVP's server reads the fields. */
+  items?: unknown[]
+  categories?: unknown
+}
+
+/** SCOUT 1.41.2+: every brand on TRYBE, page by page from TRYBE's own list,
+ *  in a background tab. Nothing is pressed or sent. */
+export async function requestTrybeHarvest(maxPages = 120): Promise<TrybeHarvestResult> {
+  const res = await sendToExtension<TrybeHarvestResult>({ type: 'MVP_TRYBE_HARVEST', maxPages }, 600_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
 export interface TrybeSendResult { outcome: 'sent' | 'already' | 'failed' | 'unconfirmed'; error?: string | null; steps?: string[] }
 
 /** SCOUT presses Request to Join for one brand with this message. A missing

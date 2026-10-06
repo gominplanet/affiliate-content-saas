@@ -81,6 +81,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/trybe-directory",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/refresh-deal-radar",
       "schedule": "0 */6 * * *"
     },

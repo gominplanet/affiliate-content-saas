@@ -6,6 +6,8 @@
 //   POST {action:'settings'}  core message, daily cap, categories, keywords
 //   POST {action:'match'}     judge found brands against the niche (website read)
 //   POST {action:'found'}     a day's find ran (the daily find waits a day)
+//   POST {action:'directory'} TRYBE's whole brand list, as SCOUT read it (shared)
+//   POST {action:'shortlist'} brands in MVP's directory that match the niche
 //   POST {action:'import'}    brands SCOUT read from TRYBE's Discover Brands
 //   POST {action:'draft'}     research each brand's website, write its message
 //   POST {action:'edit'|'skip'|'unskip'|'reset'}
@@ -28,6 +30,7 @@ import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { getWorkedWithBrands } from '@/lib/creator-brands'
 import { brandKey } from '@/lib/brand-normalize'
 import { researchBrandSite } from '@/lib/trybe-research'
+import { mergeDirectory, directorySearchText, nicheScore, readCategories } from '@/lib/trybe-directory'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -101,7 +104,29 @@ export async function GET() {
   let worked = new Map<string, unknown>()
   try { worked = await getWorkedWithBrands(supabase as Db, ownerId) } catch { /* best-effort */ }
   const brands = ((rows.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))) }))
-  return NextResponse.json({ ok: true, settings, usedToday: used, brands })
+  return NextResponse.json({ ok: true, settings, usedToday: used, brands, directory: await directoryStats(admin) })
+}
+
+/** How complete MVP's copy of TRYBE is. Null before migration 417. */
+async function directoryStats(admin: Db) {
+  try {
+    const head = { count: 'exact' as const, head: true }
+    const [all, withSite, read, last, meta] = await Promise.all([
+      admin.from('trybe_directory').select('brand_id', head),
+      admin.from('trybe_directory').select('brand_id', head).not('website', 'is', null),
+      admin.from('trybe_directory').select('brand_id', head).not('site_text', 'is', null),
+      admin.from('trybe_directory').select('last_seen_at').order('last_seen_at', { ascending: false }).limit(1),
+      admin.from('trybe_directory_meta').select('value').eq('key', 'categories').maybeSingle(),
+    ])
+    if (all.error) return null
+    return {
+      brands: all.count ?? 0,
+      withWebsite: withSite.count ?? 0,
+      websitesRead: read.count ?? 0,
+      lastCollectedAt: (last.data?.[0]?.last_seen_at as string | undefined) ?? null,
+      categories: Array.isArray(meta.data?.value) ? (meta.data.value as string[]) : [],
+    }
+  } catch { return null }
 }
 
 async function writerFacts(admin: Db, ownerId: string): Promise<string[]> {
@@ -151,6 +176,82 @@ export async function POST(request: Request) {
     const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, last_find_at: now, updated_at: now })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, lastFindAt: now })
+  }
+
+  if (action === 'directory') {
+    // TRYBE's own brand list, as SCOUT read it page by page from the
+    // creator's TRYBE tab. Shared: kept once for every member. Only what TRYBE
+    // says about the brand is written; what MVP read from its website stays.
+    const items = Array.isArray(body.items) ? (body.items as unknown[]).slice(0, 800) : []
+    const list = mergeDirectory(items)
+    if (Array.isArray(body.categories)) {
+      const cats = readCategories(body.categories)
+      if (cats.length) await admin.from('trybe_directory_meta').upsert({ key: 'categories', value: cats, updated_at: now })
+    }
+    if (!list.length) {
+      const keys = items.length && items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : []
+      return NextResponse.json({ ok: true, saved: 0, withWebsite: 0, received: items.length, keys })
+    }
+    const rows = list.map(b => ({
+      brand_id: b.brandId, name: b.name, website: b.website, categories: b.categories, about: b.about,
+      pay_text: b.payText, trybe_score: b.trybeScore == null ? null : Math.round(b.trybeScore),
+      total_creators: b.totalCreators == null ? null : Math.round(b.totalCreators), rating: b.rating,
+      raw: b.raw, search_text: directorySearchText(b), last_seen_at: now,
+    }))
+    const { error } = await admin.from('trybe_directory').upsert(rows, { onConflict: 'brand_id' })
+    if (error) {
+      const missing = /does not exist|schema cache/i.test(error.message)
+      return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
+    }
+    return NextResponse.json({
+      ok: true, saved: rows.length, withWebsite: list.filter(b => b.website).length, received: items.length,
+      keys: items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : [],
+    })
+  }
+
+  if (action === 'shortlist') {
+    // MVP'S OWN SEARCH. The niche is matched against MVP's copy of every
+    // TRYBE brand: name, TRYBE description and categories, and the brand's
+    // own website text and products where they have been read. The best are
+    // put on the creator's list for the fit check; brands already on it (sent,
+    // skipped, judged) are left out.
+    const settings = await readSettings(admin, ownerId)
+    const want = Math.max(1, Math.min(60, Number(body.limit) || 40))
+    const terms = [...settings.keywords, ...settings.categories].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
+    const { data: mine } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).limit(10000)
+    const have = new Set(((mine || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
+    let q = admin.from('trybe_directory')
+      .select('brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_summary, site_products, site_text, site_error, site_fetched_at')
+      .limit(3000)
+    // Each term's words, anywhere in what TRYBE or the website says. Letters,
+    // digits and spaces only, so nothing in a term can break the filter.
+    const words = Array.from(new Set(terms.flatMap(t => [/^[a-z0-9 ]+$/.test(t) ? t : '', ...t.split(/[^a-z0-9]+/).filter(w => w.length > 3)]).filter(Boolean)))
+    if (words.length) {
+      q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+    } else {
+      q = q.order('trybe_score', { ascending: false, nullsFirst: false })
+    }
+    const { data: cands, error } = await q
+    if (error) {
+      const missing = /does not exist|schema cache/i.test(error.message)
+      return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
+    }
+    const scored = ((cands || []) as Array<Record<string, any>>) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .filter(r => !have.has(r.brand_id))
+      .map(r => ({ r, score: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, settings.categories, settings.keywords) : (r.trybe_score ?? 0) }))
+      .filter(x => !terms.length || x.score > 0)
+      .sort((a, b) => b.score - a.score || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
+    const pick = scored.slice(0, want)
+    if (pick.length) {
+      const { error: insErr } = await admin.from('trybe_brands').upsert(pick.map(({ r }) => ({
+        user_id: ownerId, brand_id: r.brand_id, name: r.name, categories: r.categories || [], website: r.website,
+        about: r.about, pay_text: r.pay_text, rating: r.rating, trybe_score: r.trybe_score, total_creators: r.total_creators,
+        site_summary: r.site_summary, site_products: r.site_products || [], site_error: r.site_error, site_fetched_at: r.site_fetched_at,
+        status: 'new', updated_at: now,
+      })), { onConflict: 'user_id,brand_id', ignoreDuplicates: true })
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, matched: scored.length, added: pick.length, searched: terms.length ? (cands || []).length : null })
   }
 
   if (action === 'match') {

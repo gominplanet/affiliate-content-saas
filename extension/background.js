@@ -12339,6 +12339,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_HARVEST') {
+    // 1.41.2: every brand on TRYBE from its own list, for MVP's directory.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 590000)
+    trybeHarvest({ maxPages: msg.maxPages }, sender && sender.tab ? sender.tab.id : null)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_SEND') {
     // Past the press, a late answer is 'unconfirmed', never 'failed'.
     const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 110000)
@@ -14096,6 +14104,122 @@ async function trybeScan({ knownNames, max, keywords, categories }, callerTabId)
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     await trybeBackTo(callerTabId)
+    stopKeepAlive(ka)
+  }
+}
+
+// ── THE WHOLE LIST (1.41.2) ──────────────────────────────────────────────────
+// TRYBE's own search does not find brands by what they sell, so MVP keeps its
+// own copy of every brand and searches that. TRYBE's Discover page loads its
+// list from /backend/api/discovery/brands, 75 a page; SCOUT asks for each page
+// from inside the creator's own signed-in TRYBE tab, with the same sign-in the
+// page uses, a short pause between pages. It hands MVP the entries as TRYBE
+// wrote them; MVP's server reads the fields. Nothing is pressed or sent.
+
+// In page: the sign-in TRYBE's own requests carry, from where its sign-in
+// library keeps it (local storage, or cookies, possibly split in parts).
+function trybeTokenInPage() {
+  const fromValue = (v) => {
+    try {
+      let s = String(v || '')
+      if (s.startsWith('base64-')) s = atob(s.slice(7))
+      const o = JSON.parse(s)
+      return (o && (o.access_token || (o.currentSession && o.currentSession.access_token))) || (Array.isArray(o) && typeof o[0] === 'string' ? o[0] : null)
+    } catch (e) { return null }
+  }
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (/^sb-.+-auth-token$/.test(k || '')) { const t = fromValue(localStorage.getItem(k)); if (t) return t }
+    }
+  } catch (e) {}
+  const parts = {}
+  for (const c of String(document.cookie || '').split('; ')) {
+    const eq = c.indexOf('=')
+    const k = c.slice(0, eq), v = c.slice(eq + 1)
+    const m = k.match(/^(sb-.+-auth-token)(?:\.(\d+))?$/)
+    if (m) { (parts[m[1]] = parts[m[1]] || [])[Number(m[2] || 0)] = decodeURIComponent(v) }
+  }
+  for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) return t }
+  return null
+}
+
+async function trybeHarvestInPage(maxPages) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const max = Math.max(1, Math.min(200, Number(maxPages) || 120))
+  let token = trybeTokenInPage()
+  // Not readable from the page (an httpOnly cookie): catch it on the page's
+  // own next request instead, by scrolling the list so it asks for more.
+  if (!token) {
+    const realFetch = window.fetch
+    window.fetch = function (input, init) {
+      try {
+        const h = init && init.headers
+        const a = h && (typeof h.get === 'function' ? h.get('authorization') : (h.authorization || h.Authorization))
+        if (a && /^Bearer /i.test(a)) token = a.replace(/^Bearer /i, '')
+      } catch (e) {}
+      return realFetch.apply(this, arguments)
+    }
+    for (let i = 0; i < 12 && !token; i++) {
+      window.scrollTo(0, document.body.scrollHeight)
+      for (const el of Array.from(document.querySelectorAll('*'))) if (el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) el.scrollTop = el.scrollHeight
+      await sleep(800)
+    }
+    window.fetch = realFetch
+  }
+  const get = async (path) => {
+    const r = await fetch(path, { credentials: 'include', headers: token ? { authorization: 'Bearer ' + token, accept: 'application/json' } : { accept: 'application/json' } })
+    if (r.status === 401 || r.status === 403) {
+      const again = trybeTokenInPage()
+      if (again && again !== token) { token = again; return get(path) }
+      return { status: r.status, json: null }
+    }
+    return { status: r.status, json: r.ok ? await r.json().catch(() => null) : null }
+  }
+  const items = []
+  let totalPages = null, total = null, pages = 0, error = null
+  for (let p = 1; p <= max; p++) {
+    let res
+    try { res = await get('/backend/api/discovery/brands?limit=75&page=' + p) } catch (e) { error = 'fetch-failed'; break }
+    if (!res.json) { error = res.status === 401 || res.status === 403 ? 'not-signed-in' : 'status-' + res.status; break }
+    const j = res.json
+    const list = Array.isArray(j) ? j : (Array.isArray(j.data) ? j.data : Array.isArray(j.brands) ? j.brands : Array.isArray(j.items) ? j.items : [])
+    pages = p
+    for (const it of list) items.push(it)
+    const pg = j && j.pagination
+    if (pg) { totalPages = Number(pg.totalPages) || totalPages; total = Number(pg.total) || total }
+    if (!list.length || (totalPages && p >= totalPages)) break
+    await sleep(450 + Math.round(Math.random() * 650))
+  }
+  // TRYBE's own category list, for MVP's category chips. Best-effort.
+  let categories = null
+  for (const path of ['/backend/api/discovery/niche-categories', '/backend/api/niche-categories']) {
+    try { const c = await get(path); if (c.json) { categories = c.json; break } } catch (e) {}
+  }
+  return { ok: items.length > 0, error: items.length ? null : (error || 'no-brands'), pages, totalPages, total, items, categories, signedIn: !!token }
+}
+
+async function trybeHarvest({ maxPages }, callerTabId) {
+  if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+  const ka = startKeepAlive()
+  let tabId = null
+  try {
+    // Behind, not in front: this only reads TRYBE's data, nothing on screen.
+    const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    let state = 'loading'
+    for (let i = 0; i < 20 && state === 'loading'; i++) {
+      await _sleep(750)
+      state = await trybeRun(trybePageStateInPage, [], tabId)
+    }
+    if (state === 'signin') return { ok: false, error: 'not-signed-in' }
+    const res = await trybeRun(trybeHarvestInPage, [maxPages], tabId)
+    return res || { ok: false, error: 'no-answer-from-page' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     stopKeepAlive(ka)
   }
 }
