@@ -817,12 +817,16 @@ export default function LaunchBoard() {
         // goes public depends on it.
         body: JSON.stringify({ timezone: tz }),
       })
-      const j = await r.json()
+      // A timed-out reply is an HTML page, not JSON. It used to throw here and
+      // the button just came back with nothing said.
+      const j = await r.json().catch(() => ({}))
       if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start a batch.'); return }
       // A NEW BATCH IS A NEW PAGE, so it may point at step one.
       showBatch(j.id)
       await refreshBatches()
       await load(j.id)
+    } catch {
+      toast.error('Could not reach the server. Try again.')
     } finally { setBusy(null) }
   }
 
@@ -1314,6 +1318,11 @@ export default function LaunchBoard() {
         )
       }
       await load(batchId)
+    } catch {
+      // The request may still have reached the server, so this does not say
+      // it failed; the board is read again to show what actually happened.
+      toast.error('Lost the connection while launching. The board below shows what went out.', { duration: 14000 })
+      void load(batchId, true)
     } finally { setBusy(null) }
   }
 
@@ -1776,7 +1785,7 @@ export default function LaunchBoard() {
             void patchBatch({ markets: cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d] })
           },
           disabled: busy === 'batch',
-          intro: 'Liftoff uploads to your US storefront only. Amazon\u2019s Global Storefront shows your US videos in the other countries\u2019 storefronts, so there is nothing to translate or dub.',
+          intro: 'Bulk Amazon upload sends to your US storefront only. Amazon\u2019s Global Storefront shows your US videos in the other countries\u2019 storefronts, so there is nothing to translate or dub.',
         })}
       </StepCard>}
 
@@ -2241,7 +2250,7 @@ export default function LaunchBoard() {
                   {!bgPref
                     ? (studioUpload ? 'Off: SCOUT only uploads to YouTube, and to Amazon, while this page is open.' : 'Off: the Studio steps and Amazon uploads only run while this page is open.')
                     : bgState?.error === 'bad-origin'
-                      ? 'SCOUT only keeps Liftoff going from mvpaffiliate.io. Open Liftoff there for this to work.'
+                      ? 'SCOUT only keeps Bulk Amazon upload going from mvpaffiliate.io. Open Bulk Amazon upload there for this to work.'
                     : bgState?.error === 'no-reply'
                       ? 'SCOUT did not answer, so nothing will run with this page closed. Update SCOUT to the latest version, then reload this page.'
                     : bgState && !bgState.hasAlarms
@@ -2249,8 +2258,8 @@ export default function LaunchBoard() {
                       : bgState?.lastRun === 'signed-out'
                         ? 'The last background run found you signed out of MVP in this browser, so it could not do anything. Stay signed in and it carries on.'
                         : studioUpload
-                          ? 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to upload your videos through Studio, post their comments and send them to Amazon, then closes it.'
-                          : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
+                          ? 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Bulk Amazon upload in a pinned background tab to upload your videos through Studio, post their comments and send them to Amazon, then closes it.'
+                          : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Bulk Amazon upload in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
                   {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${({ 'all-done': 'all done', waiting: 'more to do', 'timed-out': 'stopped answering, closed', 'tab-closed': 'its tab was closed', 'could-not-open': 'could not open a tab', 'signed-out': 'signed out', opened: 'running now', armed: 'waiting to start' } as Record<string, string>)[bgState.lastRun ?? ''] ?? bgState.lastRun})` : ''}
                 </span>
               </span>

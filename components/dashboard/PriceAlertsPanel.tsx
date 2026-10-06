@@ -131,7 +131,7 @@ export default function PriceAlertsPanel() {
                 )}
                 {a.kind === 'covered_sale' && (
                   <a href="/encore" className="inline-flex items-center gap-1 text-xs font-semibold rounded-full border px-3 py-1.5 hover:bg-accent">
-                    Open in Encore
+                    Open in On sale comments
                   </a>
                 )}
                 {a.kind === 'stale_price' ? (

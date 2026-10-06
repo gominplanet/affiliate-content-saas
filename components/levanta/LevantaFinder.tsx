@@ -144,7 +144,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
       setGen((g) => ({ ...g, [m.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
       setDone((d) => (d.includes(m.asin) ? d : [...d, m.asin]))
     } catch {
-      setGen((g) => ({ ...g, [m.asin]: { error: 'Network error during generation.' } }))
+      setGen((g) => ({ ...g, [m.asin]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 

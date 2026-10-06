@@ -567,7 +567,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               {cleaning ? 'Working…' : 'Clean up'}
             </button>
             {cleanupOpen && cleanupData && (
-              <div className="mvp-panel absolute right-0 top-full mt-2 z-50 w-[320px] rounded-xl border p-3.5 shadow-xl">
+              <div className="mvp-panel absolute right-0 top-full mt-2 z-50 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border p-3.5 shadow-xl">
                 <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Trim the EPC library</p>
                 <p className="text-[11.5px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
                   EPC cards don&rsquo;t show an end date, so we use the last time a scan saw each product. Do a full scan pass first so live products are freshly stamped, then remove the stragglers.

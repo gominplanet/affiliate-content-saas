@@ -292,8 +292,10 @@ export default function DealRadarPage() {
       const res = await fetch('/api/deal-radar/roundup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asins: [...selected] }),
       })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Could not build the roundup.'); return }
+      // A gateway timeout is an HTML page, and the roundup may still be
+      // publishing behind it, so that case says so instead of "could not".
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || (res.status >= 502 ? TIMED_OUT_POST : 'Could not build the roundup.'), { duration: 12000 }); return }
       toast.success(`Roundup post published: ${data.count} deals.`)
       setSelected(new Set())
       if (data.url) window.open(data.url, '_blank')
@@ -628,6 +630,8 @@ export default function DealRadarPage() {
 // occasion:'auto' → a "low price alert" article year-round when no event.
 // Shared by the main DealCard and the double-win TickerCard so both get the
 // same "Writing… → View post" flow.
+const TIMED_OUT_POST = 'No answer in time. The post may still be publishing, so check your blog before trying again.'
+
 function useMakePost(d: Deal) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
@@ -639,7 +643,7 @@ function useMakePost(d: Deal) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ asin: d.asin, occasion: 'auto', ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
       })
-      return { res, data: await res.json() }
+      return { res, data: await res.json().catch(() => ({})) }
     }
     try {
       let { res, data } = await submit(false)
@@ -650,7 +654,7 @@ function useMakePost(d: Deal) {
         if (!ok) { setGen('idle'); return }
         ;({ res, data } = await submit(true))
       }
-      if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
+      if (!res.ok) { toast.error(data.error || (res.status >= 502 ? TIMED_OUT_POST : 'Could not create the post.'), { duration: 12000 }); setGen('idle'); return }
       setPostUrl(data.url || null); setGen('done')
       toast.success('Deal post published.')
       // Auto-watch the product so we can alert if it hits a new low or the price

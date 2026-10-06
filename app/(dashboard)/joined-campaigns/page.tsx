@@ -193,7 +193,11 @@ export default function JoinedCampaignsPage() {
     toast.loading('Looking up the products…', { id: tId, duration: Infinity })
     try {
       const r = await fetch('/api/campaigns/scan-products', { method: 'POST' })
-      const d = await r.json() as { ok?: boolean; scanned?: number; filled?: number; remaining?: number; error?: string }
+      // A timeout answers with an HTML page; parsing it put "Unexpected token <"
+      // on screen instead of saying what happened.
+      const d = await r.json().catch(() => ({
+        error: r.status >= 502 ? 'The look-up ran out of time. Press again to carry on where it stopped.' : `Could not look them up (${r.status}).`,
+      })) as { ok?: boolean; scanned?: number; filled?: number; remaining?: number; error?: string }
       if (!d?.ok) { toast.error(d?.error || 'Could not look them up.', { id: tId, duration: 8000 }); return }
       if (!d.scanned) {
         toast.success('Every product is already looked up.', { id: tId, duration: 5000 })
@@ -219,7 +223,12 @@ export default function JoinedCampaignsPage() {
         body: JSON.stringify({ asin: row.asin, campaignName: row.product || undefined, endsAt: row.endsAt || undefined, creatorNote: creatorNote || undefined }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok || j?.error) { toast.error(j?.error || `Failed (${res.status})`, { id: tId, duration: 8000 }); return }
+      if (!res.ok || j?.error) {
+        toast.error(j?.error || (res.status >= 502
+          ? 'No answer in time. The post may still be publishing, so check your blog before trying again.'
+          : `Failed (${res.status})`), { id: tId, duration: 10000 })
+        return
+      }
       toast.success('Blog post published.', { id: tId, duration: 6000 })
       await load()
     } catch (e) {

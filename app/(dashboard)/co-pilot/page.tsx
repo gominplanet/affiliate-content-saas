@@ -4482,8 +4482,12 @@ export default function StudioPage() {
         params.set('pageToken', cursor)
         if (activeQuery) params.set('q', activeQuery)
         if (includePublished) params.set('includePublished', '1')
+        // The channel on screen. Without it, Load all on a second channel
+        // appended the default channel's videos to this one's list.
+        if (selectedChannelId) params.set('channelId', selectedChannelId)
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
-        const data = await res.json()
+        // A timeout is an HTML page; the parse used to throw with nothing said.
+        const data = await res.json().catch(() => ({}))
         if (!res.ok) {
           setError(data.error || 'Failed to load more drafts. Try Refresh.')
           break
@@ -4500,10 +4504,12 @@ export default function StudioPage() {
         setNextPageToken(cursor)
         if (!cursor) break  // exhausted — no more pages on the channel
       }
+    } catch {
+      setError('Could not reach MVP to load more videos. Press Refresh.')
     } finally {
       setLoadingMore(false)
     }
-  }, [nextPageToken, loadingMore, activeQuery, includePublished])
+  }, [nextPageToken, loadingMore, activeQuery, includePublished, selectedChannelId])
 
   /** Dig forward through the uploads list until at least one TO-DO draft
    *  surfaces (or the budget / cursor runs out). The server scan already gates
@@ -4528,7 +4534,7 @@ export default function StudioPage() {
         if (includePublished) params.set('includePublished', '1')
         if (selectedChannelId) params.set('channelId', selectedChannelId)
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
-        const data = await res.json()
+        const data = await res.json().catch(() => ({}))
         if (!res.ok) { setError(data.error || 'Failed to load more drafts. Try Refresh.'); break }
         const incoming = (data.drafts as DraftVideo[] | undefined) || []
         setDrafts(prev => {
@@ -4541,6 +4547,8 @@ export default function StudioPage() {
         if (incoming.some(v => classifyVideo(v) === 'todo')) break
         if (!cursor) break
       }
+    } catch {
+      setError('Could not reach MVP to load more videos. Press Refresh.')
     } finally {
       setLoadingMore(false)
     }

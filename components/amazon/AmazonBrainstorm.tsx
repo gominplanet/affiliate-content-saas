@@ -198,7 +198,7 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
               disabled={accepting || !camp.detailsUrl}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap disabled:opacity-60"
               style={{ backgroundColor: ACCENT }}
-              title={camp.detailsUrl ? 'Accept this campaign on Amazon via SCOUT' : 'No campaign link yet. Open it in CC Campaigns'}
+              title={camp.detailsUrl ? 'Accept this campaign on Amazon via SCOUT' : 'No campaign link yet. Open it in Brand campaigns'}
             >
               {accepting ? <><Loader2 size={13} className="animate-spin" /> Accepting…</> : <><Handshake size={13} /> Accept on Amazon</>}
             </button>

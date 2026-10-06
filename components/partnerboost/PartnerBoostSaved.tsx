@@ -69,7 +69,7 @@ export default function PartnerBoostSaved({ reloadKey }: { reloadKey: number }) 
       if (!j.ok) { setGen(g => ({ ...g, [it.id]: { error: j.error || 'Generation failed' } })); return }
       setGen(g => ({ ...g, [it.id]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
-      setGen(g => ({ ...g, [it.id]: { error: 'Network error during generation.' } }))
+      setGen(g => ({ ...g, [it.id]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 

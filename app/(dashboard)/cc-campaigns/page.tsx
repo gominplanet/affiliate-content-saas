@@ -133,7 +133,9 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j?.error) {
-        toast.error(j?.error || `Failed (${res.status})`, { id: toastId, duration: 8_000 })
+        toast.error(j?.error || (res.status >= 502
+          ? 'No answer in time. The post may still be publishing, so check your blog before trying again.'
+          : `Failed (${res.status})`), { id: toastId, duration: 10_000 })
         return
       }
       setPostUrl(j.wordpressUrl || j.url || null)
@@ -541,10 +543,13 @@ export default function CcCampaignsPage() {
     const wasSaved = savedAsins.has(asin)
     setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
     try {
+      // The reply decides, not the request: a refused save used to say
+      // "Saved" and then be missing from Saved Campaigns.
       if (wasSaved) {
-        await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+        const r = await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+        if (!r.ok) throw new Error('remove')
       } else {
-        await fetch('/api/campaigns/saved', {
+        const r = await fetch('/api/campaigns/saved', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             asin: c.repAsin, source: 'campaign', campaignId: c.campaignId, title: c.name, brand: c.brand,
@@ -552,10 +557,12 @@ export default function CcCampaignsPage() {
             rating: c.rating, hasVideo: (c.videoCount ?? 0) > 0, marketplace: 'us', detailsUrl: c.detailsUrl,
           }),
         })
+        if (!r.ok) throw new Error('save')
         toast.success('Saved to your Saved Campaigns.')
       }
     } catch {
       setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n }) // revert
+      toast.error(wasSaved ? 'Could not remove it from Saved. Try again.' : 'Could not save it. Try again.')
     }
   }, [savedAsins])
 

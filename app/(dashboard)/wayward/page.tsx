@@ -29,6 +29,13 @@ function bigImg(u: string | null): string | null {
   return u.replace(/\._[A-Z]{1,2}\d+_\./i, '._SL500_.')
 }
 
+// A reply that is not JSON (a gateway timeout is an HTML page) used to put
+// "Unexpected token <" on screen. This says what happened instead.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readReply(res: Response, timedOut = 'Wayward took too long to answer. Try again.'): Promise<any> {
+  return res.json().catch(() => ({ ok: false, error: res.status >= 502 ? timedOut : `The server answered ${res.status}. Try again.` }))
+}
+
 export default function WaywardPage() {
   const [loading, setLoading] = useState(true)
   const [needsToken, setNeedsToken] = useState(false)
@@ -58,7 +65,7 @@ export default function WaywardPage() {
       if (asinFilter.trim()) qs.set('asin', asinFilter.trim())
       if (brandId) qs.set('brandId', brandId)
       const res = await fetch(`/api/wayward/products?${qs.toString()}`)
-      const data = await res.json()
+      const data = await readReply(res)
       if (data.needsToken) { setNeedsToken(true); setProducts([]); return }
       if (!data.ok) throw new Error(data.error || 'Failed to load')
       setNeedsToken(false)
@@ -112,7 +119,7 @@ export default function WaywardPage() {
         // eslint-disable-next-line no-await-in-loop
         const res = await fetch(`/api/wayward/products?${qs.toString()}`)
         // eslint-disable-next-line no-await-in-loop
-        const data = await res.json()
+        const data = await readReply(res)
         if (data.needsToken) { setNeedsToken(true); setProducts([]); return }
         if (!data.ok) throw new Error(data.error || 'Search failed')
         totalPagesLocal = data.totalPages || 1
@@ -141,7 +148,7 @@ export default function WaywardPage() {
     setLinking(p.asin)
     try {
       const res = await fetch('/api/wayward/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name }) })
-      const data = await res.json()
+      const data = await readReply(res)
       if (!data.ok) throw new Error(data.error || 'Could not generate link')
       setLinks(prev => ({ ...prev, [p.asin]: data.url }))
       try { await navigator.clipboard.writeText(data.url) } catch { /* ignore */ }
@@ -152,11 +159,14 @@ export default function WaywardPage() {
   async function toggleSave(p: Product) {
     const isSaved = savedAsins.has(p.asin); setSavingAsin(p.asin)
     try {
+      // The reply decides: a refused save used to say "Saved" anyway.
       if (isSaved) {
-        await fetch(`/api/wayward/saved?asin=${encodeURIComponent(p.asin)}`, { method: 'DELETE' })
+        const r = await fetch(`/api/wayward/saved?asin=${encodeURIComponent(p.asin)}`, { method: 'DELETE' })
+        if (!r.ok) throw new Error()
         setSavedAsins(prev => { const n = new Set(prev); n.delete(p.asin); return n })
       } else {
-        await fetch('/api/wayward/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }) })
+        const r = await fetch('/api/wayward/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }) })
+        if (!r.ok) throw new Error()
         setSavedAsins(prev => new Set(prev).add(p.asin))
         toast.success('Saved to Saved Campaigns')
       }
@@ -168,7 +178,7 @@ export default function WaywardPage() {
     toast.loading('Writing & publishing…', { id: `gen-${p.asin}` })
     try {
       const res = await fetchUnlessMade('/api/wayward/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }) })
-      const data = await res.json()
+      const data = await readReply(res, 'No answer in time. The post may still be publishing, so check your blog before trying again.')
       if (!data.ok) throw new Error(data.error || 'Generation failed')
       toast.success('Post published', { id: `gen-${p.asin}`, action: data.wordpressUrl ? { label: 'View', onClick: () => window.open(data.wordpressUrl, '_blank') } : undefined })
       return true

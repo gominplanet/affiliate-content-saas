@@ -41,10 +41,10 @@ export function AmzFinderGuide() {
         { icon: <BarChart3 size={18} />, title: 'Check the data first', body: <>Each card shows the price, rating, reviews, monthly sales and best-seller rank where Amazon has them. Tap <strong>Data</strong> for the deep dive: price against its typical and all-time low, recent sales, carousel videos, and seller details, with a <strong>Write review</strong> button at the end.</> },
         { icon: <PenLine size={18} />, title: 'Write a review in one click', body: <><strong>Write review</strong> researches the product, writes a full review in your voice, and publishes it to your WordPress with your affiliate link. When it finishes, the button turns into <strong>View review</strong>.</> },
         { icon: <ShoppingCart size={18} />, title: 'Buy to review vs your affiliate link', body: <>The green <strong>cart</strong> button is a plain Amazon link with no tag, for buying the product yourself (you cannot earn commission on your own purchase). Every other product link carries your own Associates tag, which you set once in <strong>Brand Profile</strong>.</> },
-        { icon: <Bookmark size={18} />, title: 'Save for later', body: <>Hit <strong>Save</strong> and the product lands on your <strong>Saved for later</strong> shelf below, your buy-to-review shortlist. From there you can <strong>Buy to review</strong> or <strong>Remove</strong> it; items you saved from CC Campaigns also get <strong>Message brand</strong>.</> },
+        { icon: <Bookmark size={18} />, title: 'Save for later', body: <>Hit <strong>Save</strong> and the product lands on your <strong>Saved for later</strong> shelf below, your buy-to-review shortlist. From there you can <strong>Buy to review</strong> or <strong>Remove</strong> it; items you saved from Brand campaigns also get <strong>Message brand</strong>.</> },
         { icon: <Lightbulb size={18} />, title: 'Made for your channel', body: <>When MVP has matches for you, a <strong>Made for your channel</strong> strip sits above the search. Open it to see products matched to what already earns for you, each with the reasons it matched. Until your storefront earnings sync, it shows <strong>Trending picks to try</strong> instead.</> },
       ]}
-      footerNote={<><strong className="text-foreground">Looking for Creator Connections campaigns?</strong> They have their own <strong className="text-foreground">CC Campaigns</strong> page under Research.</>}
+      footerNote={<><strong className="text-foreground">Looking for Creator Connections campaigns?</strong> They have their own <strong className="text-foreground">Brand campaigns</strong> page under Research.</>}
     />
   )
 }
@@ -348,7 +348,7 @@ export function FaceModelsGuide() {
         { icon: <Users size={18} />, title: 'How many faces you can keep', body: <>Faces are included on paid plans, and your plan sets how many you can keep, shown next to <strong>Your faces</strong>. You can add more photos to an existing face at any time, up to 20.</> },
         { icon: <Shirt size={18} />, title: 'Pin an outfit', body: <>Set <strong>Outfit in thumbnails</strong> on a face (for example, a white lab coat) and every thumbnail puts you in it. Leave it blank to let MVP vary your outfit.</> },
         { icon: <Youtube size={18} />, title: 'Where your face is used', body: <>Pick a face in YouTube Co-Pilot under <strong>Who’s in this video?</strong>, in <strong>Thumbnails</strong>, in Bulk Amazon upload, and in Instagram and Pinterest image posts. Co-Pilot and Thumbnails also offer a product-only option.</> },
-        { icon: <Rocket size={18} />, title: 'A face per video in Liftoff', body: <>Liftoff sets one face for the whole batch. With two or more faces saved, each upload also asks <strong>Who’s in this video?</strong> so every video gets the right presenter, and any you leave unanswered use the batch’s face.</> },
+        { icon: <Rocket size={18} />, title: 'A face per video in Bulk Amazon upload', body: <>Bulk Amazon upload sets one face for the whole batch. With two or more faces saved, each upload also asks <strong>Who’s in this video?</strong> so every video gets the right presenter, and any you leave unanswered use the batch’s face.</> },
         { icon: <ImageIcon size={18} />, title: 'Photobooth headshots', body: <>Pick a face, a look (Studio, Office, LinkedIn, Magazine, Cinematic or Outdoor), an expression and a shape, then generate a studio quality headshot for your profiles. Each one takes 1 to 3 minutes, and the page shows how many you have left this month.</> },
         { icon: <Trash2 size={18} />, title: 'Deleting a face', body: <>Deleting a face never changes thumbnails or posts that are already made. It removes the uploaded photos, so that face cannot be used on anything new until you add it again.</> },
       ]}
@@ -490,7 +490,7 @@ export function CollaborationsGuide() {
       version={2}
       accent="#60A5FA"
       icon={<Handshake size={20} />}
-      title="Your guide to Brand Deals"
+      title="Your guide to Brand pitches"
       subtitle="MVP researches the brand and writes a pitch email that sells your work."
       sections={[
         { icon: <Handshake size={18} />, title: 'Start with the brand', body: <>Enter the <strong>Brand name</strong> (the only required field), plus the brand&rsquo;s website and the product name or ASIN if you have them. Give an ASIN and MVP looks the product up so the email can name it and point out a feature or two.</> },
@@ -656,7 +656,7 @@ export function BrandInquiriesGuide() {
         { icon: <ShieldCheck size={18} />, title: 'Save pushes it live', body: <><strong>Save banner settings</strong> updates your blog. If the push to WordPress fails, you get a warning instead of the success message, so check your WordPress connection. The banner needs either a link or the form turned on, otherwise it has nowhere to send brands.</> },
         { icon: <Inbox size={18} />, title: 'Messages land here', body: <>Form messages appear under <strong>Messages</strong> with the brand, contact, date and the blog page they wrote from. New ones have a purple edge, and <strong>Brand Inquiries</strong> in the menu shows an unread count until you open this page.</> },
         { icon: <Mail size={18} />, title: 'Reply or archive', body: <>When the brand left an email, <strong>Reply</strong> opens your email app already addressed to them. <strong>Archive</strong> clears a message from the list once you are done.</> },
-        { icon: <Handshake size={18} />, title: 'Turn interest into deals', body: <>These are warm leads: brands that found you and want to work with you. Reply, agree on terms, and cover their product; use <strong>Brand Deals</strong> when you want MVP to help write the pitch.</> },
+        { icon: <Handshake size={18} />, title: 'Turn interest into deals', body: <>These are warm leads: brands that found you and want to work with you. Reply, agree on terms, and cover their product; use <strong>Brand pitches</strong> when you want MVP to help write the pitch.</> },
       ]}
     />
   )
@@ -692,17 +692,17 @@ export function LiftoffGuide() {
       version={1}
       accent="#0EA5A4"
       icon={<Rocket size={20} />}
-      title="Your guide to Liftoff"
+      title="Your guide to Bulk Amazon upload"
       subtitle="Up to ten videos, set up once, launched to YouTube and Amazon."
       sections={[
         { icon: <Upload size={18} />, title: 'Add up to 10 videos', body: <>In <strong>Add your videos</strong>, pick up to 10 files at once, each under 500MB. Every file gets its own bar showing MB sent, speed and time left, and one that stalls starts again by itself; keep the tab open until they finish. If a file name contains the product’s ASIN (like Ninja Crispi B0DDDD8WD6.mp4), the product is filled in for you.</> },
         { icon: <UserSquare size={18} />, title: 'Who’s in this video?', body: <>With two or more faces saved in Face Models, each upload asks <strong>Who’s in this video?</strong> beside its bar, so the right presenter goes on its thumbnail. Anything you leave unanswered uses the face chosen for the batch.</> },
         { icon: <MousePointerClick size={18} />, title: 'Choose the CTA and thumbnail look', body: <>Pick one CTA design, one of nine spots, a size, and when it shows (<strong>Early, for 10s</strong> or <strong>Last 8 seconds</strong>), or choose <strong>No CTA on these</strong>. For thumbnails, choose who is on them, one or more looks (<strong>Mix it up</strong> varies them) and the badge. Every video gets one, used on YouTube and in every Amazon country.</> },
-        { icon: <Globe size={18} />, title: 'Amazon: your US storefront', body: <>Liftoff sends each video to your <strong>US</strong> storefront. Amazon&rsquo;s Global Storefront shows your US videos in the other countries&rsquo; storefronts, so there is nothing to translate or dub. MVP checks the product is sold in the US before the upload, and says so on the card when it is not.</> },
+        { icon: <Globe size={18} />, title: 'Amazon: your US storefront', body: <>Bulk Amazon upload sends each video to your <strong>US</strong> storefront. Amazon&rsquo;s Global Storefront shows your US videos in the other countries&rsquo; storefronts, so there is nothing to translate or dub. MVP checks the product is sold in the US before the upload, and says so on the card when it is not.</> },
         { icon: <Tag size={18} />, title: 'Set each product', body: <>Paste the ASIN or Amazon link for each video. Each has its own <strong>Title for YouTube</strong> and <strong>Title for Amazon</strong>, both with <strong>Write it for me</strong>; leave the Amazon title empty and MVP writes one, and other countries get it translated. The arrows on each row set the order the videos go out in.</> },
         { icon: <Clock size={18} />, title: 'Schedule, check the channel, launch', body: <>Choose <strong>YouTube and Amazon</strong> or <strong>Amazon only</strong>, then give each video its own date and time, or let the daily pattern fill the rest; <strong>Notify subscribers</strong> stays off unless you turn it on. Above the <strong>Launch</strong> button, MVP asks YouTube which channel your login uploads to, and you confirm it with <strong>Yes, upload here</strong>.</> },
         { icon: <Youtube size={18} />, title: 'What happens on YouTube', body: <>On MVP’s servers, with the tab closed, each video gets its CTA burned in, both thumbnails built, and a description written with your affiliate link. It is uploaded private with paid promotion set through YouTube and read back, gets its thumbnail and your playlist, and goes public at its time. SCOUT then does the Studio steps you ticked (monetization, ad rating, end screen). Product tags are yours to add in Studio while Chrome is open.</> },
-        { icon: <Store size={18} />, title: 'What happens on Amazon', body: <>Amazon does not follow the YouTube schedule: once a video is launched (in two-part Liftoff, once you press <strong>Start Amazon</strong>), MVP checks the product is sold in the US and SCOUT uploads your original video, without the CTA, to your US storefront through your own signed-in Creator account, from the Liftoff page or a background tab while Chrome is open.</> },
+        { icon: <Store size={18} />, title: 'What happens on Amazon', body: <>Amazon does not follow the YouTube schedule: once a video is launched (in a two-part batch, once you press <strong>Start Amazon</strong>), MVP checks the product is sold in the US and SCOUT uploads your original video, without the CTA, to your US storefront through your own signed-in Creator account, from the Liftoff page or a background tab while Chrome is open.</> },
       ]}
       footerNote={<><strong className="text-foreground">The report shows what happened, not what was planned.</strong> After launch, every video’s YouTube and Amazon results come from what came back, and a stopped row says why, with <strong>Try again</strong> to put it back in the queue.</>}
     />
@@ -717,11 +717,11 @@ export function PinnedCommentsGuide() {
       version={1}
       accent="#0EA5A4"
       icon={<Pin size={20} />}
-      title="Your guide to Pinned Comments"
+      title="Your guide to Pinned comments"
       subtitle="A comment from your channel with the product link, pinned to the top of every video."
       sections={[
         { icon: <Pin size={18} />, title: 'What it is', body: <>On a phone, a video&apos;s description sits folded away; the pinned comment is the first thing people read under the video. MVP writes one from your video&apos;s title and the product link in its description, marks the link <strong>(paid link)</strong> as the FTC asks, posts it from your channel and pins it.</> },
-        { icon: <Rocket size={18} />, title: 'New videos get one automatically', body: <>Every video <strong>YouTube Co-Pilot</strong> or <strong>Liftoff</strong> uploads gets its pinned comment when it goes public. Nothing to set. SCOUT does the pinning, because YouTube only lets a person pin, so keep Chrome open with MVP in a tab.</> },
+        { icon: <Rocket size={18} />, title: 'New videos get one automatically', body: <>Every video <strong>YouTube Co-Pilot</strong> or <strong>Bulk Amazon upload</strong> sends gets its pinned comment when it goes public. Nothing to set. SCOUT does the pinning, because YouTube only lets a person pin, so keep Chrome open with MVP in a tab.</> },
         { icon: <ListChecks size={18} />, title: 'Older videos: tick and press', body: <>This page lists your channel&apos;s videos with what each has: <strong>Pinned</strong>, <strong>Posted, not pinned</strong> (and why), <strong>Waiting until the video is public</strong>, or none. Tick <strong>Only videos without one</strong>, then <strong>Select all shown</strong>, and press <strong>Post and pin</strong>. Videos go one at a time and each row says what happened.</> },
         { icon: <RefreshCw size={18} />, title: 'Posted but not pinned', body: <>If SCOUT could not pin one (Chrome closed, signed out of YouTube), <strong>Pin the ones not pinned</strong> button (it shows how many) tries again without posting a second comment.</> },
         { icon: <Clock size={18} />, title: 'Good to know', body: <>Pinning replaces a comment you pinned yourself on that video. YouTube allows roughly 190 comments a day; when that runs out the run stops and says so, and you carry on tomorrow. A video with no product link in its description gets a comment without a link. <strong>Encore</strong> edits the pinned comment when that product goes on sale.</> },

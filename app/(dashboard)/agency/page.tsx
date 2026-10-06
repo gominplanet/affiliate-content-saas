@@ -159,7 +159,7 @@ export default function AgencyPage() {
           permissions,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         toast.error(data.error || 'Failed to send invite')
         return
@@ -168,6 +168,8 @@ export default function AgencyPage() {
       setEmail(''); setRole('member'); setNote('')
       setPermissions({ ...DEFAULT_VA_PERMISSIONS })
       void refresh()
+    } catch {
+      toast.error('Could not reach the server. The invite was not sent.')
     } finally {
       setInviting(false)
     }
@@ -180,8 +182,8 @@ export default function AgencyPage() {
       confirmLabel: 'Cancel invite',
       destructive: true,
     }))) return
-    const res = await fetch(`/api/agency/invites/${id}`, { method: 'DELETE' })
-    if (!res.ok) {
+    const res = await fetch(`/api/agency/invites/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) {
       toast.error('Failed to cancel invite')
       return
     }
@@ -196,8 +198,8 @@ export default function AgencyPage() {
       confirmLabel: 'Revoke access',
       destructive: true,
     }))) return
-    const res = await fetch(`/api/agency/members/${id}`, { method: 'DELETE' })
-    if (!res.ok) {
+    const res = await fetch(`/api/agency/members/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) {
       toast.error('Failed to revoke access')
       return
     }
@@ -223,7 +225,7 @@ export default function AgencyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: memberDraftPerms }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         toast.error(data.error || 'Failed to update permissions')
         return
@@ -232,6 +234,8 @@ export default function AgencyPage() {
       setEditingMemberId(null)
       setMemberDraftPerms(null)
       void refresh()
+    } catch {
+      toast.error('Could not reach the server. Permissions were not changed.')
     } finally {
       setSavingMember(false)
     }

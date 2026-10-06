@@ -207,8 +207,9 @@ export default function BillingPage() {
     setPortalLoading(true)
     try {
       const res = await fetch('/api/stripe/portal', { method: 'POST' })
-      const { url, error } = await res.json()
-      if (error) { toast.error(error); return }
+      const { url, error } = await res.json().catch(() => ({} as { url?: string; error?: string }))
+      // No url and no error used to send the browser to /undefined.
+      if (error || !url) { toast.error(error || 'The billing portal did not open. Try again.'); return }
       window.location.href = url
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPortalLoading(false) }
@@ -281,7 +282,11 @@ export default function BillingPage() {
       }
       if (url) { window.location.href = url; return }
       toast.error('Something went wrong. Please try again.')
-    } catch { toast.error('Something went wrong. Please try again.') }
+    } catch {
+      // A timed-out reply may still have switched the plan, so a blind retry
+      // could change it twice. Say what to check first.
+      toast.error('Billing did not answer in time. Refresh this page to see your current plan before trying again.', { duration: 10_000 })
+    }
     finally { setCheckoutLoading(null) }
   }
 

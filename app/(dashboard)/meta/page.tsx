@@ -150,8 +150,9 @@ function MetaHub() {
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/facebook/setup', { cache: 'no-store' })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d.error || `Could not load (${r.status})`)
+      // A timeout is an HTML page; parsing it put "Unexpected token <" on screen.
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || (r.status >= 502 ? 'Your Facebook setup took too long to load. Refresh in a moment.' : `Could not load (${r.status})`))
       setS(d as Setup)
       setLoadError(null)
     } catch (e) { setLoadError(e instanceof Error ? e.message : 'Could not load your Facebook setup') }

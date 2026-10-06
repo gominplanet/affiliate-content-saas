@@ -72,7 +72,7 @@ export default function RecapPage() {
         )}
         {nothing && (
           <p className="text-[13.5px] rounded-xl border px-4 py-4" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-            Nothing went out this week. A video, a post or a Liftoff batch next week will show up here.
+            Nothing went out this week. A video, a post or a Bulk Amazon upload batch next week will show up here.
           </p>
         )}
 
@@ -82,8 +82,8 @@ export default function RecapPage() {
           <Tile label="Social posts sent" value={data.social?.sent} sub={data.social?.failed ? `${data.social.failed} failed` : undefined} warn={!!data.social?.failed} />
           <Tile label="Videos on Amazon" value={data.amazonVideos} />
           <Tile label="Passport clicks" value={data.clicks?.count} sub={data.clicks ? change(data.clicks.count, data.clicks.previous) : undefined} />
-          <Tile label="First comments posted" value={data.pinnedComments} />
-          <Tile label="Encore sale comments" value={data.encoreComments} />
+          <Tile label="Pinned comments posted" value={data.pinnedComments} />
+          <Tile label="On sale comments" value={data.encoreComments} />
           <Tile label="Reviews updated" value={data.postUpdates} />
         </div>
 

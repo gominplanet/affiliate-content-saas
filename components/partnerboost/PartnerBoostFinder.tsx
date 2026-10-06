@@ -157,7 +157,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
       if (!j.ok) { setGen((g) => ({ ...g, [m.key]: { error: j.error || 'Generation failed' } })); return }
       setGen((g) => ({ ...g, [m.key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
-      setGen((g) => ({ ...g, [m.key]: { error: 'Network error during generation.' } }))
+      setGen((g) => ({ ...g, [m.key]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 

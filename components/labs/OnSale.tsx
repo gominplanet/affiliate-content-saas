@@ -150,7 +150,7 @@ function CopyBlock({ title, text, children }: { title: string; text: string; chi
     <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{title}</span>
-        <button type="button" onClick={() => { void navigator.clipboard.writeText(text); toast.success('Copied') }}
+        <button type="button" onClick={() => { navigator.clipboard.writeText(text).then(() => toast.success('Copied'), () => toast.error('Could not copy. Select the text and copy it by hand.')) }}
           className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
           <Copy size={11} /> Copy
         </button>
@@ -294,7 +294,7 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare, selectable,
                   {v.views != null && <span style={{ color: 'var(--text-faint)' }}> · {v.views.toLocaleString()} views</span>}
                   {v.isShort === true && (
                     <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(220,38,38,0.1)', color: '#DC2626' }}
-                      title="Links in Shorts comments are not clickable, so Encore does not comment on Shorts">
+                      title="Links in Shorts comments are not clickable, so On sale comments does not comment on Shorts">
                       Short
                     </span>
                   )}
@@ -603,7 +603,7 @@ export default function OnSale() {
       <PageHero
         accent={ACCENT}
         title="On sale comments"
-        subtitle={<>Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, Encore writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts.<span className="block mt-1 text-[12px]">Formerly Encore.</span></>}
+        subtitle={<>Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, MVP writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts.<span className="block mt-1 text-[12px]">Formerly Encore.</span></>}
       />
 
       {/* HOW IT WORKS, in the order it happens: a real sequence, so numbered. */}

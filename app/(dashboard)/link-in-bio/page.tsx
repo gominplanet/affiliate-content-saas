@@ -59,6 +59,9 @@ export default function LinkInBioPage() {
   const closeGuide = () => { setShowGuide(false); try { localStorage.setItem('link_in_bio_guide_seen', '1') } catch { /* no-op */ } }
 
   const [loading, setLoading] = useState(true)
+  // A page that failed to load is not a member with no page. Without this a
+  // timed-out read showed "Claim your link" to someone who already has one.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [page, setPage] = useState<LinkPage | null>(null)
   const [items, setItems] = useState<LinkPageItem[]>([])
   const [origin, setOrigin] = useState('')
@@ -80,17 +83,17 @@ export default function LinkInBioPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/link-in-bio')
-      const data = await res.json()
-      if (res.ok) {
-        setPage(data.page || null)
-        setItems(Array.isArray(data.items) ? data.items : [])
-        setOrigin(data.origin || (typeof window !== 'undefined' ? window.location.origin : ''))
-        setAvatarUrl(data.page?.avatar_url || '')
-        if (data.brand) setBrand(data.brand)
-        setBlogUrl(data.blogUrl || null)
-        setKnownLinks(data.knownLinks || {})
-      }
-    } catch { /* leave empty */ } finally { setLoading(false) }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setLoadError(data.error || 'Your Link in Bio page could not be loaded.'); return }
+      setLoadError(null)
+      setPage(data.page || null)
+      setItems(Array.isArray(data.items) ? data.items : [])
+      setOrigin(data.origin || (typeof window !== 'undefined' ? window.location.origin : ''))
+      setAvatarUrl(data.page?.avatar_url || '')
+      if (data.brand) setBrand(data.brand)
+      setBlogUrl(data.blogUrl || null)
+      setKnownLinks(data.knownLinks || {})
+    } catch { setLoadError('Could not reach the server.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
 
@@ -233,17 +236,20 @@ export default function LinkInBioPage() {
   }
   const clearStory = async () => {
     setItems((x) => x.map((it) => (it.kind !== 'link' && it.in_story ? { ...it, in_story: false } : it))) // optimistic
-    try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clearStory: true }) }) } catch { /* no-op */ }
-    toast.success('Story section cleared.')
+    const ok = await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clearStory: true }) }).then((r) => r.ok).catch(() => false)
+    if (ok) toast.success('Story section cleared.')
+    else { toast.error('Could not clear the story section. Nothing was changed.'); void load() }
   }
 
   const patchItem = async (id: string, patch: Partial<LinkPageItem>) => {
     setItems((x) => x.map((it) => (it.id === id ? { ...it, ...patch } : it))) // optimistic
-    try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...patch }) }) } catch { /* revert on reload */ }
+    const ok = await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...patch }) }).then((r) => r.ok).catch(() => false)
+    if (!ok) { toast.error('Could not save that change.'); void load() }
   }
   const deleteItem = async (id: string) => {
     setItems((x) => x.filter((it) => it.id !== id))
-    try { await fetch('/api/link-in-bio/items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }) } catch { /* no-op */ }
+    const ok = await fetch('/api/link-in-bio/items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then((r) => r.ok).catch(() => false)
+    if (!ok) { toast.error('Could not delete that tile. It is back in the list.'); void load() }
   }
   // Reorder within a kind (links reorder among links, products among products).
   const move = async (item: LinkPageItem, dir: -1 | 1) => {
@@ -256,7 +262,8 @@ export default function LinkInBioPage() {
     const others = items.filter((x) => (x.kind === 'link') !== isLink)
     const next = [...s, ...others]
     setItems(next)
-    try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next.map((it) => it.id) }) }) } catch { /* no-op */ }
+    const ok = await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next.map((it) => it.id) }) }).then((r) => r.ok).catch(() => false)
+    if (!ok) { toast.error('Could not save the new order.'); void load() }
   }
 
   const renderItem = (it: LinkPageItem, i: number, list: LinkPageItem[]) => (
@@ -391,7 +398,13 @@ export default function LinkInBioPage() {
         </div>
       )}
 
-      {!page ? (
+      {loadError ? (
+        <div className="rounded-2xl border border-red-300 bg-red-50 dark:bg-red-950/30 p-6">
+          <div className="text-base font-semibold mb-1">Your page did not load</div>
+          <p className="text-sm text-muted-foreground mb-4">{loadError}</p>
+          <Button size="sm" variant="outline" onClick={() => { setLoading(true); void load() }}>Try again</Button>
+        </div>
+      ) : !page ? (
         /* Claim a handle */
         <div className="rounded-2xl border bg-card p-6">
           <div className="text-base font-semibold mb-1">Claim your link</div>

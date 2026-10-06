@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
 import { FaceModelsGuide } from '@/components/guide/tool-guides'
@@ -81,6 +82,8 @@ export default function PhotoboothPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [faceError, setFaceError] = useState<string | null>(null)
+  // A list that failed to load is not "No faces yet".
+  const [facesLoadError, setFacesLoadError] = useState(false)
 
   // ── Generator ───────────────────────────────────────────────────────────--
   const [faceId, setFaceId] = useState<string>('')
@@ -104,11 +107,13 @@ export default function PhotoboothPage() {
     setTier(effectiveTier(resolvedTier))
     try {
       const r = await fetch('/api/face-models')
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json()
       const models = (d.models || []) as FaceModel[]
       setFaces(models)
+      setFacesLoadError(false)
       setFaceId(prev => prev && models.some(m => m.id === prev) ? prev : (models[0]?.id || ''))
-    } catch { /* ignore */ }
+    } catch { setFacesLoadError(true) }
     try {
       const ur = await fetch('/api/photobooth')
       const ud = await ur.json()
@@ -235,7 +240,8 @@ export default function PhotoboothPage() {
       destructive: true,
     })
     if (!ok) return
-    await fetch(`/api/face-models/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/face-models/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) { toast.error('Could not delete that face. It is still saved.'); return }
     setFaces(prev => prev.filter(m => m.id !== id))
   }
 
@@ -270,13 +276,15 @@ export default function PhotoboothPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addImagePaths: paths }),
       })
-      const d = await res.json()
-      if (res.ok && Array.isArray(d.source_images)) {
-        setFaces(prev => prev.map(m => m.id === faceId ? { ...m, source_images: d.source_images } : m))
-        // Drop any open preview so it re-fetches with the new photos.
-        setPhotoView(prev => { const n = { ...prev }; delete n[faceId]; return n })
-      }
-    } catch { /* best-effort */ }
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !Array.isArray(d.source_images)) throw new Error(d.error || 'The photos were not added to this face.')
+      setFaces(prev => prev.map(m => m.id === faceId ? { ...m, source_images: d.source_images } : m))
+      // Drop any open preview so it re-fetches with the new photos.
+      setPhotoView(prev => { const n = { ...prev }; delete n[faceId]; return n })
+      toast.success(`Added ${chosen.length} photo${chosen.length === 1 ? '' : 's'}.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'The photos were not added to this face.')
+    }
     finally { setAddingFaceId(null) }
   }
 
@@ -292,11 +300,10 @@ export default function PhotoboothPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ outfitPref: value }),
       })
-      if (res.ok) {
-        setFaces(prev => prev.map(m => m.id === faceId ? { ...m, outfit_pref: value || null } : m))
-        setOutfitDraft(prev => { const n = { ...prev }; delete n[faceId]; return n })
-      }
-    } catch { /* best-effort */ }
+      if (!res.ok) throw new Error()
+      setFaces(prev => prev.map(m => m.id === faceId ? { ...m, outfit_pref: value || null } : m))
+      setOutfitDraft(prev => { const n = { ...prev }; delete n[faceId]; return n })
+    } catch { toast.error('Could not save the outfit. Try again.') }
     finally { setSavingOutfit(null) }
   }
 
@@ -366,10 +373,16 @@ export default function PhotoboothPage() {
   function removeShot(shot: Shot) {
     setShots(prev => prev.filter(s => s.id !== shot.id))
     if (shot.path) {
+      // A delete that did not happen puts the headshot back, rather than
+      // letting it reappear on the next visit as if it came back by itself.
       fetch('/api/photobooth', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: shot.path }),
-      }).catch(() => { /* ignore */ })
+      }).then(r => r.ok).catch(() => false).then(ok => {
+        if (ok) return
+        toast.error('Could not delete that headshot.')
+        setShots(prev => prev.some(s => s.id === shot.id) ? prev : [shot, ...prev])
+      })
     }
   }
 
@@ -448,6 +461,11 @@ export default function PhotoboothPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-[#86868b] py-10 justify-center">
               <Loader2 size={14} className="animate-spin" /> Loading…
+            </div>
+          ) : facesLoadError ? (
+            <div className="card p-6 text-center">
+              <p className="text-sm font-medium text-[#ff3b30] mb-2">Your faces could not be loaded.</p>
+              <button onClick={() => { setLoading(true); void load() }} className="text-xs font-semibold text-[#7C3AED] hover:underline">Try again</button>
             </div>
           ) : !hasFace ? (
             <div className="card p-8 text-center">

@@ -27,7 +27,7 @@ const ACCENT = '#7C3AED'
 /** What each limit counts, in the creator's words. */
 const WHAT: Record<string, string> = {
   generations: 'New blog posts and content pieces MVP writes for you.',
-  thumbnails: 'AI thumbnails, from Co-Pilot, Liftoff and blog heroes.',
+  thumbnails: 'AI thumbnails, from Co-Pilot, Bulk Amazon upload and blog heroes.',
   shorts: 'Shorts rendered in Shorts Studio.',
   x: 'Posts sent to X. X charges for every post, so it has its own limit.',
   pins: 'Designed Pinterest pins.',
@@ -43,7 +43,7 @@ const WHAT: Record<string, string> = {
   newsletter: 'Newsletter emails sent to your list.',
   cascade: 'Posts scheduled out to your socials.',
   articles: 'Articles.',
-  sale_comments: 'Comments posted on your videos from Encore. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
+  sale_comments: 'Comments posted on your videos from On sale comments. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
   index_nudges: 'Asking Google to index a page now. Google gives all of MVP one small shared allowance; your pages still get indexed through your sitemap without these.',
 }
 

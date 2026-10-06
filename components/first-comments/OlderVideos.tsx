@@ -126,7 +126,7 @@ export default function OlderVideos() {
           setRunNote("Stopped at YouTube's daily limit. Nothing after this was tried, so nothing was lost.")
           break
         }
-        update(v.youtubeVideoId, { step: 'held', note: j.reason === 'not_public' ? 'Not public yet. It posts itself when the video is public, and SCOUT pins it next time Co-Pilot or Liftoff is open.' : 'YouTube did not answer. MVP tries again by itself.' })
+        update(v.youtubeVideoId, { step: 'held', note: j.reason === 'not_public' ? 'Not public yet. It posts itself when the video is public, and SCOUT pins it next time Co-Pilot or Bulk Amazon upload is open.' : 'YouTube did not answer. MVP tries again by itself.' })
         continue
       }
       if (j.state !== 'posted' || !j.commentId || !j.id) {
@@ -169,7 +169,7 @@ export default function OlderVideos() {
         subtitle="A comment from your channel with the product link, pinned to the top of every video, where viewers look first."
       />
       <div className="card p-4 mb-4 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d1d1d6]">
-        Every video Co-Pilot or Liftoff uploads now gets a pinned first comment. This gives your older videos one too. Tick the videos, and MVP writes each comment from the video&apos;s title and the product link in its description (marked &quot;(paid link)&quot;), posts it from your channel, and SCOUT pins it.
+        Every video Co-Pilot or Bulk Amazon upload sends now gets a pinned first comment. This gives your older videos one too. Tick the videos, and MVP writes each comment from the video&apos;s title and the product link in its description (marked &quot;(paid link)&quot;), posts it from your channel, and SCOUT pins it.
         <span className="block mt-1.5 text-[12px] text-[#86868b]">
           Pinning replaces a comment you pinned yourself on that video. YouTube lets MVP post roughly 190 comments a day; when that runs out, the run stops and says so.
         </span>

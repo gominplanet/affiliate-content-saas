@@ -84,7 +84,7 @@ export default function AmzFinderPage() {
         </div>
         <AmazonResearchPanel canAct={canUseFinder} onSavedChange={() => setSavedReloadKey(k => k + 1)} />
         <p className="text-[11px] leading-relaxed mt-1 mb-4 px-1" style={{ color: 'var(--text-faint)' }}>
-          Product data is sourced from licensed catalogue providers; prices and availability update on Amazon. Links carry your own Associates tag when you&rsquo;ve set one in Settings. Looking for Creator Connections campaigns? They live on the <span className="font-medium">CC Campaigns</span> page under Research.
+          Product data is sourced from licensed catalogue providers; prices and availability update on Amazon. Links carry your own Associates tag when you&rsquo;ve set one in Settings. Looking for Creator Connections campaigns? They live on the <span className="font-medium">Brand campaigns</span> page under Research.
         </p>
       </div>
 

@@ -142,7 +142,7 @@ export default function LevantaPage() {
       if (!j.ok) { setGen((m) => ({ ...m, [p.asin]: { error: j.error || 'Generation failed' } })); return }
       setGen((m) => ({ ...m, [p.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
-      setGen((m) => ({ ...m, [p.asin]: { error: 'Network error during generation.' } }))
+      setGen((m) => ({ ...m, [p.asin]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 

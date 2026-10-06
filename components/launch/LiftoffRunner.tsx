@@ -135,7 +135,7 @@ export default function LiftoffRunner() {
         const workLeft = more
         const fc = await postDueFirstCommentsViaScout(say)
         if (fc.on) {
-          if (fc.posted || fc.failed) say(`First comments: ${fc.posted} posted${fc.failed ? `, ${fc.failed} not` : ''}`)
+          if (fc.posted || fc.failed) say(`Pinned comments: ${fc.posted} posted${fc.failed ? `, ${fc.failed} not` : ''}`)
           // BACK WHEN THE NEXT ONE IS DUE, not on a timer: SCOUT wakes this
           // tab two minutes after that comment's time (up to a day ahead).
           if (fc.nextAt && Date.parse(fc.nextAt) - Date.now() < 24 * 3_600_000) {
@@ -163,9 +163,9 @@ export default function LiftoffRunner() {
 
   return (
     <div className="max-w-xl p-6">
-      <h1 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Liftoff is finishing your batches</h1>
+      <h1 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Bulk Amazon upload is finishing your batches</h1>
       <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-2)' }}>
-        SCOUT opened this tab to finish the Studio steps and the Amazon uploads while the Liftoff page is closed.
+        SCOUT opened this tab to finish the Studio steps and the Amazon uploads while the Bulk Amazon upload page is closed.
         It closes itself when it is done. You can keep using Chrome.
       </p>
       <ul className="mt-3 flex flex-col gap-0.5 text-[12px] tabular-nums" style={{ color: 'var(--text)' }}>

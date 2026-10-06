@@ -146,7 +146,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           draft: false,
         }),
       })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'No answer in time. The post may still be publishing, so check your blog before trying again.' : `The server answered ${res.status}. Try again.` }))
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
       setResults((m) => ({ ...m, [o.key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
       toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ': link cloaked via Geniuslink' : ''}`)
@@ -173,7 +173,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'No answer in time. The roundup may still be publishing, so check your blog before trying again.' : undefined }))
       if (!res.ok || !j.ok) { toast.error(j.error || 'Could not build the roundup.'); return }
       toast.success('Roundup post published.')
       if (j.url) window.open(j.url, '_blank')

@@ -376,7 +376,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       if (updErr) throw new Error(updErr.message || 'Save failed')
       setUrl(publicUrl)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed')
+      setErr(errText(e) || 'Upload failed')
     } finally {
       setBusy(false)
     }
@@ -389,7 +389,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
       setUrl(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Remove failed')
+      setErr(errText(e) || 'Remove failed')
     } finally {
       setBusy(false)
     }
@@ -485,7 +485,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
       if (updErr) throw new Error(updErr.message || 'Save failed')
       setUrl(publicUrl)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed')
+      setErr(errText(e) || 'Upload failed')
     } finally {
       setBusy(false)
     }
@@ -498,7 +498,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
       await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
       setUrl(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Remove failed')
+      setErr(errText(e) || 'Remove failed')
     } finally {
       setBusy(false)
     }
@@ -1074,7 +1074,7 @@ const VideoCard = memo(function VideoCardImpl({
                 toast.error(`${(idata.error as string) || 'Couldn’t add in-article images.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
               }
             } catch (e) {
-              toast.error(`${e instanceof Error ? e.message : 'Image step failed.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
+              toast.error(`${errText(e) || 'Image step failed.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
             }
           })()
         }
@@ -1126,7 +1126,7 @@ const VideoCard = memo(function VideoCardImpl({
               failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
             }
           })
-          .catch((e) => { failures.push(`${label} (${e instanceof Error ? e.message : 'network error'})`) }),
+          .catch((e) => { failures.push(`${label} (${errText(e) || 'network error'})`) }),
       )
     }
 
@@ -1156,7 +1156,7 @@ const VideoCard = memo(function VideoCardImpl({
           setPinPosted(true)
           postedKeys.push('pinterestPinId')
         } catch (e) {
-          failures.push(`Pinterest (${e instanceof Error ? e.message : 'error'})`)
+          failures.push(`Pinterest (${errText(e) || 'error'})`)
         }
       })())
     }
@@ -3244,7 +3244,7 @@ export default function ContentPage() {
       return { ok: true }
     } catch (e) {
       const aborted = e instanceof DOMException && e.name === 'AbortError'
-      return { ok: false, error: aborted ? 'Timed out talking to Pinterest. Try again.' : (e instanceof Error ? e.message : 'Publish failed') }
+      return { ok: false, error: aborted ? 'Timed out talking to Pinterest. Try again.' : (errText(e) || 'Publish failed') }
     } finally {
       clearTimeout(timer)
       setPinPublishingFor(null)
@@ -3290,7 +3290,7 @@ export default function ContentPage() {
       toast.success('Published. It is live on your blog now.')
       await loadScheduled()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not publish it.')
+      toast.error(errText(e) || 'Could not publish it.')
     } finally {
       setPublishingNow(null)
     }
@@ -3407,7 +3407,7 @@ export default function ContentPage() {
       setAllBlogPosts(merged)
       setPostsLoaded(true)
     } catch (e) {
-      setFixCatResult(`Failed to load posts: ${e instanceof Error ? e.message : String(e)}`)
+      setFixCatResult(`Failed to load posts: ${errText(e) || String(e)}`)
     } finally {
       setPostsLoading(false)
     }
@@ -3479,7 +3479,7 @@ export default function ContentPage() {
         })
       }
     } catch (e) {
-      setImgToast(e instanceof Error ? e.message : 'Image refresh failed')
+      setImgToast(errText(e) || 'Image refresh failed')
     } finally {
       setRefreshingImagesId(null)
     }
@@ -3561,7 +3561,7 @@ export default function ContentPage() {
         }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkRewriteProgress(null)
@@ -3612,7 +3612,7 @@ export default function ContentPage() {
         }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkGenerateProgress(null)
@@ -3650,7 +3650,7 @@ export default function ContentPage() {
         else { failed++; if (!firstError) firstError = data.error || `HTTP ${res.status}` }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkCategoryProgress(null)

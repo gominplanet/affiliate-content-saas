@@ -123,7 +123,7 @@ export default function WalmartPBPage() {
       if (rel) qs.set('relationship', rel)
       const res = await fetch(`/api/walmart/brands?${qs.toString()}`, { cache: 'no-store' })
       if (res.status === 403) { setForbidden(true); setBrands([]); return }
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'PartnerBoost took too long to answer. Try again.' : `The server answered ${res.status}. Try again.` }))
       if (j.needsToken) { setNeedsToken(true); setBrands([]); return }
       if (!j.ok) { setError(j.error || 'Failed to load'); setBrands([]); return }
       setForbidden(false); setNeedsToken(false)
@@ -168,7 +168,7 @@ export default function WalmartPBPage() {
       if (b.brand_id) qs.set('brandId', b.brand_id)
       qs.set('mcid', b.mcid)
       const res = await fetch(`/api/walmart/products?${qs.toString()}`, { cache: 'no-store' })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'PartnerBoost took too long to answer. Try again.' : `The server answered ${res.status}. Try again.` }))
       if (!j.ok) { setProdErr((m) => ({ ...m, [b.mcid!]: j.error || 'Failed to load products' })); return }
       setProducts((m) => ({ ...m, [b.mcid!]: Array.isArray(j.products) ? j.products : [] }))
     } catch (e) {
@@ -186,7 +186,7 @@ export default function WalmartPBPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url, network, draft: !publishLive }),
       })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'No answer in time. The post may still be publishing, so check your blog before trying again.' : `The server answered ${res.status}. Try again.` }))
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
       setResults((m) => ({ ...m, [key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
       toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ': link cloaked via Geniuslink' : ''}`)

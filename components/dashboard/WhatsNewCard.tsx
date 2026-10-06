@@ -32,15 +32,15 @@ const UPDATES: Update[] = [
   {
     badge: 'NEW',
     tone: '#E4572E',
-    title: 'Liftoff: launch up to ten videos at once',
+    title: 'Bulk Amazon upload: launch up to ten videos at once',
     desc: 'One press sends up to ten videos to YouTube and to your US Amazon storefront. Each video gets its own date and time, its own thumbnail with the right face ("Who is in this video?"), its own Amazon title, and your CTA exactly where you placed it. MVP checks the YouTube channel before anything uploads, and with SCOUT it keeps going even after you close the page. On the Pro plan, at the top of Create.',
     href: '/liftoff',
   },
   {
     badge: 'NEW',
     tone: '#E4572E',
-    title: 'Encore: timely sale comments on your videos',
-    desc: 'When a product you already reviewed goes on sale, Encore writes a comment for that video in your voice, with your link and the Amazon disclosure, posts it and pins it with SCOUT. When the sale ends it edits the comment so it no longer mentions a sale. Each promo also comes with a Short script, a Community post and a social post. On the Pro plan, under Create.',
+    title: 'On sale comments: timely sale comments on your videos',
+    desc: 'When a product you already reviewed goes on sale, MVP writes a comment for that video in your voice, with your link and the Amazon disclosure, posts it and pins it with SCOUT. When the sale ends it edits the comment so it no longer mentions a sale. Each promo also comes with a Short script, a Community post and a social post. On the Pro plan, under Create.',
     href: '/encore',
   },
   {
@@ -81,7 +81,7 @@ const UPDATES: Update[] = [
     badge: 'IMPROVED',
     tone: '#6d28d9',
     title: 'Every Full guide rewritten',
-    desc: 'The Full guide on each page now explains what that page does today, including a new one for Liftoff. New tutorial videos are being recorded for the latest features.',
+    desc: 'The Full guide on each page now explains what that page does today, including a new one for Bulk Amazon upload. New tutorial videos are being recorded for the latest features.',
   },
   {
     badge: 'NEW',

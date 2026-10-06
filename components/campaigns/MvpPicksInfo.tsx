@@ -43,7 +43,7 @@ export default function MvpPicksInfo() {
 
       {open && (
         <div
-          className="mvp-panel absolute left-0 top-full mt-2 z-50 w-[320px] sm:w-[380px] rounded-2xl border p-4 shadow-xl"
+          className="mvp-panel absolute left-0 top-full mt-2 z-50 w-[320px] sm:w-[380px] max-w-[calc(100vw-2rem)] rounded-2xl border p-4 shadow-xl"
           style={{ boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}
         >
           <div className="flex items-start justify-between gap-3 mb-2">
