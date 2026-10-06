@@ -4,6 +4,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export async function GET() {
@@ -77,7 +78,7 @@ export async function GET() {
       .single(),
   ])
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: plainReadError('campaigns.list', error) }, { status: 500 })
 
   // Which socials the user has connected — campaign rows show pills for
   // these once published. Pinterest uses the one-click auto endpoint

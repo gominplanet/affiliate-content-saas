@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function GET(req: Request) {
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
     .eq('archived', false)
     .order('created_at', { ascending: false })
     .limit(200)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: plainReadError('brand-inquiries', error) }, { status: 500 })
 
   const inquiries = (data ?? []) as Array<{ read_at: string | null }>
   const unread = inquiries.filter(i => !i.read_at).length

@@ -156,7 +156,11 @@ export default function JoinedCampaignsPage() {
       let payload: (CampaignLibrary & { error?: string }) | null = null
       try { payload = JSON.parse(text) } catch { payload = null }
       if (!payload) {
-        setLoadError(`The server answered ${r.status} with something that was not a campaign list. ${text.slice(0, 160)}`)
+        // A gateway timeout answers with an HTML page; quoting it put raw markup
+        // on screen. Say what happened instead, status kept for support.
+        setLoadError(r.status === 504 || r.status === 502
+          ? `Your campaigns took too long to load (${r.status}). Please refresh in a moment.`
+          : `The server answered ${r.status} with something that was not a campaign list. Please refresh, and contact support if it keeps happening.`)
         setData(null)
         return
       }

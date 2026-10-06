@@ -74,3 +74,22 @@ export async function checkedWrite(
   }
   return true
 }
+
+/**
+ * The sentence a member sees when a READ failed, in place of the database's own
+ * words. "canceling statement due to statement timeout" reached the Brand
+ * campaigns toast as is, which tells a creator nothing about what to do. The
+ * real message is still logged here, so the plain one hides nothing from us.
+ */
+export function plainReadError(context: string, error: unknown): string {
+  const raw = messageOf(error)
+  // eslint-disable-next-line no-console
+  console.error(`[db-read] ${context}: ${raw}`)
+  if (/statement timeout|canceling statement|57014/i.test(raw)) {
+    return 'This took too long to load. Please try again, or narrow it down with a search or filter.'
+  }
+  if (/does not exist|schema cache|PGRST20[45]/i.test(raw)) {
+    return 'This part of your account is still being set up on our side. Please contact support if it does not load soon.'
+  }
+  return 'This could not load right now. Please try again in a moment.'
+}

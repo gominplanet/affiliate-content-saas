@@ -18,6 +18,7 @@
 // row belonging to somebody else cannot be read or cancelled even by id.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import type { ScheduledRow } from '@/lib/amazon-queue'
 
 export const dynamic = 'force-dynamic'
@@ -43,7 +44,7 @@ export async function GET() {
     .order('scheduled_at', { ascending: false })
     .limit(MAX_ROWS)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: plainReadError('amazon.scheduled', error) }, { status: 500 })
 
   const rows: ScheduledRow[] = (data ?? []).map((r: Record<string, unknown>) => {
     const status = (r.status as ScheduledRow['status']) ?? 'pending'

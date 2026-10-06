@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,7 @@ export async function GET() {
     .eq('user_id', user.id) // defense-in-depth (RLS also scopes this)
     .eq('source', 'wayward')
     .order('created_at', { ascending: false }).limit(500)
-  if (error) return NextResponse.json({ ok: false, error: error.message, saved: [] }, { status: 200 })
+  if (error) return NextResponse.json({ ok: false, error: plainReadError('wayward.saved', error), saved: [] }, { status: 200 })
   return NextResponse.json({ ok: true, saved: data ?? [] })
 }
 

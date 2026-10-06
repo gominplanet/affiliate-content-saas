@@ -4406,8 +4406,20 @@ export default function StudioPage() {
     if (opts?.forceRefresh && !scoutSynced) params.set('refresh', '1')
     if (selectedChannelId) params.set('channelId', selectedChannelId)
     const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
-    const res = await fetch(url)
-    const data = await res.json()
+    // A gateway timeout answers with an HTML page, not JSON. Without the catch
+    // the parse threw, loading never cleared, and the page spun forever.
+    let res: Response
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any
+    try {
+      res = await fetch(url)
+      data = await res.json().catch(() => ({}))
+    } catch {
+      setError('Could not reach MVP to load your videos. Check your connection, then press Refresh.')
+      if (append) setLoadingMore(false)
+      else if (!silent) setLoading(false)
+      return
+    }
     if (res.status === 401 && data.needsAuth) {
       setNeedsAuth(true)
     } else if (!res.ok) {

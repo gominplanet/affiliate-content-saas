@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import { brandTrust, campaignFullness, estPerSale, daysUntil, opportunityScore, type BrandAgg } from '@/lib/cc-intelligence'
 import { ccAccessOk } from '@/lib/cc-access'
 import { ccRequestUrl } from '@/lib/cc-urls'
@@ -309,7 +310,7 @@ export async function GET(request: NextRequest) {
       usedKeyword = 'ilike'
       ;({ data, error } = await build('ilike', false))
     }
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ ok: false, error: plainReadError('cc.campaigns', error) }, { status: 500 })
     const rows = (data ?? []) as CatalogRow[]
 
     // How many campaigns actually match, as opposed to how many are in the

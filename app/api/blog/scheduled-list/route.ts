@@ -6,6 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import { getPublishContext } from '@/lib/agency-publish'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
@@ -42,7 +43,7 @@ export async function GET() {
     data = fb.data; error = fb.error
   }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: plainReadError('blog.scheduled-list', error) }, { status: 500 })
 
   const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null; platform: string | null; status: string | null; body_text?: string | null }>
 
