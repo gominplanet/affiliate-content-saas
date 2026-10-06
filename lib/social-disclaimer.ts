@@ -206,19 +206,34 @@ export function labelLinks(text: string, known?: Record<string, LinkDestination 
     }
     const sep = SEPARATOR_END.exec(before)
     const labelled = /[A-Za-z]/.test(before) && !!sep
+    // MID-SENTENCE, THE LABEL JOINS THE SENTENCE. "and grab it url" becomes
+    // "and grab it here on Amazon: url", not "and grab it Check it out here
+    // on Amazon: url". A link on its own line gets the full label.
+    const midLine = /[A-Za-z0-9]\s*$/.test(before) && !labelled
     if (!dest) {
       if (labelled || /[A-Za-z].*(?::|👉|→)\s*$/u.test(context.trim()) || /check it out here/i.test(context)) continue
-      t = `${t.slice(0, idx)}${UNKNOWN_LINK_LABEL} ${t.slice(idx)}`
+      t = `${t.slice(0, idx)}${midLine ? 'here:' : UNKNOWN_LINK_LABEL} ${t.slice(idx)}`
       continue
     }
     if (DEST_SAID[dest].test(context)) continue
+    // A LABEL LINE ABOVE ("Full review:") is given the store, rather than a
+    // second label under it: "Full review on my blog:".
+    if (!/[A-Za-z]/.test(before)) {
+      const prevEnd = t.slice(0, lineStart).replace(/\s+$/, '').length
+      const prevLine = t.slice(t.lastIndexOf('\n', prevEnd - 1) + 1, prevEnd)
+      if (/[A-Za-z]\s*:$/.test(prevLine)) {
+        const colon = prevEnd - 1
+        t = `${t.slice(0, colon).replace(/\s+$/, '')} on ${DEST_NAME[dest]}${t.slice(colon)}`
+        continue
+      }
+    }
     if (labelled && sep) {
       // "Get it here 👉 url" becomes "Get it here on Amazon 👉 url".
       const at = lineStart + (sep.index ?? 0)
       t = `${t.slice(0, at)} on ${DEST_NAME[dest]}${t.slice(at)}`
       continue
     }
-    t = `${t.slice(0, idx)}${DEST_LABEL[dest]} ${t.slice(idx)}`
+    t = `${t.slice(0, idx)}${midLine ? `here on ${DEST_NAME[dest]}:` : DEST_LABEL[dest]} ${t.slice(idx)}`
   }
   return t
 }

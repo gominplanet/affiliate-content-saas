@@ -67,7 +67,7 @@ const SP = /(?<![\w#\\])\\?#sponsored\b/gi
     check(`${p}: within ${max} characters`, out.length <= max)
     check(`${p}: both tags survive the cut`, count(out, AD) === 1 && count(out, SP) === 1)
     check(`${p}: the link survives whole`, out.includes(url))
-    check(`${p}: the link is labelled`, out.includes(`${DEST_LABEL.amazon} ${url}`))
+    check(`${p}: the link is labelled`, out.includes(`${DEST_LABEL.amazon} ${url}`) || out.includes(`here on Amazon: ${url}`))
     check(`${p}: idempotent`, discloseSocialPost(out, p) === out)
   }
   const tags = Array.from({ length: 30 }, (_, i) => `#topic${i}`).join(' ')
@@ -95,11 +95,15 @@ const SP = /(?<![\w#\\])\\?#sponsored\b/gi
   rememberLinkDestination('https://geni.us/blogwrap', 'https://myblog.example/best-blender/')
   check('a geni.us wrapping the blog is the blog', linkDestination('https://geni.us/blogwrap') === 'blog')
 
-  check('Amazon label', labelLinks('Great https://amzn.to/x').includes('Check it out here on Amazon: https://amzn.to/x'))
-  check('blog label', labelLinks('More https://myblog.example/p').includes('Read the full review on my blog: https://myblog.example/p'))
-  check('Walmart label', labelLinks('Deal https://www.walmart.com/ip/1').includes('See it on Walmart: https://www.walmart.com/ip/1'))
-  check('LTK label', labelLinks('Outfit https://liketk.it/4a').includes('Shop it on LTK: https://liketk.it/4a'))
-  check('unknown label', labelLinks('Look https://geni.us/neverseen').includes('Check it out here: https://geni.us/neverseen'))
+  check('Amazon label', labelLinks('Great find! https://amzn.to/x').includes('Check it out here on Amazon: https://amzn.to/x'))
+  check('blog label', labelLinks('More in my review. https://myblog.example/p').includes('Read the full review on my blog: https://myblog.example/p'))
+  check('Walmart label', labelLinks('Big deal. https://www.walmart.com/ip/1').includes('See it on Walmart: https://www.walmart.com/ip/1'))
+  check('LTK label', labelLinks('Outfit details. https://liketk.it/4a').includes('Shop it on LTK: https://liketk.it/4a'))
+  check('unknown label', labelLinks('Take a look. https://geni.us/neverseen').includes('Check it out here: https://geni.us/neverseen'))
+  // 2026-10-07: mid-sentence the label joins the sentence, and a label line
+  // above a link is given the store instead of a second label under it.
+  check('mid-sentence label joins the sentence', labelLinks('and grab it https://amzn.to/x today') === 'and grab it here on Amazon: https://amzn.to/x today')
+  check('a label line above gets the store', labelLinks('Full review:\nhttps://amzn.to/x') === 'Full review on Amazon:\nhttps://amzn.to/x')
   const named = '🛒 On Amazon: https://geni.us/neverseen'
   check('a line that already names the store is left alone', labelLinks(named) === named)
   const above = 'Check it out on Walmart\nhttps://www.walmart.com/ip/1'
