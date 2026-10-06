@@ -102,7 +102,8 @@ async function main() {
   // ── the sales pages count down and explain the lock ───────────────────────
   const C = r('components/landing/PriceLockCountdown.tsx')
   const jsx = C.slice(C.indexOf('  return ('))
-  check('the countdown reads its numbers from the schedule', /\$\{PRICES_BEFORE\.amazon\.month\}/.test(C) && /\$\{NEW_MEMBER_PRICES\.pro\.month\}/.test(C) && /timeUntilPriceChange\(\)/.test(C))
+  // 2026-10-07: the founding-price cards read both plans from the schedule too.
+  check('the countdown reads its numbers from the schedule', /PRICES_BEFORE\.amazon\.month/.test(C) && /PRICES_BEFORE\.pro\.month/.test(C) && /NEW_MEMBER_PRICES\.amazon\.month/.test(C) && /\$\{NEW_MEMBER_PRICES\.pro\.month\}/.test(C) && /timeUntilPriceChange\(\)/.test(C) && !/\$(99|159|199|299)\b/.test(jsx))
   check('it explains the lock in plain words', /locked for as long as you stay subscribed/.test(C) && /Every feature we add is included at that price/.test(C) && /stays yours if you switch plans/.test(C))
   check('it names no year and no dash punctuation', !/20\d\d/.test(jsx) && !/[—–]| - /.test(jsx))
   check('it disappears once the change happens', /if \(over\) return null/.test(C))

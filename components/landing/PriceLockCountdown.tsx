@@ -4,7 +4,8 @@
 //
 // THE PRICE LOCK, ON THE SALES PAGES.
 //
-// Seb, 2026-10-05: prices go up for new members on November 1. Anyone who joins
+// Seb, 2026-10-05: prices go up for new members on November 1, and 2026-10-07:
+// present today's price as founding member pricing, salesy but not sleazy. Anyone who joins
 // before keeps $99 (Amazon) or $199 (Pro) for as long as they stay subscribed,
 // whatever MVP adds, on either plan. This says so, with a live countdown to the
 // moment lib/price-schedule turns the prices over, and disappears at that
@@ -17,6 +18,14 @@
 import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange } from '@/lib/price-schedule'
+
+// THE OFFER, IN NUMBERS. Today's price next to the November price and the
+// monthly difference, so "lock in" means something concrete. Honest about
+// the one condition: the lock lasts while the membership does.
+const plans = [
+  { name: 'Amazon', now: PRICES_BEFORE.amazon.month, later: NEW_MEMBER_PRICES.amazon.month },
+  { name: 'Pro', now: PRICES_BEFORE.pro.month, later: NEW_MEMBER_PRICES.pro.month },
+].map((pl) => ({ ...pl, saved: pl.later - pl.now }))
 
 type Left = NonNullable<ReturnType<typeof timeUntilPriceChange>>
 
@@ -59,34 +68,55 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
   ]
 
   return (
-    <section aria-label="Price lock before November 1" className={`w-full max-w-3xl mx-auto rounded-2xl border p-5 sm:p-6 shadow-sm ${box} ${className}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+    <section aria-label="Founding member pricing until November 1" className={`w-full max-w-3xl mx-auto rounded-2xl border p-5 sm:p-6 shadow-sm ${box} ${className}`}>
+      <div className="flex flex-col sm:flex-row sm:items-start gap-5">
         <div className="flex-1 min-w-0">
           <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9D6BFF]">
-            <Lock size={12} /> Price lock
+            <Lock size={12} /> Founding member pricing
           </p>
           <h2 className="mt-1.5 text-xl sm:text-2xl font-bold tracking-tight" style={{ textWrap: 'balance' }}>
-            Prices go up on November 1
+            Lock in today&apos;s price before November 1
           </h2>
           <p className={`mt-2 text-sm leading-relaxed ${soft}`}>
-            Join before then and your price is locked for as long as you stay subscribed:
-            {' '}<strong className={strong}>${PRICES_BEFORE.amazon.month} a month for Amazon</strong> or
-            {' '}<strong className={strong}>${PRICES_BEFORE.pro.month} for Pro</strong>.
+            On November 1, MVP moves to its full price. Join before then and today&apos;s price is
+            {' '}<strong className={strong}>locked for as long as you stay subscribed</strong>.
             Every feature we add is included at that price, and it stays yours if you switch plans.
-            From November 1, new members pay ${NEW_MEMBER_PRICES.amazon.month} and ${NEW_MEMBER_PRICES.pro.month}.
           </p>
         </div>
-        <div className="grid grid-cols-4 gap-2 sm:w-[260px] flex-shrink-0" role="timer" aria-live="off">
-          {units.map(([label, n]) => (
-            <div key={label} className={`rounded-xl border px-1 py-2.5 text-center ${cell}`}>
-              <div className="text-2xl font-bold leading-none" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                {n === undefined ? '--' : String(n).padStart(2, '0')}
+        <div className="sm:w-[260px] flex-shrink-0">
+          <p className={`mb-1.5 text-[11px] font-semibold uppercase tracking-wider ${soft}`}>Founding price ends in</p>
+          <div className="grid grid-cols-4 gap-2" role="timer" aria-live="off">
+            {units.map(([label, n]) => (
+              <div key={label} className={`rounded-xl border px-1 py-2.5 text-center ${cell}`}>
+                <div className="text-2xl font-bold leading-none" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {n === undefined ? '--' : String(n).padStart(2, '0')}
+                </div>
+                <div className={`mt-1 text-[10px] font-medium uppercase tracking-wider ${soft}`}>{label}</div>
               </div>
-              <div className={`mt-1 text-[10px] font-medium uppercase tracking-wider ${soft}`}>{label}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
+
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {plans.map((pl) => (
+          <div key={pl.name} className={`rounded-xl border px-4 py-3 ${cell}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-wider ${soft}`}>{pl.name} plan</p>
+            <p className="mt-1 flex items-baseline gap-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
+              <span className={`text-2xl font-bold ${strong}`}>${pl.now}</span>
+              <span className={`text-sm ${soft}`}>a month</span>
+              <span className={`ml-auto text-sm line-through ${soft}`} aria-label={`${pl.later} dollars from November 1`}>${pl.later}</span>
+            </p>
+            <p className="mt-1 text-[12.5px] font-medium text-[#10B981]">You save ${pl.saved} every month</p>
+          </div>
+        ))}
+      </div>
+
+      <p className={`mt-4 text-[12px] leading-relaxed ${soft}`}>
+        No catch, and you can cancel anytime. The lock lasts while your membership is active, so if you cancel
+        and come back after November 1, you join at the price of the day. From November 1, new members pay
+        {' '}${NEW_MEMBER_PRICES.amazon.month} for Amazon and ${NEW_MEMBER_PRICES.pro.month} for Pro.
+      </p>
     </section>
   )
 }
