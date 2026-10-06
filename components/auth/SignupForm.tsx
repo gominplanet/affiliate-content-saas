@@ -106,7 +106,7 @@ export default function SignupForm() {
       if (pendingTimer.current) clearTimeout(pendingTimer.current)
       pendingTimer.current = setTimeout(() => {
         setPendingSubmit(false)
-        setError('Couldn’t verify you’re human — please try again.')
+        setError('Couldn’t verify you’re human. Please try again.')
         captchaRef.current?.reset()
         setCaptchaToken(null)
       }, 15000)
@@ -150,7 +150,7 @@ export default function SignupForm() {
         }
         window.location.href = data.url as string // → Stripe Checkout
       } catch {
-        setError('Connection error — please try again.')
+        setError('Connection error. Please try again.')
         setLoading(false)
       }
       return
@@ -205,7 +205,7 @@ export default function SignupForm() {
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           We sent a confirmation link to <strong>{email}</strong>. Click it to unlock{' '}
-          {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'} — no card required.
+          {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'}. No card required, and your free trial runs 30 days.
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
@@ -220,13 +220,13 @@ export default function SignupForm() {
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier
         ? `Start your ${tierLabel} plan`
         : path === 'amazon'
-          ? 'Start free — designs with your face on them'
-          : 'Start free — 5 reviews on the house'}</h2>
+          ? 'Start your 30-day free trial: designs with your face on them'
+          : 'Start your 30-day free trial: 5 reviews on the house'}</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
-        ? `Create your account, then continue to secure checkout — you go straight to ${tierLabel}, no free trial.`
+        ? `Create your account, then continue to secure checkout. You go straight to ${tierLabel}, no free trial.`
         : path === 'amazon'
           ? 'No credit card, no website, no YouTube channel. Confirm your email and you are one Amazon product link away from a finished design you can download.'
-          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.'}</p>
+          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site, unlocked the moment you confirm your email.'}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -293,7 +293,7 @@ export default function SignupForm() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
           {paidTier
             ? 'Secure checkout by Stripe · Cancel anytime'
-            : 'No credit card · Cancel anytime · 5 free reviews to try the full workflow'}
+            : 'No credit card · 30 days free · 5 free reviews to try the full workflow'}
         </p>
       </form>
 
