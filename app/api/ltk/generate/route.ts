@@ -223,8 +223,10 @@ export async function POST(request: NextRequest) {
     // in as the model for everything the creator writes afterwards.
     const isDraft = status === 'draft'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // slug is NOT NULL (schema.sql): without it every LTK row was refused and
+    // the post existed on WordPress only. Same fields as the Wayward insert.
     const { error: saveErr } = await (supabase as any).from('blog_posts').insert({
-      user_id: user.id, title,
+      user_id: user.id, title, slug, content, excerpt,
       status: isDraft ? 'draft' : 'published',
       post_type: 'review',
       wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,

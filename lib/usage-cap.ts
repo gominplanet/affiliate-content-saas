@@ -103,7 +103,8 @@ interface CapCheck {
  * Count how many `features` calls a user has made in their current
  * billing period and compare against `limit`.
  *
- * Returns null on DB error — callers should treat that as "not over
+ * Counts with the service role whatever client is passed (ai_usage has no
+ * member read policy). Returns null on DB error — callers should treat that as "not over
  * cap" rather than blocking the user on a telemetry hiccup. Telemetry
  * must never break a paid action.
  */
@@ -127,7 +128,15 @@ export async function checkUsageCap(
   })
 
   try {
-    const { count } = await supabase
+    // COUNTED WITH THE SERVICE ROLE. ai_usage is service-role only (028: RLS
+    // on, no policies), so a member's own client counts zero rows without an
+    // error, and every cap read as "nothing used yet". The other limiters
+    // (deal-post, find-moments, partner-post) already count this way.
+    // `supabase` stays in the signature for the callers; it is not used here.
+    void supabase
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (createAdminClient() as any)
       .from('ai_usage')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)

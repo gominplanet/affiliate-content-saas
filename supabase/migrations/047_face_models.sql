@@ -45,10 +45,12 @@ create index if not exists face_models_user_idx on public.face_models (user_id, 
 
 alter table public.face_models enable row level security;
 
+drop policy if exists "Users can read their own face models" on public.face_models;
 create policy "Users can read their own face models"
   on public.face_models for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can manage their own face models" on public.face_models;
 create policy "Users can manage their own face models"
   on public.face_models for all
   using (auth.uid() = user_id);

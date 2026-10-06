@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,affiliate_disclaimer,voice_fingerprint')
+      .select('name,learn_profile,affiliate_disclaimer,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,9 +139,6 @@ export async function POST(request: NextRequest) {
       const gate = await spendGate(user.id, tier)
       if (gate) return gate
       const anthropic = createAnthropicClient()
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
@@ -151,7 +148,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling LinkedIn post for this blog article.
 
-Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Keep the ENTIRE post under 600 characters (LinkedIn sweet spot for engagement).
 

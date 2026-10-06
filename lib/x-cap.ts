@@ -158,7 +158,14 @@ export async function refundXPost(
 ): Promise<void> {
   if (!reservationId) return
   try {
-    await supabase.from('ai_usage')
+    // WITH THE SERVICE ROLE. ai_usage has no member policy (028), so the
+    // creator's own client updated zero rows without an error, and a failed
+    // tweet from the blog page kept its slot. The row id came from
+    // claim_x_post, so this touches only the reservation it made.
+    void supabase
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (createAdminClient() as any).from('ai_usage')
       .update({ feature: 'x_post_failed' })
       .eq('id', reservationId).eq('feature', 'x_post')
   } catch (e) {

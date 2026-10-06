@@ -23,10 +23,12 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile"
   on public.profiles for select
   using (auth.uid() = id);
 
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
@@ -78,6 +80,7 @@ create table if not exists public.brand_profiles (
 
 alter table public.brand_profiles enable row level security;
 
+drop policy if exists "Users can manage own brand profile" on public.brand_profiles;
 create policy "Users can manage own brand profile"
   on public.brand_profiles for all
   using (auth.uid() = user_id);
@@ -105,6 +108,7 @@ create table if not exists public.integrations (
 
 alter table public.integrations enable row level security;
 
+drop policy if exists "Users can manage own integrations" on public.integrations;
 create policy "Users can manage own integrations"
   on public.integrations for all
   using (auth.uid() = user_id);
@@ -136,6 +140,7 @@ create index if not exists idx_youtube_videos_user_published
 
 alter table public.youtube_videos enable row level security;
 
+drop policy if exists "Users can manage own videos" on public.youtube_videos;
 create policy "Users can manage own videos"
   on public.youtube_videos for all
   using (auth.uid() = user_id);
@@ -171,6 +176,7 @@ create index if not exists idx_blog_posts_user_status
 
 alter table public.blog_posts enable row level security;
 
+drop policy if exists "Users can manage own blog posts" on public.blog_posts;
 create policy "Users can manage own blog posts"
   on public.blog_posts for all
   using (auth.uid() = user_id);
@@ -204,6 +210,7 @@ create index if not exists idx_social_drafts_video
 
 alter table public.social_drafts enable row level security;
 
+drop policy if exists "Users can manage own social drafts" on public.social_drafts;
 create policy "Users can manage own social drafts"
   on public.social_drafts for all
   using (auth.uid() = user_id);
@@ -234,6 +241,7 @@ create index if not exists idx_job_failures_user_status
 
 alter table public.job_failures enable row level security;
 
+drop policy if exists "Users can manage own job failures" on public.job_failures;
 create policy "Users can manage own job failures"
   on public.job_failures for all
   using (auth.uid() = user_id);

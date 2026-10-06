@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -144,9 +144,6 @@ export async function POST(request: NextRequest) {
         .replace(/<[^>]+>/g, '')
         .slice(0, 1200)
 
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
@@ -156,7 +153,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single Bluesky post for this product review article.
 
-Style: a content creator's authentic short take. Strong hook, one clear value bullet, conversational. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic short take. Strong hook, one clear value bullet, conversational. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The post text BEFORE the URL is appended must be ${generationBudget} characters or fewer.

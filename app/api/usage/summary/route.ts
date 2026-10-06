@@ -28,6 +28,7 @@ import {
 } from '@/lib/tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,9 +79,13 @@ export async function GET() {
 
   // Count ai_usage rows for a feature set within the window (or lifetime). Each
   // count is isolated — a failure returns 0 rather than breaking the whole meter.
+  // Service role, as checkUsageCap counts: ai_usage has no member read policy
+  // (028), so the member's own client saw zero rows and every meter read 0.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
   const countFeatures = async (features: string[]): Promise<number> => {
     try {
-      let q = sb.from('ai_usage').select('id', { count: 'exact', head: true })
+      let q = admin.from('ai_usage').select('id', { count: 'exact', head: true })
         .eq('user_id', user.id).in('feature', features)
       if (windowStart) q = q.gte('created_at', windowStart)
       const { count } = await q

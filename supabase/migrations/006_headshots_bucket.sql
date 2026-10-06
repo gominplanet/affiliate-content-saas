@@ -10,22 +10,27 @@ values (
 on conflict (id) do nothing;
 
 -- Each user can upload/update/delete their own headshot
+drop policy if exists "Users upload own headshot" on storage.objects;
 create policy "Users upload own headshot"
   on storage.objects for insert
   to authenticated
   with check (bucket_id = 'headshots' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "Users update own headshot" on storage.objects;
 create policy "Users update own headshot"
   on storage.objects for update
   to authenticated
   using (bucket_id = 'headshots' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "Users delete own headshot" on storage.objects;
 create policy "Users delete own headshot"
   on storage.objects for delete
   to authenticated
   using (bucket_id = 'headshots' and (storage.foldername(name))[1] = auth.uid()::text);
 
-create policy "Public read headshots"
-  on storage.objects for select
-  to public
-  using (bucket_id = 'headshots');
+-- "Public read headshots" (select, to public, the whole bucket) used to be
+-- created here. Migration 176 dropped it because it let anyone list every
+-- creator's files; the bucket is public, so a file's URL still works without
+-- it. It is not created here any more, so running this file again can never
+-- bring it back.
+drop policy if exists "Public read headshots" on storage.objects;

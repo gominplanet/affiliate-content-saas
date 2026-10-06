@@ -17,9 +17,12 @@ CREATE INDEX IF NOT EXISTS cta_stickers_user_created_idx
 ALTER TABLE cta_stickers ENABLE ROW LEVEL SECURITY;
 
 -- Owner-only across the board (private to the creator who designed them).
+DROP POLICY IF EXISTS "cta_stickers owner select" ON cta_stickers;
 CREATE POLICY "cta_stickers owner select" ON cta_stickers
   FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "cta_stickers owner insert" ON cta_stickers;
 CREATE POLICY "cta_stickers owner insert" ON cta_stickers
   FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "cta_stickers owner delete" ON cta_stickers;
 CREATE POLICY "cta_stickers owner delete" ON cta_stickers
   FOR DELETE USING (auth.uid() = user_id);

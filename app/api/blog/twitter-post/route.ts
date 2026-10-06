@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,9 +164,6 @@ export async function POST(request: NextRequest) {
         .replace(/<[^>]+>/g, '')
         .slice(0, 1200)
 
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       // A PROVIDER ERROR IS NOT A SENTENCE. Uncaught, an overload or refusal
@@ -179,7 +176,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single tweet for this product review article.
 
-Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The tweet text alone (BEFORE the URL is appended) must be ${generationBudget} characters or fewer.
