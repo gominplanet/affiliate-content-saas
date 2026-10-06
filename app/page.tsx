@@ -735,8 +735,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  *
  *  The proof is the founder's own brand, Gominplanet: a +$3M/yr affiliate
  *  business run on MVP, and the edge it gives in attracting brand partners.
- *  Backed by defensible numbers (the 4-min workflow, 9 outputs/video, the
- *  fact-grounding guarantee). No fabricated customer quotes.
+ *  Backed only by numbers we can stand behind. No fabricated customer quotes.
  */
 /** Founder section — a real face + the $3M story. Trust lever the competitors
  *  both use (logie5's "since day one", Oink's "I'm Rob"). Photo: sebmichelle. */
@@ -1050,8 +1049,8 @@ function ProofSection() {
           </p>
         </div>
 
-        {/* 4-up stat row. Each big number with a label. */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* The stat row: only numbers we can back up. */}
+        <div className="grid grid-cols-1 gap-4 max-w-xs mx-auto">
           {STATS.map(s => (
             <StatCard key={s.label} stat={s} />
           ))}
@@ -1070,9 +1069,9 @@ interface Stat {
 
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
-  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog, comparison, buying guide, thumbnail, script + social fan-out' },
-  { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
+  // "4 min", "9 outputs" and "0 fabricated claims" came out (Seb, 2026-10-07):
+  // none of them could be checked against anything. Only numbers we can stand
+  // behind go here.
 ]
 
 function StatCard({ stat }: { stat: Stat }) {

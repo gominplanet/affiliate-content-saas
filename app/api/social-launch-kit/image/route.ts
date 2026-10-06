@@ -212,7 +212,7 @@ export async function POST(request: Request) {
 
   let sourceB64 = ''
   let sourceUrl = ''
-  let usedModel: 'gpt-image-1' | 'fal-nano-banana' | 'fal-ideogram-v3' = 'gpt-image-1'
+  let usedModel: 'gpt-image-1' | 'gpt-image-1-medium' | 'fal-nano-banana' | 'fal-ideogram-v3' = 'gpt-image-1'
 
   // ── HAND-COMPOSITED WIDE PATH ─────────────────────────────────────────────
   // Extreme-wide banners (X/Bluesky 3:1, LinkedIn 4:1): no model renders both an
@@ -250,7 +250,8 @@ export async function POST(request: Request) {
     sourceB64 = refs.length
       ? await openai.generateWithReferences({ prompt, images: refs, size: kind === 'banner' ? '1536x1024' : '1024x1024', quality: 'high' })
       : await openai.generateHeroImage(prompt)
-    usedModel = 'gpt-image-1'
+    // References render at high quality; the plain hero is medium.
+    usedModel = refs.length ? 'gpt-image-1' : 'gpt-image-1-medium'
   } catch {
     // OpenAI unavailable → Nano Banana Pro with the same brief-driven prompt (needs a fal ref).
     const falRefs = [customRef ? await uploadDataUrlToFal(customRef) : null, ...(logoUrl ? await rehostAll([logoUrl]) : [])]
