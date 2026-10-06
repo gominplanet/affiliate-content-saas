@@ -64,6 +64,7 @@ import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
 import AmazonTagNudge from './AmazonTagNudge'
+import ScoutRequired from './ScoutRequired'
 // TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
@@ -1348,6 +1349,10 @@ export default function DashboardShellV2({
         {/* Alert when no Amazon Associates tag is set — Amazon affiliate links
             can't earn without it. Dismissible; self-hides once a tag exists. */}
         <AmazonTagNudge />
+        {/* SCOUT installed, current and working in the background, or a plain
+            line saying which of those is missing. Also switches its background
+            work on, so first comments post from Chrome, not the shared quota. */}
+        <ScoutRequired tier={String(tier)} />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison
