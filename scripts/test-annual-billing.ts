@@ -205,6 +205,12 @@ const days = (n: number) => n * 24 * 60 * 60 * 1000
   check('a logged-out buyer keeps their choice through signup',
     /billing=annual/.test(BUTTON),
     'otherwise they pick yearly, sign up, and are quietly put on monthly')
+  // The button half alone was true for months while the signup form and
+  // /api/auth/signup-paid both ignored ?billing=annual, which is exactly the
+  // failure the line above describes.
+  check('and the signup form and paid-signup route actually honour it',
+    /sp\.get\('billing'\) === 'annual'/.test(read('components/auth/SignupForm.tsx'))
+      && /annualPriceIdFor\(tier\)/.test(read('app/api/auth/signup-paid/route.ts')))
 
   check('the saving is stated in dollars, which is exact',
     /Save up to \$\{best\}/.test(PRICING))

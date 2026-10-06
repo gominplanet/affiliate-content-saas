@@ -15,7 +15,7 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
 
-const PAID_SIGNUP_TIERS = ['creator', 'amazon', 'studio', 'pro']
+const PAID_SIGNUP_TIERS = ['amazon', 'pro']
 
 export default function SignupForm() {
   const router = useRouter()
@@ -43,6 +43,9 @@ export default function SignupForm() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [paidTier, setPaidTier] = useState<string | null>(null)
+  // Yearly chosen on the pricing page (?billing=annual). Was dropped here, so a
+  // logged-out buyer who picked yearly was checked out monthly.
+  const [annual, setAnnual] = useState(false)
   const [path, setPath] = useState<OnboardingPath | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
@@ -81,6 +84,7 @@ export default function SignupForm() {
     // never seen a checkout. The API has always accepted the tier; only this
     // list did not.
     if (t && PAID_SIGNUP_TIERS.includes(t)) setPaidTier(t)
+    setAnnual(sp.get('billing') === 'annual')
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
     setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
@@ -131,6 +135,7 @@ export default function SignupForm() {
             password,
             fullName,
             tier: paidTier,
+            interval: annual ? 'year' : 'month',
             referral: rw?.referral ?? null,
             couponId: rw?.coupon?.id ?? null,
           }),

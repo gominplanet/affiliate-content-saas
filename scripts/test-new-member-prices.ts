@@ -85,7 +85,9 @@ async function main() {
   check('checkout compares the Stripe price with the shown one before it changes anything',
     guardAt > 0 && guardAt < CO.indexOf('stripe.subscriptions.update(') && guardAt < CO.indexOf('stripe.checkout.sessions.create('))
   const SP = r('app/api/auth/signup-paid/route.ts')
-  const spAt = SP.indexOf("await priceMismatch(getStripe(), priceId, tier as Tier, 'month', 'paid signup')")
+  // Was pinned to 'month'. Paid signup now honours ?billing=annual (it used to
+  // check out a yearly buyer monthly), so it compares at the interval it bills.
+  const spAt = SP.indexOf("await priceMismatch(getStripe(), priceId, tier as Tier, annualId ? 'year' : 'month', 'paid signup')")
   check('paid signup checks it before the account is created', spAt > 0 && spAt < SP.indexOf('admin.auth.admin.createUser('))
   check('re-selecting your own plan keeps the price you pay',
     /\(sameInterval && !!item\.price\?\.id && tierIds\.includes\(item\.price\.id\)\)/.test(CO))

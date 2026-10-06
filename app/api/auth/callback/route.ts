@@ -77,5 +77,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  // Carry `next` so signing in by hand still lands in the onboarding they
+  // signed up for; LoginForm explains the failure and re-validates the path.
+  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed&next=${encodeURIComponent(next)}`)
 }

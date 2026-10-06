@@ -22,6 +22,10 @@ export default function BillingPage() {
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
   const [upgraded, setUpgraded] = useState(false)
+  // The plan Stripe's success URL says they just bought, and how many times we
+  // have re-read the row waiting for the webhook to grant it (see below).
+  const [boughtPlan, setBoughtPlan] = useState<Tier | null>(null)
+  const [confirmTries, setConfirmTries] = useState(0)
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [promoCode, setPromoCode] = useState('')
@@ -118,6 +122,7 @@ export default function BillingPage() {
       const q = new URLSearchParams(window.location.search)
       const plan = q.get('plan') as Tier | null
       const cs = q.get('cs')
+      if (plan && TIERS[plan]) setBoughtPlan(plan)
       const value = plan && TIERS[plan] ? TIERS[plan].price : undefined
       trackMeta(
         'Purchase',
@@ -146,6 +151,22 @@ export default function BillingPage() {
     if (loading || !highlightPlan) return
     planPickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [loading, highlightPlan])
+
+  // BACK FROM STRIPE BEFORE THE WEBHOOK. Stripe redirects here the moment the
+  // card clears, and the tier is only written when its webhook lands, usually a
+  // few seconds later. Until then this page said "You're on the Free plan.
+  // Welcome aboard!" and offered the Upgrade buttons again; with no Stripe
+  // customer on file yet, clicking one opened a SECOND checkout and a second
+  // subscription. So: re-read every few seconds, keep the picker hidden, and
+  // say plainly if it never arrives.
+  const awaitingWebhook = upgraded && !loading && realTier !== 'admin'
+    && (boughtPlan ? realTier !== boughtPlan : realTier === 'trial')
+  const confirmGaveUp = awaitingWebhook && confirmTries >= 12
+  useEffect(() => {
+    if (!awaitingWebhook || confirmGaveUp) return
+    const t = setTimeout(() => { setConfirmTries((n) => n + 1); void load() }, 2500)
+    return () => clearTimeout(t)
+  }, [awaitingWebhook, confirmGaveUp, confirmTries, load])
 
   const currentTier = TIERS[tier]
   const isPaid = tier !== 'trial' && tier !== 'admin'
@@ -344,8 +365,24 @@ export default function BillingPage() {
             </div>
           )}
 
-          {/* Upgrade success banner */}
-          {upgraded && (
+          {/* Upgrade success banner, only once the plan is really on the account */}
+          {awaitingWebhook && !confirmGaveUp && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/20">
+              <Loader2 size={18} className="text-[#7C3AED] flex-shrink-0 animate-spin" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Checkout complete. Activating your <strong>{boughtPlan ? TIERS[boughtPlan].label : 'new'}</strong> plan now, which usually takes a few seconds.
+              </p>
+            </div>
+          )}
+          {confirmGaveUp && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#FF9500]/10 border border-[#FF9500]/30">
+              <Zap size={18} className="text-[#FF9500] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Checkout finished, but your plan has not switched over yet. Refresh this page in a minute. Please do not buy again: if it still shows {currentTier.label} after that, contact support and we will fix it.
+              </p>
+            </div>
+          )}
+          {upgraded && !awaitingWebhook && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/20">
               <PartyPopper size={18} className="text-[#34c759] flex-shrink-0" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -439,7 +476,7 @@ export default function BillingPage() {
           </div>
 
           {/* Plans */}
-          {tier !== 'admin' && (
+          {tier !== 'admin' && !awaitingWebhook && (
             <div ref={planPickerRef} className="card p-6">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">
                 {isPaid ? 'Change plan' : 'Upgrade your plan'}

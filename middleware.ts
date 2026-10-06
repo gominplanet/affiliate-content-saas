@@ -237,7 +237,17 @@ export async function middleware(request: NextRequest) {
 
   if (session && (pathname === '/login' || pathname === '/signup')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    // A signed-in visitor who clicked "Get Pro" on the homepage or an ad page
+    // arrives as /signup?plan=pro (or ?tier=). Sending them to /dashboard threw
+    // the purchase away; /billing?plan= highlights that plan's card instead.
+    const plan = pathname === '/signup' ? (url.searchParams.get('tier') || url.searchParams.get('plan')) : null
+    url.search = ''
+    if (plan === 'amazon' || plan === 'pro') {
+      url.pathname = '/billing'
+      url.searchParams.set('plan', plan)
+    } else {
+      url.pathname = '/dashboard'
+    }
     return NextResponse.redirect(url)
   }
 
