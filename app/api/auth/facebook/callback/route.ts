@@ -5,6 +5,7 @@ import { clearConnectionHealth } from '@/lib/connection-probe'
 import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/facebook'
 import { syncFacebookAccounts } from '@/lib/social-accounts'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('facebook', state, redirectUri)
+  const stateUserId = verified?.uid ?? null
+
   if (error || !code) {
     return NextResponse.redirect(`${setupUrl}?fb_error=access_denied`)
   }
@@ -25,15 +31,14 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-    // CSRF check (2026-06-02 audit fix): require the OAuth state to
-    // match the current session user. Without this, an attacker can
-    // lure a victim to a crafted Facebook authorize URL that binds
-    // the attacker's Page (with attacker access token) into the
-    // victim's MVP account on callback. We pass user.id as `state`
-    // at start; if it's missing or doesn't match, abort.
-    if (!state || state !== user.id) {
-      console.warn('[facebook/callback] state mismatch — possible CSRF', { hasState: !!state, sessionUid: user.id })
-      return NextResponse.redirect(`${setupUrl}?fb_error=state_mismatch`)
+    // CSRF check (2026-06-02 audit fix): the state must be the one-time one
+    // this browser started, and it must name the current session user.
+    // Without this, an attacker can lure a victim to a crafted Facebook
+    // authorize URL that binds the attacker's Page (with attacker access
+    // token) into the victim's MVP account on callback.
+    if (!stateUserId || stateUserId !== user.id) {
+      console.warn('[facebook/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+      return NextResponse.redirect(`${setupUrl}?fb_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
     }
 
     // Exchange code → short-lived token → long-lived token

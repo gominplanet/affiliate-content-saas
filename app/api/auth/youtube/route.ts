@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { getOwnerUserId } from '@/lib/agency'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
 export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -9,6 +10,12 @@ export async function GET(req: Request) {
   if (!clientId || !appUrl) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 })
   }
+
+  const redirectUri = `${appUrl}/api/auth/youtube/callback`
+  // START ON THE CALLBACK'S HOST so the one-time state cookie is there when
+  // Google sends the member back (apex and www keep separate cookies).
+  const hostHop = callbackHostRedirect(req, redirectUri)
+  if (hostHop) return NextResponse.redirect(hostHop)
 
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -60,11 +67,9 @@ export async function GET(req: Request) {
   // asked for it (incremental auth) or the public flag is on (grab it on connect).
   const addUploadScope = !verifiedOnly && uploadEligible && (wantUpload || youtubeUploadEnabled())
 
-  // Encode user ID (+ optional return path) in state so the callback can
-  // identify the user without a session cookie. JSON now; the callback still
-  // accepts the legacy bare-uid format for any in-flight old requests.
-  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo, add: addChannel })).toString('base64url')
-  const redirectUri = `${appUrl}/api/auth/youtube/callback`
+  // RANDOM, ONE-TIME STATE (lib/oauth-state). The return path and the
+  // "add another channel" flag ride in the httpOnly state cookie, not the URL.
+  const state = await startOAuthState('youtube', user.id, redirectUri, { rt: returnTo, add: addChannel })
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', clientId)

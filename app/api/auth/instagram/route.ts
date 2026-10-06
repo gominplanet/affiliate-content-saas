@@ -13,9 +13,15 @@ import { createServerClient } from '@/lib/supabase/server'
 import { buildAuthUrl } from '@/services/instagram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
-export async function GET() {
+export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  const redirectUri = `${appUrl}/api/auth/instagram/callback`
+  // START ON THE CALLBACK'S HOST so the one-time state cookie is there when
+  // Instagram sends the member back (apex and www keep separate cookies).
+  const hostHop = callbackHostRedirect(request, redirectUri)
+  if (hostHop) return NextResponse.redirect(hostHop)
 
   // Resolve the user first so the reviewer test account / admins can start the
   // OAuth flow while Meta is gated for the public.
@@ -43,12 +49,13 @@ export async function GET() {
     return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=server_not_configured`)
   }
 
-  // CSRF protection — pass user id as state so the callback can validate.
-  // Instagram echoes this back; we check it matches the current session user.
+  // CSRF protection: a RANDOM, ONE-TIME state (lib/oauth-state) bound to this
+  // user in an httpOnly cookie. Instagram echoes it back and the callback
+  // verifies and burns it. The bare user id used to be the state: guessable.
   const url = buildAuthUrl({
     clientId,
-    redirectUri: `${appUrl}/api/auth/instagram/callback`,
-    state: user.id,
+    redirectUri,
+    state: await startOAuthState('instagram', user.id, redirectUri),
   })
   return NextResponse.redirect(url)
 }

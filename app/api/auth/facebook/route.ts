@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
 export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  // START ON THE CALLBACK'S HOST so the one-time state cookie (and the session
+  // read below) are on the host Facebook sends the member back to.
+  const hostHop = appUrl ? callbackHostRedirect(request, `${appUrl}/api/auth/facebook/callback`) : null
+  if (hostHop) return NextResponse.redirect(hostHop)
   // Read the session (no DB query) so the reviewer test account / admins can
   // start the OAuth flow while Meta is gated for the public.
   const supabase = await createServerClient()
@@ -30,20 +35,20 @@ export async function GET(request: Request) {
     ? 'pages_show_list,pages_manage_posts,business_management,pages_messaging,pages_read_engagement,pages_manage_metadata'
     : 'pages_show_list,pages_manage_posts,business_management'
 
-  // CSRF protection: pass the user's id as `state`, then verify at the
-  // callback that the returning user matches. Without this, an attacker
-  // could lure a logged-in victim into clicking a crafted Facebook
-  // authorize URL with the attacker's app/page params and bind the
-  // attacker's Page into the victim's account. Found in 2026-06-02
-  // audit. Matches the pattern already used by /api/auth/twitter.
+  // CSRF protection: a RANDOM, ONE-TIME state (lib/oauth-state) bound to this
+  // user in an httpOnly cookie, verified and burned at the callback. Without
+  // it an attacker could lure a logged-in victim through a crafted authorize
+  // URL and bind the attacker's Page into the victim's account (2026-06-02
+  // audit). The user id used to be the state, which is guessable and reusable.
   if (!user) return NextResponse.redirect(`${appUrl}/login?from=facebook`)
+  const state = await startOAuthState('facebook', user.id, redirectUri)
 
   const url = new URL('https://www.facebook.com/v19.0/dialog/oauth')
   url.searchParams.set('client_id', appId)
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('scope', scope)
   url.searchParams.set('response_type', 'code')
-  url.searchParams.set('state', user.id)
+  url.searchParams.set('state', state)
 
   const res = NextResponse.redirect(url.toString())
   // ?return=meta (from Meta Hub): the callback brings the creator back there.

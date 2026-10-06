@@ -4,6 +4,7 @@ import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, fetchThreadsProfile } from '@/services/threads'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { syncThreadsAccount } from '@/lib/social-accounts'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -11,6 +12,11 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const error = searchParams.get('error')
   const state = searchParams.get('state')
+
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('threads', state, `${appUrl}/api/auth/threads/callback`)
+  const stateUserId = verified?.uid ?? null
 
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent(error || 'no_code')}`)
@@ -20,18 +26,13 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  // CSRF: the state we issued must decode to the CURRENT session user.
-  // Without this, an attacker could start their own Threads authorization,
-  // hold the code, and get a logged-in victim to load this URL — binding the
-  // attacker's Threads account to the victim's tenant. Matches the check in
-  // twitter/callback and facebook/callback.
-  let stateUserId: string | null = null
-  if (state) {
-    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
-  }
+  // CSRF: the state must be the one-time one we issued to this browser, for
+  // the CURRENT session user. Without this, an attacker could start their own
+  // Threads authorization, hold the code, and get a logged-in victim to load
+  // this URL, binding the attacker's Threads account to the victim's tenant.
   if (!stateUserId || stateUserId !== user.id) {
-    console.warn('[threads/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
-    return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
+    console.warn('[threads/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
 
   let step = 'token_exchange'

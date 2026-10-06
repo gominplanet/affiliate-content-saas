@@ -13,11 +13,11 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import {
-  signState,
   normalizeWpSiteUrl,
   MVP_WP_APP_ID,
   MVP_WP_APP_NAME,
 } from '@/lib/wp-oauth'
+import { startOAuthState } from '@/lib/oauth-state'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export async function GET(request: Request) {
@@ -46,10 +46,6 @@ export async function GET(request: Request) {
     throw e
   }
 
-  // Sign state so the callback can verify it really came from us and recover
-  // which MVP user is connecting + which site URL they typed.
-  const state = signState({ userId: user.id, siteUrl })
-
   // The callback URL on OUR side. Critical: must use the SAME hostname the
   // user came in on (apex vs. www), not whatever NEXT_PUBLIC_APP_URL is —
   // otherwise the user gets redirected back to a host their auth cookie
@@ -61,7 +57,13 @@ export async function GET(request: Request) {
   const appUrl = reqHost
     ? `${reqProto}//${reqHost}`
     : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/$/, '')
-  const successUrl = `${appUrl}/api/wordpress/oauth-callback?state=${encodeURIComponent(state)}`
+  // RANDOM, ONE-TIME STATE (lib/oauth-state). Which MVP user is connecting and
+  // the site URL they typed ride in an httpOnly cookie on THIS host, which is
+  // the host the callback below returns to, so no host hop is needed here.
+  // The old signed state was reusable for its whole ten minutes.
+  const callbackUrl = `${appUrl}/api/wordpress/oauth-callback`
+  const state = await startOAuthState('wordpress', user.id, callbackUrl, { siteUrl })
+  const successUrl = `${callbackUrl}?state=${encodeURIComponent(state)}`
   const rejectUrl = `${appUrl}/api/wordpress/oauth-callback?state=${encodeURIComponent(state)}&rejected=1`
 
   // WordPress core's Authorize-Application endpoint. WP shows the user a

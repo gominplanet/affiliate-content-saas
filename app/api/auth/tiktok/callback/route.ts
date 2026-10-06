@@ -20,6 +20,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 interface TikTokTokenResponse {
   access_token?: string
@@ -58,6 +59,12 @@ export async function GET(request: Request) {
   const errorParam = searchParams.get('error')
   const errorDesc = searchParams.get('error_description')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed. Same
+  // redirect_uri expression as the start route, so the cookie path matches.
+  const verified = await consumeOAuthState('tiktok', state, process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`)
+  const stateUserId = verified?.uid ?? null
+
   // ── Creator cancelled / TikTok declined ─────────────────────────────────
   if (errorParam) {
     const msg = errorDesc || errorParam
@@ -67,12 +74,13 @@ export async function GET(request: Request) {
     return redirect(`tiktok_error=${encodeURIComponent('Missing code or state from TikTok.')}`)
   }
 
-  // ── CSRF: state must match current session user ─────────────────────────
+  // ── CSRF: one-time state from this browser, for the session user ──────────
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
-  if (state !== user.id) {
-    return redirect(`tiktok_error=${encodeURIComponent('Session changed mid-OAuth. Try again.')}`)
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[tiktok/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return redirect(`tiktok_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
 
   // ── Exchange code for tokens ────────────────────────────────────────────

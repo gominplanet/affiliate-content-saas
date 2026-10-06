@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/twitter'
 import { rememberXScopes } from '@/lib/x-media'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -13,37 +13,34 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie, with the
+  // PKCE verifier in it, is deleted whatever happens next, so this callback URL
+  // can never be replayed.
+  const verified = await consumeOAuthState('twitter', state, `${appUrl}/api/auth/twitter/callback`)
+
   if (error || !code) {
     return NextResponse.redirect(
       `${appUrl}/connect-socials?twitter_error=${encodeURIComponent(error || 'no_code')}`,
     )
   }
 
-  // Decode user_id from state (set during OAuth initiation).
-  //
-  // CSRF defense-in-depth (2026-06-02 audit): require the decoded
-  // state to match the CURRENT session user. RLS + the SSR client
-  // already prevent writing to another user's row, but if anyone
-  // later swaps for createAdminClient (e.g. to "fix RLS" or for
-  // a refactor), this becomes account-takeover. Belt + suspenders.
-  let stateUserId: string | null = null
-  if (state) {
-    try {
-      stateUserId = Buffer.from(state, 'base64url').toString('utf-8')
-    } catch { /* ignore */ }
-  }
+  // CSRF defense-in-depth (2026-06-02 audit): require the one-time state
+  // to name the CURRENT session user. RLS + the SSR client already prevent
+  // writing to another user's row, but if anyone later swaps for
+  // createAdminClient (e.g. to "fix RLS" or for a refactor), this becomes
+  // account-takeover. Belt + suspenders.
+  const stateUserId = verified?.uid ?? null
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
   if (!stateUserId || stateUserId !== user.id) {
-    console.warn('[twitter/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
-    return NextResponse.redirect(`${appUrl}/connect-socials?twitter_error=state_mismatch`)
+    console.warn('[twitter/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?twitter_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
   const userId = user.id
 
-  // Pull the PKCE verifier back out of the cookie we set during /api/auth/twitter
-  const cookieStore = await cookies()
-  const codeVerifier = cookieStore.get('twitter_pkce_verifier')?.value
+  // The PKCE verifier came back in the state cookie set by /api/auth/twitter.
+  const codeVerifier = typeof verified?.data.v === 'string' ? verified.data.v : ''
   if (!codeVerifier) {
     return NextResponse.redirect(
       `${appUrl}/connect-socials?twitter_error=pkce_verifier_missing`,
@@ -87,9 +84,6 @@ export async function GET(request: NextRequest) {
     // without migration 337 saves no tokens while the screen says Connected.
     // A swallowed failure here costs a hint, not a connection.
     await rememberXScopes(supabase, userId, tokens.scope)
-
-    // Clear the verifier cookie — it's single-use.
-    cookieStore.delete('twitter_pkce_verifier')
 
     // Reconnecting must clear the "needs reconnecting" alert immediately —
     // otherwise the old failures stay the newest outcomes and it keeps nagging.

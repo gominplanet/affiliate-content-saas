@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, PinterestService } from '@/services/pinterest'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   // Must match the start route's redirect_uri byte-for-byte (Pinterest
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('pinterest', state, `${appUrl}/api/auth/pinterest/callback`)
+  const stateUserId = verified?.uid ?? null
+
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent(error || 'no_code')}`)
   }
@@ -21,16 +27,13 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  // CSRF: state must decode to the current session user. Pinterest also hands
-  // back a long-lived refresh token here, so a successful cross-bind would give
-  // the attacker durable publish access to the victim's boards.
-  let stateUserId: string | null = null
-  if (state) {
-    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
-  }
+  // CSRF: state must be this browser's one-time state for the current session
+  // user. Pinterest also hands back a long-lived refresh token here, so a
+  // successful cross-bind would give the attacker durable publish access to the
+  // victim's boards.
   if (!stateUserId || stateUserId !== user.id) {
-    console.warn('[pinterest/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
-    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
+    console.warn('[pinterest/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
 
   // Track which step failed so the surfaced error is actionable

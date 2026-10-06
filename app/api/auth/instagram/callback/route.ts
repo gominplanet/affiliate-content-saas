@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForTokens, subscribeToComments } from '@/services/instagram'
 import { syncInstagramAccount } from '@/lib/social-accounts'
@@ -20,6 +21,11 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('instagram', state, `${appUrl}/api/auth/instagram/callback`)
+  const stateUserId = verified?.uid ?? null
+
   if (error || !code) {
     const msg = errorDescription || error || 'no_code'
     return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=${encodeURIComponent(msg)}`)
@@ -29,9 +35,11 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  // CSRF — state should match the user id we passed in /api/auth/instagram
-  if (state !== user.id) {
-    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=invalid_state`)
+  // CSRF: the state must be the one-time one this browser started in
+  // /api/auth/instagram, and it must name the current session user.
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[instagram/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
 
   const clientId = process.env.INSTAGRAM_APP_ID
