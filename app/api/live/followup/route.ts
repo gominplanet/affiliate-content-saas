@@ -8,7 +8,9 @@
 // POST { action: 'create', replayUrl, planId?, read }      read = what SCOUT found
 // POST { action: 'transcribe', id }    pull the audio and transcribe it
 // POST { action: 'match', id }         find each product's moment
-// POST { action: 'clip', id, asin }    cut that product's clip
+// POST { action: 'frame', id, asin }   a still from the moment, and where the speaker is
+// POST { action: 'clip', id, asin, cropX?, layout? }   cut that product's clip,
+//                                      framed on the speaker (or where the creator set)
 // POST { action: 'roundup', id }       the "everything I showed" post, as text
 // POST { action: 'delete', id }
 //
@@ -20,30 +22,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { pickStream, wordsInWindow, composeRoundup, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
-import { streamAudio, transcribeLive, matchMoments, renderLiveClip } from '@/lib/live-followup-server'
+import { spendGate } from '@/lib/ai-spend'
+import { pickStream, wordsInWindow, composeRoundup, cropXForFace, type LiveMoment, type LiveProduct } from '@/lib/live-followup'
+import { streamAudio, transcribeLive, matchMoments, renderLiveClip, liveFrame, findSpeaker } from '@/lib/live-followup-server'
 import { resolveClipLinks } from '@/lib/reel-caption'
+import { broadcastIdOf, parseLiveReplayHtml, vttToWordCues, type LiveReplayPage } from '@/lib/amazon-live-page'
+import { fetchAmazonProduct } from '@/services/amazon'
 import type { TranscriptCue } from '@/lib/shorts-types'
+import { amazonLiveLimit } from '@/lib/amazon-live-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const COLS = 'id,plan_id,replay_url,title,stream_url,page_asins,duration_sec,moments,missing,state,error,created_at,updated_at'
+const COLS = 'id,plan_id,replay_url,title,stream_url,page_asins,duration_sec,audio_url,moments,missing,state,error,created_at,updated_at'
 const missingTable = (m?: string) => /live_followups/.test(m || '') && /does not exist|could not find/i.test(m || '')
 
-async function gate() {
+async function gate(mode: 'read' | 'paid' = 'paid') {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of Pro.', upgrade: true }, { status: 403 }) }
+  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of the Amazon and Pro plans.', upgrade: true }, { status: 403 }) }
+  // The monthly spend ceiling, like every other paid route. Follow-up runs
+  // Whisper on the replay and Claude on the moments, and was the one paid
+  // feature with no backstop at all. Reads (GET) pass through: they cost nothing.
+  if (mode === 'paid') {
+    const blocked = await spendGate(user.id, intg?.tier)
+    if (blocked) return { error: blocked }
+  }
   return { userId: user.id as string, tier: (intg?.tier as string | null) ?? null }
 }
 
 export async function GET(req: NextRequest) {
-  const g = await gate()
+  const g = await gate('read')
   if ('error' in g) return g.error
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
@@ -70,18 +83,56 @@ export async function POST(req: NextRequest) {
   if (action === 'create') {
     const replayUrl = String(body.replayUrl || '').trim()
     if (!/^https:\/\/(www\.)?amazon\.com\/live\//i.test(replayUrl)) return NextResponse.json({ error: 'Paste the replay link from amazon.com/live.' }, { status: 400 })
-    const read = (body.read || {}) as { streams?: unknown; asins?: unknown; title?: unknown; durationSec?: unknown }
-    const streams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter((s) => /^https:\/\//i.test(s)).slice(0, 20)
-    const stream = pickStream(streams)
-    if (!stream) return NextResponse.json({ error: 'SCOUT found no video stream on that page.' }, { status: 422 })
+    // THE BROADCAST, NAMED. Without its id the page cannot be read here, and
+    // the stream would be whatever the request said it was: any https address,
+    // fetched and transcribed by MVP's video service on MVP's account.
+    const broadcastId = broadcastIdOf(replayUrl)
+    if (!broadcastId) return NextResponse.json({ error: 'That link does not name a broadcast. Open the Live on amazon.com and copy the link from the address bar (it contains /live/broadcast/).' }, { status: 400 })
     const planId = typeof body.planId === 'string' && body.planId ? body.planId : null
+    // 1. The replay page itself: its data names the stream, Amazon's captions
+    //    and the products shown, with no login (lib/amazon-live-page).
+    const page = await readReplayPage(replayUrl)
+    // 2. What SCOUT read in the browser, when the page could not be read here.
+    const read = (body.read || {}) as { streams?: unknown; asins?: unknown; title?: unknown; durationSec?: unknown }
+    // Only Amazon's own video hosts, and only this broadcast's video.
+    const amazonVideo = (x: string) => {
+      try {
+        const u = new URL(x)
+        return u.protocol === 'https:' && /(?:^|\.)(?:cloudfront\.net|media-amazon\.com|amazon\.com|live-video\.net|amazonvideo\.com)$/i.test(u.hostname)
+          && u.pathname.toLowerCase().includes(broadcastId)
+      } catch { return false }
+    }
+    const scoutStreams = (Array.isArray(read.streams) ? read.streams : []).map(String).filter(amazonVideo).slice(0, 20)
+    const stream = page.ok && page.data.streamUrl ? page.data.streamUrl : pickStream(scoutStreams)
+    if (!stream) {
+      return NextResponse.json({
+        error: page.ok ? 'The replay page names no video for this Live. Is the replay finished processing on Amazon?' : `MVP could not read the replay page (${page.error}).`,
+        tryScout: !body.read,
+      }, { status: 422 })
+    }
+    const asins = page.ok && page.data.asins.length ? page.data.asins
+      : (Array.isArray(read.asins) ? read.asins : []).map(String).filter((a) => /^[A-Z0-9]{10}$/.test(a)).slice(0, 60)
+    // Amazon's own captions, when the replay has them: exact, free and
+    // instant, so the transcription step is not needed.
+    let cues: Array<{ start: number; end: number; text: string }> = []
+    if (page.ok && page.data.captionUrl) {
+      try {
+        const r = await fetch(page.data.captionUrl, { signal: AbortSignal.timeout(15_000) })
+        if (r.ok) cues = vttToWordCues(await r.text())
+      } catch { /* the transcription step remains */ }
+    }
+    // The Amazon plan: 4 follow-ups a month (lib/amazon-live-limit).
+    const showCap = await amazonLiveLimit(g.userId, g.tier, 'followup')
+    if (showCap) return showCap
     const { data, error } = await admin.from('live_followups').insert({
-      user_id: g.userId, plan_id: planId, replay_url: replayUrl, title: String(read.title || '').slice(0, 200) || null,
-      stream_url: stream, streams, page_asins: (Array.isArray(read.asins) ? read.asins : []).map(String).filter((a) => /^[A-Z0-9]{10}$/.test(a)).slice(0, 60),
-      duration_sec: Number.isFinite(Number(read.durationSec)) ? Math.round(Number(read.durationSec)) : null, state: 'read',
+      user_id: g.userId, plan_id: planId, replay_url: replayUrl,
+      title: ((page.ok && page.data.title) || String(read.title || '')).slice(0, 200) || null,
+      stream_url: stream, streams: page.ok && page.data.streamUrl ? [page.data.streamUrl] : scoutStreams, page_asins: asins,
+      duration_sec: (page.ok && page.data.durationSec) || (Number.isFinite(Number(read.durationSec)) ? Math.round(Number(read.durationSec)) : null),
+      ...(cues.length ? { cues, state: 'transcribed' } : { state: 'read' }),
     }).select(COLS).single()
     if (error) return NextResponse.json({ error: missingTable(error.message) ? 'Migration 394 has not been run.' : error.message }, { status: 500 })
-    return NextResponse.json({ followup: data })
+    return NextResponse.json({ followup: data, source: page.ok ? 'page' : 'scout', captions: cues.length ? 'amazon' : null, words: cues.length })
   }
 
   const id = String(body.id || '')
@@ -114,21 +165,70 @@ export async function POST(req: NextRequest) {
   if (action === 'match') {
     const cues = (Array.isArray(row.cues) ? row.cues : []) as TranscriptCue[]
     if (!cues.length) return NextResponse.json({ error: 'Transcribe the replay first.' }, { status: 409 })
-    const products = await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])
+    const { products, unnamed } = await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])
     const m = await matchMoments(products, cues, row.duration_sec ?? null, g.userId, g.tier)
     if (!m.ok) return fail(m.error)
-    const followup = await save({ moments: m.moments, missing: m.missing, state: 'matched', error: null })
+    // A product shown that MVP could not name cannot be looked for in speech:
+    // it is listed with the ones not found, never dropped without a word.
+    const missing = [...m.missing, ...unnamed.map((asin) => ({ asin, title: `${asin} (no product name found)` }))]
+    // CLIPS AND FRAMING ALREADY MADE ARE KEPT. Finding the products again
+    // replaced every moment, so each clip and every hand-set framing vanished
+    // without a word. A product found at the same time keeps all of it; one
+    // found at a new time keeps the framing (same Live, same set) but not the
+    // clip, which was cut from the old window.
+    const before = new Map(((Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]).map((x) => [x.asin, x]))
+    const merged = m.moments.map((mo) => {
+      const old = before.get(mo.asin)
+      if (!old) return mo
+      const keepFrame = { cropX: old.cropX, framing: old.framing, layout: old.layout, frameUrl: old.frameUrl, frameAspect: old.frameAspect, frameNote: old.frameNote }
+      return old.startSec === mo.startSec && old.endSec === mo.endSec
+        ? { ...mo, ...keepFrame, clipUrl: old.clipUrl, clipError: old.clipError }
+        : { ...mo, ...keepFrame }
+    })
+    const followup = await save({ moments: merged, missing, state: 'matched', error: null })
     return NextResponse.json({ followup })
   }
 
-  if (action === 'clip') {
+  // FRAMING. One still from the moment, and where the speaker is in it, so
+  // the 9:16 window sits on them instead of the middle of the frame.
+  const uid = g.userId as string
+  const tier = g.tier
+  async function autoFrame(mo: LiveMoment): Promise<LiveMoment> {
+    const at = mo.startSec + Math.min(20, (mo.endSec - mo.startSec) * 0.3)
+    const f = await liveFrame(row.stream_url, at, uid)
+    if (!f.ok) return { ...mo, cropX: mo.cropX ?? 0.5, framing: 'centre', frameNote: f.error }
+    const sp = await findSpeaker(f.url, uid, tier)
+    const faceX = sp.ok ? sp.faceX : null
+    return {
+      ...mo, frameUrl: f.url, frameAspect: f.aspect,
+      cropX: faceX == null ? 0.5 : cropXForFace(faceX, f.aspect),
+      framing: faceX == null ? 'centre' : 'auto',
+      layout: mo.layout ?? 'center',
+      frameNote: sp.ok ? (faceX == null ? 'No face was clear in this frame, so the middle is used.' : null) : sp.error,
+    }
+  }
+
+  if (action === 'frame' || action === 'clip') {
     const asin = String(body.asin || '').toUpperCase()
     const moments = (Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]
     const i = moments.findIndex((x) => x.asin === asin)
     if (i < 0) return NextResponse.json({ error: 'That product has no moment in this replay.' }, { status: 404 })
-    const mo = moments[i]
+    let mo = moments[i]
+    // The creator's own framing wins; otherwise MVP finds the speaker once.
+    const x = Number(body.cropX)
+    if (Number.isFinite(x) && x >= 0 && x <= 1) mo = { ...mo, cropX: Math.round(x * 1000) / 1000, framing: 'manual' }
+    if (body.layout === 'split' || body.layout === 'center') mo = { ...mo, layout: body.layout }
+    if (action === 'frame' || mo.cropX == null || body.refind === true) {
+      const keepManual = mo.framing === 'manual' && action === 'clip' && body.refind !== true
+      const framed = await autoFrame(mo)
+      mo = keepManual ? { ...framed, cropX: mo.cropX, framing: 'manual' } : framed
+    }
+    if (action === 'frame') {
+      moments[i] = mo
+      return NextResponse.json({ followup: await save({ moments }) })
+    }
     const words = wordsInWindow((Array.isArray(row.cues) ? row.cues : []) as TranscriptCue[], mo.startSec, mo.endSec)
-    const r = await renderLiveClip(row.stream_url, mo.startSec, mo.endSec, words, g.userId)
+    const r = await renderLiveClip(row.stream_url, mo.startSec, mo.endSec, words, g.userId, { cropX: mo.cropX, layout: mo.layout })
     moments[i] = { ...mo, clipUrl: r.ok ? r.url : (mo.clipUrl ?? null), clipError: r.ok ? null : r.error }
     const followup = await save({ moments })
     return r.ok ? NextResponse.json({ followup, clipUrl: r.url }) : NextResponse.json({ error: r.error, followup }, { status: 502 })
@@ -138,7 +238,7 @@ export async function POST(req: NextRequest) {
     const moments = (Array.isArray(row.moments) ? row.moments : []) as LiveMoment[]
     const products: Array<{ asin: string; title: string }> = moments.length
       ? moments.map((m) => ({ asin: m.asin, title: m.title }))
-      : (await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])).map((p) => ({ asin: p.asin, title: p.title }))
+      : (await productsFor(admin, g.userId, row.plan_id, row.page_asins ?? [])).products.map((p) => ({ asin: p.asin, title: p.title }))
     if (!products.length) return NextResponse.json({ error: 'No products to list yet.' }, { status: 409 })
     let disclosure = ''
     const items: Array<{ title: string; link: string | null }> = []
@@ -154,32 +254,62 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
 }
 
-/** What to look for: the show plan's products in order, then anything else
- *  the replay page listed, named from the creator's storefront where known. */
+/** What to look for: the products the replay page lists, in the order shown,
+ *  then any in the show plan the page did not list. Each is named from the
+ *  plan, the creator's storefront, videos and campaigns, then Amazon's page.
+ *  Products no source could name come back as `unnamed`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function productsFor(admin: any, userId: string, planId: string | null, pageAsins: string[]): Promise<LiveProduct[]> {
-  const out: LiveProduct[] = []
-  const seen = new Set<string>()
+async function productsFor(admin: any, userId: string, planId: string | null, pageAsins: string[]): Promise<{ products: LiveProduct[]; unnamed: string[] }> {
+  const plan = new Map<string, { title: string; plannedMin: number | null }>()
   if (planId) {
     const { data } = await admin.from('live_plans').select('plan').eq('id', planId).eq('user_id', userId).maybeSingle()
-    const segs = Array.isArray(data?.plan?.segments) ? data.plan.segments : []
-    for (const s of segs as Array<{ asin?: string; title?: string; startMin?: number }>) {
+    for (const s of (Array.isArray(data?.plan?.segments) ? data.plan.segments : []) as Array<{ asin?: string; title?: string; startMin?: number }>) {
       const asin = String(s.asin || '').toUpperCase()
-      if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) continue
-      seen.add(asin)
-      out.push({ asin, title: String(s.title || asin), plannedMin: Number.isFinite(Number(s.startMin)) ? Number(s.startMin) : null })
+      if (/^[A-Z0-9]{10}$/.test(asin) && !plan.has(asin)) plan.set(asin, { title: String(s.title || ''), plannedMin: Number.isFinite(Number(s.startMin)) ? Number(s.startMin) : null })
     }
   }
-  const extra = pageAsins.filter((a) => !seen.has(a))
-  if (extra.length) {
-    const { data } = await admin.from('storefront_catalog').select('asin,title').eq('user_id', userId).in('asin', extra)
-    const titles = new Map(((data ?? []) as Array<{ asin: string; title: string | null }>).map((r) => [r.asin, r.title]))
-    // A product the page listed but the storefront cannot name cannot be
-    // found in speech either, so it is left out rather than guessed at.
-    for (const a of extra) {
-      const t = titles.get(a)
-      if (t) out.push({ asin: a, title: t })
-    }
+  const order = [...new Set([...pageAsins.map((a) => a.toUpperCase()), ...plan.keys()])]
+  const names = new Map<string, string>()
+  for (const [a, p] of plan) if (p.title) names.set(a, p.title)
+  const need = () => order.filter((a) => !names.get(a))
+  const fill = (rows: Array<{ asin: string | null; title: string | null }> | null | undefined) => {
+    for (const r of rows ?? []) { const a = String(r.asin || '').toUpperCase(); if (a && r.title && !names.get(a)) names.set(a, String(r.title)) }
   }
-  return out
+  if (need().length) fill((await admin.from('storefront_catalog').select('asin,title').eq('user_id', userId).in('asin', need())).data)
+  if (need().length) fill((await admin.from('youtube_videos').select('asin,title').eq('user_id', userId).in('asin', need())).data)
+  if (need().length) fill(((await admin.from('campaigns').select('asin,product_title').eq('user_id', userId).in('asin', need())).data ?? []).map((r: { asin: string; product_title: string | null }) => ({ asin: r.asin, title: r.product_title })))
+  // Amazon's own product page, for what is still unnamed (a few at a time).
+  const rest = need().slice(0, 30)
+  for (let i = 0; i < rest.length; i += 6) {
+    await Promise.all(rest.slice(i, i + 6).map(async (a) => {
+      const p = await Promise.race([fetchAmazonProduct(a).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 9000))])
+      if (p?.title) names.set(a, p.title)
+    }))
+  }
+  const products: LiveProduct[] = []
+  const unnamed: string[] = []
+  for (const a of order) {
+    const t = names.get(a)
+    if (t) products.push({ asin: a, title: t, plannedMin: plan.get(a)?.plannedMin ?? null })
+    else unnamed.push(a)
+  }
+  return { products, unnamed }
+}
+
+/** The replay page, read here. Amazon serves it without a login. */
+async function readReplayPage(url: string): Promise<{ ok: true; data: LiveReplayPage } | { ok: false; error: string }> {
+  const id = broadcastIdOf(url)
+  if (!id) return { ok: false, error: 'that is not a broadcast link' }
+  try {
+    const r = await fetch(`https://www.amazon.com/live/broadcast/${id}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36', Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
+      signal: AbortSignal.timeout(20_000), cache: 'no-store',
+    })
+    if (!r.ok) return { ok: false, error: `Amazon answered ${r.status}` }
+    const html = await r.text()
+    if (/captcha|robot check/i.test(html.slice(0, 20000)) && !/VideoObject/.test(html)) return { ok: false, error: 'Amazon showed a robot check' }
+    return { ok: true, data: parseLiveReplayHtml(html, id) }
+  } catch (e) {
+    return { ok: false, error: String(e instanceof Error ? e.message : e).slice(0, 120) }
+  }
 }

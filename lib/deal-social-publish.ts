@@ -13,6 +13,7 @@
  * Each platform runs in its own try/catch and returns an independent result, so
  * one failure never blocks the others.
  */
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import {
   decryptIntegrationRow, encryptIntegrationWrite,
 } from '@/lib/integration-secrets'
@@ -20,7 +21,8 @@ import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
-import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { postToXWithOneRetry, xPostKey, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { createFacebookService } from '@/services/facebook'
 import { ThreadsService } from '@/services/threads'
 import { createLinkedInService } from '@/services/linkedin'
@@ -111,6 +113,10 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
     try {
       const link = linkFor(platform)
       if (platform === 'twitter') {
+        // X is a Pro channel (TIERS socials), and the one that costs us per
+        // request. The blog X route checked the plan; this deal path did not,
+        // so a plan without X could still post deals to it.
+        if (!tierAllowsSocial(ig.tier as Tier, 'twitter')) throw new Error('Posting to X is part of the Pro plan.')
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
         // Refresh the token BEFORE reserving the paid slot. A refresh failure
@@ -134,18 +140,18 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         // attaches. X was the only one posting a bare link and hoping the card
         // rendered. Resolved BEFORE the cap reservation so a slow image download
         // cannot widen the window a concurrent post races through.
+        // A deal X already refused twice today is not sent again, and that is
+        // checked before the image upload, itself a request to X.
+        const xKey = xPostKey('deal', `${deal.asin}:${new Date().toISOString().slice(0, 10)}`)
+        if (await xFailedAttempts(userId, xKey) >= X_ATTEMPTS_PER_POST) throw new Error(xDroppedMessage())
         const xMedia = await resolveXMedia({ accessToken: token!, imageUrl: img, grantedScopes: twScopes })
-        // X is the only paid-per-post channel — reserve a slot atomically before
-        // posting so concurrent posts can't overspend the cap. Refund on failure.
-        const xres = await reserveXPost(supabase, userId)
-        if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
-        let t
-        try {
-          t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer), xMedia.mediaIds)
-        } catch (e) {
-          await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
-          throw e
-        }
+        // X is the only paid-per-post channel. postToXWithOneRetry reserves a
+        // cap slot per request, refunds a failure, and sends one re-attempt at
+        // most (lib/x-retry). A deal is one post per product per UTC day.
+        const t = await postToXWithOneRetry({
+          supabase, userId, key: xKey,
+          tweet: () => createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer), xMedia.mediaIds),
+        })
         // The reservation already counted this post (no recordXPost).
         // ok:true AND a note: the post went out, and it went out without the
         // picture the creator saw in the preview. Neither half is the whole
@@ -168,10 +174,15 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         })
         if (!acct) throw new Error('Facebook Page is not connected.')
         const caption = composeText(baseCaption, 'facebook', link, disclaimer, retailer)
+        // A deal post always carries its Amazon link: the first thing Meta's
+        // monthly link limit stops. Past it, not posted, and said why.
+        const linkCheck = await checkPageLinkPost({ userId, pageId: acct.externalId, pageName: acct.displayName, text: caption, link: img ? null : link })
+        if (!linkCheck.ok) throw new Error(linkCheck.error)
         const fb = createFacebookService(acct.accessToken, acct.externalId)
         let id: string
         if (img) { const r = await fb.postPhoto({ imageUrl: img, caption }); id = r.post_id || r.id }
         else { const r = await fb.postLink({ message: caption, link }); id = r.id }
+        if (linkCheck.counts) await recordPageLinkPost({ userId, pageId: acct.externalId, postId: id, source: 'deal' })
         return { platform, ok: true, url: `https://www.facebook.com/${id}` }
 
       } else if (platform === 'threads') {

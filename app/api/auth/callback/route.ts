@@ -1,40 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { reportRegistration } from '@/lib/meta-registration'
-
-/**
- * Validate `next` is a same-origin internal path before using it in a redirect.
- *
- * Without this, `?next=//evil.com` slipped through: Next's URL parser tolerates
- * leading `//` as a protocol-relative URL, so we'd cheerfully send the user
- * off-site post-login carrying their Supabase session cookie. Same problem
- * with `\\` and other URL schemes.
- *
- * Rules: must start with a single `/`, must NOT start with `//` or `/\`, must
- * NOT contain a scheme (http:, javascript:, data:, mailto:, etc.). Anything
- * suspicious falls back to /dashboard.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return '/dashboard'
-  if (!raw.startsWith('/')) return '/dashboard'
-  if (raw.startsWith('//')) return '/dashboard'
-  if (raw.startsWith('/\\')) return '/dashboard'
-  // Reject URL-encoded slash/backslash variants that some redirect handlers
-  // decode AFTER the origin check ( `/%2fevil.com`, `/%5cevil.com`,
-  // `/%2F%2Fevil.com`). Belt-and-braces: also reject control chars and
-  // any non-ASCII high-bit byte that some URL parsers normalize down to /.
-  if (/%2f|%5c|%00|%01|%02|%03|%04|%05|%06|%07|%08|%09|%0a|%0b|%0c|%0d|%0e|%0f/i.test(raw)) return '/dashboard'
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(raw)) return '/dashboard'
-  // Reject any scheme-looking content (e.g. `/something/javascript:alert()`).
-  if (/^\/[^/]*:/.test(raw)) return '/dashboard'
-  return raw
-}
+import { safeNextPath } from '@/lib/safe-next'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = safeNext(searchParams.get('next'))
+  // SAME-ORIGIN PATHS ONLY, or a crafted link carries the fresh session
+  // cookie off-site. lib/safe-next.ts holds the rules.
+  const next = safeNextPath(searchParams.get('next')) ?? '/dashboard'
 
   if (code) {
     const supabase = await createServerClient()
@@ -55,7 +29,11 @@ export async function GET(request: Request) {
       const user = data?.user
       const createdAt = user?.created_at ? Date.parse(user.created_at) : NaN
       const isNewAccount = Number.isFinite(createdAt) && Date.now() - createdAt < 24 * 60 * 60 * 1000
-      if (user && isNewAccount) {
+      // A TEAM INVITE IS NOT AN AD SIGNUP. Someone confirming their email on
+      // the way to /agency/accept/ is joining another member's account; counted
+      // as a creator registration, they inflated the number the ads optimise on.
+      const joiningTeam = next.startsWith('/agency/accept/')
+      if (user && isNewAccount && !joiningTeam) {
         // AWAITED, never after(). A serverless function can be frozen the
         // moment the response is returned, so an after() callback is dropped
         // mid-flight and the conversion is lost. app/api/stripe/webhook says
@@ -77,5 +55,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  // Carry `next` so signing in by hand still lands in the onboarding they
+  // signed up for; LoginForm explains the failure and re-validates the path.
+  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed&next=${encodeURIComponent(next)}`)
 }

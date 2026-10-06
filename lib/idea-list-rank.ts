@@ -66,14 +66,16 @@ export async function enrichAndRankIdeaList(
   const imageByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), i.image || null]))
 
   // Earnings + campaigns across the WHOLE list, so a campaign product deep in
-  // the list is never missed.
+  // the list is never missed. The column is commission_cents (224/252): asking
+  // for a `commission` column that does not exist failed the whole read, so
+  // every product scored zero for the creator's own sales.
   const [{ data: earnRows }, { data: campRows }] = await Promise.all([
-    sb.from('storefront_earnings').select('asin,commission').eq('user_id', userId).in('asin', allAsins),
+    sb.from('storefront_earnings').select('asin,commission_cents').eq('user_id', userId).in('asin', allAsins),
     sb.from('campaigns').select('asin').eq('user_id', userId).in('asin', allAsins),
   ])
   const earnByAsin = new Map<string, number>()
-  for (const r of (earnRows || []) as Array<{ asin: string; commission: number | null }>) {
-    earnByAsin.set(r.asin, (earnByAsin.get(r.asin) || 0) + (Number(r.commission) || 0))
+  for (const r of (earnRows || []) as Array<{ asin: string; commission_cents: number | null }>) {
+    earnByAsin.set(r.asin, (earnByAsin.get(r.asin) || 0) + (Number(r.commission_cents) || 0) / 100)
   }
   const campaignAsins = new Set((campRows || []).map((r: { asin: string }) => r.asin))
 

@@ -100,7 +100,7 @@ export default function RedirectsPage() {
       for (const m of ms) def[m.from] = (m.to && (m.confidence === 'high' || m.confidence === 'medium')) ? m.to : SKIP
       setChoice(def)
       const s = data.summary || {}
-      toast.success(`Matched ${ms.length} URLs — ${s.high || 0} strong, ${s.medium || 0} likely, ${(s.low || 0) + (s.none || 0)} unsure.`)
+      toast.success(`Matched ${ms.length} URLs: ${s.high || 0} strong, ${s.medium || 0} likely, ${(s.low || 0) + (s.none || 0)} unsure.`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Match failed')
     } finally {
@@ -168,7 +168,7 @@ export default function RedirectsPage() {
     <>
       <PageHero
         title="Fix 404s (redirects)"
-        subtitle="Paste your Search Console “Not found (404)” list — MVP matches each dead URL to the right live post and 301-redirects it, recovering the ranking history Google already found."
+        subtitle="Paste your Search Console “Not found (404)” list. MVP matches each dead URL to the right live post and 301-redirects it, recovering the ranking history Google already found."
       />
 
       <div className="max-w-4xl">
@@ -188,7 +188,7 @@ export default function RedirectsPage() {
           >
             <div className="min-w-0">
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-                Step 1 — grab your 404 list from Search Console
+                Step 1: grab your 404 list from Search Console
               </p>
               <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
                 {gscProperty
@@ -206,9 +206,9 @@ export default function RedirectsPage() {
             </a>
           </div>
 
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Step 2 — paste or upload it here</label>
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Step 2: paste or upload it here</label>
           <textarea value={input} onChange={e => setInput(e.target.value)} rows={5}
-            placeholder={`Paste 404 URLs, one per line — or the exported CSV's contents:\nhttps://yoursite.com/old-review/\nhttps://yoursite.com/another-review-2/`}
+            placeholder={`Paste 404 URLs, one per line, or the exported CSV's contents:\nhttps://yoursite.com/old-review/\nhttps://yoursite.com/another-review-2/`}
             className="w-full rounded-lg px-3 py-2 text-[13px] font-mono outline-none"
             style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           <div className="flex items-center justify-between gap-3 mt-2 flex-wrap">
@@ -226,7 +226,7 @@ export default function RedirectsPage() {
             </button>
           </div>
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-            The CSV has extra columns — that&apos;s fine, MVP pulls the URLs out and ignores the rest.
+            The CSV has extra columns. That&apos;s fine, MVP pulls the URLs out and ignores the rest.
           </p>
         </div>
 

@@ -64,7 +64,7 @@ export default function DuplicatesPage() {
       setKeeperOverride({})
       setRan(true)
       const n = data.groupCount ?? 0
-      toast.success(n ? `Found ${n} duplicate group${n === 1 ? '' : 's'} (${data.extraCount} extra post${data.extraCount === 1 ? '' : 's'}).` : 'No duplicates found — nice and clean.')
+      toast.success(n ? `Found ${n} duplicate group${n === 1 ? '' : 's'} (${data.extraCount} extra post${data.extraCount === 1 ? '' : 's'}).` : 'No duplicates found. Nice and clean.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Scan failed')
     } finally {
@@ -91,7 +91,7 @@ export default function DuplicatesPage() {
       if (!res.ok) { toast.error(data.error || 'Merge failed'); return }
       const mergedKeys = new Set(gs.map(g => g.key))
       setGroups(prev => prev.filter(g => !mergedKeys.has(g.key)))
-      toast.success(`Merged — ${data.trashed} post${data.trashed === 1 ? '' : 's'} trashed and 301-redirected to the keeper.`)
+      toast.success(`Merged: ${data.trashed} post${data.trashed === 1 ? '' : 's'} trashed and 301-redirected to the keeper.`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Merge failed')
     } finally {
@@ -105,7 +105,7 @@ export default function DuplicatesPage() {
     <>
       <PageHero
         title="Duplicate posts"
-        subtitle="Find the same product reviewed twice (WordPress adds -2 / -3 to colliding slugs). Merge keeps the best one, 301-redirects the extras to it, and trashes them — recovering your split rankings and killing the 404s."
+        subtitle="Find the same product reviewed twice (WordPress adds -2 / -3 to colliding slugs). Merge keeps the best one, 301-redirects the extras to it, and trashes them, recovering your split rankings and killing the 404s."
       />
 
       <div className="max-w-4xl">
@@ -124,7 +124,7 @@ export default function DuplicatesPage() {
               <button onClick={() => mergeGroups(groups, 'ALL')} disabled={anyMerging}
                 className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#ff3b30] hover:bg-[#e0352b] disabled:opacity-60">
                 {merging.has('ALL') ? <Loader2 size={15} className="animate-spin" /> : <GitMerge size={15} />}
-                Confirm — merge all {groups.length} groups
+                Confirm: merge all {groups.length} groups
               </button>
             ) : (
               <button onClick={() => setConfirmKey('ALL')} disabled={anyMerging}
@@ -153,7 +153,7 @@ export default function DuplicatesPage() {
             <div className="flex items-start gap-2 text-[12px] mb-4 p-3 rounded-lg" style={{ background: 'rgba(124,58,237,0.06)', color: 'var(--text-2)' }}>
               <Info size={14} className="mt-0.5 flex-shrink-0 text-[#7C3AED]" />
               <div>
-                Each group is the same product published more than once. Click a post to pick the <span className="font-semibold text-[#248a3d]">Keep</span> (defaults to the indexed / original one). <span className="font-semibold">Merge</span> 301-redirects the extras to it and moves them to WordPress Trash — recoverable from WP → Posts → Trash.
+                Each group is the same product published more than once. Click a post to pick the <span className="font-semibold text-[#248a3d]">Keep</span> (defaults to the indexed / original one). <span className="font-semibold">Merge</span> 301-redirects the extras to it and moves them to WordPress Trash. Recoverable from WP → Posts → Trash.
               </div>
             </div>
 
@@ -259,7 +259,7 @@ function DuplicateCategoriesCard() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(data.error || 'Couldn’t merge categories.'); return }
-      toast.success(`Merged ${data.groupsMerged} group${data.groupsMerged === 1 ? '' : 's'} — ${data.postsReassigned} post${data.postsReassigned === 1 ? '' : 's'} moved, ${data.categoriesRemoved} duplicate categor${data.categoriesRemoved === 1 ? 'y' : 'ies'} removed.`)
+      toast.success(`Merged ${data.groupsMerged} group${data.groupsMerged === 1 ? '' : 's'}: ${data.postsReassigned} post${data.postsReassigned === 1 ? '' : 's'} moved, ${data.categoriesRemoved} duplicate categor${data.categoriesRemoved === 1 ? 'y' : 'ies'} removed.`)
       setGroups([]); setConfirm(false)
     } catch { toast.error('Couldn’t merge categories.') } finally { setApplying(false) }
   }
@@ -285,7 +285,7 @@ function DuplicateCategoriesCard() {
             <button onClick={apply} disabled={applying}
               className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#ff3b30] hover:bg-[#e0352b] disabled:opacity-60">
               {applying ? <Loader2 size={15} className="animate-spin" /> : <GitMerge size={15} />}
-              Confirm — merge {groups.length} group{groups.length === 1 ? '' : 's'}
+              Confirm: merge {groups.length} group{groups.length === 1 ? '' : 's'}
             </button>
           ) : (
             <button onClick={() => setConfirm(true)} disabled={applying}
@@ -299,7 +299,7 @@ function DuplicateCategoriesCard() {
 
       {ran && groups.length === 0 && !scanning && (
         <div className="flex items-center gap-2 text-[13px] mt-4" style={{ color: 'var(--text-faint)' }}>
-          <CheckCircle2 size={16} className="text-[#34c759]" /> No duplicate categories — your categories are clean.
+          <CheckCircle2 size={16} className="text-[#34c759]" /> No duplicate categories: your categories are clean.
         </div>
       )}
 
@@ -310,7 +310,7 @@ function DuplicateCategoriesCard() {
               <Info size={14} className="mt-0.5 flex-shrink-0 text-[#7C3AED]" />
               <div>
                 Keep <span className="font-semibold text-[#248a3d]">{g.name}</span> ({g.keep.count} post{g.keep.count === 1 ? '' : 's'}) · remove {g.remove.length} duplicate{g.remove.length === 1 ? '' : 's'}
-                {g.totalPosts > 0 && <> — {g.totalPosts} post{g.totalPosts === 1 ? '' : 's'} will move to the keeper</>}.
+                {g.totalPosts > 0 && <>, and {g.totalPosts} post{g.totalPosts === 1 ? '' : 's'} will move to the keeper</>}.
               </div>
             </div>
           ))}

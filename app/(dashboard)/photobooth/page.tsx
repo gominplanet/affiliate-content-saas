@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
 import { FaceModelsGuide } from '@/components/guide/tool-guides'
@@ -23,6 +24,7 @@ import {
   Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2, Trash2,
   Upload, X, CheckCircle,
 } from 'lucide-react'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 interface FaceModel {
   id: string
@@ -80,6 +82,8 @@ export default function PhotoboothPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [faceError, setFaceError] = useState<string | null>(null)
+  // A list that failed to load is not "No faces yet".
+  const [facesLoadError, setFacesLoadError] = useState(false)
 
   // ── Generator ───────────────────────────────────────────────────────────--
   const [faceId, setFaceId] = useState<string>('')
@@ -103,11 +107,13 @@ export default function PhotoboothPage() {
     setTier(effectiveTier(resolvedTier))
     try {
       const r = await fetch('/api/face-models')
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json()
       const models = (d.models || []) as FaceModel[]
       setFaces(models)
+      setFacesLoadError(false)
       setFaceId(prev => prev && models.some(m => m.id === prev) ? prev : (models[0]?.id || ''))
-    } catch { /* ignore */ }
+    } catch { setFacesLoadError(true) }
     try {
       const ur = await fetch('/api/photobooth')
       const ud = await ur.json()
@@ -234,7 +240,8 @@ export default function PhotoboothPage() {
       destructive: true,
     })
     if (!ok) return
-    await fetch(`/api/face-models/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/face-models/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) { toast.error('Could not delete that face. It is still saved.'); return }
     setFaces(prev => prev.filter(m => m.id !== id))
   }
 
@@ -269,13 +276,15 @@ export default function PhotoboothPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addImagePaths: paths }),
       })
-      const d = await res.json()
-      if (res.ok && Array.isArray(d.source_images)) {
-        setFaces(prev => prev.map(m => m.id === faceId ? { ...m, source_images: d.source_images } : m))
-        // Drop any open preview so it re-fetches with the new photos.
-        setPhotoView(prev => { const n = { ...prev }; delete n[faceId]; return n })
-      }
-    } catch { /* best-effort */ }
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !Array.isArray(d.source_images)) throw new Error(d.error || 'The photos were not added to this face.')
+      setFaces(prev => prev.map(m => m.id === faceId ? { ...m, source_images: d.source_images } : m))
+      // Drop any open preview so it re-fetches with the new photos.
+      setPhotoView(prev => { const n = { ...prev }; delete n[faceId]; return n })
+      toast.success(`Added ${chosen.length} photo${chosen.length === 1 ? '' : 's'}.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'The photos were not added to this face.')
+    }
     finally { setAddingFaceId(null) }
   }
 
@@ -291,11 +300,10 @@ export default function PhotoboothPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ outfitPref: value }),
       })
-      if (res.ok) {
-        setFaces(prev => prev.map(m => m.id === faceId ? { ...m, outfit_pref: value || null } : m))
-        setOutfitDraft(prev => { const n = { ...prev }; delete n[faceId]; return n })
-      }
-    } catch { /* best-effort */ }
+      if (!res.ok) throw new Error()
+      setFaces(prev => prev.map(m => m.id === faceId ? { ...m, outfit_pref: value || null } : m))
+      setOutfitDraft(prev => { const n = { ...prev }; delete n[faceId]; return n })
+    } catch { toast.error('Could not save the outfit. Try again.') }
     finally { setSavingOutfit(null) }
   }
 
@@ -317,7 +325,9 @@ export default function PhotoboothPage() {
     if (!faceId) { setGenError('Pick a face first.'); return }
     setGenerating(true); setGenError(null)
     try {
-      const res = await fetch('/api/photobooth', {
+      // Same face, look and expression already in the album: asked first
+      // (lib/already-made-client), so a repeat is a choice, not a charge.
+      const res = await fetchUnlessMade('/api/photobooth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ faceModelId: faceId, style, expression, customPrompt: customPrompt.trim() || undefined, size }),
       })
@@ -326,7 +336,7 @@ export default function PhotoboothPage() {
       if (!res.ok) {
         throw new Error((d.error as string) || (
           res.status === 504 || res.status === 502
-            ? 'That took too long and timed out. Please try again — high-quality headshots can take 1–3 minutes.'
+            ? 'That took too long and timed out. Please try again. High-quality headshots can take 1 to 3 minutes.'
             : `Generation failed (HTTP ${res.status}). Please try again.`
         ))
       }
@@ -363,10 +373,16 @@ export default function PhotoboothPage() {
   function removeShot(shot: Shot) {
     setShots(prev => prev.filter(s => s.id !== shot.id))
     if (shot.path) {
+      // A delete that did not happen puts the headshot back, rather than
+      // letting it reappear on the next visit as if it came back by itself.
       fetch('/api/photobooth', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: shot.path }),
-      }).catch(() => { /* ignore */ })
+      }).then(r => r.ok).catch(() => false).then(ok => {
+        if (ok) return
+        toast.error('Could not delete that headshot.')
+        setShots(prev => prev.some(s => s.id === shot.id) ? prev : [shot, ...prev])
+      })
     }
   }
 
@@ -377,7 +393,7 @@ export default function PhotoboothPage() {
       <PageHero
         guide={<FaceModelsGuide />}
         title="Face Models"
-        subtitle="Teach MVP your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
+        subtitle="Teach MVP your face once, then put the real you in every thumbnail, post, and studio-quality headshot."
       />
 
       {!isPaid && (
@@ -388,7 +404,7 @@ export default function PhotoboothPage() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Putting your face in thumbnails, posts &amp; headshots is a paid feature</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">
-              Add a few photos of yourself once, and every generated thumbnail, social image, and headshot can include the real you — not a generic stock-photo person. No training wait; ready the moment you save.
+              Add a few photos of yourself once, and every generated thumbnail, social image, and headshot can include the real you, not a generic stock-photo person. No training wait; ready the moment you save.
             </p>
             <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
               <Sparkles size={11} /> Upgrade to Pro
@@ -408,18 +424,18 @@ export default function PhotoboothPage() {
               <Sparkles size={14} className="text-[#7C3AED]" /> How Face Models work
             </summary>
             <div className="mt-3 flex flex-col gap-2 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0]">
-              <p>Each face is a set of your photos MVP uses as the reference whenever it casts you — thumbnails, Instagram images, and the headshots below.</p>
-              <p>Add {MIN_IMAGES}–{MAX_IMAGES} clear photos per face (mix angles, expressions, lighting). It&apos;s ready instantly — more and clearer photos = stronger likeness.</p>
+              <p>Each face is a set of your photos MVP uses as the reference whenever it casts you: thumbnails, Instagram images, and the headshots below.</p>
+              <p>Add {MIN_IMAGES} to {MAX_IMAGES} clear photos per face (mix angles, expressions, lighting). It&apos;s ready instantly. More and clearer photos = stronger likeness.</p>
             </div>
           </details>
         ) : (
           <div className="card p-5">
             <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Start here: teach MVP your face</h2>
             <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] mb-3">
-              Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like — so it casts the real you everywhere instead of a stock-photo stranger.
+              Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like, so it casts the real you everywhere instead of a stock-photo stranger.
             </p>
             <ul className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] flex flex-col gap-1.5 list-disc pl-5">
-              <li>Click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Add a face</strong> and upload <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{MIN_IMAGES}–{MAX_IMAGES} clear photos</strong> — mix angles, expressions, and lighting.</li>
+              <li>Click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Add a face</strong> and upload <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{MIN_IMAGES} to {MAX_IMAGES} clear photos</strong>: mix angles, expressions, and lighting.</li>
               <li>Ready <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">instantly</strong>, no training wait. More (and clearer) photos = stronger likeness.</li>
             </ul>
           </div>
@@ -435,7 +451,7 @@ export default function PhotoboothPage() {
             <button
               onClick={() => { if (atFaceCap) return; setNewFaceOpen(true); setFaceError(null); setFiles([]); setName('') }}
               disabled={atFaceCap}
-              title={atFaceCap ? `Maximum ${MAX_FACES} faces — delete one to add another` : 'Add a face'}
+              title={atFaceCap ? `Maximum ${MAX_FACES} faces: delete one to add another` : 'Add a face'}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Camera size={11} /> Add a face
@@ -446,11 +462,16 @@ export default function PhotoboothPage() {
             <div className="flex items-center gap-2 text-sm text-[#86868b] py-10 justify-center">
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
+          ) : facesLoadError ? (
+            <div className="card p-6 text-center">
+              <p className="text-sm font-medium text-[#ff3b30] mb-2">Your faces could not be loaded.</p>
+              <button onClick={() => { setLoading(true); void load() }} className="text-xs font-semibold text-[#7C3AED] hover:underline">Try again</button>
+            </div>
           ) : !hasFace ? (
             <div className="card p-8 text-center">
               <UserCircle2 size={32} className="text-[#86868b] mx-auto mb-3" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No faces yet</p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Click <span className="font-semibold">Add a face</span> to upload {MIN_IMAGES}–{MAX_IMAGES} photos of yourself — ready to use instantly.</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Click <span className="font-semibold">Add a face</span> to upload {MIN_IMAGES} to {MAX_IMAGES} photos of yourself. Ready to use instantly.</p>
             </div>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -560,13 +581,13 @@ export default function PhotoboothPage() {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Camera size={18} className="text-[#7C3AED]" />
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Photobooth — headshots for profiles &amp; socials</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Photobooth: headshots for profiles &amp; socials</p>
           </div>
 
           {!hasFace ? (
             <div className="card p-6 text-center">
               <Camera size={26} className="text-[#86868b] mx-auto mb-2" />
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Create a face above first — then generate studio-quality headshots in any look + expression.</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Create a face above first, then generate studio-quality headshots in any look + expression.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -641,7 +662,7 @@ export default function PhotoboothPage() {
                   {generating ? <><Loader2 size={14} className="animate-spin" /> Generating… (up to ~3 min)</> : <><Camera size={14} /> Generate headshot</>}
                 </button>
 
-                <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93] -mt-1">Rendered at high quality — allow <span className="font-medium">1–3 minutes</span> per headshot.</p>
+                <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93] -mt-1">Rendered at high quality: allow <span className="font-medium">1 to 3 minutes</span> per headshot.</p>
 
                 {usage && usage.limit !== null ? (
                   <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93]">
@@ -676,7 +697,7 @@ export default function PhotoboothPage() {
                           <Trash2 size={13} />
                         </button>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={s.url} alt={`Headshot — ${s.style}`} className="w-full rounded-lg" />
+                        <img src={s.url} alt={`Headshot: ${s.style}`} className="w-full rounded-lg" />
                         {/* Headshots are just for downloading (profiles/socials) —
                             no expression tag or favorite. */}
                         <button
@@ -701,7 +722,7 @@ export default function PhotoboothPage() {
           <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add your face</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Upload {MIN_IMAGES}–{MAX_IMAGES} clear photos of yourself — the more the better. No training wait; it&apos;s ready to use the moment you save.
+              Upload {MIN_IMAGES} to {MAX_IMAGES} clear photos of yourself. The more the better. No training wait; it&apos;s ready to use the moment you save.
             </p>
 
             <div className="card p-3 mb-4" style={{ background: 'rgba(0,113,227,0.05)', borderColor: 'rgba(0,113,227,0.2)' }}>
@@ -709,9 +730,9 @@ export default function PhotoboothPage() {
               <ul className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] space-y-1">
                 <li>• Use clear, front-facing photos with good lighting</li>
                 <li>• The face should take up most of the image</li>
-                <li>• Avoid group photos — one person per image works best</li>
+                <li>• Avoid group photos: one person per image works best</li>
                 <li>• Mix expressions and angles (smiling, neutral, ¾ view)</li>
-                <li>• More photos = stronger likeness — aim for 10+ if you can</li>
+                <li>• More photos = stronger likeness: aim for 10+ if you can</li>
                 <li>• JPG or PNG, at least 512×512 px, max 10 MB each</li>
               </ul>
             </div>
@@ -730,7 +751,7 @@ export default function PhotoboothPage() {
 
             <div className="mb-4">
               <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                Images <span className={`font-normal ${files.length < MIN_IMAGES ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>({files.length}/{MAX_IMAGES} — minimum {MIN_IMAGES})</span>
+                Images <span className={`font-normal ${files.length < MIN_IMAGES ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>({files.length}/{MAX_IMAGES}: minimum {MIN_IMAGES})</span>
               </label>
               <label className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 text-xs text-[#86868b] hover:border-[#7C3AED] hover:text-[#7C3AED] cursor-pointer transition-colors">
                 <Upload size={18} />

@@ -28,6 +28,9 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { Tier } from '@/lib/tier'
 import { selectHashtags, mergeHashtags, detectNiche } from '@/lib/hashtag-map'
 import { pulseTrendingTags } from '@/lib/pulse-rank'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
+import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { capSocialText } from '@/lib/social-cap'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -118,7 +121,24 @@ const BANNED_PATTERNS: Array<[RegExp, string]> = [
 function scrub(s: string): string {
   let out = s
   for (const [pat, replacement] of BANNED_PATTERNS) out = out.replace(pat, replacement)
-  return out.replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim()
+  out = out.replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim()
+  // THE SHARED SCRUB TOO. These captions are published as written, and the
+  // local list above never covered dashes or health claims, so they reached
+  // TikTok and Instagram with both. scrubBanned is the house rule for both.
+  return scrubBanned(out)
+}
+
+/** Caption = head (hook, value, hashtags...) plus a tail that must survive.
+ *
+ *  THE DISCLOSURE IS NEVER THE PART THAT GETS CUT. The caption used to be
+ *  joined and then sliced to the platform cap, and the disclaimer is the last
+ *  line, so any overflow (a long creator disclaimer, a long description) cut
+ *  the FTC disclosure first. The head is trimmed instead. */
+function assembleCaption(head: string[], tail: string[], cap: number): string {
+  const h = head.filter(Boolean).join('\n\n')
+  const t = tail.filter(Boolean).join('\n\n')
+  if (!h) return t.slice(0, cap)
+  return capSocialText(h, cap, t ? `\n\n${t}` : '')
 }
 
 /** Generate a platform-tuned caption from a vertical Short.
@@ -133,8 +153,9 @@ export async function generateDirectCaption(
   const rules = PLATFORM_RULES[input.platform]
   const platformLabel = input.platform === 'tiktok' ? 'TikTok' : 'Instagram Reels'
 
-  const disclaimer = input.affiliateDisclaimer.trim() ||
-    'Some links may be affiliate links — I may earn a small commission at no cost to you.'
+  // The house default (lib/social-disclaimer), not a local one: the local
+  // line had an em dash and no Amazon Associates statement.
+  const disclaimer = input.affiliateDisclaimer.trim() || AFFILIATE_DISCLAIMER_DEFAULT
 
   const productBlock = input.product?.title
     ? `
@@ -165,6 +186,8 @@ HARD BANS:
 - Mentions of "link in description / bio / below" — both platforms have other surfaces for links.
 - "Smash the like", "hit the bell", "don't forget to subscribe" — engagement-bait sign-offs.
 - Hype clichés: "game-changer", "mind-blowing", "next-level", "absolute banger".
+- Em dashes and en dashes. Use a comma or a period instead.
+- Any year (such as the current year) in the hook.
 ${input.wordsToAvoid.length ? `- Creator's own banned words: ${input.wordsToAvoid.slice(0, 30).join(', ')}` : ''}
 
 VIDEO TITLE
@@ -215,7 +238,7 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     }
   }
 
-  const hook = scrub((parsed.hook || '').slice(0, 200))
+  const hook = scrubTitle(scrub((parsed.hook || '').slice(0, 200)))
   const body = scrub((parsed.body || '').slice(0, 400))
   const hashtags = (Array.isArray(parsed.hashtags) ? parsed.hashtags : [])
     .map(t => String(t).trim())
@@ -226,12 +249,7 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     .slice(0, rules.hashtagCount)
 
   // Final assembly. Capped to the platform char limit just in case.
-  const fullCaption = [
-    hook,
-    body,
-    hashtags.join(' '),
-    disclaimer,
-  ].filter(Boolean).join('\n\n').slice(0, rules.charCap)
+  const fullCaption = assembleCaption([hook, body, hashtags.join(' ')], [disclaimer], rules.charCap)
 
   return {
     caption: fullCaption,
@@ -272,8 +290,7 @@ export async function generateDmCampaignCaption(
   ctx: { userId: string; tier: Tier },
 ): Promise<DirectCaptionResult> {
   const rules = PLATFORM_RULES.instagram
-  const disclaimer = input.affiliateDisclaimer.trim() ||
-    'Some links may be affiliate links — I may earn a small commission at no cost to you.'
+  const disclaimer = input.affiliateDisclaimer.trim() || AFFILIATE_DISCLAIMER_DEFAULT
   const cta = dmCtaLine(input.keyword)
 
   const prompt = `You're writing an Instagram Reel caption for a product the creator is promoting through a comment-to-DM funnel. Viewers who comment a trigger word get the affiliate link auto-sent to their DMs. Your caption needs:
@@ -314,7 +331,7 @@ Return ONLY a JSON object shaped EXACTLY:
     }
   }
 
-  const hook = scrub((parsed.hook || input.productName).slice(0, 200))
+  const hook = scrubTitle(scrub((parsed.hook || input.productName).slice(0, 200)))
   const body = scrub((parsed.body || '').slice(0, 400))
   // Curated brand + broad category mix leads (reliable, vetted), then the AI's
   // product-specific tags fill the rest — deduped, spam-filtered, capped.
@@ -332,8 +349,9 @@ Return ONLY a JSON object shaped EXACTLY:
   const hashtags = mergeHashtags(curated, aiTags, rules.hashtagCount)
 
   // hook · value · CTA (with trigger word) · hashtags · disclaimer
-  const caption = [hook, body, cta, hashtags.join(' '), disclaimer]
-    .filter(Boolean).join('\n\n').slice(0, rules.charCap)
+  // The trigger word and the disclosure are the tail: trimming either breaks
+  // the funnel or the FTC rule, so only the hook and value lines can give.
+  const caption = assembleCaption([hook, body], [cta, hashtags.join(' '), disclaimer], rules.charCap)
 
   return { caption, hashtags, hook }
 }

@@ -125,7 +125,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
     // working rather than looking hung. The request itself runs at 600s server
     // side now, so it finishes instead of timing out.
     const toastId = `cc-gen-${c.repAsin}`
-    toast.loading('Writing your post… (~1-2 min — keep this tab open)', { id: toastId, duration: Infinity })
+    toast.loading('Writing your post… (~1-2 min, keep this tab open)', { id: toastId, duration: Infinity })
     try {
       const res = await fetch('/api/campaigns/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -133,7 +133,9 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j?.error) {
-        toast.error(j?.error || `Failed (${res.status})`, { id: toastId, duration: 8_000 })
+        toast.error(j?.error || (res.status >= 502
+          ? 'No answer in time. The post may still be publishing, so check your blog before trying again.'
+          : `Failed (${res.status})`), { id: toastId, duration: 10_000 })
         return
       }
       setPostUrl(j.wordpressUrl || j.url || null)
@@ -173,8 +175,10 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           ? 'SCOUT extension not detected. Install/enable it and open Amazon Creator Connections, then try again.'
           : res.error === 'timeout'
             ? 'SCOUT timed out. Make sure you’re logged into Amazon, then try again.'
-            : res.reason || res.error || 'Couldn’t accept automatically — use “Open on Amazon”.'
+            : res.reason || res.error || 'Couldn’t accept automatically. Use “Open on Amazon”.'
         toast.error(msg, { id: tId, duration: 8_000 })
+        // Full on Amazon: reload, so the card the catalogue still showed as open goes.
+        if (res.full) onActed?.()
         return
       }
       // Record it, awaited, so an accept MVP just performed cannot go missing
@@ -185,7 +189,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         source: 'campaign-card',
       })
       setAcceptedLocal(true)
-      toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
+      toast.success(res.already ? 'Already accepted. You’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
       onActed?.() // refresh per-ASIN status so "Hide joined" sees this immediately
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })
@@ -199,7 +203,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         <button type="button" onClick={onToggleSelect} aria-label={selected ? 'Deselect' : 'Select for bulk message'} aria-pressed={selected}
           className="absolute top-2 left-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border shadow-sm"
           style={{ background: selected ? '#7C3AED' : 'rgba(255,255,255,0.92)', borderColor: selected ? '#7C3AED' : 'var(--border)' }}
-          title={selected ? 'Selected — click to remove' : 'Select for bulk message'}>
+          title={selected ? 'Selected: click to remove' : 'Select for bulk message'}>
           {selected && <Check size={15} className="text-white" />}
         </button>
       )}
@@ -281,7 +285,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           </div>
         ) : (
           <button onClick={doAccept} disabled={accepting || c.isFull} className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center disabled:opacity-50"
-            title={c.isFull ? 'Campaign is full — no spot to accept' : 'Accept this campaign on Amazon via SCOUT — no tab-hopping'}>
+            title={c.isFull ? 'Campaign is full: no spot to accept' : 'Accept this campaign on Amazon via SCOUT: no tab-hopping'}>
             {accepting ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} {accepting ? 'Accepting via SCOUT…' : 'Accept campaign'}
           </button>
         )}
@@ -295,7 +299,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
               </a>
             ) : (
               <button onClick={onToggleSave} disabled={!c.repAsin} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50" style={{ background: '#d97706', borderColor: '#d97706' }}
-                title="Save this product to make a social post in Social Influencer">
+                title="Save this product to make a social post in Social designs">
                 <Bookmark size={13} /> Save for a post
               </button>
             )
@@ -317,7 +321,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           {!socialOnly && onToggleSave && (
             <button
               onClick={onToggleSave}
-              title={saved ? 'Saved — click to remove' : 'Save to Saved Campaigns'}
+              title={saved ? 'Saved: click to remove' : 'Save to Saved Campaigns'}
               className="btn-secondary flex items-center gap-1.5 text-xs"
               style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : undefined}
             >
@@ -394,7 +398,7 @@ export default function CcCampaignsPage() {
       }
       const unread = new Set((r.chats || []).filter(c => c.unread).map(c => c.brand.trim().toLowerCase()))
       setReplyBrands(unread)
-      toast.success(unread.size ? `${unread.size} brand${unread.size === 1 ? '' : 's'} replied — see the “Replied” badge.` : 'No new brand replies right now.')
+      toast.success(unread.size ? `${unread.size} brand${unread.size === 1 ? '' : 's'} replied: see the “Replied” badge.` : 'No new brand replies right now.')
     } finally { setCheckingReplies(false) }
   }, [])
   // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
@@ -470,12 +474,15 @@ export default function CcCampaignsPage() {
     if (list.length === 0) return
     setBulkAccepting(true)
     const tId = 'cc-bulk-accept'
-    let done = 0, joined = 0, already = 0, failed = 0
+    let done = 0, joined = 0, already = 0, failed = 0, full = 0
     toast.loading(`Accepting 0 of ${list.length}…`, { id: tId, duration: Infinity })
     for (const c of list) {
       try {
         const r = await requestAcceptCampaign(c.detailsUrl)
-        if (r.ok && r.already) already++
+        // Full on Amazon is its own count: not a failure of MVP's, and each one
+        // is now marked full in the catalogue for everyone.
+        if (r.full) full++
+        else if (r.ok && r.already) already++
         else if (r.ok) {
           joined++
           await recordAccept({
@@ -489,7 +496,7 @@ export default function CcCampaignsPage() {
       toast.loading(`Accepting ${done} of ${list.length}…`, { id: tId, duration: Infinity })
       if (done < list.length) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000))
     }
-    toast.success(`Accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
+    toast.success(`Accepted ${joined} · ${already} already joined${full ? ` · ${full} full on Amazon (taken off the list)` : ''}${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
     setBulkAccepting(false)
     clearSelected()
     loadStatus()
@@ -536,10 +543,13 @@ export default function CcCampaignsPage() {
     const wasSaved = savedAsins.has(asin)
     setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
     try {
+      // The reply decides, not the request: a refused save used to say
+      // "Saved" and then be missing from Saved Campaigns.
       if (wasSaved) {
-        await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+        const r = await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+        if (!r.ok) throw new Error('remove')
       } else {
-        await fetch('/api/campaigns/saved', {
+        const r = await fetch('/api/campaigns/saved', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             asin: c.repAsin, source: 'campaign', campaignId: c.campaignId, title: c.name, brand: c.brand,
@@ -547,10 +557,12 @@ export default function CcCampaignsPage() {
             rating: c.rating, hasVideo: (c.videoCount ?? 0) > 0, marketplace: 'us', detailsUrl: c.detailsUrl,
           }),
         })
+        if (!r.ok) throw new Error('save')
         toast.success('Saved to your Saved Campaigns.')
       }
     } catch {
       setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n }) // revert
+      toast.error(wasSaved ? 'Could not remove it from Saved. Try again.' : 'Could not save it. Try again.')
     }
   }, [savedAsins])
 
@@ -661,7 +673,7 @@ export default function CcCampaignsPage() {
       if (!res.ok) {
         const msg = res.error === 'not-installed'
           ? 'SCOUT isn’t detected. Install/enable it and open Amazon, then try again.'
-          : res.error === 'timeout' ? 'Amazon took too long — try again.'
+          : res.error === 'timeout' ? 'Amazon took too long. Try again.'
             : res.reason === 'no-creator-id' ? 'SCOUT couldn’t read your Creator Connections session. Open Amazon (logged in) and retry.'
               : (res.reason || res.error || 'Couldn’t read your joined campaigns.')
         toast.error(msg)
@@ -692,14 +704,14 @@ export default function CcCampaignsPage() {
   // real campaigns back = proven invite, which we stamp server-side to unlock.
   const verifyCcAccess = useCallback(async () => {
     if (verifying) return
-    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access — this can take a minute…')
+    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access. This can take a minute…')
     try {
       const res = await requestCcSmartScan(campaignRules('wide'))
       if (!res.ok) {
         setVerifyMsg(res.error === 'not-installed'
-          ? 'SCOUT isn’t connected — install it and paste your token, then try again.'
+          ? 'SCOUT isn’t connected. Install it and paste your token, then try again.'
           : res.error === 'timeout'
-            ? 'That ran long and timed out — try again in a moment.'
+            ? 'That ran long and timed out. Try again in a moment.'
             : 'We couldn’t confirm a Creator Connections grid for your account. Open your Creator Connections tab once, then try again.')
         return
       }
@@ -707,11 +719,16 @@ export default function CcCampaignsPage() {
         setVerifyMsg('Your grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
         return
       }
-      const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
+      const stamp = await fetch('/api/campaigns/cc-verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignIds: res.matches.map(m => m.campaignId).filter(Boolean) }),
+      }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) { setLocked(false); setVerifyMsg(null); toast.success('Creator Connections access confirmed.'); fetchPage(1, false) }
-      else setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
+      else setVerifyMsg(stamp?.reason === 'no-match'
+        ? 'SCOUT read your grid, but its campaigns did not match the shared catalogue yet. Try again after the next catalogue refresh.'
+        : 'Verified your grid, but couldn’t save it just now. Please try again.')
     } catch {
-      setVerifyMsg('Verification failed unexpectedly — reload and try again.')
+      setVerifyMsg('Verification failed unexpectedly. Reload and try again.')
     } finally { setVerifying(false) }
   }, [verifying, fetchPage])
 
@@ -752,7 +769,7 @@ export default function CcCampaignsPage() {
         const msg = res.error === 'not-installed'
           ? 'SCOUT extension not detected. Install/enable it and open Amazon, then try again.'
           : res.reason === 'no-creator-id'
-            ? 'SCOUT needs to see your Creator Connections page once first — open it, then try again.'
+            ? 'SCOUT needs to see your Creator Connections page once first. Open it, then try again.'
             : res.error === 'timeout' ? 'Amazon took too long. Try again.' : (res.reason || res.error || 'Couldn’t read your campaigns.')
         toast.error(msg, { id: tId, duration: 8_000 })
         return
@@ -772,7 +789,7 @@ export default function CcCampaignsPage() {
           const line = v.length ? v.map((x) => `${x.label}: ${x.status ?? '-'}/${x.ads ?? 0}${x.err ? ` (${x.err})` : ''}`).join(' · ') : ''
           toast.success(
             diag
-              ? `No accepted campaigns returned. SCOUT reached Amazon (id ${diag.creatorId || '?'}). Variants — ${line || 'none tried'}. Open the console for the full diagnostic and send it to support.`
+              ? `No accepted campaigns returned. SCOUT reached Amazon (id ${diag.creatorId || '?'}). Variants: ${line || 'none tried'}. Open the console for the full diagnostic and send it to support.`
               : 'No accepted campaigns found on Amazon yet.',
             { id: tId, duration: 12_000 },
           )
@@ -799,7 +816,7 @@ export default function CcCampaignsPage() {
         const short = total != null && n < total
         toast.success(
           short
-            ? `Synced ${n} of ${total} joined campaigns. If that's short, sync again — Amazon paginates large lists.`
+            ? `Synced ${n} of ${total} joined campaigns. If that's short, sync again: Amazon paginates large lists.`
             : `Synced ${n} joined campaign${n === 1 ? '' : 's'} from Amazon.`,
           { id: tId, duration: short ? 9_000 : 6_000 },
         )
@@ -819,8 +836,8 @@ export default function CcCampaignsPage() {
   return (
     <>
       <PageHero
-        title="CC Campaigns"
-        subtitle="Every live Creator Connections campaign with the numbers that matter — commission, $ per sale, spots left, whether the brand actually pays out — and one click to turn it into a blog post."
+        title="Brand campaigns"
+        subtitle={<>Every live Creator Connections campaign with the numbers that matter (commission, $ per sale, spots left, whether the brand actually pays out) and one click to turn it into a blog post.<span className="block mt-1 text-[12px]">Formerly CC Campaigns.</span></>}
       />
 
       {locked ? (
@@ -831,7 +848,7 @@ export default function CcCampaignsPage() {
           <div>
             <p className="text-base font-semibold text-[var(--text)] mb-1">Creator Connections access required</p>
             <p className="text-xs text-[var(--text-3)] max-w-md leading-relaxed">
-              These campaigns are only shown to creators who actually have the Amazon Creator Connections invite. SCOUT will open your own Creator Connections grid and confirm it — most creators don&apos;t have the invite yet, and if you don&apos;t, this stays locked. No campaign data is shown until it&apos;s confirmed.
+              These campaigns are only shown to creators who actually have the Amazon Creator Connections invite. SCOUT will open your own Creator Connections grid and confirm it. Most creators don&apos;t have the invite yet, and if you don&apos;t, this stays locked. No campaign data is shown until it&apos;s confirmed.
             </p>
           </div>
           <button onClick={verifyCcAccess} disabled={verifying} className="btn-primary flex items-center gap-2 text-sm">
@@ -903,7 +920,7 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
         </button>
-        <button onClick={() => setMessagedOnly((v) => !v)} title="Show only the brands you've already messaged — your outreach list" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${messagedOnly ? 'border-[#8a6d00] text-[#8a6d00] bg-[#ffcc00]/15' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setMessagedOnly((v) => !v)} title="Show only the brands you've already messaged: your outreach list" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${messagedOnly ? 'border-[#8a6d00] text-[#8a6d00] bg-[#ffcc00]/15' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Messaged
         </button>
         <button onClick={() => void checkReplies()} disabled={checkingReplies} title="Read your Amazon brand-chat inbox via SCOUT and flag brands that replied" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
@@ -930,7 +947,7 @@ export default function CcCampaignsPage() {
                 try { await navigator.clipboard.writeText(out) } catch { /* clipboard may be blocked */ }
                 try { console.log('[MVP SCOUT recipe]', out) } catch { /* ignore */ }
                 toast.success('SCOUT recipe copied to clipboard (also logged to console).')
-              } catch { toast.error('Could not read SCOUT recipe — is SCOUT installed?') }
+              } catch { toast.error('Could not read SCOUT recipe. Is SCOUT installed?') }
             }}
             title="Admin: copy SCOUT's learned CC send/search recipe for debugging"
             className="px-3 py-2 rounded-lg border border-dashed border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 transition-colors">
@@ -950,7 +967,7 @@ export default function CcCampaignsPage() {
                 <li><b>Message one brand:</b> the <Mail size={12} className="inline -mt-0.5" /> button on a card. MVP accepts the campaign if needed and sends the pitch through your logged-in Amazon session.</li>
                 <li><b>Message many at once:</b> tick the checkbox on up to {BULK_MAX} cards, then <b>Message N brands</b> in the bar that appears. Each is messaged in the background, one at a time.</li>
                 <li><b>Joining is your call:</b> messaging a brand and joining its campaign are two different things, and you can message a brand without joining. The bulk window has a checkbox for it, on by default because joining is what puts you on the commission and lets you ask for a sample. Turn it off and nothing is accepted on your behalf.</li>
-                <li><b>Your wording:</b> every pitch is built from one saved profile — your greeting, credibility, offer, links and sample address. Edit it once and it applies to every message.</li>
+                <li><b>Your wording:</b> every pitch is built from one saved profile: your greeting, credibility, offer, links and sample address. Edit it once and it applies to every message.</li>
                 <li><b>Edit before it sends:</b> in the message window you can rewrite each message, add or remove one, and tick what to include (product &amp; ASIN, livestream/banner offers, portfolio links, free sample, shipping address). Nothing goes out until you hit Send.</li>
               </ul>
               <button onClick={() => setEditWording(true)} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white" style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
@@ -1001,7 +1018,7 @@ export default function CcCampaignsPage() {
           return (
             <div className="card p-8 text-center text-sm text-[var(--text-3)]">
               {messagedOnly
-                ? 'None of the loaded campaigns are ones you’ve messaged. The brands you messaged may not be on this page — turn “Messaged” off, or Load more.'
+                ? 'None of the loaded campaigns are ones you’ve messaged. The brands you messaged may not be on this page. Turn “Messaged” off, or Load more.'
                 : repliesOnly
                 ? 'None of the loaded campaigns are from a brand that replied. Turn “Replies” off, or Load more.'
                 : minDaysLeft

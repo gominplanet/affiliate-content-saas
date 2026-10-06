@@ -19,8 +19,8 @@
  *   still apply on top of this content.
  * - Action-oriented. Lead with what the user clicks/types/picks.
  * - Include the URL or sidebar entry for every feature so the
- *   assistant can say "go to /co-pilot" or "click Blog Set Up in the
- *   sidebar".
+ *   assistant can say "go to /co-pilot" or "click Your setup →
+ *   Connections → Blog in the sidebar".
  * - Mention tier gates when they matter — saves a follow-up "but
  *   I'm on Creator and don't see it" exchange.
  */
@@ -28,6 +28,60 @@
 import { APP_SEARCH_INDEX } from './app-search-index'
 import { TIERS, SELLABLE_TIERS, type Tier } from './tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from './usage-cap'
+import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from './amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from './launch-batch'
+
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
+// so the assistant is told that instead of how to use it, and never offers it.
+// The full section is kept for the day the switch goes back on.
+const NEWSLETTER_RETIRED_GUIDE = `## NEWSLETTER (RETIRED)
+
+The Newsletter tool has been retired and is not part of any plan. If a user
+asks about it, say plainly that it has been retired. Never suggest it, link to
+/newsletter, or quote a subscriber or send limit.`
+
+const NEWSLETTER_GUIDE = `## NEWSLETTER
+
+URL: /newsletter · Sidebar: Blog → Newsletter
+
+A built-in email list. Subscribers opt in via forms on the user's blog.
+
+### Subscriber management
+URL: /newsletter — view, tag, export, delete subscribers.
+Tags are user-defined free-text labels (e.g. "paying", "lead", "archived")
+used for segmenting later.
+
+### Composing + sending
+URL: /newsletter/compose — pick a recent blog post, customize the email,
+hit Send. The newsletter pulls the post's title + hero image + intro and
+formats them for email.
+
+### Pro features
+- **Segmented sends** — narrow by source / signup date range / tags.
+  Live preview shows "Matches 47 of 312 active subscribers" before
+  sending.
+- **A/B subject lines** — two subjects, split-test, winner sends to the
+  rest. Pro-only.
+- **Scheduling** — schedule a broadcast for a future time. Pro.
+
+### Tier caps for newsletter (current)
+- Trial: locked (FeatureLockedCard shown)
+- Pro: ${proNewsletter()}
+
+### Legacy Creator grandfathering
+NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
+and no screen offers them. Never suggest either as an upgrade; the only
+plans anyone can buy are Free Trial, Amazon and Pro. This section exists
+so that if an EXISTING Creator subscriber asks why their numbers differ,
+the answer is right rather than absent.
+Creator users who were paying when the cap was lowered (2026-06-04)
+keep the OLD numbers: 1,000 subs + 4 sends/month. A grandfather banner
+on /newsletter and /billing explains this. Cancel + re-subscribe = new
+caps apply.`
 
 const FEATURE_GUIDE = `
 # MVP AFFILIATE — FEATURE GUIDE (for assistant grounding)
@@ -41,9 +95,40 @@ rather than inventing a feature.
 
 ## NAVIGATION OVERVIEW
 
-The left sidebar groups tools under collapsible headings (Set up, Create,
-Source & Earn, Grow, Collaborate, Find & Earn, Help). A topbar "Search MVP"
-box jumps straight to any tool by name.
+The left sidebar starts with Dashboard, then groups tools by job under
+collapsible headings: Find products, Make videos, Blog, Share, Work with
+brands, Your setup, Help. Some items open a page with tabs along the top; a
+sidebar direction written as "Section → Item → Tab" means click the item,
+then the tab. A topbar "Search MVP" box jumps straight to any tool by name.
+
+What sits under each heading (renamed tools show their old name once, since
+members may still use it):
+- Find products: Product research (tabs: Catalog search, Amazon research),
+  Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
+  paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,
+  Wayward, LTK), Idea lists.
+- Make videos: YouTube Co-Pilot, Thumbnails (formerly Thumbnail Generator),
+  Scriptwriter, Clip Factory, Bulk Amazon upload (formerly Liftoff), YouTube
+  comments (tabs: Pinned comments, On sale comments, formerly Encore), Amazon
+  Live (tabs: Prep, Follow-up).
+- Blog: Blog posts (formerly Blog Post Generator), Comparisons and guides
+  (tabs: Comparisons, Buying guides), Articles, Ended deals, SEO and indexing,
+  Ads, Blog design (formerly Customize Blog).
+- Share: Social Push, Social designs (formerly Social Influencer), Social
+  Launch Kit, Meta Hub, Hashtag insights (formerly Pulse), Link in Bio,
+  Passport links, Deals Hub.
+- Work with brands: Brand pitches (formerly Brand Deals), Brand inbox (tabs:
+  Inquiries, History, formerly Brand Hub, and Recap).
+- Your setup: Connections (tabs: Blog, formerly WordPress, YouTube, Socials,
+  Other tools), Brand and voice (tabs: Brand profile, Writing voice, formerly
+  Voice Training), Face models, Team (formerly Virtual Assistant), Plan and
+  usage (tabs: Plan and billing, Usage).
+- Help: Ask MVP (formerly MVP Help Desk), Tutorials and support (tabs:
+  Tutorials, Contact support, Community).
+
+On the Amazon plan, Pro-only tools are not repeated as locked rows in each
+section; they are listed once in a "More with Pro" section at the bottom of
+the sidebar. Which items a user sees depends on their plan.
 
 For the exact, always-current list of every page and its route, see the
 "WHERE EVERYTHING LIVES" section at the very END of this guide. When a user
@@ -56,7 +141,7 @@ URLs cited below are exact (e.g. /setup, /brand, /co-pilot).
 
 ## ONBOARDING — BLOG SET UP
 
-URL: /setup · Sidebar: Set up → Blog Set Up
+URL: /setup · Sidebar: Your setup → Connections → Blog tab (formerly Blog Set Up)
 
 The first thing a new user does. Two paths picked from a mode picker:
 
@@ -97,7 +182,7 @@ Profile → Application Passwords.
 
 ## BRAND PROFILE
 
-URL: /brand · Sidebar: Set up → Brand Profile
+URL: /brand · Sidebar: Your setup → Brand and voice → Brand profile tab
 
 Everything that makes content feel like the user's brand:
 
@@ -129,7 +214,7 @@ to WordPress automatically via /api/wordpress/sync-brand.
 
 ## YOUTUBE CO-PILOT
 
-URL: /co-pilot · Sidebar: Create → YouTube Co-Pilot
+URL: /co-pilot · Sidebar: Make videos → YouTube Co-Pilot
 
 The flagship feature. Workflow:
 
@@ -145,13 +230,19 @@ The flagship feature. Workflow:
 4. User reviews, edits if needed, clicks "Push to YouTube" — title +
    description + tags + thumbnail go live on the video.
 
+### On the Amazon plan
+Included: ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and ${AMAZON_COPILOT_RUNS_PER_MONTH} Co-Pilot
+runs a month (titles, descriptions and tags). The Amazon plan has no blog, so
+no blog review is written from the video. Connecting a channel is optional.
+
 ### Thumbnail variants
 The user can pick 1-10 variants per generation. Each variant burns one
 unit from their Generations cap (see TIERS below).
 
-### Face Training (Pro)
+### Face Training (Amazon and Pro)
 Upload 5-20 selfies → MVP trains a LoRA → next thumbnails put the user's
-real face on them. Done via /face-training. Up to 2 faces on Pro.
+real face on them. Done in Your setup → Face models (/photobooth; the old
+/face-training link opens the same page). Up to ${TIERS.pro.maxFaces} faces on Pro and ${TIERS.amazon.maxFaces} on Amazon.
 
 ### Naming requirement
 Without an ASIN in the video title or filename, the agent can't identify
@@ -170,18 +261,18 @@ video transcript. ~2000-word long-form with verdict box, pros/cons,
 FAQ, in-body product images, affiliate buttons.
 
 ### Comparison Posts (Pro)
-URL: /comparison · Sidebar: Create → Comparison
+URL: /comparison · Sidebar: Blog → Comparisons and guides → Comparisons tab
 Pick 2-5 ASINs → MVP researches each, ranks them, writes a comparison
 post with a verdict box, sortable spec table, pros/cons per product, and
 "best for X" recommendations.
 
 ### Buying Guides
-URL: /buying-guides · Sidebar: Create → Buying Guides
+URL: /buying-guides · Sidebar: Blog → Comparisons and guides → Buying guides tab
 Generate a topic-based guide ("Best Wireless Vacuums for Pet Hair").
 Pro can use this — minimal but visible buying-guide template.
 
 ### Deal Posts
-URL: /deals · Sidebar: Create → Deals Hub
+URL: /deals · Sidebar: Share → Deals Hub
 For TIME-SENSITIVE Amazon deals with a price drop or discount code.
 Paste any Amazon URL, Geniuslink, amzn.to short link, or bare ASIN.
 The agent writes a deal post with a baked thumbnail, end-date countdown
@@ -196,51 +287,14 @@ layout. Keeps the URL, replaces everything else.
 
 ---
 
-## NEWSLETTER
-
-URL: /newsletter · Sidebar: Create → Newsletter
-
-A built-in email list. Subscribers opt in via forms on the user's blog.
-
-### Subscriber management
-URL: /newsletter — view, tag, export, delete subscribers.
-Tags are user-defined free-text labels (e.g. "paying", "lead", "archived")
-used for segmenting later.
-
-### Composing + sending
-URL: /newsletter/compose — pick a recent blog post, customize the email,
-hit Send. The newsletter pulls the post's title + hero image + intro and
-formats them for email.
-
-### Pro features
-- **Segmented sends** — narrow by source / signup date range / tags.
-  Live preview shows "Matches 47 of 312 active subscribers" before
-  sending.
-- **A/B subject lines** — two subjects, split-test, winner sends to the
-  rest. Pro-only.
-- **Scheduling** — schedule a broadcast for a future time. Pro.
-
-### Tier caps for newsletter (current)
-- Trial: locked (FeatureLockedCard shown)
-- Pro: ${proNewsletter()}
-
-### Legacy Creator grandfathering
-NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
-and no screen offers them. Never suggest either as an upgrade; the only
-plans anyone can buy are Free Trial, Amazon and Pro. This section exists
-so that if an EXISTING Creator subscriber asks why their numbers differ,
-the answer is right rather than absent.
-Creator users who were paying when the cap was lowered (2026-06-04)
-keep the OLD numbers: 1,000 subs + 4 sends/month. A grandfather banner
-on /newsletter and /billing explains this. Cancel + re-subscribe = new
-caps apply.
+${NEWSLETTER_FOR_MEMBERS ? NEWSLETTER_GUIDE : NEWSLETTER_RETIRED_GUIDE}
 
 ---
 
 ## CREATOR CAMPAIGNS (CC CAMPAIGNS)
 
-URL: /cc-campaigns · Sidebar: Source & Earn (also linked from the Amazon
-research launchpad). The older /campaigns queue still works but the main
+URL: /cc-campaigns · Sidebar: Find products → Brand campaigns (also linked
+from the Amazon research launchpad). The older /campaigns queue still works but the main
 surface is now /cc-campaigns (see the CC CAMPAIGNS BROWSER section below for
 the richer, decision-data version).
 
@@ -264,15 +318,17 @@ a full blog review, publishes to WordPress. ~3-4 min per campaign.
 - Stuck campaigns (10+ min in researching/generating) auto-fail via
   a cron worker so the user can retry
 
-### Why it's Pro-only
-Amazon Creator Connections itself requires Amazon Influencer status,
-which has its own qualifications.
+### Which plan
+Finding and browsing campaigns is on the Amazon plan and Pro. Generating a
+blog review from a campaign needs the blog, which is Pro only. Amazon Creator
+Connections itself requires Amazon Influencer status, which has its own
+qualifications.
 
 ---
 
-## COLLABORATIONS
+## BRAND PITCHES (formerly Brand Deals)
 
-URL: /collaborations · Sidebar: Create → Collaborations
+URL: /collaborations · Sidebar: Work with brands → Brand pitches
 
 Generates personalized brand-outreach pitch emails. Fill in the brand
 name + product URL + the user's Brand Profile feeds the rest (their
@@ -287,9 +343,9 @@ into generated emails when possible.
 
 ---
 
-## VOICE TRAINING
+## WRITING VOICE (formerly Voice Training)
 
-URL: /learn · Sidebar: Set up → Voice Training
+URL: /learn · Sidebar: Your setup → Brand and voice → Writing voice tab
 
 The single editing surface for the user's writing voice:
 
@@ -306,7 +362,8 @@ no path skips it. Even partially-filled profiles are honored.
 
 ## CONNECT SOCIALS
 
-URL: /connect-socials · Sidebar: Set up → Connect Socials
+URL: /connect-socials · Sidebar: Your setup → Connections → Socials tab
+(YouTube also has its own tab: Your setup → Connections → YouTube, /connect-youtube)
 
 Where users connect YouTube + every social platform they publish to.
 
@@ -325,10 +382,6 @@ write access to push generated metadata back.
 ### Multi-account social (Pro)
 Pro users can connect multiple Facebook Pages or Instagram accounts and
 pick which one each post fans out to.
-
-### Newsletter as a "channel"
-The newsletter is treated like a social channel for fan-out purposes
-on the publish flow.
 
 ### Amazon affiliate links on Facebook — is it allowed? (common question)
 Yes — it's a myth that you can't. Amazon Associates ALLOWS affiliate links
@@ -356,13 +409,13 @@ Program Policies.)
 
 ---
 
-## PHOTOBOOTH
+## FACE MODELS AND PHOTOBOOTH
 
-URL: /photobooth · Sidebar: Create → Photobooth
+URL: /photobooth · Sidebar: Your setup → Face models
 
 Generate AI-styled headshots of the user (e.g. their face in an
 "podcast in front of microphone" setting). Requires a trained face
-(via /face-training).
+(created on this same page).
 
 Outputs can be:
 - Used in blog posts (in-article AI images)
@@ -375,7 +428,7 @@ Cap is per-month (10 Creator, 15 Studio, 30 Pro).
 
 ## DASHBOARD
 
-URL: /dashboard · Sidebar: Today → Dashboard
+URL: /dashboard · Sidebar: Dashboard (the first item, above every section)
 
 Landing page after login. Shows:
 - Hero card with current usage vs cap ("3 of 20 generations used")
@@ -385,9 +438,9 @@ Landing page after login. Shows:
 
 ---
 
-## CUSTOMIZE BLOG
+## BLOG DESIGN (formerly Customize Blog)
 
-URL: /customize · Sidebar: Set up → Customize Blog
+URL: /customize · Sidebar: Blog → Blog design
 
 Fine-tune the look of the user's WordPress blog beyond brand colors:
 - Hero copy on the homepage
@@ -398,7 +451,7 @@ Different from /brand: /brand is "who I am"; /customize is "how the
 blog presents itself".
 
 ### Site Verification & Meta Tags (the canonical place to verify a blog)
-URL: /customize → "Site Verification & Meta Tags" section.
+URL: /customize (Blog → Blog design) → "Site Verification & Meta Tags" section.
 
 THIS is the one place a user verifies their blog with ANY service that
 hands them a verification meta tag — Google Search Console, Bing
@@ -417,13 +470,13 @@ verification keeps passing.
 
 ---
 
-## AMZ PRODUCT FINDER
+## CATALOG SEARCH (formerly AMZ Product Finder)
 
-URL: /amz-finder · Sidebar: Source & Earn → AMZ Product Finder
+URL: /amz-finder · Sidebar: Find products → Product research → Catalog search tab
 
 Search the whole Amazon catalogue by keyword, price, rating, review count,
 best-seller rank, and category. Save winners to a buy-to-review shortlist,
-turn one into a review post, or send it to the thumbnail generator. Research
+turn one into a review post, or send it to Thumbnails. Research
 is free on every paid plan (Trial can browse but can't take paid actions).
 Turn on "MVP picks" (paid plans) to deep-verify products that have a real
 video carousel and genuine monthly demand. Amazon-only by design.
@@ -432,7 +485,7 @@ video carousel and genuine monthly demand. Amazon-only by design.
 
 ## DEAL RADAR
 
-URL: /deal-radar · Sidebar: Source & Earn
+URL: /deal-radar · Sidebar: Find products → Deal Radar
 
 An always-on, live feed of real Amazon price drops (plus a Walmart tab).
 Each deal card shows the discount %, a verification badge ("All-time low" or
@@ -445,9 +498,10 @@ fresh. Filters: category, "Real deals" only, "Has video", minimum discount.
 
 ---
 
-## CC CAMPAIGNS BROWSER
+## CC CAMPAIGNS BROWSER (sidebar name: Brand campaigns)
 
-URL: /cc-campaigns · Sidebar: Source & Earn
+URL: /cc-campaigns · Sidebar: Find products → Brand campaigns → All campaigns tab
+(the Joined, Saved and Best paying tabs sit next to it; Best paying is /epc-library)
 
 The research surface for Amazon Creator Connections. Every live campaign shows
 decision data right on the card: commission %, estimated $/sale, spots left
@@ -464,7 +518,8 @@ locked until SCOUT confirms you actually have the Creator Connections invite.
 
 ## AMZ STOREFRONT (earnings dashboard)
 
-URL: /storefront · Sidebar: Find & Earn → AMZ Storefront
+URL: /storefront · Sidebar: Labs (not shown to members yet, so do not send a
+member to it)
 
 Your Amazon affiliate earnings dashboard. Headline numbers with
 period-over-period deltas: earnings, revenue, units shipped, clicks,
@@ -477,11 +532,11 @@ Amazon report ranges while SCOUT is installed so it can capture them.
 
 ---
 
-## PULSE (hashtag reach learning)
+## HASHTAG INSIGHTS (formerly Pulse; hashtag reach learning)
 
-URL: /pulse · Sidebar: Grow → Pulse
+URL: /pulse · Sidebar: Share → Hashtag insights
 
-Pulse learns which hashtags actually earn reach on your Instagram Reels. It
+Hashtag insights (formerly Pulse) learns which hashtags actually earn reach on your Instagram Reels. It
 checks each post's reach about a day after publishing, ranks your tags by how
 far above your own baseline they perform, and automatically feeds the proven
 ones into future AI-generated captions. The panel shows your best tags, your
@@ -495,7 +550,7 @@ ranking and timing unlock.
 
 ## CLIP FACTORY & SHORTS STUDIO
 
-URL: /clip-factory · Sidebar: Create → Clip Factory (Pro)
+URL: /clip-factory · Sidebar: Make videos → Clip Factory (Amazon and Pro)
 
 Turn one long YouTube video into vertical short clips with burned-in animated
 captions. Three steps: Create (pick the moments, or let MVP suggest the best
@@ -504,11 +559,16 @@ clips) → Enhance → Publish. Publishing goes to TikTok and Instagram today.
 verifying our upload permission — set it up, but don't promise it as live yet;
 when it's on, you'll reconnect YouTube once to enable it.)
 
+On the Amazon plan: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month,
+posted to Instagram Reels and Facebook Reels. TikTok and YouTube Shorts
+publishing are Pro only.
+
 ---
 
 ## AUTO-PILOT (hands-off daily blog)
 
-Where: a toggle on the Blog Post Generator (/content) called "Auto-pilot".
+Where: a toggle on Blog posts (/content, formerly Blog Post Generator; Sidebar:
+Blog → Blog posts) called "Auto-pilot".
 
 When on, a daily job publishes ONE post from your next un-blogged YouTube
 video, on a schedule you choose: every day, every other day, or specific days
@@ -523,7 +583,7 @@ the button turns purple and says it's ON.
 
 ## SEO & INDEXING
 
-URL: /seo · Sidebar: Grow → SEO & Indexing
+URL: /seo · Sidebar: Blog → SEO and indexing
 
 Scores every published post on the things that matter (title length + keyword,
 word count, headings, internal links, image alt text, FAQ, affiliate
@@ -538,7 +598,8 @@ older/imported posts.
 
 ## SITE TOOLS
 
-URL: /tools/... · Sidebar: Site Tools
+URL: /tools/... · Sidebar: Blog → SEO and indexing, then the tool tabs along
+the top of that page
 
 Quick one-purpose fixers for a blog:
 - **Title Check** (/tools/title-audit) — flags posts whose title doesn't match the body.
@@ -549,39 +610,40 @@ Quick one-purpose fixers for a blog:
 
 ---
 
-## BRAND HUB (all brand relationships in one place)
+## BRAND HISTORY (formerly Brand Hub; all brand relationships in one place)
 
-URL: /brand-hub · Sidebar: Collaborate → Brand Hub
+URL: /brand-hub · Sidebar: Work with brands → Brand inbox → History tab
 
 One consolidated history of every brand the creator has dealt with, pulled
 together from three places that used to be separate: inbound inquiries (blog
-form), outbound pitches (Brand Deals), and Amazon Creator Connections
+form), outbound pitches (Brand pitches), and Amazon Creator Connections
 campaigns. Each brand gets one card with a timeline: who reached out, pitches
 sent, campaigns added/messaged/accepted/joined, and posts published for them,
 newest first. Filter by channel (inbound / pitched / campaign), search by
 brand, and see a headline status per brand (Joined > Accepted > Messaged >
 Pitched > Inquiry received). It's the place to answer "have I talked to this
 brand before, and what happened?" Read-only overview; take actions in the
-underlying tools (reply to an inquiry, send a new pitch in Brand Deals,
-message a brand in CC Campaigns).
+underlying tools (reply to an inquiry, send a new pitch in Brand pitches,
+message a brand in Brand campaigns).
 
 ---
 
 ## BRAND INQUIRIES (inbound inbox)
 
-URL: /brand-inquiries · Sidebar: Collaborate → Brand Inquiries
+URL: /brand-inquiries · Sidebar: Work with brands → Brand inbox → Inquiries tab
 
 The inbox for brands that message you through the "Work with brands" form on
 your own blog. See unread messages, read/archive them, and reply by email.
 Turn the blog form on or off in the settings panel on this page. This is for
-INBOUND brand contact; for OUTBOUND pitches use Brand Deals (/collaborations),
-and for Amazon campaign research use CC Campaigns (/cc-campaigns).
+INBOUND brand contact; for OUTBOUND pitches use Brand pitches (/collaborations,
+formerly Brand Deals), and for Amazon campaign research use Brand campaigns
+(/cc-campaigns).
 
 ---
 
 ## INSTAGRAM / FACEBOOK DM (Labs)
 
-URL: /instagram-dm · Sidebar: Channels (Pro)
+URL: /instagram-dm · Sidebar: Labs (not shown to members yet)
 
 Comment-to-DM automation: when someone comments a keyword (e.g. "LINK") on
 your Instagram or Facebook post, they automatically get a DM with that post's
@@ -594,7 +656,7 @@ sending live yet.
 
 ## SOCIAL LAUNCH KIT
 
-URL: /social-launch-kit · Sidebar: Set up
+URL: /social-launch-kit · Sidebar: Share → Social Launch Kit
 
 Generates a matching set to spin up new social accounts fast: handle/name
 ideas, a bio, a banner, and an avatar, aligned to the user's brand.
@@ -603,7 +665,7 @@ ideas, a bio, a banner, and an avatar, aligned to the user's brand.
 
 ## ADS (display monetization)
 
-URL: /ads · Sidebar: Set up → Ads
+URL: /ads · Sidebar: Blog → Ads
 
 Connect your Google AdSense publisher ID (ca-pub-...) so display ads run on
 your blog — banner, in-content, and sidebar placements — and manage ads.txt.
@@ -611,19 +673,49 @@ This is separate from affiliate income; it's ad revenue on your traffic.
 
 ---
 
-## OTHER CREATE TOOLS
+## OTHER TOOLS
 
-- **Scriptwriter** (/script) — writes a full video script from a product or topic. Monthly cap by tier.
-- **Idea Lists** (/idea-lists) — turn an Amazon storefront idea list into a shoppable roundup post.
-- **MVP x LTK** (/ltk) — turn products into LTK-style link posts.
-- **PartnerBoost / Walmart** (/partnerboost) — find Walmart + DTC brand deals and deep links beyond Amazon, and generate posts from Walmart offers.
-- **MVP x Levanta** (/levanta) — Amazon creator network for commissionable brand links.
+- **Scriptwriter** (/script; Sidebar: Make videos → Scriptwriter) — writes a full video script from a product or topic. Monthly cap by tier.
+- **Idea lists** (/idea-lists; Sidebar: Find products → Idea lists) — turn an Amazon storefront idea list into a shoppable roundup post.
+- **MVP x LTK** (/ltk; Sidebar: Find products → Partner programs → LTK tab) — turn products into LTK-style link posts.
+- **PartnerBoost / Walmart** (/partnerboost; Sidebar: Find products → Partner programs → PartnerBoost and Walmart tab) — find Walmart + DTC brand deals and deep links beyond Amazon, and generate posts from Walmart offers.
+- **MVP x Levanta** (/levanta; Sidebar: Find products → Partner programs → Levanta tab) — Amazon creator network for commissionable brand links.
+
+---
+
+## THE AMAZON PLAN ($${TIERS.amazon.price} a month)
+
+For creators who live on their Amazon storefront and socials. No blog and no
+website. YouTube is optional: everything works without a channel, and one can
+be connected. It includes:
+- Thumbnails, and Pinterest and Instagram social designs (Facebook reuses
+  them), Social Launch Kit, Link in Bio, Passport links.
+- Product research, including Creator Connections campaigns and Deal Radar.
+- Brand pitches (${TIERS.amazon.collabsPerMonth} a month), Brand inbox, Face models, Ask MVP.
+- Bulk Amazon upload (/liftoff, formerly Liftoff): up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at
+  once to their Amazon storefront through SCOUT, and to YouTube too when a
+  channel is connected.
+- ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and YouTube Co-Pilot (/co-pilot): ${AMAZON_COPILOT_RUNS_PER_MONTH} runs a month
+  (titles, descriptions, tags).
+- Pinned comments (/first-comments) and On sale comments (/encore) on their
+  YouTube videos.
+- Amazon Live prep and follow-up (/amazon-live): up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month.
+- Clip Factory (/clip-factory): ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month, posted to
+  Instagram and Facebook Reels (not TikTok, not YouTube Shorts).
+- Deal posts: up to ${TIERS.amazon.dealsPerMonth} a month from Deal Radar, to Pinterest, Facebook, an
+  Instagram card and Story.
+
+Pro only (not on the Amazon plan): the blog and everything that publishes to
+it (blog posts, comparisons, buying guides, articles, ended deals, SEO and
+indexing, ads), the partner networks LTK, Levanta, Walmart and Wayward,
+posting to X, Threads, LinkedIn, Bluesky, Telegram and TikTok, Meta Hub, Team
+seats, and video scripts.
 
 ---
 
 ## PRICING & TIERS
 
-URL: /billing · Sidebar: Settings → Plan & Billing
+URL: /billing · Sidebar: Your setup → Plan and usage → Plan and billing tab
 
 <<PLANS>>
 
@@ -672,7 +764,7 @@ or hosts (Hostinger's CDN, WPEngine) blocking REST writes.
 markers on the page"** — This was a formatting bug (now fixed) that could
 break WordPress's invisible block markers on some older posts. Posts you
 generate or update from now on are safe. To repair an affected post, use
-**Rebuild** in MVP (SEO & Indexing → open the post → Rebuild, or from the
+**Rebuild** in MVP (Blog → SEO and indexing → open the post → Rebuild, or from the
 Library) — it regenerates a clean copy and replaces the broken one. Do NOT
 just click "Update" inside WordPress; that keeps the broken markers, so use
 Rebuild in MVP instead. If they have several affected posts, Rebuild each.
@@ -684,19 +776,19 @@ clearing.
 **"My domain shows DNS propagating"** — Wait 15-30 min, refresh. Most
 domains resolve within an hour of Hostinger sign-up.
 
-**"Can I import subscribers from ConvertKit / Substack / Mailchimp?"** —
+${NEWSLETTER_FOR_MEMBERS ? `**"Can I import subscribers from ConvertKit / Substack / Mailchimp?"** —
 Yes. /newsletter has a CSV import. Takes the first column of
 every line + a possible header row.
 
-**"How do I disconnect a WordPress site without losing my posts?"** —
+` : ''}**"How do I disconnect a WordPress site without losing my posts?"** —
 Click the trash icon on the site in /setup. It removes the connection
 from MVP only; the WordPress posts stay on the WordPress site.
 
-**"How do I tag subscribers?"** — /newsletter, click a row,
+${NEWSLETTER_FOR_MEMBERS ? `**"How do I tag subscribers?"** — /newsletter, click a row,
 add tags. Tags are free-text — anything you want (e.g. "paying", "lead").
 Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 
-**"My Trial is over — what now?"** — Pick Creator, Studio, or Pro on
+` : ''}**"My Trial is over, what now?"** Pick Amazon ($${TIERS.amazon.price} a month) or Pro on
 /billing. Stripe checkout. Tier updates immediately on webhook.
 
 **"Can I connect more than one WordPress site?"** Yes on Pro (up to ${TIERS.pro.sites}).
@@ -757,9 +849,9 @@ links carry rel="sponsored nofollow" (the correct SEO + disclosure signal).
 Reviews are written only from what's actually in your video and the real product
 details, never fabricated experiences or made-up numbers.
 
-**"Can I put my Amazon affiliate link in my newsletter / emails?"** Amazon's
+**"Can I put my Amazon affiliate link in my emails?"** Amazon's
 Operating Agreement does NOT allow Amazon affiliate links inside emails. Best
-practice: point your newsletter at your blog POST (which carries the affiliate
+practice: point any email you send at your blog POST (which carries the affiliate
 link) rather than linking straight to Amazon. Linking to your own site is always
 fine.
 
@@ -874,24 +966,36 @@ function plansBlock(): string {
     const rows = [
       line('Generations per month (blog + thumbnail + metadata share one bucket)', t.postsPerMonth, 'per month'),
       t.thumbnailsPerMonth ? `- Art Director thumbnails: ${n(t.thumbnailsPerMonth, 'per month')}` : null,
-      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins, ${t.igPostsPerMonth} Reels covers, ${t.facebookPostsPerMonth} Facebook per month` : null,
+      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins and ${t.igPostsPerMonth} Instagram posts and Stories per month. Facebook posts reuse the product's thumbnail or Instagram design, so they use none of these` : null,
       line('Video scripts', t.scriptsPerMonth, 'per month'),
       line('Photobooth headshots', t.photoboothPerMonth, 'per month'),
       line('Creator Connections outreach', t.collabsPerMonth, 'per month'),
       line('Instagram AI thumbnails', t.instagramAiThumbnailsPerMonth, 'per month'),
       line('Face training slots', t.maxFaces, plural(t.maxFaces, 'slot', 'slots')),
       line('WordPress sites', t.sites, plural(t.sites, 'site', 'sites')),
-      t.newsletterSubscribers
+      // Retired for members (NEWSLETTER_FOR_MEMBERS): no line at all, so no
+      // plan, legacy ones included, is described as having a newsletter.
+      !NEWSLETTER_FOR_MEMBERS ? null : t.newsletterSubscribers
         ? `- Newsletter: ${t.newsletterSubscribers.toLocaleString('en-US')} subscribers, ${n(t.newsletterBroadcastsPerMonth, `${plural(t.newsletterBroadcastsPerMonth, 'send', 'sends')} per month`)}`
         : '- Newsletter: not on this plan',
-      line('Help Desk messages', t.assistantMessagesPerMonth, 'per month'),
-      line('Virtual Assistant seats', t.vaSeats, plural(t.vaSeats, 'seat', 'seats')),
+      line('Ask MVP messages', t.assistantMessagesPerMonth, 'per month'),
+      line('Team seats', t.vaSeats, plural(t.vaSeats, 'seat', 'seats')),
       // Read, not typed. The old hand-written list carried an asterisk footnote
       // about app-review gates that had drifted out of step with which
       // platforms were actually gated.
       Array.isArray(t.socials) && t.socials.length
         ? `- Publishes to: ${t.socials.join(', ')}`
         : null,
+      // The Amazon plan's video allowances live in lib/amazon-plan, not TIERS
+      // (Seb, 2026-10-05), so they are added here or the table omits them.
+      ...(key === 'amazon' ? [
+        `- YouTube channels: ${AMAZON_YOUTUBE_CHANNELS} (optional)`,
+        `- YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs per month`,
+        `- Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once`,
+        `- Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows per month`,
+        `- Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips per month, to Instagram and Facebook Reels`,
+        `- Deal posts: ${n(t.dealsPerMonth, 'per month')}`,
+      ] : []),
     ].filter(Boolean)
     const price = t.price === 0 ? 'free' : `$${t.price}/mo`
     const annual = t.annualPrice ? `, or $${t.annualPrice}/year` : ''
@@ -909,8 +1013,7 @@ right and something needs reporting. Say so rather than explaining the gap away.
 
 ### Free Trial (free)
 - 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card required.
-- Help Desk messages: ${TIERS.trial.assistantMessagesPerMonth} per month
-- Newsletter: not on this plan
+- Ask MVP messages: ${TIERS.trial.assistantMessagesPerMonth} per month${NEWSLETTER_FOR_MEMBERS ? '\n- Newsletter: not on this plan' : ''}
 
 ## PLANS ON SALE TODAY
 
@@ -922,10 +1025,10 @@ ${legacy}
 
 ## CAPS THAT ARE NOT PER-TIER
 
-These two are fixed for every paid plan, and they are ENFORCED at these
-numbers. They are separate from the generations bucket.
+These two are ENFORCED at these numbers. They are separate from the
+generations bucket.
 
-- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period. Planning and finding clips is free; only a finished render counts.
+- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period on Pro; ${AMAZON_CLIPS_PER_MONTH} clips and ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments on the Amazon plan. Only a finished render counts as a clip.
 - X / Twitter posts: ${X_MONTHLY_CAP} per billing period.
 
 ## NEVER CALCULATE SOMEONE'S REMAINING ALLOWANCE
@@ -934,7 +1037,7 @@ You are not given anyone's usage. You do not know how many Shorts, posts or
 messages a user has left, and you do not know their reset date. Do not subtract
 a number they mention from a cap and present the result, and do not state a
 reset date. Give the cap, then send them to the page that shows the real figure:
-**[Plan & Billing](/billing)** for the overall picture, and the counter on the
+**[Plan and billing](/billing)** for the overall picture, and the counter on the
 tool's own page for that tool. A confident wrong number about what somebody has
 left is worse than no number.`
 }

@@ -18,7 +18,7 @@ const steps: Step[] = [
   {
     id: 'hostinger',
     label: 'Get a domain + WordPress host',
-    description: 'Your reviews need somewhere to live. Hostinger gives you a domain + WordPress install in about 5 minutes — and 20% off through our link. It\'s the only piece that isn\'t built into MVP.',
+    description: 'Your reviews need somewhere to live. Hostinger gives you a domain + WordPress install in about 5 minutes, and 20% off through our link. It\'s the only piece that isn\'t built into MVP.',
     href: 'https://geni.us/MVPhosting',
     required: true,
     done: false,
@@ -78,12 +78,12 @@ export default function SetupChecklist() {
           </div>
           <div className="text-left">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {allDone ? 'Account ready' : 'Before you generate — one external account'}
+              {allDone ? 'Account ready' : 'Before you generate: one external account'}
             </p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {allDone
                 ? 'Your hosting account is set up.'
-                : `${allRequired.length - doneCount} required — opens in a new tab`}
+                : `${allRequired.length - doneCount} required: opens in a new tab`}
             </p>
           </div>
         </div>

@@ -23,8 +23,9 @@ import { buildCaptionChunks, isPowerWord } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
-import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { shortsCapFor } from '@/lib/usage-cap'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -45,9 +46,9 @@ export async function POST(request: Request) {
       .select('tier,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Rendering Shorts is a Pro feature.',
+        error: 'Rendering clips is part of the Amazon and Pro plans.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     // (if under cap) inserts a zero-cost reservation row it returns; we refund it
     // in the finally if the render fails. Real render cost is logged separately
     // as 'shorts_render_cost' so it never double-counts the cap.
-    const capLimit = tier === 'admin' ? null : SHORTS_MONTHLY_CAP
+    const capLimit = shortsCapFor(tier)
     const { startISO, resetLabel } = billingWindow({
       periodStart: (intRow?.subscription_period_start as string | null) ?? null,
       periodEnd: (intRow?.subscription_period_end as string | null) ?? null,

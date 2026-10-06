@@ -147,7 +147,7 @@ export function YouTubeDescriptionSettings() {
         </button>
       </div>
       <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-        Titled blocks of name → link rows — great for your gear, editing setup, or any recurring affiliate links.
+        Titled blocks of name → link rows: great for your gear, editing setup, or any recurring affiliate links.
       </p>
       {sections.length === 0 && (
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No sections yet. Click &quot;Add section&quot; to create one.</p>
@@ -294,7 +294,7 @@ export function YouTubeDescriptionSettings() {
       {/* Sub-section: free-text custom block — Co-Pilot appends it verbatim. */}
       <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Custom block</h3>
       <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-        Write anything you want on <strong>every</strong> description — your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it exactly as you type it. Your spacing and line breaks are kept.
+        Write anything you want on <strong>every</strong> description: your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it exactly as you type it. Your spacing and line breaks are kept.
       </p>
       <textarea
         value={customBlock}

@@ -20,6 +20,7 @@
  * Phases 2–4 land.
  */
 
+import { noteTokenOwner } from '@/lib/youtube-quota'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
@@ -264,7 +265,7 @@ export async function getChannelOAuthToken(
   }
 
   if (row?.oauth_access_token) {
-    return refreshGoogleToken(supabase, {
+    return owned(userId, await refreshGoogleToken(supabase, {
       table: 'youtube_channels',
       idColumn: 'id',
       idValue: row.id,
@@ -273,7 +274,7 @@ export async function getChannelOAuthToken(
       expiry: row.oauth_token_expiry,
       accessCol: 'oauth_access_token',
       expiryCol: 'oauth_token_expiry',
-    })
+    }))
   }
 
   // Legacy bridge: single-channel user whose token still lives on integrations.
@@ -283,7 +284,7 @@ export async function getChannelOAuthToken(
     .eq('user_id', userId)
     .maybeSingle()
   if (legacy?.youtube_oauth_access_token) {
-    return refreshGoogleToken(supabase, {
+    return owned(userId, await refreshGoogleToken(supabase, {
       table: 'integrations',
       idColumn: 'user_id',
       idValue: userId,
@@ -292,9 +293,16 @@ export async function getChannelOAuthToken(
       expiry: legacy.youtube_oauth_token_expiry,
       accessCol: 'youtube_oauth_access_token',
       expiryCol: 'youtube_oauth_token_expiry',
-    })
+    }))
   }
   return null
+}
+
+/** The token, noted as this account's so its YouTube calls are put down to
+ *  them in the quota log (lib/youtube-quota). */
+function owned(userId: string, token: string | null): string | null {
+  noteTokenOwner(token, userId)
+  return token
 }
 
 /** Set a channel as the user's default (atomic clear-then-set, like sites). */

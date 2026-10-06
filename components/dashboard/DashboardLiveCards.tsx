@@ -76,7 +76,7 @@ export function DashboardLiveCards() {
         ) : clicks === 'error' || clicks.clicks === 0 ? (
           <div>
             <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-              Connect Geniuslink to track your clicks — and see which channel (blog, Facebook, Pinterest, X…) drove each one.
+              Connect Geniuslink to track your clicks, and see which channel (blog, Facebook, Pinterest, X…) drove each one.
             </p>
             <div className="flex items-center gap-3 mt-2">
               <Link href="/brand" className="text-[11px] font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">Connect</Link>

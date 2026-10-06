@@ -56,9 +56,9 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
 
   const copy = useCallback(async () => {
     const t = message.trim()
-    if (!t) { toast.error('Nothing to copy yet — draft a message first.'); return }
-    try { await navigator.clipboard.writeText(t); toast.success('Message copied — paste it to the brand.') }
-    catch { toast.error('Copy failed — select the text and copy manually.') }
+    if (!t) { toast.error('Nothing to copy yet. Draft a message first.'); return }
+    try { await navigator.clipboard.writeText(t); toast.success('Message copied: paste it to the brand.') }
+    catch { toast.error('Copy failed: select the text and copy manually.') }
   }, [message])
 
   return (
@@ -108,7 +108,7 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
           <a href={target.networkUrl} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold text-white ml-auto"
             style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}
-            title={`Open ${target.network} — find ${target.brand || 'the brand'} and paste your message`}>
+            title={`Open ${target.network}: find ${target.brand || 'the brand'} and paste your message`}>
             Open {target.network} <ExternalLink size={13} />
           </a>
         </div>

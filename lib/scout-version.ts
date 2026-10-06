@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.22.1'
+export const SCOUT_LATEST_VERSION = '1.40.8'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Reads an Amazon Live replay page for Live follow-up (the video stream and the products shown), and fills a post into your Facebook Group.'
+  'Liftoff uploads, tags, thumbnails, playlists and schedules your videos in YouTube Studio, so they no longer use MVP\'s daily YouTube allowance.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -60,6 +60,25 @@ export const SCOUT_PIN_MIN_VERSION = '1.21.16'
 
 /** The oldest SCOUT that can fill a post into a Facebook Group. */
 export const SCOUT_FB_GROUP_MIN_VERSION = '1.22.0'
+
+/** The oldest SCOUT that can attach the hero (thumbnail or video card) to a
+ *  Group post it fills. */
+export const SCOUT_FB_GROUP_MEDIA_MIN_VERSION = '1.23.0'
+
+/** The oldest SCOUT that watches for the filled Group post to go up and
+ *  reports its address, so MVP can offer a Page post linking to it. */
+export const SCOUT_FB_GROUP_WATCH_MIN_VERSION = '1.24.0'
+/** SCOUT answers "is it allowed on Facebook" and can ask, for Facebook setup. */
+export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
+/** SCOUT attaches a Clip Factory clip's video to a Group post. */
+export const SCOUT_FB_GROUP_CLIP_MIN_VERSION = '1.40.0'
+
+/** The oldest SCOUT that uploads Liftoff videos through YouTube Studio
+ *  (MVP_STUDIO_UPLOAD), so an upload costs nothing from the shared quota. */
+export const SCOUT_STUDIO_UPLOAD_MIN_VERSION = '1.25.0'
+
+/** The oldest SCOUT that posts first comments itself, at no YouTube quota. */
+export const SCOUT_COMMENT_POST_MIN_VERSION = '1.26.0'
 
 /** True when the installed SCOUT is at least `min`. False when unknown. */
 export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {

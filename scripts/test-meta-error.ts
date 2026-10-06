@@ -35,6 +35,8 @@ import {
   isMetaRateLimit,
   looksLikeDeadToken,
 } from '../lib/meta-error'
+import { FacebookService } from '../services/facebook'
+import { getMediaPermalink } from '../services/instagram'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -185,9 +187,76 @@ function body(fields: Record<string, unknown>): { error: Record<string, unknown>
   }
 }
 
-if (failures.length) {
-  console.error(`\n❌ meta-error: ${failures.length} failure(s)\n`)
-  for (const f of failures) console.error(`   • ${f}`)
-  process.exit(1)
+// ── WHAT META ANSWERED, NOT THE STATUS LINE ─────────────────────────────────
+// Meta can answer HTTP 200 with an `error` object, or with no id at all. A
+// Facebook Page post read that as success, so a post that does not exist was
+// marked published and linked as facebook.com/undefined. And an Instagram post
+// was linked as instagram.com/p/<numeric media id>, which /p/ does not take, so
+// every "View on Instagram" link was dead. Both run against stubbed answers.
+async function metaAnswers(): Promise<void> {
+  const realFetch = globalThis.fetch
+  const answer = (status: number, json: unknown) => {
+    globalThis.fetch = (async () => new Response(JSON.stringify(json), { status, headers: { 'Content-Type': 'application/json' } })) as typeof fetch
+  }
+  const fails = async (fn: () => Promise<unknown>): Promise<string | null> => {
+    try { await fn(); return null } catch (e) { return e instanceof Error ? e.message : String(e) }
+  }
+  try {
+    const fb = new FacebookService('tok', 'PAGE')
+    answer(200, { error: { message: 'Permissions error', code: 200 } })
+    const e1 = await fails(() => fb.postPhoto({ imageUrl: 'https://x.test/a.jpg', caption: 'hi' }))
+    check('facebook: a 200 carrying an error object is a failure with Meta\'s words', !!e1 && /Permissions error/.test(e1), String(e1))
+    answer(200, {})
+    const e2 = await fails(() => fb.postLink({ message: 'hi', link: 'https://x.test' }))
+    check('facebook: a 200 with no id is a failure, never a post', !!e2 && /without a post id/.test(e2), String(e2))
+    check('facebook: that failure has no dash punctuation', !!e2 && !/[—–]|\s-\s/.test(e2))
+    answer(200, { success: true })
+    check('facebook: a text post with no id fails too', !!(await fails(() => fb.postText({ message: 'hi' }))))
+    answer(200, { id: 'PHOTO1', post_id: 'PAGE_POST1' })
+    const ok = await fb.postPhoto({ imageUrl: 'https://x.test/a.jpg', caption: 'hi' })
+    check('facebook: a real photo answer keeps both ids', ok.id === 'PHOTO1' && ok.post_id === 'PAGE_POST1')
+    answer(200, { post_id: 'PAGE_POST2' })
+    const onlyPost = await fb.postPhoto({ imageUrl: 'https://x.test/a.jpg', caption: 'hi' })
+    check('facebook: a post_id alone still gives callers a defined id', onlyPost.id === 'PAGE_POST2' && onlyPost.post_id === 'PAGE_POST2')
+    answer(400, { error: { message: 'Error validating access token', code: 190 } })
+    const e3 = await fails(() => fb.postLink({ message: 'hi', link: 'https://x.test' }))
+    check('facebook: a refused post keeps the raw body the dead-token check reads', !!e3 && /failed 400/.test(e3) && /access token/.test(e3), String(e3))
+
+    answer(200, { permalink: 'https://www.instagram.com/p/DAbC123xYz/', id: '17900000000000001' })
+    check('instagram: the post address is the permalink Meta reports',
+      await getMediaPermalink({ mediaId: '17900000000000001', accessToken: 't' }) === 'https://www.instagram.com/p/DAbC123xYz/')
+    answer(200, { permalink: 'https://www.instagram.com/reel/DAbC123xYz/' })
+    check('instagram: a Reel permalink comes back the same way',
+      await getMediaPermalink({ mediaId: '1', accessToken: 't' }) === 'https://www.instagram.com/reel/DAbC123xYz/')
+    answer(400, { error: { message: 'nope' } })
+    check('instagram: a failed read is no link, not a guessed one', await getMediaPermalink({ mediaId: '1', accessToken: 't' }) === null)
+    answer(200, { id: '1' })
+    check('instagram: an answer without a permalink is no link', await getMediaPermalink({ mediaId: '1', accessToken: 't' }) === null)
+    globalThis.fetch = (async () => { throw new Error('fetch failed') }) as typeof fetch
+    check('instagram: a network failure is no link and does not throw', await getMediaPermalink({ mediaId: '1', accessToken: 't' }) === null)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 }
-console.log('✅ meta-error: a dead token, a rate limit and an unknown cause are three different sentences')
+
+// 2026-10-07: Facebook saying OK with no post id may mean the photo is up, so
+// the photo-to-link fallback must not post a second time on it.
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  for (const p of ['app/api/cron/process-scheduled/route.ts', 'app/api/blog/facebook-post/route.ts']) {
+    check(`${p}: no link fallback after an unconfirmed photo post`, /if \(isUnconfirmedFacebookPost\(photoErr\)\) throw photoErr/.test(rf(p, 'utf8')))
+  }
+}
+
+function report(): void {
+  if (failures.length) {
+    console.error(`\n❌ meta-error: ${failures.length} failure(s)\n`)
+    for (const f of failures) console.error(`   • ${f}`)
+    process.exit(1)
+  }
+  console.log('✅ meta-error: a dead token, a rate limit and an unknown cause are three different sentences, and a 200 without an id is not a post')
+}
+
+void metaAnswers()
+  .catch((e) => { failures.push(`stubbed Meta answers threw: ${e instanceof Error ? e.message : e}`) })
+  .then(report)

@@ -17,9 +17,20 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
-export async function GET() {
+export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  // TikTok matches redirect_uri EXACTLY (no wildcards, www ≠ non-www) and a Live
+  // app's redirect URI can't be edited without a re-review. So allow an env
+  // override to match whatever's registered on the TikTok app (currently the
+  // non-www form). Must be identical here and in the token-exchange (callback).
+  const redirectUri = process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`
+  // START ON THE CALLBACK'S HOST. TIKTOK_REDIRECT_URI can name a different
+  // host from NEXT_PUBLIC_APP_URL, and the one-time state cookie only reaches
+  // the callback if it was set on the callback's own host.
+  const hostHop = callbackHostRedirect(request, redirectUri)
+  if (hostHop) return NextResponse.redirect(hostHop)
 
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -41,15 +52,10 @@ export async function GET() {
     return NextResponse.redirect(`${appUrl}/connect-socials?tiktok_error=server_not_configured`)
   }
 
-  // CSRF state — TikTok echoes this back to the callback. We pass the
-  // current user id so the callback can validate it matches the session
-  // and bind the new TikTok tokens to the right MVP user.
-  const state = user.id
-  // TikTok matches redirect_uri EXACTLY (no wildcards, www ≠ non-www) and a Live
-  // app's redirect URI can't be edited without a re-review. So allow an env
-  // override to match whatever's registered on the TikTok app (currently the
-  // non-www form). Must be identical here and in the token-exchange (callback).
-  const redirectUri = process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`
+  // CSRF state: RANDOM and ONE-TIME (lib/oauth-state), bound to this user in
+  // an httpOnly cookie. TikTok echoes it back and the callback verifies and
+  // burns it. The bare user id used to be the state: guessable and reusable.
+  const state = await startOAuthState('tiktok', user.id, redirectUri)
 
   const url = new URL('https://www.tiktok.com/v2/auth/authorize/')
   url.searchParams.set('client_key', clientKey)

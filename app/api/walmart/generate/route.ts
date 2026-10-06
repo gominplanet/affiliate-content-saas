@@ -33,6 +33,8 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
+import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
+import { partnerKey, partnerMeta, partnerAlreadyMade } from '@/lib/partner-made-before'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -81,8 +83,11 @@ export async function POST(request: NextRequest) {
     // route. Was previously ungated, bypassing the cost circuit-breaker.
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
+    // One LTK, Levanta, Walmart or Wayward post a day (lib/partner-post-limit).
+    const daily = await partnerPostLimit(user.id, tier)
+    if (daily) return daily
 
-    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string; draft?: boolean }
+    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string; draft?: boolean; again?: boolean }
     const p = body.product || {}
     if (!p.name || !p.url) {
       return NextResponse.json({ ok: false, error: 'A product with at least a name and URL is required.' }, { status: 400 })
@@ -121,6 +126,11 @@ export async function POST(request: NextRequest) {
     //    deep-link to a bare walmart.com page relies on PartnerBoost's redirect. ─
     const isWalmart = (body.network || '').trim().toLowerCase() === 'walmart'
     const itemId = (p.sku || '').trim()
+    // Already posted this item? Hand it back before writing. Walmart posts from
+    // before keys existed are matched on their stamped item id.
+    const madeKey = partnerKey('walmart', itemId || (p.url as string | undefined) || (p.name as string | undefined))
+    const made = await partnerAlreadyMade(supabase, user.id, madeKey, body.again, isWalmart ? itemId || null : null)
+    if (made) return made
     let affiliateUrl = ''
     let linkSource: 'product_tracking' | 'deep_link' | 'bare_url' = 'bare_url'
     if (p.trackingUrl && p.trackingUrl.trim()) {
@@ -334,7 +344,9 @@ export async function POST(request: NextRequest) {
         wordpress_url: wpPost.link,
         wordpress_post_id: wpPost.id,
         // Stamp the Walmart item id so Deal Radar can mark it "Published" later.
-        ...(isWalmart && itemId ? { deal_meta: { kind: 'walmart', itemId } } : {}),
+        // Walmart keeps kind 'walmart' + itemId (Deal Radar's "Published"
+        // badge reads them); every post also carries its made-before key.
+        deal_meta: isWalmart && itemId ? { kind: 'walmart', itemId, key: madeKey } : { kind: isWalmart ? 'walmart_item' : 'partnerboost', key: madeKey },
         published_at: status === 'draft' ? null : new Date().toISOString(),
       })
       if (bpErr) console.error('[partnerboost] blog_posts insert failed:', bpErr.message)
@@ -354,6 +366,7 @@ export async function POST(request: NextRequest) {
     })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
+    recordPartnerPost(user.id, tier)
     return NextResponse.json({
       ok: true,
       wordpressUrl: wpPost.link,

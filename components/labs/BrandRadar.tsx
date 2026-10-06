@@ -67,7 +67,7 @@ export default function BrandRadar() {
       const res = await fetch('/api/creator/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, handle }) })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { setMsg({ ok: false, text: d.error || 'Could not start the sync.' }); return }
-      if (d.async) setMsg({ ok: true, text: 'Syncing your storefront in the background — this can take a few minutes. Your brands fill in as it lands.' })
+      if (d.async) setMsg({ ok: true, text: 'Syncing your storefront in the background. This can take a few minutes. Your brands fill in as it lands.' })
       else setMsg({ ok: true, text: `Scanned ${d.postsScanned ?? 0} TikToks, found ${d.brands?.length ?? 0} brands.` })
       await loadMeta(); await loadBrands(q)
     } catch { setMsg({ ok: false, text: 'Something went wrong. Try again.' }) }
@@ -80,7 +80,7 @@ export default function BrandRadar() {
       const res = await fetch('/api/storefront/enrich-brands', { method: 'POST' })
       const d = await res.json().catch(() => ({}))
       if (d.configured === false) setMsg({ ok: false, text: 'Brand enrichment isn’t connected yet.' })
-      else setMsg({ ok: true, text: `Enriched ${d.enriched ?? 0} products.${d.remaining ? ` ${d.remaining} left — run again for the rest.` : ''}` })
+      else setMsg({ ok: true, text: `Enriched ${d.enriched ?? 0} products.${d.remaining ? ` ${d.remaining} left: run again for the rest.` : ''}` })
       await loadMeta(); await loadBrands(q)
     } catch { setMsg({ ok: false, text: 'Enrichment failed. Try again.' }) }
     finally { setBusy(null) }
@@ -105,7 +105,7 @@ export default function BrandRadar() {
       <PageHero
         accent={ACCENT}
         title="Brand Radar"
-        subtitle="Every brand you’ve worked with, from your Amazon storefront and TikTok — searchable, and matchable against any brand marketplace."
+        subtitle="Every brand you’ve worked with, from your Amazon storefront and TikTok, searchable and matchable against any brand marketplace."
       />
 
       {providers && !anyProvider && (
@@ -137,7 +137,7 @@ export default function BrandRadar() {
         </div>
         {brands.length === 0 ? (
           <p className="text-[12.5px] py-4 text-center" style={{ color: 'var(--text-faint)' }}>
-            {q ? 'No brands match that search.' : 'No brands yet — sync your storefront or TikTok below.'}
+            {q ? 'No brands match that search.' : 'No brands yet. Sync your storefront or TikTok below.'}
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[440px] overflow-y-auto pr-1">
@@ -172,7 +172,7 @@ export default function BrandRadar() {
           <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Check brands against your history</h2>
         </div>
         <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-soft)' }}>
-          Paste brand names from TRYBE (or any marketplace), one per line, to see which you’ve <b>already worked with</b> — the ones you’re promoting for free and could pitch.
+          Paste brand names from TRYBE (or any marketplace), one per line, to see which you’ve <b>already worked with</b>: the ones you’re promoting for free and could pitch.
         </p>
         <textarea
           value={trybeInput} onChange={e => setTrybeInput(e.target.value)} rows={4}

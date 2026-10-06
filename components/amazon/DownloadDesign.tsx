@@ -69,7 +69,7 @@ export default function DownloadDesign({
         // Not silent. The image opens so they can long-press or right-click it,
         // and they are told that is what just happened.
         window.open(url, '_blank', 'noopener')
-        toast.info('Opened your design in a new tab — press and hold, or right-click, to save it.')
+        toast.info('Opened your design in a new tab. Press and hold, or right-click, to save it.')
         return
       }
       const objectUrl = URL.createObjectURL(blob)
@@ -84,7 +84,7 @@ export default function DownloadDesign({
       setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000)
     } catch {
       window.open(url, '_blank', 'noopener')
-      toast.info('Opened your design in a new tab — press and hold, or right-click, to save it.')
+      toast.info('Opened your design in a new tab. Press and hold, or right-click, to save it.')
     } finally {
       setBusy(false)
     }

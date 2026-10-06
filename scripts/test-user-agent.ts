@@ -85,6 +85,11 @@ const SAFARI_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Ap
     check(`unreadable agent claims no device: ${JSON.stringify(ua)}`, r.device === null, `device=${r.device}`)
     check(`unreadable agent claims no browser: ${JSON.stringify(ua)}`, r.browser === null || r.browser === 'Bot')
   }
+  // People, not bots: a Cubot phone ("CUBOT" ends in "bot") and the
+  // DuckDuckGo browser ("DuckDuckGo/7"). DuckDuckBot is still a bot.
+  check('a Cubot phone is a person', parseUserAgent('Mozilla/5.0 (Linux; Android 12; CUBOT X30) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36').browser === 'Chrome')
+  check('the DuckDuckGo browser is a person', parseUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 DuckDuckGo/7').browser !== 'Bot')
+  check('DuckDuckBot is a bot', parseUserAgent('DuckDuckBot/1.1; (+http://duckduckgo.com/duckduckbot.html)').browser === 'Bot')
   check('null is unknown', parseUserAgent(null).device === null && parseUserAgent(null).browser === null)
   check('undefined is unknown', parseUserAgent(undefined).device === null)
 }

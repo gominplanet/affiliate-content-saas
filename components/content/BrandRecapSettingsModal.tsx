@@ -47,7 +47,7 @@ export default function BrandRecapSettingsModal({ onClose }: { onClose: () => vo
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Save failed')
-      toast.success('Saved — new recaps use this message')
+      toast.success('Saved: new recaps use this message')
       onClose()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed')
@@ -103,7 +103,7 @@ export default function BrandRecapSettingsModal({ onClose }: { onClose: () => vo
                 spellCheck
               />
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                Placeholders MVP fills in automatically: <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{brand}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{product}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{links}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{name}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{site}}'}</code>. Keep <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{links}}'}</code> on its own line — that&rsquo;s where every live URL drops in.
+                Placeholders MVP fills in automatically: <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{brand}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{product}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{links}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{name}}'}</code> <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{site}}'}</code>. Keep <code className="bg-[var(--surface-2,#f5f5f7)] px-1 rounded">{'{{links}}'}</code> on its own line. That&rsquo;s where every live URL drops in.
               </p>
             </div>
 

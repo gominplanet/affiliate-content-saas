@@ -62,50 +62,60 @@ export async function GET(req: Request) {
     .sort((a, b) => (lastChecked.get(a) ?? '').localeCompare(lastChecked.get(b) ?? ''))
 
   let users = 0, alerts = 0
+  const errors: Array<{ userId: string; error: string }> = []
   for (const userId of order) {
     if (left() < 90_000) break
     // KEEPA IS SHARED with every other feature. Below a floor, stop and let
     // tomorrow's run carry on from the creators not reached today.
     const tokens = await fetchKeepaTokenStatus()
     if (tokens.tokensLeft != null && tokens.tokensLeft < 150) break
-    const covered = await coveredProducts(sb, userId)
-    // EVERY VIDEO PRODUCT, EVERY DAY: those are the products Encore can put
-    // a comment on, so a sale on one must not wait days for its turn. The
-    // storefront-only products keep the rolling allowance of 100 new lookups.
-    const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 100, videoKeepaCap: VIDEO_DAILY_MAX }) : []
+    // ONE CREATOR'S ERROR IS THAT CREATOR'S. A throw here used to end the run,
+    // and since that creator was never stamped they were first again next
+    // run and threw again: nobody after them was ever checked.
+    try {
+      const covered = await coveredProducts(sb, userId)
+      // EVERY VIDEO PRODUCT, EVERY DAY: those are the products Encore can put
+      // a comment on, so a sale on one must not wait days for its turn. The
+      // storefront-only products keep the rolling allowance of 100 new lookups.
+      const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 100, videoKeepaCap: VIDEO_DAILY_MAX }) : []
 
-    if (onSale.length) {
-      const since = new Date(Date.now() - REALERT_DAYS * 86_400_000).toISOString()
-      const { data: recent } = await sb.from('price_alerts').select('asin,label')
-        .eq('user_id', userId).eq('kind', 'covered_sale').gte('created_at', since)
-      const recentPct = new Map<string, number>()
-      for (const r of (recent ?? []) as Array<{ asin: string; label: string | null }>) {
-        // No percentage in the label (a lightning deal, a new low) counts as
-        // the deepest, so the same sale is not raised again within the week.
-        const m = /(\d+)%/.exec(r.label || '')
-        recentPct.set(r.asin, Math.max(recentPct.get(r.asin) ?? 0, m ? Number(m[1]) : 100))
-      }
-      const rows = onSale.filter((p) => {
-        const was = recentPct.get(p.asin)
-        return was === undefined || (p.verdict.pct ?? 0) >= was + DEEPER_BY
-      }).slice(0, 10).map((p) => {
-        const vids = p.sources.filter((s) => s.kind === 'video').length
-        return {
-          user_id: userId, asin: p.asin, kind: 'covered_sale',
-          title: p.title, image_url: p.image,
-          price_now_cents: p.verdict.nowCents, price_ref_cents: p.verdict.refCents,
-          label: `${saleLabel(p.verdict)}. ${vids ? `In ${vids} of your videos` : 'In your storefront'}`,
+      if (onSale.length) {
+        const since = new Date(Date.now() - REALERT_DAYS * 86_400_000).toISOString()
+        const { data: recent } = await sb.from('price_alerts').select('asin,label')
+          .eq('user_id', userId).eq('kind', 'covered_sale').gte('created_at', since)
+        const recentPct = new Map<string, number>()
+        for (const r of (recent ?? []) as Array<{ asin: string; label: string | null }>) {
+          // No percentage in the label (a lightning deal, a new low) counts as
+          // the deepest, so the same sale is not raised again within the week.
+          const m = /(\d+)%/.exec(r.label || '')
+          recentPct.set(r.asin, Math.max(recentPct.get(r.asin) ?? 0, m ? Number(m[1]) : 100))
         }
-      })
-      if (rows.length) {
-        const { error } = await sb.from('price_alerts').insert(rows)
-        if (!error) alerts += rows.length
+        const rows = onSale.filter((p) => {
+          const was = recentPct.get(p.asin)
+          return was === undefined || (p.verdict.pct ?? 0) >= was + DEEPER_BY
+        }).slice(0, 10).map((p) => {
+          const vids = p.sources.filter((s) => s.kind === 'video').length
+          return {
+            user_id: userId, asin: p.asin, kind: 'covered_sale',
+            title: p.title, image_url: p.image,
+            price_now_cents: p.verdict.nowCents, price_ref_cents: p.verdict.refCents,
+            label: `${saleLabel(p.verdict)}. ${vids ? `In ${vids} of your videos` : 'In your storefront'}`,
+          }
+        })
+        if (rows.length) {
+          const { error } = await sb.from('price_alerts').insert(rows)
+          if (!error) alerts += rows.length
+        }
       }
+      await sb.from('covered_sale_checks').upsert({
+        user_id: userId, checked_at: new Date().toISOString(), asins: covered.length, on_sale: onSale.length,
+      }, { onConflict: 'user_id' })
+      users++
+    } catch (e) {
+      errors.push({ userId, error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+      // Stamped anyway so the queue moves past them; tried again tomorrow.
+      await sb.from('covered_sale_checks').upsert({ user_id: userId, checked_at: new Date().toISOString() }, { onConflict: 'user_id' })
     }
-    await sb.from('covered_sale_checks').upsert({
-      user_id: userId, checked_at: new Date().toISOString(), asins: covered.length, on_sale: onSale.length,
-    }, { onConflict: 'user_id' })
-    users++
   }
-  return NextResponse.json({ ok: true, users, alerts, of: order.length })
+  return NextResponse.json({ ok: true, users, alerts, of: order.length, ...(errors.length ? { errors } : {}) })
 }

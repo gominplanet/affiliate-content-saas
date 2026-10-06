@@ -29,14 +29,21 @@
 // of them understating the plan, and scripts/test-sales-page-facts exists
 // because of it.
 
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
 import NextImage from 'next/image'
 import {
   ArrowRight, Check, X as XIcon, ShieldCheck, Wand2, LayoutTemplate,
-  Handshake, UserSquare,
+  Handshake, UserSquare, Upload, Scissors, Youtube, Radio,
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
@@ -44,9 +51,9 @@ import { SALES_PAUSED } from '@/lib/sales-paused'
 import MetaTrack from '@/components/analytics/MetaTrack'
 
 export const metadata: Metadata = {
-  title: 'Make the assets your storefront needs | MVP Affiliate',
+  title: 'Make the assets your storefront needs',
   description:
-    'Thumbnails, shoppable designs, pins, Reels covers and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
+    'Thumbnails, shoppable designs, pins, Instagram posts, bulk video uploads, Reels clips and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
   robots: { index: false, follow: false },
 }
 
@@ -84,18 +91,47 @@ const MAKES: { icon: React.ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <LayoutTemplate size={18} />,
-    title: `${TIERS.amazon.pinsPerMonth} pins, ${TIERS.amazon.igPostsPerMonth} Reels covers, ${TIERS.amazon.facebookPostsPerMonth} Facebook designs`,
-    body: 'Shoppable designs for every surface your storefront traffic comes from, made and scheduled rather than briefed.',
+    title: `${TIERS.amazon.pinsPerMonth} pins and ${TIERS.amazon.igPostsPerMonth} Instagram posts, posted to Facebook too`,
+    body: 'Shoppable designs for every surface your storefront traffic comes from, made and scheduled rather than briefed, with #ad #sponsored and link labels added for you.',
   },
   {
     icon: <Handshake size={18} />,
-    title: `${TIERS.amazon.collabsPerMonth} brand-deal outreach messages a month`,
+    // collabsPerMonth caps drafted pitch EMAILS, not Creator Connections
+    // messages, which have no cap (scripts/test-sales-page-facts).
+    title: `Unlimited brand messages, plus ${TIERS.amazon.collabsPerMonth} pitch emails a month`,
     body: 'Creator Connections campaigns found and the first message written, so the pitch goes out the day you see the product.',
   },
   {
     icon: <UserSquare size={18} />,
     title: `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} headshots a month`,
     body: 'Your face on the designs without a shoot, so the whole storefront looks like one person made it.',
+  },
+  // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+  // members). Numbers from lib/amazon-plan, the constants the routes enforce.
+  {
+    icon: <Upload size={18} />,
+    title: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos uploaded at once`,
+    body: 'Bulk Amazon upload sends a batch of review videos to your storefront through SCOUT, and to YouTube too when you connect a channel.',
+  },
+  {
+    icon: <Scissors size={18} />,
+    title: `${AMAZON_CLIPS_PER_MONTH} clips a month from Clip Factory`,
+    body: `${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments a month pick the best parts of your videos and turn them into vertical clips, posted to Instagram and Facebook Reels.`,
+  },
+  {
+    icon: <Youtube size={18} />,
+    title: `${AMAZON_COPILOT_RUNS_PER_MONTH} YouTube Co-Pilot runs a month`,
+    body: `Titles, descriptions and tags written for your videos on ${AMAZON_YOUTUBE_CHANNELS} YouTube channel, plus pinned and On sale comments under them. The channel is optional.`,
+  },
+  {
+    icon: <Radio size={18} />,
+    title: `Amazon Live prep and follow-up for ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month`,
+    body: 'The lineup and talking points ready before you go live, and the follow-up done after the show.',
+  },
+  {
+    icon: <LayoutTemplate size={18} />,
+    title: `${TIERS.amazon.dealsPerMonth} deal posts a month`,
+    body: 'A Deal Radar find becomes posts for Pinterest, Facebook and an Instagram card and Story, published together.',
   },
 ]
 
@@ -132,6 +168,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'No. This plan is built for the storefront and the socials around it, with no WordPress involved. If you later decide you want a blog you own, that is a different plan and you can move up without losing anything.',
   },
   {
+    q: 'Do I need a YouTube channel?',
+    a: `No. Everything works without one. If you have a channel, you can connect ${AMAZON_YOUTUBE_CHANNELS} and your bulk uploads go to YouTube too, with Co-Pilot titles, descriptions and tags and pinned comments.`,
+  },
+  {
     q: 'Will the images look like AI made them?',
     a: 'They are art-directed from your own product photo, in a look you pick once and can change. You get to see them before anything goes out, and if you upload a face model your own face is on them.',
   },
@@ -141,6 +181,9 @@ const FAQ: { q: string; a: string }[] = [
   },
 ]
 
+// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+export const revalidate = 600
+
 export default function RunYourStorefrontPage() {
   const hasProof = TESTIMONIALS.length > 0
   return (
@@ -149,7 +192,7 @@ export default function RunYourStorefrontPage() {
 
       <header className="px-6 lg:px-8 pt-7">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
-          <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Affiliate" width={120} height={32} className="h-7 w-auto" priority />
+          <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Affiliate" width={28} height={28} className="h-7 w-7" priority />
         </div>
       </header>
 
@@ -166,12 +209,14 @@ export default function RunYourStorefrontPage() {
             </span>
           </h1>
           <p className="mt-6 text-[17px] sm:text-[19px] leading-relaxed text-black/70">
-            Scores, campaign feeds and inbox tools tell you what to go after. You still have to make the thumbnail, the pin, the Reel cover and the pitch. MVP makes all of them, from one product photo, in your look, at <span className="font-semibold text-black">${TIERS.amazon.price} a month</span>.
+            Scores, campaign feeds and inbox tools tell you what to go after. You still have to make the thumbnail, the pin, the Instagram post and the pitch. MVP makes all of them, from one product photo, in your look, at <span className="font-semibold text-black">${TIERS.amazon.price} a month</span>.
           </p>
           <div className="mt-9">
             <Cta />
             <CtaSubtext />
           </div>
+          {/* Prices go up for new members on November 1; the lock and countdown. */}
+          {!newPricesLive() && <PriceLockCountdown tone="light" className="mt-10 text-left" />}
         </div>
       </section>
 
@@ -182,7 +227,7 @@ export default function RunYourStorefrontPage() {
             Knowing which product to post is the easy half.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            You already know what sells. What eats the week is making the thing: a thumbnail that gets the click, a pin that does not look like every other pin, a Reel cover, a message to a brand you meant to send on Tuesday.
+            You already know what sells. What eats the week is making the thing: a thumbnail that gets the click, a pin that does not look like every other pin, an Instagram post, a message to a brand you meant to send on Tuesday.
           </p>
           <p className="mt-4 text-[16px] leading-relaxed text-white/90 font-semibold">
             That is the half nobody automated. It is the half this does.
@@ -198,7 +243,7 @@ export default function RunYourStorefrontPage() {
               What lands in your account every month
             </h2>
           </div>
-          <div className="mt-11 grid sm:grid-cols-2 gap-4">
+          <div className="mt-11 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {MAKES.map((s) => (
               <div key={s.title} className="rounded-2xl border border-black/10 bg-white p-6">
                 <span className="w-9 h-9 rounded-xl flex items-center justify-center text-white mb-3" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
@@ -319,7 +364,7 @@ export default function RunYourStorefrontPage() {
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
             {[
-              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: `Against a list price of $${TIERS.amazon.regularPrice}, locked for as long as you stay.` },
+              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: TIERS.amazon.regularPrice > TIERS.amazon.price ? `New members pay $${TIERS.amazon.regularPrice} from November 1. Join before and yours is locked for as long as you stay.` : 'Locked for as long as you stay.' },
               { icon: <LayoutTemplate size={15} />, t: 'No blog needed', b: 'Built for the storefront and the socials around it. No WordPress.' },
               { icon: <ShieldCheck size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
             ].map((f) => (
@@ -357,7 +402,7 @@ export default function RunYourStorefrontPage() {
 
       {SALES_PAUSED && (
         <p className="px-6 pb-10 text-center text-[13px] text-black/50">
-          New subscriptions are paused right now. The free tier is still open.
+          New subscriptions are paused right now. The free trial is still open.
         </p>
       )}
 

@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { ingestConfigured, renderShort, getLastIngestError } from '@/lib/youtube-ingest'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,9 +33,9 @@ export async function POST(request: Request) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier)
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Reframing uploads is a Pro feature.',
+        error: 'Reframing uploads is part of the Amazon and Pro plans.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

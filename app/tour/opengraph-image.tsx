@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const runtime = 'nodejs'
-export const alt = 'MVP Affiliate — Product Tour: everything the platform does today'
+export const alt = 'MVP Affiliate product tour: everything the platform does today'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -120,7 +120,7 @@ export default async function Image() {
                 display: 'flex',
               }}
             >
-              Blog posts that rank, comparisons, thumbnails, newsletter, brand pitches — plus Amazon Deal Radar & a shoppable Shop page. Fact-grounded, every time.
+              Blog posts that rank, comparisons, thumbnails and brand pitches, plus Amazon Deal Radar & a shoppable Shop page. Fact-grounded, every time.
             </div>
 
             {/* CTA row */}

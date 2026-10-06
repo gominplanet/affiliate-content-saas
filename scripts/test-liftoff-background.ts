@@ -84,7 +84,7 @@ check('a failed re-read is not "nothing left"', /if \(!ar\.ok \|\| !a\?\.ok\)/.t
 check('the page arms SCOUT only when work is left', /if \(!batch \|\| !workLeft \|\| !bgPref/.test(read('components/launch/LaunchBoard.tsx')))
 check('it asks the same request builder as the page', /liftoffStudioRequest\(it, opts, notify, true\)/.test(RUN)
   && /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(read('components/launch/LaunchBoard.tsx')))
-check('it always tells SCOUT when it is finished', /await liftoffDone\(more, sigs\.join\('#'\)\)/.test(RUN))
+check('it always tells SCOUT when it is finished', /await liftoffDone\(more, sigs\.join\('#'\)(, nextIn)?\)/.test(RUN))
 check('the page sends SCOUT\'s background tab to the runner', /if \(sp\.background === '1'\) return <LiftoffRunner \/>/.test(read('app/(dashboard)/liftoff/page.tsx')))
 check('the creator can switch it off', /toggleBg\(!bgPref\)/.test(read('components/launch/LaunchBoard.tsx')))
 

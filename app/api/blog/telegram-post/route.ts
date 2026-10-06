@@ -15,8 +15,9 @@
 import { capSocialText } from '@/lib/social-cap'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { channelShareUrl } from '@/lib/channel-share-url'
@@ -35,9 +36,10 @@ const CAPTION_BUDGET = 800 // Telegram caption limit is 1024; leave room for URL
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // ── Tier gate ───────────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
     const tgCap = evaluateSocialCap(tgSocialCount)
     if (!dryRun && tgCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Telegram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Telegram ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'telegram',
       }, { status: 429 })
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,9 +122,6 @@ export async function POST(request: NextRequest) {
         .replace(/<[^>]+>/g, '')
         .slice(0, 1500)
 
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       const gate = await spendGate(user.id, tier)
@@ -135,7 +134,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single Telegram channel post for this product review article.
 
-Style: a content creator's authentic, scannable take. Strong hook in line 1, 2-3 short bullets or short lines with key takeaways, conversational. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic, scannable take. Strong hook in line 1, 2-3 short bullets or short lines with key takeaways, conversational. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The post BEFORE we append the URL must be ${CAPTION_BUDGET} characters or fewer.
@@ -186,13 +185,19 @@ Return ONLY the post text.`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tgShareUrl = (await channelShareUrl({ supabase, post: post as any, channel: 'telegram', userId: user.id, apiKey: maybeDecrypt(tierRow?.geniuslink_api_key) as string | undefined, apiSecret: maybeDecrypt(tierRow?.geniuslink_api_secret) as string | undefined })) || (((post as any).geniuslink_blog_url || post.wordpress_url) as string)
     const escapedUrl = escapeMarkdownV2(tgShareUrl)
-    const linkLabel = escapeMarkdownV2('Read the full review →')
+    const linkLabel = escapeMarkdownV2('Read the full review on my blog')
     const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
 
     if (dryRun) {
-      // Show the body the user can edit; finalText is the rendered Markdown
-      // version that ships to Telegram (with the CTA link appended).
-      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${(post as any).geniuslink_blog_url || post.wordpress_url}` })
+      // Show the body the user can edit; finalText is the MarkdownV2 message
+      // services/telegram sends (disclosed there, with this route's per-channel
+      // link), rendered as a reader sees it: [label](url) as "label: url" and
+      // the MarkdownV2 escapes dropped. It used to be a hand-written plain copy
+      // with a different link and none of the tags.
+      const shown = discloseSocialPost(finalCaption, 'telegram')
+        .replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, '$1: $2')
+        .replace(/\\(.)/g, '$1')
+      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: shown })
     }
 
     // Video-less posts (campaigns, guides, comparisons) have no YouTube
@@ -210,7 +215,7 @@ Return ONLY the post text.`,
     await supabase
       .from('blog_posts')
       .update({ telegram_message_id: String(result.messageId) })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     await incrementSocialCount(supabase, postId!, 'telegram')
 
     return NextResponse.json({

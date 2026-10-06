@@ -270,7 +270,7 @@ export default function BrandRecap() {
         <Notice tone="warn">The recap log is missing (migration 379). You can still send, but MVP cannot remember what each brand already got, so every link will keep showing as new.</Notice>
       )}
       {data && !data.linksTable && (
-        <Notice tone="warn">MVP is not yet keeping the links of Deal Radar, Encore and Amazon social posts (migration 379), so those posts are not listed.</Notice>
+        <Notice tone="warn">MVP is not yet keeping the links of Deal Radar, On sale comments and Amazon social posts (migration 379), so those posts are not listed.</Notice>
       )}
       {data && data.unread.length > 0 && (
         <Notice tone="warn">Could not read {data.unread.join(', ')}, so some links may be missing below. Refresh to try again.</Notice>

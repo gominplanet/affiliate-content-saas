@@ -51,12 +51,16 @@ ALTER TABLE agency_invites ENABLE ROW LEVEL SECURITY;
 -- Owners read/write their own invites. The accept route uses the admin
 -- client (bypass RLS) because the invitee may not have a Supabase session
 -- yet at accept time.
+DROP POLICY IF EXISTS "agency_invites owner-read" ON agency_invites;
 CREATE POLICY "agency_invites owner-read" ON agency_invites
   FOR SELECT USING (auth.uid() = owner_user_id);
+DROP POLICY IF EXISTS "agency_invites owner-insert" ON agency_invites;
 CREATE POLICY "agency_invites owner-insert" ON agency_invites
   FOR INSERT WITH CHECK (auth.uid() = owner_user_id);
+DROP POLICY IF EXISTS "agency_invites owner-update" ON agency_invites;
 CREATE POLICY "agency_invites owner-update" ON agency_invites
   FOR UPDATE USING (auth.uid() = owner_user_id);
+DROP POLICY IF EXISTS "agency_invites owner-delete" ON agency_invites;
 CREATE POLICY "agency_invites owner-delete" ON agency_invites
   FOR DELETE USING (auth.uid() = owner_user_id);
 
@@ -89,10 +93,12 @@ ALTER TABLE agency_members ENABLE ROW LEVEL SECURITY;
 
 -- Owners read all their members; members read only their own row.
 -- (Both will eventually call getOwnerUserId() to know whose data to show.)
+DROP POLICY IF EXISTS "agency_members owner-read" ON agency_members;
 CREATE POLICY "agency_members owner-read" ON agency_members
   FOR SELECT USING (auth.uid() = owner_user_id OR auth.uid() = member_user_id);
 -- Only the owner can revoke (UPDATE revoked_at). Member can't unilaterally
 -- "leave" via this table — they'd contact support or delete their auth row.
+DROP POLICY IF EXISTS "agency_members owner-update" ON agency_members;
 CREATE POLICY "agency_members owner-update" ON agency_members
   FOR UPDATE USING (auth.uid() = owner_user_id);
 -- Inserts come from the accept route (admin client, bypass RLS).

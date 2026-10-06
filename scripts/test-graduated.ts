@@ -16,13 +16,13 @@ for (const f of FEATURES) {
 }
 const NAV = read('components/layout/DashboardShellV2.tsx')
 const labsAt = NAV.indexOf("label: 'Labs',")
-const labsEnd = NAV.indexOf("label: 'Help & Community'")
+const labsEnd = NAV.indexOf("label: 'Help',")
 const labs = NAV.slice(labsAt, labsEnd)
 for (const href of ['/first-comments', '/ended-deals', '/brand-recap', '/amazon-live']) {
   const at = NAV.indexOf(`href: '${href}'`)
   check(`${href} is in the menu, outside Labs`, at > 0 && !labs.includes(`href: '${href}'`))
 }
-check('First comments is called Pinned Comments', /label: 'Pinned Comments'/.test(NAV) && !/label: 'First comments'/.test(NAV))
+check('First comments is called Pinned comments', /label: 'Pinned comments'/.test(NAV) && !/label: 'First comments'/.test(NAV))
 const pages: Array<[string, string]> = [
   ['components/first-comments/OlderVideos.tsx', 'PinnedCommentsGuide'],
   ['components/deal/EndedDeals.tsx', 'EndedDealsGuide'],

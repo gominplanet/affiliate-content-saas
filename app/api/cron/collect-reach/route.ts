@@ -98,8 +98,15 @@ export async function GET(request: Request) {
     } else {
       const yt = createYouTubeService(apiKey)
       let views: Record<string, number> = {}
-      try { views = await yt.getViewCounts(ytRows.map(r => r.media_id)) } catch { views = {} }
+      // A LOOKUP THAT THREW IS NOT A MISSING VIDEO. This runs at 06:45 UTC,
+      // late in the Pacific day when the shared allowance is most often gone,
+      // and a refusal
+      // used to cost every row an attempt until it was marked failed for
+      // good. Now the rows wait for tomorrow's run untouched.
+      let unanswered = false
+      try { views = await yt.getViewCounts(ytRows.map(r => r.media_id)) } catch { unanswered = true }
       for (const row of ytRows) {
+        if (unanswered) { retried++; continue }
         const v = views[row.media_id]
         if (v == null) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
         await admin.from('reach_samples').update({

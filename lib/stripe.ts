@@ -1,4 +1,5 @@
 import { TIERS } from '@/lib/tier'
+import { newPricesLive } from '@/lib/price-schedule'
 import Stripe from 'stripe'
 
 let _stripe: Stripe | null = null
@@ -68,6 +69,22 @@ export const ANNUAL_PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon
  *  would not recognise what they bought. That is the worst failure available on
  *  this file, so annual ids are folded in at the source rather than at each of
  *  the three call sites that would each have to remember. */
+/**
+ * THE PRICES NEW MEMBERS PAY FROM NOVEMBER 1 (lib/price-schedule).
+ *
+ * Their own env vars, so the ids can be set now and the switch happens by date
+ * with no deploy: STRIPE_PRICE_AMAZON_NEW, STRIPE_PRICE_AMAZON_ANNUAL_NEW,
+ * STRIPE_PRICE_PRO_NEW, STRIPE_PRICE_PRO_ANNUAL_NEW. The existing vars keep the
+ * prices of everyone who joined before, and stay what checkout charges until
+ * the change. Empty after the change = that plan cannot be bought, and
+ * checkout says so and pages ops, rather than charging the old price under the
+ * new one.
+ */
+export const NEW_PRICE_ID_LIST: Record<'pro' | 'amazon', Record<BillingInterval, string[]>> = {
+  pro:    { month: priceIdsFor(process.env.STRIPE_PRICE_PRO_NEW),    year: priceIdsFor(process.env.STRIPE_PRICE_PRO_ANNUAL_NEW) },
+  amazon: { month: priceIdsFor(process.env.STRIPE_PRICE_AMAZON_NEW), year: priceIdsFor(process.env.STRIPE_PRICE_AMAZON_ANNUAL_NEW) },
+}
+
 export const PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon', string[]> = {
   creator: [...priceIdsFor(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER), ...ANNUAL_PRICE_ID_LIST.creator],
   studio:  [...priceIdsFor(process.env.STRIPE_PRICE_STUDIO), ...ANNUAL_PRICE_ID_LIST.studio],
@@ -77,14 +94,79 @@ export const PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon', stri
   // subscribers keep their allowances and their price.
   amazon:  [...priceIdsFor(process.env.STRIPE_PRICE_AMAZON), ...ANNUAL_PRICE_ID_LIST.amazon],
 }
+// The new prices are recognised by the webhook from the day they exist.
+for (const t of ['pro', 'amazon'] as const) PRICE_ID_LIST[t].push(...NEW_PRICE_ID_LIST[t].month, ...NEW_PRICE_ID_LIST[t].year)
+
+/** The price id a NEW buyer is charged right now, or null when none is set. */
+export function newBuyerPriceId(tier: string, interval: BillingInterval): string | null {
+  if ((tier === 'pro' || tier === 'amazon') && newPricesLive()) {
+    return NEW_PRICE_ID_LIST[tier][interval][0] ?? null
+  }
+  const list = interval === 'year'
+    ? ANNUAL_PRICE_ID_LIST[tier as keyof typeof ANNUAL_PRICE_ID_LIST]
+    : priceIdsFor(tier === 'creator' ? (process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)
+      : process.env[`STRIPE_PRICE_${tier.toUpperCase()}`])
+  return list?.[0] ?? null
+}
+
+/** Is this a price someone joined on before the November 1 change (any plan,
+ *  monthly or yearly)? Those members keep that price level for good. */
+export function isLockedInPrice(priceId: string | null | undefined): boolean {
+  if (!priceId) return false
+  for (const t of ['pro', 'amazon'] as const) {
+    if (NEW_PRICE_ID_LIST[t].month.includes(priceId) || NEW_PRICE_ID_LIST[t].year.includes(priceId)) return false
+  }
+  return Object.values(PRICE_ID_LIST).some((ids) => ids.includes(priceId))
+}
+
+/**
+ * The price a member moving to `tier` is put on. Seb, 2026-10-05: whoever joins
+ * before November 1 keeps $99 or $199 "whatever tier they take", so a member
+ * still on a pre-change price who switches between Amazon and Pro after the
+ * change lands on the OLD price of the new plan, not the new-member one.
+ * Everyone else gets what a new buyer pays.
+ */
+export function planChangePriceId(tier: string, interval: BillingInterval, currentPriceId: string | null | undefined): string | null {
+  if (isLockedInPrice(currentPriceId) && (tier === 'pro' || tier === 'amazon')) {
+    const old = interval === 'year'
+      ? ANNUAL_PRICE_ID_LIST[tier][0]
+      : priceIdsFor(process.env[`STRIPE_PRICE_${tier.toUpperCase()}`])[0]
+    if (old) return old
+  }
+  return newBuyerPriceId(tier, interval)
+}
+
+/**
+ * ONE ANSWER TO "WHICH PRICE DOES THIS PLAN CHANGE GO TO", read by both the
+ * upgrade preview and checkout, so the number quoted is the number charged.
+ *
+ * The member KEEPS THEIR CURRENT INTERVAL unless they explicitly asked for the
+ * other one: a yearly member switching plans stays yearly. Checkout used to
+ * send every in-place change without an interval to monthly while the preview
+ * priced it yearly, so a yearly member was quoted one price and charged
+ * another. A yearly change with no yearly price configured falls back to
+ * monthly and RETURNS that it did, so the preview can say so instead of
+ * quoting a different number in silence.
+ */
+export function planChangeTarget(
+  tier: string,
+  requested: unknown,
+  current: { id?: string | null; recurring?: { interval?: string | null } | null } | null | undefined,
+): { priceId: string | null; interval: BillingInterval; fellBackToMonthly: boolean } {
+  const interval: BillingInterval = requested === 'year' || requested === 'month'
+    ? requested
+    : current?.recurring?.interval === 'year' ? 'year' : 'month'
+  const priceId = planChangePriceId(tier, interval, current?.id)
+  if (priceId || interval === 'month') return { priceId, interval, fellBackToMonthly: false }
+  return { priceId: planChangePriceId(tier, 'month', current?.id), interval: 'month', fellBackToMonthly: true }
+}
 
 /** The annual price a NEW buyer is charged, or null when annual is not
  *  configured for that tier. Null is the honest answer and every caller checks
  *  it: offering a yearly button that cannot check out is worse than not
  *  offering one. */
 export function annualPriceIdFor(tier: string): string | null {
-  const list = ANNUAL_PRICE_ID_LIST[tier as keyof typeof ANNUAL_PRICE_ID_LIST]
-  return list && list.length > 0 ? list[0]! : null
+  return newBuyerPriceId(tier, 'year')
 }
 
 /** Is a yearly option sellable for this tier right now? */
@@ -93,12 +175,14 @@ export function hasAnnual(tier: string): boolean {
 }
 
 /** The price a NEW buyer is charged. The first id in the list. */
+// Getters, so the November 1 change takes effect in a server that was already
+// running (lib/price-schedule).
 export const PRICE_IDS = {
-  creator: PRICE_ID_LIST.creator[0]!,
-  studio:  PRICE_ID_LIST.studio[0]!,
-  pro:     PRICE_ID_LIST.pro[0]!,
-  amazon:  PRICE_ID_LIST.amazon[0]!,
-} as const
+  get creator(): string { return newBuyerPriceId('creator', 'month') ?? '' },
+  get studio(): string { return newBuyerPriceId('studio', 'month') ?? '' },
+  get pro(): string { return newBuyerPriceId('pro', 'month') ?? '' },
+  get amazon(): string { return newBuyerPriceId('amazon', 'month') ?? '' },
+}
 
 // Dub credit packs were removed 2026-10-01 with dubbing (nothing goes to
 // other Amazon countries any more). None was ever bought.

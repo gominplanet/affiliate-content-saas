@@ -4,6 +4,8 @@ import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { maybeEncrypt } from '@/lib/secrets'
 import { normalizeTier } from '@/lib/tier'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { ytFetch, isQuotaRefusalBody } from '@/lib/youtube-quota'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -12,30 +14,19 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
-  // Decode state up front so BOTH the error and success paths can route back to
-  // wherever the flow began (e.g. the onboarding funnel) instead of always
-  // dumping the user on /setup. New format is JSON { uid, rt }; legacy callers
-  // sent the bare uid string.
-  let userId: string | null = null
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so a callback URL can never be replayed. The return
+  // path and the "add another channel" flag come from the httpOnly cookie, so
+  // BOTH the error and success paths can route back to where the flow began.
+  const verified = await consumeOAuthState('youtube', state, `${appUrl}/api/auth/youtube/callback`)
+  const userId: string | null = verified?.uid ?? null
   let returnTo = ''
-  // True when the user clicked "Connect ANOTHER channel" — lets us tell a real
+  // Re-validate the return path on the way out too: same-origin relative only.
+  const rt = verified?.data.rt
+  if (typeof rt === 'string' && /^\/(?!\/)/.test(rt)) returnTo = rt
+  // True when the user clicked "Connect ANOTHER channel". Lets us tell a real
   // new-channel add from Google handing back the same channel they already have.
-  let wantNew = false
-  if (state) {
-    try {
-      const decoded = Buffer.from(state, 'base64url').toString('utf-8')
-      if (decoded.startsWith('{')) {
-        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string; add?: boolean }
-        userId = typeof parsed.uid === 'string' ? parsed.uid : null
-        // Re-validate the return path on the way out too (defence in depth
-        // against a tampered state): same-origin relative only.
-        if (typeof parsed.rt === 'string' && /^\/(?!\/)/.test(parsed.rt)) returnTo = parsed.rt
-        wantNew = parsed.add === true
-      } else {
-        userId = decoded
-      }
-    } catch { /* ignore — fall back to session below */ }
-  }
+  const wantNew = verified?.data.add === true
 
   // Build a redirect that returns to the funnel (returnTo) when present, else
   // the existing /setup destination. Appends the marker query param correctly
@@ -48,12 +39,21 @@ export async function GET(request: NextRequest) {
   if (error || !code) {
     return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent(error || 'no_code')}`))
   }
-  if (!userId) {
+  // THE STATE MUST BE OURS AND NAME THE SIGNED-IN USER (2026-10-06 security
+  // audit). This used to trust the uid in `state` and fall back to the session only when it
+  // was missing, so a callback link carrying the attacker's own Google code and
+  // no state connected the ATTACKER's channel to whoever clicked it, and every
+  // upload of theirs went to a channel they do not own. Every other OAuth
+  // callback here already refuses a state that is not the session user.
+  {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+    if (!user) return NextResponse.redirect(`${appUrl}/login`)
+    if (!userId || userId !== user.id) {
+      console.warn('[youtube/callback] state mismatch, possible CSRF', { hasState: !!userId, sessionUid: user.id })
+      return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`))
+    }
   }
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
   let step = 'token_exchange'
   try {
@@ -92,8 +92,10 @@ export async function GET(request: NextRequest) {
     step = 'fetch_channel_id'
     let channelId: string | null = null
     let channelTitle: string | null = null
+    let quotaRefused = false
     try {
-      const chRes = await fetchWithTimeout(
+      // Through the counter like every other YouTube call (lib/youtube-quota).
+      const chRes = await ytFetch(
         'https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true',
         { headers: { Authorization: `Bearer ${tokens.access_token}` } },
       )
@@ -101,6 +103,8 @@ export async function GET(request: NextRequest) {
         const data = await chRes.json() as { items?: Array<{ id?: string; snippet?: { title?: string } }> }
         channelId = data.items?.[0]?.id ?? null
         channelTitle = data.items?.[0]?.snippet?.title ?? null
+      } else {
+        quotaRefused = isQuotaRefusalBody(await chRes.text().catch(() => ''))
       }
     } catch { /* leave channelId null — manual field remains the fallback */ }
 
@@ -130,6 +134,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (!channelId) {
+      // A USED-UP ALLOWANCE, WITH CHANNELS ALREADY CONNECTED. MVP cannot tell
+      // which channel this login is, and the legacy save below would put it
+      // over the DEFAULT channel's token (the hijack the multi-channel path
+      // guards against) while saying "connected". Nothing is saved; it says so.
+      if (quotaRefused) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { count: have } = await (supabase as any).from('youtube_channels')
+          .select('id', { count: 'exact', head: true }).eq('user_id', userId)
+        if (((have as number | null) ?? 0) > 0) {
+          return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent('YouTube’s daily allowance is used up, so MVP could not ask which channel you signed in with. Nothing was changed. Connect again after midnight Pacific.')}`))
+        }
+      }
       // Couldn't identify the channel — legacy save only (the manual
       // channel-ID field on /connect-youtube remains the fallback).
       await writeIntegrations()

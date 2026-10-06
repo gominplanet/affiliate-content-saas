@@ -71,7 +71,7 @@ export default function AiVisibilityCard() {
         {(!allGood || showAll) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3.5">
           {crawlers.map(c => (
-            <div key={c.token} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} title={`${c.label} — ${c.serves} — ${c.allowed ? 'allowed' : 'blocked'}`}>
+            <div key={c.token} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} title={`${c.label}: ${c.serves} — ${c.allowed ? 'allowed' : 'blocked'}`}>
               {c.allowed
                 ? <Check size={13} style={{ color: '#059669', flexShrink: 0 }} />
                 : <X size={13} style={{ color: '#e11d48', flexShrink: 0 }} />}
@@ -95,7 +95,7 @@ export default function AiVisibilityCard() {
 
         {!data.robotsFound && (
           <p className="text-[11px] mt-2.5" style={{ color: 'var(--text-faint)' }}>
-            No robots.txt found — nothing is blocked, so all engines can read the site. (A robots.txt only ever restricts access.)
+            No robots.txt found: nothing is blocked, so all engines can read the site. (A robots.txt only ever restricts access.)
           </p>
         )}
       </div>

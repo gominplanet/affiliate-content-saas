@@ -69,7 +69,7 @@ export default function ReelCoverPicker({
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
               <ImageIcon size={16} className="text-[#E1306C]" /> Choose the Reel cover
             </h3>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Scrub to a frame — that still becomes your Reel cover. No need to fix it in Instagram.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Scrub to a frame. That still becomes your Reel cover. No need to fix it in Instagram.</p>
           </div>
           <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white p-1" title="Close"><X size={18} /></button>
         </div>

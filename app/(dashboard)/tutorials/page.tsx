@@ -13,7 +13,7 @@ const TUTORIALS = [
   {
     id: 'aBo0ruDuVuE',
     title: 'Step 1: Onboarding Walkthrough',
-    description: 'A complete setup guide — from connecting WordPress and YouTube to generating your first blog post and pushing it everywhere.',
+    description: 'A complete setup guide, from connecting WordPress and YouTube to generating your first blog post and pushing it everywhere.',
     category: 'Getting Started',
     accent: '#7C3AED',
   },
@@ -33,8 +33,8 @@ const TUTORIALS = [
   },
   {
     id: '6YVGN_8EQh8',
-    title: 'Step 4: Blog Post Generator',
-    description: 'Turn any YouTube review into a full, SEO-optimized blog post on your WordPress site — automatically.',
+    title: 'Step 4: Blog posts',
+    description: 'Turn any YouTube review into a full, SEO-optimized blog post on your WordPress site, automatically.',
     category: 'Getting Started',
     accent: '#059669',
   },
@@ -48,7 +48,7 @@ const TUTORIALS = [
   {
     id: 'cWHZh3LRlLg',
     title: 'Step 6: Complete Walkthrough',
-    description: 'A full tour of MVP Affiliate with every extra feature explained — so you know exactly what the platform can do.',
+    description: 'A full tour of MVP Affiliate with every extra feature explained, so you know exactly what the platform can do.',
     category: 'Getting Started',
     accent: '#0891B2',
   },
@@ -125,7 +125,7 @@ export default function TutorialsPage() {
             <p className="text-[13.5px] mt-1 leading-relaxed max-w-2xl" style={{ color: 'var(--text-soft)' }}>
               MVP has grown a lot, so I am recording brand new tutorials that show off the latest features from start to finish.
               They will appear right here as soon as they are ready. In the meantime, subscribe above to be the first to see them,
-              or open <a href="/assistant" className="underline font-medium" style={{ color: 'var(--text)' }}>MVP Help Desk</a> if you get stuck on anything.
+              or open <a href="/assistant" className="underline font-medium" style={{ color: 'var(--text)' }}>Ask MVP</a> if you get stuck on anything.
             </p>
             <p className="text-[12.5px] mt-3 font-medium" style={{ color: 'var(--text-faint)' }}>Seb</p>
           </div>

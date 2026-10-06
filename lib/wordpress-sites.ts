@@ -38,7 +38,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { maybeDecrypt } from '@/lib/secrets'
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import type { Database } from '@/lib/types/database'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 
@@ -409,8 +409,10 @@ export async function addSite(
       label: input.label.trim() || (isFirst ? 'Main' : `Site ${cap.current + 1}`),
       url: normalizeUrl(input.url),
       username: input.username.trim(),
-      app_password: input.appPassword,
-      api_token: input.apiToken ?? null,
+      // Encrypted at rest like every other site password (it was stored as
+      // typed, readable by anyone who could read the row).
+      app_password: maybeEncrypt(input.appPassword),
+      api_token: maybeEncrypt(input.apiToken ?? null) ?? null,
       is_default: isFirst,
       display_order: cap.current,
       content_only: input.contentOnly ?? false,

@@ -456,14 +456,13 @@ check('and so does the footer',
     panel.includes(`first ${num(TRIAL, 'trialDays')} days`), '')
   check(`the ${num(trialBlock, 'lifetimeMax')} posts match lifetimeMax`,
     panel.includes(`${num(trialBlock, 'lifetimeMax')} full posts`), '')
-  check(`Amazon is the $${num(amazonBlock, 'price')} we charge`,
-    panel.includes(`$${num(amazonBlock, 'price')}/month`), '')
-  check(`and Pro the $${num(proBlock, 'price')}`,
-    panel.includes(`$${num(proBlock, 'price')}/month`), '')
-  check(`the discount is off the real $${num(amazonBlock, 'regularPrice')} and $${num(proBlock, 'regularPrice')}`,
-    panel.includes(`normally $${num(amazonBlock, 'regularPrice')}`)
-    && panel.includes(`normally $${num(proBlock, 'regularPrice')}`),
-    'a saving measured against a number we never charged is the one claim here that could cost us')
+  // The prices moved for new members on 2026-10-05 behind a Vercel switch
+  // (lib/tier NEW_MEMBER_PRICES_LIVE), and a static page cannot follow a
+  // switch. So the guide names the plans and sends readers to the pricing page,
+  // which reads the live price, rather than quoting one that can drift.
+  check('the guide quotes no monthly price that could drift from checkout',
+    !/\$\d+\/month/.test(panel) && !/normally \$\d+/.test(panel), (panel.match(/[^.]*\$\d+\/month[^.]*/) ?? [''])[0])
+  check('and points at the pricing page instead', panel.includes('are on the pricing page') && panel.includes('href="https://mvpaffiliate.io/pricing"'))
 
   // THE FIVE POSTS ARE NOT PART OF THE MONTH, and grouping them under it was
   // the mistake this section was written for. try_consume_post_quota is handed

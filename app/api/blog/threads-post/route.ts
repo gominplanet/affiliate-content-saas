@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { ThreadsService } from '@/services/threads'
@@ -14,14 +15,16 @@ import { metaEnabledForUser } from '@/lib/feature-flags'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
-const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
+const DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Threads publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // Threads auto-publish is Creator+ (Creator, Pro, Admin).
@@ -80,14 +83,14 @@ export async function POST(request: NextRequest) {
     const thCap = evaluateSocialCap(thSocialCount)
     if (!dryRun && thCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Threads ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Threads ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'threads',
       }, { status: 429 })
     }
 
     if (!dryRun && !ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
-    if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
+    if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing. Try reconnecting Threads in Settings.' }, { status: 400 })
 
     let bodyText: string
     if (overrideText) {
@@ -128,7 +131,8 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: fullText })
+      // THE PREVIEW IS WHAT POSTS: services/threads discloses the text it sends.
+      return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: discloseSocialPost(fullText, 'threads') })
     }
 
     // Use YouTube thumbnail (hero image with person + product)

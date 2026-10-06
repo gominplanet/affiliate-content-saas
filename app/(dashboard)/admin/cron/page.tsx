@@ -267,7 +267,7 @@ export default function AdminCronPage() {
             <button
               onClick={() => retryBulk(stats.recentFailures.map(r => r.id), 'failed rows')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#ff3b30] text-white hover:bg-[#ff3b30]/90 transition-colors"
-              title={`Flip all ${stats.recentFailures.length} failed rows back to pending — useful after a network blip caused a batched failure`}
+              title={`Flip all ${stats.recentFailures.length} failed rows back to pending. Useful after a network blip caused a batched failure`}
             >
               <RefreshCw size={11} /> Retry all failed ({stats.recentFailures.length})
             </button>

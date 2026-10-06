@@ -12,15 +12,16 @@
  */
 import type { Metadata } from 'next'
 import { GUARANTEE_LABEL } from '@/lib/guarantee'
+import { MAX_ITEMS as LIFTOFF_MAX_VIDEOS } from '@/lib/launch-batch'
 import NextImage from 'next/image'
 import {
   Search, Rocket, Globe, Radar, Sparkles, Store, Play,
   FileText, Zap, ShieldCheck, TrendingUp, ArrowRight, Check,
-  Mail, LayoutGrid, MapPin, BarChart3, Users,
+  Mail, LayoutGrid, MapPin, BarChart3, Users, Pin, Radio,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Features — MVP Affiliate',
+  title: 'Features',
   description:
     'Every MVP Affiliate feature, organized by the loop that turns one product into offsite Amazon revenue: find paying brands, create in your voice, publish everywhere, and earn on every click.',
 }
@@ -64,7 +65,7 @@ const LOOP = [
   { k: 'Find', d: 'Surface the live brand campaigns that actually pay, and the products worth reviewing.' },
   { k: 'Create', d: 'Write the review, comparisons and social posts in your real voice. Thumbnails and Shorts included.' },
   { k: 'Publish', d: 'Push it to YouTube, your Amazon storefront, your blog and your socials.' },
-  { k: 'Earn', d: "Route every click to the shopper's own store with your tag, and see what each channel makes." },
+  { k: 'Earn', d: "Route every click to the shopper's own store with your tag, and see which channel sends the clicks." },
 ]
 
 type Feat = { icon: React.ReactNode; title: string; desc: string; tag?: string; flagship?: boolean; wide?: boolean }
@@ -74,10 +75,10 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     id: 'find', n: '01', tag: 'Find the money', head: 'The paying opportunities, not a wall of products.',
     intro: "MVP reads Amazon's Creator Connections and deal feeds directly, so you spend time on brands that convert, not on scrolling.",
     items: [
-      { icon: <Search size={20} />, wide: true, title: 'Creator Connections campaign finder', desc: "Every live campaign with the numbers that matter — commission, estimated dollars per sale, spots left, days remaining, and whether the brand actually pays out. Filter by commission, open spots, days left, or brands you've already joined." },
+      { icon: <Search size={20} />, wide: true, title: 'Creator Connections campaign finder', desc: "Every live campaign with the numbers that matter: commission, estimated dollars per sale, spots left, days remaining, and whether the brand actually pays out. Filter by commission, open spots, days left, or brands you've already joined." },
       { icon: <Mail size={20} />, flagship: true, title: 'Bulk brand outreach', desc: 'Tick up to 100 brands, and MVP joins each campaign and sends a message drafted from your profile, in the background, one at a time so the burst is never flagged. Same-brand duplicates fold into one thread; replies surface automatically.' },
-      { icon: <Radar size={20} />, title: 'Amazon Deal Radar', desc: 'Live deals verified against real price history — no fake "was" prices, so a drop you post is a drop that happened. MVP turns the genuine ones into posts and a shoppable bio.' },
-      { icon: <Users size={20} />, wide: true, title: "Brands you've worked with, remembered", desc: 'MVP keeps a portfolio of the content you made per brand — receipts you can hand a brand when you pitch the next collab — pulled from your storefront and posts, not manual logging.' },
+      { icon: <Radar size={20} />, title: 'Amazon Deal Radar', desc: 'Live deals verified against real price history, with no fake "was" prices, so a drop you post is a drop that happened. MVP turns the genuine ones into posts and a shoppable bio.' },
+      { icon: <Users size={20} />, wide: true, title: "Brands you've worked with, remembered", desc: 'MVP keeps a portfolio of the content you made per brand (receipts you can hand a brand when you pitch the next collab), pulled from your storefront and posts, not manual logging.' },
     ],
   },
   {
@@ -86,25 +87,27 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     items: [
       { icon: <Sparkles size={20} />, tag: 'Learns over time', title: 'Writes in your real voice', desc: 'A voice fingerprint learned from your own transcripts and edits feeds every post, per channel if you run more than one. Reviews read like you wrote them, not generic AI.' },
       { icon: <ImageThumb />, title: 'Thumbnails from real frames & your selfies', desc: "SCOUT grabs true frames from your video, and MVP composes a scroll-stopping thumbnail using your own product and, if you add a few selfies, your own face. Never a stranger's, and never guessed from someone else's clip." },
-      { icon: <FileText size={20} />, title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts — all from one product and your transcript, grounded in what you actually said on camera.' },
+      { icon: <FileText size={20} />, tag: 'Pro', title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts, all from one product and your transcript, grounded in what you actually said on camera.' },
     ],
   },
   {
     id: 'publish', n: '03', tag: 'Publish everywhere', head: 'One video, every surface it belongs on.',
     intro: 'The same review goes to YouTube, your Amazon storefront, your blog and your socials, each one formatted for where it lands.',
     items: [
-      { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish — with paid-promotion disclosure and monetization set for you, not left as homework.' },
-      { icon: <Rocket size={20} />, tag: 'Pro', title: 'Liftoff', desc: "Up to ten videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed." },
-      { icon: <Store size={20} />, title: 'Blog & WordPress', desc: 'Publish the review to your own blog network — formatted, illustrated, and linked — so you own an asset that keeps earning past the feed.' },
-      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, auto-post Shorts to TikTok and Instagram, and hand shoppers a Link-in-Bio storefront that fills itself from what you post.' },
+      { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish, with paid-promotion disclosure and monetization set for you, not left as homework.' },
+      { icon: <Rocket size={20} />, tag: 'Amazon + Pro', title: 'Bulk Amazon upload', desc: `Up to ${LIFTOFF_MAX_VIDEOS} videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed.` },
+      { icon: <Pin size={20} />, tag: 'Amazon + Pro', title: 'Pinned and On sale comments', desc: 'A pinned comment with your product link under each YouTube video. When a product you reviewed goes on sale, the comment says so, and the sale comes out again when it ends.' },
+      { icon: <Radio size={20} />, tag: 'Amazon + Pro', title: 'Amazon Live prep and follow-up', desc: 'The lineup and talking points ready before you go live, then clips and a roundup post drafted from the replay after the show.' },
+      { icon: <Store size={20} />, tag: 'Pro', title: 'Blog & WordPress', desc: 'Publish the review to your own blog network, formatted, illustrated, and linked, so you own an asset that keeps earning past the feed.' },
+      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, post Shorts to Instagram and Facebook Reels (TikTok and YouTube Shorts on Pro), and hand shoppers a Link in Bio storefront that fills itself from what you post. Every social post carries #ad #sponsored and labels where its links go.' },
     ],
   },
   {
     id: 'earn', n: '04', tag: 'Earn on every click', head: 'No wasted click, no wrong country.',
     intro: "A viewer in Berlin who lands on the US store rarely buys. MVP's links fix that, and show you exactly where the money comes from.",
     items: [
-      { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link — not just Amazon — cloaks the destination, and lands each click in a per-channel group so you see what YouTube, Pinterest and your blog each earn." },
-      { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your cloned voice and face stay yours.' },
+      { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link, not just Amazon, cloaks the destination, and lands each click in a per-channel group so you see how many clicks YouTube, Pinterest and your blog each send." },
+      { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your face, from Photobooth, stays yours.' },
     ],
   },
 ]
@@ -159,7 +162,7 @@ export default function FeaturesPage() {
             <a href="/pricing" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold transition-transform hover:-translate-y-0.5" style={{ color: '#F6F2FF', border: '1px solid rgba(246,242,255,0.28)' }}>See pricing</a>
           </div>
           <div className="flex flex-wrap gap-9 mt-14">
-            {[['10', 'videos in one Liftoff'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
+            {[[String(LIFTOFF_MAX_VIDEOS), 'videos in one bulk upload'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
               <div key={l}>
                 <div className="text-[30px] font-extrabold tabular-nums" style={{ color: '#F6F2FF' }}>{n}</div>
                 <div className="text-[13.5px] mt-0.5" style={{ color: '#B4A7CC' }}>{l}</div>
@@ -210,7 +213,7 @@ export default function FeaturesPage() {
             <span className="text-[12px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--accent-text)' }}>The companion</span>
             <h2 className="text-[clamp(26px,3.4vw,38px)] font-extrabold tracking-[-0.03em] mt-3">SCOUT does the Amazon work, in the background.</h2>
             <p className="mt-4 text-[17px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              SCOUT is MVP&apos;s browser companion. It works inside your own logged-in Amazon and YouTube, so there&apos;s no copy-pasting tokens and no leaving your account. It accepts campaigns, messages brands, uploads to storefronts and grabs real video frames — quietly, one step at a time.
+              SCOUT is MVP&apos;s browser companion. It works inside your own logged-in Amazon and YouTube, so there&apos;s no copy-pasting tokens and no leaving your account. It accepts campaigns, messages brands, uploads to storefronts and grabs real video frames, quietly, one step at a time.
             </p>
             <ul className="mt-6 grid gap-3">
               {[
@@ -241,7 +244,7 @@ export default function FeaturesPage() {
       {/* Closing CTA */}
       <section className="max-w-3xl mx-auto px-6 py-24 text-center">
         <h2 className="text-[clamp(30px,4.6vw,50px)] font-extrabold tracking-[-0.03em] max-w-[18ch] mx-auto">Run the loop once. Then watch it compound.</h2>
-        <p className="mt-5 text-[18px] leading-relaxed max-w-[46ch] mx-auto" style={{ color: 'var(--text-soft)' }}>Find, create, publish, earn — MVP does the parts that don&apos;t need you, so you can film the next review.</p>
+        <p className="mt-5 text-[18px] leading-relaxed max-w-[46ch] mx-auto" style={{ color: 'var(--text-soft)' }}>Find, create, publish, earn. MVP does the parts that don&apos;t need you, so you can film the next review.</p>
         <div className="flex flex-wrap gap-3.5 justify-center mt-9">
           <a href="/signup" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>Start free trial <ArrowRight size={17} /></a>
           <a href="/tour" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold" style={{ color: 'var(--text)', border: '1px solid var(--border)' }}>Take the tour</a>
@@ -253,7 +256,7 @@ export default function FeaturesPage() {
         <a href="/" className="hover:opacity-70" style={{ color: 'var(--text-soft)' }}>← Back to home</a>
         <span className="mx-3">·</span>
         <a href="/pricing" className="hover:opacity-70" style={{ color: 'var(--text-soft)' }}>Pricing</a>
-        <div className="mt-3">MVP Affiliate — the workflow for Amazon Influencers.</div>
+        <div className="mt-3">MVP Affiliate: the workflow for Amazon Influencers.</div>
       </footer>
     </div>
   )

@@ -52,7 +52,7 @@ export default function WpUpdateBanner() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-[#ff3b30] mb-1">WordPress connection needs reconnecting</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-              Your site rejected the saved Application Password — until you reconnect, your logo, brand details,
+              Your site rejected the saved Application Password. Until you reconnect, your logo, brand details,
               and new posts won&apos;t reach your blog. This happens when your WordPress password changed, the app
               password was revoked, or the site was migrated.
             </p>
@@ -79,7 +79,7 @@ export default function WpUpdateBanner() {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
               Your installed plugin predates one-click updates. Reinstall it once from{' '}
               <a href="/setup" className="text-[#7C3AED] hover:underline">Setup</a> (and the theme),
-              and from then on every update is a single button here — no wp-admin, ever again.
+              and from then on every update is a single button here: no wp-admin, ever again.
             </p>
           </div>
         </div>

@@ -33,6 +33,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWpFormHmac } from '@/lib/wp-form-hmac'
 import { normalizeTier, allowedNewsletterSubscribers } from '@/lib/tier'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 import {
   EMAIL_RE,
@@ -158,6 +159,15 @@ export async function POST(req: NextRequest) {
     integ = (withLegacy.data as IntegRow) ?? null
   }
   const tier = normalizeTier(integ?.tier)
+
+  // ── 3b. Retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS) ────
+  // A member's blog can still carry the old form until their next Customize
+  // save. Say plainly that signups are closed: the cap check below would
+  // otherwise answer "currently full", which is not true. MVP's own list
+  // (an admin owner) is unaffected.
+  if (!NEWSLETTER_FOR_MEMBERS && tier !== 'admin') {
+    return json({ ok: false, error: 'Signups for this newsletter are closed.' }, { status: 410 })
+  }
 
   // ── 4. Cap check (count active + pending — both consume the cap) ──────────
   // Pending counts because spammers could flood pendings to push real

@@ -248,8 +248,8 @@ const PREDICATE = live(read('lib/connected-platforms.ts'))
 {
   const MODALS = [
     'components/deal/QuickPostModal.tsx',
-    'components/walmart/WalmartQuickPostModal.tsx',
-    'components/wayward/WaywardQuickPostModal.tsx',
+    // Walmart and Wayward are one shared window now (thin wrappers around it).
+    'components/social/PartnerQuickPostModal.tsx',
   ]
   for (const m of MODALS) {
     const src = live(read(m))

@@ -108,18 +108,29 @@ export async function gatherWeek(sb: Sb, ownerId: string, w: WeekWindow, prev: W
         .eq('user_id', ownerId).gte('refreshed_at', s).lt('refreshed_at', e))
     }),
     read('Passport clicks', async () => {
-      const r = ok(await sb.from('passport_link_clicks').select('country', { count: 'exact' })
-        .eq('user_id', ownerId).gte('created_at', s).lt('created_at', e).limit(5000))
-      const previous = await count(sb.from('passport_link_clicks').select('id', { count: 'exact', head: true })
-        .eq('user_id', ownerId).gte('created_at', prev.start.toISOString()).lt('created_at', prev.end.toISOString()))
+      // Human clicks only: link-preview fetchers and crawlers (browser 'Bot')
+      // are left out, as on the Passport page. Rows from before the browser
+      // was recorded have none and count as people.
+      const human = (q: Sb) => q.or('browser.is.null,browser.neq.Bot')
+      const total = await count(human(sb.from('passport_link_clicks').select('id', { count: 'exact', head: true })
+        .eq('user_id', ownerId).gte('created_at', s).lt('created_at', e)))
+      const previous = await count(human(sb.from('passport_link_clicks').select('id', { count: 'exact', head: true })
+        .eq('user_id', ownerId).gte('created_at', prev.start.toISOString()).lt('created_at', prev.end.toISOString())))
+      // Countries from every row, read in pages (1,000 per request at most).
       const by = new Map<string, number>()
-      for (const c of (r.data ?? []) as Array<{ country: string | null }>) {
-        const k = (c.country || '').toUpperCase() || 'Unknown'
-        by.set(k, (by.get(k) ?? 0) + 1)
+      for (let from = 0; from < 20000; from += 1000) {
+        const r = ok(await human(sb.from('passport_link_clicks').select('country')
+          .eq('user_id', ownerId).gte('created_at', s).lt('created_at', e)).order('created_at').order('id').range(from, from + 999))
+        const rows = (r.data ?? []) as Array<{ country: string | null }>
+        for (const c of rows) {
+          const k = (c.country || '').toUpperCase() || 'Unknown'
+          by.set(k, (by.get(k) ?? 0) + 1)
+        }
+        if (rows.length < 1000) break
       }
       out.clicks = {
-        count: r.count ?? 0, previous,
-        topCountries: [...by.entries()].map(([country, n]) => ({ country, count: n })).sort((a, b) => b.count - a.count).slice(0, 4),
+        count: total, previous,
+        topCountries: [...by.entries()].map(([country, n]) => ({ country, count: n })).sort((a, b) => b.count - a.count).slice(0, 6),
       }
     }),
   ])

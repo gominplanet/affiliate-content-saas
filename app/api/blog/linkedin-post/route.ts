@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -16,7 +17,7 @@ import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
-import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { getLinkStyle } from '@/lib/link-cloak'
@@ -29,9 +30,10 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // LinkedIn posting is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,7 +76,7 @@ export async function POST(request: NextRequest) {
     const liCap = evaluateSocialCap(liSocialCount)
     if (!dryRun && liCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to LinkedIn ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to LinkedIn ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'linkedin',
       }, { status: 429 })
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,affiliate_disclaimer,voice_fingerprint')
+      .select('name,learn_profile,affiliate_disclaimer,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -137,9 +139,6 @@ export async function POST(request: NextRequest) {
       const gate = await spendGate(user.id, tier)
       if (gate) return gate
       const anthropic = createAnthropicClient()
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
@@ -149,7 +148,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling LinkedIn post for this blog article.
 
-Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Keep the ENTIRE post under 600 characters (LinkedIn sweet spot for engagement).
 
@@ -215,7 +214,12 @@ Return ONLY the post text, no extra commentary.`,
     const cardUrl = primaryCardUrl(pref, affiliateLink, shareUrl, videoUrl) ?? shareUrl
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
+      // THE EDITABLE TEXT IS THE WRITE-UP, NOT THE CAPTION. It comes back as
+      // `text` on publish (and as body_text from a schedule), and both paths
+      // run composeCaption on it again, so handing back the composed caption
+      // posted the product link, disclosure and blog line twice. finalText is
+      // what LinkedIn receives once services/linkedin has disclosed it.
+      return NextResponse.json({ ok: true, dryRun: true, text: cleaned, finalText: discloseSocialPost(postText, 'linkedin') })
     }
 
     // ── 5. Publish to LinkedIn ────────────────────────────────────────────────
@@ -251,10 +255,12 @@ Return ONLY the post text, no extra commentary.`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase
       .from('blog_posts')
-      .update({ linkedin_post_id: result.id })
-      .eq('id', postId)
+      .update({ linkedin_post_id: result.id || null })
+      .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the post.
-    await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
+    // Only with a real id: LinkedIn can answer without one, and a permalink
+    // built from nothing is a link that leads nowhere.
+    if (result.id) await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
     await incrementSocialCount(supabase, postId!, 'linkedin')
 
     return NextResponse.json({

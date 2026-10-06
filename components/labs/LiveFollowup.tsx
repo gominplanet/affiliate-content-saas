@@ -10,9 +10,10 @@ import Link from 'next/link'
 import { Loader2, Radio, Scissors, Copy, Trash2, Download, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { requestLiveReplay } from '@/lib/extension-frame'
-import { fmtClock, shortTitle, type LiveMoment } from '@/lib/live-followup'
+import { fmtClock, shortTitle, windowShare, type LiveMoment } from '@/lib/live-followup'
 
 type Followup = {
+  audio_url?: string | null
   id: string; plan_id: string | null; replay_url: string; title: string | null; stream_url: string | null
   page_asins: string[]; duration_sec: number | null; moments: LiveMoment[]; missing: Array<{ asin: string; title: string }>
   state: 'read' | 'transcribed' | 'matched'; error: string | null; created_at: string
@@ -43,6 +44,7 @@ export default function LiveFollowup() {
   const [url, setUrl] = useState('')
   const [planId, setPlanId] = useState('')
   const [reading, setReading] = useState(false)
+  const [usingScout, setUsingScout] = useState(false)
   const [readError, setReadError] = useState<string | null>(null)
   const [current, setCurrent] = useState<Followup | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -72,13 +74,19 @@ export default function LiveFollowup() {
   async function readReplay() {
     setReading(true); setReadError(null)
     try {
-      const read = await requestLiveReplay(url.trim())
-      if (!read.ok) { setReadError(SCOUT_ERRORS[read.error || ''] || `SCOUT could not read the replay (${read.error || 'unknown'}).`); return }
-      const { ok, j } = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null, read })
-      if (!ok) { setReadError(j.error || 'Could not save it.'); return }
-      setCurrent(j.followup); setUrl(''); loadList()
-      toast.success(`SCOUT found the video and ${read.asins?.length ?? 0} products on the page`)
-    } finally { setReading(false) }
+      // MVP reads the replay page itself first. SCOUT only when that fails.
+      let res = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null })
+      if (!res.ok && res.j.tryScout) {
+        setUsingScout(true)
+        const read = await requestLiveReplay(url.trim())
+        if (!read.ok) { setReadError(`${res.j.error} SCOUT could not read it either: ${SCOUT_ERRORS[read.error || ''] || read.error || 'unknown'}`); return }
+        res = await post({ action: 'create', replayUrl: url.trim(), planId: planId || null, read })
+      }
+      if (!res.ok) { setReadError(res.j.error || 'Could not save it.'); return }
+      setCurrent(res.j.followup); setUrl(''); loadList()
+      const n = res.j.followup?.page_asins?.length ?? 0
+      toast.success(`Found the replay and ${n} product${n === 1 ? '' : 's'} you showed${res.j.captions === 'amazon' ? `, with Amazon's captions (${res.j.words} words), so no transcription is needed` : ''}`)
+    } finally { setReading(false); setUsingScout(false) }
   }
 
   async function step(action: 'transcribe' | 'match', label: string) {
@@ -93,14 +101,36 @@ export default function LiveFollowup() {
     } finally { setBusy(null) }
   }
 
-  async function cut(asin: string) {
+  // The creator's framing while they adjust it, per product, before a cut.
+  const [draftX, setDraftX] = useState<Record<string, number>>({})
+
+  async function cut(m: LiveMoment) {
     if (!current) return
-    setBusy(`clip:${asin}`)
+    setBusy(`clip:${m.asin}`)
     try {
-      const { ok, j } = await post({ action: 'clip', id: current.id, asin })
+      const x = draftX[m.asin]
+      const { ok, j } = await post({ action: 'clip', id: current.id, asin: m.asin, ...(x != null ? { cropX: x } : {}), layout: m.layout ?? 'center' })
       if (j.followup) setCurrent(j.followup)
+      setDraftX((d) => { const n = { ...d }; delete n[m.asin]; return n })
       if (!ok) toast.error(j.error || 'The clip could not be cut')
     } finally { setBusy(null) }
+  }
+
+  async function frame(m: LiveMoment, extra: Record<string, unknown> = {}) {
+    if (!current) return
+    setBusy(`frame:${m.asin}`)
+    try {
+      const { ok, j } = await post({ action: 'frame', id: current.id, asin: m.asin, refind: true, ...extra })
+      if (j.followup) setCurrent(j.followup)
+      setDraftX((d) => { const n = { ...d }; delete n[m.asin]; return n })
+      if (!ok) toast.error(j.error || 'No frame could be read')
+    } finally { setBusy(null) }
+  }
+
+  async function setLayout(m: LiveMoment, layout: 'center' | 'split') {
+    if (!current) return
+    const moments = current.moments.map((x) => (x.asin === m.asin ? { ...x, layout } : x))
+    setCurrent({ ...current, moments })
   }
 
   async function writeRoundup() {
@@ -149,9 +179,9 @@ export default function LiveFollowup() {
         </label>
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={readReplay} disabled={reading || !/amazon\.com\/live\//i.test(url)} className={`${btn} text-white bg-[#7C3AED]`}>
-            {reading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />} {reading ? 'SCOUT is reading the replay…' : 'Read the replay with SCOUT'}
+            {reading ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} />} {reading ? (usingScout ? 'SCOUT is reading the replay…' : 'Reading the replay…') : 'Read the replay'}
           </button>
-          {reading && <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>A tab opens for a few seconds while the video starts, then closes.</span>}
+          {reading && usingScout && <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>A tab opens for a few seconds while the video starts, then closes.</span>}
         </div>
         {readError && <p className="text-[12.5px] text-[#ff3b30]">{readError}</p>}
       </section>
@@ -168,11 +198,14 @@ export default function LiveFollowup() {
             <button onClick={() => remove(current.id)} aria-label="Delete" title="Delete" className="p-1.5" style={{ color: 'var(--text-faint)' }}><Trash2 size={15} /></button>
           </div>
           {current.error && <p className="text-[12.5px] text-[#ff3b30]">Last step failed: {current.error}</p>}
+          {current.state !== 'read' && !current.audio_url && (
+            <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Using Amazon&apos;s own captions for this replay, so no transcription was needed.</p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button onClick={() => step('transcribe', 'Transcribing')} disabled={!!busy} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               {busy === 'transcribe' && <Loader2 size={13} className="animate-spin" />}
-              {current.state === 'read' ? '1. Transcribe the replay' : 'Transcribe again'}
+              {current.state === 'read' ? '1. Transcribe the replay' : current.audio_url ? 'Transcribe again' : 'Transcribe with Whisper instead'}
             </button>
             <button onClick={() => step('match', 'Finding the products')} disabled={!!busy || current.state === 'read'} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               {busy === 'match' && <Loader2 size={13} className="animate-spin" />}
@@ -200,9 +233,11 @@ export default function LiveFollowup() {
                     <p className="text-[12px] tabular-nums" style={{ color: 'var(--text-faint)' }}>{fmtClock(m.startSec)} to {fmtClock(m.endSec)} in the replay ({Math.round(m.endSec - m.startSec)}s)</p>
                     {m.hook && <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>&ldquo;{m.hook}&rdquo;</p>}
                     {m.clipError && <p className="text-[12px] text-[#ff3b30]">{m.clipError}</p>}
+                    <Framing m={m} x={draftX[m.asin] ?? m.cropX ?? 0.5} busy={busy === `frame:${m.asin}`} disabled={!!busy}
+                      onX={(x) => setDraftX((d) => ({ ...d, [m.asin]: x }))} onFind={() => frame(m)} onLayout={(l) => setLayout(m, l)} edited={draftX[m.asin] != null} />
                     <div className="flex flex-wrap gap-2 mt-1">
-                      <button onClick={() => cut(m.asin)} disabled={!!busy} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-                        {busy === `clip:${m.asin}` ? <Loader2 size={13} className="animate-spin" /> : <Scissors size={13} />} {m.clipUrl ? 'Cut again' : 'Cut the clip'}
+                      <button onClick={() => cut(m)} disabled={!!busy} className={`${btn} border`} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                        {busy === `clip:${m.asin}` ? <Loader2 size={13} className="animate-spin" /> : <Scissors size={13} />} {m.clipUrl ? 'Cut again with this framing' : 'Cut the clip'}
                       </button>
                       {m.clipUrl && (<>
                         <Link href={`/clip-factory?liveClip=${encodeURIComponent(m.clipUrl)}&product=${m.asin}&name=${encodeURIComponent(shortTitle(m.title))}`} className={`${btn} text-white bg-[#7C3AED]`}>
@@ -254,6 +289,54 @@ export default function LiveFollowup() {
           </ul>
         )}
       </section>
+    </div>
+  )
+}
+
+/** Where the 9:16 window sits on the frame: the still from the moment with
+ *  the window drawn on it, a slider to move it, and the layout. Before any
+ *  still exists, one button gets it (and finds the speaker). */
+function Framing(p: { m: LiveMoment; x: number; busy: boolean; disabled: boolean; edited: boolean; onX: (x: number) => void; onFind: () => void; onLayout: (l: 'center' | 'split') => void }) {
+  const { m } = p
+  const w = windowShare(m.frameAspect)
+  const status = p.edited ? 'Your framing: cut again to use it.'
+    : m.framing === 'auto' ? 'MVP found the speaker and centred the clip on them.'
+      : m.framing === 'manual' ? 'Your framing.'
+        : m.framing === 'centre' ? `Centred: ${m.frameNote || 'no speaker was found.'}` : null
+  if (!m.frameUrl) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={p.onFind} disabled={p.disabled} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold border disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+          {p.busy && <Loader2 size={13} className="animate-spin" />} {p.busy ? 'Finding the speaker…' : 'Frame on the speaker'}
+        </button>
+        {status && <span className="text-[12px]" style={{ color: m.framing === 'centre' ? '#ff9500' : 'var(--text-faint)' }}>{status}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+      <div className="relative w-full max-w-md rounded-lg overflow-hidden bg-black" style={{ aspectRatio: String(m.frameAspect || 16 / 9) }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={m.frameUrl} alt="A still from this moment" className="absolute inset-0 w-full h-full object-cover" />
+        {m.layout !== 'split' && (<>
+          <div className="absolute inset-y-0 left-0 bg-black/55" style={{ width: `${p.x * (1 - w) * 100}%` }} />
+          <div className="absolute inset-y-0 border-2 border-white rounded-sm" style={{ left: `${p.x * (1 - w) * 100}%`, width: `${w * 100}%` }} />
+          <div className="absolute inset-y-0 right-0 bg-black/55" style={{ width: `${(1 - w - p.x * (1 - w)) * 100}%` }} />
+        </>)}
+      </div>
+      {m.layout !== 'split' && (
+        <label className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          Left
+          <input id={`frame-x-${m.asin}`} type="range" min={0} max={1000} value={Math.round(p.x * 1000)} onChange={(e) => p.onX(Number(e.target.value) / 1000)} className="flex-1 max-w-xs" />
+          Right
+        </label>
+      )}
+      <div className="flex items-center gap-2 flex-wrap text-[12px]">
+        <button onClick={() => p.onLayout('center')} className={`rounded-full border px-2.5 py-1 ${m.layout !== 'split' ? 'font-semibold' : ''}`} style={{ borderColor: m.layout !== 'split' ? '#7C3AED' : 'var(--border)', color: m.layout !== 'split' ? '#7C3AED' : 'var(--text-soft)' }}>Crop to the speaker</button>
+        <button onClick={() => p.onLayout('split')} className={`rounded-full border px-2.5 py-1 ${m.layout === 'split' ? 'font-semibold' : ''}`} style={{ borderColor: m.layout === 'split' ? '#7C3AED' : 'var(--border)', color: m.layout === 'split' ? '#7C3AED' : 'var(--text-soft)' }}>Split screen (whole frame below)</button>
+        <button onClick={p.onFind} disabled={p.disabled} className="underline disabled:opacity-50" style={{ color: 'var(--text-faint)' }}>{p.busy ? 'Finding…' : 'Find the speaker again'}</button>
+      </div>
+      {status && <p className="text-[12px]" style={{ color: m.framing === 'centre' && !p.edited ? '#ff9500' : 'var(--text-faint)' }}>{status}</p>}
     </div>
   )
 }

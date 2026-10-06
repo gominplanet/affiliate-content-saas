@@ -14,7 +14,11 @@ const FI = readFileSync('app/api/partnerboost/finder/route.ts', 'utf8')
 const UI = readFileSync('components/partnerboost/PartnerBoostFinder.tsx', 'utf8')
 
 check('the sweep keeps what PartnerBoost said when the brand list fails',
-  /catch \(e\) \{ if \(!brandListError\) brandListError = /.test(SW) && /brandListOk = true/.test(SW))
+  /if \(!res\) \{ if \(!brandListError\) brandListError = /.test(SW) && /brandListOk = true/.test(SW))
+// One network's brand list failing while others answered deleted that
+// network's whole saved catalogue; a throttled brand list is now retried.
+check('the purge never runs after any brand list failed', /productErrors === 0 && !brandListError/.test(SW))
+check('a throttled brand list is waited out and asked again', /for \(let attempt = 0; attempt < 3 && !res; attempt\+\+\)/.test(SW))
 check('a sync with no brand list answer throws, in PartnerBoost\'s words, and keeps the cache',
   /if \(!brandListOk && brandListError\) \{/.test(SW) && /no longer accepts your API token/.test(SW)
   && SW.indexOf('if (!brandListOk && brandListError)') < SW.indexOf("from('pb_finder_cache').upsert"))
@@ -33,7 +37,8 @@ check('a PartnerBoost token is verified before it is saved', /verifyPartnerBoost
 check('a good token clears the 12 hour sync back-off', /pb_sync_failed:\$\{g\.userId\}/.test(SAVE))
 check('a refused GET is retried as POST JSON', /code !== 1000 && first\?\.status\?\.code !== 1001\) return first/.test(SVC) && /method: 'POST'/.test(SVC))
 check('an unreadable saved key is not replaced by the env key', /saved key could not be decrypted[\s\S]{0,40}return null/.test(KEYS))
-check('product feeds that fail are counted, retried when the connection drops, and said apart', /productErrors\+\+/.test(SW) && /productDropped\+\+/.test(SW) && /attempt < 3/.test(SW) && /connection to PartnerBoost dropped/.test(UI) && /PartnerBoost refused the products of/.test(UI))
+check('product feeds that fail are counted, retried when the connection drops, and said apart', /productErrors\+\+/.test(SW) && /productDropped\+\+/.test(SW) && /attempt < 5/.test(SW) && /connection to PartnerBoost dropped/.test(UI) && /PartnerBoost refused the products of/.test(UI))
+check('"Too many request" pauses every worker and is retried, not counted as a refusal', /isThrottle\(msg\)\) \{[\s\S]{0,200}pauseUntil = Math\.max/.test(SW) && /MIN_GAP_MS = 250/.test(SW) && /asked MVP to slow down/.test(UI))
 check('a sync with unreadable brands never purges their saved products', /purgeSafe = rows\.length > 0 && !timedOut && productErrors === 0/.test(SW))
 check('no screen sends people to an "All Channels" token any more', !/copy the "All Channels"|All-Channels API token|Token Manage → All Channels/.test(SW + FI + readFileSync('components/integrations/ExternalKeyConnect.tsx', 'utf8') + readFileSync('app/(dashboard)/partnerboost/page.tsx', 'utf8')))
 

@@ -107,11 +107,11 @@ export default function BrandCtaSettings() {
         return
       }
       if (json.wordpress === 'failed') {
-        toast.error(json.wordpressError || 'Saved, but the push to your blog failed — check your WordPress connection.')
+        toast.error(json.wordpressError || 'Saved, but the push to your blog failed. Check your WordPress connection.')
       } else {
         // Purge cache so the banner change appears immediately on the live blog.
         fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
-        toast.success('Saved — your blog banner is updated.')
+        toast.success('Saved: your blog banner is updated.')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
@@ -130,7 +130,7 @@ export default function BrandCtaSettings() {
             <Megaphone size={16} className="text-[#7C3AED]" /> Blog banner
           </h2>
           <p className="text-xs text-[var(--text-3)] mt-1">
-            Show a discreet &quot;Work with brands&quot; banner on your blog. Brands who click it see your pitch and can reach you — via your media-kit link and/or a form that delivers straight to this inbox (no public email needed).
+            Show a discreet &quot;Work with brands&quot; banner on your blog. Brands who click it see your pitch and can reach you, via your media-kit link and/or a form that delivers straight to this inbox (no public email needed).
           </p>
         </div>
       </div>
@@ -156,7 +156,7 @@ export default function BrandCtaSettings() {
               <div>
                 <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Button on your blog</label>
                 <input type="text" value={bc.pillLabel} onChange={e => update({ pillLabel: e.target.value })} maxLength={40} className="input-field w-full" placeholder={DEFAULT_PILL_LABEL} />
-                <p className="text-[11px] text-[var(--text-3)] mt-1">The small pill visitors see on your blog — e.g. &quot;Work with us&quot;, &quot;For brands&quot;, &quot;Feature your brand&quot;.</p>
+                <p className="text-[11px] text-[var(--text-3)] mt-1">The small pill visitors see on your blog: e.g. &quot;Work with us&quot;, &quot;For brands&quot;, &quot;Feature your brand&quot;.</p>
               </div>
 
               <div>
@@ -174,7 +174,7 @@ export default function BrandCtaSettings() {
               <div>
                 <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Link URL <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
                 <input type="url" value={bc.mediaKitUrl} onChange={e => update({ mediaKitUrl: e.target.value })} maxLength={500} className="input-field w-full" placeholder="https://your-media-kit.com" />
-                <p className="text-[11px] text-[var(--text-3)] mt-1">Where the button sends brands — a media kit, portfolio, press page, booking form, anywhere. Paste any URL.</p>
+                <p className="text-[11px] text-[var(--text-3)] mt-1">Where the button sends brands: a media kit, portfolio, press page, booking form, anywhere. Paste any URL.</p>
               </div>
 
               {bc.mediaKitUrl.trim() !== '' && (
@@ -182,13 +182,13 @@ export default function BrandCtaSettings() {
                   <div>
                     <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Button label</label>
                     <input type="text" value={bc.mediaKitLabel} onChange={e => update({ mediaKitLabel: e.target.value })} maxLength={60} className="input-field w-full" placeholder={DEFAULT_MEDIA_KIT_LABEL} />
-                    <p className="text-[11px] text-[var(--text-3)] mt-1">The text on the button that opens your link — e.g. &quot;View my media kit&quot;, &quot;See my portfolio&quot;, &quot;Book a collab&quot;.</p>
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">The text on the button that opens your link: e.g. &quot;View my media kit&quot;, &quot;See my portfolio&quot;, &quot;Book a collab&quot;.</p>
                   </div>
 
                   <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                     <div>
                       <p className="text-sm font-medium text-[var(--text)]">Link straight to it</p>
-                      <p className="text-xs text-[var(--text-3)]">Skip the pop-up — the banner opens your link directly.</p>
+                      <p className="text-xs text-[var(--text-3)]">Skip the pop-up. The banner opens your link directly.</p>
                     </div>
                     <button onClick={() => update({ directLink: !bc.directLink })} className="text-[var(--text-3)]" aria-label="Toggle direct link">
                       {bc.directLink ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
@@ -200,7 +200,7 @@ export default function BrandCtaSettings() {
               <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                 <div>
                   <p className="text-sm font-medium text-[var(--text)]">In-app contact form</p>
-                  <p className="text-xs text-[var(--text-3)]">Let brands message you directly — replies land right here in Brand Inquiries. No email exposed.</p>
+                  <p className="text-xs text-[var(--text-3)]">Let brands message you directly. Replies land right here in Brand Inquiries. No email exposed.</p>
                 </div>
                 <button onClick={() => update({ inbox: !bc.inbox })} className="text-[var(--text-3)]" aria-label="Toggle in-app contact form">
                   {bc.inbox ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
@@ -208,7 +208,7 @@ export default function BrandCtaSettings() {
               </div>
 
               {noDestination && (
-                <p className="text-[11px] text-[#ff9500]">Add a media-kit link or turn on the in-app form — otherwise the banner has nowhere to send brands.</p>
+                <p className="text-[11px] text-[#ff9500]">Add a media-kit link or turn on the in-app form. Otherwise the banner has nowhere to send brands.</p>
               )}
             </>
           )}

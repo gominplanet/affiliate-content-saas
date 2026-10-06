@@ -72,11 +72,15 @@ function basicToRow(b: KeepaBasic, at: string) {
 export async function fetchKeepaBasicsCached(
   admin: Admin,
   asins: string[],
-  opts?: { maxAgeDays?: number },
+  opts?: { maxAgeDays?: number; answered?: Set<string> },
 ): Promise<Map<string, KeepaBasic>> {
   const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
   const out = new Map<string, KeepaBasic>()
   if (!valid.length) return out
+  // WHICH ASINS GOT AN ANSWER, for a caller that stamps rows as done. A missing
+  // key in the result means either "Keepa knows nothing" or "Keepa never
+  // replied"; only the first may be written off.
+  const answered = opts?.answered
 
   const maxAgeMs = (opts?.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS) * 86_400_000
   const freshSince = new Date(Date.now() - maxAgeMs).toISOString()
@@ -98,8 +102,11 @@ export async function fetchKeepaBasicsCached(
     }
   } catch {
     // Cache table missing / read error → fetch everything directly, no caching.
-    return await fetchKeepaBasics(valid)
+    const direct = await fetchKeepaBasics(valid)
+    if (answered) for (const a of direct.keys()) answered.add(a)
+    return direct
   }
+  if (answered) for (const a of handled) answered.add(a)
 
   const missing = valid.filter((a) => !handled.has(a))
   if (!missing.length) return out
@@ -124,6 +131,6 @@ export async function fetchKeepaBasicsCached(
   } catch { /* caching is best-effort — the data still flows through below */ }
 
   // 4. Merge the freshly-fetched data into the result.
-  for (const [a, b] of fetched) out.set(a, b)
+  for (const [a, b] of fetched) { out.set(a, b); answered?.add(a) }
   return out
 }

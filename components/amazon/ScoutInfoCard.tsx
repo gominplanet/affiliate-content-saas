@@ -45,7 +45,7 @@ export default function ScoutInfoCard() {
   const installed = status?.kind === 'store' || status?.kind === 'sideload'
   const syncLabel = sync && sync.products > 0
     ? `${sync.products} product${sync.products === 1 ? '' : 's'} synced`
-    : 'No products synced yet — open your Amazon report page'
+    : 'No products synced yet. Open your Amazon report page'
 
   // Connected + collapsed → one slim confirmation row.
   if (installed && !expanded) {

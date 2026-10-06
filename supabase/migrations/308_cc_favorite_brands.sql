@@ -28,6 +28,7 @@ alter table public.cc_favorite_brands enable row level security;
 
 -- Each creator sees and manages only their own favorites. The cron uses the
 -- service-role admin client, which bypasses RLS.
+drop policy if exists "own cc favorites" on public.cc_favorite_brands;
 create policy "own cc favorites" on public.cc_favorite_brands
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 

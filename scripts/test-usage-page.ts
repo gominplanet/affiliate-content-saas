@@ -42,7 +42,8 @@ check('the admin preview is said to be a preview',
 check('warnings at 80% and at the limit',
   /used \/ limit >= 0\.8 \? 'close'/.test(PAGE) && /used >= limit \? 'out'/.test(PAGE))
 check('the page is reachable from the nav and from the usage bar',
-  (read('components/layout/DashboardShellV2.tsx').match(/href: '\/usage'/g) ?? []).length === 2
+  // One nav entry: the Usage tab of "Plan and usage", for every plan.
+  /href: '\/usage', icon: null, label: 'Usage'/.test(read('components/layout/DashboardShellV2.tsx'))
   && /href="\/usage"/.test(read('components/layout/UsageBar.tsx')))
 check('copy has no dashes as sentence breaks', !/ — | – | - [A-Z]/.test(PAGE_CODE))
 

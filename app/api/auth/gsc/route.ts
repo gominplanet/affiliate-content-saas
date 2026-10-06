@@ -11,6 +11,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
 export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -18,6 +19,12 @@ export async function GET(req: Request) {
   if (!clientId || !appUrl) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 })
   }
+
+  const redirectUri = `${appUrl}/api/auth/gsc/callback`
+  // START ON THE CALLBACK'S HOST so the one-time state cookie is there when
+  // Google sends the member back (apex and www keep separate cookies).
+  const hostHop = callbackHostRedirect(req, redirectUri)
+  if (hostHop) return NextResponse.redirect(hostHop)
 
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -27,8 +34,9 @@ export async function GET(req: Request) {
   // Profile send the user back to /brand instead of the default /setup.
   const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
   const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
-  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo })).toString('base64url')
-  const redirectUri = `${appUrl}/api/auth/gsc/callback`
+  // RANDOM, ONE-TIME STATE (lib/oauth-state); the return path rides in the
+  // httpOnly state cookie, not the URL.
+  const state = await startOAuthState('gsc', user.id, redirectUri, { rt: returnTo })
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', clientId)

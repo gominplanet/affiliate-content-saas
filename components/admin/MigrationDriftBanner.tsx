@@ -49,9 +49,9 @@ export default function MigrationDriftBanner() {
   async function copySql(sql: string) {
     try {
       await navigator.clipboard.writeText(sql)
-      toast.success('SQL copied — paste in Supabase SQL Editor')
+      toast.success('SQL copied: paste in Supabase SQL Editor')
     } catch {
-      toast.error('Copy failed — select the SQL and copy manually')
+      toast.error('Copy failed: select the SQL and copy manually')
     }
   }
 
@@ -67,7 +67,7 @@ export default function MigrationDriftBanner() {
               <AlertTriangle size={16} className="text-[#ff3b30] flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#ff3b30]">
-                  Migration {m.id} not applied — {m.what}
+                  Migration {m.id} not applied: {m.what}
                 </p>
                 <button
                   onClick={() => setExpanded(expanded === m.id ? null : m.id)}

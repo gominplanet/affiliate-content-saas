@@ -261,6 +261,15 @@ async function enrichPriceHistory(
     if (Date.now() > deadline) break
     if (budget != null && budget < MIN_TOKENS_TO_CONTINUE) break
     const a = await fetchKeepaProductStats(row.asin)
+    // AN EMPTY READ CHANGES NOTHING BUT THE STAMP. fetchKeepaProductStats
+    // returns all nulls on a refusal or timeout, and the update below wrote
+    // those nulls over the verdict, the 90 day average and the all time low a
+    // good run had stored. Stamped so the row is not re-asked every run.
+    if (a.currentCents == null && a.avg90Cents == null && a.allTimeLowCents == null && a.quality == null && a.monthlySold == null && a.salesRank == null) {
+      await admin.from('deal_radar_cache').update({ price_verified_at: new Date().toISOString() }).eq('asin', row.asin)
+      if (budget != null) budget -= 1
+      continue // not counted as verified: nothing was
+    }
     // Reconcile the discount the UI filters/sorts/badges on with price-history
     // reality. When Keepa gives us an authoritative price-history read, make
     // discount_pct REFLECT that verified "% below usual" — the number the card,

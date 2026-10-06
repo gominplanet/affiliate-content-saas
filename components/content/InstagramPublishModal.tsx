@@ -26,6 +26,7 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 import { effectiveTier } from '@/lib/view-as'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
+import { INSTAGRAM_AI_IMAGES } from '@/lib/ig-ai-images'
 
 // ── Instagram Publish modal ───────────────────────────────────────────────────
 // Opens when the user clicks the Instagram pill on a video card. Walks them
@@ -165,7 +166,9 @@ export function InstagramPublishModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const aiIsPro = aiTier === 'pro' || aiTier === 'admin'
+  // Retired for everyone (lib/ig-ai-images): with the switch off, the AI path
+  // never shows and every landscape video composes from its thumbnail.
+  const aiIsPro = INSTAGRAM_AI_IMAGES && (aiTier === 'pro' || aiTier === 'admin')
 
   /** Fire the IG-native AI image generation. On success, the returned
    *  imageUrl is wired into existingUrl so the rest of the modal treats
@@ -309,7 +312,7 @@ export function InstagramPublishModal({
     // through a Vercel function), so the ceiling is the Supabase bucket's
     // file_size_limit (set to 300MB) — well within Instagram's ~1GB Reel limit.
     if (file.size > 300 * 1024 * 1024) {
-      setUploadError(`File is ${(file.size / 1024 / 1024).toFixed(1)}MB — videos must be under 300MB. Compress and retry.`)
+      setUploadError(`File is ${(file.size / 1024 / 1024).toFixed(1)}MB: videos must be under 300MB. Compress and retry.`)
       return
     }
     setUploading(true)
@@ -397,7 +400,9 @@ export function InstagramPublishModal({
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (!res.ok) throw new Error(data.error || 'Publish failed')
+      // Every part failed: the route answers 502 with the reasons in
+      // `warnings` and no `error`, which used to show a bare "Publish failed".
+      if (!res.ok) throw new Error(data.error || (Array.isArray(data.warnings) && data.warnings.length ? data.warnings.join(' · ') : '') || 'Publish failed')
 
       if (data.reelId || data.imagePostId) onReelPosted()
       if (data.storyId) onStoryPosted(data.affiliateUrl ?? '')
@@ -537,7 +542,7 @@ export function InstagramPublishModal({
                             👎
                           </button>
                           {aiFeedbackSent && (
-                            <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                            <span className="text-[10px] text-[#86868b]">Thanks, saved.</span>
                           )}
                         </div>
                       )}
@@ -621,7 +626,7 @@ export function InstagramPublishModal({
                         <div className="flex flex-col gap-1">
                           <label className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer text-xs ${aiFaceModelId === null ? 'border-[#5856d6] bg-white dark:bg-[#0a0a0a]' : 'border-gray-200 dark:border-white/10'}`}>
                             <input type="radio" name="ig-face" checked={aiFaceModelId === null} onChange={() => setAiFaceModelId(null)} />
-                            <span>No face — product-only</span>
+                            <span>No face: product-only</span>
                           </label>
                           {aiFaceModels.map(m => (
                             <label key={m.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer text-xs ${aiFaceModelId === m.id ? 'border-[#5856d6] bg-white dark:bg-[#0a0a0a]' : 'border-gray-200 dark:border-white/10'}`}>
@@ -634,7 +639,7 @@ export function InstagramPublishModal({
                       </div>
                     ) : (
                       <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
-                        No trained faces yet — the AI will generate a product-only portrait. <Link href="/face-training" className="text-[#5856d6] hover:underline">Train your face</Link> for stronger Instagram results.
+                        No trained faces yet. The AI will generate a product-only portrait. <Link href="/face-training" className="text-[#5856d6] hover:underline">Train your face</Link> for stronger Instagram results.
                       </p>
                     )}
                     <button
@@ -688,7 +693,7 @@ export function InstagramPublishModal({
                   <>
                     <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
                     <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 300MB</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3 to 90 seconds, under 300MB</p>
                   </>
                 )}
               </label>
@@ -800,12 +805,12 @@ export function InstagramPublishModal({
               <div className="flex items-start gap-1.5 rounded-lg border px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]"
                 style={{ background: 'rgba(225,48,108,0.06)', borderColor: 'rgba(225,48,108,0.22)' }}>
                 <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
-                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM is on.</strong> A comment of “{dmKeyword}” on this post will DM your affiliate link automatically — the workaround for Instagram’s no-clickable-link rule.</span>
+                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM is on.</strong> A comment of “{dmKeyword}” on this post will DM your affiliate link automatically, the workaround for Instagram’s no-clickable-link rule.</span>
               </div>
             ) : (
               <Link href="/instagram-dm" className="flex items-start gap-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] hover:border-[#E1306C]/40 transition-colors">
                 <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
-                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Turn on Auto-DM</strong> so a comment fetches your link automatically — since this feed post can’t carry a clickable link. Set it up →</span>
+                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Turn on Auto-DM</strong> so a comment fetches your link automatically, since this feed post can’t carry a clickable link. Set it up →</span>
               </Link>
             )
           )}

@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { checkUsageCap, PRIMARY_FEATURE, SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { checkUsageCap, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 
 export const runtime = 'nodejs'
 
@@ -20,7 +20,7 @@ export async function GET() {
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', user.id).single()
   const tier = normalizeTier(intRow?.tier) as Tier
-  const limit = tier === 'admin' ? null : SHORTS_MONTHLY_CAP
+  const limit = shortsCapFor(tier)
 
   const cap = await checkUsageCap(
     supabase, user.id, PRIMARY_FEATURE.short, limit,

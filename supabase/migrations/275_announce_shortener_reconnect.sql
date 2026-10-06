@@ -7,8 +7,15 @@
 -- this migration never inserts a duplicate. Deactivates any current
 -- announcement first, matching the admin "Publish" flow. Depends on
 -- migrations 060 + 061. Seb can hide or replace it from /admin/announcement.
+--
+-- ONCE ONLY. Run again, the first version switched off whatever announcement
+-- was live at the time and put this old popup back in front of every member.
+-- Now the switch-off happens only while this popup does not exist yet, and a
+-- popup that already exists is left exactly as it is (hidden stays hidden).
 
-update public.announcements set active = false, updated_at = now() where active = true;
+update public.announcements set active = false, updated_at = now()
+ where active = true
+   and not exists (select 1 from public.announcements where id = '00000000-0000-4000-a000-000000000275');
 
 insert into public.announcements (id, active, title, body, cta_label, cta_href, variant)
 values (
@@ -22,13 +29,6 @@ Seb',
   '/brand',
   'modal'
 )
-on conflict (id) do update
-  set active = true,
-      title = excluded.title,
-      body = excluded.body,
-      cta_label = excluded.cta_label,
-      cta_href = excluded.cta_href,
-      variant = excluded.variant,
-      updated_at = now();
+on conflict (id) do nothing;
 
 notify pgrst, 'reload schema';

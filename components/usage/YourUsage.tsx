@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 
 interface Bucket { key: string; label: string; used: number; limit: number | null; remaining: number | null }
 interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; lifetime: boolean }
@@ -26,7 +27,7 @@ const ACCENT = '#7C3AED'
 /** What each limit counts, in the creator's words. */
 const WHAT: Record<string, string> = {
   generations: 'New blog posts and content pieces MVP writes for you.',
-  thumbnails: 'AI thumbnails, from Co-Pilot, Liftoff and blog heroes.',
+  thumbnails: 'AI thumbnails, from Co-Pilot, Bulk Amazon upload and blog heroes.',
   shorts: 'Shorts rendered in Shorts Studio.',
   x: 'Posts sent to X. X charges for every post, so it has its own limit.',
   pins: 'Designed Pinterest pins.',
@@ -42,7 +43,7 @@ const WHAT: Record<string, string> = {
   newsletter: 'Newsletter emails sent to your list.',
   cascade: 'Posts scheduled out to your socials.',
   articles: 'Articles.',
-  sale_comments: 'Comments posted on your videos from Encore. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
+  sale_comments: 'Comments posted on your videos from On sale comments. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
   index_nudges: 'Asking Google to index a page now. Google gives all of MVP one small shared allowance; your pages still get indexed through your sitemap without these.',
 }
 
@@ -113,7 +114,11 @@ export default function YourUsage() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  const monthly = (summary?.buckets ?? []).filter((b): b is Bucket & { limit: number } => typeof b.limit === 'number' && b.limit > 0)
+  // No newsletter bar while the member newsletter is retired
+  // (lib/feature-flags NEWSLETTER_FOR_MEMBERS); the summary route leaves it out too.
+  const monthly = (summary?.buckets ?? [])
+    .filter((b) => NEWSLETTER_FOR_MEMBERS || b.key !== 'newsletter')
+    .filter((b): b is Bucket & { limit: number } => typeof b.limit === 'number' && b.limit > 0)
   const all = [
     ...monthly.map((b) => ({ label: b.label, lvl: levelOf(b.used, b.limit) })),
     ...(daily ?? []).map((b) => ({ label: b.label, lvl: levelOf(b.used, b.limit) })),

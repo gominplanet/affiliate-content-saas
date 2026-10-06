@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export async function GET() {
     // Levanta finds still live in their own shelf (/api/levanta/saved).
     .in('source', ['campaign', 'onsite', 'wayward'])
     .order('created_at', { ascending: false }).limit(500)
-  if (error) return NextResponse.json({ ok: false, error: error.message, saved: [] }, { status: 200 })
+  if (error) return NextResponse.json({ ok: false, error: plainReadError('campaigns.saved', error), saved: [] }, { status: 200 })
   return NextResponse.json({ ok: true, saved: data ?? [] })
 }
 

@@ -33,28 +33,45 @@ alter table public.integrations
 alter table public.integrations
   alter column blog_social_link_mode drop not null;
 
--- Restore the creators who had Geniuslink connected before the chooser existed.
-update public.integrations
-   set blog_social_link_mode = 'geniuslink'
- where (blog_social_link_mode is null or blog_social_link_mode = 'direct')
-   and passport_links_enabled is not true
-   and (
-     wrap_blog_geniuslink is true
-     or (nullif(btrim(geniuslink_api_key), '') is not null
-         and nullif(btrim(geniuslink_api_secret), '') is not null)
-   );
+-- ONCE ONLY. Both updates below are a one-time repair of 274's backfill. Run
+-- again later, the first would turn a creator who has since CHOSEN Direct, with
+-- Geniuslink keys still saved, back to Geniuslink: a paid per-click service
+-- they switched off. The column comment written at the end of this file is the
+-- mark that the repair already ran, so a second run leaves every choice alone.
+do $$
+begin
+  if col_description('public.integrations'::regclass,
+       (select attnum from pg_attribute
+         where attrelid = 'public.integrations'::regclass
+           and attname = 'blog_social_link_mode'))
+     like 'The creator''s chosen link style:%' then
+    raise notice '316 already ran: link styles left as creators set them';
+    return;
+  end if;
 
--- Give everyone else their silence back. Only reachable for a row still sitting
--- on 274's backfilled default with nothing behind it: no Geniuslink, no Bitly,
--- no Passport, no legacy flag. Such a row cannot have been a decision, because
--- the screen that records one also stores something alongside it.
-update public.integrations
-   set blog_social_link_mode = null
- where blog_social_link_mode = 'direct'
-   and wrap_blog_geniuslink is not true
-   and passport_links_enabled is not true
-   and nullif(btrim(geniuslink_api_key), '') is null
-   and nullif(btrim(bitly_access_token), '') is null;
+  -- Restore the creators who had Geniuslink connected before the chooser existed.
+  update public.integrations
+     set blog_social_link_mode = 'geniuslink'
+   where (blog_social_link_mode is null or blog_social_link_mode = 'direct')
+     and passport_links_enabled is not true
+     and (
+       wrap_blog_geniuslink is true
+       or (nullif(btrim(geniuslink_api_key), '') is not null
+           and nullif(btrim(geniuslink_api_secret), '') is not null)
+     );
+
+  -- Give everyone else their silence back. Only reachable for a row still sitting
+  -- on 274's backfilled default with nothing behind it: no Geniuslink, no Bitly,
+  -- no Passport, no legacy flag. Such a row cannot have been a decision, because
+  -- the screen that records one also stores something alongside it.
+  update public.integrations
+     set blog_social_link_mode = null
+   where blog_social_link_mode = 'direct'
+     and wrap_blog_geniuslink is not true
+     and passport_links_enabled is not true
+     and nullif(btrim(geniuslink_api_key), '') is null
+     and nullif(btrim(bitly_access_token), '') is null;
+end $$;
 
 -- The check still holds for the three real values; null passes it untouched.
 alter table public.integrations

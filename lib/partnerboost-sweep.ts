@@ -24,6 +24,10 @@ export interface SweepOptions {
   deadlineMs?: number
   /** Return false to skip a brand before fetching its products (saves calls). */
   brandGate?: (b: { commissionPct: number | null; flatPayout: number | null }) => boolean
+  /** When each brand's products were last saved (brand id or mcid → ms).
+   *  Brands refreshed longest ago go first, so a run cut short by the time
+   *  limit still moves the whole catalogue forward across runs. */
+  lastSynced?: Map<string, number>
 }
 
 type SweepBrand = {
@@ -34,9 +38,13 @@ type SweepBrand = {
 /** Sweep every JOINED brand's products across the networks, in a pool. */
 export async function sweepJoinedProducts(
   token: string, opts: SweepOptions = {},
-): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null; productDropped: number }> {
-  const concurrency = opts.concurrency ?? 8
+): Promise<{ raw: PbCandidate[]; joinedTotal: number; brandsSwept: number; timedOut: boolean; brandListOk: boolean; brandListError: string | null; productErrors: number; productError: string | null; productDropped: number; productThrottled: number }> {
+  const concurrency = opts.concurrency ?? 4
   const deadlineMs = opts.deadlineMs ?? 250_000
+  // THE CLOCK STARTS HERE, not after the brand list: up to eighteen brand
+  // list calls used to run off the clock, and the run went past the function
+  // limit, was killed before it recorded anything, and was picked again.
+  const tStart = Date.now()
   const focus = (opts.focus || '').trim().toLowerCase()
 
   // 1. Joined brands across the networks (paginated), optionally brand-gated.
@@ -50,8 +58,20 @@ export async function sweepJoinedProducts(
   for (const network of NETWORKS) {
     for (let page = 1; page <= MAX_BRAND_PAGES; page++) {
       let res
-      try { res = await listPartnerBoostBrands(token, { brandType: network, relationship: 'Joined', page, limit: BRAND_LIMIT }) }
-      catch (e) { if (!brandListError) brandListError = e instanceof Error ? e.message : String(e); break }
+      // The brand list gets the same patience as products: "Too many
+      // request" and a dropped connection are waited out and asked again.
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < 3 && !res; attempt++) {
+        try { res = await listPartnerBoostBrands(token, { brandType: network, relationship: 'Joined', page, limit: BRAND_LIMIT }) }
+        catch (e) {
+          lastErr = e
+          const m = e instanceof Error ? e.message : String(e)
+          if (!/too many request|rate|429|ECONNRESET|socket|terminated|fetch failed|timed? ?out/i.test(m)) break
+          if (Date.now() - tStart > deadlineMs / 2) break
+          await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)))
+        }
+      }
+      if (!res) { if (!brandListError) brandListError = lastErr instanceof Error ? lastErr.message : String(lastErr); break }
       brandListOk = true
       for (const b of res.brands) {
         joinedTotal++
@@ -63,12 +83,14 @@ export async function sweepJoinedProducts(
       if (page >= res.totalPage) break
     }
   }
-  // Best-commission brands first so the budget is spent where the money is.
-  brands.sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0) || (b.flatPayout ?? 0) - (a.flatPayout ?? 0))
+  // Stalest brands first (never saved counts as stalest), then the best
+  // commission, so the budget is spent where the money is.
+  const seenAt = (b: SweepBrand) => opts.lastSynced?.get(b.brandId || b.mcid || '') ?? 0
+  brands.sort((a, b) => seenAt(a) - seenAt(b) || (b.commissionPct ?? 0) - (a.commissionPct ?? 0) || (b.flatPayout ?? 0) - (a.flatPayout ?? 0))
 
   // 2. Per-brand product pull in a CONCURRENCY pool.
   const raw: PbCandidate[] = []
-  const t0 = Date.now()
+  const t0 = tStart
   let brandsSwept = 0
   let cursor = 0
   let timedOut = false
@@ -80,25 +102,55 @@ export async function sweepJoinedProducts(
   // <its message>") and the connection dropping mid-answer ("terminated",
   // "fetch failed", a timeout), which is load and worth one more try.
   let productDropped = 0
+  let productThrottled = 0
+  // PACING. PartnerBoost publishes no rate limit but answers "Too many
+  // request" when asked too fast. Requests start at least MIN_GAP_MS apart
+  // across all workers, and a "too many" answer pauses every worker, longer
+  // each time, before that brand is tried again.
+  const MIN_GAP_MS = 250
+  let nextSlot = 0
+  let pauseUntil = 0
+  let backoff = 0
+  const isThrottle = (m: string) => /too many request|rate limit|\b429\b/i.test(m)
+  async function waitTurn() {
+    for (;;) {
+      const now = Date.now()
+      const at = Math.max(now, nextSlot, pauseUntil)
+      if (at <= now) { nextSlot = now + MIN_GAP_MS; return }
+      await new Promise((r) => setTimeout(r, at - now))
+    }
+  }
   const fetchProducts = (b: SweepBrand) => b.network === 'Amazon'
     ? listAmazonProducts(token, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
     : listPartnerBoostProducts(token, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
   async function sweepOne(b: SweepBrand) {
     let products: PBProduct[] = []
     let lastErr: unknown = null
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try { products = (await fetchProducts(b)).products; lastErr = null; break }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await waitTurn()
+      // Out of time after waiting: this brand is not reached this run (the
+      // run is partial, so nothing is purged), never counted as failed.
+      if (Date.now() - t0 > deadlineMs) { timedOut = true; return }
+      try { products = (await fetchProducts(b)).products; lastErr = null; backoff = Math.max(0, backoff - 1000); break }
       catch (e) {
         lastErr = e
-        const refused = /^PartnerBoost:/.test(e instanceof Error ? e.message : String(e))
-        if (refused || attempt === 2 || Date.now() - t0 > deadlineMs) break
+        const msg = e instanceof Error ? e.message : String(e)
+        if (Date.now() - t0 > deadlineMs || attempt === 4) break
+        if (isThrottle(msg)) {
+          // Everyone waits, longer each time, up to 30 seconds.
+          backoff = Math.min(30_000, backoff ? backoff * 2 : 4000)
+          pauseUntil = Math.max(pauseUntil, Date.now() + backoff)
+          continue
+        }
+        if (/^PartnerBoost:/.test(msg) || attempt >= 2) break // a real refusal is not retried
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
       }
     }
     if (lastErr) {
       const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
       productErrors++
-      if (!/^PartnerBoost:/.test(msg)) productDropped++
+      if (isThrottle(msg)) productThrottled++
+      else if (!/^PartnerBoost:/.test(msg)) productDropped++
       if (!productError) productError = msg
       brandsSwept++
       return
@@ -133,7 +185,7 @@ export async function sweepJoinedProducts(
     }
   }))
 
-  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped }
+  return { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped, productThrottled }
 }
 
 /**
@@ -145,9 +197,29 @@ export async function sweepJoinedProducts(
 export async function syncUserCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
-): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean; productErrors: number; productError: string | null; productDropped: number }> {
-  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped } = await sweepJoinedProducts(token, {
-    concurrency: 8,
+): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean; productErrors: number; productError: string | null; productDropped: number; productThrottled: number }> {
+  // When each brand was last saved, so this run starts with the stalest.
+  const lastSynced = new Map<string, number>()
+  {
+    // Read in pages: a request returns 1,000 rows at most, whatever the
+    // limit says, so a catalogue of 16,000 products only showed its first
+    // 1,000 here and "stalest first" ordered by a fraction of the brands.
+    for (let from = 0; from < 60_000; from += 1000) {
+      const { data, error } = await sb.from('pb_finder_cache').select('brand_id,brand_mcid,synced_at')
+        .eq('user_id', userId).order('id').range(from, from + 999)
+      if (error) break
+      const rows = (data ?? []) as Array<{ brand_id: string | null; brand_mcid: string | null; synced_at: string }>
+      for (const r of rows) {
+        const k = r.brand_id || r.brand_mcid
+        const t = Date.parse(r.synced_at)
+        if (k && Number.isFinite(t) && t > (lastSynced.get(k) ?? 0)) lastSynced.set(k, t)
+      }
+      if (rows.length < 1000) break
+    }
+  }
+  const { raw, joinedTotal, brandsSwept, timedOut, brandListOk, brandListError, productErrors, productError, productDropped, productThrottled } = await sweepJoinedProducts(token, {
+    lastSynced,
+    concurrency: 4,
     deadlineMs: opts.deadlineMs ?? 260_000,
     // Cache everything worth keeping — drop only zero-commission brands.
     brandGate: (b) => (b.commissionPct ?? 0) >= 1 || (b.flatPayout ?? 0) >= 1,
@@ -212,7 +284,10 @@ export async function syncUserCache(
   // didn't reach look identical to brands that disappeared. So is a run where
   // any brand's products could not be read: its products were not refreshed,
   // and purging would delete them as if the brand had gone.
-  const purgeSafe = rows.length > 0 && !timedOut && productErrors === 0
+  // AND EVERY NETWORK'S BRAND LIST ANSWERED. One network failing (Walmart
+  // throttled, say) while the others answered made every one of that
+  // network's saved products look gone, and the purge deleted them all.
+  const purgeSafe = rows.length > 0 && !timedOut && productErrors === 0 && !brandListError
   if (purgeSafe) {
     await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
   } else {
@@ -220,7 +295,7 @@ export async function syncUserCache(
       userId, products: rows.length, brandsSwept, joinedTotal, timedOut,
     })
   }
-  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe, productErrors, productError, productDropped }
+  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe, productErrors, productError, productDropped, productThrottled }
 }
 
 /**

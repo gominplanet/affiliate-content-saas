@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark, MessageCircle, SlidersHorizontal } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const CYAN = '#0E7490'
 
@@ -126,7 +127,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
     setOptionsFor(null)
     setGen((g) => ({ ...g, [m.asin]: { loading: true } }))
     try {
-      const res = await fetch('/api/levanta/generate', {
+      const res = await fetchUnlessMade('/api/levanta/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -143,7 +144,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
       setGen((g) => ({ ...g, [m.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
       setDone((d) => (d.includes(m.asin) ? d : [...d, m.asin]))
     } catch {
-      setGen((g) => ({ ...g, [m.asin]: { error: 'Network error during generation.' } }))
+      setGen((g) => ({ ...g, [m.asin]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 
@@ -167,7 +168,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
               MVP Finder <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary criteria</span>
             </p>
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              One scan sweeps every brand you&rsquo;re partnered with on Levanta and keeps only the products worth a review — vetted for real commission, price, demand, rating and Levanta&rsquo;s own earnings-per-click, ranked best-first. Products you&rsquo;ve already generated are skipped.
+              One scan sweeps every brand you&rsquo;re partnered with on Levanta and keeps only the products worth a review: vetted for real commission, price, demand, rating and Levanta&rsquo;s own earnings-per-click, ranked best-first. Products you&rsquo;ve already generated are skipped.
             </p>
             <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: CYAN }}>
               <SlidersHorizontal size={11} /> Customize how your brand messages are written
@@ -201,7 +202,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
 
           <input
             value={focus} onChange={(e) => setFocus(e.target.value)} disabled={running}
-            placeholder="Focus (optional) — e.g. kitchen"
+            placeholder="Focus (optional): e.g. kitchen"
             className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:outline-none w-[190px] disabled:opacity-60"
             style={{ borderColor: 'var(--border)' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !running) runScan() }}
@@ -211,7 +212,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70"
             style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? 'Scanning…' : (willAppend ? 'Scan again — more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
+            {running ? 'Scanning…' : (willAppend ? 'Scan again: more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
           </button>
 
           {/* Draft / live */}

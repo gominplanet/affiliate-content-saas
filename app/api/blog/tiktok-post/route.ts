@@ -20,6 +20,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import {
   getValidTikTokToken,
@@ -37,9 +38,10 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 export async function POST(request: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient())
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
 
   let body: {
     blogPostId?: string
@@ -125,7 +127,7 @@ export async function POST(request: Request) {
   const ytVideoId = ytRow?.youtube_video_id as string | undefined
   if (!storageUrl || !/^https:\/\//.test(storageUrl)) {
     return NextResponse.json({
-      error: 'No vertical video for this post yet. Add one on the Post to TikTok screen — upload a 9:16 file or make one in Shop Burner. (It\'s shared with Instagram.)',
+      error: 'No vertical video for this post yet. Add one on the Post to TikTok screen: upload a 9:16 file or make one in Shop Burner. (It\'s shared with Instagram.)',
     }, { status: 400 })
   }
   // FILE_UPLOAD path: push video bytes directly to TikTok's one-time
@@ -138,7 +140,7 @@ export async function POST(request: Request) {
   const blogPostVideoUuid = (post as { video_id?: string }).video_id
   if (!blogPostVideoUuid) {
     return NextResponse.json({
-      error: 'This post is missing a linked YouTube video — can\'t resolve the vertical URL.',
+      error: 'This post is missing a linked YouTube video, so its vertical URL cannot be found.',
     }, { status: 400 })
   }
   // eslint-disable-next-line no-console

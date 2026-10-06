@@ -151,11 +151,14 @@ export async function completeJob(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result: Record<string, any>,
 ): Promise<void> {
-  await admin
+  const { error } = await admin
     .from('generation_jobs')
     .update({ status: 'done', result, error: null, finished_at: new Date().toISOString() })
     .eq('id', id)
     .eq('status', 'running') // guard: only complete a job we still own (not re-claimed / already terminal)
+  // THROWN, so the worker's retry loop actually retries. Ignored, a failed
+  // write left a finished job 'running' for the stale reclaim to run again.
+  if (error) throw new Error(`could not mark the job done: ${error.message}`)
 }
 
 /**

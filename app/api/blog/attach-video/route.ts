@@ -21,6 +21,7 @@
  * Errors are categorised so the modal can show a useful message instead of
  * a generic 500.
  */
+import { ytFetch, isQuotaRefusalBody } from '@/lib/youtube-quota'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -78,14 +79,16 @@ interface YtSnippetResponse {
 
 /** Pull title + description + channel + thumbnail for a single video via the
  *  YouTube Data API key (no OAuth — public metadata only). Returns null when
- *  the id doesn't resolve or the API rejects the key. */
+ *  the id doesn't resolve or the API rejects the key, and 'quota' when the
+ *  shared daily allowance is used up (YouTube was not asked, so it is not
+ *  "could not find"). */
 async function fetchYouTubeMetadata(apiKey: string, videoId: string) {
   const url = new URL('https://www.googleapis.com/youtube/v3/videos')
   url.searchParams.set('part', 'snippet,contentDetails,statistics')
   url.searchParams.set('id', videoId)
   url.searchParams.set('key', apiKey)
-  const res = await fetchWithTimeout(url.toString(), { signal: AbortSignal.timeout(10_000) })
-  if (!res.ok) return null
+  const res = await ytFetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) return isQuotaRefusalBody(await res.text().catch(() => '')) ? 'quota' as const : null
   const data = await res.json() as YtSnippetResponse
   const item = data.items?.[0]
   const snip = item?.snippet
@@ -137,13 +140,13 @@ async function fetchLegacyWpPost(
     Authorization: authHeader,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   }
-  const res = await fetchWithTimeout(
+  const res = await ytFetch(
     `${base}/wp-json/wp/v2/posts/${postId}?_fields=id,title,slug,content,excerpt,link,date,featured_media&context=edit`,
     { headers, signal: AbortSignal.timeout(15_000) },
   )
   if (!res.ok) {
     // Retry without `context=edit` — some hosts strip the param.
-    const r2 = await fetchWithTimeout(
+    const r2 = await ytFetch(
       `${base}/wp-json/wp/v2/posts/${postId}?_fields=id,title,slug,content,excerpt,link,date,featured_media`,
       { headers, signal: AbortSignal.timeout(15_000) },
     )
@@ -229,6 +232,9 @@ export async function POST(request: Request) {
 
   // ── Pull YouTube metadata ───────────────────────────────────────────────────
   const ytMeta = await fetchYouTubeMetadata(apiKey, youtubeVideoId)
+  if (ytMeta === 'quota') {
+    return NextResponse.json({ error: 'YouTube’s daily allowance is used up, so MVP could not look this video up and nothing changed. Try again after midnight Pacific.', quotaExceeded: true }, { status: 503 })
+  }
   if (!ytMeta) {
     return NextResponse.json({
       error: 'YouTube couldn\'t find that video. Double-check the URL is public and the ID is correct.',

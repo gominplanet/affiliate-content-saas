@@ -115,7 +115,7 @@ export function SitePicker({
       >
         {sites.map(s => (
           <option key={s.id} value={s.id} disabled={s.paused}>
-            {s.label} {s.isDefault ? '(default)' : s.paused ? '(paused — upgrade to Pro)' : ''}
+            {s.label} {s.isDefault ? '(default)' : s.paused ? '(paused, upgrade to Pro)' : ''}
           </option>
         ))}
       </select>

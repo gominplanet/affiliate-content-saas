@@ -93,7 +93,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
               Create account
             </Link>
             <p className="text-xs text-gray-500 mt-2">
-              Use the email the invite was sent to — the link only works for that address.
+              Use the email the invite was sent to. The link only works for that address.
             </p>
           </div>
         </div>

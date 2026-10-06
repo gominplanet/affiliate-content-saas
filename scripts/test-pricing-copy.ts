@@ -66,7 +66,9 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
   check('and offers only the sellable plans',
     /const planDetails = SELLABLE_TIERS\.map/.test(BILLING),
     'the old hardcoded list omitted Amazon entirely, so an Amazon customer saw three plans and none was theirs')
-  check('and its prices', /price: TIERS\[t\]\.price/.test(BILLING),
+  // A member locked in before the November 1 change sees their locked price
+  // (lib/price-schedule PRICES_BEFORE); everyone else the TIERS price.
+  check('and its prices', /price: (?:paying\?\.lockedIn && \(t === 'amazon' \|\| t === 'pro'\) \? PRICES_BEFORE\[t\]\.month : )?TIERS\[t\]\.price/.test(BILLING),
     'three hand-kept price lists is how one of them goes stale unnoticed')
 }
 
@@ -77,7 +79,8 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
 // in the copy; the point is that a WRONG one cannot sit there quietly.
 {
   const NUMERIC: Array<{ key: keyof typeof TIERS.pro; label: RegExp; name: string }> = [
-    { key: 'assistantMessagesPerMonth', label: /([\d,]+) AI assistant messages/, name: 'assistant messages' },
+    // The cards say "Ask MVP: N messages" now, the sidebar's name for the assistant.
+    { key: 'assistantMessagesPerMonth', label: /Ask MVP: ([\d,]+) messages/, name: 'assistant messages' },
     { key: 'photoboothPerMonth', label: /([\d,]+) Photobooth headshots/, name: 'Photobooth headshots' },
     { key: 'collabsPerMonth', label: /([\d,]+) brand[- ](?:collab pitch emails|pitches)/, name: 'brand pitches' },
     { key: 'scriptsPerMonth', label: /([\d,]+) video scripts/, name: 'video scripts' },
@@ -134,7 +137,7 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
   // If the block-finding above silently matched nothing, every check passes by
   // finding nothing to disagree with.
   check('the scan actually saw real copy',
-    /AI assistant messages/.test(cards) && /Photobooth headshots/.test(cards),
+    /Ask MVP: [^\n]*messages/.test(cards) && /Photobooth headshots/.test(cards),
     'the slice missed the feature lists, so the checks above prove nothing')
 }
 

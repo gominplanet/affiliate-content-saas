@@ -17,6 +17,7 @@
  * racing for the same row → one wins, the other sees an empty result.
  */
 
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { blogPinLink } from '@/lib/pin-product-link'
 import { NextResponse } from 'next/server'
@@ -24,11 +25,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
-import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
+import { checkXPostCap, xCapMessage } from '@/lib/x-cap'
+import { postToXWithOneRetry, xPostKey, XPostError, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
-import { createFacebookService } from '@/services/facebook'
+import { createFacebookService, isUnconfirmedFacebookPost } from '@/services/facebook'
 import { chooseFacebookAttachment, parseFacebookMediaChoice, type FacebookMediaChoice } from '@/lib/facebook-attachment'
 import { createLinkedInService } from '@/services/linkedin'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
@@ -37,7 +39,7 @@ import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { scrubBanned } from '@/lib/scrub'
 import { maybeDecrypt } from '@/lib/secrets'
-import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel } from '@/lib/channel-health'
+import { getDeadChannels, shouldSkipChannel, autoSkipMessage, LINK_LIMIT_PREFIX, type DeadChannel } from '@/lib/channel-health'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials, isSitePaused } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
@@ -57,17 +59,21 @@ import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveD
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
 // stragglers on the next minute.
 const MAX_PER_TICK = 25
-export const maxDuration = 60
+// 240, not 60. An Instagram Reel or TikTok takes 30 seconds to two minutes
+// to process on their side, and the function was killed mid-wait: the row
+// was reclaimed, failed, and sometimes posted twice. Kept under the five
+// minute stuck-row reclaim so a live run is never reclaimed under itself.
+export const maxDuration = 240
 
 // Disclaimer used by Threads + Telegram + Facebook so the body the user
 // edited stays clean and we append ours at publish time.
-const THREADS_DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
+const THREADS_DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
 // Long-form disclaimer guarantee (LinkedIn, Telegram) — see lib/social-disclaimer.
 // Short-form (X, Bluesky) carry the blog link; the full disclosure lives on the
@@ -321,7 +327,10 @@ export async function GET(request: Request) {
       // the dead-channel streak (it never lands as 'failed').
       const attempts = (row.retry_count ?? 0)
       const isTransient = TRANSIENT_RE.test(rawMsg)
-      if (isTransient && attempts < MAX_PUBLISH_RETRIES) {
+      // An X post that reached X has had its one re-attempt already
+      // (lib/x-retry); requeueing it would be a third paid request.
+      const xAlreadyRetried = err instanceof XPostError && (err.sent || err.dropped)
+      if (isTransient && attempts < MAX_PUBLISH_RETRIES && !xAlreadyRetried) {
         console.warn('[cron/process-scheduled] transient publish error — requeueing', { id: row.id, platform: row.platform, attempt: attempts + 1, error: msg })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (admin as any)
@@ -510,7 +519,11 @@ async function publishOne(
     pinterest: p.pinterest_pin_id,
     telegram: p.telegram_message_id,
   }
-  const alreadyPosted = existingExternalId[row.platform]
+  // ONLY ON A ROW THAT HAS RUN BEFORE. On a first run the id on the post is
+  // from an EARLIER share (re-sharing is a feature, and so is a second
+  // Facebook Page), and this marked the new share completed with the old
+  // post's id without posting anything.
+  const alreadyPosted = (row.retry_count ?? 0) > 0 ? existingExternalId[row.platform] : null
   if (alreadyPosted) {
     console.warn(`[process-scheduled] row ${row.id}: ${row.platform} already has external id ${String(alreadyPosted)} — skipping republish (idempotency)`)
     return { externalId: String(alreadyPosted) }
@@ -603,6 +616,10 @@ async function publishOne(
       source: row.platform,
     })
   }
+  // The share link may be a stored geni.us code minted on another day, which
+  // cannot say where it lands. This route knows (schedAmazonDestination), so it
+  // says so for the label in front of the link (lib/social-disclaimer).
+  if (schedAffiliateLink && schedAmazonDestination) rememberLinkDestination(schedAffiliateLink, 'amazon')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schedVideoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -665,12 +682,14 @@ async function publishOne(
         catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
       }
 
-      // Monthly X post cap (X is the only paid-per-post channel). Reserve a slot
-      // ATOMICALLY before posting so several X posts in one tick can't all pass a
-      // stale count and overspend. Over cap → fail this post with a clear reason.
-      // Refund the reservation if the tweet fails so a blip doesn't burn a slot.
-      const xres = await reserveXPost(admin, row.user_id)
-      if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
+      // Monthly X cap and the one-re-attempt rule, checked BEFORE the image
+      // upload, which is itself a request to X. The atomic reservation still
+      // happens per request inside postToXWithOneRetry.
+      const xcap = await checkXPostCap(admin, row.user_id)
+      if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
+      if (await xFailedAttempts(row.user_id, xPostKey('scheduled', row.id)) >= X_ATTEMPTS_PER_POST) {
+        throw new XPostError(xDroppedMessage(), false, true)
+      }
 
       // Cap the body so the trailing link always survives — an un-capped
       // `${body} ${url}` on a near-280-char body pushed the tweet over the limit
@@ -687,32 +706,23 @@ async function publishOne(
         || (await fetchOgImage(url))
         || null
       let xMedia = await resolveXMedia({ accessToken: accessToken!, imageUrl: xImage, grantedScopes: twScopes })
-      let result
-      try {
-        try {
-          result = await createTweet(accessToken!, finalText, xMedia.mediaIds)
-        } catch (e) {
-          // Reactive refresh: a 401 means the access token is dead even though
-          // expiry looked fine (missing/stale expiry, or token revoked then
-          // re-issued). Refresh once and retry before giving up.
-          const msg = e instanceof Error ? e.message : String(e)
-          if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
+      // ONE RE-ATTEMPT, THEN DROPPED (lib/x-retry). X bills every request, so a
+      // scheduled X post gets its first try and a single re-attempt a few
+      // seconds later, never more: not the transient requeue below, not a
+      // second click. The helper reserves a cap slot per request and refunds a
+      // failure. On the re-attempt after a 401 the token is refreshed first and
+      // the image re-resolved: a 401 means the token was already dead when the
+      // upload ran, so xMedia is a 401 note, not a media id.
+      const result = await postToXWithOneRetry({
+        supabase: admin, userId: row.user_id, key: xPostKey('scheduled', row.id),
+        tweet: async (previous) => {
+          if (previous && /\b401\b|unauthorized/i.test(previous) && refreshToken) {
             accessToken = await doRefresh()
-            // Re-resolve the image too. A 401 on the tweet means the token was
-            // already dead when the upload ran, so xMedia is almost certainly a
-            // 401 note rather than a media id; reusing it would post the retry
-            // without a picture and then report a scope problem that was really
-            // an expired token.
             xMedia = await resolveXMedia({ accessToken, imageUrl: xImage, grantedScopes: twScopes })
-            result = await createTweet(accessToken, finalText, xMedia.mediaIds)
-          } else {
-            throw e
           }
-        }
-      } catch (e) {
-        await refundXPost(admin, xres.reservationId) // tweet failed → don't burn the slot
-        throw e
-      }
+          return createTweet(accessToken!, finalText, xMedia.mediaIds)
+        },
+      })
       // Success: the reservation already counted this post (no recordXPost).
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
@@ -783,7 +793,7 @@ async function publishOne(
         result = await linkedin.createPost({ text: postText, ...liArticle })
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id ?? null }).eq('id', row.blog_post_id)
+      await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id || null }).eq('id', row.blog_post_id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const liId = (result as any).id as string | undefined
       if (liId) await recordSocialPermalink(admin, row.blog_post_id, 'linkedin', socialPermalink.linkedin(liId))
@@ -855,6 +865,15 @@ async function publishOne(
         amazonDestination: schedAmazonDestination,
       })
       const fbFallbackLink = primaryCardUrl(fbPref, schedAffiliateLink, url, schedVideoUrl) ?? url
+      // META'S MONTHLY LIMIT ON OUTSIDE LINKS (lib/facebook-link-budget): past
+      // it, held back with the reason on the row, never posted with a dead
+      // link. The prefix keeps it out of the "Facebook is failing" streak.
+      const fbWillAttach = chooseFacebookAttachment({ requested: fbMedia, videoUrl: schedVideoUrl, imageUrl, fallbackLink: fbFallbackLink })
+      const fbLinkCheck = await checkPageLinkPost({
+        userId: row.user_id, pageId: fbPageId, text: caption,
+        link: fbWillAttach.kind === 'photo' && fbWillAttach.imageUrl ? null : (fbWillAttach.link || fbFallbackLink),
+      })
+      if (!fbLinkCheck.ok) throw new Error(`${LINK_LIMIT_PREFIX} ${fbLinkCheck.error}`)
       const fb = createFacebookService(fbPageToken, fbPageId)
       // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
       // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as
@@ -865,6 +884,7 @@ async function publishOne(
         requested: fbMedia, videoUrl: schedVideoUrl, imageUrl, fallbackLink: fbFallbackLink,
       })
       let fbPostId: string
+      let fbPostedLink = false
       if (fbAttachment.kind === 'photo' && fbAttachment.imageUrl) {
         try {
           const r = await fb.postPhoto({ imageUrl: fbAttachment.imageUrl, caption })
@@ -876,8 +896,12 @@ async function publishOne(
           // vague 'failing' — otherwise a link post can quietly mask a dying token.
           const pm = photoErr instanceof Error ? photoErr.message : String(photoErr)
           if (/\b401\b|\b403\b|token|expired|revoked|unauthorized|oauth/i.test(pm)) throw photoErr
+          // NO SECOND POST ON AN UNCONFIRMED FIRST. Facebook said OK without a
+          // post id: the photo may be up, and a link post would double it.
+          if (isUnconfirmedFacebookPost(photoErr)) throw photoErr
           const r = await fb.postLink({ message: caption, link: fbFallbackLink })
           fbPostId = r.id
+          fbPostedLink = true
         }
       } else {
         // The video choice lands here: Facebook builds a playable card from the
@@ -885,6 +909,7 @@ async function publishOne(
         const r = await fb.postLink({ message: caption, link: fbAttachment.link || fbFallbackLink })
         fbPostId = r.id
       }
+      if (fbLinkCheck.counts || fbPostedLink) await recordPageLinkPost({ userId: row.user_id, pageId: fbPageId, postId: fbPostId, source: 'scheduled' })
       await admin.from('blog_posts').update({ facebook_post_id: fbPostId }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'facebook', socialPermalink.facebook(fbPostId))
       return { externalId: fbPostId }
@@ -908,7 +933,7 @@ async function publishOne(
       if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
       const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT))
       const escapedUrl = escapeMarkdownV2(url)
-      const linkLabel = escapeMarkdownV2('Read the full review →')
+      const linkLabel = escapeMarkdownV2('Read the full review on my blog')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
       const result = imageUrl
         ? await sendPhoto(tgToken, integration.telegram_channel_id, imageUrl, finalCaption)

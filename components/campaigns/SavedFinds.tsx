@@ -83,7 +83,7 @@ export default function SavedFinds({
         <div className="card p-6 text-center"><Loader2 size={16} className="animate-spin inline text-[#86868b]" /></div>
       ) : items.length === 0 ? (
         <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-          Nothing saved yet. In the <b style={{ color: 'var(--text-soft)' }}>MVP Finder</b> above, hit <b style={{ color: 'var(--text-soft)' }}>Save</b> on any product to keep it here — your buy-to-review shortlist.
+          Nothing saved yet. In the <b style={{ color: 'var(--text-soft)' }}>MVP Finder</b> above, hit <b style={{ color: 'var(--text-soft)' }}>Save</b> on any product to keep it here: your buy-to-review shortlist.
         </div>
       ) : (
         <div className="card divide-y divide-gray-100 dark:divide-white/10 overflow-hidden">

@@ -24,10 +24,12 @@ create table if not exists public.youtube_video_cache (
 alter table public.youtube_video_cache enable row level security;
 
 -- Users read / write only their own row
+drop policy if exists "youtube_video_cache: user read own" on public.youtube_video_cache;
 create policy "youtube_video_cache: user read own"
   on public.youtube_video_cache for select
   using (auth.uid() = user_id);
 
+drop policy if exists "youtube_video_cache: user write own" on public.youtube_video_cache;
 create policy "youtube_video_cache: user write own"
   on public.youtube_video_cache for all
   using (auth.uid() = user_id);

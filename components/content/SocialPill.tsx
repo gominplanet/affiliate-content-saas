@@ -47,7 +47,7 @@ export function SocialPill({
     return (
       <a
         href="/pricing"
-        title={`${label} publishing is on a higher plan — upgrade to unlock`}
+        title={`${label} publishing is on a higher plan. Upgrade to unlock`}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-white/15 text-[#86868b] hover:border-[#7C3AED]/40 hover:text-[#7C3AED] transition-colors"
       >
         <span style={{ display: 'inline-flex', opacity: 0.55 }}>{icon}</span>
@@ -70,7 +70,7 @@ export function SocialPill({
     <button
       onClick={onClick}
       disabled={loading}
-      title={scheduleFailed ? `${label}: last scheduled push failed — click to retry manually` : undefined}
+      title={scheduleFailed ? `${label}: last scheduled push failed. Click to retry manually` : undefined}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/[0.04] disabled:opacity-60 transition-all ${
         scheduleFailed
           ? 'border-[#ff3b30]/40 bg-[#ff3b30]/5 dark:bg-[#ff3b30]/10 hover:border-[#ff3b30]/60'

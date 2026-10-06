@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { getOwnerUserId } from '@/lib/agency'
+import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
 
 export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -8,6 +10,12 @@ export async function GET(req: Request) {
   if (!clientId || !appUrl) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 })
   }
+
+  const redirectUri = `${appUrl}/api/auth/youtube/callback`
+  // START ON THE CALLBACK'S HOST so the one-time state cookie is there when
+  // Google sends the member back (apex and www keep separate cookies).
+  const hostHop = callbackHostRedirect(req, redirectUri)
+  if (hostHop) return NextResponse.redirect(hostHop)
 
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -19,6 +27,13 @@ export async function GET(req: Request) {
   // /onboarding instead of dumping them on /setup mid-flow.
   const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
   const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
+  // A VIRTUAL ASSISTANT does not sign in to Google here: the tokens would land
+  // on their own empty MVP account, not the owner's, and the owner's channel
+  // would stay unconnected. Say so in words, and point to the way that works
+  // for a VA: Connect it by link, which saves the channel on the owner.
+  if ((await getOwnerUserId(user.id)) !== user.id) {
+    return NextResponse.redirect(`${appUrl}${returnTo || '/connect-youtube'}${(returnTo || '').includes('?') ? '&' : '?'}youtube_error=va_owner_connects`)
+  }
   // We ALWAYS force Google's account chooser (below). This is the fix for the
   // multi-channel footgun: when a Google login owns several YouTube channels
   // (a personal channel + Brand Account channels), `prompt=consent` alone
@@ -52,11 +67,9 @@ export async function GET(req: Request) {
   // asked for it (incremental auth) or the public flag is on (grab it on connect).
   const addUploadScope = !verifiedOnly && uploadEligible && (wantUpload || youtubeUploadEnabled())
 
-  // Encode user ID (+ optional return path) in state so the callback can
-  // identify the user without a session cookie. JSON now; the callback still
-  // accepts the legacy bare-uid format for any in-flight old requests.
-  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo, add: addChannel })).toString('base64url')
-  const redirectUri = `${appUrl}/api/auth/youtube/callback`
+  // RANDOM, ONE-TIME STATE (lib/oauth-state). The return path and the
+  // "add another channel" flag ride in the httpOnly state cookie, not the URL.
+  const state = await startOAuthState('youtube', user.id, redirectUri, { rt: returnTo, add: addChannel })
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', clientId)

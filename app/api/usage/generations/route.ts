@@ -8,6 +8,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { TIERS, billingWindow, effectivePostCap, normalizeTier, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -33,7 +34,7 @@ export async function GET() {
   const sb = supabase as any
   const { data: ig } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' reads limits_cohort (migration 405) when present
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -47,18 +48,22 @@ export async function GET() {
   })
   // Trial → lifetime allowance (count everything). Paid → grandfather-aware
   // monthly cap counted within the billing window. Admin → effectivePostCap null.
-  const limit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
+  const limit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
   const windowStart = lifetime ? null : startISO
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const applyWindow = (q: any, col: string) => (windowStart ? q.gte(col, windowStart) : q)
 
+  // ai_usage is service-role only (028: no member policy). Through the
+  // member's own client both counts below came back 0 without an error.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
   let used = 0
   try {
     const [blog, thumb, meta] = await Promise.all([
       applyWindow(sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id), 'published_at'),
-      applyWindow(sb.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).in('feature', THUMB_FEATURES), 'created_at'),
-      applyWindow(sb.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('feature', META_FEATURE), 'created_at'),
+      applyWindow(admin.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).in('feature', THUMB_FEATURES), 'created_at'),
+      applyWindow(admin.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('feature', META_FEATURE), 'created_at'),
     ])
     used = (blog.count ?? 0) + (thumb.count ?? 0) + (meta.count ?? 0)
   } catch {

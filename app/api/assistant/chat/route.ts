@@ -20,8 +20,9 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { spendGate } from '@/lib/ai-spend'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 import { MVP_FEATURES_DOC } from '@/lib/assistant-features-doc'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -35,11 +36,15 @@ function buildSystemPrompt(
   recentPostTitles: string[],
   recentCampaigns: string[],
   memory: string,
-): string {
+): { stable: string; personal: string } {
   const name = (brand?.author_name as string) || (brand?.name as string) || ''
   const niches = ((brand?.niches as string[]) || []).join(', ')
   const tone = ((brand?.tone as string[]) || []).join(', ')
-  return `You are the MVP Help Desk — the in-app guide for MVP Affiliate (mvpaffiliate.io). Half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income. When users ask "what are you" or "who are you", introduce yourself as the MVP Help Desk.
+  // Two parts. STABLE is the same for every user and every message (the
+  // product guide is most of it, ~15k tokens), so it is sent with a cache mark
+  // and read back at a tenth of the price on every later message. PERSONAL is
+  // this user's brand, recent posts and memory, sent fresh each time.
+  const stable = `You are Ask MVP (formerly called the MVP Help Desk), the in-app guide for MVP Affiliate (mvpaffiliate.io). Half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income. When users ask "what are you" or "who are you", introduce yourself as the MVP Help Desk.
 
 WHAT MVP AFFILIATE DOES — full feature guide below. Treat this as
 authoritative: when a user asks how to do something in MVP, answer
@@ -51,7 +56,7 @@ features.
 
 FORMATTING: Use markdown. When you mention an in-app page, format it
 as a markdown link the user can click — e.g. **[Face Training](/face-training)**
-or **[Newsletter compose](/newsletter/compose)**. When you mention
+or **[Brand Profile](/brand)**. When you mention
 external URLs (Amazon, Hostinger, etc.), use the full https:// URL
 inside the link as well. Use **bold** for key actions, bullets for
 lists of steps, and \`/path\` inline code only when literally telling
@@ -75,9 +80,14 @@ HOW TO BEHAVE:
 - Be concise and actionable. Prefer specific steps ("Go to YouTube Co-Pilot → …") over generic advice.
 - For affiliate strategy questions, give concrete, experienced guidance (niches, what converts, posting cadence, how to land brand deals).
 - Never invent features the platform doesn't have. If something isn't possible in MVP Affiliate, say so plainly and suggest the closest real workflow.
-- Never use the word "honest". Don't fabricate stats.
-${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}${memory ? `\n\nLONG-TERM MEMORY (what you've learned about this user across past chats + anything they imported — treat as known background, don't recite it back verbatim):\n${memory}` : ''}`
+- Never use the word "honest". Don't fabricate stats.`
+  const personal = `${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}${memory ? `\n\nLONG-TERM MEMORY (what you've learned about this user across past chats + anything they imported — treat as known background, don't recite it back verbatim):\n${memory}` : ''}`
+  return { stable, personal: personal.trim() }
 }
+
+/** Longest single message the assistant accepts. Generous for a question,
+ *  far short of a pasted document. */
+const ASSISTANT_MAX_MESSAGE_CHARS = 4000
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -87,17 +97,26 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { conversationId?: string; message?: string }
   const message = (body.message || '').trim()
   if (!message) return new Response(JSON.stringify({ error: 'message required' }), { status: 400 })
+  // A MESSAGE IS PRICED BY ITS LENGTH, NOT BY THE CAP. The cap counts turns, so
+  // without this one pasted 100k-character "message" (re-sent as history on
+  // the next twelve turns) cost what a month of normal chat does.
+  if (message.length > ASSISTANT_MAX_MESSAGE_CHARS) {
+    return new Response(JSON.stringify({ error: `That message is too long. Keep it under ${ASSISTANT_MAX_MESSAGE_CHARS.toLocaleString('en-US')} characters.` }), { status: 400 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: intRow } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' so limits_cohort (migration 405) is read when present
     .eq('user_id', user.id).single()
   const tier = normalizeTier(intRow?.tier)
 
   // ── Cap gate ──────────────────────────────────────────────────────────────
-  const cap = TIERS[tier].assistantMessagesPerMonth
+  // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+  const cap = effectiveCap(tier, 'assistantMessagesPerMonth', TIERS[tier].assistantMessagesPerMonth,
+    billingWindow({ periodStart: (intRow?.subscription_period_start as string | null) ?? null, periodEnd: (intRow?.subscription_period_end as string | null) ?? null }).startISO,
+    (intRow?.limits_cohort as string | null) ?? null)
   const capCheck = await checkUsageCap(
     sb, user.id, PRIMARY_FEATURE.assistant, cap,
     (intRow?.subscription_period_start as string | null) ?? null,
@@ -109,6 +128,12 @@ export async function POST(request: Request) {
       limitReached: true, cap: 'assistant', currentTier: tier,
     }), { status: 429, headers: { 'Content-Type': 'application/json' } })
   }
+
+  // THE ASSISTANT IS PAID AI LIKE ANY OTHER. It had its own message cap but no
+  // spend ceiling, so it was the one route an expired free trial could still
+  // use every month after its window closed.
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // ── Resolve / create conversation ──────────────────────────────────────────
   let conversationId = body.conversationId || null
@@ -163,10 +188,17 @@ export async function POST(request: Request) {
     async start(controller) {
       let full = ''
       try {
+        const sys = buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns, memory)
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 1200,
-          system: buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns, memory),
+          // The stable guide is cached (cache_control), so a message reads
+          // it back at about a tenth of the price; the user's own context
+          // follows it uncached.
+          system: [
+            { type: 'text' as const, text: sys.stable, cache_control: { type: 'ephemeral' as const } },
+            ...(sys.personal ? [{ type: 'text' as const, text: sys.personal }] : []),
+          ],
           messages: [...priorMsgs, { role: 'user', content: message }],
         })
         stream.on('text', (t: string) => { full += t; controller.enqueue(encoder.encode(t)) })

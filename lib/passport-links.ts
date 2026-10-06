@@ -12,6 +12,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePassport } from '@/lib/feature-access'
 import { mintVerdict } from '@/lib/passport-abuse'
 import { normalizeTier } from '@/lib/tier'
+import { rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -155,10 +156,11 @@ export function parseUserAgent(ua: string | null | undefined): { device: string 
   // and non-browser HTTP clients. Both are traffic; neither is a reader.
   const BOT = new RegExp([
     // self-declared crawlers and link previewers
-    'bot\\b', '\\bbots\\b', 'crawler', 'spider', 'slurp', 'archiver', 'scraper',
+    // (not Cubot, a phone maker: "CUBOT X30" is a person on an Android phone)
+    '(?<!cu)bot\\b', '\\bbots\\b', 'crawler', 'spider', 'slurp', 'archiver', 'scraper',
     'facebookexternalhit', 'whatsapp', 'slackbot', 'discordbot', 'telegrambot',
     'twitterbot', 'linkedinbot', 'pinterestbot', 'redditbot', 'embedly', 'quora link preview',
-    'applebot', 'googlebot', 'bingbot', 'bingpreview', 'yandex', 'duckduck', 'baiduspider',
+    'applebot', 'googlebot', 'bingbot', 'bingpreview', 'yandex', 'duckduckbot', 'duckassistbot', 'baiduspider',
     'semrush', 'ahrefs', 'mj12', 'dotbot', 'petalbot', 'dataforseo', 'screaming frog',
     'google-inspectiontool', 'chrome-lighthouse', 'gptbot', 'ccbot', 'claudebot', 'perplexity',
     // headless and scripted clients
@@ -166,6 +168,17 @@ export function parseUserAgent(ua: string | null | undefined): { device: string 
     'python-requests', 'python-urllib', 'aiohttp', 'httpx', 'scrapy',
     'curl/', 'wget', 'libwww', 'go-http-client', 'okhttp', 'axios', 'node-fetch',
     'java/', 'apache-httpclient', 'postmanruntime', 'insomnia', 'guzzle', 'restsharp',
+    // a WordPress site fetching the link itself (pingbacks, link checkers):
+    // "WordPress/7.1; https://site.com". Thousands a week on a busy site.
+    '^wordpress/', 'wp-cron', 'jetpack',
+    // link scanners seen in the click log
+    'google-safety', 'lightpanda', 'skywatch', 'linkring', 'piiksi',
+    // a client that names itself with a bare runtime or a single word
+    '^node$', '^google$',
+    // self-declared tools carry their own home page: "(compatible; X/1.0; +https://...)"
+    '\\+https?://',
+    // browsers that have not existed for twenty years
+    'msie [1-6]\\.', 'windows 9[58]',
   ].join('|'), 'i')
   if (BOT.test(s)) return { device: null, browser: 'Bot', os: null }
 
@@ -571,6 +584,20 @@ export interface PassportTarget {
  * source). Returns the code, or null on invalid input / failure.
  */
 export async function getOrCreatePassportLink(
+  admin: Db, userId: string, siteId: string | null, target: PassportTarget,
+): Promise<string | null> {
+  const code = await findOrMintPassportCode(admin, userId, siteId, target)
+  // A Passport link cannot say where it lands; this is the code that knows. An
+  // ASIN geo-routes to an Amazon store, anything else forwards to its URL.
+  // Recorded for the label in front of it (lib/social-disclaimer).
+  if (code) {
+    const asinTarget = /^[A-Z0-9]{10}$/.test((target.asin || '').trim().toUpperCase())
+    rememberLinkDestination(passportLinkUrl(code), asinTarget ? 'amazon' : (target.destinationUrl || '').trim())
+  }
+  return code
+}
+
+async function findOrMintPassportCode(
   admin: Db, userId: string, siteId: string | null, target: PassportTarget,
 ): Promise<string | null> {
   const asin = (target.asin || '').trim().toUpperCase()

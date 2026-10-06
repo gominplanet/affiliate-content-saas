@@ -25,17 +25,17 @@ interface Placement {
 // Tick-box option sets, mapped to Wayward's "worth mentioning" prompts.
 const CONTENT_TYPES = [
   'Dedicated blog post / review', 'Roundup / listicle inclusion', 'YouTube dedicated video',
-  'YouTube integration (60–90s)', 'Instagram Reel', 'Instagram Story frames', 'TikTok video',
+  'YouTube integration (60 to 90s)', 'Instagram Reel', 'Instagram Story frames', 'TikTok video',
   'Email newsletter feature', 'Pinterest pin',
 ]
 const HOOKS = [
-  'High-intent, ready-to-buy audience', 'Evergreen — keeps earning after publish', 'Ranks on Google (SEO)',
+  'High-intent, ready-to-buy audience', 'Evergreen: keeps earning after publish', 'Ranks on Google (SEO)',
   'Hands-on, authentic review', 'Seasonal / timely moment', 'Highly engaged niche community',
   'Trusted product recommendations', 'Multi-platform reach',
 ]
 const AUTONOMY = [
-  'Full editorial control — I write it in my voice',
-  'Collaborative — I share a draft for feedback',
+  'Full editorial control: I write it in my voice',
+  'Collaborative: I share a draft for feedback',
   'Brand approval before publish',
 ]
 const GUARANTEES = [
@@ -192,7 +192,7 @@ export default function PlacementBuilderPage() {
             </li>
           ))}
         </ol>
-        <p className="text-[12px] text-[#6e6e73] dark:text-[#a1a1a6] mt-3">This builder handles step 1 — it writes a strong listing so the right brands pitch you.</p>
+        <p className="text-[12px] text-[#6e6e73] dark:text-[#a1a1a6] mt-3">This builder handles step 1. It writes a strong listing so the right brands pitch you.</p>
       </div>
 
       {noProfile && (
@@ -210,10 +210,10 @@ export default function PlacementBuilderPage() {
         </Section>
 
         {/* 02 Audience */}
-        <Section n="02" title="Who’s your audience?" sub="Prefilled from your Brand Profile — tweak it for this placement.">
-          <input value={audience} onChange={e => setAudience(e.target.value)} placeholder="e.g. US women 25–40 into clean beauty & skincare"
+        <Section n="02" title="Who’s your audience?" sub="Prefilled from your Brand Profile. Tweak it for this placement.">
+          <input value={audience} onChange={e => setAudience(e.target.value)} placeholder="e.g. US women 25 to 40 into clean beauty & skincare"
             className="w-full px-3 py-2 rounded-lg text-sm bg-transparent border border-black/10 dark:border-white/15 outline-none focus:border-[#7C3AED]" />
-          <input value={audienceSize} onChange={e => setAudienceSize(e.target.value)} placeholder="Reach / size (optional) — e.g. 45k IG, 20k monthly blog readers"
+          <input value={audienceSize} onChange={e => setAudienceSize(e.target.value)} placeholder="Reach / size (optional): e.g. 45k IG, 20k monthly blog readers"
             className="mt-2 w-full px-3 py-2 rounded-lg text-sm bg-transparent border border-black/10 dark:border-white/15 outline-none focus:border-[#7C3AED]" />
         </Section>
 
@@ -258,7 +258,7 @@ export default function PlacementBuilderPage() {
               </div>
             </div>
           </div>
-          <input value={pastExamplesUrl} onChange={e => setPastExamplesUrl(e.target.value)} placeholder="Links to past examples (optional) — always helps brands say yes"
+          <input value={pastExamplesUrl} onChange={e => setPastExamplesUrl(e.target.value)} placeholder="Links to past examples (optional): always helps brands say yes"
             className="mt-3 w-full px-3 py-2 rounded-lg text-sm bg-transparent border border-black/10 dark:border-white/15 outline-none focus:border-[#7C3AED]" />
         </Section>
 

@@ -153,10 +153,10 @@ export default function OnboardingFunnel({
         body: JSON.stringify({ subject, body }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { toast.error(data.error || 'Could not send — try again.'); return }
-      toast.success('Sent — we’ll reply to your email shortly.')
+      if (!res.ok) { toast.error(data.error || 'Could not send. Try again.'); return }
+      toast.success('Sent: we’ll reply to your email shortly.')
       setHelpOpen(false); setHelpSubject(''); setHelpBody('')
-    } catch { toast.error('Network error — try again.') }
+    } catch { toast.error('Network error: try again.') }
     finally { setHelpSending(false) }
   }, [helpSubject, helpBody])
 
@@ -210,7 +210,7 @@ export default function OnboardingFunnel({
   const next = useCallback(() => {
     if (youtubeRequired && current.required && !current.done(status)) {
       // YouTube is the only required step, and only on the free trial.
-      toast.error('Connect your YouTube channel to continue — it’s the one step we need to get you in.')
+      toast.error('Connect your YouTube channel to continue. It’s the one step we need to get you in.')
       return
     }
     if (step >= STEPS.length) return
@@ -222,7 +222,7 @@ export default function OnboardingFunnel({
     // land them on a dashboard the layout bounces straight back here. A paid
     // account is never bounced, so it can finish whenever it likes.
     if (youtubeRequired && !status.ytConnected) {
-      toast.error('Connect your YouTube channel first — it’s the one required step.')
+      toast.error('Connect your YouTube channel first. It’s the one required step.')
       return
     }
     setSaving(true)
@@ -303,7 +303,7 @@ export default function OnboardingFunnel({
                 onChange={(e) => setHelpBody(e.target.value)}
                 rows={5}
                 maxLength={5000}
-                placeholder="Tell us what’s happening — the more detail, the faster we can help."
+                placeholder="Tell us what’s happening. The more detail, the faster we can help."
                 className="w-full rounded-lg px-3 py-2 text-sm resize-y outline-none"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#f5f5f7' }}
               />
@@ -329,7 +329,7 @@ export default function OnboardingFunnel({
             <div className="min-w-0">
               <p className="font-semibold text-[15px]" style={{ color: '#f5f5f7' }}>Just want the free tools? Skip setup.</p>
               <p className="text-sm text-[#c7c7cc] mt-0.5">
-                Use our Amazon product research and Deal Radar right now — no WordPress or YouTube needed.
+                Use our Amazon product research and Deal Radar right now: no WordPress or YouTube needed.
                 You’ll connect those later, only when you want to publish content.
               </p>
             </div>
@@ -462,8 +462,8 @@ function StepBody({ stepKey, status, onConnected, youtubeRequired }: { stepKey: 
     case 'voice': return <VoiceStep onSaved={onConnected} />
     case 'customize': return <CustomizeStep onSaved={onConnected} />
     case 'face': return <ToolStep
-      title="Last step — create your face model"
-      blurb="Open Face Models, upload up to 20 selfies, and MVP trains a reference model so your real face can appear in AI thumbnails and social images. It trains in the background (a few minutes) — you don't have to wait. This is the one step that lives in its own tool; once you've started it, come back and hit “Finish & go to dashboard” below."
+      title="Last step: create your face model"
+      blurb="Open Face Models, upload up to 20 selfies, and MVP trains a reference model so your real face can appear in AI thumbnails and social images. It trains in the background (a few minutes). You don't have to wait. This is the one step that lives in its own tool; once you've started it, come back and hit “Finish & go to dashboard” below."
       href="/photobooth" cta="Open Face Models" done={status.faceReady} />
     default: return null
   }
@@ -533,7 +533,7 @@ function IntroVideoStep() {
     <>
       <StepHeading
         title="Welcome to MVP Affiliate"
-        blurb="Watch this quick walkthrough to see how MVP turns your YouTube videos into blog posts, affiliate revenue, and cross-platform content — all in your voice. Then hit Save & next below to start connecting your tools."
+        blurb="Watch this quick walkthrough to see how MVP turns your YouTube videos into blog posts, affiliate revenue, and cross-platform content: all in your voice. Then hit Save & next below to start connecting your tools."
       />
       {/* Responsive 16:9 iframe container */}
       <div style={{
@@ -548,7 +548,7 @@ function IntroVideoStep() {
       }}>
         <iframe
           src={`https://www.youtube.com/embed/${ONBOARDING_VIDEO_ID}?rel=0&modestbranding=1`}
-          title="MVP Affiliate — getting started"
+          title="MVP Affiliate: getting started"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           style={{
@@ -639,8 +639,8 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
       return (
         <>
           <StepHeading
-            title="Site connected — content-only"
-            blurb="MVP will write and publish articles to your blog. Your theme, plugins and design are untouched — nothing else to set up here."
+            title="Site connected: content-only"
+            blurb="MVP will write and publish articles to your blog. Your theme, plugins and design are untouched: nothing else to set up here."
           />
           <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-2">
             <Check size={16} /> Connected in content-only mode.
@@ -665,8 +665,8 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     return (
       <>
         <StepHeading
-          title="Site connected — one last thing"
-          blurb="Your blog is linked and the MVP plugin is active. The only thing left is to switch on the MVP theme — your plugin can do that in one click, no downloads."
+          title="Site connected: one last thing"
+          blurb="Your blog is linked and the MVP plugin is active. The only thing left is to switch on the MVP theme: your plugin can do that in one click, no downloads."
         />
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
           <Check size={16} /> Connection successful.
@@ -681,7 +681,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         {themeOk ? (
           /* Everything done — no instructions, no consent wall needed. */
           <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/10 px-4 py-3.5 text-sm text-[#7ee2a0]">
-            <Check size={15} className="inline -mt-0.5 mr-1" /> Plugin and theme are both active — your review site is ready. Hit “Save &amp; next” below.
+            <Check size={15} className="inline -mt-0.5 mr-1" /> Plugin and theme are both active: your review site is ready. Hit “Save &amp; next” below.
           </div>
         ) : (
           <>
@@ -689,7 +689,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 px-4 py-3.5 mb-5">
               <p className="text-sm font-semibold text-[#ff9f0a] mb-1">Heads up: this changes how your blog looks</p>
               <p className="text-sm text-[#e8c9a0] leading-relaxed">
-                Activating the MVP theme replaces your current theme’s design — your blog’s layout, colors, fonts and overall look &amp; feel become the MVP review-site style. Your posts and content stay safe; only the styling changes. Want to keep your current design? You can <span className="text-white">skip this</span> and still publish posts — just without the review layout and homepage features.
+                Activating the MVP theme replaces your current theme’s design: your blog’s layout, colors, fonts and overall look &amp; feel become the MVP review-site style. Your posts and content stay safe; only the styling changes. Want to keep your current design? You can <span className="text-white">skip this</span> and still publish posts, just without the review layout and homepage features.
               </p>
             </div>
 
@@ -699,7 +699,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
                  nudge to add the plugin for the full experience. */
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
                 <p className="font-semibold text-sm mb-2">Activate the MVP theme</p>
-                <p className="text-sm text-[#a1a1a6] mb-2">You connected without the plugin, so install the theme manually — or <a href={PLUGIN_ZIP} className="text-[#7C3AED] hover:underline">add the MVP plugin</a> to get the one-click installer plus schema, Editor’s Picks and Product Finder.</p>
+                <p className="text-sm text-[#a1a1a6] mb-2">You connected without the plugin, so install the theme manually, or <a href={PLUGIN_ZIP} className="text-[#7C3AED] hover:underline">add the MVP plugin</a> to get the one-click installer plus schema, Editor’s Picks and Product Finder.</p>
                 <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-2">
                   Download the MVP theme <ExternalLink size={12} />
                 </a>
@@ -710,12 +710,12 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             ) : (
               /* Normal path: plugin is active → one-click theme install. */
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="font-semibold text-sm mb-2">Switch on the MVP theme — one click</p>
+                <p className="font-semibold text-sm mb-2">Switch on the MVP theme: one click</p>
                 <ol className="space-y-1.5 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
                   <li>In your WordPress admin, open the <span className="text-white">MVP Affiliate</span> menu in the left sidebar (the plugin you just installed).</li>
-                  <li>Under <span className="text-white">“Step 1 — Install the MVP Affiliate theme,”</span> click <span className="text-white">Install &amp; activate MVP Affiliate theme</span>. The plugin downloads, installs and activates it for you — nothing to download here.</li>
+                  <li>Under <span className="text-white">“Step 1: Install the MVP Affiliate theme,”</span> click <span className="text-white">Install &amp; activate MVP Affiliate theme</span>. The plugin downloads, installs and activates it for you: nothing to download here.</li>
                 </ol>
-                <p className="text-xs text-[#6e6e73] mt-2">The theme check above turns green automatically once it’s active — no need to refresh.</p>
+                <p className="text-xs text-[#6e6e73] mt-2">The theme check above turns green automatically once it’s active: no need to refresh.</p>
               </div>
             )}
           </>
@@ -746,7 +746,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     // Opens the WP authorize flow in a new tab; the funnel polls for the
     // connection and flips this step to ✓ when it lands.
     window.open(`/api/wordpress/oauth-start?siteUrl=${encodeURIComponent(u)}`, '_blank', 'noopener')
-    toast('Finish the authorization in the new tab — this page updates automatically.')
+    toast('Finish the authorization in the new tab. This page updates automatically.')
   }
 
   // Content-only connect: standard Application Password, no plugin, sets
@@ -766,7 +766,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(data.error || 'Could not connect. Check your details and try again.'); return }
-      toast.success(`Connected ${data.siteUrl || 'your site'} — content-only mode. Your theme stays untouched.`)
+      toast.success(`Connected ${data.siteUrl || 'your site'}: content-only mode. Your theme stays untouched.`)
       onConnected()
     } catch { toast.error('Something went wrong. Try again.') }
     finally { setBusy(false) }
@@ -786,11 +786,11 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   if (mode === 'choose') {
     return (
       <>
-        <StepHeading title="Let’s connect your blog" blurb="MVP Affiliate publishes to your own WordPress site. Pick the option that fits you — you can change your mind later." />
+        <StepHeading title="Let’s connect your blog" blurb="MVP Affiliate publishes to your own WordPress site. Pick the option that fits you. You can change your mind later." />
         <div className="grid gap-3">
           <button onClick={() => setMode('have')} className="text-left rounded-xl border border-[#7C3AED]/40 bg-[#7C3AED]/[0.06] p-5 hover:border-[#7C3AED]/70 transition-colors">
             <div className="flex items-center gap-2 mb-1">
-              <p className="font-semibold">I have a WordPress blog — give it the MVP treatment</p>
+              <p className="font-semibold">I have a WordPress blog. Give it the MVP treatment</p>
               <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED] text-white">Most popular</span>
             </div>
             <p className="text-sm text-[#a1a1a6]">
@@ -801,16 +801,16 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
           </button>
 
           <button onClick={() => { setMode('content') }} className="text-left rounded-xl border border-white/10 bg-white/[0.03] p-5 hover:border-[#7C3AED]/50 transition-colors">
-            <p className="font-semibold mb-1">I have a WordPress blog — keep my theme &amp; plugins</p>
+            <p className="font-semibold mb-1">I have a WordPress blog. Keep my theme &amp; plugins</p>
             <p className="text-sm text-[#a1a1a6]">
-              Content-only mode. MVP just writes &amp; publishes articles to your site — no theme or
+              Content-only mode. MVP just writes &amp; publishes articles to your site: no theme or
               plugin install, <span className="text-[#c7c7cc]">your blog looks exactly the same</span>.
               Buy links match your theme. Perfect if you’ve already designed your site.
             </p>
           </button>
 
           <button onClick={() => setMode('need')} className="text-left rounded-xl border border-white/10 bg-white/[0.03] p-5 hover:border-[#7C3AED]/50 transition-colors">
-            <p className="font-semibold mb-1">I’m new to WordPress — start fresh</p>
+            <p className="font-semibold mb-1">I’m new to WordPress. Start fresh</p>
             <p className="text-sm text-[#a1a1a6]">Get a blog set up the right way in ~10 minutes, then get the full MVP treatment.</p>
           </button>
         </div>
@@ -822,14 +822,14 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     return (
       <>
         <StepHeading
-          title="Connect your blog — content-only"
+          title="Connect your blog: content-only"
           blurb="MVP will only write and publish articles to your site. We won’t install our theme or plugin, touch your design, or add any MVP-only blog features. Your blog keeps looking exactly as it does now."
         />
 
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
           <p className="font-semibold text-sm mb-1">Connect with a WordPress Application Password</p>
           <p className="text-sm text-[#a1a1a6] mb-4">
-            No plugin needed — this uses WordPress’s built-in Application Passwords. Takes about a minute.
+            No plugin needed. This uses WordPress’s built-in Application Passwords. Takes about a minute.
           </p>
 
           <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#7C3AED]">
@@ -874,7 +874,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   if (mode === 'need') {
     return (
       <>
-        <StepHeading title="Get your blog" blurb="You’ll need WordPress hosting. Hostinger is what we recommend — cheap, fast, one-click WordPress, and 20% off through our link. Set it up, then come back and connect it." />
+        <StepHeading title="Get your blog" blurb="You’ll need WordPress hosting. Hostinger is what we recommend. Cheap, fast, one-click WordPress, and 20% off through our link. Set it up, then come back and connect it." />
         <ol className="space-y-2.5 text-sm text-[#c7c7cc] mb-6 list-decimal pl-5">
           <li>Grab a plan + domain on Hostinger (Premium is plenty).</li>
           <li>Use Hostinger’s one-click WordPress installer.</li>
@@ -883,10 +883,10 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         <div className="flex flex-wrap items-center gap-3">
           <a href={HOSTINGER_URL} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
-            Get hosting on Hostinger — 20% off <ExternalLink size={14} />
+            Get hosting on Hostinger: 20% off <ExternalLink size={14} />
           </a>
           <button onClick={() => setMode('have')} className="text-sm text-[#a1a1a6] hover:text-white transition-colors">
-            I’ve set it up — connect now →
+            I’ve set it up. Connect now →
           </button>
         </div>
       </>
@@ -896,7 +896,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   // mode === 'have'
   return (
     <>
-      <StepHeading title="Connect your WordPress site" blurb="The MVP plugin is what turns your blog into a full review site — the review layout, Editor’s Picks, the AI Product Finder, topic hubs and Google-ready schema. Install it, connect, and you get the whole experience. (Already have a blog whose look you want to keep? There’s a no-plugin quick option at the bottom.)" />
+      <StepHeading title="Connect your WordPress site" blurb="The MVP plugin is what turns your blog into a full review site: the review layout, Editor’s Picks, the AI Product Finder, topic hubs and Google-ready schema. Install it, connect, and you get the whole experience. (Already have a blog whose look you want to keep? There’s a no-plugin quick option at the bottom.)" />
 
       {/* PRIMARY — plugin + connection token. This is the pushed path: it powers
           the full customizable-blog experience AND works on every host (the
@@ -912,7 +912,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         {/* Newbie helper: open their WordPress login for them. Steps 2-5 all
             happen inside wp-admin, so get them there in one click. */}
         <div className="rounded-lg border border-white/10 bg-black/20 p-3 mb-4">
-          <p className="text-xs text-[#a1a1a6] mb-2">New to WordPress? Type your site address and we’ll open its login page in a new tab — that’s where steps 2–5 happen.</p>
+          <p className="text-xs text-[#a1a1a6] mb-2">New to WordPress? Type your site address and we’ll open its login page in a new tab. That’s where steps 2 to 5 happen.</p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
@@ -928,7 +928,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#7C3AED]">
           <li>
             <a href={PLUGIN_ZIP} className="text-[#a78bfa] hover:underline inline-flex items-center gap-1">Download the MVP Affiliate plugin <ExternalLink size={12} /></a>
-            {' '}— it saves a <span className="text-white">.zip</span> file (don’t unzip it).
+            . It saves a <span className="text-white">.zip</span> file (don’t unzip it).
           </li>
           <li>In your WordPress admin, go to <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
           <li>Choose the .zip you just downloaded, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
@@ -960,13 +960,13 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mt-2">
           <p className="font-semibold text-sm mb-1">Quick connect · no plugin · ~30 seconds</p>
           <p className="text-sm text-[#a1a1a6] mb-3">
-            Publishes posts only — you <span className="text-[#c7c7cc]">won’t</span> get the review layout, Editor’s Picks, Product Finder or schema unless you add the plugin later. Best if you already have a blog whose look you want to keep.
+            Publishes posts only. You <span className="text-[#c7c7cc]">won’t</span> get the review layout, Editor’s Picks, Product Finder or schema unless you add the plugin later. Best if you already have a blog whose look you want to keep.
           </p>
           <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
             <li>Make sure you’re <span className="text-white">logged in to your WordPress admin</span> in this browser (open <span className="text-[#c7c7cc]">yoursite.com/wp-admin</span> in another tab first if you’re not sure).</li>
             <li>Type your site address below and click <span className="text-white">Connect</span>.</li>
             <li>A WordPress page opens in a new tab titled <span className="text-white">“MVP Affiliate would like to connect.”</span> Click <span className="text-white">Yes, I approve.</span></li>
-            <li>That tab closes/finishes — come back here and this page turns green automatically.</li>
+            <li>That tab closes/finishes. Come back here and this page turns green automatically.</li>
           </ol>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -979,7 +979,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             </button>
           </div>
           <p className="text-xs text-[#6e6e73] mt-2.5">
-            Your site must use <span className="text-[#a1a1a6]">https://</span>. If the approve page doesn’t appear or your host blocks it, use the plugin method above — it always works.
+            Your site must use <span className="text-[#a1a1a6]">https://</span>. If the approve page doesn’t appear or your host blocks it, use the plugin method above. It always works.
           </p>
         </div>
       )}
@@ -1005,7 +1005,7 @@ function YouTubeStep({ connected, required }: { connected: boolean; required: bo
   }
   return (
     <>
-      <StepHeading title="Connect your YouTube" blurb="One click — authorize with Google and you’re done. MVP figures out your channel automatically (no IDs to paste). This is how it turns your videos into blog posts." />
+      <StepHeading title="Connect your YouTube" blurb="One click: authorize with Google and you’re done. MVP figures out your channel automatically (no IDs to paste). This is how it turns your videos into blog posts." />
       {/* returnTo brings the OAuth callback back to the funnel instead of
           dumping the user on /setup (the callback's default). */}
       <a href="/api/auth/youtube?returnTo=/onboarding" className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
@@ -1060,7 +1060,7 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
     try {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { toast.error('Session expired — refresh and try again.'); return }
+      if (!user) { toast.error('Session expired: refresh and try again.'); return }
       // Through the server, not straight from the browser. These credentials are
       // encrypted at rest and a browser cannot encrypt, so a direct upsert here
       // would store them in plain text for everyone who onboards.
@@ -1110,15 +1110,15 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
       if (failed) {
         // Key is saved (step will complete), but tell them it was rejected so
         // they can fix it — don't fake success.
-        toast.error(failed.detail || 'Geniuslink rejected those credentials — double-check your API key + secret.')
+        toast.error(failed.detail || 'Geniuslink rejected those credentials. Double-check your API key + secret.')
         onSaved()
         return
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const needsManual = Array.isArray(data?.targets) && data.targets.some((t: any) => t.status === 'needs-manual-create')
       toast.success(needsManual
-        ? 'Geniuslink connected. A link group needs a quick manual create — see Brand Profile → Affiliate Link Routing.'
-        : 'Geniuslink connected — link groups are ready.')
+        ? 'Geniuslink connected. A link group needs a quick manual create. See Brand Profile → Affiliate Link Routing.'
+        : 'Geniuslink connected: link groups are ready.')
       onSaved()
     } catch { toast.error('Verification failed. Check your key + secret.') }
     finally { setVerifying(false) }
@@ -1246,7 +1246,7 @@ function BrandStep({ onSaved }: { onSaved: () => void }) {
     <>
       <StepHeading
         title="Build your Brand Profile"
-        blurb="This is what every generated post is branded with. Fill it out as completely as you can — it saves automatically as you go."
+        blurb="This is what every generated post is branded with. Fill it out as completely as you can. It saves automatically as you go."
       />
 
       {/* In-card page dots */}
@@ -1320,7 +1320,7 @@ function BrandStep({ onSaved }: { onSaved: () => void }) {
           <label className="block text-sm text-[#c7c7cc] mb-1.5">Affiliate disclosure</label>
           <p className="text-xs text-[#6e6e73] mb-2">Shown on your posts to stay FTC-compliant. A simple default works fine.</p>
           <textarea value={disclaimer} onChange={(e) => setDisclaimer(e.target.value)} rows={4}
-            placeholder="As an Amazon Associate I earn from qualifying purchases. Some links on this site are affiliate links — if you buy through them I may earn a commission at no extra cost to you."
+            placeholder="As an Amazon Associate I earn from qualifying purchases. Some links on this site are affiliate links. If you buy through them I may earn a commission at no extra cost to you."
             className={inputCls} />
         </div>
       )}
@@ -1332,7 +1332,7 @@ function BrandStep({ onSaved }: { onSaved: () => void }) {
         {page < PAGES.length - 1
           ? <button onClick={() => setPage((p) => Math.min(PAGES.length - 1, p + 1))}
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>Next →</button>
-          : <span className="text-xs text-[#6e6e73]">All set — use “Save &amp; next” below to continue.</span>}
+          : <span className="text-xs text-[#6e6e73]">All set: use “Save &amp; next” below to continue.</span>}
       </div>
     </>
   )
@@ -1387,7 +1387,7 @@ function VoiceStep({ onSaved }: { onSaved: () => void }) {
     <>
       <StepHeading
         title="Train your writing voice"
-        blurb="The difference between generic AI copy and posts that sound like you. Optional, but strongly recommended — and it saves as you type. You can refine it later."
+        blurb="The difference between generic AI copy and posts that sound like you. Optional, but strongly recommended, and it saves as you type. You can refine it later."
       />
       <div className="flex items-center gap-2 mb-5">
         {PAGES.map((label, i) => (
@@ -1409,7 +1409,7 @@ function VoiceStep({ onSaved }: { onSaved: () => void }) {
           <div>
             <label className="block text-sm text-[#c7c7cc] mb-1.5">Your target reader</label>
             <p className="text-xs text-[#6e6e73] mb-2">Who reads you, what they care about, what they already know.</p>
-            <textarea value={audience} onChange={(e) => setAudience(e.target.value)} rows={4} placeholder="Busy pet owners comparing options before buying — they want a clear recommendation, not fluff." className={inputCls} />
+            <textarea value={audience} onChange={(e) => setAudience(e.target.value)} rows={4} placeholder="Busy pet owners comparing options before buying. They want a clear recommendation, not fluff." className={inputCls} />
           </div>
         </div>
       )}
@@ -1418,7 +1418,7 @@ function VoiceStep({ onSaved }: { onSaved: () => void }) {
         <div className="flex flex-col gap-4">
           <div>
             <label className="block text-sm text-[#c7c7cc] mb-1.5">Writing sample</label>
-            <p className="text-xs text-[#6e6e73] mb-2">Paste something you’ve written that sounds exactly like you — MVP matches this voice.</p>
+            <p className="text-xs text-[#6e6e73] mb-2">Paste something you’ve written that sounds exactly like you. MVP matches this voice.</p>
             <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={7} placeholder="Paste a few paragraphs in your own voice..." className={inputCls} />
           </div>
           <div>
@@ -1432,7 +1432,7 @@ function VoiceStep({ onSaved }: { onSaved: () => void }) {
         <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="text-sm text-[#a1a1a6] hover:text-white disabled:opacity-30 transition-colors">← Previous</button>
         {page < PAGES.length - 1
           ? <button onClick={() => setPage((p) => Math.min(PAGES.length - 1, p + 1))} className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>Next →</button>
-          : <span className="text-xs text-[#6e6e73]">Looks good — “Save &amp; next” below to continue.</span>}
+          : <span className="text-xs text-[#6e6e73]">Looks good: “Save &amp; next” below to continue.</span>}
       </div>
     </>
   )
@@ -1498,7 +1498,7 @@ function CustomizeStep({ onSaved }: { onSaved: () => void }) {
     <>
       <StepHeading
         title="Customize your blog"
-        blurb="Two quick settings that shape how every post reads. Everything else — colors, homepage picks, footer — you can fine-tune anytime in Customize Blog. Saves as you go."
+        blurb="Two quick settings that shape how every post reads. Everything else (colors, homepage picks, footer) you can fine-tune anytime in Customize Blog. Saves as you go."
       />
 
       {/* Author trust block */}
@@ -1513,7 +1513,7 @@ function CustomizeStep({ onSaved }: { onSaved: () => void }) {
             <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: author.enabled ? '18px' : '2px' }} />
           </button>
         </div>
-        <p className="text-xs text-[#6e6e73] mb-3">A short “who reviewed this” intro at the top of every post — builds Google + AI-Overview trust (E-E-A-T). Recommended on.</p>
+        <p className="text-xs text-[#6e6e73] mb-3">A short “who reviewed this” intro at the top of every post. Builds Google + AI-Overview trust (E-E-A-T). Recommended on.</p>
         {author.enabled && (
           <div className="flex flex-col gap-2">
             <input value={author.name || ''} onChange={(e) => patch((c) => { c.authorBlock = { ...c.authorBlock, name: e.target.value }; return c })} placeholder="Your name (e.g. Seb)" className={inputCls} />
@@ -1535,7 +1535,7 @@ function CustomizeStep({ onSaved }: { onSaved: () => void }) {
             <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: showDate ? '18px' : '2px' }} />
           </button>
         </div>
-        <p className="text-xs text-[#6e6e73]">{showDate ? 'Visible publish/updated dates on posts.' : 'Dates hidden — “evergreen” look. SEO freshness signals (schema) are kept either way.'}</p>
+        <p className="text-xs text-[#6e6e73]">{showDate ? 'Visible publish/updated dates on posts.' : 'Dates hidden: “evergreen” look. SEO freshness signals (schema) are kept either way.'}</p>
       </div>
 
       <div className="flex items-center justify-between mt-5">
@@ -1555,13 +1555,13 @@ function ToolStep({ title, blurb, href, cta, done }: { title: string; blurb: str
       <StepHeading title={title} blurb={blurb} />
       {done && (
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
-          <Check size={16} /> Looks good — you’ve started this.
+          <Check size={16} /> Looks good: you’ve started this.
         </div>
       )}
       <a href={href} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
         {cta} <ExternalLink size={14} />
       </a>
-      <p className="text-xs text-[#6e6e73] mt-4">Opens in a new tab — come back here to continue. This page updates automatically.</p>
+      <p className="text-xs text-[#6e6e73] mt-4">Opens in a new tab. Come back here to continue. This page updates automatically.</p>
     </>
   )
 }

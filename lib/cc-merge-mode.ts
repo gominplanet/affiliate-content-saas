@@ -56,6 +56,20 @@ export function ccNeedsPurgeGuards(mode: CcMergeMode): boolean {
   return ccShouldPurge(mode)
 }
 
+/** HIDE WHAT THE EXPORT LEFT OUT. Amazon's "available campaigns" export drops
+ *  campaigns that can no longer be joined, and add-only kept them with their old
+ *  spot counts (5 of 5 sampled were full on Amazon). After an add-only merge,
+ *  campaigns missing from the upload are marked full: open spots set to 0, never
+ *  deleted, enrichment kept, back as soon as an export or live refresh has them.
+ *
+ *  Only for an upload big enough to be a real export: a partial upload (one
+ *  CSV of five) would otherwise hide most of the catalogue until the next one. */
+export const CC_HIDE_MIN_STAGED = 100_000
+
+export function ccShouldHideMissing(mode: CcMergeMode, stagedEstimate: number | null | undefined): boolean {
+  return mode === 'add-only' && typeof stagedEstimate === 'number' && stagedEstimate >= CC_HIDE_MIN_STAGED
+}
+
 /** One line of plain English for what a finished merge actually did.
  *
  *  Written to be distinguishable in the failure direction, which is the whole
@@ -67,10 +81,14 @@ export function describeCcMergeOutcome(args: {
   mode: CcMergeMode
   upserted: number
   purged: number
+  /** Add-only: the missing campaigns are being marked full in the background. */
+  hiding?: boolean
 }): string {
   const n = (x: number) => Math.max(0, Math.round(Number(x) || 0)).toLocaleString()
   if (args.mode === 'add-only') {
-    return `Added or updated ${n(args.upserted)} campaigns. Nothing was removed: add-only was ticked, so campaigns missing from this upload were left alone.`
+    return args.hiding
+      ? `Added or updated ${n(args.upserted)} campaigns. Nothing was removed: add-only was ticked. Campaigns missing from this upload are being marked full in the background, so they stop showing open spots (nothing is deleted, and any that come back in a later upload reopen).`
+      : `Added or updated ${n(args.upserted)} campaigns. Nothing was removed: add-only was ticked, so campaigns missing from this upload were left alone.`
   }
   if ((Number(args.purged) || 0) > 0) {
     return `Added or updated ${n(args.upserted)} campaigns and removed ${n(args.purged)} that were missing from this upload.`

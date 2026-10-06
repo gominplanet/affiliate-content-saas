@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Edit3, Loader2, Save, Image as ImageIcon, Upload } from 'lucide-react'
+import { inertHtml } from '@/lib/inert-html'
 
 // `postUrl` (the live permalink) is optional but worth passing from any list
 // keyed by WordPress post id: it is what lets the thumbnail route place a post
@@ -23,6 +24,10 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [html, setHtml] = useState('')
+  // THE ARTICLE NEVER LOADED, SO THERE IS NOTHING TO SAVE. The editor used to
+  // open empty under the error with Save live, and a few typed words saved
+  // over the whole published post.
+  const [loadFailed, setLoadFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const seeded = useRef(false)
   // Thumbnail (WP featured image) editing — works for any post.
@@ -35,15 +40,21 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
   // loading is false). Only once per open so user edits aren't clobbered.
   useEffect(() => {
     if (open && !loading && ref.current && !seeded.current) {
-      ref.current.innerHTML = html
+      // INERT: post HTML can come from WordPress or a VA (lib/inert-html).
+      ref.current.innerHTML = inertHtml(html)
       seeded.current = true
     }
   }, [open, loading, html])
 
   async function toggle() {
     if (open) { setOpen(false); seeded.current = false; return }
+    await load()
+  }
+
+  async function load() {
     seeded.current = false
     setMsg(null)
+    setLoadFailed(false)
     if (!postId) { setHtml(''); setOpen(true); setMsg('No post to edit yet.'); return }
     setOpen(true); setLoading(true)
     try {
@@ -52,6 +63,8 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
       if (!res.ok) throw new Error(data.error || 'Could not load the article')
       setHtml(data.content || '')
     } catch (e) {
+      setHtml('')
+      setLoadFailed(true)
       setMsg(e instanceof Error ? e.message : 'Load failed')
     } finally {
       setLoading(false)
@@ -103,10 +116,10 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
       if (!resp.ok) { setThumbMsg(data.error || 'Upload failed.'); return }
       setThumbUrl(data.url || dataUrl)
       setThumbMsg(data.tracked === false
-        ? 'Thumbnail updated on your site ✓ — this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.'
+        ? 'Thumbnail updated on your site ✓. This post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.'
         : 'Thumbnail updated ✓ (may take a minute to refresh on the live site)')
     } catch {
-      setThumbMsg('Upload failed — try again.')
+      setThumbMsg('Upload failed: try again.')
     } finally {
       setThumbBusy(false)
     }
@@ -126,6 +139,11 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
             <div className="flex items-center gap-2 text-xs text-[#86868b] py-8 justify-center">
               <Loader2 size={14} className="animate-spin" /> Loading article…
             </div>
+          ) : loadFailed ? (
+            <div className="flex items-center gap-3 text-xs py-6 justify-center">
+              <span className="text-[#ff3b30]">{msg || 'Could not load the article.'}</span>
+              <button onClick={() => { void load() }} className="text-[#7C3AED] hover:underline">Try again</button>
+            </div>
           ) : (
             <>
               {/* Thumbnail (WP featured image) — change it without leaving MVP. */}
@@ -139,7 +157,7 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Thumbnail (hero image)</p>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{thumbMsg || 'Upload a new featured image for this post — sets it live on WordPress.'}</p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{thumbMsg || 'Upload a new featured image for this post. Sets it live on WordPress.'}</p>
                 </div>
                 <input ref={thumbFileRef} type="file" accept="image/*" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) uploadThumb(f) }} />
@@ -169,7 +187,7 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
                 {msg && <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93]">{msg}</span>}
               </div>
               <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
-                Edit the wording directly. Headings and links (including affiliate links) are kept — saving updates the live WordPress post.
+                Edit the wording directly. Headings and links (including affiliate links) are kept. Saving updates the live WordPress post.
               </p>
             </>
           )}

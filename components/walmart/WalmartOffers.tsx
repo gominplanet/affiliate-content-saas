@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import WalmartQuickPostModal, { type WalmartQuickPostItem } from '@/components/walmart/WalmartQuickPostModal'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const WM_BLUE = '#0071CE'
 
@@ -133,7 +134,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
   const generatePost = async (o: Offer) => {
     setGenerating(o.key)
     try {
-      const res = await fetch('/api/walmart/generate', {
+      const res = await fetchUnlessMade('/api/walmart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,10 +146,10 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           draft: false,
         }),
       })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'No answer in time. The post may still be publishing, so check your blog before trying again.' : `The server answered ${res.status}. Try again.` }))
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
       setResults((m) => ({ ...m, [o.key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
-      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ' — link cloaked via Geniuslink' : ''}`)
+      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ': link cloaked via Geniuslink' : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally {
@@ -172,7 +173,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       })
-      const j = await res.json()
+      const j = await res.json().catch(() => ({ ok: false, error: res.status >= 502 ? 'No answer in time. The roundup may still be publishing, so check your blog before trying again.' : undefined }))
       if (!res.ok || !j.ok) { toast.error(j.error || 'Could not build the roundup.'); return }
       toast.success('Roundup post published.')
       if (j.url) window.open(j.url, '_blank')
@@ -205,7 +206,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{title ?? 'Walmart Offers'}</p>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>{subtitle ?? 'The whole Walmart catalog on PartnerBoost, filtered by MVP’s rules — not just brands you’ve joined. Ranked by estimated $/sale.'}</p>
+          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>{subtitle ?? 'The whole Walmart catalog on PartnerBoost, filtered by MVP’s rules, not just brands you’ve joined. Ranked by estimated $/sale.'}</p>
         </div>
       </div>
 
@@ -285,7 +286,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                         {o.posted && !done && (
                           <a href={o.posted} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
-                            <Check size={12} /> You&apos;ve posted this — view it
+                            <Check size={12} /> You&apos;ve posted this. View it
                           </a>
                         )}
                         {done ? (

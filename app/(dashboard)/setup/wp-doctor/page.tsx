@@ -249,7 +249,7 @@ export default function WpDoctorPage() {
                     <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">{t.label}</p>
                     {t.detail && (
                       <p className="text-[11px] text-[#86868b] mt-0.5 font-mono break-all">
-                        {t.status ? `HTTP ${t.status} — ` : ''}{t.detail}
+                        {t.status ? `HTTP ${t.status}: ` : ''}{t.detail}
                       </p>
                     )}
                     {t.ok === null && !t.detail && (

@@ -6,6 +6,7 @@
 // always lands on youtube_videos. Mirrors the two interactive IG routes.
 
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import type { PublishTarget } from '@/lib/tiktok-publish'
 
 export type IgMode = 'reel' | 'story' | 'both'
@@ -31,7 +32,11 @@ export async function publishInstagramForTarget(
     .select('instagram_user_id,instagram_access_token,instagram_token_expiry')
     .eq('user_id', userId)
     .single()
-  let accessToken = integ?.instagram_access_token as string | undefined
+  // DECRYPT ON READ, ENCRYPT ON WRITE (2026-10-06 security audit). The
+  // Instagram callback stores this token encrypted, and this read handed the
+  // ciphertext to Meta while the refresh below wrote the new token back in
+  // plain text beside every other encrypted token.
+  let accessToken = (maybeDecrypt(integ?.instagram_access_token as string | null | undefined) || undefined) as string | undefined
   const igUserId = integ?.instagram_user_id as string | undefined
   if (!accessToken || !igUserId) throw new Error("Instagram isn't connected. Connect it in Integrations first.")
 
@@ -41,7 +46,7 @@ export async function publishInstagramForTarget(
       const refreshed = await refreshLongLivedToken(accessToken)
       accessToken = refreshed.accessToken
       await sb.from('integrations')
-        .update({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt })
+        .update({ instagram_access_token: maybeEncrypt(accessToken), instagram_token_expiry: refreshed.expiresAt })
         .eq('user_id', userId)
     } catch { /* fall through with the existing token */ }
   }

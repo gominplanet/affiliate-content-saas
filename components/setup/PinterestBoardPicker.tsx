@@ -63,14 +63,14 @@ export function PinterestBoardPicker() {
           <input type="radio" checked={mode === 'category'} disabled={busy}
             onChange={() => post({ action: 'auto' })} className="mt-0.5 accent-[#E60023]" />
           <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
-            <strong>Organize by category</strong> <span className="text-[#86868b]">— a board per blog category, created automatically.</span>
+            <strong>Organize by category</strong> <span className="text-[#86868b]">: a board per blog category, created automatically.</span>
           </span>
         </label>
         <label className="flex items-start gap-2 cursor-pointer">
           <input type="radio" checked={mode === 'single'} disabled={busy}
             onChange={() => { if (!target && boards[0]) post({ action: 'select', boardId: boards[0].id }) }} className="mt-0.5 accent-[#E60023]" />
           <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
-            <strong>Send all pins to one board</strong> <span className="text-[#86868b]">— pick or create it below.</span>
+            <strong>Send all pins to one board</strong> <span className="text-[#86868b]">: pick or create it below.</span>
           </span>
         </label>
       </div>
@@ -87,7 +87,7 @@ export function PinterestBoardPicker() {
                 onChange={e => post({ action: 'select', boardId: e.target.value })}
                 className="input-field text-sm flex-1"
               >
-                {boards.length === 0 && <option value="">No boards yet — create one below</option>}
+                {boards.length === 0 && <option value="">No boards yet. Create one below</option>}
                 {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
               <button onClick={load} disabled={busy} title="Refresh boards"

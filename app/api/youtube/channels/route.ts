@@ -19,6 +19,7 @@ import { listYouTubeChannels, setDefaultChannel, maxChannelsForTier, canAddChann
 import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 import { resolveYouTubeChannel } from '@/services/youtube'
 import { normalizeTier } from '@/lib/tier'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 // Never cache — this must reflect a connect/disconnect the instant it happens,
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if ('error' in auth) return auth.error
-  const { ownerId } = auth
+  const { ownerId, isOwner } = auth
 
   let body: { action?: string; channelRowId?: string | null; siteId?: string; channelUrl?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
@@ -96,7 +97,11 @@ export async function POST(request: Request) {
     }
     const apiKey = process.env.YOUTUBE_API_KEY
     if (!apiKey) return NextResponse.json({ error: 'YouTube lookup not configured' }, { status: 500 })
-    const resolved = await resolveYouTubeChannel(apiKey, url)
+    // A USED-UP ALLOWANCE IS NOT A WRONG URL: the lookup throws, and says so.
+    let resolved: Awaited<ReturnType<typeof resolveYouTubeChannel>> = null
+    try { resolved = await resolveYouTubeChannel(apiKey, url) } catch {
+      return NextResponse.json({ error: 'YouTube’s daily allowance is used up, so MVP could not look this channel up. Nothing was added. Try again after midnight Pacific.', quotaExceeded: true }, { status: 503 })
+    }
     if (!resolved) {
       return NextResponse.json({ error: "Couldn't find a channel at that URL. Paste the channel's YouTube page link, e.g. youtube.com/@yourchannel." }, { status: 404 })
     }
@@ -106,7 +111,14 @@ export async function POST(request: Request) {
     }
     // First real row → make it the default so Co-Pilot reads it straight away.
     const isFirst = existing.filter(c => c.id !== 'legacy').length === 0
-    const { error } = await sb.from('youtube_channels').insert({
+    // A Virtual Assistant adds the channel to the OWNER's account. Their own
+    // session cannot write the owner's row (the "new row violates row-level
+    // security policy for table youtube_channels" ticket), so the server writes
+    // it: a public, read-only row with no tokens, under the owner, which is
+    // exactly what the owner would have added themselves.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writer = isOwner ? sb : (createAdminClient() as any)
+    const { error } = await writer.from('youtube_channels').insert({
       user_id: ownerId,
       channel_id: resolved.channelId,
       channel_title: resolved.title,

@@ -13,6 +13,8 @@
 //
 // Meta's limits for a Page Reel: 9:16, 3 to 90 seconds, at least 540x960.
 
+import { discloseSocialPost } from '@/lib/social-disclaimer'
+
 const GRAPH = 'https://graph.facebook.com/v21.0'
 
 export type ReelResult =
@@ -29,6 +31,7 @@ const metaError = (j: Record<string, unknown>, fallback: string) => {
 
 export async function publishPageReel(opts: { pageId: string; token: string; videoUrl: string; description: string }): Promise<ReelResult> {
   const { pageId, token } = opts
+  const began = Date.now()
   // 1. Start: Meta gives a video id to upload into.
   const start = await fetch(`${GRAPH}/${encodeURIComponent(pageId)}/video_reels`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -37,7 +40,7 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
   })
   const sj = await json(start)
   const videoId = String(sj.video_id || '')
-  if (!start.ok || !videoId) return { ok: false, step: 'start', error: metaError(sj, `Facebook would not start the Reel upload (HTTP ${start.status}).`) }
+  if (!start.ok || sj.error || !videoId) return { ok: false, step: 'start', error: metaError(sj, `Facebook would not start the Reel upload (HTTP ${start.status}).`) }
 
   // 2. Upload by URL: Meta downloads the clip from where MVP stored it.
   const up = await fetch(`https://rupload.facebook.com/video-upload/v21.0/${encodeURIComponent(videoId)}`, {
@@ -45,20 +48,26 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
     signal: AbortSignal.timeout(120_000),
   })
   const uj = await json(up)
-  if (!up.ok || uj.success === false) return { ok: false, step: 'upload', error: metaError(uj, `Facebook could not fetch the clip (HTTP ${up.status}).`) }
+  if (!up.ok || uj.error || uj.success === false) return { ok: false, step: 'upload', error: metaError(uj, `Facebook could not fetch the clip (HTTP ${up.status}).`) }
 
   // 3. Finish and publish, with the caption.
   const fin = await fetch(`${GRAPH}/${encodeURIComponent(pageId)}/video_reels`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ upload_phase: 'finish', video_id: videoId, video_state: 'PUBLISHED', description: opts.description.slice(0, 2000), access_token: token }),
+    body: JSON.stringify({ upload_phase: 'finish', video_id: videoId, video_state: 'PUBLISHED', description: discloseSocialPost(opts.description, 'facebook').slice(0, 2000), access_token: token }),
     signal: AbortSignal.timeout(60_000),
   })
   const fj = await json(fin)
-  if (!fin.ok || fj.success === false) return { ok: false, step: 'finish', error: metaError(fj, `Facebook did not accept the Reel (HTTP ${fin.status}).`) }
+  // A 200 CAN STILL BE A REFUSAL. Meta sometimes answers 200 with an `error`
+  // object in the body; that is a failure with Meta's words, never "published".
+  if (!fin.ok || fj.error || fj.success === false) return { ok: false, step: 'finish', error: metaError(fj, `Facebook did not accept the Reel (HTTP ${fin.status}).`) }
 
-  // 4. Read back what happened to it.
+  // 4. Read back what happened to it, ON A DEADLINE. Twelve looks after the
+  // three steps above could take the whole request past its time limit, after
+  // the Reel was already published, so the creator saw an error and posted it
+  // again. Past four minutes from the start it reports "processing", which is
+  // true, and the Reel stays the one that was posted.
   const url = `https://www.facebook.com/reel/${videoId}`
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 12 && Date.now() - began < 240_000; i++) {
     await new Promise((r) => setTimeout(r, 5000))
     try {
       const s = await fetch(`${GRAPH}/${encodeURIComponent(videoId)}?fields=status&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(15_000) })

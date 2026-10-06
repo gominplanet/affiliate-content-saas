@@ -1,0 +1,232 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// LIFTOFF UPLOADS THROUGH SCOUT IN YOUTUBE STUDIO (lib/studio-upload).
+//
+// An API upload costs 1,600 of the quota every account shares. For a creator
+// with this switch on, the server must never upload, SCOUT must never upload
+// the same video twice, and each state must read as itself on the board.
+import { readFileSync } from 'node:fs'
+import { storeStudioRun, readStudioRun, studioRunSettled, studioRunHeadline } from '../lib/studio-finish'
+import { scoutSawPaidPromotion, apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+
+const failures: string[] = []
+const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
+const read = (p: string) => readFileSync(p, 'utf8')
+
+check('open to Pro and admin (2026-10-05), nobody else', usesStudioUpload('admin') && usesStudioUpload('pro') && !usesStudioUpload('free'))
+check('waiting note reads as waiting', isStudioWaiting(STUDIO_UPLOAD_WAITING) && /^Waiting/.test(STUDIO_UPLOAD_WAITING))
+check('running note is running', isStudioRunning(`${STUDIO_UPLOAD_RUNNING} Try 1 of 3.`) && !isStudioWaiting(STUDIO_UPLOAD_RUNNING))
+check('a YouTube id is 11 characters', cleanVideoId('dQw4w9WgXcQ') === 'dQw4w9WgXcQ' && cleanVideoId('abc') === null && cleanVideoId('<script>xx') === null)
+check('upload limit reads as waiting', /^Waiting/.test(studioUploadFailureText('upload-limit', '')) && /own daily upload limit/.test(studioUploadFailureText('upload-limit', '')))
+check('an unknown failure keeps its words', /went wrong here/.test(studioUploadFailureText('x', 'went wrong here')))
+check('no em or en dashes in the words', ![STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING, ...['wrong-channel', 'upload-limit', 'timeout', 'not-sent', 'no-picker', 'file-http-404', 'x'].map((e) => studioUploadFailureText(e, ''))].some((t) => /[\u2013\u2014]| - /.test(t)))
+
+const drain = read('app/api/cron/launch-drain/route.ts')
+const gate = drain.indexOf('usesStudioUpload(await ownerTier(')
+check('the drain leaves Studio uploads to SCOUT', gate > 0)
+check('the gate comes before the claim and the upload', gate > 0 && gate < drain.indexOf('publish_tries: tries + 1,') && gate < drain.indexOf('yt.uploadShort('))
+check('the gate only covers rows with no video yet', /if \(!String\(it\.youtube_video_id \|\| ''\)\.trim\(\) && usesStudioUpload/.test(drain))
+check('waiting rows cannot crowd out the rest', /\.limit\(PUBLISHES \* 4 \+ 40\)/.test(drain))
+
+const route = read('app/api/launch/studio-uploads/route.ts')
+check('the route is behind the switch', /usesStudioUpload\(integ\?\.tier\)/.test(route))
+check('a claim is guarded on the try count', /q\.eq\('publish_tries', tries\)/.test(route) && /q\.is\('publish_tries', null\)/.test(route))
+check('the id is written only where there is none', /youtube_video_id: videoId,[\s\S]{0,300}\.is\('youtube_video_id', null\)/.test(route))
+check('a second copy is named, not hidden', /is a second one: delete it in Studio/.test(route))
+check('an unsaved draft stops before any time is set', /r\.saved !== true/.test(route) && /state: 'blocked'/.test(route))
+check('a wrong channel stops at once', /wrong-channel/.test(route))
+check('rows are scoped to the signed-in creator', /\.eq\('user_id', user\.id\)\.eq\('state', 'prepared'\)/.test(route) && /\.eq\('id', itemId\)\.eq\('user_id', user\.id\)/.test(route))
+
+const bg = read('extension/background.js')
+check('SCOUT handles MVP_STUDIO_UPLOAD', /msg\.type === 'MVP_STUDIO_UPLOAD'/.test(bg))
+check('SCOUT answers a repeat with the id it kept', /already: true, videoId: map\[o\.itemId\]\.videoId/.test(bg))
+check('one visit: every page and Save while the file sends, then the creator gets Chrome back', bg.indexOf('const firstWalk = await privateIfScheduleFailed(await runStudioDraft') > 0 && bg.indexOf('const firstWalk = await privateIfScheduleFailed(await runStudioDraft') < bg.indexOf("step: 'sending', ok: true"))
+check('a save that did not take is done again on the draft in the same run, after the file is in', bg.indexOf("step: 'sending', ok: true") < bg.indexOf("'https://studio.youtube.com/video/' + videoId + '/edit'") && /if \(!saved && !_studioAbort\)/.test(bg))
+check('the upload run is the video\'s Studio run (no second pass)', /storeStudioRun\(\{ ok: r\.ok === true && r\.saved === true/.test(route))
+check('Try again on an unsaved draft goes back to SCOUT, not the API', /unsavedDraft = !!rec && rec\.visibility == null/.test(read('app/api/launch/items/[id]/retry/route.ts')))
+check('the board saves drafts through SCOUT before any other Studio pass', /isScoutDraft\(i\)\)\) return false/.test(read('components/launch/LaunchBoard.tsx')) && /!\(studioUpload && isScoutDraft\(i\)\)/.test(read('components/launch/LaunchBoard.tsx')))
+
+check('SCOUT saves Private unless MVP asked for a schedule or Public', /: \{ mode: 'private' \}/.test(bg))
+check('the file is fetched in SCOUT’s own world', /world: 'ISOLATED', func: studioUploadFileInPage/.test(bg))
+check('the kit has the upload text step', /K\.steps\.uploadText/.test(bg))
+
+const manifest = JSON.parse(read('extension/manifest.json'))
+const ver = read('lib/scout-version.ts')
+check('manifest and SCOUT_LATEST_VERSION agree', ver.includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`))
+check('the upload floor is 1.25.0', /SCOUT_STUDIO_UPLOAD_MIN_VERSION = '1\.25\.0'/.test(ver))
+check('the runner and the board check the SCOUT floor', /SCOUT_STUDIO_UPLOAD_MIN_VERSION/.test(read('components/launch/LiftoffRunner.tsx')) && /SCOUT_STUDIO_UPLOAD_MIN_VERSION/.test(read('components/launch/LaunchBoard.tsx')))
+check('the report names waiting for SCOUT', /Waiting for SCOUT/.test(read('components/launch/LaunchReport.tsx')))
+
+// ── ZERO QUOTA: SCOUT DOES THE REST, THE DRAIN CHECKS IT ─────────────────
+check('SCOUT\'s report: only plain true counts', (() => { const d = studioDid({ text: 'yes', tags: true, thumbnail: 1, playlist: false, visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true); return d.text === null && d.tags === true && d.thumbnail === null && d.playlist === false && d.visibility === 'schedule' })())
+check('not saved means no visibility', studioDid({ visibility: 'public' }, false).visibility === null)
+check('not saved means nothing SCOUT typed was kept', (() => { const d = studioDid({ text: true, tags: true, thumbnail: true, thumbVerified: true, playlist: true }, false); return d.text === null && d.tags === null && d.thumbnail === null && !d.thumbVerified && d.playlist === null })())
+check('a schedule with no time is not a schedule', studioDid({ visibility: 'schedule' }, true).visibility === null)
+check('a schedule holds only private and at its time', (() => {
+  const did = studioDid({ visibility: 'schedule', publishAt: '2030-01-01T10:00:00Z' }, true)
+  return scheduleHeld(did, { privacyStatus: 'private', publishAt: '2030-01-01T10:01:00Z' }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, { privacyStatus: 'private', publishAt: '2030-01-01T11:00:00Z' }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, { privacyStatus: 'public', publishAt: null }, '2030-01-01T10:00:00Z')
+    && !scheduleHeld(did, null, '2030-01-01T10:00:00Z')
+})())
+check('the drain reads what SCOUT did on its own', /select\('id,studio_upload'\)/.test(drain))
+check('the drain skips the schedule only when YouTube reads it back', /if \(!goNow && !missed && !heldBack && !studioScheduled\)/.test(drain) && /scheduleHeld\(viaStudio, readBack/.test(drain))
+check('the drain skips going public only when YouTube reads it public', /studioPublic = goNow && !heldBack && viaStudio\?\.visibility === 'public' && readBack\?\.privacyStatus === 'public'/.test(drain))
+check('unconfirmed paid promotion pulls a SCOUT schedule back to private', /if \(\(!paidConfirmed \|\| missed\) && viaStudio && viaStudio\.visibility && viaStudio\.visibility !== 'private'/.test(drain) && /privacyStatus: 'private', notifySubscribers: notifyByBatch/.test(drain))
+check('a thumbnail SCOUT did not see in Studio\'s own box is set by MVP', /viaStudio\?\.thumbnail === true && viaStudio\.thumbVerified\)/.test(drain) && /yt\.uploadThumbnail\(videoId/.test(drain))
+check('SCOUT reads the thumbnail back in the thumbnail box only', /previews = \(\) => all\(box\)/.test(bg) && /out\.verified = seen/.test(bg))
+check('a 1.26.0 report alone is not believed', studioDid({ thumbnail: true }, true).thumbVerified === false)
+check('a playlist SCOUT did not pick is added by MVP', /if \(viaStudio\?\.playlist !== true\) await yt\.addVideoToPlaylist/.test(drain))
+check('title and tags through the API only when SCOUT missed them', /if \(!textOk \|\| \(wantTags\.length > 0 && did\.tags !== true\)\)/.test(route))
+check('SCOUT reads back every link in the description', /links\.every\(\(l\) => now\.includes\(l\)\)/.test(bg))
+check('SCOUT saves Private when the time has gone', /> Date\.now\(\) \+ 3 \* 60000\)\) return \{ mode: 'private' \}/.test(bg))
+check('Studio is on screen while SCOUT fills it in, and the creator is put back', /await front\(\)\s*steps\.push/.test(bg) && /let saved = firstWalk\.some\([^\n]*\n\s*await back\(\)/.test(bg) && /stopKeepAlive\(keepAlive\)\s*await back\(\)/.test(bg) && /let front = async \(\) => \{\}/.test(bg))
+check('SCOUT\'s step names stay MVP\'s own (text, tags, playlist)', /\{ step: 'text' \}\)\)/.test(bg) && /\{ step: 'tags' \}\)\)/.test(bg) && /\{ step: 'playlist' \}\)\)/.test(bg))
+check('SCOUT counts tags the way YouTube does, quotes and all', /\(\/\\s\/\.test\(v\) \? 2 : 0\)/.test(bg) && /if \(len \+ add > 460\) break/.test(bg))
+check('a greyed Next says what Studio shows', /Studio shows: ' \+ errs\.join/.test(bg))
+check('the upload walk answers the batch\'s own Studio options', /monetize: opts\.monetize, selfCert: opts\.monetize && opts\.adRating, endScreen: opts\.endScreen/.test(route))
+check('an unanswered monetization box ("Select") is answered either way', /const unset = !out\.readBack\.before && !!trigger\(\)/.test(bg) && /\/\^\(on\|off\|select\)\$\/i\.test\(t\)/.test(bg))
+check('a schedule Studio will not take is saved Private, never left a draft', /const privateIfScheduleFailed = async/.test(bg) && /want\.privateIfScheduleFails && vs && !vs\.ok/.test(bg) && /privateIfScheduleFails: true/.test(read('lib/studio-upload-client.ts')))
+check('tag chips are read without an extension\'s score in front', /\.replace\(\/\^\\d\{1,3\}\\s\+\/, ''\)/.test(bg))
+check('Private is found even with the Schedule section open', /first-container-expand-button/.test(bg) && /\^save or publish/.test(bg))
+check('the date and time are typed, not dropped in', /await typeInto\(dateInput, dateStr\)/.test(bg) && /await typeInto\(timeInput, timeStr\)/.test(bg) && bg.indexOf('const readTime = (s) =>') < bg.indexOf('if (readTime(timeInput.value) !== H * 60 + Mi) { setVal('))
+check('a leftover draft is saved with Studio in front, never in a hidden tab', /visibility: vis, background: false,/.test(read('lib/studio-upload-client.ts')))
+check('a draft reopened on Visibility with the schedule open is still recognised as open', /save or publish\|set as instant premiere/.test(bg) && /if \(!opened\) opened = mainDialog\(\)/.test(bg))
+check('SCOUT knows a page by its heading when its contents say nothing yet', /'initial check': 'checks'/.test(bg) && /if \(fs >= 22\) return NAMES\[t\]/.test(bg))
+check('an unknown page says what it showed', /\(it showed: "/.test(bg))
+check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTags/.test(bg) && /K\.steps\.uploadPlaylist/.test(bg) && /func: studioUploadThumbInPage/.test(bg))
+
+// ── FIRST COMMENTS THROUGH SCOUT, THE API ONLY AS A LATE BACKUP ───────────
+{
+  const now = Date.parse('2030-01-01T12:00:00Z')
+  check('a SCOUT creator\'s comment is left to SCOUT within the grace time', leaveCommentToScout(true, '2030-01-01T11:00:00Z', now))
+  check('and taken by the API after it', !leaveCommentToScout(true, new Date(now - SCOUT_COMMENT_GRACE_MS - 1000).toISOString(), now))
+  check('other creators are never held back', !leaveCommentToScout(false, '2030-01-01T11:00:00Z', now))
+  check('a comment with no time is not held back', !leaveCommentToScout(true, null, now))
+  const cron = read('app/api/cron/first-comments/route.ts')
+  check('the cron leaves SCOUT\'s comments before spending even the 1-unit check',
+    cron.indexOf('leaveCommentToScout(') > 0 && cron.indexOf('leaveCommentToScout(') < cron.indexOf('firstCommentDue(r, now)'))
+  const sr = read('app/api/youtube/first-comment/scout/route.ts')
+  check('SCOUT claims a comment only while it is waiting', /update\(\{ state: 'posting', updated_at: at \}\)\.eq\('id', id\)\.eq\('user_id', user\.id\)\.eq\('state', 'waiting'\)/.test(sr))
+  check('a result is written only over SCOUT\'s own claim', (sr.match(/\.eq\('state', 'posting'\)/g) ?? []).length >= 2)
+  check('the SCOUT comment route is behind the switch', /usesStudioUpload\(integ\?\.tier\)/.test(sr))
+  check('SCOUT posts only as the owner, only on a public video, never twice',
+    /studio\.youtube\.com\/video\/' \+ videoId/.test(bg) && /isPrivate === true\) \{ out\.notPublic = true/.test(bg) && /out\.already = true/.test(bg))
+  check('SCOUT posts from a tab behind the creator\'s', /watch\?v=' \+ youtubeVideoId, active: false/.test(bg))
+  check('Co-Pilot, older videos and Liftoff post before they pin', /await postDueFirstCommentsViaScout\(say\)\.catch/.test(read('lib/first-comment-pins.ts')))
+  check('the background tab posts due comments', /postDueFirstCommentsViaScout\(say\)/.test(read('components/launch/LiftoffRunner.tsx')))
+}
+
+// ── THE RECORD SHOWS WHAT HAPPENED LAST, ALL OF IT ────────────────────────
+{
+  const many = Array.from({ length: 23 }, (_, i) => ({ step: i === 22 ? 'visibility' : 'x' + i, ok: i === 22, detail: 'd' }))
+  const kept = storeStudioRun({ ok: false, path: 'draft', steps: many })
+  check('a run past twenty steps keeps its last one (the save that worked)', kept.steps.length === 23 && kept.steps[22].ok === true)
+  check('and reads back whole', readStudioRun(kept)?.steps.length === 23)
+  const route = read('app/api/launch/studio-uploads/route.ts')
+  check('a draft saved later replaces the failed upload steps in the record', /UPLOAD_ONLY_STEPS\.has\(x\.step\)/.test(route) && /Saving the draft: /.test(route))
+  check('what SCOUT saw on a failed step is kept', /\.\.\.seenBits\(x\)/.test(route))
+  check('a Private fallback that failed never reads as saved', /saving it Private did not work either/.test(bg) && !/so it was saved Private and MVP sets the time: ' \+/.test(bg))
+  check('Schedule never fails silently: it says what Studio showed', /Studio did not confirm it' \+ \(shown/.test(bg))
+  check('the date is typed only into the picker, never a box behind the window', /const inDatePicker = /.test(bg) && !/const scopes = \[newDialog\(before\), document\]/.test(bg))
+  check('a date that did not take gets one slower go', /out\.readBack\.dateSecondGo = true/.test(bg))
+  // 2026-10-05: the box read 7:09 PM and Apply put back 1:00 PM on both videos.
+  check('the typed time is committed with an Enter Studio reads as 13, then the box is left',
+    /Object\.defineProperty\(ev, 'keyCode', \{ get: \(\) => 13 \}\)/.test(bg) && /await commitTime\(timeInput\)/.test(bg))
+  check('a time Apply put back gets one more go, from Studio\'s list when it is on it, never a nearby time',
+    /out\.readBack\.timeSecondGo = \(await pickListedTime\(tBox\)\) \? 'list' : 'typed'/.test(bg)
+    && /readTime\(deepText\(el\)\) === H \* 60 \+ Mi/.test(bg) && /out\.debug\.timeList = /.test(bg))
+  check('an end screen already on the video counts as done, not as an editor that never opened', /const alreadyHas = async/.test(bg) && /const viaRow = await openedEditor\(25000\)/.test(bg) && /The video already has an end screen, so SCOUT left it as it is/.test(bg))
+  check('a silent YouTube answer on AI use is unknown, never a red cross', /aiUseNo: readBack && readBack\.containsSyntheticMedia != null \? readBack\.containsSyntheticMedia === false : null/.test(read('app/api/cron/launch-drain/route.ts')) && /aiUse: rb\.containsSyntheticMedia \?\? null/.test(read('lib/launch-release.ts')))
+  check('the report falls back to SCOUT\'s Studio read-back for AI use', /const value = yt \?\? \(studio \? true : null\)/.test(read('components/launch/LaunchReport.tsx')))
+  {
+    const steps = [{ step: 'details', ok: true }, { step: 'visibility', ok: false }, { step: 'visibility', ok: true }, { step: 'sending', ok: true }]
+    check('Schedule refused then saved Private counts as finished', studioRunSettled({ ok: false, steps }))
+    check('and says how, not "Check: Schedule"', /saved it Private and MVP set the time/.test(studioRunHeadline({ ok: false, steps, path: 'draft' })))
+    check('a step that failed and stayed failed is not finished', !studioRunSettled({ ok: false, steps: [{ step: 'visibility', ok: false }, { step: 'visibility', ok: false }] }))
+    check('the board offers Studio again only for unfinished runs', /!studioRunSettled\(liveRuns\[i\.id\] \?\? i\.studio_finish\)\)\.length/.test(read('components/launch/LaunchBoard.tsx')))
+  }
+  check('Studio\'s Apply is pressed before Schedule, and the date and time read again after it', /const applyBtn = \(\) => findBtn\(\/\^apply\$\/i, dlg, \{ enabled: true \}\)/.test(bg) && bg.indexOf('const applyBtn = ') < bg.indexOf("const ok = await finish(/^schedule$/i") && /Pressed Apply, but Studio then showed/.test(bg))
+  check('a folded Private is reached by its name when nothing unfolds it', /isRadio\(el\) && String\(\(el\.getAttribute && el\.getAttribute\('name'\)\) \|\| ''\)\.toLowerCase\(\) === v\.mode/.test(bg))
+}
+
+// ── 2026-10-05: one back catalogue used the whole shared day ────────────────
+// 151 older-video comments through the API (7,550 units) ran YouTube's daily
+// allowance out for every account by 2 pm Pacific. SCOUT now posts older
+// videos too, and the API may post at most a daily share of them per account.
+{
+  const now = Date.parse('2026-10-05T20:00:00Z')
+  // The Amazon plan too, since it got Bulk Amazon upload on 2026-10-05.
+  check('Studio uploads are open to Pro, Amazon and admin', usesStudioUpload('pro') && usesStudioUpload('admin') && usesStudioUpload('amazon') && !usesStudioUpload('trial'))
+  check('an older video is left to SCOUT for a day first',
+    leaveCommentToScout(true, null, now, new Date(now - 3_600_000).toISOString())
+    && !leaveCommentToScout(true, null, now, new Date(now - SCOUT_BACKLOG_GRACE_MS - 1).toISOString())
+    && !leaveCommentToScout(false, null, now, new Date(now).toISOString()))
+  check('a new upload never waits on the daily share', apiCommentAllowed('2026-10-05T10:00:00Z', 999, true))
+  check('older videos: at most the daily share per account through the API',
+    API_BACKLOG_COMMENTS_PER_DAY === 20 && apiCommentAllowed(null, 19, false) && !apiCommentAllowed(null, 20, false))
+  check('and none once the shared day passes the reserve line', !apiCommentAllowed(null, 0, true))
+  const cron = read('app/api/cron/first-comments/route.ts')
+  check('the cron applies it before posting',
+    /if \(!apiCommentAllowed\(row\.publish_at, byAccount, dayOverReserve\)\) \{ heldBack\+\+; continue \}/.test(cron)
+    && cron.indexOf('apiCommentAllowed(row.publish_at') < cron.indexOf('await postFirstCommentIfPublic(sb, row')
+    && /const dayOverReserve = !!q && q\.spent >= q\.reserveAt/.test(cron))
+  check('and gives SCOUT its day on older videos', /leaveCommentToScout\(scoutUsers\.has\(r\.user_id\), r\.publish_at, now, r\.created_at\)/.test(cron))
+  check('SCOUT is handed older videos as well as new uploads',
+    /\.or\(`publish_at\.is\.null,publish_at\.lte\.\$\{now\}`\)/.test(read('app/api/youtube/first-comment/scout/route.ts')))
+}
+
+// ── 2026-10-05: a used-up quota is not "paid promotion missing" ────────────
+// Every SCOUT-disclosed video was held private on a day the API read failed.
+{
+  check('SCOUT\'s Studio reading of Paid promotion is read from its steps (the last answer wins)',
+    scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }, { step: 'visibility', readBack: { paidPromotion: false } }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true }] }) && !scoutSawPaidPromotion(null))
+  // 2026-10-06: the report kept only each step's sentence, so the reading
+  // above was never there. The details step's own verdict counts as well.
+  check('a details step Studio read back as Paid promotion: Yes counts, a failed one is a No',
+    scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'Paid promotion: Yes, AI use: No. Read back from Studio.' }] })
+    && scoutSawPaidPromotion({ steps: [{ step: 'details', ok: false, detail: 'Studio did not keep: Paid promotion: Yes' }, { step: 'details', ok: true, detail: 'Second go: Paid promotion: Yes, AI use: No. Read back from Studio.' }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'Paid promotion: Yes. Read back from Studio.' }, { step: 'details', ok: false, detail: 'Second go: Studio did not keep: Paid promotion: Yes' }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'AI use: No. Read back from Studio.' }] }))
+  const su = read('app/api/launch/studio-uploads/route.ts')
+  check('the upload report keeps the paid promotion Studio read back on each step',
+    /detail: String\(x\.detail \|\| ''\)\.slice\(0, 200\), \.\.\.paidSeen\(x\) \}\)\)\n\s*\.slice\(0, 40\)/.test(su)
+    && /studio_upload: \{ \.\.\.kept, steps: \[\.\.\.keptSteps, \.\.\.saveSteps\]/.test(su))
+  const dr = read('app/api/cron/launch-drain/route.ts')
+  check('it counts only when YouTube could not be asked; an API answer still decides',
+    /const apiBlind = readBack == null/.test(dr)
+    && /const paidConfirmed = !disclose \|\| readBack\?\.paidPromotion === true \|\| \(apiBlind && studioPaidByItem\.has\(it\.id\)\)/.test(dr))
+  const rl = read('lib/launch-release.ts')
+  check('a held video is released on SCOUT\'s Studio reading when the quota is used up, with no YouTube call',
+    /if \(!\/quota\|dailyLimitExceeded\/i\.test\(said\)\) throw e/.test(rl)
+    && /if \(scoutPaid && scoutScheduled\)/.test(rl)
+    && /return \{ state: 'waiting', why: 'youtube-quota' \}/.test(rl))
+  check('a video SCOUT disclosed and saved private, its time gone, is told to pick a new time without waiting for the allowance',
+    /if \(scoutPaid && did\?\.visibility && nowRow\?\.publish_now !== true/.test(rl) && /Paid promotion is on \(SCOUT read it back in Studio\)/.test(rl))
+  check('a quota wait says so on the row and keeps the note the held check finds it by',
+    /\$\{HELD_FOR_PAID_PROMOTION\} yet: YouTube's daily allowance for API calls is used up/.test(rl)
+    && /HELD_FOR_QUOTA = \/quotaExceeded\|dailyLimitExceeded\|allowance for API calls is used up\//.test(read('lib/launch-batch.ts'))
+    && /yt\.heldForQuota === yt\.held/.test(read('components/launch/LaunchBoard.tsx')))
+  // 1.40.8: only a schedule SCOUT read back after Apply stands unasked.
+  check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(\(apiBlind && viaStudio\.scheduleVerified\) \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
+}
+
+// ── 2026-10-07 nightly audit, SCOUT 1.40.8 ─────────────────────────────────
+{
+  check('a failed progress read is not a quiet page: a closed tab ends the send as not sent',
+    /let readFailed = false/.test(bg) && /the Studio tab closed before the file finished sending/.test(bg) && /if \(\+\+unread >= 24\)/.test(bg))
+  check('SCOUT says whether it read the schedule back after Apply',
+    /out\.readBack\.timeVerified = /.test(bg) && /scheduleVerified: !!\(saved && visibility\.mode === 'schedule'/.test(bg))
+  check('the fallbacks for a day YouTube cannot be asked trust only a schedule read back',
+    /did\.publishAt && did\.scheduleVerified/.test(read('lib/launch-release.ts')) && /\(apiBlind && viaStudio\.scheduleVerified\)/.test(read('app/api/cron/launch-drain/route.ts')))
+  check('the upload timeout carries the video id YouTube already gave', /sendResponse\(\{ ok: false, steps: \[\], error: 'timeout', videoId/.test(bg))
+  check('storefront sync posts to the storefront route again', /async function pushStorefrontToMvp\(earnings, totals\)/.test(bg) && /pushStorefrontToMvp\(r\.rows, r\.totals\)/.test(bg))
+}
+
+if (failures.length) {
+  console.error('❌ studio upload guard failed:\n  - ' + failures.join('\n  - '))
+  process.exit(1)
+}
+console.log('✓ studio upload guard passed')

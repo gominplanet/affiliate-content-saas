@@ -44,12 +44,12 @@ export function ChangeThumbnailButton({ postId, postUrl }: { postId?: string | n
       // differently everywhere else in the app. Saying so here is the only place
       // the creator finds out before the next feature quietly skips it.
       if (data.tracked === false) {
-        toast.success('Thumbnail replaced on your site ✓ — note this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.', { id: t, duration: 9000 })
+        toast.success('Thumbnail replaced on your site ✓. Note this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.', { id: t, duration: 9000 })
         return
       }
       toast.success('Thumbnail replaced ✓ (may take a minute to refresh on the live site)', { id: t })
     } catch {
-      toast.error('Upload failed — try again.', { id: t })
+      toast.error('Upload failed: try again.', { id: t })
     } finally {
       setBusy(false)
     }

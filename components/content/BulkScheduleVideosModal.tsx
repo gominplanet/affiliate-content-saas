@@ -200,7 +200,7 @@ export default function BulkScheduleVideosModal({
     setRunning(false)
 
     if (successCount > 0) toast.success(`Scheduled ${successCount}/${plan.length} ${successCount === 1 ? 'post' : 'posts'}`)
-    if (failureCount > 0) toast.error(`${failureCount} failed — see the modal for details`)
+    if (failureCount > 0) toast.error(`${failureCount} failed: see the modal for details`)
     onDone({ successCount, failureCount, videoIds: plan.map(p => p.videoId) })
   }
 
@@ -381,7 +381,7 @@ export default function BulkScheduleVideosModal({
             disabled={running}
             className="px-3 py-2 rounded-lg text-sm font-medium opacity-80 hover:opacity-100 disabled:opacity-40"
           >
-            {running ? 'Working — please wait' : 'Cancel'}
+            {running ? 'Working: please wait' : 'Cancel'}
           </button>
           <button
             onClick={handleSubmit}

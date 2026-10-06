@@ -385,7 +385,7 @@ export async function GET(request: Request) {
     // Refresh stale cached descriptions so a video that's since been given a real
     // description on YouTube drops out of "Needs metadata" (the cache never
     // refreshes existing rows' descriptions on its own).
-    const trued = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
+    const { list: trued, checked: statusChecked } = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
     // WHAT WENT LIVE LEAVES THE LIST, and the saved copy learns it too, so it
     // is not shown again as a draft on the next visit.
     const changed = new Map(trued.filter((t, i) => t.status !== drafts[i].status || t.publishAt !== drafts[i].publishAt).map(t => [t.youtubeVideoId, t]))
@@ -402,13 +402,18 @@ export async function GET(request: Request) {
       drafts: await enrichWithPushState(supabase, user.id, current),
       nextPageToken: nextCursor,
       fromCache: usedCache,
+      // YOUTUBE COULD NOT BE ASKED (its daily allowance used up): the statuses
+      // and descriptions are MVP's saved copy, so a video that went public
+      // since still reads Private and sits in Needs metadata. Said on the
+      // page rather than shown as fact.
+      statusUnchecked: !statusChecked,
       includePublished,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (/quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded|\bquota\b/i.test(msg)) {
       return NextResponse.json({
-        error: 'YouTube\'s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific — your videos will load again then.',
+        error: 'YouTube\'s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific, and your videos will load again then.',
         quotaExceeded: true,
       }, { status: 429 })
     }
@@ -587,7 +592,7 @@ async function runFullScan(
 async function backfillTrueDescriptions(
   yt: ReturnType<typeof createYouTubeOAuthService>,
   drafts: ReturnType<typeof buildDraftVideo>[],
-): Promise<ReturnType<typeof buildDraftVideo>[]> {
+): Promise<{ list: ReturnType<typeof buildDraftVideo>[]; checked: boolean }> {
   // EVERY VIDEO NOT YET PUBLIC, not only the ones with an empty description.
   // The saved list is only ever topped up with new uploads, so a video that
   // was private when first seen stayed "Private, not scheduled" here after it
@@ -597,15 +602,15 @@ async function backfillTrueDescriptions(
   // checked. Fifty per call, one quota unit each, and what is corrected is
   // saved, so the next load has almost nothing left to ask about.
   const suspects = drafts.filter(d => d.youtubeVideoId && d.status !== 'public').slice(0, 1500)
-  if (!suspects.length) return drafts
+  if (!suspects.length) return { list: drafts, checked: true }
   let meta: Record<string, { description: string; status: string; publishAt: string | null }> = {}
   try {
     meta = await yt.getVideoMetaByIds(suspects.map(d => d.youtubeVideoId))
   } catch (err) {
     console.warn('[yt-drafts] description backfill failed (non-fatal):', err instanceof Error ? err.message : String(err))
-    return drafts
+    return { list: drafts, checked: false }
   }
-  return drafts.map(d => {
+  return { checked: true, list: drafts.map(d => {
     const m = meta[d.youtubeVideoId]
     if (!m) return d
     return {
@@ -617,7 +622,7 @@ async function backfillTrueDescriptions(
       // its time no longer has one, and the old time must not linger.
       publishAt: m.publishAt ?? null,
     }
-  })
+  }) }
 }
 
 // Enrich drafts with Co-Pilot push timestamps (best-effort, non-blocking)
@@ -633,7 +638,12 @@ async function enrichWithPushState(
   // product_title with product_url). It wins over the ASIN in the title, which
   // is all the card knew before: a correction lasted until the next reload.
   const setAsinMap: Record<string, string> = {}
-  if (videoIds.length > 0) {
+  // IN CHUNKS OF 200, like the SCOUT sync's read. One .in() with every id of
+  // a synced library (hundreds of ids) makes a request URL long enough for
+  // the database gateway to refuse, and a refusal comes back as empty data:
+  // every pushed or generated video then fell back into "Needs metadata".
+  for (let i = 0; i < videoIds.length; i += 200) {
+    const ids = videoIds.slice(i, i + 200)
     try {
       // Two Co-Pilot signals decide the "Metadata sent" bucket:
       //   pushes     = metadata APPLIED to YouTube via MVP (mig 109)
@@ -644,12 +654,12 @@ async function enrichWithPushState(
           .from('youtube_copilot_pushes')
           .select('youtube_video_id,pushed_at')
           .eq('user_id', userId)
-          .in('youtube_video_id', videoIds),
+          .in('youtube_video_id', ids),
         (supabase as any)
           .from('youtube_copilot_generated')
           .select('youtube_video_id,generated_at')
           .eq('user_id', userId)
-          .in('youtube_video_id', videoIds),
+          .in('youtube_video_id', ids),
       ])
       for (const row of (Array.isArray(pushesRes.data) ? pushesRes.data : [])) {
         if (row.youtube_video_id && row.pushed_at) appliedMap[row.youtube_video_id as string] = row.pushed_at as string
@@ -662,7 +672,7 @@ async function enrichWithPushState(
         .from('youtube_videos')
         .select('youtube_video_id,product_url')
         .eq('user_id', userId)
-        .in('youtube_video_id', videoIds)
+        .in('youtube_video_id', ids)
         .not('product_title', 'is', null)
       for (const row of (Array.isArray(setRows) ? setRows : [])) {
         const m = String(row.product_url || '').match(/\/dp\/([A-Z0-9]{10})\b/i)

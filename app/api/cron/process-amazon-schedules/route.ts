@@ -97,7 +97,9 @@ export async function GET(request: Request) {
       if (!intRow) throw new Error('No integration row at post time.')
 
       let externalId = ''
-      let externalUrl = ''
+      // Null when Instagram did not report the post's address: the row stays
+      // completed with its media id, and the queue shows no dead link.
+      let externalUrl: string | null = ''
       let note: string | null = null
       if (row.platform === 'instagram') {
         const out = await publishToInstagram({

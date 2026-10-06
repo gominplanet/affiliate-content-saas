@@ -11,6 +11,7 @@ import ToolGuide from '@/components/guide/ToolGuide'
 // The Shorts cap is READ, never typed: this line is what a creator is shown
 // when they ask what their limit is, and it sat at 50 while the constant moved.
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { AMAZON_CLIPS_PER_MONTH } from '@/lib/amazon-plan'
 import {
   ShoppingBag, Sparkles, Search, Tag, ShoppingCart, PenLine, Bookmark, ShieldCheck,
   Youtube, Image as ImageIcon, Type, FileText, Layers, Send, Mail, Link2, Scale,
@@ -40,10 +41,10 @@ export function AmzFinderGuide() {
         { icon: <BarChart3 size={18} />, title: 'Check the data first', body: <>Each card shows the price, rating, reviews, monthly sales and best-seller rank where Amazon has them. Tap <strong>Data</strong> for the deep dive: price against its typical and all-time low, recent sales, carousel videos, and seller details, with a <strong>Write review</strong> button at the end.</> },
         { icon: <PenLine size={18} />, title: 'Write a review in one click', body: <><strong>Write review</strong> researches the product, writes a full review in your voice, and publishes it to your WordPress with your affiliate link. When it finishes, the button turns into <strong>View review</strong>.</> },
         { icon: <ShoppingCart size={18} />, title: 'Buy to review vs your affiliate link', body: <>The green <strong>cart</strong> button is a plain Amazon link with no tag, for buying the product yourself (you cannot earn commission on your own purchase). Every other product link carries your own Associates tag, which you set once in <strong>Brand Profile</strong>.</> },
-        { icon: <Bookmark size={18} />, title: 'Save for later', body: <>Hit <strong>Save</strong> and the product lands on your <strong>Saved for later</strong> shelf below, your buy-to-review shortlist. From there you can <strong>Buy to review</strong> or <strong>Remove</strong> it; items you saved from CC Campaigns also get <strong>Message brand</strong>.</> },
+        { icon: <Bookmark size={18} />, title: 'Save for later', body: <>Hit <strong>Save</strong> and the product lands on your <strong>Saved for later</strong> shelf below, your buy-to-review shortlist. From there you can <strong>Buy to review</strong> or <strong>Remove</strong> it; items you saved from Brand campaigns also get <strong>Message brand</strong>.</> },
         { icon: <Lightbulb size={18} />, title: 'Made for your channel', body: <>When MVP has matches for you, a <strong>Made for your channel</strong> strip sits above the search. Open it to see products matched to what already earns for you, each with the reasons it matched. Until your storefront earnings sync, it shows <strong>Trending picks to try</strong> instead.</> },
       ]}
-      footerNote={<><strong className="text-foreground">Looking for Creator Connections campaigns?</strong> They have their own <strong className="text-foreground">CC Campaigns</strong> page under Research.</>}
+      footerNote={<><strong className="text-foreground">Looking for Creator Connections campaigns?</strong> They have their own <strong className="text-foreground">Brand campaigns</strong> page under Research.</>}
     />
   )
 }
@@ -80,7 +81,7 @@ export function ContentGuide() {
       guideKey="content"
       version={2}
       icon={<FileText size={20} />}
-      title="Your guide to the Blog Post Generator"
+      title="Your guide to Blog posts"
       subtitle="Turn your YouTube videos, or a product link, into published reviews, then share them."
       sections={[
         { icon: <Youtube size={18} />, title: 'Video to Blog', body: <>Press <strong>Sync videos</strong> to pull in your YouTube videos. Any video on your channel works, even old ones. On a video, choose <strong>Generate now</strong> to set options and write the post, or <strong>Schedule for later</strong> to pick a date, a time and which socials to post to.</> },
@@ -325,7 +326,7 @@ export function VoiceTrainingGuide() {
         { icon: <FileText size={18} />, title: 'The four basics', body: <>Fill in <strong>About You</strong>, <strong>Target Reader</strong>, and <strong>Your Writing Style</strong>, where you paste writing that sounds exactly like you. List anything you never want to read in <strong>Words & Phrases to Avoid</strong>, one per line, and it is kept out of every generated post.</> },
         { icon: <Sparkles size={18} />, title: 'Calibrate your style', body: <>Answer the <strong>Voice calibration</strong> questions (what sounds fake, weak, cringe or trustworthy to you) and pick a side on each line of <strong>Your communicative style</strong>. Then tick the speech patterns and thought process the writing should use; tap a selected option again to clear it.</> },
         { icon: <Lightbulb size={18} />, title: 'Let MVP fill the gaps', body: <>Once you have published a few posts, <strong>Refresh MVP suggestions</strong> reads them and fills in only the fields you left empty. Your own answers are never overwritten.</> },
-        { icon: <PenLine size={18} />, title: 'Where it shows up', body: <>Your voice is used by the Blog Post Generator, Comparisons, Articles, Scriptwriter, Newsletter, Shorts Studio, and the captions MVP writes for your social posts.</> },
+        { icon: <PenLine size={18} />, title: 'Where it shows up', body: <>Your voice is used by Blog posts, Comparisons, Articles, Scriptwriter, Shorts Studio, and the captions MVP writes for your social posts.</> },
       ]}
       footerNote={<><strong className="text-foreground">Press Save in the bar at the bottom.</strong> Your changes apply to the next thing MVP writes for you.</>}
     />
@@ -346,8 +347,8 @@ export function FaceModelsGuide() {
         { icon: <Camera size={18} />, title: 'Add a face', body: <>Click <strong>Add a face</strong>, give it a name, and upload 4 to 20 photos (JPG, PNG or WebP, up to 10 MB each). Use clear, well lit, front facing shots of just you, mix angles and expressions, and aim for 10 or more for a stronger likeness.</> },
         { icon: <Users size={18} />, title: 'How many faces you can keep', body: <>Faces are included on paid plans, and your plan sets how many you can keep, shown next to <strong>Your faces</strong>. You can add more photos to an existing face at any time, up to 20.</> },
         { icon: <Shirt size={18} />, title: 'Pin an outfit', body: <>Set <strong>Outfit in thumbnails</strong> on a face (for example, a white lab coat) and every thumbnail puts you in it. Leave it blank to let MVP vary your outfit.</> },
-        { icon: <Youtube size={18} />, title: 'Where your face is used', body: <>Pick a face in YouTube Co-Pilot under <strong>Who’s in this video?</strong>, in the <strong>Thumbnail Generator</strong>, in Liftoff, and in Instagram and Pinterest image posts. Co-Pilot and the Thumbnail Generator also offer a product-only option.</> },
-        { icon: <Rocket size={18} />, title: 'A face per video in Liftoff', body: <>Liftoff sets one face for the whole batch. With two or more faces saved, each upload also asks <strong>Who’s in this video?</strong> so every video gets the right presenter, and any you leave unanswered use the batch’s face.</> },
+        { icon: <Youtube size={18} />, title: 'Where your face is used', body: <>Pick a face in YouTube Co-Pilot under <strong>Who’s in this video?</strong>, in <strong>Thumbnails</strong>, in Bulk Amazon upload, and in Instagram and Pinterest image posts. Co-Pilot and Thumbnails also offer a product-only option.</> },
+        { icon: <Rocket size={18} />, title: 'A face per video in Bulk Amazon upload', body: <>Bulk Amazon upload sets one face for the whole batch. With two or more faces saved, each upload also asks <strong>Who’s in this video?</strong> so every video gets the right presenter, and any you leave unanswered use the batch’s face.</> },
         { icon: <ImageIcon size={18} />, title: 'Photobooth headshots', body: <>Pick a face, a look (Studio, Office, LinkedIn, Magazine, Cinematic or Outdoor), an expression and a shape, then generate a studio quality headshot for your profiles. Each one takes 1 to 3 minutes, and the page shows how many you have left this month.</> },
         { icon: <Trash2 size={18} />, title: 'Deleting a face', body: <>Deleting a face never changes thumbnails or posts that are already made. It removes the uploaded photos, so that face cannot be used on anything new until you add it again.</> },
       ]}
@@ -435,7 +436,7 @@ export function BrainstormGuide() {
       sections={[
         { icon: <BarChart3 size={18} />, title: 'Grounded in your data', body: <>This reads your last 90 days: which posts and products earned clicks, which topics pulled traffic. It is not random ideas; it is what your own audience responds to.</> },
         { icon: <Lightbulb size={18} />, title: 'What to make next', body: <>It turns those patterns into concrete next posts: more of a winning angle, a comparison your readers are clearly shopping for, a roundup around a product that is converting.</> },
-        { icon: <PenLine size={18} />, title: 'Act on it', body: <>Take an idea straight into the Blog Post Generator, Comparisons, or Buying Guides and publish it.</> },
+        { icon: <PenLine size={18} />, title: 'Act on it', body: <>Take an idea straight into Blog posts, Comparisons, or Buying guides and publish it.</> },
       ]}
     />
   )
@@ -466,7 +467,7 @@ export function AssistantGuide() {
       guideKey="assistant"
       version={2}
       icon={<MessageCircle size={20} />}
-      title="Your guide to the MVP Help Desk"
+      title="Your guide to Ask MVP"
       subtitle="Ask how to do anything in MVP, or get affiliate strategy advice."
       sections={[
         { icon: <MessageCircle size={18} />, title: 'Two jobs in one', body: <>Ask how any part of MVP works (where a feature lives, how to connect a site), or ask for strategy (what to review next, how to land a brand deal). It answers from MVP’s own feature guide, so its steps match the product.</> },
@@ -475,7 +476,7 @@ export function AssistantGuide() {
         { icon: <Brain size={18} />, title: 'Memory across chats', body: <>Open <strong>Memory</strong> to see what MVP remembers about you across all your chats; it updates itself as you talk. <strong>Clear all memory</strong> wipes it.</> },
         { icon: <Upload size={18} />, title: 'Bring what another AI knows', body: <>Under <strong>Import knowledge</strong>, paste notes or use <strong>Upload file</strong> for a text, markdown, JSON or CSV export from another AI tool, then press <strong>Import to memory</strong>. MVP keeps the lasting facts and does not store the raw text.</> },
         { icon: <Inbox size={18} />, title: 'Your saved chats', body: <>Every conversation is saved in your chat list, so you can reopen one or start a <strong>New chat</strong>. Deleting a conversation removes its messages for good.</> },
-        { icon: <Clock size={18} />, title: 'Your monthly messages', body: <>Your plan includes a set number of Help Desk messages each billing period. When you reach it, the chat says so and tells you when it resets.</> },
+        { icon: <Clock size={18} />, title: 'Your monthly messages', body: <>Your plan includes a set number of Ask MVP messages each billing period. When you reach it, the chat says so and tells you when it resets.</> },
       ]}
     />
   )
@@ -489,7 +490,7 @@ export function CollaborationsGuide() {
       version={2}
       accent="#60A5FA"
       icon={<Handshake size={20} />}
-      title="Your guide to Brand Deals"
+      title="Your guide to Brand pitches"
       subtitle="MVP researches the brand and writes a pitch email that sells your work."
       sections={[
         { icon: <Handshake size={18} />, title: 'Start with the brand', body: <>Enter the <strong>Brand name</strong> (the only required field), plus the brand&rsquo;s website and the product name or ASIN if you have them. Give an ASIN and MVP looks the product up so the email can name it and point out a feature or two.</> },
@@ -540,7 +541,6 @@ export function CustomizeGuide() {
         { icon: <UserSquare size={18} />, title: 'Reviewer Trust Block', body: <>This adds a reviewer box to every post with your name, a credibility tagline, a real photo and a &ldquo;More about me&rdquo; link. Name and photo come from Brand Profile unless you change them here.</> },
         { icon: <Star size={18} />, title: 'Your homepage lineup', body: <><strong>Featured posts (Editor&rsquo;s Picks)</strong> pins the big hero and the four cards in the Editor&rsquo;s Picks row; any slot left on Automatic shows your newest post. <strong>Pick of the Day</strong> features a post in the sidebar or on the homepage. It rotates every 12 or 24 hours, or you can pin one post.</> },
         { icon: <Layers size={18} />, title: 'How posts look', body: <>Site-wide switches cover post dates, a sticky header, comments, the bio on your About page, and price in product schema. The read counter adds a reads chip to each post and to the blog once they pass the thresholds you set.</> },
-        { icon: <Mail size={18} />, title: 'Mid-article newsletter form', body: <>This drops a signup form into every post, after the paragraph you choose, with your own headline, subtitle and button label. Signups go to your existing MVP newsletter list.</> },
         { icon: <Link2 size={18} />, title: 'Footer links and tracking', body: <>Add <strong>Custom Links</strong> to the footer and paste verification tags from services like Google Search Console. Enter your GA4 Measurement ID or a Tag Manager ID and the theme adds the tracking tag for you.</> },
         { icon: <Send size={18} />, title: 'Save & Push to Blog', body: <>Changes go live when you press <strong>Save &amp; Push to Blog</strong>, which also clears your site cache; <strong>Clear Cache</strong> does that on its own. If WordPress refuses the push, the page tells you, and your settings stay saved in MVP.</> },
       ]}
@@ -588,7 +588,7 @@ export function ShortsStudioGuide() {
         { icon: <Layers size={18} />, title: 'Fine tune before you render', body: <>Use <strong>Edit</strong> on any suggestion to change its start and end time, its on-screen hook or its caption. Save, then render to apply the change.</> },
         { icon: <Type size={18} />, title: 'Captions and layout', body: <>Captions are burned in word for word from what you actually said, timed to your speech; switch them off for a clean clip, or pick a caption style. Choose <strong>Standard</strong> or <strong>Split screen</strong>, then hit <strong>Render Short</strong>.</> },
         { icon: <Send size={18} />, title: 'Post or download', body: <>A finished Short can be downloaded or posted to <strong>TikTok</strong>, <strong>Instagram</strong> or <strong>YouTube</strong> straight from the list. Each button shows when that clip has been posted.</> },
-        { icon: <ShieldCheck size={18} />, title: 'Plan and limits', body: <>Shorts are a Pro feature, capped at <strong>{SHORTS_MONTHLY_CAP} finished Shorts a month</strong>; the counter shows how many you have left. Only use videos you own or have the rights to.</> },
+        { icon: <ShieldCheck size={18} />, title: 'Plan and limits', body: <>Clips are part of the Amazon and Pro plans: <strong>{SHORTS_MONTHLY_CAP} finished clips a month on Pro</strong> and <strong>{AMAZON_CLIPS_PER_MONTH} on Amazon</strong>; the counter shows how many you have left. Only use videos you own or have the rights to.</> },
       ]}
       footerNote={<>Want a shoppable call to action or a product link on the clip? Use <strong className="text-foreground">Clip Factory</strong>, which does the same cutting and adds an Enhance step before publishing.</>}
     />
@@ -611,7 +611,7 @@ export function ClipFactoryGuide() {
         { icon: <Tag size={18} />, title: 'Add a call to action', body: <>In <strong>Enhance</strong>, choose a <strong>CTA box</strong> or <strong>Caption text</strong>, then set where the clip is going and how people buy: <strong>In-app shop</strong> or <strong>Link in bio</strong>. Pick a <strong>Recommended</strong> badge, one from <strong>Gallery</strong> or <strong>My boxes</strong>, or <strong>Make your own</strong> from a few words; drag it on the preview, resize it, and choose how long it shows.</> },
         { icon: <ShoppingBag size={18} />, title: 'Add the product', body: <>Paste an Amazon ASIN, store URL or TikTok Shop link, plus the product name if you like, and MVP writes a suggested caption for it. If <strong>Auto-add products from my posts</strong> is on in Link in Bio, the product lands on your Shop page when you post to TikTok or Instagram. Hit <strong>Burn overlay & continue</strong>, or use <strong>Skip</strong> to publish the clip as is.</> },
         { icon: <Send size={18} />, title: 'Publish from here', body: <>Post the finished clip to <strong>TikTok</strong>, <strong>Instagram</strong> or <strong>YouTube</strong>, or <strong>Download</strong> it. <strong>Choose Reel cover</strong> sets the still frame Instagram shows; YouTube asks for publishing access the first time and adds tags automatically. Each button turns solid and reads Posted once that post goes through.</> },
-        { icon: <ShieldCheck size={18} />, title: 'Ground rules and limits', body: <>Only use your own videos or ones you have the rights to. Rendering is a Pro feature, capped at <strong>{SHORTS_MONTHLY_CAP} finished Shorts a month</strong>; the counter beside the title shows how many you have left and when it resets.</> },
+        { icon: <ShieldCheck size={18} />, title: 'Ground rules and limits', body: <>Only use your own videos or ones you have the rights to. Rendering is part of the Amazon and Pro plans: <strong>{SHORTS_MONTHLY_CAP} finished clips a month on Pro</strong> and <strong>{AMAZON_CLIPS_PER_MONTH} on Amazon</strong>; the counter beside the title shows how many you have left and when it resets.</> },
       ]}
       footerNote={<><strong className="text-foreground">Longer videos are not better here.</strong> Clip Factory works best on tight, spoken review content: pick a video with a face and clear speech.</>}
     />
@@ -656,7 +656,7 @@ export function BrandInquiriesGuide() {
         { icon: <ShieldCheck size={18} />, title: 'Save pushes it live', body: <><strong>Save banner settings</strong> updates your blog. If the push to WordPress fails, you get a warning instead of the success message, so check your WordPress connection. The banner needs either a link or the form turned on, otherwise it has nowhere to send brands.</> },
         { icon: <Inbox size={18} />, title: 'Messages land here', body: <>Form messages appear under <strong>Messages</strong> with the brand, contact, date and the blog page they wrote from. New ones have a purple edge, and <strong>Brand Inquiries</strong> in the menu shows an unread count until you open this page.</> },
         { icon: <Mail size={18} />, title: 'Reply or archive', body: <>When the brand left an email, <strong>Reply</strong> opens your email app already addressed to them. <strong>Archive</strong> clears a message from the list once you are done.</> },
-        { icon: <Handshake size={18} />, title: 'Turn interest into deals', body: <>These are warm leads: brands that found you and want to work with you. Reply, agree on terms, and cover their product; use <strong>Brand Deals</strong> when you want MVP to help write the pitch.</> },
+        { icon: <Handshake size={18} />, title: 'Turn interest into deals', body: <>These are warm leads: brands that found you and want to work with you. Reply, agree on terms, and cover their product; use <strong>Brand pitches</strong> when you want MVP to help write the pitch.</> },
       ]}
     />
   )
@@ -669,13 +669,13 @@ export function VirtualAssistantsGuide() {
       guideKey="virtual-assistants"
       version={2}
       icon={<Users size={20} />}
-      title="Your guide to Virtual Assistants"
+      title="Your guide to your Team"
       subtitle="Give a VA their own login without sharing yours."
       sections={[
         { icon: <Users size={18} />, title: 'Delegate without sharing your password', body: <>Invite a VA or contractor and they get their own login on your single Pro subscription. Pro includes up to 3 VA seats, and the page shows how many are in use.</> },
         { icon: <Mail size={18} />, title: 'Send an invite', body: <>Enter their email, set their permissions, add an optional personal note, and press <strong>Send invite</strong>. Invites they have not accepted wait under <strong>Pending invites</strong>, where you can cancel one and invite the same email again later.</> },
         { icon: <Layers size={18} />, title: 'What a VA can see', body: <>VAs work inside your workspace: your videos, posts, WordPress sites, brand voice and face library. What they generate counts against your Pro plan’s usage and AI cost.</> },
-        { icon: <ShieldCheck size={18} />, title: 'What stays yours', body: <>VAs cannot open billing, your WordPress and integrations setup, Customize Blog, API keys, or the Virtual Assistants page, and they cannot read your stored API keys.</> },
+        { icon: <ShieldCheck size={18} />, title: 'What stays yours', body: <>VAs cannot open billing, your WordPress and integrations setup, Blog design, API keys, or the Team page, and they cannot read your stored API keys.</> },
         { icon: <KeyRound size={18} />, title: 'What permissions do today', body: <><strong>Manage newsletter</strong> is enforced: a VA without it cannot send or edit your list. The other five are saved on each VA and shown on the page, but are not yet checked everywhere, so treat them as your intent rather than a lock.</> },
         { icon: <Trash2 size={18} />, title: 'Change or remove access', body: <>Edit a VA’s permissions from their row at any time. Revoke them and they lose access to your workspace immediately; their own account stays open but is no longer linked to yours.</> },
       ]}
@@ -692,17 +692,17 @@ export function LiftoffGuide() {
       version={1}
       accent="#0EA5A4"
       icon={<Rocket size={20} />}
-      title="Your guide to Liftoff"
+      title="Your guide to Bulk Amazon upload"
       subtitle="Up to ten videos, set up once, launched to YouTube and Amazon."
       sections={[
         { icon: <Upload size={18} />, title: 'Add up to 10 videos', body: <>In <strong>Add your videos</strong>, pick up to 10 files at once, each under 500MB. Every file gets its own bar showing MB sent, speed and time left, and one that stalls starts again by itself; keep the tab open until they finish. If a file name contains the product’s ASIN (like Ninja Crispi B0DDDD8WD6.mp4), the product is filled in for you.</> },
         { icon: <UserSquare size={18} />, title: 'Who’s in this video?', body: <>With two or more faces saved in Face Models, each upload asks <strong>Who’s in this video?</strong> beside its bar, so the right presenter goes on its thumbnail. Anything you leave unanswered uses the face chosen for the batch.</> },
         { icon: <MousePointerClick size={18} />, title: 'Choose the CTA and thumbnail look', body: <>Pick one CTA design, one of nine spots, a size, and when it shows (<strong>Early, for 10s</strong> or <strong>Last 8 seconds</strong>), or choose <strong>No CTA on these</strong>. For thumbnails, choose who is on them, one or more looks (<strong>Mix it up</strong> varies them) and the badge. Every video gets one, used on YouTube and in every Amazon country.</> },
-        { icon: <Globe size={18} />, title: 'Amazon: your US storefront', body: <>Liftoff sends each video to your <strong>US</strong> storefront. Amazon&rsquo;s Global Storefront shows your US videos in the other countries&rsquo; storefronts, so there is nothing to translate or dub. MVP checks the product is sold in the US before the upload, and says so on the card when it is not.</> },
+        { icon: <Globe size={18} />, title: 'Amazon: your US storefront', body: <>Bulk Amazon upload sends each video to your <strong>US</strong> storefront. Amazon&rsquo;s Global Storefront shows your US videos in the other countries&rsquo; storefronts, so there is nothing to translate or dub. MVP checks the product is sold in the US before the upload, and says so on the card when it is not.</> },
         { icon: <Tag size={18} />, title: 'Set each product', body: <>Paste the ASIN or Amazon link for each video. Each has its own <strong>Title for YouTube</strong> and <strong>Title for Amazon</strong>, both with <strong>Write it for me</strong>; leave the Amazon title empty and MVP writes one, and other countries get it translated. The arrows on each row set the order the videos go out in.</> },
         { icon: <Clock size={18} />, title: 'Schedule, check the channel, launch', body: <>Choose <strong>YouTube and Amazon</strong> or <strong>Amazon only</strong>, then give each video its own date and time, or let the daily pattern fill the rest; <strong>Notify subscribers</strong> stays off unless you turn it on. Above the <strong>Launch</strong> button, MVP asks YouTube which channel your login uploads to, and you confirm it with <strong>Yes, upload here</strong>.</> },
         { icon: <Youtube size={18} />, title: 'What happens on YouTube', body: <>On MVP’s servers, with the tab closed, each video gets its CTA burned in, both thumbnails built, and a description written with your affiliate link. It is uploaded private with paid promotion set through YouTube and read back, gets its thumbnail and your playlist, and goes public at its time. SCOUT then does the Studio steps you ticked (monetization, ad rating, end screen). Product tags are yours to add in Studio while Chrome is open.</> },
-        { icon: <Store size={18} />, title: 'What happens on Amazon', body: <>Amazon does not follow the YouTube schedule: once a video is launched (in two-part Liftoff, once you press <strong>Start Amazon</strong>), MVP checks the product is sold in the US and SCOUT uploads your original video, without the CTA, to your US storefront through your own signed-in Creator account, from the Liftoff page or a background tab while Chrome is open.</> },
+        { icon: <Store size={18} />, title: 'What happens on Amazon', body: <>Amazon does not follow the YouTube schedule: once a video is launched (in a two-part batch, once you press <strong>Start Amazon</strong>), MVP checks the product is sold in the US and SCOUT uploads your original video, without the CTA, to your US storefront through your own signed-in Creator account, from the Liftoff page or a background tab while Chrome is open.</> },
       ]}
       footerNote={<><strong className="text-foreground">The report shows what happened, not what was planned.</strong> After launch, every video’s YouTube and Amazon results come from what came back, and a stopped row says why, with <strong>Try again</strong> to put it back in the queue.</>}
     />
@@ -717,11 +717,11 @@ export function PinnedCommentsGuide() {
       version={1}
       accent="#0EA5A4"
       icon={<Pin size={20} />}
-      title="Your guide to Pinned Comments"
+      title="Your guide to Pinned comments"
       subtitle="A comment from your channel with the product link, pinned to the top of every video."
       sections={[
         { icon: <Pin size={18} />, title: 'What it is', body: <>On a phone, a video&apos;s description sits folded away; the pinned comment is the first thing people read under the video. MVP writes one from your video&apos;s title and the product link in its description, marks the link <strong>(paid link)</strong> as the FTC asks, posts it from your channel and pins it.</> },
-        { icon: <Rocket size={18} />, title: 'New videos get one automatically', body: <>Every video <strong>YouTube Co-Pilot</strong> or <strong>Liftoff</strong> uploads gets its pinned comment when it goes public. Nothing to set. SCOUT does the pinning, because YouTube only lets a person pin, so keep Chrome open with MVP in a tab.</> },
+        { icon: <Rocket size={18} />, title: 'New videos get one automatically', body: <>Every video <strong>YouTube Co-Pilot</strong> or <strong>Bulk Amazon upload</strong> sends gets its pinned comment when it goes public. Nothing to set. SCOUT does the pinning, because YouTube only lets a person pin, so keep Chrome open with MVP in a tab.</> },
         { icon: <ListChecks size={18} />, title: 'Older videos: tick and press', body: <>This page lists your channel&apos;s videos with what each has: <strong>Pinned</strong>, <strong>Posted, not pinned</strong> (and why), <strong>Waiting until the video is public</strong>, or none. Tick <strong>Only videos without one</strong>, then <strong>Select all shown</strong>, and press <strong>Post and pin</strong>. Videos go one at a time and each row says what happened.</> },
         { icon: <RefreshCw size={18} />, title: 'Posted but not pinned', body: <>If SCOUT could not pin one (Chrome closed, signed out of YouTube), <strong>Pin the ones not pinned</strong> button (it shows how many) tries again without posting a second comment.</> },
         { icon: <Clock size={18} />, title: 'Good to know', body: <>Pinning replaces a comment you pinned yourself on that video. YouTube allows roughly 190 comments a day; when that runs out the run stops and says so, and you carry on tomorrow. A video with no product link in its description gets a comment without a link. <strong>Encore</strong> edits the pinned comment when that product goes on sale.</> },

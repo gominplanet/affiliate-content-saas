@@ -70,7 +70,7 @@ export default function StorefrontBrands() {
 
   function copyList() {
     if (!data) return
-    const text = data.brands.map(b => `${b.brand} (${b.count})${b.cc ? ' — on Creator Connections' : ''}`).join('\n')
+    const text = data.brands.map(b => `${b.brand} (${b.count})${b.cc ? ': on Creator Connections' : ''}`).join('\n')
     navigator.clipboard?.writeText(text).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1600)
     }).catch(() => {})

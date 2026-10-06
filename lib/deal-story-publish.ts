@@ -8,6 +8,7 @@
 
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { maybeDecrypt } from '@/lib/secrets'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { renderStoryImage, cloudinaryConfigured } from '@/services/cloudinary'
 
@@ -55,8 +56,10 @@ export async function publishDealStory(opts: {
     try {
       const r = await refreshLongLivedToken(accessToken)
       accessToken = r.accessToken
+      // ENCRYPTED LIKE EVERY OTHER TOKEN WRITE. A plain update put the refreshed
+      // Instagram token into the integrations row as readable text.
       await supabase.from('integrations')
-        .update({ instagram_access_token: accessToken, instagram_token_expiry: r.expiresAt })
+        .update(encryptIntegrationWrite({ instagram_access_token: accessToken, instagram_token_expiry: r.expiresAt }))
         .eq('user_id', userId)
     } catch { /* keep the existing token */ }
   }

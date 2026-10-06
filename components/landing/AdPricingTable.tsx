@@ -27,6 +27,10 @@
 import { useState } from 'react'
 import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
+import { FREE_TRIAL } from '@/lib/free-trial'
+import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -42,25 +46,41 @@ function capsFor(tier: PaidTier): string[] {
     ? [
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
         ['Pinterest pins a month', t.pinsPerMonth],
-        ['Reels covers a month', t.igPostsPerMonth],
-        ['Facebook designs a month', t.facebookPostsPerMonth],
-        ['brand-deal messages a month', t.collabsPerMonth],
+        // igPostsPerMonth counts Instagram posts and Stories, not Reels.
+        ['Instagram posts a month', t.igPostsPerMonth],
+        ['brand pitch emails drafted a month', t.collabsPerMonth],
         ['face models', t.maxFaces],
+        // Seb, 2026-10-05: the video additions, from lib/amazon-plan.
+        ['deal posts a month', t.dealsPerMonth],
+        ['YouTube Co-Pilot runs a month', AMAZON_COPILOT_RUNS_PER_MONTH],
+        ['Clip Factory clips a month, to Instagram and Facebook Reels', AMAZON_CLIPS_PER_MONTH],
+        ['Amazon Live shows a month, prep and follow-up', AMAZON_LIVE_SHOWS_PER_MONTH],
       ]
     : [
         ['published articles a month', t.postsPerMonth],
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
+        ['Pinterest pins a month', t.pinsPerMonth],
+        ['Instagram posts a month', t.igPostsPerMonth],
+        ['YouTube Co-Pilot runs a month', t.metadataGensPerMonth],
+        ['Clip Factory clips a month, TikTok and YouTube Shorts too', SHORTS_MONTHLY_CAP],
         ['video scripts a month', t.scriptsPerMonth],
         ['WordPress sites', t.sites],
-        ['newsletter subscribers', t.newsletterSubscribers],
-        ['virtual assistant seats', t.vaSeats],
+        ['team seats', t.vaSeats],
       ]
   return rows.filter(([, v]) => v !== 0).map(([label, v]) => `${n(v)} ${label}`)
 }
 
-const EXTRAS: Record<PaidTier, string> = {
-  amazon: 'Passport geo-links, unlimited and no cost per click',
-  pro: 'Passport geo-links, unlimited and no cost per click',
+const EXTRAS: Record<PaidTier, string[]> = {
+  amazon: [
+    'Bulk Amazon upload: review videos to your storefront, and YouTube when connected',
+    'Passport geo-links, unlimited and no cost per click',
+  ],
+  pro: [
+    'Everything in the Amazon plan, plus the blog',
+    'X, Threads, TikTok, LinkedIn, Bluesky and Telegram posting',
+    'Partner programs: Levanta, PartnerBoost, Wayward and LTK',
+    'Passport geo-links, unlimited and no cost per click',
+  ],
 }
 
 function PlanCard({
@@ -167,7 +187,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       note: showYear
         ? `Saves $${saving.toLocaleString('en-US')} against monthly`
         : (annual ? `Or $${annual.toLocaleString('en-US')} a year` : null),
-      features: [...capsFor(k), EXTRAS[k]],
+      features: [...capsFor(k), ...EXTRAS[k]],
       ctaLabel: `Get ${t.label}`,
       ctaHref: `/signup?tier=${k}&plan=paid&billing=${showYear ? 'annual' : 'monthly'}`,
     }
@@ -208,17 +228,21 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       )}
 
       <div className="grid md:grid-cols-3 gap-5 items-stretch">
+        {/* A trial, not a free plan: the allowances stop after
+            FREE_TRIAL.trialDays (lib/free-trial). This card said "/forever"
+            on both ad landing pages. Designs first, because that is the loop
+            the trial is built around; the posts need a WordPress site. */}
         <PlanCard
-          name="Free"
+          name="Free trial"
           blurb="See it work before you decide"
           price={`$${TIERS.trial.price}`}
-          priceSuffix="/forever"
+          priceSuffix={`for ${FREE_TRIAL.trialDays} days`}
           note="No card required"
           features={[
-            `${TIERS.trial.lifetimeMax} full published reviews`,
-            `${TIERS.trial.thumbnailsPerMonth} art-directed thumbnails`,
-            `${TIERS.trial.maxFaces} face model, ${TIERS.trial.photoboothPerMonth} headshots`,
-            'Your own blog, connected to your domain',
+            `${FREE_TRIAL.thumbnails} art-directed thumbnails`,
+            `${FREE_TRIAL.socialDesigns} ready-to-post designs`,
+            `${FREE_TRIAL.faces} face model, ${FREE_TRIAL.photobooth} headshots`,
+            `${TIERS.trial.lifetimeMax} full published reviews once you connect a WordPress site`,
           ]}
           ctaLabel="Start free, no card"
           ctaHref={freeHref}
@@ -250,7 +274,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       </div>
 
       <p className="mt-7 text-center text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-        30-day money-back guarantee on every paid plan. Cancel any time, and everything you have already made stays yours.
+        {GUARANTEE_LABEL} on every paid plan. Cancel any time, and everything you have already made stays yours.
       </p>
     </div>
   )

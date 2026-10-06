@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { describePinDowngrade } from '@/lib/pin-design-outcome'
 import { buildPinAssets } from '@/lib/pin-assets'
@@ -27,9 +28,10 @@ import { spendGate } from '@/lib/ai-spend'
 export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
 
   const { postId: rawPostId, postUrl, postTitle, postImage } = await request.json()
   if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
   // synthetic-post fallback below instead of a hard "Post not found".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    supabase.from('blog_posts').select('*').eq('id', postId).maybeSingle(),
+    supabase.from('blog_posts').select('*').eq('id', postId).eq('user_id', user.id).maybeSingle(),
     supabase.from('integrations').select('*').eq('user_id', user.id).single(),
   ])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
     if (vid) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: v } = await (supabase as any)
-        .from('youtube_videos').select('instagram_video_url').eq('id', vid).maybeSingle()
+        .from('youtube_videos').select('instagram_video_url').eq('id', vid).eq('user_id', user.id).maybeSingle()
       videoUrl = (v?.instagram_video_url as string | null) ?? null
     }
   } catch { /* no render — image pin only */ }

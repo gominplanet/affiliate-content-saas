@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { createYouTubeOAuthService } from '@/services/youtube'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { isQuotaError, QUOTA_WAIT_TEXT } from '@/lib/youtube-quota'
 
 // ── GET /api/youtube/calendar ───────────────────────────────────────────────
 //
@@ -66,9 +68,10 @@ type CalEvent = {
 }
 
 export async function GET(request: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
 
   try {
     const { searchParams } = new URL(request.url)
@@ -84,7 +87,7 @@ export async function GET(request: Request) {
     let cachedTruncated = false
     let haveCache = false
     let cacheAgeMs = Number.POSITIVE_INFINITY
-    if (!forceRefresh) {
+    {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (supabase as any)
@@ -104,7 +107,10 @@ export async function GET(request: Request) {
 
     // Fresh enough → serve straight from cache. ZERO YouTube quota, recalls
     // nothing from the API. This is the common path on a normal page open.
-    if (haveCache && cacheAgeMs < FRESH_MS) {
+    // A FORCED refresh counts too when the last full scan is under ten
+    // minutes old: each one can cost over a thousand units of the one daily
+    // YouTube quota every MVP account shares.
+    if (haveCache && (cacheAgeMs < FRESH_MS || (forceRefresh && cacheAgeMs < 10 * 60_000))) {
       return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true })
     }
 
@@ -195,7 +201,17 @@ export async function GET(request: Request) {
     let stopReason = 'page-cap'
     for (let page = 0; page < MAX_PAGES; page++) {
       pagesUsed = page + 1
-      const { videos, nextPageToken, uploadsPlaylistId } = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId)
+      let got: Awaited<ReturnType<typeof yt.getDraftVideos>>
+      try { got = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId) } catch (e) {
+        // A REFRESH THE ALLOWANCE STOPPED KEEPS THE LIBRARY IT HAD. Pressing
+        // "Refresh from YouTube" on a used-up day replaced a full calendar
+        // with an error; the cached scan is still the best answer there is.
+        if (haveCache && isQuotaError(e)) {
+          return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true, quotaHit: true, note: QUOTA_WAIT_TEXT })
+        }
+        throw e
+      }
+      const { videos, nextPageToken, uploadsPlaylistId } = got
       playlistId = uploadsPlaylistId
       const before = seen.size
       for (const v of videos) {
@@ -236,7 +252,9 @@ export async function GET(request: Request) {
     // results. `searchAdded` is surfaced for diagnosis.
     let searchAdded = 0
     try {
-      const viaSearch = await yt.listMyVideosViaSearch(10)
+      // Two pages (about 200 units), not ten (about 1,000): scheduled videos
+      // are recent ones, and SCOUT reads Studio's full scheduled list anyway.
+      const viaSearch = await yt.listMyVideosViaSearch(2)
       for (const v of viaSearch) {
         if (!v.youtubeVideoId || seen.has(v.youtubeVideoId)) continue
         seen.add(v.youtubeVideoId)
@@ -267,6 +285,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ events, truncated, scanned: seen.size, pagesUsed, stopReason, searchAdded, cached: false })
   } catch (err) {
+    // A USED-UP ALLOWANCE IS SAID AS ONE. With no saved calendar to fall back
+    // on, YouTube's raw 403 text was printed on the calendar as the error.
+    if (isQuotaError(err)) {
+      return NextResponse.json({ error: `The calendar cannot load yet. ${QUOTA_WAIT_TEXT}`, quotaHit: true }, { status: 429 })
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },
       { status: 500 },

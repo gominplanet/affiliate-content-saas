@@ -17,12 +17,20 @@
  * advertised number stops matching the one the server enforces.
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
+import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import {
-  FileText, Image as ImageIcon, Mail, Scale, Calendar,
+  FileText, Image as ImageIcon, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
   Twitter, Cloud, Send, Linkedin, Facebook, Instagram, AtSign,
   Globe, TrendingUp, Wand2,
@@ -105,6 +113,9 @@ const LIGHT_VARS: React.CSSProperties = {
 }
 
 
+// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+export const revalidate = 600
+
 export default function LandingPreview() {
   // Light mode only — bright, high-contrast sales page. Sections that need
   // emphasis darken their OWN background locally (see DarkBand), rather than a
@@ -176,7 +187,7 @@ export default function LandingPreview() {
   )
 }
 
-/** Amazon-only router — the "no blog, no YouTube" buyer. Replaces the old
+/** Amazon-only router — the "no blog" buyer. Replaces the old
  *  pre-hero two-panel splitter with two light touchpoints: a slim strip under
  *  the hero, and a callout at the pricing decision point. Both deep-link to the
  *  Amazon plan's own sales page. */
@@ -187,7 +198,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
         <p className="max-w-3xl mx-auto text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           Not building a blog? The{' '}
           <a href="/amazon-influencer" className="font-bold" style={{ color: '#EA580C' }}>Amazon storefront plan</a>{' '}
-          covers thumbnails, designs, storefront and brand deals only, from ${TIERS.amazon.price}/mo.
+          covers thumbnails, designs, review videos, storefront and brand deals, from ${TIERS.amazon.price}/mo.
         </p>
       </section>
     )
@@ -195,7 +206,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
   return (
     <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(192,38,211,0.06))', borderBottom: '1px solid var(--border)' }}>
       <div className="max-w-6xl mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-center gap-x-4 gap-y-1.5 flex-wrap text-center text-[13.5px]">
-        <b style={{ color: 'var(--text)' }}>Not building a blog or YouTube?</b>
+        <b style={{ color: 'var(--text)' }}>Not building a blog?</b>
         <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from ${TIERS.amazon.price}/mo.</span>
         <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#EA580C' }}>
           See the Amazon plan <ArrowRight size={13} />
@@ -212,7 +223,7 @@ const LOOP_STEPS = [
   { n: 'Find', d: 'Research all of Amazon and live Deal Radar for products worth promoting, or just paste any product, brand or Amazon link.' },
   { n: 'Create', d: 'MVP writes the review, comparisons and social posts in your real voice, and makes the thumbnail and the Shorts for you.' },
   { n: 'Publish', d: 'It all lands on a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
-  { n: 'Earn', d: 'Free Passport geo-links and Creator Connections keep every shopper earning, with the commission going to you.' },
+  { n: 'Earn', d: 'Passport geo-links with no per-click fees and Creator Connections keep every shopper earning, with the commission going to you.' },
 ]
 function HowItWorks() {
   return (
@@ -248,7 +259,7 @@ function HowItWorks() {
 const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
   { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
   { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Free Passport geo-links', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
+  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
   { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
   { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
   { icon: <Search size={19} />, title: 'Free product research', desc: 'Filter all of Amazon by sales, rating, price and video competition. Scout Creator Connections, Levanta and PartnerBoost too.' },
@@ -339,6 +350,8 @@ function PricingSection() {
         style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.22) 0%, rgba(192,38,211,0.10) 45%, transparent 70%)' }}
       />
       <div className="max-w-6xl mx-auto relative">
+        {/* Prices go up for new members on November 1; the lock and countdown. */}
+        {!newPricesLive() && <PriceLockCountdown tone="light" className="mb-10" />}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
@@ -371,7 +384,7 @@ function PricingSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every blog plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
+            Start on the free trial, then pick the plan that fits. Cancel anytime. Your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
@@ -404,7 +417,7 @@ function PricingSection() {
               Free to start. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar are free forever. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
+              Product research and Deal Radar stay open after your trial ends. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
             </p>
           </div>
           <a
@@ -522,27 +535,35 @@ const PRICING_TIERS: PricingTier[] = [
     },
     features: [
       '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
-      'Creator Connections finder + daily picked-for-you campaign digest',
-      'Shoppable Link-in-Bio page',
+      'Brand campaigns: the Creator Connections finder + a daily picked-for-you digest',
+      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
       `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
-      `${TIERS.amazon.pinsPerMonth} Pinterest, ${TIERS.amazon.igPostsPerMonth} Instagram & ${TIERS.amazon.facebookPostsPerMonth} Facebook designs / month`,
-      'Auto-post to Pinterest, Instagram & Facebook with AI captions + your affiliate link',
-      `${TIERS.amazon.dealsPerMonth} deal / product posts / month`,
-      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots — your face on every design`,
-      `Brand Deals: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
-      `${TIERS.amazon.assistantMessagesPerMonth} AI assistant messages / month`,
+      `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
+      'Auto-post to Pinterest, Instagram & Facebook with AI captions, your affiliate link, and #ad #sponsored added for you',
+      `${TIERS.amazon.dealsPerMonth} deal posts / month from Deal Radar to Pinterest, Facebook and an Instagram card and Story`,
+      // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+      // members). Numbers from lib/amazon-plan, the constants the routes enforce.
+      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and YouTube when connected`,
+      `${AMAZON_YOUTUBE_CHANNELS} YouTube channel with YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs / month`,
+      'Pinned and On sale comments on your YouTube videos',
+      `Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`,
+      `Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips / month to Instagram and Facebook Reels`,
+      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots: your face on every design`,
+      `Brand pitches: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
+      `Ask MVP: ${TIERS.amazon.assistantMessagesPerMonth} messages / month`,
       'Priority generation queue + priority support',
       // SAY WHAT IT DOES NOT DO, ON THE CARD. At $79 as a side product this was
       // obvious from context. As one of two headline plans it is not, and
       // somebody buying a $99 plan expecting a blog churns in week one. The
       // cheapest refund to prevent is the one you talk a person out of.
-      '✕ No blog, no WordPress, no YouTube — that is Pro',
+      // "no YouTube" came off on 2026-10-05 (Seb): YouTube is optional now.
+      '✕ No blog or WordPress, and no TikTok, X or Threads. That is Pro',
     ],
     cta: 'Start storefront',
   },
   {
     name: 'Pro',
-    tagline: 'Best for the serious affiliate marketer. Everything, uncapped.',
+    tagline: 'Best for the serious affiliate marketer. Everything MVP does, with the biggest allowances.',
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
     highlight: false,
@@ -556,18 +577,19 @@ const PRICING_TIERS: PricingTier[] = [
     },
     features: [
       'Everything in Amazon, plus:',
-      `📝 The blog — ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
+      `📝 The blog: ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
-      '🎬 Clip Factory — turn long videos into ready-to-post shorts',
+      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month, posting to TikTok and YouTube Shorts too`,
+      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, and Amazon Live with no monthly show limit`,
       `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
-      `${TIERS.pro.pinsPerMonth} Pinterest, ${TIERS.pro.igPostsPerMonth} Instagram & ${TIERS.pro.facebookPostsPerMonth} Facebook designs / month`,
+      `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
       'Multi-account social + one-click Publish All',
-      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Virtual Assistant seats`,
-      'Multiple YouTube channels — one per site, or pull from any',
-      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} Brand Deals outreach emails drafted / month`,
-      `Newsletter — ${(TIERS.pro.newsletterSubscribers ?? 0).toLocaleString()} subs, weekly + A/B + segments`,
-      `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
+      'Partner programs: Levanta, PartnerBoost, Wayward & LTK campaigns turned into posts',
+      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
+      `Up to ${TIERS.pro.youtubeChannels} YouTube channels, one per site, or pull from any`,
+      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitch emails drafted / month`,
+      `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
     ],
     cta: 'Go Pro',
   },
@@ -663,9 +685,11 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           {/* Price block — now at the BOTTOM, right above the CTA, so the eye
               lands on the value first and the price after. */}
           <div className="mt-auto pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-            <p className="text-[12px] line-through mb-0.5" style={{ color: 'var(--text-faint)' }}>
-              ${tier.regularPrice}/month regular
-            </p>
+            {tier.regularPrice > tier.price && (
+              <p className="text-[12px] mb-0.5" style={{ color: 'var(--text-faint)' }}>
+                <span className="line-through">${tier.regularPrice}/month</span> from November 1
+              </p>
+            )}
             <div className="flex items-baseline gap-1.5">
               <span
                 className="text-[44px] font-extrabold tracking-[-0.02em] tabular-nums leading-none"
@@ -711,8 +735,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  *
  *  The proof is the founder's own brand, Gominplanet: a +$3M/yr affiliate
  *  business run on MVP, and the edge it gives in attracting brand partners.
- *  Backed by defensible numbers (the 4-min workflow, 9 outputs/video, the
- *  fact-grounding guarantee). No fabricated customer quotes.
+ *  Backed only by numbers we can stand behind. No fabricated customer quotes.
  */
 /** Founder section — a real face + the $3M story. Trust lever the competitors
  *  both use (logie5's "since day one", Oink's "I'm Rob"). Photo: sebmichelle. */
@@ -772,7 +795,7 @@ function OldWayNewWay() {
     },
     {
       old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
-      mvp: 'Co-Pilot writes the title, description and tags in minutes, and Liftoff launches up to ten videos to YouTube and your Amazon storefronts in one press.',
+      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload sends up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
     },
     {
       old: 'Your thumbnail is a plain still that disappears on a crowded carousel.',
@@ -780,7 +803,7 @@ function OldWayNewWay() {
     },
     {
       old: 'A product you reviewed goes on sale and nobody watching your old video ever hears about it.',
-      mvp: 'Encore spots the sale, pins a comment with your link on that video, and takes the sale out when it ends.',
+      mvp: 'On sale comments spot the sale, pin a comment with your link on that video, and take the sale out when it ends.',
     },
     {
       old: 'Writing the review is the evening you did not want to spend.',
@@ -1026,8 +1049,8 @@ function ProofSection() {
           </p>
         </div>
 
-        {/* 4-up stat row. Each big number with a label. */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* The stat row: only numbers we can back up. */}
+        <div className="grid grid-cols-1 gap-4 max-w-xs mx-auto">
           {STATS.map(s => (
             <StatCard key={s.label} stat={s} />
           ))}
@@ -1046,9 +1069,9 @@ interface Stat {
 
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
-  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter, script + social fan-out' },
-  { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
+  // "4 min", "9 outputs" and "0 fabricated claims" came out (Seb, 2026-10-07):
+  // none of them could be checked against anything. Only numbers we can stand
+  // behind go here.
 ]
 
 function StatCard({ stat }: { stat: Stat }) {
@@ -1463,7 +1486,6 @@ function ProductMock() {
     { icon: <Scale size={13} />, label: 'Comparison' },
     { icon: <Bookmark size={13} />, label: 'Buying guide' },
     { icon: <ImageIcon size={13} />, label: 'Thumbnail' },
-    { icon: <Mail size={13} />, label: 'Newsletter' },
     { icon: <Instagram size={13} />, label: 'Instagram' },
     { icon: <Facebook size={13} />, label: 'Facebook' },
     { icon: <Pin size={13} />, label: 'Pinterest' },
@@ -1654,7 +1676,7 @@ function ComparisonSection() {
             </span>
           </h2>
           <p className="mt-5 text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Other Amazon affiliate tools make you stitch together three or four services — and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
+            Other Amazon affiliate tools make you stitch together three or four services, and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
           </p>
         </div>
 
@@ -1710,7 +1732,7 @@ function ComparisonSection() {
           <div>
             <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
             <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
+              We don&apos;t harvest, sell, or train on your personal data: not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
             </p>
           </div>
         </div>
@@ -1731,8 +1753,8 @@ function PlatformBar() {
         </p>
         <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
           Every post auto-publishes natively to{' '}
-          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>
-          {' '}— no copy-paste, no separate scheduler.
+          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>.
+          {' '}No copy-paste, no separate scheduler.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2.5">
           {PLATFORMS.map((p) => (
@@ -1805,7 +1827,7 @@ function Footer() {
               </span>
             </div>
             <p className="text-[13px] max-w-md leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Your central content hub. One review video, every output, your voice — grounded in what you actually said.
+              Your central content hub. One review video, every output, your voice, grounded in what you actually said.
             </p>
           </div>
           <a
@@ -1827,7 +1849,6 @@ function Footer() {
               { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },
-              { label: 'Product tour', href: '/tour' },
             ]}
           />
           {/* Public resources only — no member-only in-app tools here (WordPress

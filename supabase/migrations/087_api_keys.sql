@@ -41,15 +41,19 @@ ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 -- Users can only see / mint / revoke their own keys. The auth middleware
 -- uses the admin client (bypass RLS) for the lookup step since the
 -- incoming request hasn't been authenticated yet at that point.
+DROP POLICY IF EXISTS "api_keys self-read" ON api_keys;
 CREATE POLICY "api_keys self-read" ON api_keys
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "api_keys self-insert" ON api_keys;
 CREATE POLICY "api_keys self-insert" ON api_keys
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "api_keys self-update" ON api_keys;
 CREATE POLICY "api_keys self-update" ON api_keys
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "api_keys self-delete" ON api_keys;
 CREATE POLICY "api_keys self-delete" ON api_keys
   FOR DELETE USING (auth.uid() = user_id);
 

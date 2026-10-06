@@ -96,6 +96,10 @@ export interface ScheduleModalProps {
   onScheduled: (result: { parentScheduleId: string | null; childScheduleIds: string[]; mode: ScheduleMode; scheduledFor: string }) => void
 }
 
+/** Schedules still writing, by video (or by post in cascade mode). Module
+ *  level because the request outlives the modal that started it. */
+const SCHEDULES_IN_FLIGHT = new Set<string>()
+
 /**
  * Minimum allowed schedule time. The route enforces +1 min server-side;
  * we default the picker to +1 hour for a saner first-time UX (typing in
@@ -288,6 +292,14 @@ export default function ScheduleModal({
    * row badge update both fire whether the modal is still open or not.
    */
   function handleSubmit() {
+    // ONE SCHEDULE PER VIDEO AT A TIME. The modal closes before the 30 to 60
+    // second write, and the card keeps its Schedule button until it returns,
+    // so a second open + Schedule generated and queued the same video twice.
+    const flightKey = existingPostId ? `post:${existingPostId}` : `video:${videoId}`
+    if (SCHEDULES_IN_FLIGHT.has(flightKey)) {
+      toast.message('This one is already being scheduled. Its result appears here in a moment.')
+      return
+    }
     const whenMs = new Date(scheduledFor).getTime()
     if (isNaN(whenMs)) {
       toast.error('Pick a valid date/time')
@@ -338,6 +350,7 @@ export default function ScheduleModal({
     // Fire the fetch and detach. Anything below runs regardless of
     // whether the modal is still mounted.
     const localExistingPostId = existingPostId
+    SCHEDULES_IN_FLIGHT.add(flightKey)
     void (async () => {
       try {
         const endpoint = cascadeOnly ? '/api/blog/schedule-cascade-only' : '/api/blog/schedule-publish'
@@ -374,7 +387,7 @@ export default function ScheduleModal({
         // quietly does less than asked is never a surprise.
         if (json.skippedPlatforms?.length) {
           const names = json.skippedPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
-          toast.warning(`${names} skipped — not connected yet`, {
+          toast.warning(`${names} skipped, not connected yet`, {
             description: 'Connect it in Connect Socials and it’ll be included next time.',
             duration: 8_000,
           })
@@ -394,7 +407,7 @@ export default function ScheduleModal({
         const wpImgId = json.wordpressPostId
         if (!cascadeOnly && includeImages && typeof wpImgId === 'number') {
           const imgToastId = `sch-img-${wpImgId}`
-          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: imgToastId, duration: Infinity })
+          toast.loading('Generating in-article images… (1-3 min, runs in the background)', { id: imgToastId, duration: Infinity })
           void fetch('/api/blog/refresh-images', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -424,6 +437,7 @@ export default function ScheduleModal({
         // Component might already be unmounted by now (modal closed) —
         // React 18+ tolerates state writes on unmounted components, so
         // this is safe even though the value won't be read again.
+        SCHEDULES_IN_FLIGHT.delete(flightKey)
         setSubmitting(false)
       }
     })()
@@ -548,7 +562,7 @@ export default function ScheduleModal({
           {cascadeOnly && (
             <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 p-3 text-xs">
               <p className="font-medium" style={{ color: 'var(--text, #F5F5F7)' }}>This post is already live.</p>
-              <p style={{ color: 'var(--text-faint, rgba(255,255,255,0.6))' }}>Only the social cascade gets queued — no generation, no WP status change.</p>
+              <p style={{ color: 'var(--text-faint, rgba(255,255,255,0.6))' }}>Only the social cascade gets queued: no generation, no WP status change.</p>
             </div>
           )}
 

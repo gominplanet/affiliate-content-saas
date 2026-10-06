@@ -7,6 +7,8 @@ import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLef
 import { segmentOptions, type Segment } from '@/lib/admin-segments'
 
 import { TIERS, isSellableTier, SELLABLE_TIERS } from '@/lib/tier'
+import { RebuildPosts } from '@/components/admin/RebuildPosts'
+import { DomainSwap } from '@/components/admin/DomainSwap'
 
 // The same list the broadcast tool offers, built from the plans that exist,
 // so "the people I am looking at" and "the people that would email" cannot
@@ -374,7 +376,7 @@ export default function AdminUsersPage() {
     <>
       <PageHero
         title="Admin · Users"
-        subtitle="Look up a user by email and bump their tier. Changes are immediate — affects their next request."
+        subtitle="Look up a user by email and bump their tier. Changes are immediate: affects their next request."
       />
 
       <div className="card p-5 max-w-2xl">
@@ -473,6 +475,10 @@ export default function AdminUsersPage() {
               </p>
             )}
           </div>
+
+          <RebuildPosts userId={user.id} email={user.email} />
+
+          <DomainSwap userId={user.id} />
 
           {/* Delete posts on the creator's behalf.
               The monthly allowance is COUNT(blog_posts) in the billing window,
@@ -607,7 +613,7 @@ export default function AdminUsersPage() {
                 <input
                   value={msgSubject}
                   onChange={e => { setMsgSubject(e.target.value); setMsgConfirm(false) }}
-                  placeholder="Subject — e.g. Your Telegram posts are fixed"
+                  placeholder="Subject: e.g. Your Telegram posts are fixed"
                   maxLength={200}
                   className="input-field text-sm w-full"
                 />
@@ -640,7 +646,7 @@ export default function AdminUsersPage() {
                   </button>
                   {msgConfirm && !msgSending && (
                     <span className="text-xs text-[#ff9500] flex items-center gap-1">
-                      <AlertCircle size={12} /> Sends to {user.email} — click again to confirm.
+                      <AlertCircle size={12} /> Sends to {user.email}: click again to confirm.
                     </span>
                   )}
                   {msgError && (

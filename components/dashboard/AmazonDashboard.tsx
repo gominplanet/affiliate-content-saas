@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // AmazonDashboard — the landing page a real Amazon Influencer sees instead of
-// the blog/YouTube-oriented default dashboard. Two halves, as designed:
+// the blog-oriented default dashboard. Two halves, as designed:
 //   LEFT  — the toolkit they're paying for (their Amazon features, each a card
 //           that deep-links into the tool).
 //   RIGHT — the upgrade pitch: everything the full creator plans add on top.
@@ -16,25 +16,39 @@ import type { ReactNode } from 'react'
 import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
 import {
   Wand2, PackageSearch, Share2, Handshake, Radar, UserSquare,
-  FileText, Youtube, Scale, Mail, TrendingUp, Check, ArrowRight, Sparkles,
+  FileText, Youtube, Scale, TrendingUp, Check, ArrowRight, Sparkles,
+  Upload, Scissors, Radio,
 } from 'lucide-react'
+import { TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH,
+} from '@/lib/amazon-plan'
 
 const ACCENT = '#C2410C' // Amazon-hub orange (sidebar + /pricing)
 
+// EVERY NUMBER READ, NONE TYPED. These tiles said 50 deals a month, 1 face
+// model and 6 photobooth shots long after the plan said otherwise.
+const AMZ = TIERS.amazon
+
 const TOOLKIT: { href: string; icon: ReactNode; title: string; desc: string }[] = [
-  { href: '/amazon/thumbnails', icon: <Wand2 size={18} />, title: 'Thumbnail Generator', desc: 'Incredible Amazon video-review thumbnails in one click. 200/mo.' },
-  { href: '/amazon/social', icon: <Share2 size={18} />, title: 'Social Influencer', desc: 'Ready-to-post pins, Reels and Facebook designs, published to all three at once.' },
+  { href: '/amazon/thumbnails', icon: <Wand2 size={18} />, title: 'Thumbnails', desc: `Incredible Amazon video-review thumbnails in one click. ${AMZ.thumbnailsPerMonth} a month.` },
+  { href: '/amazon/social', icon: <Share2 size={18} />, title: 'Social designs', desc: 'Ready-to-post pins and Reels designs, with Facebook reusing them, published to all three at once.' },
   { href: '/amazon/research', icon: <PackageSearch size={18} />, title: 'Product Research', desc: 'Filter the whole Amazon catalogue by sales, rating, price and competition.' },
-  { href: '/cc-campaigns', icon: <Handshake size={18} />, title: 'Creator Connections', desc: 'A daily digest of brand campaigns auto-matched to your content. Land + message deals. 50/mo.' },
-  { href: '/deal-radar', icon: <Radar size={18} />, title: 'Deal Radar', desc: 'Live, price-history-verified Amazon deals to post while they are hot.' },
-  { href: '/photobooth', icon: <UserSquare size={18} />, title: 'Face Models', desc: 'Put your own face on every design. 1 model + 6 studio photobooth shots.' },
+  { href: '/cc-campaigns', icon: <Handshake size={18} />, title: 'Creator Connections', desc: 'A daily digest of brand campaigns auto-matched to your content. Messaging brands is unlimited.' },
+  { href: '/deal-radar', icon: <Radar size={18} />, title: 'Deal Radar', desc: `Live, price-history-verified Amazon deals. Up to ${AMZ.dealsPerMonth} deal posts a month to Pinterest, Facebook and Instagram.` },
+  { href: '/photobooth', icon: <UserSquare size={18} />, title: 'Face Models', desc: `Put your own face on every design. ${AMZ.maxFaces} models and ${AMZ.photoboothPerMonth} studio photobooth shots a month.` },
+  // THE VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon members).
+  { href: '/liftoff', icon: <Upload size={18} />, title: 'Bulk Amazon upload', desc: 'Upload a batch of review videos to your Amazon storefront through SCOUT, and to YouTube too when a channel is connected.' },
+  { href: '/co-pilot', icon: <Youtube size={18} />, title: 'YouTube Co-Pilot', desc: `Titles, descriptions and tags for your videos on one connected channel. ${AMAZON_COPILOT_RUNS_PER_MONTH} runs a month.` },
+  { href: '/clip-factory', icon: <Scissors size={18} />, title: 'Clip Factory', desc: `Find the best moments and post clips to Instagram and Facebook Reels. ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month.` },
+  { href: '/amazon-live', icon: <Radio size={18} />, title: 'Amazon Live', desc: `Prep before the show and follow-up after it. Up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month.` },
 ]
 
 const UPGRADE: { icon: ReactNode; title: string; desc: string }[] = [
   { icon: <FileText size={16} />, title: 'A real blog', desc: 'Publish full product-review posts to your own WordPress site, in your voice.' },
-  { icon: <Youtube size={16} />, title: 'YouTube engine', desc: 'Turn any video into a blog, thumbnails, scripts and a week of social posts.' },
+  { icon: <Youtube size={16} />, title: 'Video to blog', desc: 'Turn any video into a blog post and a script, and post to TikTok, X, Threads and more.' },
   { icon: <Scale size={16} />, title: 'Comparisons & guides', desc: 'Head-to-head ranked posts and buying guides that win search.' },
-  { icon: <Mail size={16} />, title: 'Newsletter', desc: 'Your own list, with scheduling and segments.' },
   { icon: <TrendingUp size={16} />, title: 'SEO & indexing', desc: 'Get every post found on Google, faster.' },
 ]
 
@@ -106,9 +120,9 @@ export default function AmazonDashboard({ firstName, today }: { firstName: strin
           </div>
           <div className="rounded-2xl border p-6 h-[calc(100%-2rem)] flex flex-col" style={{ borderColor: `${ACCENT}55`, background: `linear-gradient(180deg, ${ACCENT}14, ${ACCENT}05)` }}>
             <p className="text-[13.5px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
-              You&apos;ve got the storefront covered. The full MVP plans add a whole content engine on
-              top of everything you already have, so one product can become a blog post, a video, a
-              newsletter and a week of social, not just a design.
+              You&apos;ve got the storefront covered. Pro adds a whole content engine on top of
+              everything you already have, so one product can become a blog post, a script and a
+              week of social on every network, not just a design.
             </p>
             <ul className="space-y-3 flex-1">
               {UPGRADE.map((u) => (

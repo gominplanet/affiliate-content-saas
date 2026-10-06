@@ -23,6 +23,7 @@ import { normalizeTier } from '@/lib/tier'
 import { availabilityKey } from '@/lib/product-availability'
 import { lookupRegional, productIdentities, recordStoreCheck, type RegionalAnswer, type StoreCheckResult } from '@/lib/regional-listing'
 import { marketByDomain } from '@/lib/markets'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -46,8 +47,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const sb = supabase as any
   // PRO, like every other Launch Batch route: this spends shared Keepa tokens.
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
+  if (!hasVideoTools(integ?.tier)) {
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.' }, { status: 403 })
   }
   const { data: batch } = await sb.from('launch_batches').select('id').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
@@ -110,8 +111,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
+  if (!hasVideoTools(integ?.tier)) {
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.' }, { status: 403 })
   }
   const body = await req.json().catch(() => ({})) as { domain?: string; results?: StoreCheckResult[] }
   const mkt = marketByDomain(String(body.domain || ''))

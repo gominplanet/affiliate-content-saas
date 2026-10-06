@@ -121,7 +121,11 @@ const OLD = 'price_1QOLD79amazon'
 // ── the wiring ─────────────────────────────────────────────────────────────
 {
   const STRIPE = readFileSync('lib/stripe.ts', 'utf8')
-  check('PRICE_IDS charges the FIRST id', /creator: PRICE_ID_LIST\.creator\[0\]/.test(STRIPE),
+  // Since the November 1 change, PRICE_IDS asks newBuyerPriceId, which takes
+  // the FIRST id of the list in force (today's vars, then the *_NEW ones).
+  check('PRICE_IDS charges the FIRST id',
+    /get creator\(\): string \{ return newBuyerPriceId\('creator', 'month'\)/.test(STRIPE)
+      && /return list\?\.\[0\] \?\? null/.test(STRIPE) && /return NEW_PRICE_ID_LIST\[tier\]\[interval\]\[0\] \?\? null/.test(STRIPE),
     'charging anything else would bill new customers the retired price')
   // Pinned on the env var reaching the tier's list, not on the exact spelling
   // of the line. Annual prices are now folded in alongside the monthly ones

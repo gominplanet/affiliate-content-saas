@@ -190,8 +190,8 @@ export default function SeoPage() {
       const d = await res.json()
       if (!res.ok) { toast.error(d.error || 'Couldn’t re-attach thumbnails.'); return }
       if (d.fixed > 0 && d.stillBlocked === 0) toast.success(`Re-attached ${d.fixed} thumbnail${d.fixed !== 1 ? 's' : ''}. ✅`)
-      else if (d.fixed > 0) toast.success(`Re-attached ${d.fixed}, but ${d.stillBlocked} still blocked — your host is likely still rejecting uploads.`)
-      else if (d.stillBlocked > 0) toast.error(`Still blocked on ${d.stillBlocked} post${d.stillBlocked !== 1 ? 's' : ''} — your host is rejecting image uploads. Allowlist /wp-json/wp/v2/media, then retry.`)
+      else if (d.fixed > 0) toast.success(`Re-attached ${d.fixed}, but ${d.stillBlocked} still blocked: your host is likely still rejecting uploads.`)
+      else if (d.stillBlocked > 0) toast.error(`Still blocked on ${d.stillBlocked} post${d.stillBlocked !== 1 ? 's' : ''}: your host is rejecting image uploads. Allowlist /wp-json/wp/v2/media, then retry.`)
       else toast.success('All thumbnails are already in place.')
       await load()
     } catch { toast.error('Couldn’t reach the server.') }
@@ -224,11 +224,11 @@ export default function SeoPage() {
       const d = await res.json().catch(() => ({}))
       if (!res.ok || d.error) { setFixMsg({ ok: false, text: d.error || 'Couldn’t sync from WordPress. Try again in a moment.' }); return }
       const n = d.backfilled ?? 0
-      const tail = d.remaining ? ` ${d.remaining} more to go — click again to finish.` : ''
+      const tail = d.remaining ? ` ${d.remaining} more to go. Click again to finish.` : ''
       const fails = d.failed ? ` (${d.failed} couldn’t be read.)` : ''
       setFixMsg({ ok: true, text: n === 0
-        ? 'Nothing to sync — every post already has its text stored.'
-        : `Synced ${n} post${n !== 1 ? 's' : ''} from WordPress — scores now reflect the real content.${tail}${fails}` })
+        ? 'Nothing to sync: every post already has its text stored.'
+        : `Synced ${n} post${n !== 1 ? 's' : ''} from WordPress: scores now reflect the real content.${tail}${fails}` })
       await load()
     } catch { setFixMsg({ ok: false, text: 'Couldn’t sync from WordPress. Try again in a moment.' }) }
     finally { setSyncingBodies(false) }
@@ -245,8 +245,8 @@ export default function SeoPage() {
       if (d.error) { setFixMsg({ ok: false, text: d.error, postId }); return }
       const n = Array.isArray(d.applied) ? d.applied.length : 1
       setFixMsg(n === 0
-        ? { ok: false, text: 'Nothing could be auto-applied here — these checks need a manual edit in WordPress (or a rebuild from the source video).', postId }
-        : { ok: true, text: `Applied ${n} fix${n !== 1 ? 'es' : ''} — re-scored to ${d.score}/100 and republished.`, postId })
+        ? { ok: false, text: 'Nothing could be auto-applied here. These checks need a manual edit in WordPress (or a rebuild from the source video).', postId }
+        : { ok: true, text: `Applied ${n} fix${n !== 1 ? 'es' : ''}: re-scored to ${d.score}/100 and republished.`, postId })
       await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.', postId }) }
     finally { setFixing(null) }
@@ -265,7 +265,7 @@ export default function SeoPage() {
       })
       const d = await res.json()
       if (!res.ok || d.error) { setFixMsg({ ok: false, text: d.error || 'Couldn’t save the title.', postId }); return }
-      setFixMsg({ ok: true, text: `Title updated on WordPress — re-scored to ${d.score}/100.`, postId })
+      setFixMsg({ ok: true, text: `Title updated on WordPress. Re-scored to ${d.score}/100.`, postId })
       setTitleDraft(null)
       await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.', postId }) }
@@ -296,11 +296,11 @@ export default function SeoPage() {
       })
       const d = await res.json().catch(() => ({}))
       if (res.status === 403 || d.proRequired) {
-        setFixMsg({ ok: false, text: d.error || 'Manual index submission is a Pro feature — your posts still index automatically via your sitemap.' })
+        setFixMsg({ ok: false, text: d.error || 'Manual index submission is a Pro feature: your posts still index automatically via your sitemap.' })
         return
       }
       if (res.status === 412 || d.scopeMissing) {
-        setFixMsg({ ok: false, text: `${d.error || 'We need indexing permission.'} On /seo, click Disconnect on the Search Console card, then Connect again — Google will show a new consent screen that includes the indexing scope.` })
+        setFixMsg({ ok: false, text: `${d.error || 'We need indexing permission.'} On /seo, click Disconnect on the Search Console card, then Connect again. Google will show a new consent screen that includes the indexing scope.` })
         return
       }
       if (res.status === 429 || d.limitReached) {
@@ -430,12 +430,12 @@ export default function SeoPage() {
 
     // Wrap-up toast — distinct copy per stop reason.
     const summary = stopReason === 'completed'
-      ? `Bulk indexing complete — ${submitted} submitted${failed > 0 ? `, ${failed} failed` : ''}.`
+      ? `Bulk indexing complete: ${submitted} submitted${failed > 0 ? `, ${failed} failed` : ''}.`
       : stopReason === 'quota'
-      ? `Stopped at Google's daily quota — ${submitted} submitted before the cap hit. Try the rest tomorrow.`
+      ? `Stopped at Google's daily quota: ${submitted} submitted before the cap hit. Try the rest tomorrow.`
       : stopReason === 'scope'
-      ? 'Stopped — Google needs to be reconnected for the indexing scope. Disconnect Search Console on /seo and reconnect.'
-      : `Cancelled — ${submitted} submitted before you stopped.`
+      ? 'Stopped: Google needs to be reconnected for the indexing scope. Disconnect Search Console on /seo and reconnect.'
+      : `Cancelled: ${submitted} submitted before you stopped.`
     setFixMsg({ ok: stopReason === 'completed' && failed === 0, text: summary })
     // Clear the selection on success; leave it on quota/abort so the user
     // can see what didn't ship.
@@ -472,7 +472,7 @@ export default function SeoPage() {
           : p),
       } : prev)
     } catch {
-      setFixMsg({ ok: false, text: 'Recheck failed — try again.' })
+      setFixMsg({ ok: false, text: 'Recheck failed: try again.' })
     } finally {
       setRechecking(prev => { const next = new Set(prev); next.delete(postId); return next })
     }
@@ -533,7 +533,7 @@ export default function SeoPage() {
         setRebuildStage(''); return
       }
       const title = linkJson.youtubeTitle ? ` ("${linkJson.youtubeTitle}")` : ''
-      setFixMsg({ ok: true, text: `Rebuilt the post${title} from the video — same URL, fresh body. Refreshing your scores…` })
+      setFixMsg({ ok: true, text: `Rebuilt the post${title} from the video: same URL, fresh body. Refreshing your scores…` })
       setRebuildTarget(null); setRebuildUrl(''); setRebuildFeedback(''); setRebuildStage('')
       await load()
     } catch (e) {
@@ -653,7 +653,7 @@ export default function SeoPage() {
         const breakdown = [...fails.values()]
           .sort((a, b) => b.count - a.count)
           .slice(0, 4)
-          .map(f => `• ${f.count} post${f.count === 1 ? '' : 's'}: ${f.label}${f.hint ? ` — ${f.hint}` : ''}`)
+          .map(f => `• ${f.count} post${f.count === 1 ? '' : 's'}: ${f.label}${f.hint ? ` (${f.hint})` : ''}`)
         const manualLines = lastSkipped
           .filter(s => s.reasons.some(r => /manual|edit it manually|edit it yourself/i.test(r)))
           .slice(0, 5)
@@ -661,7 +661,7 @@ export default function SeoPage() {
 
         if (avgScore >= 90) {
           const tail = breakdown.length ? `\n\nA few small things still need your hand:\n${breakdown.join('\n')}` : ''
-          setFixMsg({ ok: true, text: `Every post is in great shape (avg ${Math.round(avgScore)}/100) — auto-fixer can't push further. 🎉${tail}` })
+          setFixMsg({ ok: true, text: `Every post is in great shape (avg ${Math.round(avgScore)}/100): auto-fixer can't push further. 🎉${tail}` })
         } else if (avgScore >= 70) {
           const tail = breakdown.length
             ? `\n\nThe remaining points need YOUR hand:\n${breakdown.join('\n')}`
@@ -672,12 +672,12 @@ export default function SeoPage() {
           // tapped out AND there's lots of room left. The remaining points
           // are not script-able — they need content / structure work.
           const tail = breakdown.length
-            ? `\n\nMost of what's missing:\n${breakdown.join('\n')}\n\nThese aren't auto-fixable — they need a content pass in WordPress (or a regen from the source video).`
+            ? `\n\nMost of what's missing:\n${breakdown.join('\n')}\n\nThese aren't auto-fixable. They need a content pass in WordPress (or a regen from the source video).`
             : `\n\nAuto-fixer couldn't help further on this batch.`
-          setFixMsg({ ok: false, text: `Auto-fixer is tapped out, but average score is only ${Math.round(avgScore)}/100 — plenty of room.${tail}` })
+          setFixMsg({ ok: false, text: `Auto-fixer is tapped out, but average score is only ${Math.round(avgScore)}/100: plenty of room.${tail}` })
         }
       } else {
-        setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
+        setFixMsg({ ok: true, text: `Done: fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
       }
       await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
@@ -700,7 +700,7 @@ export default function SeoPage() {
       if (!res.ok || !res.body) {
         const d = await res.json().catch(() => ({}))
         if ((d as { skipped?: boolean }).skipped) {
-          setFixMsg({ ok: true, text: 'Price schema is disabled in Customize Blog — enable it first.' })
+          setFixMsg({ ok: true, text: 'Price schema is disabled in Customize Blog. Enable it first.' })
         } else {
           setFixMsg({ ok: false, text: (d as { error?: string }).error || 'Price refresh failed.' })
         }
@@ -851,7 +851,7 @@ export default function SeoPage() {
           {!getFound ? (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click — we handle the rest</p>
+                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click: we handle the rest</p>
                 <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes your sitemap, pings Google, Bing &amp; AI crawlers, heals broken links, and auto-fixes SEO issues on every post.</p>
               </div>
               <button onClick={runGetFound} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold text-white bg-[#34c759] hover:bg-[#2fb350] transition-colors shadow-sm">
@@ -862,7 +862,7 @@ export default function SeoPage() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 {getFound.done ? <CheckCircle2 size={18} className="text-[#34c759]" /> : <Loader2 size={18} className="animate-spin text-[#34c759]" />}
-                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done — your blog is set up to be found' : 'Getting your blog found…'}</p>
+                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done: your blog is set up to be found' : 'Getting your blog found…'}</p>
               </div>
               <div className="space-y-1.5">
                 {['Refreshing your sitemap + pinging Google, Bing & AI', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
@@ -901,7 +901,7 @@ export default function SeoPage() {
 
         {/* Step 2 — fix 404s from a Search Console export (drop the file, we do the rest) */}
         <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5">
-          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">2.</span> Win back rankings from broken links <span className="font-normal text-[#86868b]">— one-time, worth it</span></p>
+          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">2.</span> Win back rankings from broken links <span className="font-normal text-[#86868b]">: one-time, worth it</span></p>
           <ol className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1.5 mb-2.5 space-y-1 list-none pl-0">
             <li>
               <strong>a.</strong>{' '}
@@ -973,7 +973,7 @@ export default function SeoPage() {
             })
             if (data.summary.thumbnailBlocked > 0) rows.push({
               key: 'thumb', icon: <ImageOff size={15} className="text-[#ff9500] flex-shrink-0" />,
-              text: <><span className={F}>{data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail</span> — usually your host blocking image uploads via the API. Safe to re-run.</>,
+              text: <><span className={F}>{data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail</span>: usually your host blocking image uploads via the API. Safe to re-run.</>,
               action: <button onClick={reattachThumbnails} disabled={reattaching} className={`${actBtn} bg-[#ff9500]`}>{reattaching ? 'Fixing…' : 'Re-attach'}</button>,
             })
             if (rows.length === 0) return null
@@ -1025,10 +1025,10 @@ export default function SeoPage() {
               waiting on Google. */}
           {data.connected && (data.summary.reasons?.length ?? 0) > 0 && (() => {
             const meta: Record<string, { dot: string; note: string }> = {
-              redirect: { dot: '#ff3b30', note: 'Fixable — send these to a live page with Fix 404s' },
+              redirect: { dot: '#ff3b30', note: 'Fixable: send these to a live page with Fix 404s' },
               other:    { dot: '#ff9500', note: 'Worth a look' },
-              wait:     { dot: '#5856d6', note: 'Waiting on Google — keep the sitemap fresh' },
-              benign:   { dot: '#8e8e93', note: 'Expected — archive/duplicate pages, nothing to do' },
+              wait:     { dot: '#5856d6', note: 'Waiting on Google. Keep the sitemap fresh' },
+              benign:   { dot: '#8e8e93', note: 'Expected: archive/duplicate pages, nothing to do' },
             }
             const order = { redirect: 0, other: 1, wait: 2, benign: 3 } as const
             const reasons = [...(data.summary.reasons || [])].sort((a, b) => (order[a.fixable] - order[b.fixable]) || (b.count - a.count))
@@ -1076,7 +1076,7 @@ export default function SeoPage() {
                     {missingBodies} older post{plural ? 's' : ''} {plural ? 'score' : 'scores'} low because {plural ? 'their' : 'its'} text isn&apos;t synced to MVP yet
                   </p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                    They&apos;re live on WordPress — pull the real bodies in so the scores read true and you can auto-fix them in place. No rebuild needed.
+                    They&apos;re live on WordPress. Pull the real bodies in so the scores read true and you can auto-fix them in place. No rebuild needed.
                   </p>
                 </div>
                 <button
@@ -1107,7 +1107,7 @@ export default function SeoPage() {
               <button
                 onClick={() => setFilterNotIndexed(v => !v)}
                 className={`ml-1 px-2.5 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${filterNotIndexed ? 'border-[#ff3b30] text-[#ff3b30] bg-[#ff3b30]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f]'}`}
-                title="Show only posts Google hasn't indexed yet — your Request Indexing worklist"
+                title="Show only posts Google hasn't indexed yet: your Request Indexing worklist"
               >
                 {filterNotIndexed ? <X size={11} /> : <AlertCircle size={11} />} Not indexed ({data.summary.notIndexed})
               </button>
@@ -1295,10 +1295,10 @@ export default function SeoPage() {
                         ? 'All checks pass'
                         : autoFixable > 0
                           ? `${failing.length} to improve · ${autoFixable} auto-fixable`
-                          : `${failing.length} to improve — manual edits`}</span>
+                          : `${failing.length} to improve: manual edits`}</span>
                     </span>
                     {p.inSitemap === false && (
-                      <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap — Google may not discover it">
+                      <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap. Google may not discover it">
                         <AlertCircle size={12} /> No sitemap
                       </span>
                     )}
@@ -1334,7 +1334,7 @@ export default function SeoPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
                         className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline flex-shrink-0"
-                        title="Submit this post to Google for indexing — sends a request via Google's Indexing API (no manual Search Console step)"
+                        title="Submit this post to Google for indexing. Sends a request via Google's Indexing API (no manual Search Console step)"
                       >
                         Index <ExternalLink size={11} />
                       </button>
@@ -1343,7 +1343,7 @@ export default function SeoPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); setRebuildTarget(p); setRebuildUrl(''); setRebuildFeedback(''); setRebuildError(null) }}
                         className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#5856d6] hover:underline flex-shrink-0"
-                        title="Paste the original YouTube URL — we'll rebuild this post's body from the transcript while keeping the same URL and indexing history"
+                        title="Paste the original YouTube URL. We'll rebuild this post's body from the transcript while keeping the same URL and indexing history"
                       >
                         <Youtube size={11} /> Rebuild
                       </button>
@@ -1377,7 +1377,7 @@ export default function SeoPage() {
                           so a clear "Applying…" state matters too. */}
                       {fixing?.startsWith(`${p.postId}:`) && (
                         <p className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#7C3AED]">
-                          <Loader2 size={12} className="animate-spin" /> Applying fixes — this can take up to a minute…
+                          <Loader2 size={12} className="animate-spin" /> Applying fixes: this can take up to a minute…
                         </p>
                       )}
                       {fixMsg?.postId === p.postId && !fixing && (
@@ -1395,7 +1395,7 @@ export default function SeoPage() {
                         <button
                           onClick={() => { setRebuildTarget(p); setRebuildUrl(''); setRebuildFeedback(''); setRebuildError(null) }}
                           className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] transition-colors"
-                          title="Paste the original YouTube URL — we'll rebuild this post's body using the transcript while keeping the same URL"
+                          title="Paste the original YouTube URL. We'll rebuild this post's body using the transcript while keeping the same URL"
                         >
                           <Youtube size={11} /> Rebuild from video
                         </button>
@@ -1421,7 +1421,7 @@ export default function SeoPage() {
                               />
                               <div className="flex items-center gap-2">
                                 <span className={`text-[10px] ${titleDraft.value.trim().length > 65 || titleDraft.value.trim().length < 30 ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>
-                                  {titleDraft.value.trim().length} chars {titleDraft.value.trim().length < 30 ? '(aim 30–65)' : titleDraft.value.trim().length > 65 ? '(aim 30–65)' : '✓'}
+                                  {titleDraft.value.trim().length} chars {titleDraft.value.trim().length < 30 ? '(aim 30 to 65)' : titleDraft.value.trim().length > 65 ? '(aim 30 to 65)' : '✓'}
                                 </span>
                                 <div className="ml-auto flex items-center gap-2">
                                   <button
@@ -1498,7 +1498,7 @@ export default function SeoPage() {
                   <Youtube size={18} className="text-[#5856d6]" /> Rebuild from video
                 </h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1 leading-relaxed">
-                  Paste the YouTube URL that this post is about. We&apos;ll pull the transcript, rebuild the body in your voice, and push it back to the SAME post — the URL and Google indexing history stay intact.
+                  Paste the YouTube URL that this post is about. We&apos;ll pull the transcript, rebuild the body in your voice, and push it back to the SAME post. The URL and Google indexing history stay intact.
                 </p>
                 <p className="text-[11px] text-[#86868b] mt-1.5 truncate">For: <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{rebuildTarget.title}</span></p>
               </div>
@@ -1568,7 +1568,7 @@ export default function SeoPage() {
               <div>
                 <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix all posts</h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  {bulkPreview.toFix} of {bulkPreview.total} posts have auto-fixable issues ({bulkPreview.totalFixes} fixes total). Each gets, as needed: title trimmed, internal links + alt text + FAQ added, an affiliate disclosure added, and the target keyword worked into the opening + a subhead — then republished. Nothing&apos;s saved yet.
+                  {bulkPreview.toFix} of {bulkPreview.total} posts have auto-fixable issues ({bulkPreview.totalFixes} fixes total). Each gets, as needed: title trimmed, internal links + alt text + FAQ added, an affiliate disclosure added, and the target keyword worked into the opening + a subhead, then republished. Nothing&apos;s saved yet.
                 </p>
               </div>
               <button onClick={() => !bulkApplying && setBulkPreview(null)} disabled={bulkApplying} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40">
@@ -1615,9 +1615,9 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
       >
         <Gauge size={18} className="text-[#5856d6] flex-shrink-0" />
         <span className="flex-1 min-w-0">
-          <span className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">How indexing works — and what to expect</span>
+          <span className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">How indexing works, and what to expect</span>
           <span className="block text-[12px] text-[#6e6e73] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-            Your score measures how well a post is <em>optimized</em>. Indexing is separate — whether search engines have added it to their results. We submit to Bing, Yandex &amp; Copilot instantly; Google indexes on its own schedule (days to weeks).
+            Your score measures how well a post is <em>optimized</em>. Indexing is separate: whether search engines have added it to their results. We submit to Bing, Yandex &amp; Copilot instantly; Google indexes on its own schedule (days to weeks).
           </span>
         </span>
         {open ? <ChevronDown size={16} className="text-[#86868b] flex-shrink-0" /> : <ChevronRight size={16} className="text-[#86868b] flex-shrink-0" />}
@@ -1627,7 +1627,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
         <div className="px-4 pb-5 pt-3 sm:pl-12 flex flex-col gap-4 border-t border-gray-100 dark:border-white/10 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0]">
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What “indexed” means</p>
-            <p>Indexing is when a search engine adds your post to its results so people can actually find it. A post can score 100 and still be waiting to get indexed — that’s normal, especially on a newer site. Optimization (your score) and indexing (the engine’s decision) are two different steps.</p>
+            <p>Indexing is when a search engine adds your post to its results so people can actually find it. A post can score 100 and still be waiting to get indexed. That’s normal, especially on a newer site. Optimization (your score) and indexing (the engine’s decision) are two different steps.</p>
           </div>
 
           <div>
@@ -1635,7 +1635,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
             <ul className="list-disc pl-5 flex flex-col gap-1">
               <li>Optimizes every post for search &amp; AI Overviews (answer-first intros, FAQ, internal links, alt text, structured data) so it’s ready to rank.</li>
               <li>Keeps your sitemap fresh and pings it the moment you publish, so engines can find new posts fast.</li>
-              <li>Instantly notifies Bing, Yandex &amp; Copilot on publish (IndexNow) — these often index within hours.</li>
+              <li>Instantly notifies Bing, Yandex &amp; Copilot on publish (IndexNow). These often index within hours.</li>
               <li>Refreshes every post’s Google indexing status overnight, so the worklist below is already current when you open this page. Hit <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Check</strong> on any row for an instant re-check.</li>
               <li>Pulls each post’s real status from Google Search Console so you can see what’s live.</li>
             </ul>
@@ -1645,7 +1645,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What to expect</p>
             <ul className="list-disc pl-5 flex flex-col gap-1">
               <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Bing, Yandex, Copilot:</strong> usually a few hours to a day or two.</li>
-              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. The <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Index</strong> button sends Google a direct request through its Indexing API — a strong nudge, but Google still decides when (and whether) to index. Days to a few weeks is normal, sometimes longer for a new site, so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected — not a problem with your post.</li>
+              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. The <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Index</strong> button sends Google a direct request through its Indexing API: a strong nudge, but Google still decides when (and whether) to index. Days to a few weeks is normal, sometimes longer for a new site, so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected, not a problem with your post.</li>
               <li>Impressions show up before clicks, so 0 clicks at the start is normal.</li>
             </ul>
           </div>
@@ -1658,15 +1658,15 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
                 <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Nudge a priority post (optional, Pro).</span> Your posts already index on their own via the sitemap above — you don’t need to do anything. On <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pro</strong>, you also get a manual accelerator: click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on a post and MVP sends Google a direct request through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong> — no Search Console, no pasting. It’s capped at <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">2 a day</strong> (that quota is shared across all of MVP, so it’s deliberately small), and it’s a nudge, not a guarantee. Use it on the one or two posts you care most about; leave the rest to index naturally.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Nudge a priority post (optional, Pro).</span> Your posts already index on their own via the sitemap above. You don’t need to do anything. On <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pro</strong>, you also get a manual accelerator: click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on a post and MVP sends Google a direct request through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong>: no Search Console, no pasting. It’s capped at <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">2 a day</strong> (that quota is shared across all of MVP, so it’s deliberately small), and it’s a nudge, not a guarantee. Use it on the one or two posts you care most about; leave the rest to index naturally.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on the social channels you’ve connected — every share is a crawlable link back. Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on the social channels you’ve connected: every share is a crawlable link back. Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Check what Google is actually seeing.</span> Open{' '}
                 <a href={pageIndexingUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Page indexing <ExternalLink size={11} /></a>{' '}
-                for the real reason anything isn’t indexed. If you see a <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not found (404)</strong> group, those are dead URLs still holding ranking history — export that list and{' '}
+                for the real reason anything isn’t indexed. If you see a <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not found (404)</strong> group, those are dead URLs still holding ranking history. Export that list and{' '}
                 <Link href="/tools/redirects" className="text-[#7C3AED] hover:underline">Fix 404s</Link>{' '}
                 matches each one to the right live post and redirects it, so the history carries over instead of being lost.
               </li>
@@ -1710,7 +1710,7 @@ function QueryGapsCard() {
           <Zap size={16} className="text-[#ff9500] mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-gray-900 dark:text-white">Search demand you&rsquo;re missing</p>
-            <p className="text-xs text-[#86868b]">Real Google queries your site already shows for, with no post that targets them. Proven demand — strong candidates for your next guides.</p>
+            <p className="text-xs text-[#86868b]">Real Google queries your site already shows for, with no post that targets them. Proven demand: strong candidates for your next guides.</p>
           </div>
         </div>
         {open ? <ChevronDown size={16} className="shrink-0 text-[#86868b]" /> : <ChevronRight size={16} className="shrink-0 text-[#86868b]" />}
@@ -1761,5 +1761,5 @@ function IndexBadge({ indexed, coverage }: { indexed: boolean | null; coverage: 
   // indexed === null → we simply haven't looked yet (the daily sweep checks
   // automatically, or the user can click Check). Frame it as a neutral
   // not-yet-checked state, never an alarming "Unknown".
-  return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0" title="Indexing status is checked automatically overnight — or click Check to look now."><RefreshCw size={11} /> Not checked yet</span>
+  return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0" title="Indexing status is checked automatically overnight, or click Check to look now."><RefreshCw size={11} /> Not checked yet</span>
 }

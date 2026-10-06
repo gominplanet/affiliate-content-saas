@@ -19,10 +19,13 @@ ALTER TABLE integrations
 -- a migration helper or admin update) can't ship malformed data either.
 -- Accent must be a 7-char #hex (no shorthand like #abc — Satori / Tailwind
 -- both want 6-char forms). Brand name is short and bounded.
+-- Dropped first so this file can run twice (ADD CONSTRAINT has no IF NOT EXISTS).
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS whitelabel_accent_format;
 ALTER TABLE integrations
   ADD CONSTRAINT whitelabel_accent_format
     CHECK (whitelabel_accent_color IS NULL OR whitelabel_accent_color ~* '^#[0-9a-f]{6}$');
 
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS whitelabel_brand_name_len;
 ALTER TABLE integrations
   ADD CONSTRAINT whitelabel_brand_name_len
     CHECK (whitelabel_brand_name IS NULL OR (length(whitelabel_brand_name) >= 1 AND length(whitelabel_brand_name) <= 40));

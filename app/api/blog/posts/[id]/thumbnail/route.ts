@@ -104,7 +104,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!outcome.ok) {
     return NextResponse.json(
       { ok: false, reason: outcome.reason, error: heroOutcomeMessage(outcome) },
-      { status: outcome.reason === 'over_cap' ? 429 : 502 },
+      { status: outcome.reason === 'over_cap' ? 429 : outcome.reason === 'paused' ? 403 : 502 },
     )
   }
   return NextResponse.json({

@@ -23,6 +23,11 @@ import { maybeCreateBlogShortlink, type BlogSocialLinkMode } from '@/lib/blog-sh
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
+import { transcriptionConfigured, transcribeToCues } from '@/lib/shorts-transcribe'
+import { cuesToText } from '@/lib/shorts-transcript'
+import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -49,6 +54,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { researchKeyword } from '@/lib/keyword-research'
+import { earlierPostSource } from '@/lib/earlier-work'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
@@ -274,8 +280,15 @@ async function handleGenerate(request: Request) {
     /** Set by the daily auto-pilot. Its posts go out with nobody looking, so
      *  they are the ones the quality gate holds as drafts. */
     autopilot?: boolean
+    /** Build on a post MVP already wrote about this product (lib/made-before):
+     *  its facts go to the writer as source material and the paid web
+     *  research is skipped. The new post is still written fresh. */
+    basedOnPostId?: string
   }
   const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
+  // An admin repair of a live post (app/api/admin/rebuild-posts). Honoured
+  // only on the job worker's service call, which the admin route queues.
+  const isRepair = isServiceCall && (body as { repair?: unknown }).repair === true
   const scheduleMode = body.scheduleMode
   const scheduledForIso = body.scheduledFor
 
@@ -349,6 +362,10 @@ async function handleGenerate(request: Request) {
     .maybeSingle()
 
   const isRewrite = !!existingForLimit
+  // A repair rewrites a live post in place and never makes a new one.
+  if (isRepair && !existingForLimit?.wordpress_post_id) {
+    return NextResponse.json({ error: 'This video has no live post on record to repair, so nothing was written.', reason: 'repair_no_post' }, { status: 409 })
+  }
   // When set: skip createPost and updatePost(existingWpPostId) instead, so the
   // live URL + Google indexing history are preserved across the rebuild.
   let existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
@@ -548,8 +565,20 @@ async function handleGenerate(request: Request) {
   // the column list here is dynamic (different code paths select
   // different subsets of `youtube_videos`).
   const videoRow = video as Record<string, unknown>
-  let transcript = (videoRow.transcript as string | null) || ''
-  let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'none' = transcript ? 'cache' : 'none'
+  // A scrap is not a transcript: under 80 characters reads as none, so saved
+  // word cues and the other sources are still tried.
+  let transcript = ((videoRow.transcript as string | null) || '').trim().length >= 80 ? (videoRow.transcript as string) : ''
+  let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'whisper' | 'none' = transcript ? 'cache' : 'none'
+  // Word-timed cues already saved for this video (Shorts transcribes the same
+  // videos), so a post never pays for words MVP already has.
+  if (!transcript) {
+    const rawCues = (videoRow as { transcript_cues?: unknown }).transcript_cues
+    const saved = (Array.isArray(rawCues) ? rawCues : [])
+      .map((c: { start?: unknown; end?: unknown; text?: unknown }) => ({ start: Number(c?.start), end: Number(c?.end), text: String(c?.text ?? '').trim() }))
+      .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.text)
+    const text = saved.length ? cuesToText(saved) : ''
+    if (text.trim().length >= 80) { transcript = text; transcriptSource = 'cache' }
+  }
   // Only a REAL YouTube id is worth asking YouTube about. A Launchpad master is
   // an uploaded file stored under a synthetic "upload-…" id, so the two fetch
   // layers below would spend a token refresh and a scrape on a video YouTube has
@@ -558,34 +587,66 @@ async function handleGenerate(request: Request) {
   const rawVideoId = (videoRow.youtube_video_id as string | undefined) ?? ''
   const youtubeVideoIdForTranscript = /^[A-Za-z0-9_-]{11}$/.test(rawVideoId) ? rawVideoId : ''
 
-  // Layer 1: official YouTube Data API.
+  // Layer 1: the YoutubeTranscript scraper. Free (no quota, no cost); it
+  // handles auto-captions, but YouTube blocks it from many cloud addresses.
+  if (!transcript && youtubeVideoIdForTranscript) {
+    try {
+      const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
+      const text = segments.map((s: { text: string }) => s.text).join(' ')
+      if (text && text.trim().length >= 80) {
+        transcript = text
+        transcriptSource = 'scraper'
+      }
+    } catch { /* leave empty */ }
+  }
+
+  // Layer 2: the video's own audio, transcribed (the path Shorts uses). No
+  // YouTube quota at all, which is why it comes before the Data API. It
+  // pulls only the audio and runs Whisper on it. Capped at an hour.
+  let whisperCues: Array<{ start: number; end: number; text: string }> = []
+  if (!transcript && youtubeVideoIdForTranscript && ingestConfigured() && transcriptionConfigured()
+    && (Number(videoRow.duration_seconds) || 0) <= 3600) {
+    try {
+      const audioUrl = await ingestAudio(youtubeVideoIdForTranscript, ownerId)
+      if (audioUrl) {
+        whisperCues = await transcribeToCues(audioUrl)
+        if (whisperCues.length) {
+          recordUsage({ userId: user.id, tier: ((integration as Record<string, unknown> | null)?.tier as string | null) ?? null, feature: 'blog_transcribe', model: 'fal-whisper', images: 1 })
+          const text = cuesToText(whisperCues)
+          if (text.trim().length >= 80) { transcript = text; transcriptSource = 'whisper' }
+        }
+        const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
+        if (p) { try { await createAdminClient().storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
+      }
+    } catch { /* leave empty */ }
+  }
+
+  // Layer 3, LAST: the official YouTube Data API. It is the dearest thing a
+  // post can spend from the one daily YouTube quota every MVP account shares:
+  // a caption list (50 units) and a download (200), 250 a post. Once it used
+  // the token of the channel that owns the video it started succeeding, and
+  // a day of posts took the whole quota, so playlists and uploads stopped for
+  // everyone. The audio above costs no quota, so this only runs when that
+  // could not be used (no video service, or a video over an hour).
   // Perf (audit 2026-06-02): reuses the `integration` row already
   // loaded in the Promise.all above — was previously re-fetching
   // the same row a second time (~80ms saved).
   if (!transcript && youtubeVideoIdForTranscript) {
     try {
       const integ = integration as Record<string, unknown> | null
-      if (integ?.youtube_oauth_access_token) {
-        const token = await getValidYouTubeToken(integ as Record<string, unknown>)
+      // THE CHANNEL THAT OWNS THE VIDEO. YouTube only hands captions to their
+      // owner, and this used the account's first token whatever channel the
+      // video was on, so a second channel or a Brand Account was refused every
+      // time and the post was written without the creator's words.
+      const owned = await getChannelOAuthToken(supabase, ownerId, (videoRow.channel_id as string | null) ?? null).catch(() => null)
+      const token = owned || (integ?.youtube_oauth_access_token ? await getValidYouTubeToken(integ as Record<string, unknown>) : null)
+      if (token) {
         const yt = createYouTubeOAuthService(token)
         const apiTranscript = await yt.getTranscript(youtubeVideoIdForTranscript)
-        if (apiTranscript && apiTranscript.trim().length >= 40) {
+        if (apiTranscript && apiTranscript.trim().length >= 80) {
           transcript = apiTranscript
           transcriptSource = 'youtube_api'
         }
-      }
-    } catch { /* fall through to the scraper */ }
-  }
-
-  // Layer 2: YoutubeTranscript scraper (handles auto-captions but YouTube
-  // blocks it from many cloud IPs — best-effort).
-  if (!transcript && youtubeVideoIdForTranscript) {
-    try {
-      const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
-      const text = segments.map((s: { text: string }) => s.text).join(' ')
-      if (text && text.trim().length >= 40) {
-        transcript = text
-        transcriptSource = 'scraper'
       }
     } catch { /* leave empty */ }
   }
@@ -594,20 +655,31 @@ async function handleGenerate(request: Request) {
   if (transcript && transcriptSource !== 'cache') {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase
+      await (supabase as any)
         .from('youtube_videos')
-        .update({ transcript, transcript_fetched_at: new Date().toISOString() })
+        .update({ transcript, transcript_fetched_at: new Date().toISOString(), ...(whisperCues.length ? { transcript_cues: whisperCues } : {}) })
         .eq('id', videoId)
     } catch { /* non-fatal */ }
   }
 
-  // NOTE: no standalone empty-transcript gate here — the layered fetcher above
-  // already tries the official Data API before the scraper, and the voice-
+  // NOTE: no standalone empty-transcript gate here. The layered fetcher above
+  // tries every source, and the voice-
   // betrayal scrub + prompt rule 8 keep "we don't have a transcript" patterns
   // out of the body. The REVIEW-WORTHINESS gate below (§5.2) refuses only the
   // truly contentless case: no resolvable product AND a thin transcript.
   // allowEmptyTranscript is that gate's explicit "generate anyway" override.
   const transcriptUsed = !!transcript && transcript.trim().length >= 80
+
+  // AN ADMIN REPAIR (app/api/admin/rebuild-posts) exists to put the creator's
+  // own words into a post that was written without them. Without a transcript
+  // it would only write the same research post again over a live one, so it
+  // stops here and the post is left exactly as it was.
+  if (isRepair && !transcriptUsed) {
+    return NextResponse.json({
+      error: 'No transcript could be read from this video (captions refused and the audio could not be transcribed), so the post was left as it was.',
+      reason: 'repair_no_transcript',
+    }, { status: 422 })
+  }
 
   // ── 5. Resolve the product / affiliate link ───────────────────────────────
   // Priority:
@@ -665,6 +737,16 @@ async function handleGenerate(request: Request) {
         } else {
           destination = directProductUrl
           alreadyGeniuslink = true
+          // THE PRODUCT, STILL. Re-wrapping needs the creator's Geniuslink
+          // keys, but finding out WHICH product the link points at does not:
+          // the geni.us redirect is public. Without this, a creator who links
+          // with Geniuslink got posts with no product facts, no listing and no
+          // ASIN. Their own geni.us link is still the one the post uses.
+          try {
+            const finalUrl = await resolveTrueDestination(directProductUrl)
+            const asinFromFinal = asinFromAmazonUrl(finalUrl)
+            if (asinFromFinal) asinOverride = asinFromFinal.toUpperCase()
+          } catch { /* the link still works; the product is found by title below */ }
         }
       } else if (/(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(directProductUrl)) {
         // A short link — LOOK IT UP before assuming. If it lands on an
@@ -1074,8 +1156,13 @@ async function handleGenerate(request: Request) {
   //  here was redundant AND expensive (it was the $28/mo, ~36k-input-tokens/call
   //  `blog_web_product_search` line). Only run it for NON-Amazon products
   //  (direct-store links) where we have no listing to fall back on.
+  // ── 5.89. BUILD ON WHAT IS ALREADY WRITTEN (Seb, 2026-10-05). A post MVP
+  //          already published about this product carries its researched
+  //          facts. Handed to the writer as source material, it replaces the
+  //          paid web research below, and the new post links back to it.
+  const earlier = await earlierPostSource(supabase, user.id, body.basedOnPostId, 'This new post is about a different video, so take the angle this video takes.')
   let productResearch: string | null = null
-  if (!asinOverride && (tier === 'creator' || tier === 'pro' || tier === 'admin')) {
+  if (!earlier && !asinOverride && (tier === 'creator' || tier === 'pro' || tier === 'admin')) {
     const pUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (pUrl) {
       // HARD TIME BUDGET: research is best-effort enrichment, but the
@@ -1096,6 +1183,8 @@ async function handleGenerate(request: Request) {
       )
     }
   }
+
+  if (earlier) productResearch = productResearch ? `${productResearch}\n\n${earlier}` : earlier
 
   // ── 5.94. MVP's own product signals, for the writer.
   //
@@ -1462,7 +1551,7 @@ async function handleGenerate(request: Request) {
   // "watch the full video before deciding…" filler.
   {
     const channelUrl = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-    const scrub = scrubVoicePatterns(content, { channelUrl })
+    const scrub = scrubVoicePatterns(content, { channelUrl, ownVideo: true })
     content = scrub.content
     if (scrub.paragraphsRemoved + scrub.phrasesRewritten + scrub.handlesWrapped > 0) {
       console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s), wrapped ${scrub.handlesWrapped} @handle(s)`)
@@ -1566,7 +1655,7 @@ async function handleGenerate(request: Request) {
         critique.edits.map(e => ({ weakness: e.weakness, applied: e.applied })))
       // Re-scrub — the critique rewrites can reintroduce banned voice/words.
       const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-      content = scrubVoicePatterns(scrubBanned(critique.content), { channelUrl: channelUrlForRescrub }).content
+      content = scrubVoicePatterns(scrubBanned(critique.content), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
     } else if (critique.edits.length > 0) {
       console.log(`[blog/generate] self-critique: ${critique.edits.length} flagged but 0 applied (verbatim mismatch)`)
     }
@@ -1854,7 +1943,7 @@ async function handleGenerate(request: Request) {
       factCheckedPrePublish = true
       if (checked && checked !== content) {
         const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
       }
     } catch { /* not checked here; the after() pass tries once more */ }
   }
@@ -1905,7 +1994,10 @@ async function handleGenerate(request: Request) {
   if (productMismatch) heldReasons.push(productMismatch)
   if (body.autopilot === true) {
     const src = (generated as { experienceSource?: ExperienceSource }).experienceSource ?? null
-    if (src === 'none') heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
+    // NO WORDS FROM THE VIDEO: the writer marks every blog post as from the
+    // creator's own video, so 'none' never came back and this hold never ran.
+    // Whether a transcript was used is the real question.
+    if (src === 'none' || !transcriptUsed) heldReasons.push('It has no first-hand source: no transcript from your video and no notes, so it could only be a research post, and an auto-pilot research post is the kind Google treats as mass-produced.')
     if (tells.length >= AI_TELL_HOLD_AT) heldReasons.push(`It still reads as machine-written in ${tells.length} places: ${tells.slice(0, 5).map((t) => t.kind.replace(/^word: /, '"') + (t.kind.startsWith('word: ') ? '"' : '')).join(', ')}.`)
   }
   // Never on a post that is already live (a rebuild or an adopted slug), whose
@@ -2000,7 +2092,11 @@ async function handleGenerate(request: Request) {
           title: generated.title,
           content,
           excerpt: generated.excerpt,
-          status: heldForReview ? 'draft' : 'publish',
+          // A LIVE POST'S STATUS IS THE CREATOR'S. This sent 'publish' on
+          // every rebuild, so a held draft went live unreviewed and a post
+          // scheduled for next week went out today. Only this job's own post
+          // (an earlier attempt of it) gets the status it was asked for.
+          ...(heldForReview ? { status: 'draft' as const } : existingIsThisJobsPost ? { status: wpStatus, ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}) } : {}),
           tags: tagIds,
           categories: categoryIds,
         })
@@ -2014,6 +2110,10 @@ async function handleGenerate(request: Request) {
         // cleared). This was the #1 cause of "Internal Server Error" on
         // re-generates against a deleted post.
         const m = err instanceof Error ? err.message : String(err)
+        // An admin repair never makes a new post (app/api/admin/rebuild-posts).
+        if (isRepair && /rest_post_invalid_id|invalid post id|"status":\s*404/i.test(m)) {
+          return NextResponse.json({ error: 'The post is no longer on the site (WordPress says it does not exist), so the repair made nothing.', reason: 'repair_post_gone' }, { status: 409 })
+        }
         if (/rest_post_invalid_id|invalid post id|"status":\s*404/i.test(m)) {
           console.warn(`[blog-generate] stored WP post ${existingWpPostId} is gone — creating fresh instead:`, m)
           existingWpPostId = null
@@ -2134,8 +2234,11 @@ async function handleGenerate(request: Request) {
       const media = await uploadVideoThumbnail(wpService, { youtubeVideoId, customUrl: customBlogThumb, storedUrl: storedThumb })
       await wpService.updatePost(wpPost.id, {
         title: generated.title, slug, content, excerpt: generated.excerpt,
-        status: wpStatus,
-        ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+        // An existing post keeps its own status here too (see the rebuild above).
+        ...(existingWpPostId && !existingIsThisJobsPost ? {} : {
+          status: wpStatus,
+          ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+        }),
         tags: tagIds, featured_media: media.id,
       })
     }
@@ -2191,6 +2294,9 @@ async function handleGenerate(request: Request) {
   const blogPayload = {
     user_id: ownerId,
     video_id: videoId,
+    // When this post was last written: how the admin repair tells a rewrite
+    // that finished after the worker stopped waiting from one that did not.
+    updated_at: new Date().toISOString(),
     title: generated.title,
     slug,
     content,
@@ -2268,7 +2374,9 @@ async function handleGenerate(request: Request) {
     // blocked (Pro gets one AI rewrite per post). Only mutate these
     // fields when this *is* a rewrite — fresh generations leave them
     // at the defaults (0 / null).
-    ...(isRewrite
+    // An admin repair is ours to pay for, so it does not use up one of the
+    // creator's rebuilds of this post.
+    ...(isRewrite && !isRepair
       ? {
           // Increment (not set) so the 3-per-post rebuild cap actually counts up.
           rewrite_count: ((existingForLimit?.rewrite_count as number) ?? 0) + 1,
@@ -2452,7 +2560,9 @@ async function handleGenerate(request: Request) {
     // be worse than no link. For draft-flip the cron will fire this when
     // it flips the post; for wp-native it's just skipped (future: post-
     // status-transition webhook from WP could fire it at publish time).
-    if (!isScheduled) {
+    // Not on an admin repair: the post was linked when it was first made, and
+    // a second line costs quota and clutters the creator's description.
+    if (!isScheduled && !isRepair) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: ytRow } = await supabase
@@ -2596,7 +2706,7 @@ async function handleGenerate(request: Request) {
         // out a bogus spec. Pass the channel URL again so any bare @handles the
         // fact-check leaves behind also get wrapped.
         const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
-        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub, ownVideo: true }).content
         try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3255,6 +3365,15 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // for a held post, why it is a draft. Written even when scoring failed,
     // because a hold with no record is a draft nobody is told about.
     const record = { ...(aio ?? {}), tells: tells.slice(0, 12), ...(titleFix ? { titleFix } : {}), ...(brandFixes.size ? { brandFix: { brand: officialBrand, from: [...brandFixes] } } : {}), ...(heldForReview ? { held: { at: new Date().toISOString(), reasons: heldReasons } } : {}) }
+    // A REBUILD KEEPS THE HOLD. The post's status is left as it was (a held
+    // draft stays a draft), so the reason it is held stays on screen with it.
+    if (!heldForReview && existingWpPostId && !existingIsThisJobsPost) {
+      try {
+        const { data: prior } = await (supabase as any).from('blog_posts').select('aio').eq('id', savedPost.id).maybeSingle()
+        const priorHeld = (prior?.aio as { held?: unknown } | null)?.held
+        if (priorHeld) (record as Record<string, unknown>).held = priorHeld
+      } catch { /* nothing to keep */ }
+    }
     try { await (supabase as any).from('blog_posts').update({ aio: record }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
   }
 
@@ -3354,3 +3473,4 @@ function extractGeniuslinkCode(text: string | null | undefined): string | null {
   const m = text.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)
   return m ? m[1] : null
 }
+

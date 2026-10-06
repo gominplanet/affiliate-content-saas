@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { canUsePreview } from '@/lib/labs-preview'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { detectShorts } from '@/lib/shorts-detect'
@@ -15,9 +16,10 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('shorts_mode', intg?.tier)) return NextResponse.json({ shorts: {} })
   const body = await req.json().catch(() => ({})) as { ids?: unknown; channelId?: string | null }

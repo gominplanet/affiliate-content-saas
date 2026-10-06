@@ -18,6 +18,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getDeadChannels, platformLabel, type DeadChannel } from '@/lib/channel-health'
 import { probeAndStoreConnections, isHealthFresh, deadPlatforms, type ConnectionHealth } from '@/lib/connection-probe'
@@ -36,10 +37,15 @@ const PROACTIVE_MESSAGE: Record<string, string> = {
 }
 
 export async function GET() {
-  const supabase = await createServerClient()
-  const auth = await getAuthAndOwner(supabase)
+  const session = await createServerClient()
+  const auth = await getAuthAndOwner(session)
   if (auth.error) return auth.error
   const { ownerId } = auth
+  // A Virtual Assistant's session cannot read the owner's integrations row
+  // (migration 320), so a VA saw every channel as disconnected. The server
+  // reads it for them; only yes/no and labels go back, never a token.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = auth.isOwner ? session : (createAdminClient() as any)
 
   // 1. Reactive — scheduled-post failure history.
   const dead: DeadChannel[] = await getDeadChannels(supabase, ownerId)

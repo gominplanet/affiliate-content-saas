@@ -25,6 +25,7 @@ import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-ima
 import { asinPathRegex } from '@/lib/asin'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+import { INSTAGRAM_AI_IMAGES } from '@/lib/ig-ai-images'
 import { spendGate } from '@/lib/ai-spend'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -287,6 +288,11 @@ export async function POST(request: Request) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     const tier = (intRow?.tier as Tier) ?? 'trial'
+    // Retired (lib/ig-ai-images): refused before anything is rendered, for
+    // everyone but admin, with the reason and the way that replaced it.
+    if (!INSTAGRAM_AI_IMAGES && tier !== 'admin') {
+      return NextResponse.json({ error: 'Instagram AI images have been retired. Post the video itself to Instagram from Clip Factory, or compose the post from your YouTube thumbnail.', retired: true }, { status: 410 })
+    }
     // Tier restructure 2026-06-04: IG AI thumbnails opened to Studio
     // (30/mo) on top of Pro (100/mo). Trial + Creator still blocked.
     // (Was previously Pro-only — but the tier matrix puts Studio at
@@ -486,13 +492,16 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
         if (imageUrl && productImageUrl) {
           const verdict = await verifyProductMatch(productImageUrl, imageUrl, productTitle || (video.title as string), { userId: user.id, tier })
           if (!verdict.match) {
-            const retry = await composeWithGptImage({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+            // The retry is told what was wrong, so it has a reason to come out
+            // different. A second render with the same prompt was a second
+            // roll of the same dice.
+            const fix = `\n\nTHE PREVIOUS RENDER GOT THE PRODUCT WRONG: ${verdict.reason}. Match the product reference exactly this time: its true shape, colour and parts.`
+            const retry = await composeWithGptImage({ prompt: igPrompt + fix, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
             if (retry[0]) {
               imageUrl = retry[0]
-              // Cost-only feature so the QC retry's real spend is still tracked
-              // WITHOUT advancing the monthly cap — `ig_ai_thumbnail_image` must
-              // appear exactly once per delivered image (see PRIMARY_FEATURE in
-              // lib/usage-cap.ts), else one image would burn two of the cap.
+              // A render is a render: the QC retry counts against the monthly
+              // Instagram allowance (PRIMARY_FEATURE.instagramAi lists this
+              // feature), as Seb asked on 2026-10-05, and its cost is tracked.
               recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_retry_cost', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
             }
           }

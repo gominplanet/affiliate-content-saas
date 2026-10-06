@@ -37,24 +37,27 @@ export class OpenAIService {
     })
   }
 
-  private async generateOne(prompt: string, size: '1792x1024' | '1024x1024'): Promise<string> {
+  // THE SAME IMAGE MODEL AS EVERYTHING ELSE (Seb, 2026-10-07). This was the
+  // last DALL-E 3 call, a model OpenAI has been retiring; it now uses gpt-image
+  // (OPENAI_IMAGE_MODEL, else gpt-image-1) at medium quality, which always
+  // answers in base64, so no response_format is sent.
+  private async generateOne(prompt: string, size: '1536x1024' | '1024x1024'): Promise<string> {
     const response = await this.client.images.generate({
-      model: 'dall-e-3',
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
       prompt,
       n: 1,
       size,
-      quality: 'standard',
-      response_format: 'b64_json',
+      quality: 'medium',
     })
     const b64 = response.data?.[0]?.b64_json
-    if (!b64) throw new Error('DALL-E returned no image data')
+    if (!b64) throw new Error('The image model returned no image data')
     return b64
   }
 
-  /** Single 16:9 hero image (1792x1024 b64 PNG) — for campaign post
-   *  featured images. Caller normalizes to exact 1280x720. */
+  /** Single landscape hero image (1536x1024 b64 PNG), for campaign post
+   *  featured images. Callers crop it to their exact size (1280x720). */
   async generateHeroImage(prompt: string): Promise<string> {
-    return this.generateOne(prompt, '1792x1024')
+    return this.generateOne(prompt, '1536x1024')
   }
 
   /**
@@ -178,7 +181,7 @@ export class OpenAIService {
   }): Promise<ImageSet> {
     // Run all 3 in parallel — ~5-10s total vs 15-30s sequential
     const [hero, lifestyle, setting] = await Promise.all([
-      this.generateOne(prompts.hero, '1792x1024'),
+      this.generateOne(prompts.hero, '1536x1024'),
       this.generateOne(prompts.lifestyle, '1024x1024'),
       this.generateOne(prompts.setting, '1024x1024'),
     ])

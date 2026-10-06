@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { NewsletterRetiredNotice, useNewsletterRetired } from '@/components/newsletter/NewsletterRetiredNotice'
 import { NewsletterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
@@ -72,14 +73,14 @@ interface Settings {
 }
 
 const HOMEPAGE_PLACEMENT_LABELS: Record<HomepagePlacement, { label: string; hint: string }> = {
-  before_pick: { label: 'Before Pick of the Day', hint: 'First thing under the hero — highest visibility, competes with the editor’s pick' },
+  before_pick: { label: 'Before Pick of the Day', hint: 'First thing under the hero: highest visibility, competes with the editor’s pick' },
   after_pick:  { label: 'After Pick of the Day',  hint: 'Between the pick and the 3-up ad strip' },
-  after_ads:   { label: 'After the 3 ad spots',   hint: 'Default — prime above-the-fold real estate without crowding the pick' },
-  footer:      { label: 'In the footer',          hint: 'Last thing on the page — lowest visibility, but doesn’t compete with content' },
+  after_ads:   { label: 'After the 3 ad spots',   hint: 'Default: prime above-the-fold real estate without crowding the pick' },
+  footer:      { label: 'In the footer',          hint: 'Last thing on the page: lowest visibility, but doesn’t compete with content' },
 }
 const SIDEBAR_PLACEMENT_LABELS: Record<SidebarPlacement, { label: string; hint: string }> = {
   top:    { label: 'Top of the sidebar',     hint: 'First sidebar element on every blog post' },
-  bottom: { label: 'After other sidebar ads', hint: 'Default — last sidebar element so readers see it after the post' },
+  bottom: { label: 'After other sidebar ads', hint: 'Default: last sidebar element so readers see it after the post' },
 }
 interface SubscriberRow {
   id: string
@@ -93,7 +94,17 @@ interface SubscriberRow {
 }
 interface Counts { active: number; pending: number; unsubscribed: number }
 
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS):
+// anyone but admin gets a short notice, and the tool below never mounts, so
+// none of its API calls are made.
 export default function NewsletterPage() {
+  const retired = useNewsletterRetired()
+  if (retired === 'loading') return null
+  if (retired) return <NewsletterRetiredNotice />
+  return <NewsletterTool />
+}
+
+function NewsletterTool() {
   const { confirm, ConfirmHost } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [savingField, setSavingField] = useState<string | null>(null)
@@ -272,7 +283,7 @@ export default function NewsletterPage() {
       // REST writes) the on-page signup form won't reflect the change yet. Say
       // so, rather than letting the UI imply the site is already in sync.
       if (d.wpSync && d.wpSync.pushed === false) {
-        setError('Saved — but we couldn’t update your blog yet (couldn’t reach WordPress). The on-page signup form may lag until your site syncs. Check your WordPress connection under Set Up, then toggle again.')
+        setError('Saved, but we couldn’t update your blog yet (couldn’t reach WordPress). The on-page signup form may lag until your site syncs. Check your WordPress connection under Set Up, then toggle again.')
       } else {
         setError(null)
       }
@@ -322,8 +333,8 @@ export default function NewsletterPage() {
         setSettings(d.settings)
         const s = d.settings?.domain_status
         if (s === 'verified') setDomainMsg({ ok: true, text: 'Verified! Your newsletter will now send from your own domain.' })
-        else if (s === 'failed') setDomainMsg({ ok: false, text: "Records didn't match. Double-check the DNS values below and give it a few more minutes — DNS can take up to an hour to propagate." })
-        else setDomainMsg({ ok: true, text: 'Still pending — DNS propagation usually finishes within an hour. Try again shortly.' })
+        else if (s === 'failed') setDomainMsg({ ok: false, text: "Records didn't match. Double-check the DNS values below and give it a few more minutes. DNS can take up to an hour to propagate." })
+        else setDomainMsg({ ok: true, text: 'Still pending: DNS propagation usually finishes within an hour. Try again shortly.' })
       }
     } catch (e) {
       setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Verification failed.' })
@@ -373,11 +384,11 @@ export default function NewsletterPage() {
       } else {
         setSettings(d.settings)
         const s = d.settings?.domain_status
-        const idChangedNote = d.idChanged ? ' (your stored Resend domain id was out of date — patched).' : ''
+        const idChangedNote = d.idChanged ? ' (your stored Resend domain id was out of date, patched).' : ''
         if (s === 'verified') {
-          setDomainMsg({ ok: true, text: `Re-synced from Resend — your domain is verified${idChangedNote}` })
+          setDomainMsg({ ok: true, text: `Re-synced from Resend: your domain is verified${idChangedNote}` })
         } else {
-          setDomainMsg({ ok: false, text: `Re-synced from Resend. Resend currently reports "${d.resendStatus || s}"${idChangedNote} — if Resend's own dashboard shows Verified, give it a minute and try again.` })
+          setDomainMsg({ ok: false, text: `Re-synced from Resend. Resend currently reports "${d.resendStatus || s}"${idChangedNote}: if Resend's own dashboard shows Verified, give it a minute and try again.` })
         }
       }
     } catch (e) {
@@ -439,7 +450,7 @@ export default function NewsletterPage() {
     const root = parts.length >= 2 ? parts.slice(-2).join('.') : settings.sender_domain
     const stamp = new Date().toISOString().slice(0, 10)
     const header = [
-      `;; MVP Affiliate — newsletter sender records`,
+      `;; MVP Affiliate: newsletter sender records`,
       `;; Sender domain: ${settings.sender_domain}`,
       `;; Generated: ${stamp}`,
       `;; Import into your DNS host's "Import zone file" feature, or use as a copy-paste reference.`,
@@ -697,7 +708,7 @@ export default function NewsletterPage() {
               placeholder="e.g. Gomin Reviews"
               className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
             />
-            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Shows on the From line — e.g. &quot;Gomin Reviews &lt;newsletter@…&gt;&quot;.</p>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Shows on the From line: e.g. &quot;Gomin Reviews &lt;newsletter@…&gt;&quot;.</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Mailing address <span className="text-[#ff9500]">(US CAN-SPAM)</span></label>
@@ -766,7 +777,7 @@ export default function NewsletterPage() {
                 value={ctaBullet1}
                 onChange={(e) => setCtaBullet1(e.target.value)}
                 maxLength={140}
-                placeholder="One short email per week — never spam"
+                placeholder="One short email per week, never spam"
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7] mb-2"
               />
               <input
@@ -935,7 +946,7 @@ export default function NewsletterPage() {
             <Info size={12} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p>
-                <strong>Test emails arrive even while this says &ldquo;Pending&rdquo;</strong> — we fall back to a shared sender until your domain is verified. &ldquo;Verified&rdquo; only changes the FROM address subscribers see (so it reads as your brand, not MVP).
+                <strong>Test emails arrive even while this says &ldquo;Pending&rdquo;</strong>: we fall back to a shared sender until your domain is verified. &ldquo;Verified&rdquo; only changes the FROM address subscribers see (so it reads as your brand, not MVP).
               </p>
               {settings.domain_checked_at && (
                 <p className="text-[#86868b] dark:text-[#8e8e93] mt-1">
@@ -959,7 +970,7 @@ export default function NewsletterPage() {
                 disabled={domainBusy === 'add'}
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
               />
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A subdomain like <code className="font-mono">mail.</code> is recommended — it keeps your root domain&apos;s reputation isolated.</p>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A subdomain like <code className="font-mono">mail.</code> is recommended: it keeps your root domain&apos;s reputation isolated.</p>
             </div>
             <button
               onClick={() => void addDomain()}
@@ -997,7 +1008,7 @@ export default function NewsletterPage() {
                   onClick={() => void resyncDomain()}
                   disabled={domainBusy === 'resync'}
                   className="px-3 py-1.5 rounded-md text-xs font-semibold border border-[#7C3AED]/30 text-[#7C3AED] hover:bg-[#7C3AED]/10 disabled:opacity-50 transition-colors"
-                  title="Use this if Resend's own dashboard shows your domain as Verified but MVP still says Pending — it re-fetches state from Resend and patches any out-of-date IDs."
+                  title="Use this if Resend's own dashboard shows your domain as Verified but MVP still says Pending. It re-fetches state from Resend and patches any out-of-date IDs."
                 >
                   {domainBusy === 'resync' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Re-syncing…</> : <><RefreshCw size={11} className="inline mr-1" /> Re-sync from Resend</>}
                 </button>
@@ -1018,7 +1029,7 @@ export default function NewsletterPage() {
                   <div>
                     <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Add these {settings.dkim_records.length} DNS records to your domain</p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-                      Cloudflare, Route 53, and Google DNS support the zone file below as a one-click <strong>Import</strong>. Hostinger / Namecheap: add each row by hand — if the Name column already appends your root domain, paste just the prefix part.
+                      Cloudflare, Route 53, and Google DNS support the zone file below as a one-click <strong>Import</strong>. Hostinger / Namecheap: add each row by hand. If the Name column already appends your root domain, paste just the prefix part.
                     </p>
                   </div>
                   {/* Zone-file download — useful for both bulk-import panels AND
@@ -1027,7 +1038,7 @@ export default function NewsletterPage() {
                   <button
                     onClick={downloadZoneFile}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] hover:border-[#7C3AED] text-[#7C3AED] flex-shrink-0"
-                    title="Download as a BIND zone file — import into Cloudflare / Route 53 / Google DNS in one shot"
+                    title="Download as a BIND zone file. Import into Cloudflare / Route 53 / Google DNS in one shot"
                   >
                     <Download size={11} /> Download zone file
                   </button>
@@ -1099,8 +1110,8 @@ export default function NewsletterPage() {
                     <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
                       DNS lookup results
                       {dnsCheck.allMatch
-                        ? <span className="ml-2 text-[#34c759]">— all records found ✓</span>
-                        : <span className="ml-2 text-[#ff9500]">— some records aren&apos;t matching yet</span>
+                        ? <span className="ml-2 text-[#34c759]">: all records found ✓</span>
+                        : <span className="ml-2 text-[#ff9500]">: some records aren&apos;t matching yet</span>
                       }
                     </p>
                     <div className="flex flex-col gap-2">
@@ -1193,7 +1204,7 @@ export default function NewsletterPage() {
               onClick={() => setPasteOpen(true)}
               disabled={importing}
               className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#3a3a3c] dark:text-[#d2d2d7] disabled:opacity-60"
-              title="Paste emails from Mailchimp, Substack, ConvertKit, or any list — no file needed"
+              title="Paste emails from Mailchimp, Substack, ConvertKit, or any list: no file needed"
             >
               <Copy size={11} /> Paste list
             </button>
@@ -1275,7 +1286,7 @@ export default function NewsletterPage() {
           <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Paste subscribers</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-              Paste a list of emails — one per line, or the first column of a CSV. Works straight from Mailchimp, Substack, ConvertKit, Beehiiv, or anywhere else you exported a list. Imported subscribers come in as <strong>active</strong> (we trust they consented on the other platform).
+              Paste a list of emails: one per line, or the first column of a CSV. Works straight from Mailchimp, Substack, ConvertKit, Beehiiv, or anywhere else you exported a list. Imported subscribers come in as <strong>active</strong> (we trust they consented on the other platform).
             </p>
             <textarea
               value={pasteText}
@@ -1286,7 +1297,7 @@ export default function NewsletterPage() {
               autoFocus
             />
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">
-              Tier cap respected — anything beyond your limit is skipped (we&apos;ll tell you how many).
+              Tier cap respected: anything beyond your limit is skipped (we&apos;ll tell you how many).
             </p>
             <div className="flex items-center justify-end gap-2 mt-4">
               <button
@@ -1381,7 +1392,7 @@ function NewsletterFormPreview({
   const b = button.trim() || 'Subscribe'
   const customBullets = bullets.map(x => x.trim()).filter(Boolean)
   const previewBullets = customBullets.length > 0 ? customBullets : [
-    'One short email per week — never spam',
+    'One short email per week, never spam',
     "Skips the stuff that isn’t worth your time",
     'Unsubscribe with one click, any time',
   ]

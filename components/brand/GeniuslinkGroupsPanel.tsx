@@ -66,10 +66,10 @@ export default function GeniuslinkGroupsPanel() {
         <div className="space-y-3">
           <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
             Every group on your Geniuslink account. Create a new one here, then point a blog at it from
-            <span className="whitespace-nowrap"> Set Up → your site → settings</span>. (Geniuslink has no rename/delete — do that in the Geniuslink dashboard.)
+            <span className="whitespace-nowrap"> Set Up → your site → settings</span>. (Geniuslink has no rename/delete; do that in the Geniuslink dashboard.)
           </p>
           <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(124,58,237,0.06)', color: 'var(--text-3, #6e6e73)' }}>
-            <span className="font-semibold text-[#7C3AED]">Automatic per-channel tracking.</span> When you publish, MVP routes each place&apos;s link into its own group so your Geniuslink dashboard shows clicks by source — your blog to a group named after your domain, plus <span className="font-mono">MVP-YOUTUBE</span>, <span className="font-mono">MVP-FACEBOOK</span>, <span className="font-mono">MVP-PINTEREST</span>, <span className="font-mono">MVP-TWITTER</span>, and one per social channel. MVP creates these for you on first use. This works with Geniuslink only — an Amazon tag alone can&apos;t split clicks by source.
+            <span className="font-semibold text-[#7C3AED]">Automatic per-channel tracking.</span> When you publish, MVP routes each place&apos;s link into its own group so your Geniuslink dashboard shows clicks by source: your blog to a group named after your domain, plus <span className="font-mono">MVP-YOUTUBE</span>, <span className="font-mono">MVP-FACEBOOK</span>, <span className="font-mono">MVP-PINTEREST</span>, <span className="font-mono">MVP-TWITTER</span>, and one per social channel. MVP creates these for you on first use. This works with Geniuslink only: an Amazon tag alone can&apos;t split clicks by source.
           </div>
 
           {/* Create */}
@@ -117,7 +117,7 @@ export default function GeniuslinkGroupsPanel() {
                 ))}
               </ul>
             ) : groups ? (
-              <p className="text-[11px] text-[#86868b] py-1">No groups yet — create your first above.</p>
+              <p className="text-[11px] text-[#86868b] py-1">No groups yet. Create your first above.</p>
             ) : null}
           </div>
         </div>

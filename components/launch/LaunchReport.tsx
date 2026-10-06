@@ -11,7 +11,8 @@
 
 import { explainAmazonUpload, MAX_UPLOAD_TRIES } from '@/lib/amazon-upload-errors'
 import { MARKETS } from '@/lib/markets'
-import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
+import { studioRunNeeded, studioRunSettled, type StoredStudioRun } from '@/lib/studio-finish'
+import { isStudioWaiting, isStudioRunning, STUDIO_UPLOAD_DONE } from '@/lib/studio-upload'
 
 const GOOD = '#10B981', WARN = '#d97706', BAD = '#ef4444', BUSY = '#0EA5A4', IDLE = 'var(--text-2)'
 const text = { color: 'var(--text)' } as const
@@ -33,6 +34,9 @@ export interface ReportItem {
   studio_finish?: StoredStudioRun | null
   api_disclosures?: {
     asked?: boolean; paidPromotion?: boolean | null; aiUseNo?: boolean | null
+    /** What YouTube said to the AI question: true, false, or null when it
+     *  said nothing. Missing on rows recorded before it was kept. */
+    aiUse?: boolean | null
     embeddable?: boolean | null; madeForKids?: boolean | null; error?: string | null
   } | null
   asin?: string | null
@@ -49,7 +53,7 @@ function firstCommentCheck(fc: ReportItem['first_comment']): { value: boolean | 
   if (!fc) return null
   if (fc.state === 'posted') return fc.pinned === true
     ? { value: true, title: 'Posted and pinned' }
-    : { value: fc.pinned === false ? false : null, title: fc.pinned === false ? `Posted, not pinned: ${fc.pin_error || 'no reason given'}` : 'Posted; SCOUT pins it the next time you open Liftoff, Co-Pilot or First comments' }
+    : { value: fc.pinned === false ? false : null, title: fc.pinned === false ? `Posted, not pinned: ${fc.pin_error || 'no reason given'}` : 'Posted; SCOUT pins it the next time you open Bulk Amazon upload, Co-Pilot or Pinned comments' }
   if (fc.state === 'waiting') return { value: null, title: 'Posts itself when YouTube shows the video public, then SCOUT pins it' }
   if (fc.state === 'failed') return { value: false, title: `Not posted: ${fc.last_error || 'no reason given'}` }
   return null
@@ -62,6 +66,11 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
   // CHOSEN, NOT MISSED: an Amazon-only batch never goes to YouTube.
   if (i.state === 'amazon_only') return { word: 'Skipped (Amazon only)', colour: IDLE, done: true }
   if (i.state === 'published') return { word: `Live${i.publish_at ? ` since ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
+  // THE TIME CAME AND IT DID NOT GO PUBLIC. The checker leaves the row
+  // 'scheduled' and writes why; that is a problem, not a green tick.
+  if (i.state === 'scheduled' && /^The time came and went/.test(i.reason || '')) {
+    return { word: 'Did not go public', colour: BAD, done: true, problem: i.reason || undefined }
+  }
   if (i.state === 'scheduled') return { word: `Scheduled${i.publish_at ? ` for ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
   if (i.state === 'blocked') {
     return i.youtube_video_id
@@ -69,8 +78,19 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
       : { word: 'Did not upload', colour: BAD, done: true, problem: i.reason || 'It could not be uploaded.' }
   }
   if (i.state === 'prepared') {
+    // UPLOADED THROUGH STUDIO BY SCOUT (Labs): each state its own words, so
+    // waiting for SCOUT never reads like YouTube's quota, and a SCOUT that
+    // failed and will try again never reads like a queue.
+    if (i.planned_publish_at && !i.youtube_video_id) {
+      if (isStudioWaiting(i.reason)) return { word: 'Waiting for SCOUT', colour: WARN, done: false, problem: i.reason || undefined }
+      if (isStudioRunning(i.reason)) return { word: 'Uploading in Studio', colour: BUSY, done: false }
+      if (/^(?:SCOUT |Studio |YouTube Studio |The file went into Studio)/.test(i.reason || '')) return { word: 'SCOUT tries again', colour: WARN, done: false, problem: i.reason || undefined }
+    }
+    if (i.youtube_video_id && (i.reason || '') === STUDIO_UPLOAD_DONE) return { word: 'On YouTube, time next', colour: BUSY, done: false }
+    // Waiting on YouTube's daily allowance: not stuck, not failed, and says so.
+    if (i.planned_publish_at && /^Waiting/.test(i.reason || '')) return { word: 'Waiting for YouTube', colour: WARN, done: false, problem: i.reason || undefined }
     return i.planned_publish_at
-      ? { word: /is running now/.test(i.reason || '') ? 'Uploading now' : 'Queued for upload', colour: BUSY, done: false }
+      ? { word: /is running now|^Sending to YouTube in pieces/.test(i.reason || '') ? 'Uploading now' : 'Queued for upload', colour: BUSY, done: false }
       : { word: 'Ready, not launched', colour: WARN, done: false, problem: 'Ready but not launched yet. Press Launch these too.' }
   }
   return { word: 'Still being prepared', colour: BUSY, done: false }
@@ -169,13 +189,14 @@ export default function LaunchReport({
     const d = i.api_disclosures
     if (d?.error) problems.push({ video: name, where: 'YouTube settings', what: d.error })
     if (d?.asked && d.paidPromotion === false) problems.push({ video: name, where: 'YouTube settings', what: 'YouTube reports paid promotion as No.' })
+    if (d?.asked && d.aiUse === true) problems.push({ video: name, where: 'YouTube settings', what: 'YouTube reads this video as using AI. Set AI use to No in Studio.' })
     if (i.playlist_error) problems.push({ video: name, where: 'Playlist', what: i.playlist_error })
     if (i.thumbnail_error) problems.push({ video: name, where: 'Thumbnail', what: i.thumbnail_error })
     // One rule with the background tab: a run that timed out with tries left
     // is still to come, not a problem yet.
     const studioDue = !!i.youtube_video_id && studioPossible && i.state !== 'amazon_only' && studioRunNeeded(i.studio_finish)
     if (studioDue) studioLeft++
-    if (i.studio_finish && !i.studio_finish.ok && !studioDue) {
+    if (i.studio_finish && !studioRunSettled(i.studio_finish) && !studioDue) {
       const open = i.studio_finish.steps.filter((s) => !s.ok && !s.skipped).map((s) => s.detail).filter(Boolean)
       problems.push({
         video: name, where: 'YouTube Studio',
@@ -194,8 +215,11 @@ export default function LaunchReport({
     }
   }
   const allDone = ytLeft === 0 && amzLeft === 0 && studioLeft === 0
+  // THROUGH SCOUT, the YouTube half waits on Chrome too, so it is not said
+  // to "carry on regardless".
+  const viaScout = sorted.some((i) => isStudioWaiting(i.reason) || isStudioRunning(i.reason) || (i.reason || '') === STUDIO_UPLOAD_DONE)
   const working = [
-    ytLeft ? `${ytLeft} on YouTube` : '',
+    ytLeft ? `${ytLeft} going to YouTube` : '',
     studioLeft ? `${studioLeft} Studio ${studioLeft === 1 ? 'pass' : 'passes'}` : '',
     amzLeft ? `${amzLeft} Amazon ${amzLeft === 1 ? 'listing' : 'listings'}` : '',
   ].filter(Boolean)
@@ -211,8 +235,10 @@ export default function LaunchReport({
       </h2>
       <p className="text-[12px] mt-0.5" style={muted}>
         {allDone
-          ? `YouTube: ${sorted.filter((i) => i.state === 'scheduled' || i.state === 'published').length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
-          : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
+          ? `YouTube: ${sorted.filter((i) => i.state === 'published' || (i.state === 'scheduled' && !/^The time came and went/.test(i.reason || ''))).length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
+          : viaScout
+            ? `Still working: ${working.join(', ')}. SCOUT does all of it in your Chrome, so keep Chrome open (with Keep going on, this page can be closed).`
+            : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
       </p>
 
       <div className="mt-3 overflow-x-auto">
@@ -255,7 +281,18 @@ export default function LaunchReport({
                             ? means YouTube did not say (or migration 368 is
                             not in yet). */}
                         {d?.asked !== false && <Check label="Paid promotion" value={d?.paidPromotion} />}
-                        {d?.asked !== false && <Check label="AI use: No" value={d?.aiUseNo} />}
+                        {d?.asked !== false && (() => {
+                          // YOUTUBE'S OWN ANSWER FIRST; when it said nothing,
+                          // SCOUT's read-back in Studio. Older rows stored
+                          // "nothing" as false, so without aiUse a false is
+                          // not taken as a No-was-refused.
+                          const yt = d?.aiUse !== undefined ? (d.aiUse === false ? true : d.aiUse === true ? false : null) : (d?.aiUseNo === true ? true : null)
+                          const studio = run?.steps.find((s) => s.step === 'details')?.ok === true
+                          const value = yt ?? (studio ? true : null)
+                          const title = yt === false ? 'YouTube reads this video as using AI'
+                            : yt === true ? 'Read back from YouTube' : studio ? 'Read back in Studio by SCOUT (YouTube did not say)' : 'Not confirmed yet'
+                          return <Check label="AI use: No" value={value} title={title} />
+                        })()}
                         <Check label="Embedding" value={d?.embeddable} />
                         <Check label="Thumbnail" value={i.thumbnail_set_at ? true : i.thumbnail_error ? false : null}
                           title={i.thumbnail_error || undefined} />
@@ -264,7 +301,7 @@ export default function LaunchReport({
                             title={i.playlist_error || undefined} />
                         )}
                         {(() => { const fc = firstCommentCheck(i.first_comment); return fc ? <Check label="First comment" value={fc.value} title={fc.title} /> : null })()}
-                        <Check label="Studio steps" value={run ? run.ok : null}
+                        <Check label="Studio steps" value={run ? studioRunSettled(run) : null}
                           title={run ? run.steps.map((s) => `${s.step}: ${s.detail}`).join('\n') : studioPossible ? 'Not run yet' : 'SCOUT is not available in this browser'} />
                       </span>
                     )}

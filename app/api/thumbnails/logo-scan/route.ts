@@ -36,6 +36,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { normalizeTier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { summariseLogoScan, type LogoFinding } from '@/lib/logo-scan'
 import { scanPost, MIGRATION_MISSING } from '@/lib/post-logo-sweep'
 
@@ -98,6 +99,10 @@ export async function POST(request: Request) {
 
   const { data: intg } = await client.from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
   const tier = normalizeTier(intg?.tier)
+  // ONE PRESS IS A VISION CALL PER IMAGE ACROSS 25 POSTS, so it answers to the same spend
+  // ceiling (and the same closed trial) as every other paid route.
+  const spendBlocked = await spendGate(ownerId, tier)
+  if (spendBlocked) return spendBlocked
 
   // Unchecked posts first, newest first; then the rest, so pressing it again
   // carries on rather than rereading the same ten.

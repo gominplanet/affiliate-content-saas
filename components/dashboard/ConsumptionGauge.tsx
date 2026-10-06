@@ -86,7 +86,7 @@ export default function ConsumptionGauge({ embedded = false }: { embedded?: bool
 
       <div className="relative flex items-center justify-center">
         <svg viewBox="0 0 220 128" className="w-full max-w-[240px]" role="img"
-          aria-label={unlimited ? `Unlimited plan — ${usage.used} generations used this period` : `${usage.used} of ${limit} generations used this period`}>
+          aria-label={unlimited ? `Unlimited plan: ${usage.used} generations used this period` : `${usage.used} of ${limit} generations used this period`}>
           {/* track */}
           <path d={ARC_PATH} fill="none" stroke="var(--border-bright, rgba(0,0,0,0.09))" strokeWidth={16} strokeLinecap="round" />
           {/* value */}
@@ -119,7 +119,7 @@ export default function ConsumptionGauge({ embedded = false }: { embedded?: bool
         {unlimited
           ? `${usage.used} generation${usage.used === 1 ? '' : 's'} used${usage.lifetime ? '' : ' this period'}`
           : usage.lifetime
-            ? <>{remaining} of {limit} left in your trial{remaining <= 0 ? ' — upgrade to keep going' : ''}</>
+            ? <>{remaining} of {limit} left in your trial{remaining <= 0 ? ': upgrade to keep going' : ''}</>
             : <><strong style={{ color: 'var(--text, #1d1d1f)' }}>{remaining}</strong> left{usage.resetLabel ? ` · resets ${usage.resetLabel}` : ''}</>}
       </p>
 

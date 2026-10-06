@@ -112,9 +112,16 @@ export async function GET(request: Request) {
       // Count the attempt BEFORE doing the work. Counting after means a job
       // that dies mid-localize every time is retried forever, which is the
       // failure this whole route exists to stop repeating.
-      await admin.from('global_sync_jobs')
+      //
+      // AND COUNTED AS A CLAIM. Ticks fire every minute and run up to four, so
+      // a job still waiting its turn in one tick's list was picked by the next
+      // tick too and both paid to localize it. Only the tick whose write finds
+      // the job still idle goes on; the bump makes it fresh for everyone else.
+      const { data: won } = await admin.from('global_sync_jobs')
         .update({ recovery_attempts: Number(job.recovery_attempts ?? 0) + 1, updated_at: new Date().toISOString() })
-        .eq('id', job.id)
+        .eq('id', job.id).lt('updated_at', staleBefore)
+        .select('id')
+      if (!won?.length) { results.push({ job: job.id, action: 'claimed_elsewhere' }); continue }
 
       const { data: video } = await admin
         .from('youtube_videos')

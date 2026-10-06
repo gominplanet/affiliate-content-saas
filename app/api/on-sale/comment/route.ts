@@ -18,6 +18,7 @@ import { wrongChannelMessage } from '@/lib/launch-channel'
 import { notPublicMessage } from '@/lib/covered-sales'
 import { SALE_WORDING, PRICE_LINE_LEAD, DISCLOSURE, SALE_COMMENTS_PER_DAY } from '@/lib/sale-comments'
 import { detectShorts } from '@/lib/shorts-detect'
+import { isQuotaError } from '@/lib/youtube-quota'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -100,10 +101,13 @@ export async function POST(req: Request) {
   // unlisted or scheduled video is read by nobody, so "Posted." would report
   // a success that changes nothing.
   let status: Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>> = null
-  let statusFailed = false
-  try { status = await yt.getVideoStatus(videoId) } catch { statusFailed = true }
+  let statusFailed: unknown = null
+  try { status = await yt.getVideoStatus(videoId) } catch (e) { statusFailed = e ?? true }
   if (statusFailed) {
-    return NextResponse.json({ error: 'YouTube did not say whether this video is public. Nothing was posted. Try again in a minute.' }, { status: 502 })
+    // A used-up allowance does not come back in a minute.
+    return NextResponse.json(isQuotaError(statusFailed)
+      ? { error: 'YouTube’s daily allowance is used up, so MVP could not ask whether this video is public. Nothing was posted. Try again after midnight Pacific.', quotaExceeded: true }
+      : { error: 'YouTube did not say whether this video is public. Nothing was posted. Try again in a minute.' }, { status: 502 })
   }
   if (!status) {
     return NextResponse.json({ error: 'The saved login cannot see this video, so it is on a channel that login is not, or it was deleted. Nothing was posted. Reconnect that channel under Settings.' }, { status: 409 })
@@ -122,8 +126,13 @@ export async function POST(req: Request) {
   }
   {
     let me: { id: string; title: string } | null = null
-    try { me = await yt.getMyChannel() } catch { /* said below */ }
-    if (!me) return NextResponse.json({ error: 'YouTube did not say which channel this login is. Nothing was posted.' }, { status: 502 })
+    let meErr: unknown = null
+    try { me = await yt.getMyChannel() } catch (e) { meErr = e }
+    if (!me) {
+      return NextResponse.json(isQuotaError(meErr)
+        ? { error: 'YouTube’s daily allowance is used up, so MVP could not ask which channel this login is. Nothing was posted. Try again after midnight Pacific.', quotaExceeded: true }
+        : { error: 'YouTube did not say which channel this login is. Nothing was posted.' }, { status: 502 })
+    }
     if (me.id !== owner) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: named } = await (supabase as any).from('youtube_channels').select('channel_title').eq('user_id', user.id).eq('channel_id', owner).maybeSingle()

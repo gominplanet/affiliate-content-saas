@@ -24,7 +24,7 @@ const TOOLS: Link[] = [
 const PROGRAMS: Link[] = [
   { href: 'https://geni.us/GCad5Q', label: 'Levanta', desc: 'Exclusive brand deals on Amazon, Shopify & Walmart' },
   { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Top brands across retail, travel, D2C & subscriptions' },
-  { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers — up to 60% commissions' },
+  { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers: up to 60% commissions' },
   // Cloaked through our own Passport redirect (code seeded in migration 296) so
   // clicks land in the operator's Passport analytics.
   { href: 'https://jointrybe.com/r/HTLEJE47', label: 'TRYBE', desc: 'Land brand collabs & gifted products as a creator' },

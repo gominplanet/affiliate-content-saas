@@ -20,6 +20,7 @@ import { normalizeTier, type Tier } from '@/lib/tier'
 import { ingestConfigured, ingestYouTubeVideo } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -33,9 +34,9 @@ export async function POST(request: Request) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Shorts Studio is a Pro feature.',
+        error: 'Clip Factory is part of the Amazon and Pro plans.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

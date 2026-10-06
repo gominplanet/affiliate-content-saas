@@ -609,15 +609,14 @@ export default function DealsHubPage() {
             Deals Hub is resting until the next sale
           </h1>
           <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-            There&rsquo;s no Amazon deal event running right now — no Prime Day, Big Deal Days,
+            There&rsquo;s no Amazon deal event running right now: no Prime Day, Big Deal Days,
             Black Friday, Cyber Monday, or seasonal sale. Deals Hub writes time-sensitive
             &ldquo;limited-time deal&rdquo; posts, and publishing those when there isn&rsquo;t a real
             sale on just dates your content and can read as misleading to shoppers, so we&rsquo;ve
             paused it.
           </p>
           <p className="text-[14px] leading-relaxed mb-6" style={{ color: 'var(--text-soft)' }}>
-            <strong style={{ color: 'var(--text)' }}>It switches back on automatically the moment the next sale starts</strong> —
-            you&rsquo;ll see it light up right here with the event badge ready to go.
+            <strong style={{ color: 'var(--text)' }}>It switches back on automatically the moment the next sale starts</strong>: you&rsquo;ll see it light up right here with the event badge ready to go.
           </p>
           <div className="rounded-xl border border-dashed p-4 text-left" style={{ borderColor: 'var(--border)' }}>
             <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>In the meantime</p>
@@ -726,7 +725,7 @@ export default function DealsHubPage() {
               >
                 Amazon Associates → Deals Hub <ExternalLink size={11} />
               </a>
-              {' '}— browse every deal, copy any ASIN or product URL, then paste below.
+              . Browse every deal, copy any ASIN or product URL, then paste below.
             </p>
           </div>
         </div>
@@ -1070,7 +1069,7 @@ create index if not exists blog_posts_deal_meta_gin
                 )}
               </div>
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-2)' }}>
-                Leave empty to publish right away. Pick a date + time and MVP writes the post now but holds it back — WordPress publishes it live automatically at that moment. Ideal for prepping a Prime Day or Black Friday deal in advance.
+                Leave empty to publish right away. Pick a date + time and MVP writes the post now but holds it back. WordPress publishes it live automatically at that moment. Ideal for prepping a Prime Day or Black Friday deal in advance.
               </p>
             </div>
 
@@ -1110,19 +1109,19 @@ create index if not exists blog_posts_deal_meta_gin
               <span className="font-semibold" style={{ color: 'var(--text)' }}>What the buttons do:</span>
               <span className="inline-flex items-center gap-1">
                 <ExternalLink size={11} className="text-[#7C3AED]" />
-                <strong style={{ color: 'var(--text)' }}>View</strong> — open the live post on your blog
+                <strong style={{ color: 'var(--text)' }}>View</strong>: open the live post on your blog
               </span>
               <span className="inline-flex items-center gap-1">
                 <DollarSign size={11} className="text-[#34c759]" />
-                <strong style={{ color: 'var(--text)' }}>$</strong> — re-fetch Amazon&apos;s current price (article + images stay the same; only the numbers update)
+                <strong style={{ color: 'var(--text)' }}>$</strong>: re-fetch Amazon&apos;s current price (article + images stay the same; only the numbers update)
               </span>
               <span className="inline-flex items-center gap-1">
                 <RotateCcw size={11} className="text-[#7C3AED]" />
-                <strong style={{ color: 'var(--text)' }}>↻</strong> — regenerate the whole post from scratch with your latest voice + layout
+                <strong style={{ color: 'var(--text)' }}>↻</strong>: regenerate the whole post from scratch with your latest voice + layout
               </span>
               <span className="inline-flex items-center gap-1">
                 <Trash2 size={11} className="text-[#ff3b30]" />
-                <strong style={{ color: 'var(--text)' }}>🗑</strong> — delete this deal post (removes from your blog too)
+                <strong style={{ color: 'var(--text)' }}>🗑</strong>: delete this deal post (removes from your blog too)
               </span>
             </div>
           )}

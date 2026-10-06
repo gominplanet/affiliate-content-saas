@@ -124,14 +124,14 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
 
   async function onPick(file: File) {
     if (!file.type.startsWith('video/')) { toast.error('Please pick a video file (MP4 works best).'); return }
-    if (file.size > 500 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 500MB.`); return }
+    if (file.size > 500 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB: keep it under 500MB.`); return }
     setUploading(true); setRendered(null); setPublished(null)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
       const dims = await probe(file)
       if (dims.width > 0 && dims.height > 0 && dims.height > dims.width) {
-        toast.error('This looks vertical. This path is for horizontal videos — use Clip Factory for Shorts.')
+        toast.error('This looks vertical. This path is for horizontal videos. Use Clip Factory for Shorts.')
         setUploading(false); return
       }
       const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
@@ -285,7 +285,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
         body: JSON.stringify({ videoUrl: rendered, masterUrl: source?.url, title: title.trim(), privacyStatus: 'private' }),
       })
       const j = await r.json().catch(() => ({}))
-      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
+      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet. Google is verifying our upload access."); return }
       if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
       if (!r.ok || !j.url) throw new Error(j.error || 'Publish failed')
       setPublished(j.url)

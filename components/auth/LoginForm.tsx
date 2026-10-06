@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
+import { safeNextPath } from '@/lib/safe-next'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -25,6 +26,19 @@ export default function LoginForm() {
   // token arrives. This kills the spurious "Please complete the captcha below."
   const [pendingAction, setPendingAction] = useState<null | 'signin' | 'reset'>(null)
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Sent here by /api/auth/callback when a confirmation link could not be
+  // exchanged, most often because it opened in a different browser or app (the
+  // mail app) from the one they signed up in. This page used to show nothing at
+  // all, so a confirmed email looked exactly like a failed signup. `next` is
+  // where the link was going (the onboarding they signed up for).
+  const [callbackFailed, setCallbackFailed] = useState(false)
+  const [nextPath, setNextPath] = useState<string | null>(null)
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('error') === 'auth_callback_failed') setCallbackFailed(true)
+    // Same-origin paths only, the rules /api/auth/callback applies too.
+    setNextPath(safeNextPath(sp.get('next')))
+  }, [])
 
   function resetCaptcha() {
     captchaRef.current?.reset()
@@ -44,7 +58,7 @@ export default function LoginForm() {
     if (pendingTimer.current) clearTimeout(pendingTimer.current)
     pendingTimer.current = setTimeout(() => {
       setPendingAction(null)
-      setError('Couldn’t verify you’re human — please try again.')
+      setError('Couldn’t verify you’re human. Please try again.')
       resetCaptcha()
     }, 15000)
   }
@@ -75,7 +89,7 @@ export default function LoginForm() {
       setLoading(false)
       resetCaptcha() // tokens are single-use
     } else {
-      router.push('/dashboard')
+      router.push(nextPath ?? '/dashboard')
       router.refresh()
     }
   }
@@ -175,7 +189,13 @@ export default function LoginForm() {
   return (
     <div className="card p-8">
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome back</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Pick up where you left off — your drafts, brand profile and connected platforms are right where you parked them.</p>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Pick up where you left off: your drafts, brand profile and connected platforms are right where you parked them.</p>
+
+      {callbackFailed && !error && (
+        <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] bg-[#FF9500]/10 border border-[#FF9500]/30 rounded-lg px-3 py-2 mb-4">
+          That link could not sign you in on this browser, which happens when it opens in a different app from the one you signed up in. Your email is usually confirmed anyway, so sign in below. If it says your email is not confirmed, the link expired: sign up again for a new one.
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -232,7 +252,7 @@ export default function LoginForm() {
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="text-[#7C3AED] hover:underline font-medium">
+        <Link href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : '/signup'} className="text-[#7C3AED] hover:underline font-medium">
           Sign up
         </Link>
       </p>

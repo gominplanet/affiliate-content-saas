@@ -7,12 +7,12 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { verifyProductMatch } from '@/lib/product-image'
 import { asinFromAmazonUrl } from '@/lib/product-link'
-import { rememberProductImageFromUrl } from '@/lib/product-image-memory'
+import { rememberProductImageFromUrl, recallProductImage } from '@/lib/product-image-memory'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { pooledDesignCap, freeTrialImageBlock, freeTrialExpiredBlock, freeTrialWindow } from '@/lib/free-trial'
 import { accountSignupISO } from '@/lib/free-trial-signup'
 import { spendGate } from '@/lib/ai-spend'
@@ -30,6 +30,8 @@ import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from 
 import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
 import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
+import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
+import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import {
   normalizeFraming, normalizeBuild, normalizeHeight, resolveFraming, framingLine, framingNote,
@@ -92,7 +94,7 @@ async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Pro
       delay = Math.min(delay * 1.5, 15000)
     }
   }
-  throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
+  throw new Error('Claude AI is temporarily unavailable. Please try again in a moment.')
 }
 
 // ── Thumbnail copy framework (2026-06-08) ──────────────────────────────────
@@ -825,6 +827,10 @@ async function matchFaceModelToFrame<T extends { name: string; source_images: st
  * picked something. Best-effort: on any failure the caller keeps the original
  * selfies and the design comes out exactly as it does today.
  */
+/** The expression portrait always renders at medium (below), so it bills at
+ *  medium whatever quality the design itself uses. */
+const PORTRAIT_COST_MODEL = 'gpt-image-1-medium'
+
 async function generateExpressionPortrait(opts: {
   refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
   /** Built by lib/expression-portrait, where it can be read and tested. */
@@ -877,6 +883,10 @@ type SupabaseLike = any
  * MVP made the image; MVP should remember it.
  */
 export async function POST(request: Request) {
+  // Facebook reuses what exists instead of designing (facebookFromWhatExists).
+  const fb = await facebookFromWhatExists(request)
+  if (fb.reused) return fb.reused
+  request = fb.request
   // Read the flag off a CLONE — the handler still needs the body stream.
   let defer = false
   try {
@@ -885,8 +895,7 @@ export async function POST(request: Request) {
   } catch { /* unreadable body is the handler's problem, not ours */ }
 
   const memo: ImageMemo = { db: null, userId: null, asin: null }
-  let productTitle: string | null = null
-  try { productTitle = String((await request.clone().json() as { productTitle?: string }).productTitle || '') || null } catch { /* none */ }
+  const { productTitle, format, surface } = await peekMemoryFields(request)
   const res0 = await generateThumbnail(request, memo)
   const res = await withoutStoreLogos(res0, memo.userId, productTitle)
 
@@ -896,6 +905,9 @@ export async function POST(request: Request) {
   // image they never chose. The client saves the finished one instead.
   if (defer) return res
   if (res.status !== 200 || !memo.db || !memo.userId || !memo.asin) return res
+  // Pins, Instagram, Facebook, stories and Shorts covers go to the design
+  // memory, one per format (lib/design-memory), never over the thumbnail.
+  if (format !== 'landscape') return rememberDesignIn(res, memo, format, surface)
   let body: Record<string, unknown>
   try {
     body = await res.clone().json() as Record<string, unknown>
@@ -907,13 +919,91 @@ export async function POST(request: Request) {
 
   const saved = await rememberProductImageFromUrl({
     db: memo.db, userId: memo.userId, asin: memo.asin, imageUrl: url,
-    surface: 'YouTube Co-Pilot',
+    surface,
     modelUsed: typeof body.modelUsed === 'string' ? body.modelUsed : null,
   })
   // Report the result, not the attempt. `savedForProduct` is the ASIN it is now
   // filed under, or null — a screen that says "saved" for a write that did not
   // happen is the failure this repo keeps re-finding.
   return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+/**
+ * FACEBOOK REUSES, IT DOES NOT DESIGN (Seb, 2026-10-05). No member had ever
+ * made a Facebook design, and a product that already has a thumbnail or an
+ * Instagram design has a perfectly good Facebook picture. So a request for a
+ * Facebook design gets, in order: the product's remembered 16:9 thumbnail, its
+ * Instagram design, its Instagram story. Nothing is rendered or counted, and the
+ * answer says what was reused. With nothing to reuse, the product's 16:9
+ * thumbnail is made instead (counted as a thumbnail, and remembered, so the
+ * next Facebook post and every other surface reuse it).
+ */
+async function facebookFromWhatExists(request: Request): Promise<{ reused: Response | null; request: Request }> {
+  let b: Record<string, unknown>
+  try { b = await request.clone().json() as Record<string, unknown> } catch { return { reused: null, request } }
+  if (b.format !== 'fb') return { reused: null, request }
+  const asin = (typeof b.asin === 'string' && /^[A-Z0-9]{10}$/i.test(b.asin.trim()) ? b.asin.trim().toUpperCase() : null)
+    || (typeof b.productUrl === 'string' ? asinFromAmazonUrl(b.productUrl) : null)
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && asin) {
+      const thumb = await recallProductImage(supabase, user.id, asin)
+      const design = thumb ? null
+        : (await recallDesigns(supabase, user.id, asin, 'ig'))[0] || (await recallDesigns(supabase, user.id, asin, 'story'))[0] || null
+      const url = thumb?.imageUrl || design?.imageUrl
+      if (url) {
+        const what = thumb ? 'thumbnail' : 'Instagram design'
+        return {
+          reused: NextResponse.json({
+            thumbnailUrl: url, thumbnailUrls: [url], reusedFrom: what,
+            reusedNote: `Reused your ${what} for this product. Nothing new was made.`,
+          }, { status: 200 }),
+          request,
+        }
+      }
+    }
+  } catch { /* fall through to making the thumbnail */ }
+  const next = new Request(request.url, {
+    method: 'POST', headers: request.headers,
+    body: JSON.stringify({ ...b, format: 'landscape', memorySurface: (b.memorySurface as string) || 'Facebook' }),
+  })
+  return { reused: null, request: next }
+}
+
+/** Keep a non-thumbnail design against its product and format, and say so. */
+async function rememberDesignIn(res: Response, memo: ImageMemo, format: string, surface: string | null): Promise<Response> {
+  if (!isDesignFormat(format) || !memo.db || !memo.userId || !memo.asin) return res
+  let body: Record<string, unknown>
+  try { body = await res.clone().json() as Record<string, unknown> } catch { return res }
+  const url = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls[0] : null) || body.thumbnailUrl
+  if (typeof url !== 'string' || !url) return res
+  const saved = await rememberDesign({
+    db: memo.db, userId: memo.userId, asin: memo.asin, format, imageUrl: url, surface,
+    modelUsed: typeof body.modelUsed === 'string' ? body.modelUsed : null,
+  })
+  // The result, not the attempt: the format it is now kept under, or null.
+  return NextResponse.json({ ...body, savedDesignFor: saved ? { asin: memo.asin, format } : null }, { status: 200 })
+}
+
+/**
+ * WHICH PICTURE THIS IS. The product's remembered image is its 16:9 thumbnail.
+ * Pins, Instagram and Facebook designs and Shorts covers came through the
+ * wrapper too and replaced it, every one labelled "YouTube Co-Pilot", so a pin
+ * made last week could quietly become the picture offered on the next
+ * thumbnail. Only the landscape thumbnail is remembered from here; the
+ * composers remember their own designs after publishing, under their own label.
+ * `memorySurface` names where it was made ("Liftoff", "Thumbnail Generator").
+ */
+async function peekMemoryFields(request: Request): Promise<{ productTitle: string | null; format: string; surface: string | null }> {
+  try {
+    const b = await request.clone().json() as { productTitle?: string; format?: string; memorySurface?: string }
+    return {
+      productTitle: String(b.productTitle || '') || null,
+      format: typeof b.format === 'string' && b.format ? b.format : 'landscape',
+      surface: typeof b.memorySurface === 'string' && b.memorySurface.trim() ? b.memorySurface.trim().slice(0, 40) : null,
+    }
+  } catch { return { productTitle: null, format: 'landscape', surface: null } }
 }
 
 /**
@@ -993,7 +1083,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations')
-      .select('tier,subscription_period_start,subscription_period_end,amazon_associates_tag')
+      .select('*') // '*' so limits_cohort (migration 405) is read when present
       .eq('user_id', user.id)
       .single()
     const tier = normalizeTier(tierRow?.tier)
@@ -1486,10 +1576,15 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         capFeatures = ['amazon_pin', 'amazon_ig', 'amazon_fb']
         capLabel = 'ready-to-post designs'
       }
-      else if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
-      else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
-      else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
-      else { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      else {
+        // A lowered cap lands on the member's NEXT billing window (effectiveCap).
+        const winStart = billingWindow({ periodStart: tierRow?.subscription_period_start ?? null, periodEnd: tierRow?.subscription_period_end ?? null }).startISO
+        const cohort = (tierRow as { limits_cohort?: string | null } | null)?.limits_cohort
+        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart, cohort); capFeatures = ['amazon_pin']; capLabel = 'pins' }
+        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart, cohort); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
+        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart, cohort); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
+        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart, cohort); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      }
       // A ZERO allowance is not a used-up allowance. Creator can now open the
       // Amazon hub (its Thumbnail Generator and Research run on Creator's own
       // limits), and its pin/Instagram/Facebook allowance is 0, so the cap
@@ -1641,7 +1736,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         ok: false,
         needsFaceModel: true,
         error: 'Set up your Face Model first',
-        message: 'MVP only puts YOUR face on a thumbnail once you’ve added a Face Model — it will never use anyone else’s face or guess from the video. Add your face under Set up → Face Models, pick a saved face, or choose “Product only” for a thumbnail with no person.',
+        message: 'MVP only puts YOUR face on a thumbnail once you’ve added a Face Model. It will never use anyone else’s face or guess from the video. Add your face under Set up → Face Models, pick a saved face, or choose “Product only” for a thumbnail with no person.',
       }, { status: 409 })
     }
 
@@ -2040,7 +2135,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         ok: false,
         needsExtension: true,
         error: 'No identity source available',
-        message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
+        message: "This video is private, so MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
     if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
@@ -2088,6 +2183,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         // Whether the posed portrait actually showed the expression, and whether
         // it took a second attempt. Surfaced so a wrong face is attributable.
         let expressionVerified: boolean | null = null
+        let portraitFromCache = false
         let expressionRetried = false
         // Whether the creator's own clothes were cropped out of the identity
         // references. Only meaningful when the product is worn, and reported
@@ -2251,11 +2347,24 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
           ]
           const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
-          let posed = portraitPrompt ? await generateExpressionPortrait({
+          // A portrait already made from these exact selfies, for this
+          // expression and this prompt, and checked when it was made: use it
+          // and render nothing (lib/expression-portrait-cache).
+          const cachePath = portraitPrompt ? portraitCachePath({
+            userId: user.id, refs: portraitRefs.map((r) => r.data), expressionKey, prompt: portraitPrompt, model: gfxModelOverride,
+          }) : null
+          const cached = cachePath ? await readCachedPortrait(cachePath) : null
+          // Every portrait rendered counts as one design against the plan's
+          // allowance (the same feature as this design, so the same cap), and
+          // is billed at medium, the quality it always renders at.
+          const recordPortrait = () => recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: PORTRAIT_COST_MODEL, images: 1 })
+          let posed = cached ?? (portraitPrompt ? await generateExpressionPortrait({
             refs: portraitRefs,
             promptText: portraitPrompt,
             imageModel: gfxModelOverride,
-          }) : null
+          }) : null)
+          if (posed && !cached) recordPortrait()
+          if (cached) { expressionVerified = true; portraitFromCache = true }
 
           // LOOK AT IT. The design step copies this face, so a portrait that
           // came back with the polite smile these models default to makes a
@@ -2263,9 +2372,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           // exact failure that took an afternoon to find, because nobody could
           // see this intermediate image. A fraction of a cent to check,
           // against $0.06 to render it again: the cheapest guard here, on the
-          // one image everything downstream depends on.
+          // one image everything downstream depends on. A kept portrait was
+          // checked when it was made, so it is not checked again.
           const expressionDesc = expressionDescription(expressionKey)
-          if (posed && portraitPrompt && expressionDesc) {
+          if (posed && !cached && portraitPrompt && expressionDesc) {
             const v = await portraitShowsExpression({
               portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
               politeSmileIsWrong: politeSmileIsWrong(expressionKey),
@@ -2281,20 +2391,15 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               if (retry) {
                 posed = retry
                 expressionRetried = true
-                // SAME CHAIN AS EVERY OTHER RENDER SITE. These two were missed
-                // when the quality-aware billing landed, and were wrong in both
-                // directions: `'gpt-image'` is not in PRICING, so the hero path
-                // fell to IMAGE_COST_FALLBACK ($0.04) against a ~$0.19 render,
-                // while the social path recorded 'gpt-image-1' ($0.19) for a
-                // picture rendered at medium (~$0.06). gfxRecordOverride has to
-                // come FIRST: it is the one that knows the quality actually used.
-                recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
+                recordPortrait()
                 expressionVerified = (await portraitShowsExpression({
                   portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
                   politeSmileIsWrong: politeSmileIsWrong(expressionKey),
                 })).match
               }
             }
+            // Keep it only when the check said it matches.
+            if (posed && expressionVerified === true && cachePath) await writeCachedPortrait(cachePath, posed)
           }
           if (posed) {
             // The new portrait leads. One original selfie stays behind it as a
@@ -2304,7 +2409,6 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             photoBytes = posed
             extraPhotoBytes = [anchor]
             expressionInReference = true
-            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
           }
         }
 
@@ -2771,6 +2875,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           expressionViaPortrait: expressionInReference,
           expressionVerified,
           expressionRetried,
+          expressionPortraitReused: portraitFromCache,
           garmentMatch: garment.check ? garment.check.match : null,
           garmentNote: garment.check && garment.check.match === false ? garment.check.reason : null,
           garmentRetried: garment.retried,

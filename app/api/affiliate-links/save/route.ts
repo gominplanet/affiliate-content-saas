@@ -37,6 +37,13 @@ export const dynamic = 'force-dynamic'
 // and the UI renders it that way (brand/page.tsx: passportActive ? 'passport'
 // : blogSocialLinkMode). Adding it here invites the two controls to disagree.
 const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly'])
+
+/** What a team member (VA) sees of a secret: that it is set, and its last four
+ *  characters, never the secret itself. */
+const maskSecret = (v: unknown): string => {
+  const t = String(v ?? '').trim()
+  return t ? `\u2022\u2022\u2022\u2022${t.slice(-4)}` : ''
+}
 const PIN_PREFS = new Set(['auto', 'blog_post', 'youtube', 'homepage'])
 
 /**
@@ -93,12 +100,16 @@ export async function GET() {
     const linkStyleChosen = LINK_MODES.has(modeRaw) || row.wrap_blog_geniuslink === true || passportOn
     const effectiveLinkStyle = passportOn ? 'passport' : mode
 
+    // A TEAM MEMBER NEVER RECEIVES THE OWNER'S KEYS. This returned the
+    // decrypted Geniuslink key and secret and the Bitly token to any VA.
+    const isOwner = ownerId === user.id
     return NextResponse.json({
       ok: true,
-      geniuslinkKey: (row.geniuslink_api_key as string) ?? '',
-      geniuslinkSecret: (row.geniuslink_api_secret as string) ?? '',
+      geniuslinkKey: isOwner ? ((row.geniuslink_api_key as string) ?? '') : maskSecret(row.geniuslink_api_key),
+      geniuslinkSecret: isOwner ? ((row.geniuslink_api_secret as string) ?? '') : maskSecret(row.geniuslink_api_secret),
       blogSocialLinkMode: mode,
-      bitlyToken: (row.bitly_access_token as string) ?? '',
+      bitlyToken: isOwner ? ((row.bitly_access_token as string) ?? '') : maskSecret(row.bitly_access_token),
+      ownerOnlyKeys: !isOwner,
       pinterestLinkPref: PIN_PREFS.has(pinRaw) ? pinRaw : 'auto',
       amazonTag: (row.amazon_associates_tag as string) ?? '',
       // The saved default for posts that send clicks to the creator's TikTok
@@ -154,6 +165,20 @@ export async function POST(request: Request) {
      *  empty string is an explicit clear, which is how a creator removes a key. */
     const keep = (sent: string | undefined, col: string): string | null =>
       sent === undefined ? ((prev[col] as string | null) ?? null) : (sent.trim() || null)
+
+    // KEYS AND THE AMAZON TAG ARE THE OWNER'S. A team member could set their
+    // own Associates tag here and be paid for every post the owner published.
+    // A VA's save carries the masked values it was shown; those, or nothing,
+    // mean "unchanged". Anything else is refused, never quietly dropped.
+    if (ownerId !== user.id) {
+      const same = (sent: string | undefined, col: string, masked: boolean) =>
+        sent === undefined || sent.trim() === (masked ? maskSecret(prev[col]) : String(prev[col] ?? '').trim())
+      if (!same(b.geniuslinkKey, 'geniuslink_api_key', true) || !same(b.geniuslinkSecret, 'geniuslink_api_secret', true)
+        || !same(b.bitlyToken, 'bitly_access_token', true) || !same(b.amazonTag, 'amazon_associates_tag', false)) {
+        return NextResponse.json({ error: 'Only the account owner can change the Amazon tag or the Geniuslink and Bitly keys.' }, { status: 403 })
+      }
+      b.geniuslinkKey = undefined; b.geniuslinkSecret = undefined; b.bitlyToken = undefined; b.amazonTag = undefined
+    }
     const storedMode = String(prev.blog_social_link_mode ?? '')
     const mode = LINK_MODES.has(String(b.blogSocialLinkMode))
       ? String(b.blogSocialLinkMode)

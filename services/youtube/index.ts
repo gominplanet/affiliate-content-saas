@@ -1,4 +1,7 @@
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+// Every YouTube call is counted against the shared daily quota, and held
+// back once YouTube refuses (lib/youtube-quota).
+import { ytFetch as fetchWithTimeout, noteTokenOwner } from '@/lib/youtube-quota'
+import { isQuotaRefusalBody } from '@/lib/youtube-quota'
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 /**
@@ -93,7 +96,7 @@ export class YouTubeService {
     const res = await fetchWithTimeout(url.toString())
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     return res.json() as Promise<T>
   }
@@ -209,7 +212,11 @@ export function createYouTubeService(apiKey: string) {
 /**
  * Fetch snippet + duration for ONE video via the public Data API key — used when
  * a creator pastes a YouTube link for a video that isn't in their synced library
- * yet, so we can create the youtube_videos row. Returns null on any failure.
+ * yet, so we can create the youtube_videos row. Returns null when YouTube has
+ * no such public video.
+ *
+ * THROWS ON A USED-UP ALLOWANCE. Null used to cover that too, and the creator
+ * was told to double-check a link that was fine.
  */
 export async function fetchYouTubeVideoSnippet(
   apiKey: string,
@@ -226,13 +233,18 @@ export async function fetchYouTubeVideoSnippet(
   durationSeconds: number
 } | null> {
   if (!apiKey || !videoId) return null
+  const url = new URL(`${BASE}/videos`)
+  url.searchParams.set('key', apiKey)
+  url.searchParams.set('part', 'snippet,contentDetails')
+  url.searchParams.set('id', videoId)
+  const res = await fetchWithTimeout(url.toString()).catch(() => null)
+  if (!res) return null
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    if (isQuotaRefusalBody(body)) throw new Error(youTubeErrorText(res.status, body))
+    return null
+  }
   try {
-    const url = new URL(`${BASE}/videos`)
-    url.searchParams.set('key', apiKey)
-    url.searchParams.set('part', 'snippet,contentDetails')
-    url.searchParams.set('id', videoId)
-    const res = await fetchWithTimeout(url.toString())
-    if (!res.ok) return null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json() as any
     const item = data.items?.[0]
@@ -268,6 +280,9 @@ export async function fetchYouTubeVideoSnippet(
  * This is how a creator whose channel is a Brand Account (which YouTube OAuth
  * often can't select) connects it: we read that channel's PUBLIC uploads by ID.
  * Returns null when nothing resolves.
+ *
+ * THROWS WHEN THE ALLOWANCE STOPPED IT. A refused lookup resolves nothing, and
+ * that read as "Couldn't find a channel at that URL" for a link that was fine.
  */
 export async function resolveYouTubeChannel(
   apiKey: string,
@@ -275,6 +290,7 @@ export async function resolveYouTubeChannel(
 ): Promise<{ channelId: string; title: string } | null> {
   const raw = (input || '').trim()
   if (!raw) return null
+  let refused: string | null = null
 
   const channelsGet = async (params: Record<string, string>) => {
     try {
@@ -283,7 +299,11 @@ export async function resolveYouTubeChannel(
       url.searchParams.set('part', 'snippet')
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
       const res = await fetchWithTimeout(url.toString())
-      if (!res.ok) return null
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        if (isQuotaRefusalBody(body)) refused = youTubeErrorText(res.status, body)
+        return null
+      }
       const data = await res.json() as any
       const item = data.items?.[0]
       return item ? { channelId: item.id as string, title: (item.snippet?.title as string) || (item.id as string) } : null
@@ -303,9 +323,10 @@ export async function resolveYouTubeChannel(
   if (user) { const r = await channelsGet({ forUsername: user[1] }); if (r) return r }
 
   // 4. /c/NAME custom URL, or a plain (non-URL) search term → search.list.
+  //    Not asked once a lookup above was refused: it would be refused too.
   const cName = raw.match(/\/c\/([0-9A-Za-z._-]+)/)
   const term = cName ? cName[1] : (/^https?:\/\//i.test(raw) ? '' : raw)
-  if (term) {
+  if (term && !refused) {
     try {
       const url = new URL(`${BASE}/search`)
       url.searchParams.set('key', apiKey)
@@ -319,10 +340,14 @@ export async function resolveYouTubeChannel(
         const item = data.items?.[0]
         const id = item?.id?.channelId
         if (id) return { channelId: id as string, title: (item.snippet?.title as string) || id }
+      } else {
+        const body = await res.text().catch(() => '')
+        if (isQuotaRefusalBody(body)) refused = youTubeErrorText(res.status, body)
       }
     } catch { /* fall through */ }
   }
 
+  if (refused) throw new Error(refused)
   return null
 }
 
@@ -358,7 +383,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     return res.json() as Promise<T>
   }
@@ -517,6 +542,28 @@ export class YouTubeOAuthService {
       privacy: String(v.status?.privacyStatus || ''),
       publishAt: (v.status?.publishAt as string | undefined) ?? null,
     }
+  }
+
+  /** getVideoStatus for many videos: ONE QUOTA UNIT PER 50, not one each.
+   *  A video this login cannot see is absent from the map. Throws, like
+   *  getVideoStatus, when YouTube did not answer (quota, timeout). */
+  async getVideoStatuses(videoIds: string[]): Promise<Map<string, { channelId: string | null; privacy: string; publishAt: string | null }>> {
+    const out = new Map<string, { channelId: string | null; privacy: string; publishAt: string | null }>()
+    const uniq = [...new Set((videoIds || []).filter(Boolean))]
+    for (let i = 0; i < uniq.length; i += 50) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'snippet,status', id: uniq.slice(i, i + 50).join(',') })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const v of (data?.items ?? []) as any[]) {
+        if (!v?.id) continue
+        out.set(String(v.id), {
+          channelId: (v.snippet?.channelId as string | undefined) ?? null,
+          privacy: String(v.status?.privacyStatus || ''),
+          publishAt: (v.status?.publishAt as string | undefined) ?? null,
+        })
+      }
+    }
+    return out
   }
 
   /** The channel this login actually uploads to, as YouTube itself says.
@@ -705,19 +752,21 @@ export class YouTubeOAuthService {
       })
       if (!res2.ok) {
         const body2 = await res2.text()
-        throw new Error(`YouTube update failed ${res2.status}: ${body2.slice(0, 500)}`)
+        throw new Error(`YouTube update failed ${res2.status}: ${ytBodySummary(body2)}`)
       }
       return
     }
 
-    throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
+    throw new Error(`YouTube update failed ${res.status}: ${ytBodySummary(body1)}`)
   }
 
   /**
    * Append a "Full written review" backlink to the video's description
    * (SEO #21 — video→blog cross-linking). Idempotent: no-op if the URL is
    * already present. Preserves the existing title / categoryId / tags so the
-   * part=snippet update doesn't blank them. Returns true if it pushed an edit.
+   * part=snippet update doesn't blank them. Returns true if it pushed an edit,
+   * false when there was nothing to do, and throws when YouTube refused the
+   * edit (a refusal used to read as "already linked" in the log).
    */
   async appendBlogLinkToDescription(videoId: string, blogUrl: string): Promise<boolean> {
     if (!blogUrl || !/^https?:\/\//.test(blogUrl)) return false
@@ -727,6 +776,13 @@ export class YouTubeOAuthService {
     if (!snip) return false
     const desc: string = snip.description || ''
     if (desc.includes(blogUrl)) return false // already linked
+    // Already linked under another address for the same post (the site moved
+    // from a temporary domain, or www was added): the post's own path is
+    // enough to say it is there.
+    try {
+      const path = new URL(blogUrl).pathname.replace(/\/+$/, '')
+      if (path.length > 3 && desc.includes(path)) return false
+    } catch { /* not a URL: compared in full above */ }
     const line = `\n\n📝 Full written review & details: ${blogUrl}`
     const newDesc = (desc + line).slice(0, 5000)
 
@@ -743,7 +799,40 @@ export class YouTubeOAuthService {
       headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: videoId, snippet }),
     })
-    return res.ok
+    if (!res.ok) throw new Error(`YouTube refused the backlink edit (${res.status}): ${ytBodySummary(await res.text())}`)
+    return true
+  }
+
+  /**
+   * Swap one site address for another in a video's live description (lib/
+   * domain-swap). The live description is read first, so whatever the creator
+   * wrote since is kept; title, tags, category and language are sent back as
+   * they are. Returns what happened, never a guess: 'changed', 'unchanged'
+   * (the old address is not in it), or 'missing' (no such video).
+   */
+  async swapDescriptionDomain(videoId: string, swap: (desc: string) => string): Promise<'changed' | 'unchanged' | 'missing'> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = await this.get<any>('/videos', { part: 'snippet', id: videoId })
+    const snip = existing.items?.[0]?.snippet
+    if (!snip) return 'missing'
+    const desc: string = snip.description || ''
+    const next = swap(desc)
+    if (next === desc) return 'unchanged'
+    const snippet: Record<string, unknown> = {
+      title: (snip.title || '').slice(0, 100),
+      description: next.slice(0, 5000),
+      categoryId: snip.categoryId || '22',
+    }
+    if (Array.isArray(snip.tags) && snip.tags.length) snippet.tags = snip.tags
+    if (snip.defaultLanguage) snippet.defaultLanguage = snip.defaultLanguage
+    if (snip.defaultAudioLanguage) snippet.defaultAudioLanguage = snip.defaultAudioLanguage
+    const res = await fetchWithTimeout(`${BASE}/videos?part=snippet`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: videoId, snippet }),
+    })
+    if (!res.ok) throw new Error(`YouTube refused the update (${res.status}): ${ytBodySummary(await res.text())}`)
+    return 'changed'
   }
 
   // ── Pro batch-publish module ─────────────────────────────────────────
@@ -786,7 +875,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const j = await res.json() as any
@@ -804,7 +893,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(youTubeErrorText(res.status, body))
     }
   }
 
@@ -826,7 +915,7 @@ export class YouTubeOAuthService {
     // 409 conflict = video already in this playlist; treat as success.
     if (!res.ok && res.status !== 409) {
       const body = await res.text()
-      throw new Error(`Add to playlist failed ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`Add to playlist failed ${res.status}: ${ytBodySummary(body)}`)
     }
   }
 
@@ -938,7 +1027,7 @@ export class YouTubeOAuthService {
         responseStatus: res.status,
         responseBody: body.slice(0, 1200),
       })
-      throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
+      throw new Error(`YouTube status update failed ${res.status}: ${ytBodySummary(body)}`)
     }
 
   }
@@ -958,7 +1047,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube would not set paid promotion (${res.status}): ${body.slice(0, 300)}`)
+      throw new Error(`YouTube would not set paid promotion (${res.status}): ${ytBodySummary(body)}`)
     }
   }
 
@@ -1004,7 +1093,7 @@ export class YouTubeOAuthService {
     )
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube thumbnail upload failed ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`YouTube thumbnail upload failed ${res.status}: ${ytBodySummary(body)}`)
     }
   }
 
@@ -1018,6 +1107,73 @@ export class YouTubeOAuthService {
    * Returns the new video id. privacyStatus defaults to 'public' (cross-post
    * intent); pass 'unlisted'/'private' to hold it back.
    */
+  // ── A RESUMABLE UPLOAD ACROSS SEVERAL RUNS ───────────────────────────────
+  //
+  // uploadShort sends the whole file in one request inside one function run,
+  // and a 288MB video could not make it inside the five minutes a run has: all
+  // three tries "stopped before they could report back". These three calls let
+  // the caller open YouTube's upload session once, keep its address, and send
+  // the file in pieces over as many runs as it takes. The session address is
+  // the authority for that upload (no token is needed to send to it), and
+  // YouTube keeps it for about a week.
+
+  /** Open a resumable upload for `totalBytes` and return its address. */
+  async startResumableUpload(totalBytes: number, opts: Parameters<YouTubeOAuthService['uploadShort']>[1]): Promise<string> {
+    const meta = uploadMeta(opts)
+    const initRes = await fetchWithTimeout(
+      `https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&notifySubscribers=${opts.notifySubscribers === true ? 'true' : 'false'}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': 'video/*',
+          'X-Upload-Content-Length': String(totalBytes),
+        },
+        body: JSON.stringify(meta),
+      },
+    )
+    if (!initRes.ok) throw new Error(`YouTube upload init failed ${initRes.status}: ${ytBodySummary(await initRes.text())}`)
+    const url = initRes.headers.get('location')
+    if (!url) throw new Error('YouTube upload: no resumable session URL returned.')
+    return url
+  }
+
+  /** How far an upload session has got: the next byte to send, done with the
+   *  video's id, or gone (expired or unknown, so a new session is needed). */
+  static async resumableStatus(uploadUrl: string, totalBytes: number): Promise<{ next: number } | { done: true; id: string; channelId: string | null } | { gone: true }> {
+    const res = await fetchWithTimeout(uploadUrl, {
+      method: 'PUT', headers: { 'Content-Length': '0', 'Content-Range': `bytes */${totalBytes}` }, timeoutMs: 30_000,
+    })
+    if (res.status === 200 || res.status === 201) {
+      const j = await res.json().catch(() => ({})) as { id?: string; snippet?: { channelId?: string } }
+      if (j.id) return { done: true, id: j.id, channelId: j.snippet?.channelId || null }
+    }
+    if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
+    if (res.status === 404 || res.status === 410) return { gone: true }
+    throw new Error(`YouTube upload status ${res.status}: ${ytBodySummary(await res.text())}`)
+  }
+
+  /** Send one piece starting at `start`. Pieces other than the last must be a
+   *  multiple of 256 KiB. */
+  static async putChunk(uploadUrl: string, bytes: Uint8Array, start: number, totalBytes: number, timeoutMs: number)
+    : Promise<{ next: number } | { done: true; id: string; channelId: string | null }> {
+    const end = start + bytes.byteLength - 1
+    const res = await fetchWithTimeout(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Length': String(bytes.byteLength), 'Content-Range': `bytes ${start}-${end}/${totalBytes}` },
+      body: bytes as unknown as BodyInit,
+      timeoutMs,
+    })
+    if (res.status === 200 || res.status === 201) {
+      const j = await res.json() as { id?: string; snippet?: { channelId?: string } }
+      if (!j.id) throw new Error('YouTube upload: no video id in response.')
+      return { done: true, id: j.id, channelId: j.snippet?.channelId || null }
+    }
+    if (res.status === 308) return { next: rangeNext(res.headers.get('range')) }
+    throw new Error(`YouTube upload failed ${res.status}: ${ytBodySummary(await res.text())}`)
+  }
+
   async uploadShort(
     videoBytes: Uint8Array,
     opts: {
@@ -1092,7 +1248,7 @@ export class YouTubeOAuthService {
     )
     if (!initRes.ok) {
       const b = await initRes.text()
-      throw new Error(`YouTube upload init failed ${initRes.status}: ${b.slice(0, 400)}`)
+      throw new Error(`YouTube upload init failed ${initRes.status}: ${ytBodySummary(b)}`)
     }
     const uploadUrl = initRes.headers.get('location')
     if (!uploadUrl) throw new Error('YouTube upload: no resumable session URL returned.')
@@ -1106,7 +1262,7 @@ export class YouTubeOAuthService {
     })
     if (!putRes.ok) {
       const b = await putRes.text()
-      throw new Error(`YouTube upload failed ${putRes.status}: ${b.slice(0, 400)}`)
+      throw new Error(`YouTube upload failed ${putRes.status}: ${ytBodySummary(b)}`)
     }
     // part=snippet,status, so the finished resource carries the OWNING channel.
     // Callers need it to build a Studio deep link scoped to that channel — an
@@ -1179,7 +1335,7 @@ export class YouTubeOAuthService {
       const picked = items.slice().sort((a, b) => score(b) - score(a))[0]
       if (!picked?.id) return null
 
-      const dlRes = await fetch(
+      const dlRes = await fetchWithTimeout(
         `https://www.googleapis.com/youtube/v3/captions/${encodeURIComponent(picked.id)}?tfmt=srt`,
         { headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(15_000) },
       )
@@ -1260,16 +1416,84 @@ export async function getValidYouTubeToken(integration: Record<string, unknown>)
 
   if (!accessToken) throw new Error('YouTube OAuth not connected')
 
+  const owner = (integration.user_id as string | null | undefined) ?? null
   // Refresh if expired or expiring within 2 minutes
   if (expiry && Date.now() > expiry - 120_000) {
     if (!refreshToken) throw new Error('YouTube token expired and no refresh token available')
     const fresh = await refreshYouTubeToken(refreshToken)
+    noteTokenOwner(fresh.access_token, owner)
     return fresh.access_token
   }
 
+  noteTokenOwner(accessToken, owner)
   return accessToken
 }
 
 export function createYouTubeOAuthService(accessToken: string) {
   return new YouTubeOAuthService(accessToken)
+}
+
+
+/** The next byte YouTube wants, from a 308's Range header ("bytes=0-1234"). */
+/**
+ * A YouTube error as one readable line, with Google's reason code first.
+ * The raw body used to be cut at 300 characters, which falls before the
+ * reason, and YouTube's quota message puts a link between "exceeded your"
+ * and "quota". So a used-up daily quota read as an unknown 403 that told the
+ * creator to reconnect YouTube, and every quota check that looked for
+ * "quotaExceeded" or "exceeded your quota" missed it.
+ */
+/** The useful part of a YouTube error body: Google's reason code first, then
+ *  the message without its HTML. Never cut before the reason, which is what
+ *  hid a used-up quota. */
+export function ytBodySummary(body: string): string {
+  const t = youTubeErrorText(0, body).replace(/^YouTube API error 0: /, '')
+  return t.slice(0, 400)
+}
+
+export function youTubeErrorText(status: number, body: string): string {
+  let reason = '', message = ''
+  try {
+    const j = JSON.parse(body) as { error?: { message?: string; errors?: Array<{ reason?: string }> } }
+    reason = j.error?.errors?.find((e) => e.reason)?.reason || ''
+    message = String(j.error?.message || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  } catch { /* not JSON */ }
+  // MVP holding back optional calls to keep room for uploads (lib/youtube-quota).
+  if (/^MVP is keeping/.test(message)) return `YouTube API error ${status}: quotaExceeded (held by MVP). ${message}`
+  if (/quotaExceeded|dailyLimitExceeded/i.test(reason) || /exceeded your quota/i.test(message)) {
+    return `YouTube API error ${status}: quotaExceeded. MVP's daily YouTube allowance is used up. It resets at midnight Pacific time; reconnecting does not help.`
+  }
+  return `YouTube API error ${status}: ${reason ? `${reason}. ` : ''}${(message || body).slice(0, 300)}`
+}
+
+function rangeNext(range: string | null): number {
+  const m = /bytes=\d+-(\d+)/.exec(String(range || ''))
+  return m ? Number(m[1]) + 1 : 0
+}
+
+/** The snippet and status an upload is opened with (shared by uploadShort and
+ *  the resumable path, so the two can never send different settings). */
+function uploadMeta(opts: { title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; containsSyntheticMedia?: boolean; embeddable?: boolean }) {
+  const tags: string[] = []
+  let tagLen = 0
+  for (const t of (opts.tags || [])) {
+    const v = String(t).trim().slice(0, 40)
+    if (!v) continue
+    tagLen += v.length + 1
+    if (tagLen > 480 || tags.length >= 15) break
+    tags.push(v)
+  }
+  return {
+    snippet: {
+      title: (opts.title || 'Short').slice(0, 100),
+      description: (opts.description || '').slice(0, 4900),
+      ...(tags.length ? { tags } : {}),
+    },
+    status: {
+      privacyStatus: opts.privacyStatus || 'public',
+      selfDeclaredMadeForKids: false,
+      ...(typeof opts.embeddable === 'boolean' ? { embeddable: opts.embeddable } : {}),
+      ...(typeof opts.containsSyntheticMedia === 'boolean' ? { containsSyntheticMedia: opts.containsSyntheticMedia } : {}),
+    },
+  }
 }

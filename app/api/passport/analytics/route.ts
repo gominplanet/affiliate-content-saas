@@ -18,6 +18,8 @@ import { normalizeTier } from '@/lib/tier'
 export const dynamic = 'force-dynamic'
 
 const MAX_ROWS = 20000
+/** What the database returns per request at most. */
+const PAGE = 1000
 
 export async function GET(request: Request) {
   const supabase = await createServerClient()
@@ -35,14 +37,27 @@ export async function GET(request: Request) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
 
   try {
+    // EVERY ROW, PAGE BY PAGE. The database hands back at most 1,000 rows per
+    // request whatever .limit() asks for, so one request read only the newest
+    // 1,000 clicks: a busy account's 30 days showed as 785 (1,000 less its
+    // bots) with nothing on screen to say so. Read in pages up to MAX_ROWS.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let { data: rows, error } = await (supabase as any)
-      .from('passport_link_clicks')
-      .select('code, country, marketplace, source, device, browser, os, created_at')
-      .eq('user_id', user.id)
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(MAX_ROWS)
+    const readAll = async (cols: string): Promise<{ data: any[] | null; error: any }> => {
+      const out: unknown[] = []
+      for (let from = 0; from < MAX_ROWS; from += PAGE) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await (supabase as any)
+          .from('passport_link_clicks').select(cols)
+          .eq('user_id', user.id).gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .range(from, Math.min(from + PAGE, MAX_ROWS) - 1)
+        if (r.error) return { data: from ? out as never[] : null, error: from ? null : r.error }
+        out.push(...(r.data ?? []))
+        if ((r.data ?? []).length < PAGE) break
+      }
+      return { data: out as never[], error: null }
+    }
+    let { data: rows, error } = await readAll('code, country, marketplace, source, device, browser, os, created_at')
     // Older DBs (migration 284 not run yet) don't have device/browser/os — retry
     // without them so the dashboard still renders the country/marketplace slices.
     // Only on a missing-column error (Postgres 42703 / "column ... does not exist"):
@@ -50,14 +65,7 @@ export async function GET(request: Request) {
     // columns are actually present.
     const isMissingColumn = !!error && (error.code === '42703' || /column .* does not exist/i.test(error.message || ''))
     if (isMissingColumn) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const retry = await (supabase as any)
-        .from('passport_link_clicks')
-        .select('code, country, marketplace, source, created_at')
-        .eq('user_id', user.id)
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(MAX_ROWS)
+      const retry = await readAll('code, country, marketplace, source, created_at')
       rows = retry.data
       error = retry.error
     }
@@ -86,10 +94,13 @@ export async function GET(request: Request) {
     const groupParam = (url.searchParams.get('group') || '').trim() // '' all · 'none' ungrouped · else group id
     const distinctCodes = [...new Set(allHuman.map((c) => c.code))]
     const codeToGroup = new Map<string, string | null>()
-    if (distinctCodes.length) {
+    // IN CHUNKS. Thousands of codes in one request made a URL too long or a
+    // reply over 1,000 rows, the error was ignored, and every click showed as
+    // Ungrouped (and a ?group= filter as zero).
+    for (let i = 0; i < distinctCodes.length; i += 200) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: linkRows } = await (supabase as any)
-        .from('passport_links').select('code, group_id').in('code', distinctCodes)
+        .from('passport_links').select('code, group_id').in('code', distinctCodes.slice(i, i + 200))
       for (const l of ((linkRows ?? []) as { code: string; group_id: string | null }[])) codeToGroup.set(l.code, l.group_id ?? null)
     }
     const groupName = new Map<string, string>()

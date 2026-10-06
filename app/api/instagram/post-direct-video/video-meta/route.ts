@@ -13,6 +13,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { generateDirectCaption } from '@/lib/direct-caption'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { resolveFinalUrl } from '@/lib/product-link'
 
@@ -85,6 +86,10 @@ export async function GET(request: Request) {
     sb.from('integrations').select('tier,instagram_username').eq('user_id', user.id).maybeSingle(),
   ])
   const tier: Tier = normalizeTier(integ?.tier)
+  // PAID MODEL CALL BELOW: the spend ceiling (and a closed free trial) applies
+  // here exactly as on the generators, or this route is the one that keeps going.
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   const product = productInput ? await resolveProductInput(productInput) : null
 

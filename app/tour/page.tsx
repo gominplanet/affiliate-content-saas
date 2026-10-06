@@ -17,14 +17,14 @@ import { Compass, ArrowUpRight, ArrowRight } from 'lucide-react'
 import { TourBody } from '@/components/tour/tour-content'
 
 export const metadata: Metadata = {
-  title: 'Product tour · MVP Affiliate',
+  title: 'Product tour',
   description:
-    'Free Amazon product research, no card, no setup: search the whole catalogue by sales, rating, price, review ratio and video competition, watch live price-verified deals on Deal Radar, and scout your Levanta & PartnerBoost campaigns. Then, when you want it, MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter and brand pitches, all in your voice, published to a blog you own. The full tour of what ships today.',
+    'Free Amazon product research, no card, no setup: search the whole catalogue by sales, rating, price, review ratio and video competition, watch live price-verified deals on Deal Radar, and scout your Levanta & PartnerBoost campaigns. Then, when you want it, MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. The full tour of what ships today.',
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      'Free Amazon product research, no card, no setup: filter the whole catalogue, watch live deals, and scout your Levanta & PartnerBoost campaigns. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach, all in your voice. The full tour of what ships today.',
+      'Free Amazon product research, no card, no setup: filter the whole catalogue, watch live deals, and scout your Levanta & PartnerBoost campaigns. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, brand outreach, all in your voice. The full tour of what ships today.',
     url: '/tour',
     type: 'website',
   },
@@ -104,7 +104,7 @@ export default function PublicTourPage() {
             <strong style={{ color: 'var(--text)' }}> Deal Radar</strong> shows live, price-verified deals. And the
             <strong style={{ color: 'var(--text)' }}> Levanta &amp; PartnerBoost finders</strong> scout your own connected
             campaigns. Then, when you want it, MVP turns any find (or any review video) into a blog post that ranks, plus
-            comparisons, buying guides, a thumbnail, a newsletter and brand pitches, all in your voice, published to a
+            comparisons, buying guides, a thumbnail and brand pitches, all in your voice, published to a
             blog you own. This is the full tour of what ships right now. No roadmap, no &quot;coming soon.&quot;
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -134,7 +134,7 @@ export default function PublicTourPage() {
           <div className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[12px]">M</span>
             <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-              © 2026 MVP Affiliate
+              © {new Date().getFullYear()} MVP Affiliate
             </span>
           </div>
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]" style={{ color: 'var(--text-soft)' }}>

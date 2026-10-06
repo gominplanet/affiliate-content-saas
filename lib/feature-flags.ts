@@ -103,3 +103,14 @@ export async function metaEnabledForUser(
 ): Promise<boolean> {
   return true
 }
+
+/**
+ * NEWSLETTER FOR MEMBERS IS OFF (Seb, 2026-10-05). Zero sends by any member
+ * ever, and one draft in June, so the member-facing Newsletter tool is
+ * retired: the nav item, the pages, the member API routes (410), the plan
+ * caps, the copy that sold it and the WordPress signup form all read this one
+ * switch. Admin keeps the tool. MVP's own list (free guide, admin broadcast)
+ * and the public subscribe / confirm / unsubscribe / webhook routes do not
+ * read it and keep working. Flip to true to bring the feature back.
+ */
+export const NEWSLETTER_FOR_MEMBERS = false

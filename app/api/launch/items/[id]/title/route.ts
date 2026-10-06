@@ -22,6 +22,7 @@ import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { postToSelf } from '@/lib/self-url'
 import { normalizeTier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -58,6 +59,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(integ?.tier)
+  // PAID MODEL CALL BELOW: the spend ceiling (and a closed free trial) applies
+  // here exactly as on the generators, or this route is the one that keeps going.
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // The existing title is a hint, not a floor: an ASIN typed into the box is
   // exactly the case this exists for, so it is not fed back in as if it meant

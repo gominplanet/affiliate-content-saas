@@ -22,11 +22,13 @@
  * empty bucket list — the meter hides rather than showing a wrong number.
  */
 import { NextResponse } from 'next/server'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
-  TIERS, billingWindow, effectivePostCap, allowedNewsletterBroadcasts, normalizeTier, type Tier,
+  TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
-import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,7 +58,7 @@ export async function GET() {
   const sb = supabase as any
   const { data: ig } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end,legacy_creator_newsletter')
+    .select('*') // '*' reads limits_cohort (migration 405) when present
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -77,9 +79,13 @@ export async function GET() {
 
   // Count ai_usage rows for a feature set within the window (or lifetime). Each
   // count is isolated — a failure returns 0 rather than breaking the whole meter.
+  // Service role, as checkUsageCap counts: ai_usage has no member read policy
+  // (028), so the member's own client saw zero rows and every meter read 0.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
   const countFeatures = async (features: string[]): Promise<number> => {
     try {
-      let q = sb.from('ai_usage').select('id', { count: 'exact', head: true })
+      let q = admin.from('ai_usage').select('id', { count: 'exact', head: true })
         .eq('user_id', user.id).in('feature', features)
       if (windowStart) q = q.gte('created_at', windowStart)
       const { count } = await q
@@ -129,6 +135,10 @@ export async function GET() {
   // visual. Real usage still wins if higher; paid tiers always use real counts.
   const isAdminPreview = tier === 'admin'
   const refPlan = isAdminPreview ? TIERS.amazon : plan
+  // The cap in force for THIS window: a cap lowered after the window began
+  // still shows (and is enforced at) its old value until the next one.
+  const cohort = (ig?.limits_cohort as string | null | undefined) ?? null
+  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO, cohort))
   const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
 
   try {
@@ -140,10 +150,12 @@ export async function GET() {
         countFeatures(['amazon_ig']),
         countFeatures(['amazon_fb']),
       ])
-      push('thumbnails', 'Thumbnails', preview(thumb, 128), refPlan.thumbnailsPerMonth)
-      push('pins', 'Pins', preview(pin, 110), refPlan.pinsPerMonth)
-      push('instagram', 'Instagram', preview(igCount, 74), refPlan.igPostsPerMonth)
-      push('facebook', 'Facebook', preview(fb, 28), refPlan.facebookPostsPerMonth)
+      push('thumbnails', 'Thumbnails', preview(thumb, 128), ec('thumbnailsPerMonth', refPlan.thumbnailsPerMonth))
+      push('pins', 'Pins', preview(pin, 110), ec('pinsPerMonth', refPlan.pinsPerMonth))
+      push('instagram', 'Instagram', preview(igCount, 74), ec('igPostsPerMonth', refPlan.igPostsPerMonth))
+      push('facebook', 'Facebook', preview(fb, 28), ec('facebookPostsPerMonth', refPlan.facebookPostsPerMonth))
+      // Clip Factory joined the Amazon plan on 2026-10-05, with its own cap.
+      if (tier === 'amazon') push('shorts', 'Clips', await countFeatures(['shorts_render']), shortsCapFor('amazon'))
     } else {
       // Generations = NEW content pieces only (blog_posts rows in the window),
       // matching the gate (RPC 131). Thumbnails + metadata are intentionally NOT
@@ -151,17 +163,17 @@ export async function GET() {
       // tier (no count cap), and metadata has its OWN cap, shown as its own
       // bucket below. Before, the meter summed all three and over-reported —
       // a user could see "20/20" while the real blog gate still had room.
-      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
+      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig?.limits_cohort as string | null | undefined) ?? null)
       const blog = await countRows('blog_posts', 'published_at')
       push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog, genLimit)
       // Thumbnails are their OWN enforced cap on every tier (shared by co-pilot
       // + blog heroes, both counted here) — show it so users see where they are.
       const thumb = await countFeatures(THUMB_FEATURES)
-      push('thumbnails', 'Thumbnails', thumb, plan.thumbnailsPerMonth)
+      push('thumbnails', 'Thumbnails', thumb, ec('thumbnailsPerMonth', plan.thumbnailsPerMonth))
       if (tier === 'pro') {
         const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
-        push('x', 'X posts', x, X_MONTHLY_CAP)
+        push('x', 'X posts', x, ec('xPostsPerMonth', X_MONTHLY_CAP))
       }
       // Amazon-style designed social graphics — now finite + metered on Studio
       // and Pro too, so show their bars (Amazon renders these in the branch
@@ -169,9 +181,9 @@ export async function GET() {
       const [pin, igCount, fb] = await Promise.all([
         countFeatures(['amazon_pin']), countFeatures(['amazon_ig']), countFeatures(['amazon_fb']),
       ])
-      push('pins', 'Pins', pin, plan.pinsPerMonth)
-      push('instagram', 'Instagram', igCount, plan.igPostsPerMonth)
-      push('facebook', 'Facebook', fb, plan.facebookPostsPerMonth)
+      push('pins', 'Pins', pin, ec('pinsPerMonth', plan.pinsPerMonth))
+      push('instagram', 'Instagram', igCount, ec('igPostsPerMonth', plan.igPostsPerMonth))
+      push('facebook', 'Facebook', fb, ec('facebookPostsPerMonth', plan.facebookPostsPerMonth))
     }
 
     // ── Shared extra caps (shown on any tier where the cap is finite) ──
@@ -183,9 +195,9 @@ export async function GET() {
       countRows('collaborations', 'created_at'),                              // billing window
       countRows('blog_posts', 'published_at', { col: 'post_type', val: 'deal' }),
       countFeatures([META_FEATURE]),                                          // billing window (own cap)
-      countFeatures(['ig_ai_thumbnail_image']),                               // billing window
+      countFeatures(PRIMARY_FEATURE.instagramAi),                               // billing window
       countSince('video_scripts', 'created_at', calStartISO),                 // calendar month
-      countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
+      NEWSLETTER_FOR_MEMBERS ? countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']) : Promise.resolve(0),
       countCascade(),                                                         // calendar month, distinct posts
       countRows('blog_posts', 'created_at', { col: 'post_type', val: 'article' }), // own cap (billing window)
     ])
@@ -195,8 +207,8 @@ export async function GET() {
     if (TIERS[tier]?.postsPerMonth === 0 || isAdminPreview) {
       push('deals', 'Deals', preview(deals, 45), refPlan.dealsPerMonth)
     }
-    push('collabs', 'Collabs', preview(collabs, 30), refPlan.collabsPerMonth)
-    push('assistant', 'Ask Me', preview(asst, 288), refPlan.assistantMessagesPerMonth)
+    push('collabs', 'Collabs', preview(collabs, 30), ec('collabsPerMonth', refPlan.collabsPerMonth))
+    push('assistant', 'Ask Me', preview(asst, 288), ec('assistantMessagesPerMonth', refPlan.assistantMessagesPerMonth))
     push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
     // Metadata has its own enforced cap (was previously hidden inside the
     // Generations sum, which both over-reported generations AND hid this cap).
@@ -205,8 +217,12 @@ export async function GET() {
     push('igai', 'IG AI images', preview(igAi, 22), refPlan.instagramAiThumbnailsPerMonth)
     // Newsletter cap can be raised for legacy Creator accounts — use the same
     // helper the send gate uses so the meter matches the enforced number.
-    push('newsletter', 'Newsletters', preview(broadcasts, 2),
-      allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
+    // No bar at all while the member newsletter is retired (lib/feature-flags
+    // NEWSLETTER_FOR_MEMBERS), legacy Creator caps included.
+    if (NEWSLETTER_FOR_MEMBERS) {
+      push('newsletter', 'Newsletters', preview(broadcasts, 2),
+        allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
+    }
     push('cascade', 'Scheduled', preview(cascade, 12), refPlan.cascadeOnlySchedulesPerMonth)
     push('articles', 'Articles', preview(articles, 3), refPlan.articlesPerMonth)
   } catch {

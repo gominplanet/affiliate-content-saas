@@ -187,6 +187,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { data: item } = await sb.from('launch_items')
     .select('id,state,batch_id,reason,rendered_url,title_source,youtube_video_id,planned_publish_at')
     .eq('id', id).eq('user_id', user.id).maybeSingle()
+  // THE CREATOR'S OWN THUMBNAIL (thumbnail route) is never built over: a new
+  // face or a new product leaves it where it is. Read on its own, so a read
+  // that fails treats it as MVP's, as before.
+  const { data: ts } = await sb.from('launch_items').select('thumbnail_source').eq('id', id).maybeSingle()
+  const ownThumb = ts?.thumbnail_source === 'creator'
   if (!item) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
   const onYouTube = !!String(item.youtube_video_id || '').trim()
   // A video kept private after a missed slot: on the channel, with no time.
@@ -206,6 +211,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({
       error: 'This one is already on your YouTube channel, so its title, description and product are set there now. Change them in YouTube Studio.',
     }, { status: 409 })
+  }
+  // UPLOADING IN PIECES NOW: the title and description went to YouTube when
+  // the upload opened, so a change here would show on the board and never
+  // reach the video. Read on its own: before migration 396 there is no column
+  // and no piece upload, so nothing is locked.
+  if (item.state === 'prepared' && (typeof body.title === 'string' || typeof body.description === 'string')) {
+    const { data: up, error: upErr } = await sb.from('launch_items').select('yt_upload_url').eq('id', id).maybeSingle()
+    if (!upErr && up?.yt_upload_url) {
+      return NextResponse.json({
+        error: 'This one is uploading to YouTube right now with the title and description it started with. Change them in YouTube Studio once it is up.',
+      }, { status: 409 })
+    }
   }
   // QUEUED FOR UPLOAD: the product is locked, because the thumbnails and the
   // description the uploader is about to send were made from the old one.
@@ -245,8 +262,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!same) {
       // A BLOCKED VIDEO WITH ITS CTA BURNED IN is rebuilt too: the row says a
       // new face builds the thumbnails again, and for it that was not true.
-      const rebuild = item.state === 'preparing' || item.state === 'prepared'
-        || (item.state === 'blocked' && !!item.rendered_url)
+      const rebuild = !ownThumb && (item.state === 'preparing' || item.state === 'prepared'
+        || (item.state === 'blocked' && !!item.rendered_url))
       const { error: faceErr } = await sb.from('launch_items').update({
         thumbnail_face: face,
         // Stamped only with a rebuild: a render in progress must still land.
@@ -337,10 +354,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (changed || item.state === 'blocked') {
       patch.state = item.rendered_url ? 'preparing' : 'draft'
       patch.reason = null
-      patch.thumbnail_url = null
-      patch.thumbnail_clean_url = null
-      patch.thumbnail_source = null
-      patch.thumb_tries = 0
+      if (!ownThumb) {
+        patch.thumbnail_url = null
+        patch.thumbnail_clean_url = null
+        patch.thumbnail_source = null
+        patch.thumb_tries = 0
+      }
       if (typeof body.description !== 'string') patch.description = null
       if (item.title_source === 'mvp' && typeof body.title !== 'string') patch.title_source = 'filename'
     }

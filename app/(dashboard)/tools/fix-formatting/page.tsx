@@ -42,13 +42,13 @@ export default function FixFormattingPage() {
         toast.success(
           data.postsWithIssues > 0
             ? `Found broken formatting in ${data.postsWithIssues} post${data.postsWithIssues === 1 ? '' : 's'}.`
-            : 'No broken formatting found — all your posts look clean. 🎉',
+            : 'No broken formatting found: all your posts look clean. 🎉',
         )
       } else {
         toast.success(`Fixed ${data.postsUpdated} post${data.postsUpdated === 1 ? '' : 's'}.`)
       }
     } catch {
-      toast.error('Network error — try again.')
+      toast.error('Network error: try again.')
     } finally { setBusy(false) }
   }
 
@@ -58,7 +58,7 @@ export default function FixFormattingPage() {
     <div className="max-w-3xl mx-auto px-4 py-6">
       <PageHero
         title="Fix broken post formatting"
-        subtitle="Repairs posts that show raw code instead of clean text. Free — no rewriting, no images, no AI."
+        subtitle="Repairs posts that show raw code instead of clean text. Free: no rewriting, no images, no AI."
       />
       <SeoHubTabs />
 
@@ -89,7 +89,7 @@ export default function FixFormattingPage() {
 
         {busy && (
           <p className="text-xs text-[#86868b] mt-3 inline-flex items-center gap-1.5">
-            <Loader2 size={12} className="animate-spin" /> Checking your posts — this can take a moment on larger blogs.
+            <Loader2 size={12} className="animate-spin" /> Checking your posts. This can take a moment on larger blogs.
           </p>
         )}
       </div>
@@ -101,7 +101,7 @@ export default function FixFormattingPage() {
               ? <Wand2 size={16} className="text-[#7C3AED]" />
               : <CheckCircle2 size={16} className="text-[#34c759]" />}
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {result.dryRun ? 'Preview' : 'Fixed'} — checked {result.scanned} post{result.scanned === 1 ? '' : 's'}
+              {result.dryRun ? 'Preview' : 'Fixed'}: checked {result.scanned} post{result.scanned === 1 ? '' : 's'}
             </p>
           </div>
 
@@ -127,7 +127,7 @@ export default function FixFormattingPage() {
                       <span className="truncate text-[#3a3a3c] dark:text-[#ebebf0]">post {p.postId}</span>
                     )}
                     <span className="text-xs text-[#86868b] flex-shrink-0">
-                      {p.before} fixed{!result.dryRun && (p.updated ? ' ✓' : ' — draft/queued')}
+                      {p.before} fixed{!result.dryRun && (p.updated ? ' ✓' : ': draft/queued')}
                     </span>
                   </li>
                 ))}

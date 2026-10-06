@@ -19,7 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { fetchKeepaTokenStatus } from '@/services/keepa'
-import { ccMergeMode, ccShouldPurge, ccNeedsPurgeGuards, describeCcMergeOutcome } from '@/lib/cc-merge-mode'
+import { ccShouldHideMissing, ccMergeMode, ccShouldPurge, ccNeedsPurgeGuards, describeCcMergeOutcome } from '@/lib/cc-merge-mode'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -86,13 +86,13 @@ export async function GET() {
   ])
   // Background-drain status (migration 251) so the UI can show "merging in the
   // background" progress even with the tab closed. Best-effort; absent → null.
-  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean } | null = null
+  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean; hidden?: number; hideSkipped?: string } | null = null
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: f } = await (admin as any).from('system_flags').select('active,value').eq('key', 'cc_import_drain').maybeSingle()
     if (f) {
-      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean }
-      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged, scanned: v.scanned, mode: v.mode, purgeSkipped: v.purgeSkipped }
+      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean; hidden?: number; hideSkipped?: string }
+      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged, scanned: v.scanned, mode: v.mode, purgeSkipped: v.purgeSkipped, hidden: v.hidden, hideSkipped: v.hideSkipped }
     }
   } catch { /* pre-251 DB — no background status */ }
 
@@ -250,6 +250,21 @@ export async function POST(request: Request) {
           ? 'Adding in the background, removing nothing. You can close this tab; progress shows on the counts.'
           : 'Merging in the background — you can close this tab. Progress shows on the counts.',
       })
+    }
+    // HIDE MISSING NOW, for an upload already merged: campaigns not in staging
+    // are marked full in the background (migration 403). Armed as the drain's
+    // purge phase in add-only mode, which the cron turns into the hide pass,
+    // with the same partial-upload check (lib/cc-merge-mode ccShouldHideMissing).
+    if ((body as { mode?: string }).mode === 'hide-missing') {
+      try {
+        await (admin as unknown as { from: (t: string) => any }).from('system_flags').upsert( // eslint-disable-line @typescript-eslint/no-explicit-any
+          { key: 'cc_import_drain', active: true, value: { phase: 'purge', cursor: '', upserted: 0, purged: 0, mode: 'add-only', hidden: 0, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        )
+      } catch (e) {
+        return NextResponse.json({ error: toUserMessage(e, 'Could not start hiding the missing campaigns. Try again.') }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, background: true, hiding: true, message: 'Marking campaigns missing from this upload as full in the background. Nothing is deleted. You can close this tab.' })
     }
     // Stop a running background drain (admin cancels).
     if ((body as { mode?: string }).mode === 'stop-background') {
@@ -421,6 +436,23 @@ export async function POST(request: Request) {
         .update({ active: false, updated_at: new Date().toISOString() }).eq('key', 'cc_import_active')
     } catch { /* flag clear is best-effort; it also auto-expires */ }
 
+    // Add-only: hand the missing campaigns to the background hide pass (the
+    // cron, migration 403), when the upload is big enough to be a real export.
+    let hiding = false
+    if (purgeSkipped) {
+      const stagedNow = stagedCount ?? await estCount('cc_campaign_catalog_import')
+      if (ccShouldHideMissing(mode, stagedNow)) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('system_flags').upsert(
+            { key: 'cc_import_drain', active: true, value: { phase: 'purge', cursor: '', upserted, purged: 0, mode: 'add-only', hidden: 0, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
+            { onConflict: 'key' },
+          )
+          hiding = true
+        } catch { /* the merge still finished; the admin can press Hide missing */ }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       done: true,
@@ -429,7 +461,8 @@ export async function POST(request: Request) {
       purged,
       mode,
       purgeSkipped,
-      summary: describeCcMergeOutcome({ mode, upserted, purged }),
+      hiding,
+      summary: describeCcMergeOutcome({ mode, upserted, purged, hiding }),
       warning: purgeMissing
         ? 'Merge finished and all campaigns are live, but cleanup of fallen-out campaigns was skipped: the purge DB function isn’t installed. Run migration 220 in Supabase to enable it (nothing else is blocked).'
         : undefined,

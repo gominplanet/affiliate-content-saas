@@ -7,7 +7,7 @@ import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
-import { TIERS, normalizeTier, SELLABLE_TIERS, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
 
 export default function BillingPage() {
@@ -22,14 +22,22 @@ export default function BillingPage() {
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
   const [upgraded, setUpgraded] = useState(false)
+  // The plan Stripe's success URL says they just bought, and how many times we
+  // have re-read the row waiting for the webhook to grant it (see below).
+  const [boughtPlan, setBoughtPlan] = useState<Tier | null>(null)
+  const [confirmTries, setConfirmTries] = useState(0)
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [promoCode, setPromoCode] = useState('')
   // Upgrade-cost preview (shown BEFORE we bill, so the charge is never a surprise).
   const [previewLoading, setPreviewLoading] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null } | null>(null)
+  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null; interval: 'month' | 'year'; fellBackToMonthly: boolean } | null>(null)
   // A queued end-of-period downgrade (Stripe schedule), if any — shown as a note.
   const [pendingDowngrade, setPendingDowngrade] = useState<{ tier: string; effectiveAt: number } | null>(null)
+  // What this member is really charged, from their live Stripe subscription.
+  // Members who joined before a price change keep their old price, so the
+  // new-member price in lib/tier is never shown as theirs.
+  const [paying, setPaying] = useState<{ amountUsd: number; interval: 'month' | 'year'; lockedIn?: boolean } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +93,7 @@ export default function BillingPage() {
       try {
         const ps = await fetch('/api/stripe/plan-status').then(r => (r.ok ? r.json() : null))
         setPendingDowngrade(ps?.pendingDowngrade ?? null)
+        setPaying(ps?.paying ?? null)
       } catch { /* non-fatal — just don't show the note */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
@@ -113,6 +122,7 @@ export default function BillingPage() {
       const q = new URLSearchParams(window.location.search)
       const plan = q.get('plan') as Tier | null
       const cs = q.get('cs')
+      if (plan && TIERS[plan]) setBoughtPlan(plan)
       const value = plan && TIERS[plan] ? TIERS[plan].price : undefined
       trackMeta(
         'Purchase',
@@ -141,6 +151,22 @@ export default function BillingPage() {
     if (loading || !highlightPlan) return
     planPickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [loading, highlightPlan])
+
+  // BACK FROM STRIPE BEFORE THE WEBHOOK. Stripe redirects here the moment the
+  // card clears, and the tier is only written when its webhook lands, usually a
+  // few seconds later. Until then this page said "You're on the Free plan.
+  // Welcome aboard!" and offered the Upgrade buttons again; with no Stripe
+  // customer on file yet, clicking one opened a SECOND checkout and a second
+  // subscription. So: re-read every few seconds, keep the picker hidden, and
+  // say plainly if it never arrives.
+  const awaitingWebhook = upgraded && !loading && realTier !== 'admin'
+    && (boughtPlan ? realTier !== boughtPlan : realTier === 'trial')
+  const confirmGaveUp = awaitingWebhook && confirmTries >= 12
+  useEffect(() => {
+    if (!awaitingWebhook || confirmGaveUp) return
+    const t = setTimeout(() => { setConfirmTries((n) => n + 1); void load() }, 2500)
+    return () => clearTimeout(t)
+  }, [awaitingWebhook, confirmGaveUp, confirmTries, load])
 
   const currentTier = TIERS[tier]
   const isPaid = tier !== 'trial' && tier !== 'admin'
@@ -171,7 +197,9 @@ export default function BillingPage() {
     limit: (TIERS[t].postsPerMonth ?? 0) > 0
       ? `${TIERS[t].postsPerMonth} posts / month`
       : `${TIERS[t].thumbnailsPerMonth} designs / month`,
-    price: TIERS[t].price,
+    // A member who joined before the November 1 change switches plans at the
+    // price they locked in, which is what checkout charges them (lib/stripe).
+    price: paying?.lockedIn && (t === 'amazon' || t === 'pro') ? PRICES_BEFORE[t].month : TIERS[t].price,
     regularPrice: TIERS[t].regularPrice,
   }))
 
@@ -179,8 +207,9 @@ export default function BillingPage() {
     setPortalLoading(true)
     try {
       const res = await fetch('/api/stripe/portal', { method: 'POST' })
-      const { url, error } = await res.json()
-      if (error) { toast.error(error); return }
+      const { url, error } = await res.json().catch(() => ({} as { url?: string; error?: string }))
+      // No url and no error used to send the browser to /undefined.
+      if (error || !url) { toast.error(error || 'The billing portal did not open. Try again.'); return }
       window.location.href = url
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPortalLoading(false) }
@@ -199,7 +228,7 @@ export default function BillingPage() {
       if (data.error) { toast.error(data.error); return }
       if (data.kind === 'new') { void upgrade(t); return }
       if (data.kind === 'same') { toast.success("You're already on this plan."); return }
-      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null, effectiveAt: data.effectiveAt ?? null })
+      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null, effectiveAt: data.effectiveAt ?? null, interval: data.interval === 'year' ? 'year' : 'month', fellBackToMonthly: data.fellBackToMonthly === true })
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPreviewLoading(null) }
   }
@@ -237,15 +266,15 @@ export default function BillingPage() {
         const msg = alreadyOnPlan
           ? downgradeCancelled
             // Re-selecting the current plan released a queued downgrade.
-            ? `Your scheduled downgrade was cancelled — you're staying on ${label}.`
+            ? `Your scheduled downgrade was cancelled. You're staying on ${label}.`
             : discountApplied
             // They were already on the plan and redeemed a code — say the code
             // landed, not "nothing to do", which is what it used to report.
-            ? `Promo code applied to your ${label} plan — you'll see it on your next invoice.`
+            ? `Promo code applied to your ${label} plan: you'll see it on your next invoice.`
             : `You're already on ${label}.`
           : chargedNow
-            ? `Switched to ${label} — we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
-            : `Switched to ${label} — your unused time is credited against your next invoice.`
+            ? `Switched to ${label}: we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
+            : `Switched to ${label}: your unused time is credited against your next invoice.`
         toast.success(msg, { duration: 7_000 })
         if (warning) toast.warning(warning, { duration: 10_000 })
         setTimeout(() => window.location.reload(), warning ? 3_000 : 1400)
@@ -253,7 +282,11 @@ export default function BillingPage() {
       }
       if (url) { window.location.href = url; return }
       toast.error('Something went wrong. Please try again.')
-    } catch { toast.error('Something went wrong. Please try again.') }
+    } catch {
+      // A timed-out reply may still have switched the plan, so a blind retry
+      // could change it twice. Say what to check first.
+      toast.error('Billing did not answer in time. Refresh this page to see your current plan before trying again.', { duration: 10_000 })
+    }
     finally { setCheckoutLoading(null) }
   }
 
@@ -271,7 +304,7 @@ export default function BillingPage() {
           <strong>Scheduled change:</strong> your plan moves to{' '}
           {TIERS[pendingDowngrade.tier as Tier]?.label ?? pendingDowngrade.tier} on{' '}
           {new Date(pendingDowngrade.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.{' '}
-          You keep your current plan until then — re-select your current plan below to keep it.
+          You keep your current plan until then. Re-select your current plan below to keep it.
         </div>
       )}
 
@@ -337,8 +370,24 @@ export default function BillingPage() {
             </div>
           )}
 
-          {/* Upgrade success banner */}
-          {upgraded && (
+          {/* Upgrade success banner, only once the plan is really on the account */}
+          {awaitingWebhook && !confirmGaveUp && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/20">
+              <Loader2 size={18} className="text-[#7C3AED] flex-shrink-0 animate-spin" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Checkout complete. Activating your <strong>{boughtPlan ? TIERS[boughtPlan].label : 'new'}</strong> plan now, which usually takes a few seconds.
+              </p>
+            </div>
+          )}
+          {confirmGaveUp && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#FF9500]/10 border border-[#FF9500]/30">
+              <Zap size={18} className="text-[#FF9500] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Checkout finished, but your plan has not switched over yet. Refresh this page in a minute. Please do not buy again: if it still shows {currentTier.label} after that, contact support and we will fix it.
+              </p>
+            </div>
+          )}
+          {upgraded && !awaitingWebhook && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/20">
               <PartyPopper size={18} className="text-[#34c759] flex-shrink-0" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -371,7 +420,7 @@ export default function BillingPage() {
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{currentTier.label}</p>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
                   {limit ? `${limit} posts / ${currentTier.lifetimeMax ? 'lifetime' : 'month'}` : 'Unlimited'}
-                  {currentTier.price > 0 ? ` · $${currentTier.price}/month` : ''}
+                  {paying ? ` · $${paying.amountUsd.toLocaleString('en-US')}/${paying.interval}` : ''}
                 </p>
               </div>
             </div>
@@ -395,7 +444,7 @@ export default function BillingPage() {
                 </div>
                 {usagePct >= 90 && (
                   <p className="text-xs text-[#ff3b30] mt-2">
-                    {usagePct >= 100 ? 'You\'ve used every post on this plan. Upgrade to keep generating.' : 'You\'re close to your cap — upgrade now to avoid being blocked mid-generation.'}
+                    {usagePct >= 100 ? 'You\'ve used every post on this plan. Upgrade to keep generating.' : 'You\'re close to your cap. Upgrade now to avoid being blocked mid-generation.'}
                   </p>
                 )}
 
@@ -432,7 +481,7 @@ export default function BillingPage() {
           </div>
 
           {/* Plans */}
-          {tier !== 'admin' && (
+          {tier !== 'admin' && !awaitingWebhook && (
             <div ref={planPickerRef} className="card p-6">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">
                 {isPaid ? 'Change plan' : 'Upgrade your plan'}
@@ -466,14 +515,21 @@ export default function BillingPage() {
                         <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
                           {preview.kind === 'upgrade' ? (
                             preview.chargeNow != null ? (
-                              <>You&apos;ll be charged <strong>about ${preview.chargeNow.toFixed(2)} today</strong> — the prorated difference for the rest of your current billing period plus your first month of <strong>{TIERS[plan.tier].label}</strong>. After that it&apos;s <strong>${preview.nextPrice}/month</strong>.</>
+                              <>You&apos;ll be charged <strong>about ${preview.chargeNow.toFixed(2)} today</strong>: the prorated difference for the rest of your current billing period plus your first {preview.interval} of <strong>{TIERS[plan.tier].label}</strong>. After that it&apos;s <strong>${preview.nextPrice}/{preview.interval}</strong>.</>
                             ) : (
-                              <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/month</strong>.</>
+                              <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/{preview.interval}</strong>.</>
                             )
                           ) : (
-                            <>You keep your current plan until <strong>{preview.effectiveAt ? new Date(preview.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'the end of this billing period'}</strong>, then move to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/month</strong>). <strong>No charge today</strong> — you keep everything you&apos;ve paid for until then.</>
+                            <>You keep your current plan until <strong>{preview.effectiveAt ? new Date(preview.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'the end of this billing period'}</strong>, then move to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/{preview.interval}</strong>). <strong>No charge today</strong>. You keep everything you&apos;ve paid for until then.</>
                           )}
                         </p>
+                        {/* SAY IT when a yearly member is moved to monthly, so a
+                            different number is never a silent surprise. */}
+                        {preview.fellBackToMonthly && (
+                          <p className="mt-2 text-xs text-[#B45309] dark:text-[#FBBF24] leading-relaxed">
+                            Yearly billing isn&apos;t available for {TIERS[plan.tier].label} right now, so this change moves you to <strong>monthly billing</strong>.
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-3">
                           <button
                             onClick={() => upgrade(plan.tier)}

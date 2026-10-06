@@ -55,18 +55,23 @@ export default function FeatureLockedCard({
   requiredTier,
   currentTier,
 }: FeatureLockedCardProps) {
-  const tierLabel =
-    requiredTier === 'pro' ? 'Pro' :
-    requiredTier === 'studio' ? 'Studio' : 'Creator'
+  // MVP sells two plans, Amazon and Pro. 'creator' and 'studio' here mean "any
+  // paid plan" (the props predate the freeze), and naming them sent a free
+  // trial to "Upgrade to Creator" at /billing?plan=creator, a plan checkout
+  // will not sell. So only Pro is named; anything lower reads "Paid" and the
+  // button opens the plans page, where both real plans are shown.
+  const tierLabel = requiredTier === 'pro' ? 'Pro' : 'Paid'
   // Brand accents per tier (matches /pricing): Creator teal, Studio pink,
   // Pro violet. Keeps the visual hierarchy consistent across upsell cards.
   const tierAccent =
     requiredTier === 'pro' ? '#7C3AED' :
     requiredTier === 'studio' ? '#EC4899' : '#10B981'
-  const checkoutHref = `/billing?plan=${requiredTier}`
+  const checkoutHref = requiredTier === 'pro' ? '/billing?plan=pro' : '/billing'
 
+  // 'amazon' was missing, so an Amazon member read "You're on the Admin plan".
   const currentTierLabel =
-    currentTier === 'trial' ? 'Free Trial' :
+    currentTier === 'trial' ? 'free trial' :
+    currentTier === 'amazon' ? 'Amazon' :
     currentTier === 'creator' ? 'Creator' :
     currentTier === 'studio' ? 'Studio' :
     currentTier === 'pro' ? 'Pro' : 'Admin'
@@ -132,14 +137,14 @@ export default function FeatureLockedCard({
       {/* Footer: CTA + currently-on hint */}
       <div className="mt-6 pt-5 border-t flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: 'var(--border)' }}>
         <p className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
-          You're on the <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>{currentTierLabel}</span> plan.
+          You're on the <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>{currentTierLabel}</span>{currentTier === 'trial' ? '' : ' plan'}.
         </p>
         <Link
           href={checkoutHref}
           className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
           style={{ backgroundColor: tierAccent }}
         >
-          Upgrade to {tierLabel}
+          {requiredTier === 'pro' ? 'Upgrade to Pro' : 'See plans'}
           <ArrowRight size={13} />
         </Link>
       </div>

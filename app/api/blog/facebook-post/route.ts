@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
-import { createFacebookService } from '@/services/facebook'
+import { getPublishContext } from '@/lib/agency-publish'
+import { createFacebookService, isUnconfirmedFacebookPost } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -26,14 +28,16 @@ import { chooseFacebookAttachment, parseFacebookMediaChoice } from '@/lib/facebo
 import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string; includeAffiliateCta?: boolean; media?: string }
@@ -74,7 +78,7 @@ export async function POST(request: NextRequest) {
     const fbCap = evaluateSocialCap(fbSocialCount)
     if (!body.dryRun && fbCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Facebook ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Facebook ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'facebook',
       }, { status: 429 })
@@ -262,7 +266,11 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
       // videoAvailable drives the thumbnail/video choice in the preview modal.
       // Offering "post the video" on a post that has none is how a creator picks
       // it, gets a thumbnail, and never learns why.
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl })
+      // imageUrl + videoUrl let Fill with SCOUT give a Group post the same
+      // hero the Page post gets (the thumbnail, or the playable YouTube card).
+      // THE PREVIEW IS WHAT POSTS. services/facebook runs every caption through
+      // discloseSocialPost (#ad #sponsored, link labels), so the preview does too.
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: discloseSocialPost(caption, 'facebook'), hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl, imageUrl: imageUrl || null, videoUrl: videoUrl || null })
     }
 
     // ── 8. Post to Facebook — fan out to each selected Page ───────────────────
@@ -276,8 +284,18 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     })
     let photoFellBack = false
 
-    const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string }> = []
+    const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string; code?: string }> = []
+    // The link this post carries, for Meta's monthly limit on outside links
+    // (lib/facebook-link-budget). The photo post carries it in the caption.
+    const carriedLink = attachment.kind === 'photo' && attachment.imageUrl ? null : (attachment.link || shareUrl)
     for (const acct of fbAccounts) {
+      // PAST THE PAGE'S LINK LIMIT, NOT POSTED: Facebook would show the link
+      // as plain text. Said per Page, in words, never a silent dead link.
+      const linkCheck = await checkPageLinkPost({ userId: user.id, pageId: acct.externalId, pageName: acct.displayName, text: caption, link: carriedLink })
+      if (!linkCheck.ok) {
+        results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: linkCheck.error, code: linkCheck.code })
+        continue
+      }
       try {
         const fbService = createFacebookService(acct.accessToken, acct.externalId)
         // A /photos post returns { id: <photo id>, post_id: <PAGEID_POSTID> }. We
@@ -295,6 +313,8 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
             // a link post — Facebook scrapes the WP post's og:image for the card
             // preview, so the post still goes out with an image + is fully
             // comment→DM capable.
+            // NO SECOND POST ON AN UNCONFIRMED FIRST: the photo may be up.
+            if (isUnconfirmedFacebookPost(photoErr)) throw photoErr
             console.warn('[facebook-post] photo post failed, falling back to link post:', photoErr)
             const r = await fbService.postLink({ message: caption, link: fallbackLink })
             pagePostId = r.id
@@ -307,6 +327,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
           pagePostId = r.id
         }
         results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
+        if (linkCheck.counts || photoFellBack) await recordPageLinkPost({ userId: user.id, pageId: acct.externalId, postId: pagePostId, source: 'blog' })
       } catch (e) {
         results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: e instanceof Error ? e.message : String(e) })
       }
@@ -314,16 +335,19 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
 
     const succeeded = results.filter(r => r.ok)
     if (succeeded.length === 0) {
+      // A post stopped by the link limit is a 409 with its code, so the page
+      // shows it as the limit (with what to do), not as Facebook failing.
+      const limited = results.find((r) => r.code === 'fb_link_limit')
       return NextResponse.json(
-        { error: results[0]?.error || 'Facebook publish failed', results },
-        { status: 502 },
+        { error: (limited ?? results[0])?.error || 'Facebook publish failed', code: limited?.code, results },
+        { status: limited && results.every((r) => r.code === 'fb_link_limit') ? 409 : 502 },
       )
     }
 
     // ── 9. Save facebook_post_id (first success) + bump re-publish counter ────
     const firstId = succeeded[0].id!
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId)
+    await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId).eq('user_id', user.id)
     // Record the permalink so the brand-recap links straight to the post.
     await recordSocialPermalink(supabase, postId, 'facebook', socialPermalink.facebook(firstId))
     // Count one re-publish per Page actually posted to, so the per-post cap

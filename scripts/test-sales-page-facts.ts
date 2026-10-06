@@ -85,7 +85,8 @@ const split = strip(SPLIT)
     ['thumbnailsPerMonth', 'thumbnails'],
     ['pinsPerMonth', 'pins'],
     ['igPostsPerMonth', 'Reels'],
-    ['facebookPostsPerMonth', 'Facebook designs'],
+    // Facebook designs are no longer a counted allowance (2026-10-05): Facebook
+    // reuses the thumbnail or Instagram design, so there is no number to print.
     ['dealsPerMonth', 'posts published'],
     ['maxFaces', 'face models'],
     ['photoboothPerMonth', 'headshots'],
@@ -180,8 +181,9 @@ const split = strip(SPLIT)
       // Creator Connections messages come from /api/campaigns/outreach, which
       // has no cap at all, so putting this number on a Creator Connections card
       // invents a limit the product does not enforce. It was on one.
-      check(`${name} names Brand Deals where it states the figure`,
-        /Brand Deals/.test(src),
+      // "Brand pitches" is the sidebar's current name for Brand Deals (the copy was renamed to match).
+      check(`${name} names Brand pitches where it states the figure`,
+        /Brand Deals|Brand pitches|brand pitch/.test(src),
         'unlabelled, the number reads as a limit on Creator Connections messaging, which is uncapped')
     }
   }

@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
-import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
+import MadeBefore from '@/components/product/MadeBefore'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import PinDestinationPicker from '@/components/pinterest/PinDestinationPicker'
 import { asinFromAmazonUrl } from '@/lib/asin'
@@ -157,6 +158,12 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     if (!saved) return
     setThumbUrl(saved.imageUrl)
     setUsingSaved(true)
+    fillPinCopy()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved, product])
+
+  /** Fill the pin title and description for a reused image. */
+  const fillPinCopy = useCallback(() => {
     const raw = product.trim()
     if (!raw) return
     const isUrl = /^https?:\/\//i.test(raw)
@@ -169,7 +176,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       if (c?.description) setDescription(prev => prev || c.description)
     }).catch(() => { /* copy is best-effort; the publish route writes it if blank */ })
       .finally(() => setCopyBusy(false))
-  }, [saved, product])
+  }, [product])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return
@@ -200,12 +207,10 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       // Reload the queue on this page so a pin they just scheduled shows up in
       // the list below rather than after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
-      // Publishing is the approval. Remember this pin design against the
-      // product. Skipped when it WAS the recalled image — nothing changed.
-      if (!usingSaved && thumbUrl) {
-        const a = /^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : asinFromAmazonUrl(raw)
-        if (a) void saveProductImage({ asin: a, imageUrl: thumbUrl, surface: 'Pinterest' })
-      }
+      // The pin itself was kept as this product's Pinterest design when it was
+      // made (lib/design-memory). It is NOT saved over the product's 16:9
+      // thumbnail any more: a 2:3 pin there became the picture offered on the
+      // next YouTube thumbnail.
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Pin failed. Try again.')
     } finally { setPubBusy(false) }
@@ -264,6 +269,12 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
           </>
         )}
         <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
+        {/* A pin MVP already made for this product: post it again for free. */}
+        <div className="empty:hidden">
+          <MadeBefore asin={resolvedAsin} only={['design']} formats={['pin']}
+            heading="You already have a pin for this product. Reuse it for free, or design a new one."
+            onUseImage={(url) => { setThumbUrl(url); setUsingSaved(true); fillPinCopy() }} />
+        </div>
         {saved && (
           <div className="flex flex-col gap-1.5">
             <SavedProductImage

@@ -773,6 +773,36 @@ function ffmpegCutWindow(url, startSec, dur, outPath) {
   })
 }
 
+// POST /frame — one still from a video or stream, for framing a clip.
+//   body: { url, atSec, userId }  ->  { url, width, height }
+app.post('/frame', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.url || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  const atSec = Math.max(0, Number(req.body?.atSec) || 0)
+  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const tmp = path.join(os.tmpdir(), `frame-${Date.now()}.jpg`)
+  try {
+    await assertPublicHttpUrl(url)
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(atSec), '-i', url, '-frames:v', '1', '-vf', 'scale=960:-2', '-q:v', '4', '-y', tmp],
+        { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 }, (err, _o, stderr) => {
+          if (err) return reject(new Error(`could not read a frame: ${String(stderr || err.message).slice(0, 200)}`))
+          resolve()
+        })
+    })
+    if (!fs.existsSync(tmp)) throw new Error('no frame')
+    const wh = await ffprobeWH(tmp)
+    const key = `${userId || 'ingest'}/frame-${Date.now()}.jpg`
+    await uploadToSupabase(key, tmp, 'image/jpeg')
+    return res.json({ url: publicUrl(key), width: wh ? wh.w : null, height: wh ? wh.h : null })
+  } catch (e) {
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    cleanupTmp(tmp)
+  }
+})
+
 // POST /stream-audio — the audio of a long stream, small enough to transcribe.
 //   body: { url, userId }  →  { url, durationSeconds }
 app.post('/stream-audio', async (req, res) => {
@@ -808,7 +838,7 @@ app.post('/stream-audio', async (req, res) => {
 // ── Render options: split-screen reframe (#1) ────────────────────────────────
 // The reframe filtergraph lives in render-filters.js so it's unit-tested
 // directly (test-render-filters.js).
-const { reframeChain } = require('./render-filters')
+const { reframeChain, cropAt } = require('./render-filters')
 
 // Run ffmpeg with a -filter_complex graph (the split-screen path).
 function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath) {
@@ -843,6 +873,8 @@ app.post('/render-short', async (req, res) => {
   const words = Array.isArray(req.body?.words) ? req.body.words : []
   const userId = String(req.body?.userId || '').trim()
   const reframeMode = req.body?.reframe === 'split' ? 'split' : 'center'
+  // Where the 9:16 window sits across the frame (0 left, 1 right); unset is centre.
+  const cropX = req.body?.cropX
   const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
   // stream: the source is a long stream (an Amazon Live replay playlist or a
   // big mp4). ffmpeg reads the window straight from it, so the whole replay is
@@ -899,11 +931,11 @@ app.post('/render-short', async (req, res) => {
     if (reframeMode === 'split') {
       // Split-screen path — a -filter_complex graph (vstack of the two halves),
       // optionally burning captions. Audio passes through untouched.
-      const graph = reframeChain('[0:v]', 'split', W, H, withCaptions ? assTmp : null)
+      const graph = reframeChain('[0:v]', 'split', W, H, withCaptions ? assTmp : null, cropX)
       await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, '0:a?', outTmp)
     } else {
       // Default path — the original simple -vf center-crop (unchanged, low-risk).
-      const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
+      const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${cropAt(cropX)}`
       const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
       await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
     }

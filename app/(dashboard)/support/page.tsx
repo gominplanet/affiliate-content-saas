@@ -89,7 +89,7 @@ function Thread({ ticket, onReplied }: { ticket: SupportTicket; onReplied: (tick
       if (!res.ok) throw new Error(d.error || 'Failed to send')
       setReply(''); setImageUrl(null)
       onReplied(ticket.id, d.message as SupportMessage)
-      toast.success('Reply sent — we’ll get back to you here.')
+      toast.success('Reply sent: we’ll get back to you here.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to send your reply')
     } finally {
@@ -219,7 +219,7 @@ export default function SupportPage() {
       if (!res.ok) throw new Error(d.error || 'Failed to send')
       setSubject(''); setBody(''); setNewImageUrl(null)
       setTickets(prev => [d.ticket, ...prev])
-      toast.success('Ticket sent — we’ll reply right here in MVP.')
+      toast.success('Ticket sent: we’ll reply right here in MVP.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to send your ticket')
     } finally {
@@ -240,7 +240,7 @@ export default function SupportPage() {
     <>
       <PageHero
         title="Help & Support"
-        subtitle="Stuck on something? Start a ticket and we'll answer right here — no email needed. Every reply stays in the thread, so you can always see the full conversation."
+        subtitle="Stuck on something? Start a ticket and we'll answer right here: no email needed. Every reply stays in the thread, so you can always see the full conversation."
       />
 
       {/* New ticket */}

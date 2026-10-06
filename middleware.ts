@@ -54,6 +54,10 @@ const publicPaths = [
   // customer-blog visitors' browsers. CORS preflight (OPTIONS) must reach the
   // route handler too, which is why it's allowlisted here.
   '/api/blog/product-finder',
+  // Apify calls this when a storefront run finishes. It has no session; the
+  // route checks the secret it was given at the start. Without this entry the
+  // call was sent to /login and every finished run was silently lost.
+  '/api/creator/sync/callback',
   // "Work with brands" inbox — public POST hit by the WP blog's brand-contact
   // form (cross-origin, no session). Enforces its OWN auth: HMAC + honeypot +
   // hCaptcha. CORS preflight (OPTIONS) must reach the handler too. Note the
@@ -233,7 +237,17 @@ export async function middleware(request: NextRequest) {
 
   if (session && (pathname === '/login' || pathname === '/signup')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    // A signed-in visitor who clicked "Get Pro" on the homepage or an ad page
+    // arrives as /signup?plan=pro (or ?tier=). Sending them to /dashboard threw
+    // the purchase away; /billing?plan= highlights that plan's card instead.
+    const plan = pathname === '/signup' ? (url.searchParams.get('tier') || url.searchParams.get('plan')) : null
+    url.search = ''
+    if (plan === 'amazon' || plan === 'pro') {
+      url.pathname = '/billing'
+      url.searchParams.set('plan', plan)
+    } else {
+      url.pathname = '/dashboard'
+    }
     return NextResponse.redirect(url)
   }
 
@@ -256,6 +270,26 @@ export async function middleware(request: NextRequest) {
   // DB — the vast majority of requests aren't to blocked paths so we don't
   // want a per-request VA-status lookup. Only when the path matches do we
   // resolve agency context.
+  // A VA never connects or disconnects a social account: the OAuth would save
+  // it on the VA's own login, not the owner's, and a disconnect would cut the
+  // owner off. They post through the owner's connections (lib/agency-publish).
+  // YouTube has its own explained stop in /api/auth/youtube.
+  if (session && /^\/api\/auth\/(facebook|instagram|threads|pinterest|tiktok|twitter|linkedin|bluesky|telegram)(\/|$)/.test(pathname) && !/\/callback(\/|$)/.test(pathname)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('agency_members')
+      .select('owner_user_id')
+      .eq('member_user_id', session.user.id)
+      .is('revoked_at', null)
+      .maybeSingle()
+    if (data?.owner_user_id) {
+      if (request.method !== 'GET') return NextResponse.json({ error: 'Only the account owner can connect or disconnect social accounts. You post through the accounts they connected.', vaOwnerConnects: true }, { status: 403 })
+      const url = request.nextUrl.clone()
+      url.pathname = '/connect-socials'
+      url.search = ''
+      return NextResponse.redirect(url)
+    }
+  }
   if (session && isPathBlockedForVa(pathname)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase as any)

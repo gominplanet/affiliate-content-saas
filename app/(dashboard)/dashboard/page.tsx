@@ -54,8 +54,8 @@ import {
   Youtube, Link2, BookOpen, Send, Mail,
 } from 'lucide-react'
 import Link from 'next/link'
-import { TIERS, billingWindow, type Tier } from '@/lib/tier'
-import { PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { TIERS, billingWindow, normalizeTier, type Tier } from '@/lib/tier'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { canUseDealRadar, canSeeNav } from '@/lib/feature-access'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
@@ -68,12 +68,10 @@ export default async function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const [
-    { count: videoCountRaw },
     { count: postCount },
     { data: integration },
     { data: brandRow },
   ] = await Promise.all([
-    sb.from('youtube_videos').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id),
     sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id),
     sb.from('integrations').select('tier,subscription_period_start,subscription_period_end,wordpress_url,setup_status,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).maybeSingle(),
     sb.from('brand_profiles').select('author_name,name').eq('user_id', user!.id).maybeSingle(),
@@ -81,68 +79,23 @@ export default async function DashboardPage() {
 
   // ── Plan & usage ────────────────────────────────────────────────────────
   const intAny = integration as Record<string, unknown> | null
-  const tier = ((intAny?.tier as Tier) ?? 'trial')
+  // normalizeTier: a legacy stored value ('free', 'starter') maps to a real tier.
+  const tier: Tier = normalizeTier(intAny?.tier)
   const plan = TIERS[tier] ?? TIERS.trial
-  const { startISO: periodStartISO, resetLabel: resetsOn } = billingWindow({
+  const { startISO: periodStartISO } = billingWindow({
     periodStart: (intAny?.subscription_period_start as string | null) ?? null,
     periodEnd: (intAny?.subscription_period_end as string | null) ?? null,
   })
-  const onBillingCycle = !!intAny?.subscription_period_start
-  // Second (and final) query wave. Only the period-scoped counts depend on
-  // periodStartISO (derived from wave 1's integration row); the opportunity
-  // counts and recentVideos need only user.id. They used to run as two more
-  // serial waves after this one — merged here so they all hit the DB together
-  // (this is the most-visited SSR page; each saved round-trip is first-paint time).
-  const [
-    { count: postsThisPeriod },
-    { count: collabsThisPeriod },
-    { count: thumbnailsThisPeriod },
-    { count: metadataGensThisPeriod },
-    { data: recentVideos },
-  ] = await Promise.all([
-    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
-    sb.from('collaborations').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('created_at', periodStartISO),
-    // Count EVERY thumbnail-image feature the generator can log (nano-banana,
-    // ideogram, gpt-image, kontext, flux, flux-lora) via the shared
-    // PRIMARY_FEATURE list — the SAME set the cap enforcement in
-    // lib/usage-cap.ts uses. Was hardcoded to just kontext+flux (both retired
-    // paths), so the dashboard under-reported and disagreed with what Co-Pilot
-    // actually enforces. Reusing the canonical list keeps them from drifting.
-    sb.from('ai_usage').select('id', { count: 'estimated', head: true })
-      .eq('user_id', user!.id)
-      .in('feature', PRIMARY_FEATURE.thumbnail)
-      .gte('created_at', periodStartISO),
-    sb.from('ai_usage').select('id', { count: 'estimated', head: true })
-      .eq('user_id', user!.id)
-      .in('feature', PRIMARY_FEATURE.metadata)
-      .gte('created_at', periodStartISO),
-    // Recent catalog for the hero strip.
-    sb.from('youtube_videos')
-      .select('id, title, published_at, thumbnail_url, youtube_video_id, is_vertical')
-      .eq('user_id', user!.id)
-      .order('published_at', { ascending: false, nullsFirst: false })
-      .limit(6),
-  ])
-  const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisPeriod ?? 0)
-  const postsLimit = plan.lifetimeMax !== null ? plan.lifetimeMax : plan.postsPerMonth
-  const usage = [
-    {
-      label: plan.lifetimeMax !== null ? 'Posts (lifetime)' : 'Posts this period',
-      used: postsUsed,
-      limit: postsLimit,
-    },
-    ...(plan.collabsPerMonth !== 0
-      ? [{ label: 'Collab emails this period', used: collabsThisPeriod ?? 0, limit: plan.collabsPerMonth }]
-      : []),
-    ...(plan.thumbnailsPerMonth !== 0
-      ? [{ label: 'YT thumbnails this period', used: thumbnailsThisPeriod ?? 0, limit: plan.thumbnailsPerMonth }]
-      : []),
-    ...(plan.metadataGensPerMonth !== 0
-      ? [{ label: 'YT metadata generations', used: metadataGensThisPeriod ?? 0, limit: plan.metadataGensPerMonth }]
-      : []),
-  ]
+  // Second wave: only the hero's "N posts this period" depends on the billing
+  // window. Four more reads used to run here (collab, thumbnail and metadata
+  // counts, six recent videos) for a usage block and a video strip this page
+  // no longer draws. On the most visited page that was database work on every
+  // load for nothing, and the ai_usage counts read 0 anyway: that table has
+  // no member read policy.
+  const { count: postsThisPeriod } = await sb.from('blog_posts')
+    .select('id', { count: 'estimated', head: true })
+    .eq('user_id', user!.id).gte('published_at', periodStartISO)
 
-  const videoCount = videoCountRaw ?? 0
   const publishedCount = postCount ?? 0
   const isNewUser = publishedCount === 0
   // Pro (and admin) get the Today list; canSeeNav('labs') is the Pro test.
@@ -150,20 +103,6 @@ export default async function DashboardPage() {
 
   const int = integration as Record<string, unknown> | null
   const wpConnected = int?.setup_status === 'site_ready'
-  const platformFlags = [
-    wpConnected,
-    !!(int?.youtube_oauth_access_token),
-    !!(int?.facebook_page_id),
-    !!(int?.pinterest_access_token),
-    !!(int?.threads_access_token),
-    !!(int?.twitter_access_token),
-    !!(int?.linkedin_access_token),
-    !!(int?.bluesky_handle),
-    !!(int?.telegram_channel_id),
-    !!(int?.instagram_user_id),
-  ]
-  const platformsTotal = platformFlags.length
-  const platformsConnected = platformFlags.filter(Boolean).length
 
   // First-win onboarding state — read from the same real signals as above so
   // the checklist ticks itself off as the user connects and publishes.
@@ -200,8 +139,6 @@ export default async function DashboardPage() {
     .map(c => c.name)
   const showMetaNudge = metaNudgePlatforms.length > 0
 
-  // recentVideos is fetched in the merged wave above.
-
   // ── Hero values ────────────────────────────────────────────────────────
   // Pulled from brand_profiles.author_name → brand_profiles.name → user
   // email local-part. Falls through gracefully so even fresh accounts get
@@ -216,13 +153,15 @@ export default async function DashboardPage() {
   // Meta line: pluralise "site" properly, capitalise the tier label, hide
   // posts row entirely when zero (fresh account → "Connect your channel
   // to get started" elsewhere).
-  const planLabel = plan.label
+  // The trial's tier label is "Free", and there is no Free plan to sell, so a
+  // new account reads "Free trial" rather than "Free plan".
+  const planLabel = tier === 'trial' ? 'Free trial' : `${plan.label} plan`
   const wpHostname = int?.wordpress_url
     ? String(int.wordpress_url).replace(/^https?:\/\//, '').replace(/\/+$/, '')
     : null
   const heroMetaParts = [
     wpHostname ? wpHostname : null,
-    `${planLabel} plan`,
+    planLabel,
     postsThisPeriod ? `${postsThisPeriod} post${postsThisPeriod === 1 ? '' : 's'} this period` : null,
   ].filter(Boolean) as string[]
 
@@ -357,7 +296,10 @@ export default async function DashboardPage() {
             {!DEALS_HUB_PAUSED && (
               <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" accent="#EC4899" />
             )}
-            <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
+            {/* Retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS); admin keeps it. */}
+            {(NEWSLETTER_FOR_MEMBERS || tier === 'admin') && (
+              <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
+            )}
           </div>
         </section>
 

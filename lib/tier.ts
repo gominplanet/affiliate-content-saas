@@ -40,7 +40,9 @@
 //   - API access + White-label: still Pro-only but HIDDEN from nav until
 //     real demand surfaces (route + page stay alive).
 //   - Priority queue + Discord priority support: Studio + Pro.
-export type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
+import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+
+export type Tier ='trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
 export const DEFAULT_TIER: Tier = 'trial'
@@ -68,6 +70,18 @@ export function normalizeTier(raw: unknown): Tier {
 }
 
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram' | 'tiktok'
+
+// ── PRICES ──────────────────────────────────────────────────────────────────
+// Amazon and Pro prices change for NEW members on November 1 (lib/price-schedule).
+// They are getters so a server that has been running since before the change
+// still reads the new price after it. Members who joined earlier keep their
+// Stripe price; the billing page shows that real amount (api/stripe/plan-status),
+// never this table, and checkout refuses a Stripe price that does not match the
+// one shown here (lib/price-guard).
+export { NEW_MEMBER_PRICES, PRICES_BEFORE, PRICE_CHANGE_AT, newPricesLive } from './price-schedule'
+
+import { livePrice, NEW_MEMBER_PRICES } from './price-schedule'
+import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS } from './amazon-plan'
 
 export const TIERS = {
   trial:   {
@@ -113,7 +127,7 @@ export const TIERS = {
      *  ever loses its pool falls closed rather than open. */
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
-    facebookPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Five ready-to-post designs, POOLED across pins / Instagram / Facebook.
      *  The free loop is "make a design and hold it", not "make a pin, and
      *  separately make a story", so one pool is the honest shape. Null on every
@@ -210,7 +224,7 @@ export const TIERS = {
     dealsPerMonth: null as number | null,
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
-    facebookPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -220,9 +234,10 @@ export const TIERS = {
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
     /** Taster newsletter: 500 subs, 1 send/mo. Subs at the cap = upsell
-     *  pull to Studio (5k subs). */
-    newsletterSubscribers: 500 as number | null,
-    newsletterBroadcastsPerMonth: 1 as number | null,
+     *  pull to Studio (5k subs). 0 while the member newsletter is retired
+     *  (NEWSLETTER_FOR_MEMBERS), so Pro stays a superset of this plan. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 500 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 1 : 0) as number | null,
     newsletterScheduling: false,
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
@@ -272,14 +287,25 @@ export const TIERS = {
   // (nextTierFor), so it never appears as an upgrade target for a blog or
   // script cap. Blog is the reason to buy Pro.
   amazon:  {
+    // MAXED-OUT COST (2026-10-05, Seb). A plan must cost less than its price when
+    // ONE user uses every allowance to the full, not on average. Lowered:
+    // thumbnails 250 -> 200, designs 420 -> 320 (pins 115, IG 115, FB 90, the old
+    // proportions), assistant 600 -> 300, collabs 60 -> 30. Photobooth and the
+    // daily CC digest unchanged. Maxed: about $16 thumbnails + $22 designs + $6
+    // assistant + $3.60 collabs + $2.28 Photobooth + ~$2 digest/captions = ~$52,
+    // against $99.
     label: 'Amazon',
-    price: 99,
-    regularPrice: 179,
+    // New-member price; changes on November 1 (lib/price-schedule).
+    get price(): number { return livePrice('amazon', 'month') },
+    // THE STRUCK PRICE IS A REAL ONE: what new members pay from November 1
+    // (lib/price-schedule). It was 179, a price never charged anywhere. On and
+    // after the change it equals price, and the pages show no strike at all.
+    get regularPrice(): number { return NEW_MEMBER_PRICES.amazon.month },
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
      *  appear, so a price shown here can never be one Stripe cannot charge. */
-    annualPrice: 999 as number | null,
+    get annualPrice(): number | null { return livePrice('amazon', 'year') },
     /** Every render on this tier is gpt-image at MEDIUM quality (~$0.06), not
      *  $0.19: gfxQuality in generate-thumbnail is tier-gated and high is the Pro
      *  perk. Until 2026-09-14 the telemetry logged the model name rather than
@@ -301,8 +327,9 @@ export const TIERS = {
     /** No blog, and `sites: 0` below is why. Thumbnails have their own cap. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
-    /** Creator Connections collabs — storefront creators land brand deals. */
-    collabsPerMonth: 60 as number | null,
+    /** Brand Deals collab emails. 60 -> 30 -> 15 on 2026-10-05 (Seb): two
+     *  members had ever used them and none in the last 30 days. */
+    collabsPerMonth: 15 as number | null,
     /** The headline feature: Art Director thumbnails at medium quality.
      *
      *  Raised from 200 on 2026-09-14. At 2 designs per video this carries 125
@@ -315,7 +342,7 @@ export const TIERS = {
      *  prose was the more confident of the two. The value below is the only
      *  answer, the pricing page reads it, and scripts/test-sales-page-facts
      *  holds that page to reading it. */
-    thumbnailsPerMonth: 250 as number | null,
+    thumbnailsPerMonth: 200 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
@@ -329,11 +356,12 @@ export const TIERS = {
      *  The NEW numbers are deliberately not repeated here either. This comment
      *  used to claim three figures that none of the three literals below
      *  matched, describing a plan nobody was on. Read the three lines. */
-    pinsPerMonth: 150 as number | null,
-    igPostsPerMonth: 150 as number | null,
-    facebookPostsPerMonth: 120 as number | null,
-    /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
-    metadataGensPerMonth: 0 as number | null,
+    pinsPerMonth: 115 as number | null,
+    igPostsPerMonth: 115 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
+    /** YouTube Co-Pilot runs: 100 since 2026-10-05, when the Amazon plan got
+     *  one YouTube channel (lib/amazon-plan AMAZON_COPILOT_RUNS_PER_MONTH). */
+    metadataGensPerMonth: AMAZON_COPILOT_RUNS_PER_MONTH as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Deal / product social posts (their core publishing action). 60 -> 150 on
      *  2026-09-14: at 60 it was the second wall after Facebook, and a creator
@@ -355,7 +383,7 @@ export const TIERS = {
     /** Two face models (1 -> 2, 2026-09-14), up to 20 selfies each. */
     maxFaces: 2 as number | null,
     blogImagesPerPost: 0,
-    assistantMessagesPerMonth: 600 as number | null,
+    assistantMessagesPerMonth: 300 as number | null,
     newsletterSubscribers: 0 as number | null,
     newsletterBroadcastsPerMonth: 0 as number | null,
     newsletterScheduling: false,
@@ -372,7 +400,7 @@ export const TIERS = {
     bonusPosts: 0,
     /** No WordPress, no YouTube — onboards without either. */
     sites: 0,
-    youtubeChannels: 0,
+    youtubeChannels: AMAZON_YOUTUBE_CHANNELS, // since 2026-10-05 (lib/amazon-plan)
     /** Only the three visual networks Amazon influencers push to. */
     socials: ['facebook', 'pinterest', 'instagram'] as readonly Social[],
     multiAccountSocial: false,
@@ -420,7 +448,7 @@ export const TIERS = {
     // clearing an old back-catalog want to run a lot of them early on.
     metadataGensPerMonth: 100 as number | null,
     /** IG AI thumbnails open to Studio (30→25, 2026-08-22 cap-fit). */
-    instagramAiThumbnailsPerMonth: 25 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null, // retired 2026-10-05 (lib/ig-ai-images)
     /** Deals draw from Studio's shared content pool (postsPerMonth: 45), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
@@ -430,7 +458,7 @@ export const TIERS = {
     // 200→90, IG 120→70, FB 100→45) so the whole plan maxed still fits $90.
     pinsPerMonth: 90 as number | null,
     igPostsPerMonth: 70 as number | null,
-    facebookPostsPerMonth: 45 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -439,11 +467,12 @@ export const TIERS = {
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 400 as number | null,
-    /** Weekly newsletter cadence: 5k subs, 4 sends/mo. */
-    newsletterSubscribers: 5000 as number | null,
-    newsletterBroadcastsPerMonth: 4 as number | null,
+    /** Weekly newsletter cadence: 5k subs, 4 sends/mo. 0 while the member
+     *  newsletter is retired (NEWSLETTER_FOR_MEMBERS), so Pro stays a superset. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 5000 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 4 : 0) as number | null,
     /** Scheduling opens to Studio. A/B + Segments stay Pro-only. */
-    newsletterScheduling: true,
+    newsletterScheduling: NEWSLETTER_FOR_MEMBERS,
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
     scriptsPerMonth: 30 as number | null,
@@ -472,14 +501,21 @@ export const TIERS = {
     prioritySupport: true,
   },
   pro:     {
+    // MAXED-OUT COST (2026-10-05, Seb). Priced on one user using every
+    // allowance in full. Lowered: blog posts 100 -> 60, thumbnails 300 -> 200
+    // (still high quality), designs 550 -> 400 (pins 145, IG 145, FB 110, the
+    // old proportions, still above Amazon's), X 100 -> 75 (lib/usage-cap), and
+    // dubs are gone entirely (lib/markets DUBS_ENABLED).
     label: 'Pro',
-    price: 199,
-    regularPrice: 399,
+    // New-member price; changes on November 1 (lib/price-schedule).
+    get price(): number { return livePrice('pro', 'month') },
+    // The real November 1 price, not the 399 that was never charged.
+    get regularPrice(): number { return NEW_MEMBER_PRICES.pro.month },
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
      *  appear, so a price shown here can never be one Stripe cannot charge. */
-    annualPrice: 1999 as number | null,
+    get annualPrice(): number | null { return livePrice('pro', 'year') },
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
      *  185 -> 130 on 2026-09-14, on measured costs rather than estimates.
      *
@@ -494,26 +530,25 @@ export const TIERS = {
      *  the Amazon tier that is expected and this is the backstop. A real Pro
      *  writes about 30 posts a month, not 100. */
     monthlyAiSpendCeilingUsd: 130 as number | null,
-    /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
-     *  At the measured $0.69 a post, the full 100 is ~$69 — about half the
-     *  ceiling above, so the blog allowance alone can always be spent in full.
-     *  It is the design caps, at Pro's high-quality $0.19 a render, that the
-     *  ceiling actually governs. */
+    /** Shared counter of generations a month (200 -> 100 on 2026-06-14).
+     *  Briefly 60 on 2026-10-05, then back to 100 the same day (Seb): the
+     *  extra 40 posts cost $27.60 maxed (40 x $0.69 measured), paid for by
+     *  Find moments moving from 10 a day to 60 a month (lib/find-moments-limit),
+     *  which saves $48 maxed. */
     postsPerMonth: 100,
     lifetimeMax: null as number | null,
-    collabsPerMonth: 100 as number | null,
-    // 120 -> 500 (2026-09-14). Under the two-plan structure Pro must be a
-    // superset of Amazon on EVERY cap, and Amazon now carries 400 thumbnails.
-    // At 120 a Pro customer had less than a third of the design allowance of the
-    // plan costing half as much, which is the same contradiction that made
-    // Studio unsellable next to Amazon. Pro still renders at HIGH quality
-    // ($0.19), so this is the cap the spend ceiling governs in practice.
-    thumbnailsPerMonth: 300 as number | null,
+    // Brand Deals collab emails: 100 -> 30 on 2026-10-05 (Seb, usage data:
+    // two members ever, none in 30 days). Pro members from before keep 100.
+    collabsPerMonth: 30 as number | null,
+    // Pro must be a superset of Amazon on EVERY cap under the two-plan
+    // structure. Pro renders at HIGH quality ($0.19 plus about $0.03 of
+    // art-director text), which makes this the costliest cap on the plan.
+    thumbnailsPerMonth: 200 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
     // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
     // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
     metadataGensPerMonth: 200 as number | null,
-    instagramAiThumbnailsPerMonth: 40 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null, // retired 2026-10-05 (lib/ig-ai-images)
     /** Deals draw from Pro's shared content pool (postsPerMonth: 100), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
@@ -529,9 +564,9 @@ export const TIERS = {
     // requires. Briefly 250/250/200 on 2026-09-14 before the usage data arrived:
     // measured amazon_pin is FIVE a user a month, so those were sized for
     // nobody and the headroom cost ceiling rather than buying goodwill.
-    pinsPerMonth: 200 as number | null,
-    igPostsPerMonth: 200 as number | null,
-    facebookPostsPerMonth: 150 as number | null,
+    pinsPerMonth: 145 as number | null,
+    igPostsPerMonth: 145 as number | null,
+    facebookPostsPerMonth: 0 as number | null, // Facebook reuses the thumbnail or Instagram design (2026-10-05)
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -540,17 +575,14 @@ export const TIERS = {
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
     assistantMessagesPerMonth: 800 as number | null,
-    /** Weekly cadence: 10k subs, 4 sends/mo. Lowered 8 → 4 (2026-06-14): at
-     *  10k subs, 8 sends = 80k Resend emails/mo (~$30) — a real cash cost that
-     *  sits OUTSIDE the AI-spend ceiling. 4 sends (weekly) is still generous
-     *  and roughly halves that bill. */
-    newsletterSubscribers: 10000 as number | null,
-    newsletterBroadcastsPerMonth: 4 as number | null,
-    /** Pro newsletter unlocks: Scheduling (inherited), A/B subject lines,
-     *  Segmented sends (segment-builder UI is a follow-up task). */
-    newsletterScheduling: true,
-    newsletterABTesting: true,
-    newsletterSegmentedSends: true,
+    /** Newsletter retired for members (lib/feature-flags NEWSLETTER_FOR_MEMBERS, zero sends ever), so Pro includes none.
+     *  With the switch back on: 10k subs, 4 sends/mo, Scheduling, A/B subject
+     *  lines and Segmented sends, as before. */
+    newsletterSubscribers: (NEWSLETTER_FOR_MEMBERS ? 10000 : 0) as number | null,
+    newsletterBroadcastsPerMonth: (NEWSLETTER_FOR_MEMBERS ? 4 : 0) as number | null,
+    newsletterScheduling: NEWSLETTER_FOR_MEMBERS,
+    newsletterABTesting: NEWSLETTER_FOR_MEMBERS,
+    newsletterSegmentedSends: NEWSLETTER_FOR_MEMBERS,
     scriptsPerMonth: 120 as number | null,
     articlesPerMonth: 15 as number | null,
     /** Pro content-type gates. */
@@ -754,7 +786,8 @@ export function allowedNewsletterSubscribers(
   opts?: { legacyCreatorNewsletter?: boolean },
 ): number | null {
   const t = normalizeTier(tier)
-  if (opts?.legacyCreatorNewsletter && t === 'creator') return 1000
+  // No grandfathered list while the member newsletter is retired.
+  if (NEWSLETTER_FOR_MEMBERS && opts?.legacyCreatorNewsletter && t === 'creator') return 1000
   return TIERS[t].newsletterSubscribers
 }
 
@@ -770,7 +803,7 @@ export function allowedNewsletterBroadcasts(
   opts?: { legacyCreatorNewsletter?: boolean },
 ): number | null {
   const t = normalizeTier(tier)
-  if (opts?.legacyCreatorNewsletter && t === 'creator') return 4
+  if (NEWSLETTER_FOR_MEMBERS && opts?.legacyCreatorNewsletter && t === 'creator') return 4
   return TIERS[t].newsletterBroadcastsPerMonth
 }
 
@@ -786,26 +819,58 @@ export function allowedGenerationsPerMonth(tier: Tier): number | null {
   return TIERS[normalizeTier(tier)].postsPerMonth
 }
 
-// ── Transitional post-cap step-down (2026-06-14) ───────────────────────────
-// Studio 60→45 and Pro 200→100. To roll the lower caps out "to everyone on
-// their next cycle" — NO mid-cycle cut-off, NO permanent grandfather — a user
-// keeps their OLD cap for any billing window that STARTED before this
-// timestamp; the new (lower) cap takes effect from their next window onward.
-// New signups get the new cap immediately (their first window starts after
-// this date). Self-expiring: once every pre-change window has rolled over
-// (~by 2026-07-31), delete PREV_POST_CAPS + this helper and inline
-// TIERS[tier].postsPerMonth at the two call sites.
-const POST_CAP_STEPDOWN_ISO = '2026-06-14T00:00:00.000Z'
-const PREV_POST_CAPS: Partial<Record<Tier, number>> = { studio: 60, pro: 200 }
+// ── Lowered caps land on the NEXT billing window, never mid-cycle ──────────
+//
+// The rule since the 2026-06-14 step-down: when a cap goes down, a member
+// keeps the old one for any billing window that STARTED before the change,
+// and the new one applies from their next window. New signups get the new cap
+// at once. No mid-cycle cut-off, and no permanent grandfathering either.
+//
+// The 2026-10-05 changes (Seb: price on a fully used plan) skipped that rule,
+// and a Pro member 54 generations into his month watched his cap drop from
+// 100 to 60 overnight. These are the values each lowered cap had before.
+// Seb, same day: Pro members from before the change keep the old caps for
+// good (LEGACY_PRO_COHORT below), so the Pro row here is permanent. The other
+// rows only matter until every window that began before CAP_STEPDOWN_ISO has
+// rolled over (by about 2026-11-06).
+export const CAP_STEPDOWN_ISO = '2026-10-06T00:00:00.000Z'
+export type SteppedCap =
+  | 'postsPerMonth' | 'thumbnailsPerMonth' | 'pinsPerMonth' | 'igPostsPerMonth'
+  | 'facebookPostsPerMonth' | 'assistantMessagesPerMonth' | 'collabsPerMonth' | 'xPostsPerMonth'
+const PREV_CAPS: Partial<Record<Tier, Partial<Record<SteppedCap, number>>>> = {
+  pro: { thumbnailsPerMonth: 300, pinsPerMonth: 200, igPostsPerMonth: 200, xPostsPerMonth: 100, collabsPerMonth: 100 },
+  amazon: { thumbnailsPerMonth: 250, pinsPerMonth: 150, igPostsPerMonth: 150, assistantMessagesPerMonth: 600, collabsPerMonth: 60 },
+}
 
-/** The generation cap in force for a billing window that began at
- *  windowStartISO: the previous (higher) cap if that window predates the
- *  2026-06-14 step-down, otherwise the current TIERS cap. */
-export function effectivePostCap(tier: Tier, windowStartISO: string): number | null {
+/** Pro members who were on Pro before the 2026-10-05 change keep these caps
+ *  for good (Seb, 2026-10-05). Migration 405 marks them in
+ *  integrations.limits_cohort. */
+export const LEGACY_PRO_COHORT = 'pro-before-2026-10-06'
+
+/** The cap in force for this member and this billing window. `current` is the
+ *  cap the caller would otherwise use (the TIERS value, or X_MONTHLY_CAP for
+ *  X). The older, higher cap applies when:
+ *    - the member is a Pro member from before the change (cohort), for good, or
+ *    - the billing window began before the change (anyone else, this window only).
+ *  `cohort` is integrations.limits_cohort; read the row with select('*') so a
+ *  database without migration 405 simply has none. Pure. */
+export function effectiveCap(
+  tier: Tier, key: SteppedCap, current: number | null,
+  windowStartISO: string | null | undefined, cohort?: string | null,
+): number | null {
+  if (current === null) return null
   const t = normalizeTier(tier)
-  const prev = PREV_POST_CAPS[t]
-  if (prev != null && windowStartISO < POST_CAP_STEPDOWN_ISO) return prev
-  return TIERS[t].postsPerMonth
+  const prev = PREV_CAPS[t]?.[key]
+  if (prev == null || prev <= current) return current
+  if (t === 'pro' && cohort === LEGACY_PRO_COHORT) return prev
+  if (windowStartISO && windowStartISO < CAP_STEPDOWN_ISO) return prev
+  return current
+}
+
+/** The generation cap in force (see effectiveCap). */
+export function effectivePostCap(tier: Tier, windowStartISO: string, cohort?: string | null): number | null {
+  const t = normalizeTier(tier)
+  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO, cohort)
 }
 
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
@@ -1027,7 +1092,7 @@ export async function checkUsageLimit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await supabase
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' so limits_cohort (migration 405) is read when present
     .eq('user_id', userId)
     .single()
 
@@ -1050,9 +1115,8 @@ export async function checkUsageLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // Transitional: users keep their pre-2026-06-14 cap until their current
-  // billing window rolls over (see effectivePostCap).
-  const monthlyCap = effectivePostCap(tier, startISO)
+  // Lowered caps: current Pro members keep theirs, others from next window.
+  const monthlyCap = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
 
   // The RPC's bigint params can't be null; null in our tier config means
   // "no cap" (admin). Coerce to a number bigger than any real monthly
@@ -1338,7 +1402,7 @@ export async function checkGenerationLimit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await supabase
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('*') // '*' so limits_cohort (migration 405) is read when present
     .eq('user_id', userId)
     .single()
   const tier = normalizeTier(ig?.tier)
@@ -1351,10 +1415,9 @@ export async function checkGenerationLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // Transitional: honor the user's pre-2026-06-14 cap until their current
-  // billing window rolls over (see effectivePostCap), so the lower caps land
-  // on the next cycle rather than mid-cycle.
-  const limit = effectivePostCap(tier, startISO)
+  // A lowered cap lands on the next billing window, never mid-cycle (see
+  // effectiveCap).
+  const limit = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
   // null = unlimited (admin only — handled above; this is a safety net).
   if (limit === null) return { allowed: true }
 

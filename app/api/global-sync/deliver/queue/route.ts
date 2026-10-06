@@ -7,7 +7,7 @@
 // the ASIN, per market not yet delivered.
 import { dailyRoomFor } from '@/lib/daily-uploads'
 import { NextResponse } from 'next/server'
-import { UPLOAD_MARKET } from '@/lib/markets'
+import { UPLOAD_MARKET, DUBS_ENABLED } from '@/lib/markets'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/global-sync'
@@ -203,7 +203,9 @@ export async function GET(req: Request) {
       // True exactly when this market wanted its own audio and is not getting
       // it. The one field a caller has to look at to avoid shipping a silent
       // language failure.
-      audioIsMasterFallback: !!r.dub && !r.video_url,
+      // With dubs off (lib/markets DUBS_ENABLED) a market ships the original
+      // audio, and is not held back waiting on a dub that never comes.
+      audioIsMasterFallback: DUBS_ENABLED && !!r.dub && !r.video_url,
     }
   })
 

@@ -3,6 +3,7 @@ import { landsOnAmazon } from '@/lib/amazon-destination'
 import { postProductAsin } from '@/lib/post-product-link'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
@@ -18,6 +19,7 @@ import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -25,9 +27,10 @@ const POST_CHAR_LIMIT = 300
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // Bluesky auto-publish is Creator+ (free for us to run, but gives Creator
     // a meaningful extra channel over Starter).
@@ -73,7 +76,7 @@ export async function POST(request: NextRequest) {
     const bsCap = evaluateSocialCap(bsSocialCount)
     if (!dryRun && bsCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Bluesky ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Bluesky ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'bluesky',
       }, { status: 429 })
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,9 +145,6 @@ export async function POST(request: NextRequest) {
         .replace(/<[^>]+>/g, '')
         .slice(0, 1200)
 
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single Bluesky post for this product review article.
 
-Style: a content creator's authentic short take. Strong hook, one clear value bullet, conversational. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic short take. Strong hook, one clear value bullet, conversational. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The post text BEFORE the URL is appended must be ${generationBudget} characters or fewer.
@@ -202,7 +202,8 @@ Return ONLY the post text.`,
 
     // Dry-run: return the generated text without publishing
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText })
+      // THE PREVIEW IS WHAT POSTS: services/bluesky discloses the text it sends.
+      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: discloseSocialPost(finalText, 'bluesky') })
     }
 
     // ── 5. Resolve thumbnail, login, post with a native link card ──────────
@@ -225,7 +226,7 @@ Return ONLY the post text.`,
     await supabase
       .from('blog_posts')
       .update({ bluesky_post_uri: result.uri })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     await incrementSocialCount(supabase, postId!, 'bluesky')
 
     return NextResponse.json({

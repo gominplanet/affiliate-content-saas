@@ -46,7 +46,7 @@ export const DEFAULT_VA_PERMISSIONS: VaPermissions = {
  *  invite form + the member-edit panel. Keep label under 30 chars. */
 export const VA_PERMISSION_META: Record<VaPermissionKey, { label: string; help: string }> = {
   generate_posts:     { label: 'Generate blog posts',     help: 'Can use the Content page and the blog generator.' },
-  publish_to_socials: { label: 'Publish to socials',      help: 'Can post to Facebook, Instagram, TikTok, Threads, Pinterest, X, Bluesky, Telegram.' },
+  publish_to_socials: { label: 'Publish to socials',      help: 'Can post and schedule through the accounts you connected (Facebook, Instagram, TikTok, Threads, Pinterest, X, LinkedIn, Bluesky, Telegram, YouTube), without your logins.' },
   manage_newsletter:  { label: 'Manage newsletter',       help: 'Can compose and send newsletter broadcasts. Off by default — you control the list.' },
   youtube_copilot:    { label: 'YouTube Co-Pilot',        help: 'Can generate YouTube titles, descriptions, tags, and thumbnails.' },
   manage_videos:      { label: 'Manage video library',    help: 'Can add, edit, and remove videos in the content library.' },

@@ -6,9 +6,10 @@
  * freshly minted Application Password in the URL.
  *
  * We:
- *   1. Verify the signed `state` proves this came from our /oauth-start
- *   2. Look up the MVP user_id from the state (not from the browser session,
- *      so even if the browser session lapses the connect still completes)
+ *   1. Consume the one-time `state` (lib/oauth-state): it must match the
+ *      httpOnly cookie our /oauth-start set in this browser
+ *   2. Take the MVP user_id from that cookie and require it to be the
+ *      signed-in session user
  *   3. Test the credentials by hitting wp-json/wp/v2/users/me
  *   4. Persist to integrations table
  *   5. Bounce back to the setup page with a success flag
@@ -16,7 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
-import { verifyState } from '@/lib/wp-oauth'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 import { maybeEncrypt } from '@/lib/secrets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -48,18 +49,22 @@ export async function GET(request: Request) {
     return NextResponse.redirect(url.toString(), { status: 302 })
   }
 
-  // ── Validate state first so we know which MVP user this is for, regardless
-  //    of cookie session state ─────────────────────────────────────────────
-  const state = verifyState(stateRaw)
+  // ── CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state) ──────────────────
+  //    The cookie is deleted whatever happens next, so this callback URL (which
+  //    carries a freshly minted Application Password) can never be replayed.
+  //    It tells us which MVP user started the flow and which site they typed.
+  const verified = await consumeOAuthState('wordpress', stateRaw, `${appUrl}/api/wordpress/oauth-callback`)
+  const startedSite = typeof verified?.data.siteUrl === 'string' ? verified.data.siteUrl : ''
+  const state = verified && startedSite ? { userId: verified.uid, siteUrl: startedSite } : null
   if (!state) {
     return setupUrl({
       wp_oauth: 'error',
-      wp_oauth_reason: 'Connection link expired. Please click Connect WordPress again.',
+      wp_oauth_reason: OAUTH_STATE_EXPIRED_MESSAGE,
     })
   }
 
   // ── Bind the credential save to the SESSION user ─────────────────────────
-  // The signed state only proves the call came from our /oauth-start; the
+  // The one-time state only proves the call came from our /oauth-start; the
   // user_id baked into it is whoever STARTED the flow, NOT whoever just
   // authorized on the WP site. Without this check, an attacker who runs
   // /oauth-start with their own session + siteUrl=evil.com (a WP they

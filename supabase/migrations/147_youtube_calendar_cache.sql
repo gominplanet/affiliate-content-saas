@@ -26,10 +26,12 @@ create table if not exists public.youtube_calendar_cache (
 alter table public.youtube_calendar_cache enable row level security;
 
 -- Users read / write only their own rows.
+drop policy if exists "youtube_calendar_cache: user read own" on public.youtube_calendar_cache;
 create policy "youtube_calendar_cache: user read own"
   on public.youtube_calendar_cache for select
   using (auth.uid() = user_id);
 
+drop policy if exists "youtube_calendar_cache: user write own" on public.youtube_calendar_cache;
 create policy "youtube_calendar_cache: user write own"
   on public.youtube_calendar_cache for all
   using (auth.uid() = user_id);

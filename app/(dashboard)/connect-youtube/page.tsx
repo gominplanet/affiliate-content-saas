@@ -64,10 +64,14 @@ export default function ConnectYouTubePage() {
         toast.error('Connecting more than one YouTube channel is a Pro feature.', {
           action: { label: 'Upgrade', onClick: () => { window.location.href = '/pricing' } },
         })
+      } else if (decoded === 'va_owner_connects') {
+        // A Virtual Assistant: Google sign-in would connect their own empty
+        // account, so it is stopped before Google and this says what works.
+        toast.error('You are signed in as a VA on someone else’s team, so Google sign-in would connect your own login instead of the account you work in. Use Connect it by link further down this page to add the channel, or ask the account owner to press Connect YouTube once from their login.', { duration: 14000 })
       } else if (decoded === 'same_channel') {
         // Not a failure — Google returned a channel they already had. Tell them
         // how to actually reach the other one.
-        toast('That’s the channel you already connected. To add a different one, sign in with the other Google account — or if it’s a Brand channel on the same login, switch your active YouTube channel at youtube.com first, then click “Connect another channel” again.', { duration: 12000 })
+        toast('That’s the channel you already connected. To add a different one, sign in with the other Google account, or if it’s a Brand channel on the same login, switch your active YouTube channel at youtube.com first, then click “Connect another channel” again.', { duration: 12000 })
         void load()
       } else {
         toast.error(`Couldn’t connect YouTube: ${decoded}`)
@@ -94,7 +98,7 @@ export default function ConnectYouTubePage() {
     <>
       <PageHero
         title="YouTube"
-        subtitle="The heart of MVP — connect once and we can pull your videos and drafts to turn any of them into a blog post. One click, sign in with Google, done. We figure out your channel automatically."
+        subtitle="The heart of MVP. Connect once and we can pull your videos and drafts to turn any of them into a blog post. One click, sign in with Google, done. We figure out your channel automatically."
       />
 
       <div className="max-w-2xl">

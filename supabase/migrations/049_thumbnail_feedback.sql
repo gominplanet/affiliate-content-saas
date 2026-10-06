@@ -44,10 +44,12 @@ create index if not exists thumb_feedback_user_style_idx on public.thumbnail_fee
 
 alter table public.thumbnail_feedback enable row level security;
 
+drop policy if exists "Users can read their own thumbnail feedback" on public.thumbnail_feedback;
 create policy "Users can read their own thumbnail feedback"
   on public.thumbnail_feedback for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert their own thumbnail feedback" on public.thumbnail_feedback;
 create policy "Users can insert their own thumbnail feedback"
   on public.thumbnail_feedback for insert
   with check (auth.uid() = user_id);

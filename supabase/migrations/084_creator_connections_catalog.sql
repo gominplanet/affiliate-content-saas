@@ -117,6 +117,7 @@ $$;
 grant execute on function public.search_creator_campaigns(text, numeric, integer, boolean, integer) to authenticated;
 
 alter table public.creator_connections_catalog enable row level security;
+drop policy if exists "Authenticated read" on public.creator_connections_catalog;
 create policy "Authenticated read" on public.creator_connections_catalog
   for select using (auth.uid() is not null);
 -- No INSERT/UPDATE/DELETE policies: those go through service-role only,

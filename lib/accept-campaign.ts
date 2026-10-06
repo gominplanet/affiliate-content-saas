@@ -84,7 +84,7 @@ export async function acceptCampaignViaScout(p: AcceptParams): Promise<boolean> 
     // Record it. Awaited, because MVP forgetting an accept it just performed is
     // how a joined campaign stops being findable on the page built to list them.
     await recordAccept(p)
-    toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
+    toast.success(res.already ? 'Already accepted. You’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
     return true
   } catch (e) {
     toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })

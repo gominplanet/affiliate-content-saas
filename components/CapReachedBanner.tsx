@@ -99,8 +99,8 @@ export function CapReachedBanner({ message, info, onDismiss, className = '' }: P
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] transition-colors"
             >
               <Sparkles size={11} /> Upgrade to {next.label}
-              {next.limit !== null && <span className="opacity-80">— {next.limit} / month</span>}
-              {next.limit === null && <span className="opacity-80">— unlimited</span>}
+              {next.limit !== null && <span className="opacity-80">: {next.limit} / month</span>}
+              {next.limit === null && <span className="opacity-80">: unlimited</span>}
             </Link>
           )}
           <Link

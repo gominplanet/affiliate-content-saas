@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
+import { YouTubeQuota } from '@/components/admin/YouTubeQuota'
 
 interface TierAgg { cost: number; calls: number; activeUsers: number }
 interface FeatureAgg { cost: number; calls: number }
@@ -56,6 +57,8 @@ export default function AdminCostsPage() {
   return (
     <>
       <PageHero title="AI Cost (admin)" subtitle="Real model spend from ai_usage telemetry. Pricing is approximate list pricing." />
+
+      <YouTubeQuota />
 
       <div className="flex items-center gap-2 mb-5">
         {[7, 30, 90].map(d => (
@@ -185,7 +188,7 @@ export default function AdminCostsPage() {
             </div>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3 leading-relaxed">
               <span className="font-semibold">Worst-case margin = Price − Ceiling.</span> Amber = under 40% (thin); red = negative.
-              This is AI-only — a tier&apos;s newsletter email volume (Resend) and fixed infra sit on top, so true margin is a few points lower,
+              This is AI-only: a tier&apos;s newsletter email volume (Resend) and fixed infra sit on top, so true margin is a few points lower,
               heaviest on Pro. If realized Cost/user is far below the ceiling, the cap is generous headroom; if it&apos;s near the ceiling, power users are the risk.
             </p>
           </div>

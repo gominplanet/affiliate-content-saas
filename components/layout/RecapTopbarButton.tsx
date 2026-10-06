@@ -29,7 +29,7 @@ export default function RecapTopbarButton() {
       className={`relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${fresh && !here ? 'text-white bg-[#7C3AED] motion-safe:animate-pulse' : ''}`}
       style={fresh && !here ? undefined : { color: 'var(--text-soft)' }}>
       <CalendarCheck size={14} />
-      <span className="hidden sm:inline">Week recap</span>
+      <span className="hidden 2xl:inline">Week recap</span>
       {fresh && !here && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#ff3b30] ring-2 ring-white dark:ring-black" aria-label="new" />}
     </Link>
   )

@@ -18,6 +18,7 @@
 // details for them.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const runtime = 'nodejs'
@@ -52,8 +53,11 @@ export async function POST(request: Request) {
 
     // Keepa's shared cache first: it is keyed by ASIN and carries the picture and
     // the price history that make one product distinguishable from another.
+    // Read with the service role: the cache has no member policy (288), so the
+    // member's own client got an empty list back and no error.
     try {
-      const { data } = await sb.from('keepa_product_cache')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (createAdminClient() as any).from('keepa_product_cache')
         .select('asin, image_url, price_now_cents, monthly_sold, empty').in('asin', asins)
       for (const k of (data ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; empty: boolean | null }>) {
         if (k.empty) continue

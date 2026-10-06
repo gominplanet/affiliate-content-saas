@@ -46,6 +46,8 @@ function detailsUrlFor(s: SavedCampaign): string {
 export default function SavedCampaignsPage() {
   const [items, setItems] = useState<SavedCampaign[] | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  // A list that did not load is not an empty shelf.
+  const [loadFailed, setLoadFailed] = useState(false)
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
   const [createFor, setCreateFor] = useState<SavedCampaign | null>(null)
   const [accepting, setAccepting] = useState<string | null>(null)
@@ -64,10 +66,14 @@ export default function SavedCampaignsPage() {
   }
 
   const load = useCallback(() => {
+    setLoadFailed(false)
     fetch('/api/campaigns/saved')
       .then((r) => r.json())
-      .then((d) => setItems(d?.ok && Array.isArray(d.saved) ? d.saved : []))
-      .catch(() => setItems([]))
+      .then((d) => {
+        if (!d?.ok || !Array.isArray(d.saved)) throw new Error('not a list')
+        setItems(d.saved)
+      })
+      .catch(() => { setLoadFailed(true); setItems([]) })
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -92,12 +98,17 @@ export default function SavedCampaignsPage() {
     <>
       <PageHero
         title="Saved Campaigns"
-        subtitle="Every campaign you've saved — from Creator Connections or MVP x Wayward. Revisit it, message the brand, or remove it for good."
+        subtitle="Every campaign you've saved, from Creator Connections or MVP x Wayward. Revisit it, message the brand, or remove it for good."
       />
 
       {items === null ? (
         <div className="flex items-center justify-center py-16 text-[var(--text-3)]">
           <Loader2 size={20} className="animate-spin" />
+        </div>
+      ) : loadFailed ? (
+        <div className="card p-8 max-w-md mx-auto flex flex-col items-center text-center gap-3">
+          <p className="text-sm font-semibold text-[var(--text)]">Your saved campaigns could not be loaded</p>
+          <button onClick={() => { setItems(null); load() }} className="btn-secondary text-xs">Try again</button>
         </div>
       ) : items.length === 0 ? (
         <div className="card p-8 max-w-md mx-auto flex flex-col items-center text-center gap-3">
@@ -106,7 +117,7 @@ export default function SavedCampaignsPage() {
           </div>
           <p className="text-sm font-semibold text-[var(--text)]">Nothing saved yet</p>
           <p className="text-xs text-[var(--text-3)] max-w-sm">
-            Hit <span className="font-semibold">Save</span> on any campaign in <span className="font-semibold">Campaigns picked for you</span> on your dashboard, or on the <span className="font-semibold">CC Campaigns</span> page, and it lands here.
+            Hit <span className="font-semibold">Save</span> on any campaign in <span className="font-semibold">Campaigns picked for you</span> on your dashboard, or on the <span className="font-semibold">Brand campaigns</span> page, and it lands here.
           </p>
         </div>
       ) : (
@@ -167,7 +178,7 @@ export default function SavedCampaignsPage() {
                     onClick={() => accept(s)}
                     disabled={accepting === s.id}
                     className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center disabled:opacity-50"
-                    title="Accept this campaign on Amazon via SCOUT — no tab-hopping"
+                    title="Accept this campaign on Amazon via SCOUT: no tab-hopping"
                   >
                     {accepting === s.id ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
                     {accepting === s.id ? 'Accepting via SCOUT…' : 'Accept campaign'}

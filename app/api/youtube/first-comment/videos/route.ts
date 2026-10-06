@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('first_comment', intg?.tier)) {
-    return NextResponse.json({ error: 'Pinned Comments are part of Pro.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Pinned comments are part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const url = new URL(req.url)
   const missing = url.searchParams.get('missing') === '1'
@@ -32,15 +32,28 @@ export async function GET(req: Request) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const { data: vids, error } = await sb.from('youtube_videos')
+  // READ IN PAGES. A request returns 1,000 rows at most whatever the limit
+  // says, so a channel with 2,500 videos showed 1,000, its counts were wrong,
+  // and "truncated" (set at 3,000) could never be true.
+  async function readAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string; code?: string } | null }>, cap: number) {
+    const rows: T[] = []
+    for (let from = 0; from < cap; from += 1000) {
+      const { data, error } = await build(from, Math.min(cap, from + 1000) - 1)
+      if (error) return { rows, error }
+      rows.push(...(data ?? []))
+      if ((data ?? []).length < 1000) break
+    }
+    return { rows, error: null }
+  }
+  const { rows: vids, error } = await readAll<{ youtube_video_id: string; title: string | null; description: string | null; thumbnail_url: string | null; published_at: string | null; view_count: number | null }>((from, to) => sb.from('youtube_videos')
     .select('youtube_video_id,title,description,thumbnail_url,published_at,view_count')
     .eq('user_id', user.id).not('youtube_video_id', 'is', null)
-    .order('published_at', { ascending: false, nullsFirst: false }).limit(SCAN)
+    .order('published_at', { ascending: false, nullsFirst: false }).order('id').range(from, to), SCAN)
   if (error) return NextResponse.json({ error: `Could not read your videos: ${error.message}` }, { status: 500 })
 
-  const { data: fcs, error: fErr } = await sb.from('video_first_comments')
+  const { rows: fcs, error: fErr } = await readAll<{ id: string; youtube_video_id: string; state: string; comment_id: string | null; pinned: boolean | null; pin_error: string | null; last_error: string | null; text: string; posted_at: string | null }>((from, to) => sb.from('video_first_comments')
     .select('id,youtube_video_id,state,comment_id,pinned,pin_error,last_error,text,posted_at')
-    .eq('user_id', user.id).limit(10000)
+    .eq('user_id', user.id).order('id').range(from, to), 20000)
   const missingTable = !!fErr && fErr.code === '42P01'
   const byVideo = new Map<string, { id: string; state: string; comment_id: string | null; pinned: boolean | null; pin_error: string | null; last_error: string | null; text: string; posted_at: string | null }>()
   for (const f of (fcs ?? [])) byVideo.set(f.youtube_video_id, f)
@@ -60,7 +73,8 @@ export async function GET(req: Request) {
       videos: withFc.length,
       pinned: withFc.filter((x) => x.fc?.state === 'posted' && x.fc.pinned === true).length,
       postedNotPinned: withFc.filter((x) => x.fc?.state === 'posted' && x.fc.pinned !== true).length,
-      waiting: withFc.filter((x) => x.fc?.state === 'waiting').length,
+      // Being posted counts with waiting: it is on its way, not missing.
+      waiting: withFc.filter((x) => x.fc?.state === 'waiting' || x.fc?.state === 'posting').length,
       none: withFc.filter((x) => !x.fc || x.fc.state === 'failed' || x.fc.state === 'cancelled').length,
     },
     truncated: (vids ?? []).length >= SCAN,

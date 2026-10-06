@@ -86,7 +86,7 @@ export default function WpUpdatePill() {
     if (seen === versionKey) return
     try { localStorage.setItem('mvp_seen_update_version', versionKey) } catch { /* ignore */ }
     toast('🚀 A new update is ready for your site', {
-      description: 'One click applies the latest theme + plugin in about 30 seconds — no wp-admin needed.',
+      description: 'One click applies the latest theme + plugin in about 30 seconds: no wp-admin needed.',
       duration: 12000,
       action: { label: 'Update now', onClick: () => { void runUpdate() } },
     })
@@ -105,7 +105,7 @@ export default function WpUpdatePill() {
         <button
           onClick={runUpdate}
           disabled={updating}
-          title={`A newer version of your site software is ready (${parts.join(' · ')}). Applies in ~30s — no wp-admin.`}
+          title={`A newer version of your site software is ready (${parts.join(' · ')}). Applies in ~30s: no wp-admin.`}
           className="group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:opacity-60"
           style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 4px 16px rgba(255,107,0,0.38)' }}
         >
@@ -116,7 +116,7 @@ export default function WpUpdatePill() {
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-70"></span>
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white"></span>
                 </span>
-                <ArrowUpCircle size={15} /> Update available — install now
+                <ArrowUpCircle size={15} /> Update available: install now
               </>}
         </button>
         <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{parts.join(' · ')}</span>

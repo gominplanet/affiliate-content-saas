@@ -12,9 +12,10 @@
  *
  * Tier: Pro-only.
  */
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -45,9 +46,10 @@ type ImageMode = 'image' | 'story' | 'both'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as {
@@ -148,7 +150,7 @@ export async function POST(request: NextRequest) {
     const igCap = evaluateSocialCap(igSocialCount)
     if (!dryRun && igCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Instagram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Instagram ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'instagram',
       }, { status: 429 })
@@ -193,12 +195,11 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brand = brandRow as any
-    const voiceNote = brand?.voice_summary ? `\n\nVoice guidance: ${brand.voice_summary}` : ''
     const learnBlock = creatorVoiceBlock(brand)
 
     const results: {
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest) {
             role: 'user',
             content: `Write an Instagram ${postTypeLabel} caption for this product review article.
 
-Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - TOTAL output (text + hashtags) must be under 2000 characters.
@@ -287,7 +288,10 @@ Return ONLY the caption text + hashtags.`,
       return NextResponse.json({
         ok: true,
         dryRun: true,
-        reelCaption: feedCaption ?? null, // legacy field name — UI reads this
+        // THE PREVIEW IS WHAT POSTS: services/instagram discloses every caption
+        // (#ad #sponsored first, hashtags capped at 30). Idempotent, so the
+        // edited copy coming back as `caption` is not tagged twice.
+        reelCaption: feedCaption ? discloseSocialPost(feedCaption, 'instagram') : null, // legacy field name, UI reads this
         affiliateUrl: (mode === 'story' || mode === 'both') ? affiliateUrl : null,
       })
     }
@@ -300,7 +304,7 @@ Return ONLY the caption text + hashtags.`,
     const pace = await checkInstagramPace(supabase, user.id)
     if (!pace.allowed) {
       return NextResponse.json({
-        error: pace.reason || 'Posting too fast — try again shortly.',
+        error: pace.reason || 'Posting too fast. Try again shortly.',
         paced: true,
         retryAfterMinutes: pace.retryAfterMinutes ?? null,
       }, { status: 429 })
@@ -310,7 +314,7 @@ Return ONLY the caption text + hashtags.`,
     try {
       const mediaCount = await getMediaCount({ userId: igUserId, accessToken: igToken })
       if (mediaCount != null && mediaCount < 10) {
-        results.warnings.push('Heads up: this Instagram account is still new (few posts). New accounts are more likely to be flagged for automated posting — post a few times manually first and keep API posts spaced out for the first couple of weeks.')
+        results.warnings.push('Heads up: this Instagram account is still new (few posts). New accounts are more likely to be flagged for automated posting, so post a few times manually first and keep API posts spaced out for the first couple of weeks.')
       }
     } catch { /* non-fatal */ }
 
@@ -324,7 +328,7 @@ Return ONLY the caption text + hashtags.`,
       if (cloudinaryConfigured() && effectiveVideoUrl) {
         const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, 'LINK IN BIO')
         if (overlaid?.url) effectiveVideoUrl = overlaid.url
-        else results.warnings.push('Could not burn the on-screen caption — posted the original video.')
+        else results.warnings.push('Could not burn the on-screen caption, so the original video was posted.')
       }
       if (m === 'reel' || m === 'both') {
         try {
@@ -339,7 +343,7 @@ Return ONLY the caption text + hashtags.`,
           results.reelId = reelId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId).eq('user_id', user.id)
           // Pulse: learn which tags this Reel used (best-effort, non-blocking).
           void recordReachSample({ userId: user.id, mediaId: reelId, caption: feedCaption ?? '' })
         } catch (err) {
@@ -357,7 +361,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -379,7 +383,7 @@ Return ONLY the caption text + hashtags.`,
           results.imagePostId = imagePostId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Image post publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -395,7 +399,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId).eq('user_id', user.id)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }

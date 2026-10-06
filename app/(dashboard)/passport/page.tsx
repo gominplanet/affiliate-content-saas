@@ -73,10 +73,22 @@ export default function PassportPage() {
   const [reloadKey, setReloadKey] = useState(0) // bump to refresh group counts
   const [setupOpen, setSetupOpen] = useState(false)
   const [canUse, setCanUse] = useState<boolean | null>(null)
+  // A check that failed is not a member without Passport. A timeout used to
+  // show a paying member the "paid feature" upsell.
+  const [accessError, setAccessError] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/passport').then((r) => r.json()).then((d) => setCanUse(d?.ok ? !!d.canUse : false)).catch(() => setCanUse(false))
+  const checkAccess = useCallback(() => {
+    setAccessError(false)
+    fetch('/api/passport')
+      .then((r) => r.json().then((d) => ({ status: r.status, d })))
+      .then(({ status, d }) => {
+        if (d?.ok) { setCanUse(!!d.canUse); return }
+        if (status === 401 || status === 403) { setCanUse(false); return }
+        setAccessError(true)
+      })
+      .catch(() => setAccessError(true))
   }, [])
+  useEffect(() => { checkAccess() }, [checkAccess])
 
   const load = useCallback(async (d: number, g: string) => {
     setLoading(true)
@@ -114,7 +126,15 @@ export default function PassportPage() {
     <>
       <PageHero title="Passport Links" subtitle="Where your clicks come from, which products drive them, and how your geo-routing links are performing across every country." />
 
-      {canUse === false ? (
+      {accessError ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links did not load</p>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--text-3)' }}>The server did not answer. Your links still work while this page is down.</p>
+          <button type="button" onClick={checkAccess} className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+            Try again
+          </button>
+        </div>
+      ) : canUse === false ? (
         <div className="card p-8 text-center">
           <Globe size={28} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links is a paid feature</p>

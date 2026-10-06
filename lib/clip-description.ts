@@ -39,7 +39,9 @@ export const CLIP_TEXT_LIMIT: Record<ClipPlatform, number> = { facebook: 2000, t
 export const CLIP_PLATFORM_RULES: Record<ClipPlatform, { label: string; linksClickable: boolean; linkNote: string; defaults: ClipInclude; bioLine: string }> = {
   facebook: {
     label: 'Facebook Reel', linksClickable: true,
-    linkNote: 'Links in a Reel description are clickable.',
+    // NOT "clickable", flatly: Facebook limits outside links on many Pages,
+    // and a Reel description past that limit shows its link as plain text.
+    linkNote: 'Facebook limits outside links on many Pages, so a link in a Reel description may not be tappable.',
     defaults: { productLink: true, bioCta: false, review: true, hashtags: true },
     bioLine: '🛒 The link is on my Page',
   },

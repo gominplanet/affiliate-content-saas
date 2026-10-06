@@ -36,10 +36,11 @@ check('On sale now and Amazon Live prep (out of Labs, September) are open to Pro
 {
   const SHELL = read('components/layout/DashboardShellV2.tsx')
   check('and the nav follows the same switch',
-    /href: '\/encore'[^\n]*label: 'Encore', gate: previewOpenToPro\('on_sale'\) \? isPro : isAdmin/.test(SHELL)
-    // Encore sits in Create, beside Co-Pilot, not in Labs.
-    && SHELL.indexOf("href: '/encore'") > SHELL.indexOf("label: 'Create'") && SHELL.indexOf("href: '/encore'") < SHELL.indexOf("label: 'Labs'")
-    && /href: '\/amazon-live'[^\n]*gate: previewOpenToPro\('amazon_live'\) \? isPro : isAdmin/.test(SHELL),
+    /href: '\/encore'[^\n]*label: 'On sale comments', gate: canUsePreview\('on_sale', effectiveTier\)/.test(SHELL)
+    // Encore (now "On sale comments", a tab of YouTube comments) sits in Make
+    // videos, beside Co-Pilot, not in Labs.
+    && SHELL.indexOf("href: '/encore'") > SHELL.indexOf("label: 'Make videos'") && SHELL.indexOf("href: '/encore'") < SHELL.indexOf("label: 'Labs'")
+    && /href: '\/amazon-live'[^\n]*gate: canUsePreview\('amazon_live', effectiveTier\)/.test(SHELL),
     'a nav gated on Pro shows a page whose routes refuse')
   for (const f of ['app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']) {
     check(`${f} is gated on the preview`, /canUsePreview\('on_sale'/.test(read(f)) && !/canSeeNav\('labs'/.test(read(f)))
@@ -420,9 +421,9 @@ await saleEndedGuards()
 }
 
 // ── the name: Encore, at /encore, and the old address still lands there ────
-check('Encore lives at /encore and /on-sale redirects to it',
+check('Encore (now On sale comments) lives at /encore and /on-sale redirects to it',
   /redirect\('\/encore'\)/.test(read('app/(dashboard)/on-sale/page.tsx'))
-  && /title="Encore"/.test(read('components/labs/OnSale.tsx'))
+  && /title="On sale comments"/.test(read('components/labs/OnSale.tsx'))
   && /href="\/encore"/.test(read('components/dashboard/PriceAlertsPanel.tsx')))
 check('no user-facing "On sale now" is left',
   !['components/labs/OnSale.tsx', 'components/usage/YourUsage.tsx', 'components/co-pilot/ComparisonProducts.tsx', 'app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']

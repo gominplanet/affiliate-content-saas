@@ -68,7 +68,7 @@ export default function SocialLinkModeModal({ open, onClose }: { open: boolean; 
           <button onClick={onClose} className="p-1 rounded-md" style={{ color: 'var(--text-faint)' }}><X size={18} /></button>
         </div>
         <p className="text-[12.5px] mb-4" style={{ color: 'var(--text-soft)' }}>
-          For each platform, choose whether to include your <b>affiliate link</b> and which <b>content link</b> to add — your blog post or your YouTube review video. Applies to publishing and scheduling. Instagram/TikTok/Pinterest aren&rsquo;t affected.
+          For each platform, choose whether to include your <b>affiliate link</b> and which <b>content link</b> to add: your blog post or your YouTube review video. Applies to publishing and scheduling. Instagram/TikTok/Pinterest aren&rsquo;t affected.
         </p>
 
         {loading ? (

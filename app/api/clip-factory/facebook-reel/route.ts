@@ -12,8 +12,10 @@
 //
 // LABS, admin only while it is tested (lib/labs-preview facebook_reels).
 
+import { cleanNicheGroup } from '@/lib/facebook-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
 import { canUsePreview } from '@/lib/labs-preview'
 import { metaEnabledForUser } from '@/lib/feature-flags'
@@ -25,10 +27,40 @@ import { buildReelCaption } from '@/lib/reel-caption'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+// GET: where a Reel can go. The Pages this account can post to (the one used
+// when none is picked comes first, marked default), and the Facebook Groups
+// saved in Brand Profile, which a Reel can be shared into with SCOUT after it
+// is up on the Page (Meta lets no app post into a Group).
+export async function GET() {
+  // A Virtual Assistant sees the owner's (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient(), 'view')
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const [{ data: intRow }, { data: rows }, { data: brand }] = await Promise.all([
+    sb.from('integrations').select('facebook_page_id,facebook_page_access_token,facebook_page_name,tier').eq('user_id', user.id).maybeSingle(),
+    sb.from('social_accounts').select('id,display_name,is_default').eq('user_id', user.id).eq('platform', 'facebook').order('is_default', { ascending: false }),
+    sb.from('brand_profiles').select('facebook_groups').eq('user_id', user.id).maybeSingle(),
+  ])
+  const integration = decryptIntegrationRow(intRow)
+  const [def] = await resolveSocialAccounts(supabase, user.id, 'facebook', {
+    socialAccountIds: [], allowSelection: false, limit: socialAccountCap(normalizeTier(integration?.tier)),
+    legacy: { externalId: integration?.facebook_page_id, accessToken: integration?.facebook_page_access_token, displayName: integration?.facebook_page_name },
+  })
+  const pages = ((rows ?? []) as Array<{ id: string; display_name: string | null; is_default: boolean }>).map((r) => ({ id: r.id, name: r.display_name || 'Facebook Page', isDefault: !!r.is_default }))
+  if (!pages.length && def) pages.push({ id: '', name: def.displayName || 'your Facebook Page', isDefault: true })
+  const groups = (Array.isArray(brand?.facebook_groups) ? brand.facebook_groups : [])
+    .filter((g: { url?: string }) => typeof g?.url === 'string' && /facebook\.com\/groups\//i.test(g.url))
+    .map((g: unknown) => cleanNicheGroup(g)).filter(Boolean)
+  return NextResponse.json({ pages, groups, defaultPage: def?.displayName ?? null })
+}
+
 export async function POST(req: Request) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+  const pub = await getPublishContext(await createServerClient())
+  if ('error' in pub) return pub.error
+  const { supabase, user } = pub
   if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
   const body = await req.json().catch(() => ({})) as {

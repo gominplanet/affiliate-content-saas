@@ -18,11 +18,30 @@
 
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
 import SiteSocialRouting from '@/components/social/SiteSocialRouting'
+import VaConnections, { type WhoAmI } from '@/components/agency/VaConnections'
 
 function ConnectSocialsInner() {
+  // A Virtual Assistant sees the owner's connections, read only: they post
+  // through them, and only the owner connects or disconnects (lib/agency-publish).
+  const [who, setWho] = useState<WhoAmI | null>(null)
+  useEffect(() => {
+    fetch('/api/agency/whoami', { cache: 'no-store' }).then((r) => r.json())
+      .then((d) => setWho({ isVa: !!d?.isVa, ownerEmail: d?.ownerEmail ?? null, canPublish: d?.canPublish !== false }))
+      .catch(() => setWho({ isVa: false, canPublish: true }))
+  }, [])
+  if (!who) return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
+  if (who.isVa) return (
+    <div className="max-w-2xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Connect Socials</h1>
+      </div>
+      <VaConnections who={who} />
+    </div>
+  )
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
@@ -31,7 +50,7 @@ function ConnectSocialsInner() {
         </h1>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
           Hook up YouTube, your video channels, and every social platform you publish to.
-          Connect once — fan-out posting works from anywhere in the app afterward.
+          Connect once: fan-out posting works from anywhere in the app afterward.
         </p>
       </div>
       {/* Same panel that lives at /setup?tab=integrations. Reused so OAuth

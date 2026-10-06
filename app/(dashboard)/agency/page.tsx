@@ -124,7 +124,7 @@ export default function AgencyPage() {
       const res = await fetch('/api/agency')
       if (!res.ok) {
         const body = await res.text().catch(() => '')
-        toast.error(`Could not load Virtual Assistants${body ? `: ${body.slice(0, 120)}` : ''}`)
+        toast.error(`Could not load your team${body ? `: ${body.slice(0, 120)}` : ''}`)
         return
       }
       const data = await res.json()
@@ -132,7 +132,7 @@ export default function AgencyPage() {
     } catch (err) {
       // Network blip / response.json() throws — without this catch the
       // page sat on the paywall card even on Pro because state stayed null.
-      toast.error(err instanceof Error ? err.message : 'Could not load Virtual Assistants')
+      toast.error(err instanceof Error ? err.message : 'Could not load your team')
     } finally {
       setLoading(false)
     }
@@ -159,7 +159,7 @@ export default function AgencyPage() {
           permissions,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         toast.error(data.error || 'Failed to send invite')
         return
@@ -168,6 +168,8 @@ export default function AgencyPage() {
       setEmail(''); setRole('member'); setNote('')
       setPermissions({ ...DEFAULT_VA_PERMISSIONS })
       void refresh()
+    } catch {
+      toast.error('Could not reach the server. The invite was not sent.')
     } finally {
       setInviting(false)
     }
@@ -180,8 +182,8 @@ export default function AgencyPage() {
       confirmLabel: 'Cancel invite',
       destructive: true,
     }))) return
-    const res = await fetch(`/api/agency/invites/${id}`, { method: 'DELETE' })
-    if (!res.ok) {
+    const res = await fetch(`/api/agency/invites/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) {
       toast.error('Failed to cancel invite')
       return
     }
@@ -191,13 +193,13 @@ export default function AgencyPage() {
 
   async function handleRevokeMember(id: string) {
     if (!(await confirm({
-      title: 'Revoke this Virtual Assistant?',
+      title: 'Remove this VA from your team?',
       description: 'The VA will lose access to your account immediately. Their account stays open but is no longer linked to your workspace.',
       confirmLabel: 'Revoke access',
       destructive: true,
     }))) return
-    const res = await fetch(`/api/agency/members/${id}`, { method: 'DELETE' })
-    if (!res.ok) {
+    const res = await fetch(`/api/agency/members/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) {
       toast.error('Failed to revoke access')
       return
     }
@@ -223,7 +225,7 @@ export default function AgencyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: memberDraftPerms }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         toast.error(data.error || 'Failed to update permissions')
         return
@@ -232,6 +234,8 @@ export default function AgencyPage() {
       setEditingMemberId(null)
       setMemberDraftPerms(null)
       void refresh()
+    } catch {
+      toast.error('Could not reach the server. Permissions were not changed.')
     } finally {
       setSavingMember(false)
     }
@@ -245,13 +249,13 @@ export default function AgencyPage() {
     return (
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
-        feature="Virtual Assistants"
+        feature="Team"
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, brand profile, integrations, API keys, or this settings page."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Newsletter access controlled per VA; other scopes recorded for each person',
+          'Social publishing controlled per VA; other scopes recorded for each person',
           'VAs work under your account (single subscription, multiple logins)',
-          'Revoke access instantly — no downtime',
+          'Revoke access instantly: no downtime',
           'Owner-only routes: billing, brand profile, integrations, WordPress, API keys',
         ]}
         requiredTier="pro"
@@ -273,11 +277,11 @@ export default function AgencyPage() {
     return (
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
-        feature="Virtual Assistants"
+        feature="Team"
         description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, integrations or API keys."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Newsletter access controlled per VA; other scopes recorded for each person',
+          'Social publishing controlled per VA; other scopes recorded for each person',
           'Revoke access instantly',
         ]}
         requiredTier="pro"
@@ -295,12 +299,13 @@ export default function AgencyPage() {
     <div className="max-w-3xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users size={22} /> Virtual Assistants
+          <Users size={22} /> Team
           <VirtualAssistantsGuide />
         </h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Invite VAs or contractors to work in your workspace. They get their own login on your
           single Pro subscription. <b>{seatsCopy}</b>.
+          <span className="block mt-1 text-[12px]">Formerly Virtual Assistants.</span>
         </p>
       </div>
 
@@ -321,8 +326,10 @@ export default function AgencyPage() {
           owner unticks "Publish to socials", believes their accounts are
           protected, and nothing changed. */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-100">
-        <b>What these permissions do today:</b> “Manage newsletter” is enforced now — a VA without
-        it cannot send or edit your list. The other five are recorded on the VA and shown here,
+        <b>What these permissions do today:</b> “Manage newsletter” and “Publish to socials” are enforced.
+        A VA with “Publish to socials” posts and schedules through the accounts you connected, without
+        ever needing your social logins; without it, they can see your queue but cannot post. Only you
+        can connect or disconnect an account. The other four are recorded on the VA and shown here,
         but are not yet enforced at every route, so treat them as your intent for a VA rather
         than a lock. Invite people you trust with the workspace, and revoke to remove access.
       </div>
@@ -330,7 +337,7 @@ export default function AgencyPage() {
       {/* Invite form */}
       <div className="border rounded-xl p-5 space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Invite a Virtual Assistant
+          Invite someone to your team
         </h2>
         <div className="space-y-3">
           <input
@@ -348,8 +355,8 @@ export default function AgencyPage() {
               disabled={!canInvite}
               className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50"
             >
-              <option value="member">Member — can use granted permissions</option>
-              <option value="admin">Admin — can also manage other VAs</option>
+              <option value="member">Member: can use granted permissions</option>
+              <option value="admin">Admin: can also manage other VAs</option>
             </select>
           </div>
           <textarea
@@ -416,7 +423,7 @@ export default function AgencyPage() {
         </h2>
         {state.members.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            No active VAs yet. Invite someone above — they'll appear here once they accept.
+            No active VAs yet. Invite someone above. They'll appear here once they accept.
           </p>
         ) : (
           <ul className="divide-y">

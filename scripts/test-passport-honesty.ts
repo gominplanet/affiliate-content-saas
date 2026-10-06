@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs'
 import { pickLinkStyleDetailed } from '../lib/link-style'
 import { join } from 'node:path'
 import { truncationNote, coverageNote } from '../lib/passport-analytics-labels'
+import { parseUserAgent } from '../lib/passport-links'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -134,6 +135,18 @@ const PAGE = readFileSync(join(root, 'app/(dashboard)/passport/page.tsx'), 'utf8
 }
 
 
+
+// A WordPress site fetching its own links (pingbacks) is not a reader. On one
+// account that was 5,000 of 7,173 "clicks" in a week.
+for (const ua of ['WordPress/7.1.2; https://gominreviews.com', 'Google', 'Google-Safety', 'node', 'Lightpanda/1.0',
+  'Mozilla/5.0 (compatible; SkyWatch/1.0; +https://github.com/skywatch-bsky/skywatch-automod)', 'Mozilla/4.0 (compatible; MSIE 4.01; Windows 95)']) {
+  check(`"${ua.slice(0, 30)}" counts as a bot`, parseUserAgent(ua).browser === 'Bot')
+}
+check('a real iPhone Safari is still a reader', parseUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1').browser === 'Safari')
+const PLUGIN = readFileSync('wp-plugin/mvpaffiliate-platform/mvpaffiliate-platform.php', 'utf8')
+check('the plugin stops WordPress pinging Passport and Amazon links', /add_action\('pre_ping'/.test(PLUGIN) && /mvpl\\\.ink/.test(PLUGIN) && /amazon\\\./.test(PLUGIN))
+const ANALYTICS = readFileSync('app/api/passport/analytics/route.ts', 'utf8')
+check('the Passport page reads every page of clicks, not the first 1,000', /const PAGE = 1000/.test(ANALYTICS) && /\.range\(from,/.test(ANALYTICS))
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)

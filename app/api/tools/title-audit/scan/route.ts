@@ -24,6 +24,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // Give the route headroom — 20 parallel Haiku calls usually finish in
@@ -65,6 +66,11 @@ export async function POST(request: Request) {
         { status: 403 },
       )
     }
+
+    // UP TO FIFTY PARALLEL MODEL CALLS A PRESS, and nothing stopped the next
+    // press: it answers to the plan's spend ceiling like every other paid route.
+    const spendBlocked = await spendGate(ownerId, tier)
+    if (spendBlocked) return spendBlocked
 
     const body = await request.json().catch(() => ({})) as {
       limit?: number

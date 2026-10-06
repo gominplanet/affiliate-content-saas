@@ -53,7 +53,7 @@ export default function GetFound404Upload({ onDone }: { onDone?: () => void }) {
         // right export instead of a vague "no URLs".
         const isSummary = /reason,\s*source,\s*validation,\s*pages/i.test(text) || /not indexed,\s*indexed,\s*impressions/i.test(text)
         toast.error(isSummary
-          ? "That's the summary export (just the counts). In Search Console, click the \"Not found (404)\" row to open the page list, THEN hit Export — that file has the URLs."
+          ? "That's the summary export (just the counts). In Search Console, click the \"Not found (404)\" row to open the page list, THEN hit Export. That file has the URLs."
           : 'No page URLs found in that file. Make sure you exported from inside the "Not found (404)" report.')
         setBusy(null); return
       }
@@ -112,7 +112,7 @@ export default function GetFound404Upload({ onDone }: { onDone?: () => void }) {
           <CheckCircle2 size={15} className="text-[#34c759] mt-0.5 flex-shrink-0" />
           <span>
             {result.fixed > 0
-              ? `Fixed ${result.fixed} of ${result.total} dead URLs — each now 301-redirects to the right live post. `
+              ? `Fixed ${result.fixed} of ${result.total} dead URLs: each now 301-redirects to the right live post. `
               : `Read ${result.total} URLs but couldn't confidently match them. `}
             {result.leftover > 0 && (
               <Link href="/tools/redirects" className="font-semibold text-[#7C3AED] hover:underline">Review the remaining {result.leftover} in Fix 404s →</Link>

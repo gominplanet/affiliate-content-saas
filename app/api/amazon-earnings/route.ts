@@ -8,6 +8,7 @@
 // pages depending on which store is selected, so the split has to stay visible.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { canUsePreview } from '@/lib/labs-preview'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,13 @@ export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+  // Earnings is in Labs (admin only): the page checked, the API did not.
+  {
+    const { data: tierRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    if (!canUsePreview('earnings', (tierRow as { tier?: string } | null)?.tier)) {
+      return NextResponse.json({ error: 'Earnings is not open on your plan yet.' }, { status: 403 })
+    }
+  }
 
   const url = new URL(request.url)
   const from = url.searchParams.get('from')

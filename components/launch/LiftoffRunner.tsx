@@ -20,7 +20,9 @@ import { requestStudioFinish, getScoutStatus, liftoffDone, liftoffAlive } from '
 import { deliverPreparedStorefronts } from '@/lib/storefront-delivery'
 import { liftoffStudioRequest, normalizeStudioOptions, storeStudioRun, type StoredStudioRun } from '@/lib/studio-finish'
 import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
-import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
+import { runStudioUploads } from '@/lib/studio-upload-client'
+import { postDueFirstCommentsViaScout } from '@/lib/first-comment-pins'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -44,10 +46,22 @@ export default function LiftoffRunner() {
     const alive = setInterval(() => { void liftoffAlive() }, 120_000)
     void (async () => {
       let more = false
+      let nextIn: number | undefined
       const sigs: string[] = []
       try {
         const st = await getScoutStatus()
         const studioPossible = st.installed && scoutAtLeast(st.version, SCOUT_STUDIO_MIN_VERSION)
+        // ── UPLOADS THROUGH YOUTUBE STUDIO FIRST (Labs, lib/studio-upload):
+        // the videos the server is leaving to SCOUT so they cost nothing from
+        // the shared YouTube quota. Each one then goes through the server's
+        // usual steps, and its Studio pass below, on the next round.
+        if (st.installed && scoutAtLeast(st.version, SCOUT_STUDIO_UPLOAD_MIN_VERSION)) {
+          const ups = await runStudioUploads({
+            background: true,
+            onProgress: (o) => say('starting' in o ? `Uploading through Studio: ${o.title}` : `  ${o.said}`),
+          })
+          if (ups.length > 0) more = true
+        }
         const r = await fetch('/api/launch/batches')
         const j = await r.json().catch(() => ({}))
         if (!r.ok) { clearInterval(alive); say(`Could not read your batches: ${j?.error || r.status}`); await liftoffDone(true, 'error'); return }
@@ -114,6 +128,24 @@ export default function LiftoffRunner() {
           const after = liftoffPending((a.items ?? []) as RunnerItem[], markets, pend)
           if (after.youtube + after.studio + after.amazon > 0) { more = true; sigs.push(after.signature) }
         }
+        // THE FIRST COMMENTS THAT ARE DUE ARE POSTED FROM HERE (through
+        // SCOUT, at no quota, from a tab behind this one), and SCOUT is asked
+        // back for the next one coming up. Pinning still waits for a page the
+        // creator has open, as below.
+        const workLeft = more
+        const fc = await postDueFirstCommentsViaScout(say)
+        if (fc.on) {
+          if (fc.posted || fc.failed) say(`Pinned comments: ${fc.posted} posted${fc.failed ? `, ${fc.failed} not` : ''}`)
+          // BACK WHEN THE NEXT ONE IS DUE, not on a timer: SCOUT wakes this
+          // tab two minutes after that comment's time (up to a day ahead).
+          if (fc.nextAt && Date.parse(fc.nextAt) - Date.now() < 24 * 3_600_000) {
+            more = true
+            const mins = Math.max(5, Math.ceil((Date.parse(fc.nextAt) - Date.now()) / 60_000) + 2)
+            // Other work left comes back in five minutes as always.
+            if (!workLeft) nextIn = mins
+            sigs.push(`fc:${fc.nextAt}`)
+          }
+        }
         // THE PINNED FIRST COMMENTS ARE NOT PINNED FROM HERE. SCOUT pins by
         // bringing a YouTube tab to the front for a few seconds, and doing
         // that from a hidden tab would pull the creator away from whatever
@@ -125,15 +157,15 @@ export default function LiftoffRunner() {
       }
       clearInterval(alive)
       say(more ? 'More to do later. SCOUT will look again.' : 'All done. Nothing left to send.')
-      await liftoffDone(more, sigs.join('#'))
+      await liftoffDone(more, sigs.join('#'), nextIn)
     })()
   }, [])
 
   return (
     <div className="max-w-xl p-6">
-      <h1 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Liftoff is finishing your batches</h1>
+      <h1 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Bulk Amazon upload is finishing your batches</h1>
       <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-2)' }}>
-        SCOUT opened this tab to finish the Studio steps and the Amazon uploads while the Liftoff page is closed.
+        SCOUT opened this tab to finish the Studio steps and the Amazon uploads while the Bulk Amazon upload page is closed.
         It closes itself when it is done. You can keep using Chrome.
       </p>
       <ul className="mt-3 flex flex-col gap-0.5 text-[12px] tabular-nums" style={{ color: 'var(--text)' }}>

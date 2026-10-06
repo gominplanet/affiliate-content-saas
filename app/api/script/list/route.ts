@@ -8,6 +8,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { plainReadError } from '@/lib/db-error'
 import { checkScriptUsage } from '@/lib/tier'
 
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(30)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: plainReadError('script.list', error) }, { status: 500 })
 
   // Piggyback usage so the page can render the meter (or the upsell, for
   // non-Pro tiers) on first paint without a second round-trip.

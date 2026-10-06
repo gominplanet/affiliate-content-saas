@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { NewsletterRetiredNotice, useNewsletterRetired } from '@/components/newsletter/NewsletterRetiredNotice'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -81,7 +82,17 @@ interface Draft {
   }
 }
 
+// The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS):
+// anyone but admin gets a short notice, and the tool below never mounts, so
+// none of its API calls are made.
 export default function NewsletterComposePage() {
+  const retired = useNewsletterRetired()
+  if (retired === 'loading') return null
+  if (retired) return <NewsletterRetiredNotice />
+  return <NewsletterComposeTool />
+}
+
+function NewsletterComposeTool() {
   const [posts, setPosts] = useState<PickablePost[]>([])
   const [postsLoading, setPostsLoading] = useState(true)
   const [pickedIds, setPickedIds] = useState<string[]>([])
@@ -418,7 +429,7 @@ export default function NewsletterComposePage() {
       sentResult.mode === 'scheduled'
         ? (
           <>
-            Queued for {new Date(sentResult.scheduledAt).toLocaleString()} —{' '}
+            Queued for {new Date(sentResult.scheduledAt).toLocaleString()}, sending to{' '}
             <strong>{sentResult.recipients}</strong> matching subscribers at fire-time. You'll see the
             broadcast row on /newsletter once it goes out.
           </>
@@ -434,7 +445,7 @@ export default function NewsletterComposePage() {
         : (
           <>
             Sent to <strong>{sentResult.sent}</strong> of <strong>{sentResult.recipients}</strong> subscribers
-            {sentResult.failed > 0 && <span className="text-[#ff9500]"> ({sentResult.failed} errored — check the dashboard for details)</span>}.
+            {sentResult.failed > 0 && <span className="text-[#ff9500]"> ({sentResult.failed} errored: check the dashboard for details)</span>}.
           </>
         )
     return (
@@ -592,13 +603,13 @@ export default function NewsletterComposePage() {
           {/* Personal message */}
           <div className="card p-5 mb-5">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. Anything to tell your readers? <span className="text-[#86868b] font-normal">(optional)</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">A short note that appears verbatim in the email — MVP will reference it naturally in the intro.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">A short note that appears verbatim in the email. MVP will reference it naturally in the intro.</p>
             <textarea
               value={personalMessage}
               onChange={(e) => setPersonalMessage(e.target.value)}
               maxLength={2000}
               rows={4}
-              placeholder='e.g. "Quick heads-up — the wireless earbuds I reviewed last month dropped to $39 yesterday. Grabbed a pair myself."'
+              placeholder='e.g. "Quick heads-up: the wireless earbuds I reviewed last month dropped to $39 yesterday. Grabbed a pair myself."'
               className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
             />
           </div>
@@ -606,7 +617,7 @@ export default function NewsletterComposePage() {
           {/* Curated links */}
           <div className="card p-5 mb-5">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. Curated links <span className="text-[#86868b] font-normal">(optional)</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">External picks you want to share — a tool, an article, a product not on your blog. Add the URL and a short "why I'm sharing this" note.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">External picks you want to share: a tool, an article, a product not on your blog. Add the URL and a short "why I'm sharing this" note.</p>
             <div className="flex flex-col gap-2">
               {curated.map((c, idx) => (
                 <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2">
@@ -941,7 +952,7 @@ export default function NewsletterComposePage() {
                         <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                           <strong className="text-[#7C3AED]">{segPreview.matching}</strong> of {segPreview.total} active subscribers will receive this
                           {segPreview.matching === 0 && (
-                            <span className="ml-2 text-[#ff3b30]">— send disabled</span>
+                            <span className="ml-2 text-[#ff3b30]">: send disabled</span>
                           )}
                         </span>
                       </>
@@ -1163,7 +1174,7 @@ ${p.blurb ? `<p style="margin:0 0 10px;font-size:14px;color:#3a3a3c;">${esc(p.bl
     `<div style="background:#f5f5f7;border-radius:12px;padding:20px 24px;margin:0 0 28px;">
        <p style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#7C3AED;">Worth your time this week</p>
        <ul style="margin:0;padding:0 0 0 18px;">
-         ${d.curatedLinks.map(l => `<li style="margin:0 0 14px;font-size:14px;color:#3a3a3c;"><a href="${esc(l.url)}" style="color:#7C3AED;text-decoration:none;font-weight:600;">${esc(l.label || l.url)}</a><span style="color:#6e6e73;"> — ${esc(l.blurb)}</span></li>`).join('')}
+         ${d.curatedLinks.map(l => `<li style="margin:0 0 14px;font-size:14px;color:#3a3a3c;"><a href="${esc(l.url)}" style="color:#7C3AED;text-decoration:none;font-weight:600;">${esc(l.label || l.url)}</a><span style="color:#6e6e73;">: ${esc(l.blurb)}</span></li>`).join('')}
        </ul>
      </div>`
   const personal = d.personalMessage?.trim()
@@ -1182,7 +1193,7 @@ ${linksHtml}
 <div style="border-top:1px solid #e5e5ea;padding-top:20px;margin-top:24px;text-align:center;">
 <p style="margin:0 0 8px;font-size:13px;color:#3a3a3c;">${esc(d.brand.name)}</p>
 ${d.brand.mailingAddress ? `<p style="margin:0 0 8px;font-size:12px;color:#86868b;">${esc(d.brand.mailingAddress)}</p>` : ''}
-<p style="margin:0;font-size:12px;color:#86868b;"><span style="text-decoration:underline;">Unsubscribe</span> (preview — real link inserted per subscriber at send)</p>
+<p style="margin:0;font-size:12px;color:#86868b;"><span style="text-decoration:underline;">Unsubscribe</span> (preview, real link inserted per subscriber at send)</p>
 </div>
 </div>
 </body></html>`

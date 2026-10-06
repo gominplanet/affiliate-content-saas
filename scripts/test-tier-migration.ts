@@ -7,9 +7,10 @@
 // legacy subscriber is "Creator is cheap, Amazon is the cheap one now, move
 // them across". It was nearly made in conversation, and it is catastrophic:
 //
-//   creator -> amazon  loses 12 caps, INCLUDING postsPerMonth 20 -> 0,
-//                      sites 1 -> 0, newsletter 500 -> 0, and the linkedin,
-//                      bluesky and threads networks
+//   creator -> amazon  loses 9 caps, INCLUDING postsPerMonth 20 -> 0,
+//                      sites 1 -> 0, and the linkedin, bluesky and threads
+//                      networks (the newsletter is retired for every member,
+//                      so it is 0 on both)
 //
 // A Creator subscriber is a BLOGGER. Amazon is blog-free and WordPress-free by
 // design (`sites: 0`), so moving one there does not downgrade them, it deletes

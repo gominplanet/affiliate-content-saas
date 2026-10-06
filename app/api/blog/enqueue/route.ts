@@ -22,6 +22,7 @@ import { enqueueGenerationJob } from '@/lib/generation-jobs'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { preflightWpPublish } from '@/lib/wp-preflight'
+import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,6 +77,25 @@ async function handleEnqueue(request: Request) {
   }
 
   const admin = createAdminClient()
+
+  // ── ONLY FROM A VIDEO THE PUBLIC CAN WATCH, ASKED BEFORE QUEUING ──────────
+  // The same rule and exception as /api/blog/generate (lib/video-public), so
+  // the answer comes back here with its code and go-live time. Asked only in
+  // the worker, a failed job carried the sentence alone, and the page showed
+  // a scheduled video as a red error with a Retry that could only fail again.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: vr } = await (admin as any).from('youtube_videos').select('youtube_video_id,published_at,title')
+      .eq('user_id', ownerId).eq('id', body.videoId).maybeSingle()
+    if (vr?.youtube_video_id) {
+      const [np] = await videosNotPublic([{ youtubeVideoId: String(vr.youtube_video_id), publishedAt: vr.published_at ?? null }])
+      const at = typeof body.scheduledFor === 'string' ? Date.parse(body.scheduledFor) : NaN
+      const afterVideo = !!np && np.reason === 'scheduled' && !!np.goesLiveAt && Number.isFinite(at) && at >= Date.parse(np.goesLiveAt)
+      if (np && !afterVideo) {
+        return NextResponse.json({ error: notPublicMessage(np, vr.title ?? null), code: 'video_not_public', goesLiveAt: np.goesLiveAt }, { status: 409 })
+      }
+    }
+  } catch { /* the worker asks again; this only makes the answer arrive sooner */ }
 
   // ── Queue-depth cap (anti-flood, task #256) ───────────────────────────────
   // Reject if this caller already has several jobs in flight so a loop can't

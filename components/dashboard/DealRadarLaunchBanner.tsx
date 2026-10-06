@@ -75,7 +75,7 @@ export default function DealRadarLaunchBanner() {
           </div>
           <p className="text-[16px] sm:text-[17px] font-bold text-white">3 big new features are live 🎯</p>
           <p className="text-[13px] mt-1 text-white/90">
-            <strong>Amazon Deal Radar</strong> finds real, price-verified deals in your niche — post them in one
+            <strong>Amazon Deal Radar</strong> finds real, price-verified deals in your niche. Post them in one
             click, auto-generate <strong>Instagram Stories</strong>, and send followers to your new shoppable{' '}
             <strong>Shop page</strong>. All on your plan, no extra cost.
           </p>

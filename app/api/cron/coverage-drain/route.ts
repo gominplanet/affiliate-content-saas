@@ -39,7 +39,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { marketByDomain, UPLOAD_MARKET, UPLOAD_ONLY_REASON } from '@/lib/markets'
+import { marketByDomain, UPLOAD_MARKET, UPLOAD_ONLY_REASON, DUBS_ENABLED } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
@@ -569,7 +569,7 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
         state: 'preparing',
         // Which voice it will ship with. One lane now, so every non-English
         // market gets ours, and an English one ships the master as it is.
-        voice: market?.needsTranslation ? 'standard' : 'none',
+        voice: DUBS_ENABLED && market?.needsTranslation ? 'standard' : 'none',
         reason: null,
         checked_at: now, updated_at: now,
         // THE REAL STOCK ANSWER, from the pass that actually asked. This used to
@@ -749,6 +749,28 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
 
   let dubbed = 0, blocked = 0, failed = 0
   const now = new Date().toISOString()
+
+  // DUBS ARE OFF (lib/markets DUBS_ENABLED). Nothing here makes one. A market
+  // that needs its own language is BLOCKED with the reason, in the pipeline's
+  // own words, and an English one is ready with the original audio. Nothing is
+  // left in 'preparing' waiting on a dub that will never come.
+  if (!DUBS_ENABLED) {
+    for (const c of rows) {
+      const mkt = marketByDomain(c.domain)
+      if (!mkt) continue
+      if (!mkt.needsTranslation) {
+        await sb.from('storefront_coverage').update({ state: 'ready', reason: null, updated_at: now }).eq('id', c.id)
+        continue
+      }
+      await sb.from('storefront_coverage').update({ state: 'blocked', reason: UPLOAD_ONLY_REASON.slice(0, 200), checked_at: now, updated_at: now }).eq('id', c.id)
+      await sb.from('global_sync_targets')
+        .update({ state: 'failed', detail: UPLOAD_ONLY_REASON.slice(0, 200), updated_at: now })
+        .eq('job_id', c.sync_job_id).eq('domain', c.domain).is('video_url', null).neq('state', 'delivered')
+      blocked++
+    }
+    return { dubbed: 0, blocked, failed: 0 }
+  }
+
   let budget = DUBS
 
   for (const c of rows) {

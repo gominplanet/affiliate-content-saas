@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadWithProgress, STALL_MS, FINISH_MS } from '@/lib/upload-progress'
+import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import ChannelCheck from '@/components/launch/ChannelCheck'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
@@ -30,9 +31,11 @@ import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/l
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, youtubePartDone, type CtaPreset, type StepStatus, type ItemRow, type StepId, LIFTOFF_AMAZON_MARKET } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
-import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
+import { runStudioUploads } from '@/lib/studio-upload-client'
+import { isStudioWaiting, DRAFT_REASON_PREFIX, STUDIO_DRAFT_SAVING } from '@/lib/studio-upload'
 import {
-  DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
+  DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioRunSettled, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
 } from '@/lib/studio-finish'
 import StepCard from './StepCard'
@@ -58,7 +61,8 @@ interface Item {
   /** This video's own face, or null to follow the batch (migration 371). */
   thumbnail_face?: { kind: string; faceId?: string } | null
   thumbnail_url: string | null
-  /** 'styled' (the batch look applied) or 'plain' (it did not). */
+  /** 'styled' (the batch look applied), 'plain' (it did not), 'saved' (the
+   *  product's earlier thumbnail was reused instead of rendering), 'creator'. */
   thumbnail_source: string | null
   /** The youtube_videos row this became, once it reached YouTube. The upload
    *  scope is built from these, so a batch can only ever deliver its own. */
@@ -99,7 +103,9 @@ interface Item {
   api_disclosures?: ReportItem['api_disclosures']
 }
 /** Files sent to storage side by side. */
-const UPLOAD_LANES = 3
+// Two at once: on a slow line three uploads split the same bandwidth three
+// ways and each one is likelier to stall.
+const UPLOAD_LANES = 2
 
 /** A video's own face, as stored (migration 371). Null follows the batch. */
 type FaceValue = { kind: string; faceId?: string }
@@ -193,8 +199,8 @@ function UploadLine({ u, now, faces, onFace }: {
   const line = u.state === 'waiting' ? 'Waiting for a free lane'
     : u.state === 'uploading'
       ? stalled
-        ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it starts again on its own.`
-        : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · try ${u.tries} of 3` : ''}`
+        ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it picks up again on its own, keeping what was sent.`
+        : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · picked up after ${u.tries - 1} drop${u.tries === 2 ? '' : 's'}, nothing lost` : ''}`
       : u.state === 'finishing'
         ? slowFinish
           ? `All sent ${finishingFor}s ago and storage has not confirmed yet. It keeps waiting up to ${FINISH_MS / 60_000} min.`
@@ -281,6 +287,8 @@ export default function LaunchBoard() {
   // read through that channel's login, since that is where the videos go.
   const [uploadChannel, setUploadChannel] = useState<string | null>(null)
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
+  // YouTube through SCOUT (Labs): SCOUT uploads in Studio, no YouTube API.
+  const [studioUpload, setStudioUpload] = useState(false)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
   // THE CREATOR'S SAVED FACES, for choosing one per video. A channel with two
@@ -391,12 +399,37 @@ export default function LaunchBoard() {
   // within the work window, and no run yet or one that timed out with tries
   // left. Opening an old batch no longer drives its public videos through
   // Studio again.
-  const studioDue = (i: Item) => liftoffPending(
+  // A draft SCOUT is about to save is not given a separate Studio pass first.
+  const isScoutDraft = (i: Item) => i.state === 'blocked' && !!i.youtube_video_id
+    && (String(i.reason || '').startsWith(DRAFT_REASON_PREFIX) || String(i.reason || '').startsWith(STUDIO_DRAFT_SAVING))
+  const studioDue = (i: Item) => !(studioUpload && isScoutDraft(i)) && liftoffPending(
     [{ ...i, studio_finish: liveRuns[i.id] ?? i.studio_finish }], [],
     { sendToYouTube: batch?.send_to_youtube !== false, studioPossible: scoutCanStudio },
   ).studio > 0
+  // ── UPLOADS THROUGH YOUTUBE STUDIO (Labs, lib/studio-upload) ────────────
+  // Videos the server left for SCOUT, so they cost nothing from the shared
+  // YouTube quota. They go before the Studio steps: SCOUT runs one Studio job
+  // at a time, and these are what the rest is waiting on.
+  const scoutCanUpload = scoutReady === true && scoutAtLeast(scoutVersion, SCOUT_STUDIO_UPLOAD_MIN_VERSION)
+  const uploadRunning = useRef(false)
+  const [uploadNote, setUploadNote] = useState<string | null>(null)
+  const uploadTick = useRef<() => boolean>(() => false)
+  uploadTick.current = () => {
+    if (!scoutCanUpload || !batch || uploadRunning.current || studioRunning.current || amazonRunning.current) return uploadRunning.current
+    if (batch.state !== 'launched' && batch.state !== 'launching') return false
+    if (!items.some((i) => (i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason)) || isScoutDraft(i))) return false
+    uploadRunning.current = true
+    void runStudioUploads({
+      background: true,
+      onProgress: (o) => setUploadNote('starting' in o ? `SCOUT is uploading “${o.title}” through YouTube Studio. Studio comes to the front once while SCOUT fills in every page and saves it, then you are brought back here and the file finishes behind.` : `${o.title}: ${o.said}`),
+    }).then((done) => {
+      if (done.length > 0 && batch) void load(batch.id, true)
+    }).finally(() => { uploadRunning.current = false; setTimeout(() => setUploadNote(null), 15_000) })
+    return true
+  }
   const studioTick = useRef<() => void>(() => {})
   studioTick.current = () => {
+    if (uploadTick.current()) return
     if (!scoutCanStudio || !batch || studioRunning.current || studioManual.current || amazonRunning.current) return
     if (Date.now() < studioBusyUntil.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
@@ -415,7 +448,7 @@ export default function LaunchBoard() {
   const amazonTick = useRef<() => void>(() => {})
   amazonTick.current = () => {
     // The Studio steps go first; Amazon waits for them to finish.
-    if (studioRunning.current || (scoutCanStudio && items.some((i) => studioDue(i) && !studioTried.current.has(i.id)))) return
+    if (uploadRunning.current || studioRunning.current || (scoutCanStudio && items.some((i) => studioDue(i) && !studioTried.current.has(i.id)))) return
     if (amazonAuto !== 'on' || scoutReady !== true || !batch || amazonRunning.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
     if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
@@ -621,6 +654,7 @@ export default function LaunchBoard() {
       setNotifyAvailable(j.notifyAvailable !== false)
       setPlaylistId(j.playlistId ?? null)
       if (j.studioOptions) setStudioOpts(j.studioOptions as StudioOptions)
+      setStudioUpload(j.studioUpload === true)
       setYtOptionsAvailable(j.youtubeOptionsAvailable !== false)
       setYoutubeChoiceAvailable(j.youtubeChoiceAvailable !== false)
       setFaceAvailable(j.faceAvailable !== false)
@@ -783,12 +817,16 @@ export default function LaunchBoard() {
         // goes public depends on it.
         body: JSON.stringify({ timezone: tz }),
       })
-      const j = await r.json()
+      // A timed-out reply is an HTML page, not JSON. It used to throw here and
+      // the button just came back with nothing said.
+      const j = await r.json().catch(() => ({}))
       if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start a batch.'); return }
       // A NEW BATCH IS A NEW PAGE, so it may point at step one.
       showBatch(j.id)
       await refreshBatches()
       await load(j.id)
+    } catch {
+      toast.error('Could not reach the server. Try again.')
     } finally { setBusy(null) }
   }
 
@@ -1001,9 +1039,14 @@ export default function LaunchBoard() {
 
   /** Every video on YouTube whose Studio steps have not all read back, one
    *  at a time, because each one takes over a Studio tab. */
+  // Videos on YouTube whose Studio steps have not been read back yet.
+  // A run that did a step a second way (Schedule refused, saved Private) is
+  // finished: offering it again only sends Studio to the front for nothing.
+  const studioLeft = items.filter((i) => !!i.youtube_video_id && !studioRunSettled(liveRuns[i.id] ?? i.studio_finish)).length
+
   async function finishAllInStudio() {
     if (studioRunning.current) return
-    const todo = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok)
+    const todo = items.filter((i) => !!i.youtube_video_id && !studioRunSettled(liveRuns[i.id] ?? i.studio_finish))
     let done = 0
     // The automatic pass stands aside while this runs, so the two never try
     // to start the same video.
@@ -1088,9 +1131,33 @@ export default function LaunchBoard() {
         durationSec = probed.duration
         const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
         path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        // RESUMABLE FIRST. The file goes in 6MB pieces, and a dropped or
+        // stalled connection picks up where it stopped instead of starting the
+        // whole file again (lib/upload-resumable). On a slow line a 288MB video
+        // used to restart from zero two or three times and still fail.
+        let resumed = false
+        try {
+          mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: 1, error: undefined })
+          await uploadResumable({
+            supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            getAccessToken: async () => (await supabase.auth.getSession()).data.session?.access_token ?? null,
+            bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
+            onProgress: ({ sent }) => mark(key, { state: 'uploading', sent, lastMoveAt: Date.now() }),
+            onResume: ({ resumes, reason }) => mark(key, { tries: resumes + 1, error: `Picked up where it stopped after: ${reason}` }),
+            onSent: () => mark(key, { state: 'finishing', sentAt: Date.now() }),
+          })
+          resumed = true
+        } catch (e) {
+          // Only a resumable upload that could not START falls back to the
+          // single upload below; one that failed partway has already used its
+          // pick-ups and says why.
+          if (!(e instanceof ResumableUnavailable)) throw e
+          path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        }
         // TWO RETRIES, each from a fresh session: a stalled connection does not
         // start moving again by being waited on.
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 3 && !resumed; attempt++) {
           const { data: { session } } = await supabase.auth.getSession()
           if (!session) throw new Error('Signed out during the upload. Sign in again and add this one again.')
           mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: attempt, error: undefined })
@@ -1251,6 +1318,11 @@ export default function LaunchBoard() {
         )
       }
       await load(batchId)
+    } catch {
+      // The request may still have reached the server, so this does not say
+      // it failed; the board is read again to show what actually happened.
+      toast.error('Lost the connection while launching. The board below shows what went out.', { duration: 14000 })
+      void load(batchId, true)
     } finally { setBusy(null) }
   }
 
@@ -1688,6 +1760,10 @@ export default function LaunchBoard() {
         current={!!step('thumbnail')?.current} open={open === 'thumbnail'} onToggle={() => toggle('thumbnail')}
         optional={stepIsOptional('thumbnail')}
       >
+        {/* YOUR OWN, WHERE THUMBNAILS ARE CHOSEN. The upload lived only on
+            each video's row in step 5, and the first place anyone looked for
+            it was here. */}
+        <OwnThumbnails items={items} onReload={async () => { if (batchId) await load(batchId) }} />
         <ThumbnailPicker
           value={batch.thumbnail}
           chosen={!!batch.thumbnail_chosen}
@@ -1709,7 +1785,7 @@ export default function LaunchBoard() {
             void patchBatch({ markets: cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d] })
           },
           disabled: busy === 'batch',
-          intro: 'Liftoff uploads to your US storefront only. Amazon\u2019s Global Storefront shows your US videos in the other countries\u2019 storefronts, so there is nothing to translate or dub.',
+          intro: 'Bulk Amazon upload sends to your US storefront only. Amazon\u2019s Global Storefront shows your US videos in the other countries\u2019 storefronts, so there is nothing to translate or dub.',
         })}
       </StepCard>}
 
@@ -1727,6 +1803,7 @@ export default function LaunchBoard() {
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
           {items.map((it, i) => (
             <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
+              onReload={async () => { if (batchId) await load(batchId) }}
               hideAmazon={!!batch.amazon_later && batch.markets.length === 0}
               onMove={moveItem} first={i === 0} last={i === items.length - 1}
               faces={faces} faceAvailable={faceAvailable} />
@@ -2052,7 +2129,7 @@ export default function LaunchBoard() {
         // `launched.scheduled`, a number captured from the launch reply and
         // never revisited, so it read "1 video scheduled" in green above a
         // board reading "Cannot go" for that same video.
-        const out = launchOutcome(items as unknown as ItemRow[])
+        const out = launchOutcome(items as unknown as ItemRow[], { studioUpload })
         // THE TIMES COME FROM THE ROWS TOO when this is a reload rather than a
         // press, for the same reason the counts do.
         const live = items
@@ -2119,12 +2196,22 @@ export default function LaunchBoard() {
               account from this tab, and the heading now says so. */}
           <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
             {youtubeOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
-              <p className="text-[11.5px] mt-1" style={muted}>
-                Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
-                and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
-                the ad rating, the end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
-              </p>
+              {studioUpload ? (<>
+                <p className="text-[12px] font-semibold" style={text}>YouTube: SCOUT uploads in Studio, no API</p>
+                <p className="text-[11.5px] mt-1" style={muted}>
+                  SCOUT uploads each video through YouTube Studio in your Chrome, signed in as you (Studio comes to the front once per video while SCOUT fills it in, then you are put back): the file, title, description,
+                  tags, thumbnail and playlist, paid promotion and AI use, then schedules it for the time you picked. Nothing goes
+                  through YouTube&apos;s API except one quick check that paid promotion and the time stuck. The pinned comment is posted
+                  by SCOUT too. Keep Chrome open with SCOUT; with this page closed it carries on in a pinned background tab (below).
+                </p>
+              </>) : (<>
+                <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
+                <p className="text-[11.5px] mt-1" style={muted}>
+                  Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
+                  and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
+                  the ad rating, the end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
+                </p>
+              </>)}
             </div>}
             {amazonOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while Chrome is open</p>
@@ -2161,16 +2248,18 @@ export default function LaunchBoard() {
                 <span className="block text-[11.5px]" style={
                   bgPref && bgState && (bgState.ok === false || !bgState.hasAlarms || bgState.lastRun === 'signed-out' || bgState.lastRun === 'timed-out') ? { color: '#d97706' } : muted}>
                   {!bgPref
-                    ? 'Off: the Studio steps and Amazon uploads only run while this page is open.'
+                    ? (studioUpload ? 'Off: SCOUT only uploads to YouTube, and to Amazon, while this page is open.' : 'Off: the Studio steps and Amazon uploads only run while this page is open.')
                     : bgState?.error === 'bad-origin'
-                      ? 'SCOUT only keeps Liftoff going from mvpaffiliate.io. Open Liftoff there for this to work.'
+                      ? 'SCOUT only keeps Bulk Amazon upload going from mvpaffiliate.io. Open Bulk Amazon upload there for this to work.'
                     : bgState?.error === 'no-reply'
                       ? 'SCOUT did not answer, so nothing will run with this page closed. Update SCOUT to the latest version, then reload this page.'
                     : bgState && !bgState.hasAlarms
                       ? 'Your SCOUT is too old for this. Update SCOUT to the latest version, then reload this page.'
                       : bgState?.lastRun === 'signed-out'
                         ? 'The last background run found you signed out of MVP in this browser, so it could not do anything. Stay signed in and it carries on.'
-                        : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
+                        : studioUpload
+                          ? 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Bulk Amazon upload in a pinned background tab to upload your videos through Studio, post their comments and send them to Amazon, then closes it.'
+                          : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Bulk Amazon upload in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
                   {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${({ 'all-done': 'all done', waiting: 'more to do', 'timed-out': 'stopped answering, closed', 'tab-closed': 'its tab was closed', 'could-not-open': 'could not open a tab', 'signed-out': 'signed out', opened: 'running now', armed: 'waiting to start' } as Record<string, string>)[bgState.lastRun ?? ''] ?? bgState.lastRun})` : ''}
                 </span>
               </span>
@@ -2228,7 +2317,9 @@ export default function LaunchBoard() {
               // ONLY HELD VIDEOS LEFT, and nothing else is coming: said as a
               // thing to do, without a spinner over work that will not happen.
               <p className="text-[12.5px]" style={{ color: '#d97706' }}>
-                {yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private because YouTube has not confirmed paid promotion. Tick Paid promotion in YouTube Studio (or run Studio again from the row below); MVP schedules {yt.held === 1 ? 'it' : 'them'} within ten minutes, and Amazon opens then.
+                {yt.heldForQuota === yt.held
+                  ? <>{yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private for now: YouTube&apos;s daily API allowance is used up, so MVP could not check paid promotion. Each row below says whether SCOUT read it back in Studio. MVP asks again after midnight Pacific and schedules {yt.held === 1 ? 'it' : 'them'} then; Amazon opens after that.</>
+                  : <>{yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private because YouTube has not confirmed paid promotion. Tick Paid promotion in YouTube Studio (or run Studio again from the row below); MVP schedules {yt.held === 1 ? 'it' : 'them'} within ten minutes, and Amazon opens then.</>}
               </p>
             ) : (<>
               {!yt.done && (
@@ -2360,14 +2451,27 @@ export default function LaunchBoard() {
             <h2 className="text-[13px] font-semibold" style={text}>Where each video is</h2>
             {/* ONE AT A TIME, ON PURPOSE. Each run takes over a Studio tab for
                 a minute or two, and two at once would fight over it. */}
-            {scoutCanStudio && items.some((i) => !!i.youtube_video_id) && (
+            {/* Only when there is something left to do: a video on YouTube
+                whose Studio steps (paid promotion, AI use, monetization, ad
+                rating, end screen) have not been read back yet. The automatic
+                pass does these by itself; this is "do them now". */}
+            {scoutCanStudio && studioLeft > 0 && (
               <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy || amazonBusy}
+                title="SCOUT opens YouTube Studio and sets what YouTube's API cannot: paid promotion, AI use, monetization, the ad rating and the end screen. It also runs by itself as each video reaches YouTube."
                 className="text-[12px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-50"
                 style={{ background: '#0EA5A4' }}>
-                {studioBusy ? 'SCOUT is in Studio…' : 'Finish all in Studio'}
+                {studioBusy ? 'SCOUT is in Studio…' : `Finish ${studioLeft === 1 ? 'the last one' : `${studioLeft} videos`} in Studio now`}
               </button>
             )}
           </div>
+          {uploadNote && (
+            <p className="text-[12px] mb-2 rounded-lg px-3 py-2" style={{ background: 'var(--surface-2, rgba(14,165,164,0.08))', color: 'var(--text)' }}>{uploadNote}</p>
+          )}
+          {!scoutCanUpload && items.some((i) => i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason)) && (
+            <p className="text-[12px] mb-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,149,0,0.10)', color: 'var(--text)' }}>
+              These videos upload through YouTube Studio with SCOUT, and {scoutReady === true ? `your SCOUT is ${scoutVersion ?? 'an older version'}. They need SCOUT ${SCOUT_STUDIO_UPLOAD_MIN_VERSION} or later` : 'SCOUT is not answering in this Chrome'}, so nothing is uploading yet.
+            </p>
+          )}
           <ul className="flex flex-col gap-1.5">
             {items.map((it) => (
               <li key={it.id} className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
@@ -2386,6 +2490,9 @@ export default function LaunchBoard() {
                         way looked identical to one built the right way. */}
                     {it.thumbnail_source === 'plain' && (
                       <> · <span style={{ color: '#d97706' }}>plain look</span></>
+                    )}
+                    {it.thumbnail_source === 'saved' && (
+                      <> · <span style={{ color: '#d97706' }}>reused your earlier thumbnail</span></>
                     )}
                     {/* WHOSE TITLE THIS IS. A file name and a written title
                         look the same on a row, and one of them went to
@@ -2491,7 +2598,7 @@ export default function LaunchBoard() {
                     const asResult = { ok: run.ok, steps: run.steps, error: run.error ?? undefined, path: run.path ?? undefined }
                     return (
                       <details className="mt-0.5">
-                        <summary className="text-[11.5px] cursor-pointer select-none" style={{ color: run.ok ? '#10B981' : '#d97706' }}>
+                        <summary className="text-[11.5px] cursor-pointer select-none" style={{ color: studioRunSettled(run) ? '#10B981' : '#d97706' }}>
                           {studioRunHeadline(asResult)}
                         </summary>
                         <ul className="mt-1 flex flex-col gap-0.5 pl-1">
@@ -2603,9 +2710,148 @@ function progressNote(it: Item): string {
   return attempt
 }
 
+/**
+ * Step 3's "use your own": every video in the batch with its own upload, so a
+ * creator who made their thumbnails elsewhere brings them in here, where
+ * thumbnails are chosen. Videos given one skip the look below; the rest still
+ * get it.
+ */
+function OwnThumbnails({ items, onReload }: { items: Item[]; onReload: () => Promise<void> }) {
+  const ownCount = items.filter((i) => i.thumbnail_source === 'creator').length
+  const [show, setShow] = useState(ownCount > 0)
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Have your own thumbnails?</p>
+          <p className="text-[11.5px]" style={muted}>
+            {ownCount > 0
+              ? `${ownCount} of ${items.length} ${items.length === 1 ? 'video uses' : 'videos use'} your own. The rest get the look below.`
+              : 'Upload one for any video. Those skip the look below and go to YouTube and Amazon exactly as you made them.'}
+          </p>
+        </div>
+        <button type="button" onClick={() => setShow((v) => !v)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white shrink-0"
+          style={{ background: '#0EA5A4' }}>
+          <Upload size={12} /> {show ? 'Hide' : 'Use my own thumbnails'}
+        </button>
+      </div>
+      {show && (
+        <div className="mt-3 flex flex-col gap-3">
+          {items.length === 0
+            ? <p className="text-[12px]" style={muted}>Add your videos first (step 1), then give each one its thumbnail here.</p>
+            : items.map((it) => (
+              <div key={it.id} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <p className="text-[12px] font-medium truncate mb-1.5" style={{ color: 'var(--text)' }}>
+                  {it.position + 1}. {it.title || 'Untitled video'}
+                </p>
+                <ItemThumbnail item={it} onReload={onReload} bare />
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A video's thumbnail, and the creator's own instead of MVP's. Their own goes
+ * to YouTube and Amazon exactly as uploaded (made a JPEG under YouTube's 2MB),
+ * and nothing MVP does later builds over it. Once the video is on YouTube its
+ * thumbnail is YouTube's, changed in Studio.
+ */
+function ItemThumbnail({ item, onReload, bare = false }: { item: Item; onReload: () => Promise<void>; bare?: boolean }) {
+  const [working, setWorking] = useState<'up' | 'back' | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const own = item.thumbnail_source === 'creator'
+  const onYouTube = !!String(item.youtube_video_id || '').trim()
+  const lab = { color: 'var(--text-2)', fontSize: 11, fontWeight: 600 } as const
+
+  async function upload(file: File) {
+    setErr(null); setWorking('up')
+    try {
+      // UNDER THE UPLOAD LIMIT FIRST. The server takes about 4MB a request, so
+      // a big image is made a 1920-wide JPEG here before it is sent.
+      let send: Blob = file
+      if (file.size > 3.5 * 1024 * 1024) {
+        try {
+          const bmp = await createImageBitmap(file)
+          const w = Math.min(1920, bmp.width), h = Math.round(bmp.height * (w / bmp.width))
+          const c = document.createElement('canvas'); c.width = w; c.height = h
+          c.getContext('2d')?.drawImage(bmp, 0, 0, w, h)
+          const b = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', 0.9))
+          if (b) send = b
+        } catch { /* sent as it is; the server says if it is too big */ }
+      }
+      if (send.size > 4 * 1024 * 1024) { setErr('That image is too large to upload. Use one under 4MB.'); return }
+      const fd = new FormData()
+      fd.append('file', send, send === file ? file.name : 'thumbnail.jpg')
+      const r = await fetch(`/api/launch/items/${item.id}/thumbnail`, { method: 'POST', body: fd, signal: AbortSignal.timeout(90_000) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j?.error || `It could not be uploaded (${r.status}).`); return }
+      toast.success('Your thumbnail is on this video.')
+      await onReload()
+    } catch {
+      setErr('The upload did not finish. Try again.')
+    } finally { setWorking(null) }
+  }
+  async function backToMvp() {
+    setErr(null); setWorking('back')
+    try {
+      const r = await fetch(`/api/launch/items/${item.id}/thumbnail`, { method: 'DELETE', signal: AbortSignal.timeout(30_000) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j?.error || 'That did not work.'); return }
+      toast.success('MVP builds this thumbnail again.')
+      await onReload()
+    } catch { setErr('That did not finish. Try again.') } finally { setWorking(null) }
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      {!bare && <span className="w-5" />}
+      <div className="flex-1 min-w-0">
+        {!bare && <span className="block mb-1" style={lab}>Thumbnail</span>}
+        <div className="flex items-center gap-3 flex-wrap">
+          {item.thumbnail_url
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={item.thumbnail_url} alt="" className="h-14 w-auto rounded border" style={{ borderColor: 'var(--border)' }} />
+            : <span className="text-[11.5px]" style={muted}>MVP builds one while it prepares the video.</span>}
+          {!onYouTube && (
+            <span className="flex items-center gap-2">
+              <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f) }} />
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={!!working}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11.5px] disabled:opacity-40"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {working === 'up' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                {own ? 'Use a different one' : 'Use my own'}
+              </button>
+              {own && (
+                <button type="button" onClick={() => void backToMvp()} disabled={!!working}
+                  className="text-[11.5px] underline disabled:opacity-40" style={muted}>
+                  {working === 'back' ? 'Switching…' : 'Let MVP build it instead'}
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+        <span className="block text-[11px] mt-1" style={muted}>
+          {onYouTube ? 'This video is on YouTube, so change its thumbnail in YouTube Studio.'
+            : own ? 'Your own thumbnail. It goes to YouTube and Amazon as you uploaded it, and MVP never builds over it.'
+            : 'JPG or PNG, at least 640 wide (1280 by 720 is best). It goes to YouTube and Amazon as you upload it.'}
+        </span>
+        {err && <span className="block text-[11.5px] mt-1" style={{ color: '#dc2626' }}>{err}</span>}
+      </div>
+    </div>
+  )
+}
+
 function ItemRowEditor({
-  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false,
+  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false, onReload,
 }: {
+  /** Read the batch again (after this row's own thumbnail changed). */
+  onReload: () => Promise<void>
   /** Liftoff part 1: nothing about Amazon on the row. */
   hideAmazon?: boolean
   item: Item
@@ -2861,6 +3107,9 @@ function ItemRowEditor({
         </label>
       </div>}
 
+      {/* ── this video's thumbnail: MVP's, or the creator's own ──────────── */}
+      <ItemThumbnail item={item} onReload={onReload} />
+
       {/* ── this video's own face ─────────────────────────────────────────── */}
       {faceAvailable && (
         <div className="flex items-start gap-2">
@@ -2885,7 +3134,9 @@ function ItemRowEditor({
               })}
             </div>
             <span className="block text-[11px] mt-1" style={muted}>
-              {item.thumbnail_url && !faceLocked
+              {item.thumbnail_source === 'creator'
+                ? 'This video uses your own thumbnail, so the face here is not used.'
+                : item.thumbnail_url && !faceLocked
                 ? 'Changing it builds this video\'s thumbnails again with the new face.'
                 : 'Only this video. The rest keep the batch\'s face.'}
             </span>

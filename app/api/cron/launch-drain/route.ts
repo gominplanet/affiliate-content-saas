@@ -24,6 +24,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
+import { recallProductImage } from '@/lib/product-image-memory'
+import { reuseLabel } from '@/lib/product-image-label'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
 import { ctaStickerAllowed, ctaTopLeft, type CtaPreset, liftoffMarkets } from '@/lib/launch-batch'
@@ -35,6 +37,7 @@ import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
 import { canUsePreview } from '@/lib/labs-preview'
+import { usesStudioUpload, STUDIO_UPLOAD_WAITING, isStudioRunning, isStudioWaiting, studioDid, scheduleHeld, scoutSawPaidPromotion, type StudioDid } from '@/lib/studio-upload'
 import { queueFirstComment } from '@/lib/first-comment-queue'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
@@ -42,7 +45,7 @@ import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
-import { missedWhen, releaseHeld, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
+import { missedWhen, releaseHeld, heldCheckDue, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -73,6 +76,10 @@ const IMAGES = 6
 const THUMB_POOL = 3
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
+/** A video bigger than this goes to YouTube in pieces across runs. */
+const PIECES_FROM = 100 * 1024 * 1024
+/** One piece: a multiple of 256 KiB, as YouTube requires for all but the last. */
+const PIECE = 32 * 1024 * 1024
 /** Tries for the thumbnail step, which is TWO images and so needs its own
  *  budget. Three each: sharing one budget of three across both would leave a
  *  video that spent two firings succeeding with a single retry left. */
@@ -331,6 +338,22 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
   let budget = IMAGES
   const now = () => new Date().toISOString()
 
+  // AMAZON-ONLY BATCHES WRITE NO YOUTUBE TEXT. The description is where the
+  // YouTube affiliate link goes; a batch that never reaches YouTube does not
+  // need one, and asking Co-Pilot for it spent a run per video (and on the
+  // Amazon plan, before 2026-10-05, was refused every time and retried until
+  // it gave up). Read once per batch; a database without the column is a
+  // batch that goes to YouTube, as before.
+  const amazonOnlyByBatch = new Map<string, boolean>()
+  const isAmazonOnly = async (batchId: string): Promise<boolean> => {
+    const cached = amazonOnlyByBatch.get(batchId)
+    if (cached !== undefined) return cached
+    const { data: b, error: bErr } = await sb.from('launch_batches').select('send_to_youtube').eq('id', batchId).maybeSingle()
+    const only = !bErr && b?.send_to_youtube === false
+    amazonOnlyByBatch.set(batchId, only)
+    return only
+  }
+
   // The batch's chosen look, read once per batch rather than once per video.
   const presetByBatch = new Map<string, ThumbnailPreset>()
   const loadPreset = async (batchId: string): Promise<ThumbnailPreset> => {
@@ -413,7 +436,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // only into a row that still has no description, and the title only while
     // the creator has not typed one, so nothing they wrote during this firing
     // is replaced by it.
-    let haveDescription = !!String(it.description || '').trim()
+    let haveDescription = !!String(it.description || '').trim() || await isAmazonOnly(String(it.batch_id))
     let metaTried = false
     // The YouTube title, as a hint for the Amazon title writer. `title` stays
     // the hook the thumbnail is built from.
@@ -528,6 +551,9 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       if (own) preset = { ...batchPreset, face: own }
     }
     let usedPlain = false
+    // A thumbnail reused from the product's memory rather than rendered now.
+    let usedSaved = false
+    let savedLabel = ''
     // WHY it fell back, kept so the row can say it. "Could not be applied" is
     // true of a timeout, a missing face and a spend cap alike, and none of
     // those has the same answer.
@@ -547,7 +573,21 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
             plainWhy = branded.why
             // THE FALLBACK IS RECORDED, NOT HIDDEN, and only attempted with time
             // left to save it; otherwise the next firing tries the look again.
-            if (left() > 75_000) {
+            // NOT WHEN THE PLAN SAID NO. A refusal for the thumbnail allowance or
+            // the spend ceiling is an answer, and the plain image would have
+            // been a second render the plan had just refused.
+            // REUSE BEFORE RENDERING. A thumbnail MVP already made for this
+            // product (lib/product-image-memory) costs nothing and is a design
+            // the creator already had; a new plain render costs a thumbnail.
+            // Used even when the plan said no, since it renders nothing.
+            const saved = await recallProductImage(sb, it.user_id, asin).catch(() => null)
+            if (saved?.imageUrl) {
+              patch.thumbnail_url = saved.imageUrl; usedSaved = true
+              const l = reuseLabel(saved)
+              savedLabel = `${l.text}.${l.note ? ` ${l.note}` : ''}`
+            } else if (branded.limited) {
+              /* plainWhy already carries the route's own words */
+            } else if (left() > 75_000) {
               const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
               if (basic) { patch.thumbnail_url = basic; usedPlain = true }
             }
@@ -565,7 +605,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     ])
 
     if (patch.thumbnail_url) {
-      patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
+      patch.thumbnail_source = usedSaved ? 'saved' : usedPlain ? 'plain' : 'styled'
       if (usedPlain) plain++
     }
     const haveBranded = patch.thumbnail_url || it.thumbnail_url
@@ -574,7 +614,9 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       // The fallback keeps its sentence. Clearing `reason` on the way to
       // 'prepared' would erase the one place the creator could read that this
       // thumbnail is not the look they chose.
-      patch.reason = usedPlain
+      patch.reason = usedSaved
+        ? `Your chosen look could not be applied, so MVP used the thumbnail it already made for this product instead of making a new one. ${savedLabel} ${plainWhy}`.trim()
+        : usedPlain
         ? `Your chosen look could not be applied, so this is the plain product thumbnail. ${plainWhy}`.trim()
         : null
       done++
@@ -725,7 +767,7 @@ async function videoMetadata(
  */
 async function styledThumbnail(
   userId: string, title: string, asin: string, preset: ThumbnailPreset,
-): Promise<{ url: string | null; why: string }> {
+): Promise<{ url: string | null; why: string; limited?: boolean }> {
   const started = Date.now()
   const secs = () => Math.round((Date.now() - started) / 1000)
   try {
@@ -740,6 +782,8 @@ async function styledThumbnail(
         // clean 1280x720 with safe margins. Anything else is a different image
         // from the same controls.
         textMode: 'graphic',
+        // Filed under Liftoff in the product's image memory.
+        memorySurface: 'Liftoff',
         ...presetToRequestFields(preset),
       },
     })
@@ -748,9 +792,10 @@ async function styledThumbnail(
       // on (no saved face, a spend cap, an ASIN it cannot fetch), and throwing
       // all of them away left one sentence that fitted every cause equally
       // badly and pointed at none of them.
-      const body = await res.json().catch(() => ({})) as { error?: string }
+      const body = await res.json().catch(() => ({})) as { error?: string; capExceeded?: boolean; spendCapped?: boolean; limitReached?: boolean }
       const said = String(body.error || '').trim().slice(0, 160)
-      return { url: null, why: said || `the thumbnail service answered ${res.status} after ${secs()}s` }
+      const limited = res.status === 429 || !!body.capExceeded || !!body.spendCapped || !!body.limitReached
+      return { url: null, why: said || `the thumbnail service answered ${res.status} after ${secs()}s`, limited }
     }
     const j = await res.json().catch(() => ({})) as { thumbnailUrl?: string; thumbnailUrls?: string[] }
     const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
@@ -800,11 +845,15 @@ async function ownerTier(sb: Sb, userId: string): Promise<string | null> {
 }
 
 async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; failed: number }> {
+  // Creators whose channel hit its own daily upload limit this run.
+  const capped = new Set<string>()
   tierCache.clear()
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
-    .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
+    // Room for rows waiting on SCOUT's Studio upload (below), which are passed
+    // over here and must not crowd out the rows this firing can upload.
+    .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4 + 40)
   const items = rows ?? []
   if (items.length === 0) return { scheduled: 0, failed: 0 }
 
@@ -817,6 +866,33 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     const { data: nowRows, error: nowErr } = await sb.from('launch_items')
       .select('id').in('id', items.map((i: { id: string }) => i.id)).eq('publish_now', true)
     if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
+  }
+
+  // YOUTUBE UPLOAD SESSIONS IN PROGRESS (migration 396), read on their own so
+  // a missing column only turns off sending in pieces, never every upload.
+  const ytSessions = new Map<string, string>()
+  let piecesOn = false
+  {
+    const { data: sRows, error: sErr } = await sb.from('launch_items')
+      .select('id,yt_upload_url').in('id', items.map((i: { id: string }) => i.id))
+    if (!sErr) {
+      piecesOn = true
+      for (const r of (sRows ?? []) as Array<{ id: string; yt_upload_url: string | null }>) if (r.yt_upload_url) ytSessions.set(r.id, r.yt_upload_url)
+    }
+  }
+
+  // WHAT SCOUT ALREADY DID IN STUDIO for the videos it uploaded (migration
+  // 399), read on its own: on any error the map is empty and every step goes
+  // through the API, as it did before.
+  const studioByItem = new Map<string, StudioDid>()
+  const studioPaidByItem = new Set<string>()
+  {
+    const { data: sRows, error: sErr } = await sb.from('launch_items')
+      .select('id,studio_upload').in('id', items.map((i: { id: string }) => i.id)).not('studio_upload', 'is', null)
+    if (!sErr) for (const r of (sRows ?? []) as Array<{ id: string; studio_upload: Record<string, unknown> | null }>) {
+      if (r.studio_upload) studioByItem.set(r.id, studioDid(r.studio_upload, r.studio_upload.visibility != null))
+      if (r.studio_upload && scoutSawPaidPromotion(r.studio_upload)) studioPaidByItem.add(r.id)
+    }
   }
 
   // EACH BATCH'S CHANNEL, the one the creator confirmed with YouTube.
@@ -928,8 +1004,34 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       continue
     }
 
+    // ── UPLOADED BY SCOUT IN YOUTUBE STUDIO, NOT HERE ────────────────────
+    // For a creator with the Studio upload on (lib/studio-upload), the upload
+    // costs 1,600 of the quota every account shares, so it is left to SCOUT,
+    // which reports the new id to app/api/launch/studio-uploads. The row says
+    // it is waiting for SCOUT; once it has an id it goes on below as usual.
+    if (!String(it.youtube_video_id || '').trim() && usesStudioUpload(await ownerTier(sb, String(it.user_id)))) {
+      // Said once, over nothing or over a note from the API's own waiting. A
+      // reason SCOUT wrote (its last failure) stays on screen until it reports
+      // again, so the creator sees why the last go did not work.
+      const was = String(it.reason || '').trim()
+      if (!isStudioWaiting(was) && !isStudioRunning(was) && (!was || /^(?:Waiting for YouTube|Attempt \d+ of \d+ is running now)/.test(was))) {
+        const q = sb.from('launch_items').update({ reason: STUDIO_UPLOAD_WAITING, updated_at: stamp() })
+          .eq('id', it.id).eq('state', 'prepared').is('youtube_video_id', null)
+        await (it.reason == null ? q.is('reason', null) : q.eq('reason', it.reason))
+      }
+      continue
+    }
+
     const tries = Number(it.publish_tries ?? 0)
     const said0 = String(it.reason || '').trim()
+    // WAITING ON YOUTUBE: not asked again every minute. The shared allowance
+    // is looked at every ten minutes (until the reset), a channel's own upload
+    // limit hourly, and a creator whose channel hit it this run waits.
+    if (capped.has(String(it.user_id))) continue
+    if (/^Waiting/.test(said0) && it.updated_at) {
+      const since = Date.now() - new Date(it.updated_at).getTime()
+      if (since < (/own daily upload limit/.test(said0) ? 3_600_000 : 600_000)) continue
+    }
     // ── ANOTHER FIRING IS UPLOADING THIS ONE ──────────────────────────────
     //
     // THE WAY A VIDEO COULD GO UP TWICE. Firings start every minute and run up
@@ -939,7 +1041,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     // "running now" within the last five and a half minutes belongs to a
     // firing that is still alive; after that, the firing is dead and the row
     // goes round again as below.
-    if (/^Attempt \d+ of \d+ is running now\.$/.test(said0) && it.updated_at
+    if (/^Attempt \d+ of \d+ is running now\./.test(said0) && it.updated_at
       && Date.now() - new Date(it.updated_at).getTime() < 330_000) continue
     if (tries >= TRIES) {
       // THE LAST REAL ERROR SURVIVES THE GIVING UP.
@@ -955,7 +1057,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // one from "YouTube said no". It means the firing was cut off before the
       // catch could run, which is a time problem and not a YouTube problem, and
       // quoting the note back as "the last thing it said" would hide that.
-      const inflight = /^Attempt \d+ of \d+ is running now\.$/.test(said)
+      const inflight = /^Attempt \d+ of \d+ is running now\./.test(said)
       const generic = inflight || /^YouTube would not take this video/.test(said)
       // ON THE CHANNEL ALREADY CHANGES THE ADVICE ENTIRELY. "Check the channel
       // is still connected" was printed over a video that had uploaded three
@@ -985,7 +1087,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     // row in the same instant cannot both take it.
     const claim = sb.from('launch_items').update({
       publish_tries: tries + 1,
-      reason: `Attempt ${tries + 1} of ${TRIES} is running now.`,
+      // THE LAST TRY'S ERROR STAYS ON SCREEN. It used to be overwritten by
+      // this note the moment the next attempt started, so a creator watched
+      // "Attempt 2 of 3" become "Attempt 3 of 3" with no idea why.
+      reason: `Attempt ${tries + 1} of ${TRIES} is running now.${/^Sending to YouTube in pieces/.test(said0) ? ` Carrying on: ${said0.replace(/ It carries on.*$/, '')}` : said0 && !/^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ` Last try: ${said0}` : /^Attempt \d+ of \d+ is running now\./.test(said0) && tries > 0 ? ' Last try stopped before it could report back, which is a time limit, not YouTube.' : ''}`.slice(0, 300),
       updated_at: stamp(),
     }).eq('id', it.id).eq('state', 'prepared')
     const { data: claimed } = await (it.publish_tries == null ? claim.is('publish_tries', null) : claim.eq('publish_tries', tries)).select('id')
@@ -1049,7 +1154,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       //                    channel for however long the second call takes.
       const due = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
       const goNow = due && agreedNow.has(it.id)
-      const missed = due && !goNow
+      let missed = due && !goNow
 
       // ── THE UPLOAD HAPPENS ONCE, EVER ────────────────────────────────────
       //
@@ -1072,33 +1177,75 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // Refuse on the header before pulling the body into memory, the same
         // way the interactive uploader does. Downloading half a gigabyte to
         // discover it is half a gigabyte is the check becoming the problem.
-        const res = await fetchWithTimeout(src, { timeoutMs: Math.max(30_000, Math.min(240_000, left() - 90_000)) })
-        if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
-        const declared = Number(res.headers.get('content-length') || 0)
-        if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
-        const bytes = Buffer.from(await res.arrayBuffer())
-        if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
-
-        const up = await yt.uploadShort(bytes, {
+        // BIG VIDEOS GO IN PIECES, ACROSS RUNS (migration 396). One request
+        // has the five minutes of one run, and a 288MB video could not make it:
+        // all three tries "stopped before they could report back". A YouTube
+        // upload session is opened once and kept on the row, the file goes in
+        // 32MB pieces read straight from storage, and a run that runs low on
+        // time saves where it got to and gives the try back. The next run
+        // carries on from there. Small videos keep the one-request path.
+        const openOpts = {
           title: title.slice(0, 100),
-          // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
-          // the same writer Launchpad uses, because the CTA burned into this
-          // very frame says "link in the description" and an empty one makes
-          // that a lie and the video unpaid.
           description: (it.description || '').slice(0, 4900),
           tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-          // PRIVATE ALWAYS, even for a video going out now: it becomes public
-          // only once its paid promotion has been set and read back, below.
-          privacyStatus: 'private',
-          // The batch's toggle, sent explicitly: left out, YouTube notifies.
+          privacyStatus: 'private' as const,
           notifySubscribers: notifyByBatch.get(it.batch_id) === true,
           embeddable: true,
           ...(disclose ? { containsSyntheticMedia: false } : {}),
-          // What is left of this firing, less room to record the id.
-          uploadTimeoutMs: left() - 20_000,
-        })
-        videoId = up.id
-        channelId = up.channelId
+        }
+        let total = 0
+        if (piecesOn) {
+          const head = await fetchWithTimeout(src, { method: 'HEAD', timeoutMs: 20_000 }).catch(() => null)
+          total = Number(head?.headers.get('content-length') || 0)
+        }
+        if (piecesOn && total > 0 && (ytSessions.has(it.id) || total > PIECES_FROM)) {
+          if (total > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+          const sent = await sendInPieces(sb, yt, it.id, src, total, ytSessions.get(it.id) ?? null, openOpts, left)
+          if (!sent.done) {
+            // PROGRESS IS NOT A FAILED TRY: the try is handed back, and the
+            // note says how far it got. The next run carries on.
+            // ONLY WHEN IT MOVED. A run that sent nothing new keeps the try it
+            // used, so an upload that is stuck cannot go round forever.
+            const before = Number((/^Sending to YouTube in pieces: (\d+) of/.exec(said0) ?? [])[1] ?? -1)
+            const moved = Math.round(sent.sent / 1048576) > before
+            await sb.from('launch_items').update({
+              publish_tries: moved ? tries : tries + 1,
+              reason: `Sending to YouTube in pieces: ${Math.round(sent.sent / 1048576)} of ${Math.round(total / 1048576)} MB so far. It carries on by itself on the next run.`,
+              updated_at: stamp(),
+            }).eq('id', it.id)
+            continue
+          }
+          videoId = sent.id
+          channelId = sent.channelId
+        } else {
+          const res = await fetchWithTimeout(src, { timeoutMs: Math.max(30_000, Math.min(240_000, left() - 90_000)) })
+          if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
+          const declared = Number(res.headers.get('content-length') || 0)
+          if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+          const bytes = Buffer.from(await res.arrayBuffer())
+          if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+
+          const up = await yt.uploadShort(bytes, {
+            title: title.slice(0, 100),
+            // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
+            // the same writer Launchpad uses, because the CTA burned into this
+            // very frame says "link in the description" and an empty one makes
+            // that a lie and the video unpaid.
+            description: (it.description || '').slice(0, 4900),
+            tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+            // PRIVATE ALWAYS, even for a video going out now: it becomes public
+            // only once its paid promotion has been set and read back, below.
+            privacyStatus: 'private',
+            // The batch's toggle, sent explicitly: left out, YouTube notifies.
+            notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+            embeddable: true,
+            ...(disclose ? { containsSyntheticMedia: false } : {}),
+            // What is left of this firing, less room to record the id.
+            uploadTimeoutMs: left() - 20_000,
+          })
+          videoId = up.id
+          channelId = up.channelId
+        }
         // IMMEDIATELY, AND ON ITS OWN. Not bundled into the update at the end
         // of this block: everything between here and there is a way for this
         // fact to be lost, and losing it is what put three copies on a channel.
@@ -1106,8 +1253,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // second upload on the next firing. Three goes, then it is logged;
         // the update at the end of this block writes the id once more.
         for (let w = 0; w < 3; w++) {
+          // The upload session is cleared IN THE SAME WRITE as the id. Cleared
+          // first, a run that died between the two left a row with neither,
+          // and the next run uploaded the whole video again. Kept until the id
+          // is safe, the next run asks the session and gets the id back.
           const { error: idErr } = await sb.from('launch_items')
-            .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
+            .update({ youtube_video_id: videoId, updated_at: stamp(), ...(piecesOn ? { yt_upload_url: null } : {}) }).eq('id', it.id)
           if (!idErr) break
           console.error('[launch-drain] could not record the YouTube id', { item: it.id, videoId, said: idErr.message, attempt: w + 1 })
           await new Promise((r) => setTimeout(r, 1000 * (w + 1)))
@@ -1159,7 +1310,23 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       try { readBack = await yt.readDisclosures(videoId) } catch (re) {
         discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
       }
-      const paidConfirmed = !disclose || readBack?.paidPromotion === true
+      // WHEN YOUTUBE CANNOT BE ASKED, STUDIO'S OWN READING COUNTS. On a day
+      // the shared quota is used up the read above fails, and every video SCOUT
+      // had disclosed and scheduled in Studio was held private on a read that
+      // never happened (Seb, 2026-10-05: "it did the same thing" on every
+      // retry). SCOUT reads Paid promotion and the schedule back from Studio's
+      // saved state at no quota; that answers when the API cannot. An API read
+      // that does answer still decides, both ways.
+      const apiBlind = readBack == null
+      const paidConfirmed = !disclose || readBack?.paidPromotion === true || (apiBlind && studioPaidByItem.has(it.id))
+      // SCHEDULED BY SCOUT FOR ITS OWN TIME, read back from YouTube: still
+      // private with that time, or already public because the time came
+      // before this run reached it. Either way the slot was kept, not missed.
+      const viaStudio = studioByItem.get(it.id) ?? null
+      const studioOnTime = !!viaStudio && viaStudio.visibility === 'schedule' && !!viaStudio.publishAt
+        && Math.abs(Date.parse(viaStudio.publishAt) - Date.parse(String(it.planned_publish_at))) <= 120_000
+        && ((apiBlind && viaStudio.scheduleVerified) || scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
+      if (studioOnTime && paidConfirmed) missed = false
       let heldBack: string | null = null
       if (!missed && !paidConfirmed) {
         heldBack = (goNow
@@ -1168,7 +1335,27 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         ).slice(0, 400)
       }
 
-      if (!goNow && !missed && !heldBack) {
+      // ── WHAT SCOUT DID IN STUDIO, CHECKED, NOT TAKEN ON TRUST ────────────
+      // A video SCOUT uploaded may already be scheduled, public, in its
+      // playlist and wearing its thumbnail, all at no quota. The schedule and
+      // the visibility are confirmed by the read above (1 unit); anything
+      // SCOUT did not do, or that does not read back, is done here as before.
+      const studioScheduled = !goNow && !missed && !heldBack && studioOnTime
+      const studioPublic = goNow && !heldBack && viaStudio?.visibility === 'public' && readBack?.privacyStatus === 'public'
+      // NEVER OUT WITHOUT ITS DISCLOSURE. If YouTube does not confirm paid
+      // promotion on a video SCOUT scheduled or published, it is made private
+      // here, whatever Studio showed.
+      if ((!paidConfirmed || missed) && viaStudio && viaStudio.visibility && viaStudio.visibility !== 'private'
+        && (!readBack || readBack.privacyStatus !== 'private' || !!readBack.publishAt)) {
+        try {
+          await yt.updateVideoStatus(videoId, { privacyStatus: 'private', notifySubscribers: notifyByBatch.get(it.batch_id) === true, ...keep })
+        } catch (pe) {
+          const said = pe instanceof Error && pe.message ? pe.message : String(pe)
+          throw new Error(`SCOUT scheduled it in Studio, but YouTube did not confirm paid promotion, and MVP could not make it private again: ${said}`)
+        }
+      }
+
+      if (!goNow && !missed && !heldBack && !studioScheduled) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
         // may call itself scheduled. A failure here is now said in the terms
         // that matter to somebody looking at their channel: the video is on it.
@@ -1200,7 +1387,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // a second time. What it must not do is fail quietly, so the outcome is
       // written either way and the board reads it.
       // ── (FOR "NOW") GO PUBLIC, ONLY WITH THE DISCLOSURE IN PLACE ────────
-      if (goNow && !heldBack) {
+      if (goNow && !heldBack && !studioPublic) {
         try {
           await yt.updateVideoStatus(videoId, {
             privacyStatus: 'public',
@@ -1218,7 +1405,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         api_disclosures: {
           at: stamp(), asked: disclose,
           paidPromotion: readBack?.paidPromotion ?? null,
-          aiUseNo: readBack ? readBack.containsSyntheticMedia === false : null,
+          // SILENT IS NOT "YES". YouTube often leaves the AI question out of
+          // its answer; that read as "not No" and drew a red cross beside a
+          // video Studio had just read back as AI use: No. aiUse keeps what
+          // YouTube actually said (true, false, or null for nothing).
+          aiUseNo: readBack && readBack.containsSyntheticMedia != null ? readBack.containsSyntheticMedia === false : null,
+          aiUse: readBack?.containsSyntheticMedia ?? null,
           embeddable: readBack?.embeddable ?? null,
           madeForKids: readBack?.madeForKids ?? null,
           error: discloseError,
@@ -1227,7 +1419,12 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
 
       const thumbSrc = String(it.thumbnail_url || '').trim()
       const thumb: { at: string | null; error: string | null } = { at: null, error: null }
-      if (/^https:\/\//i.test(thumbSrc)) {
+      if (/^https:\/\//i.test(thumbSrc) && viaStudio?.thumbnail === true && viaStudio.thumbVerified) {
+        // SCOUT set it in Studio and saw its own image in Studio's thumbnail
+        // box. (SCOUT 1.26.0 counted any new preview in the dialog and called
+        // a missing thumbnail set, so its word alone is not taken.)
+        thumb.at = stamp()
+      } else if (/^https:\/\//i.test(thumbSrc)) {
         try {
           const tr = await fetchWithTimeout(thumbSrc, { timeoutMs: 60_000 })
           if (!tr.ok) throw new Error(`the thumbnail file could not be read (${tr.status})`)
@@ -1250,11 +1447,15 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       if (playlist && !inPlaylist.has(it.id)) {
         let added: string | null = null, plError: string | null = null
         try {
-          await yt.addVideoToPlaylist(playlist, videoId)
+          // SCOUT picked it in Studio and read it back off the dropdown.
+          if (viaStudio?.playlist !== true) await yt.addVideoToPlaylist(playlist, videoId)
           added = stamp()
         } catch (pe) {
           plError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)
           console.warn('[launch-drain] playlist refused', { item: it.id, said: plError })
+          // Out of YouTube's daily allowance is not a refusal: left unrecorded,
+          // so the playlist catch-up adds it after the reset.
+          if (/quotaExceeded|dailyLimitExceeded/i.test(plError)) plError = null
         }
         await sb.from('launch_items').update({ playlist_added_at: added, playlist_error: plError }).eq('id', it.id)
       }
@@ -1309,6 +1510,28 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       await noteHandOver(sb, it.id, handed)
       scheduled++
     } catch (e) {
+      // YOUTUBE'S DAILY ALLOWANCE IS NOT A FAILED TRY. The quota is shared by
+      // every MVP account and resets at midnight Pacific; this video did
+      // nothing wrong. It used to burn a try per firing, so within minutes
+      // every queued video across every batch was blocked for good. Now the
+      // try is handed back, the row says what it is waiting for, and this
+      // firing stops publishing (the next video would get the same answer).
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/quotaExceeded|dailyLimitExceeded|uploadLimitExceeded/i.test(msg)) {
+        const channelCap = /uploadLimitExceeded/i.test(msg)
+        await sb.from('launch_items').update({
+          publish_tries: tries,
+          reason: channelCap
+            ? 'Waiting: YouTube says this channel has reached its own daily upload limit. MVP carries on by itself tomorrow.'
+            : 'Waiting for YouTube’s daily allowance, which every MVP account shares, to reset at midnight Pacific. MVP carries on by itself after that; nothing to do.',
+          updated_at: stamp(),
+        }).eq('id', it.id)
+        // ONE CHANNEL'S OWN LIMIT IS ONE CHANNEL'S. Stopping the pass here
+        // stalled every other creator's uploads behind it all day; only this
+        // creator's other videos wait. The shared allowance stops everyone.
+        if (channelCap) { capped.add(String(it.user_id)); continue }
+        break
+      }
       // LEFT PREPARED so the next firing tries again, with the reason on the
       // row rather than in a log nobody reads.
       // THE FALLBACK USED TO BE THE GENERIC SENTENCE ITSELF, word for word, so
@@ -1677,13 +1900,19 @@ async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: numbe
   const stamp = () => new Date().toISOString()
   const tenAgo = new Date(Date.now() - 10 * 60_000).toISOString()
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,youtube_video_id,planned_publish_at')
+    .select('id,user_id,batch_id,youtube_video_id,planned_publish_at,updated_at')
     .eq('state', 'blocked')
     .not('youtube_video_id', 'is', null)
     .like('reason', `${HELD_FOR_PAID_PROMOTION}%`)
     .lt('updated_at', tenAgo)
-    .order('updated_at', { ascending: true }).limit(25)
-  const items = rows ?? []
+    .order('updated_at', { ascending: true }).limit(1000)
+  // EACH CHECK COSTS FROM THE ONE DAILY YOUTUBE QUOTA EVERY ACCOUNT SHARES.
+  // Every ten minutes for every held video, forever, was 144 units a video a
+  // day. Often only near the planned time now (lib/launch-release heldCheckDue);
+  // SCOUT's Studio step releases a video the moment it saves, so this is the
+  // fallback, not the main path.
+  const items = (rows ?? []).filter((r: { planned_publish_at: string | null; updated_at?: string | null }) =>
+    heldCheckDue(r.planned_publish_at, (r as { updated_at?: string | null }).updated_at ?? null)).slice(0, 25)
   if (items.length === 0) return { scheduled: 0, waiting: 0, late: 0 }
 
   const batchIds = Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id))))
@@ -1851,6 +2080,9 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
       added++
     } catch (e) {
       const said = (e instanceof Error && e.message ? e.message : String(e)).slice(0, 200)
+      // Out of the shared daily allowance: try again after the reset, and
+      // stop asking for the rest of this run.
+      if (/quotaExceeded|dailyLimitExceeded/i.test(said)) break
       await sb.from('launch_items').update({ playlist_error: said }).eq('id', it.id)
       failed++
     }
@@ -1903,4 +2135,53 @@ export async function GET(request: Request) {
   const firstComments = left() > 30_000 ? await firstCommentCatchUp(sb, left) : null
   const settled = await settle(sb)
   return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, firstComments, settled })
+}
+
+
+/**
+ * Send a video to YouTube in pieces, carrying on from wherever its upload
+ * session got to. Returns done with the video's id, or how many bytes YouTube
+ * has so far when this run is running out of time. The session address is
+ * saved on the row the moment it is opened, so a run that dies mid-piece
+ * loses at most that piece.
+ */
+async function sendInPieces(
+  sb: Sb, yt: YouTubeOAuthService, itemId: string, src: string, total: number, saved: string | null,
+  openOpts: Parameters<YouTubeOAuthService['startResumableUpload']>[1], left: Left,
+): Promise<{ done: true; id: string; channelId: string | null } | { done: false; sent: number }> {
+  let url = saved
+  let next = 0
+  if (url) {
+    const st = await YouTubeOAuthService.resumableStatus(url, total)
+    if ('done' in st) {
+      return st
+    }
+    if ('gone' in st) url = null
+    else next = st.next
+  }
+  if (!url) {
+    url = await yt.startResumableUpload(total, openOpts)
+    const { error } = await sb.from('launch_items').update({ yt_upload_url: url }).eq('id', itemId)
+    if (error) console.error('[launch-drain] could not keep the upload session', { item: itemId, said: error.message })
+    next = 0
+  }
+  while (next < total) {
+    if (left() < 75_000) return { done: false, sent: next }
+    const end = Math.min(total, next + PIECE) - 1
+    const piece = await fetchWithTimeout(src, { headers: { Range: `bytes=${next}-${end}` }, timeoutMs: 45_000 })
+    if (piece.status !== 206 && !(piece.status === 200 && next === 0 && end === total - 1)) {
+      throw new Error(`the video file could not be read in pieces (${piece.status})`)
+    }
+    const bytes = new Uint8Array(await piece.arrayBuffer())
+    const r = await YouTubeOAuthService.putChunk(url, bytes, next, total, Math.max(20_000, left() - 45_000))
+    if ('done' in r) {
+      return r
+    }
+    next = r.next
+  }
+  const st = await YouTubeOAuthService.resumableStatus(url, total)
+  if ('done' in st) {
+    return st
+  }
+  return { done: false, sent: 'next' in st ? st.next : next }
 }

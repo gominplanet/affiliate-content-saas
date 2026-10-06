@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/linkedin'
 
@@ -10,6 +11,11 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const error = searchParams.get('error')
   const state = searchParams.get('state')
+
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('linkedin', state, `${appUrl}/api/auth/linkedin/callback`)
+  const stateUserId = verified?.uid ?? null
 
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_error=${error || 'no_code'}`)
@@ -25,13 +31,9 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  let stateUserId: string | null = null
-  if (state) {
-    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
-  }
   if (!stateUserId || stateUserId !== user.id) {
-    console.warn('[linkedin/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
-    return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
+    console.warn('[linkedin/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
   }
   const userId = user.id
 

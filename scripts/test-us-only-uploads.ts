@@ -43,6 +43,19 @@ for (const [f, re] of [
   ['app/(dashboard)/global-sync/page.tsx', /translating and dubbing/],
 ] as const) check(`${f} no longer promises other countries or dubs`, !re.test(r(f)))
 
+// DUBS ARE OFF, everywhere (Seb 2026-10-05). One switch, read at every place a
+// dub or voice clone could start, and nothing left waiting on one.
+{
+  const R = (f: string) => readFileSync(f, 'utf8')
+  check('the switch is off', /export const DUBS_ENABLED = false/.test(R('lib/markets.ts')))
+  check('no speech is synthesized at all', /if \(!DUBS_ENABLED\) return null/.test(R('lib/tts.ts')) && (R('lib/tts.ts').match(/if \(!DUBS_ENABLED\) return false/g) ?? []).length === 2)
+  check('no voice is cloned', /if \(!DUBS_ENABLED\) return false/.test(R('lib/voice-clone.ts')) && /if \(!DUBS_ENABLED\) throw new Error/.test(R('lib/voice-clone.ts')) && /if \(!DUBS_ENABLED\) return NextResponse\.json/.test(R('app/api/voice-clone/create/route.ts')))
+  check('a dub is refused before any listing is marked dubbing', /if \(!DUBS_ENABLED\) return \{ ok: false, error: UPLOAD_ONLY_REASON, status: 410 \}/.test(R('lib/dub-target.ts')))
+  check('the coverage drain blocks with the reason instead of dubbing', /if \(!DUBS_ENABLED\) \{[\s\S]{0,900}state: 'blocked', reason: UPLOAD_ONLY_REASON/.test(R('app/api/cron/coverage-drain/route.ts')))
+  check('delivery never holds a market back for a dub', /audioIsMasterFallback: DUBS_ENABLED && !!r\.dub && !r\.video_url/.test(R('app/api/global-sync/deliver/queue/route.ts')))
+  check('the Storefront screen offers no dubs', /allowDubbing = DUBS_ENABLED/.test(R('components/launchpad/StorefrontStage.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ us-only-uploads: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

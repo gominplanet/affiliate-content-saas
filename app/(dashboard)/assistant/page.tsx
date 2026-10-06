@@ -72,9 +72,10 @@ export default function AssistantPage() {
   async function clearMemory() {
     setMemoryBusy(true)
     try {
-      await fetch('/api/assistant/memory', { method: 'DELETE' })
+      const res = await fetch('/api/assistant/memory', { method: 'DELETE' })
+      if (!res.ok) { setMemoryMsg('Could not clear memory. Nothing was removed.'); return }
       setMemory(''); setMemoryMsg('Memory cleared.')
-    } catch { /* ignore */ }
+    } catch { setMemoryMsg('Could not clear memory. Nothing was removed.') }
     finally { setMemoryBusy(false) }
   }
 
@@ -101,12 +102,19 @@ export default function AssistantPage() {
     setOldestTs(null)
     try {
       const res = await fetch(`/api/assistant/conversations/${id}`)
+      if (!res.ok) throw new Error()
       const d = await res.json()
       const rows = (d.messages ?? []) as Array<Msg & { created_at?: string }>
       setMessages(rows.map(m => ({ role: m.role, content: m.content })))
       setHasMore(!!d.hasMore)
       setOldestTs(rows[0]?.created_at ?? null)
-    } catch { setMessages([]) }
+    } catch {
+      // An empty thread here looked like a fresh chat, and the next message
+      // went into a conversation the member could not see.
+      setMessages([])
+      setActiveId(null)
+      setError('That conversation could not be loaded. Try opening it again.')
+    }
   }
 
   // Page backwards through a long conversation. Prepends the previous chunk and
@@ -194,8 +202,10 @@ export default function AssistantPage() {
           setStreaming(acc)
         }
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       setStreaming('')
+      // An empty stream is a failed answer, not a blank one.
+      if (!acc.trim()) { setError('No answer came back. Try asking again.'); return }
+      setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       loadConversations()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
@@ -206,23 +216,24 @@ export default function AssistantPage() {
 
   return (
     <>
-      <PageHero guide={<AssistantGuide />} title="MVP Help Desk" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
+      <PageHero guide={<AssistantGuide />} title="Ask MVP" subtitle={<>Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche.<span className="block mt-1 text-[12px]">Formerly MVP Help Desk.</span></>} />
 
-      <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
-        {/* Conversation list */}
-        <div className="w-56 flex-shrink-0 flex flex-col gap-2">
+      <div className="flex flex-col md:flex-row gap-4 md:h-[calc(100vh-180px)] md:min-h-[480px]">
+        {/* Conversation list: above the thread on a phone, beside it on a
+            wider screen (a fixed 224px column left the thread ~100px wide). */}
+        <div className="w-full md:w-56 md:flex-shrink-0 flex flex-col gap-2">
           <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
             <Plus size={13} /> New chat
           </button>
-          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40" title="What MVP remembers about you — view, import from another AI tool, or clear">
+          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40" title="What MVP remembers about you: view, import from another AI tool, or clear">
             <Brain size={13} /> Memory
           </button>
-          <div className="flex-1 overflow-y-auto flex flex-col gap-1">
+          <div className="max-h-36 md:max-h-none md:flex-1 overflow-y-auto flex flex-col gap-1">
             {conversations.map(c => (
               <div key={c.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer text-xs ${activeId === c.id ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : 'hover:bg-gray-100 dark:hover:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
                 <MessageSquare size={12} className="flex-shrink-0 opacity-60" />
                 <button onClick={() => openConversation(c.id)} className="flex-1 text-left truncate">{c.title}</button>
-                <button onClick={() => deleteConversation(c.id)} className="opacity-0 group-hover:opacity-100 text-[#86868b] hover:text-[#ff3b30]" title="Delete">
+                <button onClick={() => deleteConversation(c.id)} className="md:opacity-0 md:group-hover:opacity-100 text-[#86868b] hover:text-[#ff3b30]" title="Delete">
                   <Trash2 size={11} />
                 </button>
               </div>
@@ -234,7 +245,7 @@ export default function AssistantPage() {
         </div>
 
         {/* Thread */}
-        <div className="flex-1 flex flex-col rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] overflow-hidden">
+        <div className="h-[70vh] md:h-auto md:flex-1 min-w-0 flex flex-col rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] overflow-hidden">
           <div ref={threadRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
             {messages.length === 0 && !streaming && (
               <div className="m-auto max-w-md text-center">
@@ -315,19 +326,19 @@ export default function AssistantPage() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Brain size={18} className="text-[#7C3AED]" />
-                <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Assistant memory</h3>
+                <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Ask MVP memory</h3>
               </div>
               <button onClick={() => setMemoryOpen(false)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={16} /></button>
             </div>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what MVP remembers about you across all chats. It updates itself as you talk — and you can seed it by importing your history from any AI tool you&apos;ve been using.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what MVP remembers about you across all chats. It updates itself as you talk, and you can seed it by importing your history from any AI tool you&apos;ve been using.</p>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Current memory</label>
             <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0a0a0a] p-3 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap min-h-[60px] mb-4">
-              {memory || <span className="text-[#86868b]">Nothing yet — chat a bit, or import below.</span>}
+              {memory || <span className="text-[#86868b]">Nothing yet: chat a bit, or import below.</span>}
             </div>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Import knowledge</label>
-            <p className="text-[11px] text-[#86868b] mb-2">Paste anything you want it to know — or upload a text/markdown/JSON export from another AI tool. We distill the durable facts and merge them in (we don&apos;t store the raw dump).</p>
+            <p className="text-[11px] text-[#86868b] mb-2">Paste anything you want it to know, or upload a text/markdown/JSON export from another AI tool. We distill the durable facts and merge them in (we don&apos;t store the raw dump).</p>
             <textarea
               value={importText}
               onChange={e => setImportText(e.target.value)}

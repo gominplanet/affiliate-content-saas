@@ -31,6 +31,8 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
+import { partnerPostLimit, recordPartnerPost } from '@/lib/partner-post-limit'
+import { partnerKey, partnerMeta, partnerAlreadyMade } from '@/lib/partner-made-before'
 import { type Tier } from '@/lib/tier'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -68,18 +70,24 @@ export async function POST(request: NextRequest) {
 
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
+    // One LTK, Levanta, Walmart or Wayward post a day (lib/partner-post-limit).
+    const daily = await partnerPostLimit(user.id, tier)
+    if (daily) return daily
 
     const token = await getExternalKey(supabase, user.id, 'wayward')
     if (!token) {
       return NextResponse.json({ ok: false, error: 'Connect your Wayward API key in External Integrations.' }, { status: 400 })
     }
 
-    const body = await request.json() as { product?: WaywardProductInput; draft?: boolean }
+    const body = await request.json() as { product?: WaywardProductInput; draft?: boolean; again?: boolean }
     const p = body.product || {}
     const asin = (p.asin || '').trim()
     if (!asin || !isValidAsin(asin)) {
       return NextResponse.json({ ok: false, error: 'A valid Amazon ASIN is required.' }, { status: 400 })
     }
+    const madeKey = partnerKey('wayward', asin)
+    const made = await partnerAlreadyMade(supabase, user.id, madeKey, body.again)
+    if (made) return made
 
     // ── WordPress creds ──────────────────────────────────────────────────────
     const wpCreds = await getWordPressCredentials(supabase, user.id)
@@ -243,6 +251,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id, title, slug, content, excerpt,
         status: status === 'draft' ? 'draft' : 'published',
         post_type: 'review', wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
+        deal_meta: partnerMeta('wayward', madeKey),
         published_at: status === 'draft' ? null : new Date().toISOString(),
       })
       if (bpErr) console.error('[wayward] blog_posts insert failed:', bpErr.message)
@@ -262,6 +271,7 @@ export async function POST(request: NextRequest) {
     })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
+    recordPartnerPost(user.id, tier)
     return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', affiliateUrl, cloaked, linkSource, title })
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })

@@ -237,7 +237,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
   check('which is skipped only for the ones going out now',
-    /if \(!goNow && !missed && !heldBack\) \{[\s\S]{0,1200}?updateVideoStatus/.test(DRAIN),
+    /if \(!goNow && !missed && !heldBack(?: && !studioScheduled)?\) \{[\s\S]{0,1200}?updateVideoStatus/.test(DRAIN),
     'calling it with a past time fails every single time')
   check('one video per firing',
     /const PUBLISHES = 1/.test(DRAIN),
@@ -402,12 +402,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the worker is scheduled',
     /\/api\/cron\/launch-drain/.test(VERCEL),
     'a cron nobody calls is a feature that works only in the repository')
+  // Shown as "Bulk Amazon upload" since the menu was regrouped by job (2026-10-05).
   check('the page is in the nav',
-    /href: '\/liftoff'/.test(NAV) && /label: 'Liftoff'/.test(NAV))
-  check('and it has left Labs for the top of Create, still Pro only',
-    inOrder(NAV, "label: 'Create'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
-    && /href: '\/liftoff'[^\n]*gate: isPro/.test(NAV),
-    'Liftoff graduated: it belongs in Create, and it is a Pro feature')
+    /href: '\/liftoff'[^\n]*label: 'Bulk Amazon upload'/.test(NAV))
+  // Pro and, since 2026-10-05 (Seb: the six Amazon additions), the Amazon plan.
+  check('and it is out of Labs, in Make videos, Pro and Amazon only',
+    inOrder(NAV, "label: 'Make videos'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
+    && /href: '\/liftoff'[^\n]*gate: hasVideoTools\(effectiveTier\)/.test(NAV),
+    'Liftoff graduated: it belongs with the video tools, on the plans whose routes accept it')
 }
 
 // ── the migrations ──────────────────────────────────────────────────────────
@@ -681,7 +683,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // answer, and the sentence pointed at none of them.
   {
     check('the styled call carries its reason back',
-      /Promise<\{ url: string \| null; why: string \}>/.test(DRAIN),
+      /Promise<\{ url: string \| null; why: string(; limited\?: boolean)? \}>/.test(DRAIN),
       'returning null throws away the one fact that makes the failure fixable')
     // READ OFF THE RESPONSE, not just referenced. The first version matched
     // `body.error` two lines below, so gutting the line that actually reads the
@@ -692,6 +694,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('a timeout names itself',
       /timed out|timedOut/.test(DRAIN) && /took longer than/.test(DRAIN),
       'a timeout is the one cause whose fix is a number in this file, not anything the creator can do')
+    // A refusal by the plan (thumbnail allowance, spend ceiling) is not
+    // followed by the plain fallback, which would be the render it refused.
+    check('no fallback render after the plan said no',
+      /if \(branded\.limited\) \{[\s\S]{0,120}\} else if \(left\(\) > 75_000\) \{\s*const basic = await buildProductThumbnail/.test(DRAIN),
+      'the plain thumbnail had no ceiling and ran exactly when the designed one hit it')
     check('and the row carries it',
       /\$\{plainWhy\}/.test(DRAIN),
       'a reason kept in a variable and never written is a reason nobody reads')
@@ -1656,7 +1663,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       && /studioTried\.current\.add\(next\.id\)/.test(SCREEN),
     'once per video per visit, so a run that stops is not retried on a timer')
   check('and Amazon waits for them',
-    /amazonTick\.current = \(\) => \{\s*if \(studioRunning\.current/.test(SCREEN),
+    /amazonTick\.current = \(\) => \{[\s\S]{0,120}?if \(uploadRunning\.current \|\| studioRunning\.current/.test(SCREEN),
     'the disclosures are what must be in place before a video goes public')
   check('only with a SCOUT that has the new Studio steps',
     /const scoutCanStudio = scoutReady === true && scoutAtLeast\(scoutVersion, SCOUT_STUDIO_MIN_VERSION\)/.test(SCREEN)
@@ -1674,7 +1681,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
   // ── THE WORKER DOES NOT DOUBLE UP, AND NEVER OUTLIVES ITS FIRING ───────
   check('an upload another firing is running is left to it',
-    /is running now\\\.\$\/\.test\(said0\) && it\.updated_at\s*&& Date\.now\(\) - new Date\(it\.updated_at\)\.getTime\(\) < 330_000\) continue/.test(DRAIN) && /claim\.eq\('publish_tries', tries\)/.test(DRAIN),
+    /is running now\\\.\/\.test\(said0\) && it\.updated_at\s*&& Date\.now\(\) - new Date\(it\.updated_at\)\.getTime\(\) < 330_000\) continue/.test(DRAIN) && /claim\.eq\('publish_tries', tries\)/.test(DRAIN),
     'firings overlap; the second one saw a prepared row with no id and uploaded it again')
   check('a render and a thumbnail are claimed before they start',
     /\.eq\('id', it\.id\)\.eq\('state', 'draft'\)\.select\('id'\)/.test(DRAIN) && /claim\.eq\('thumb_tries', tries\)/.test(DRAIN))
@@ -1748,7 +1755,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
       check('Try again never sends a video already on YouTube back to its thumbnail',
         inOrder(RETRY, "if (String(item.youtube_video_id || '').trim()) {", "} else if (!item.thumbnail_url) {")
-        && /patch\.publish_tries = 0\n\s*if \(String\(item\.youtube_video_id/.test(RETRY)
+        && /patch\.publish_tries = 0\n[\s\S]{0,1200}?if \(String\(item\.youtube_video_id/.test(RETRY)
         && /\.eq\('state', 'blocked'\)\.select\('id'\)/.test(RETRY))
     }
     const LAUNCH = live(read('app/api/launch/batches/[id]/launch/route.ts'))
@@ -1809,14 +1816,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'the scheduling call sent the time alone, which switched embedding off on every batch video')
   check('a video going out now is uploaded private and made public only once paid promotion reads back',
     /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN) && /if \(!missed && !paidConfirmed\) \{\s*heldBack = /.test(DRAIN)
-    && /if \(goNow && !heldBack\) \{/.test(DRAIN))
+    && /if \(goNow && !heldBack(?: && !studioPublic)?\) \{/.test(DRAIN))
   {
     // THE SCHEDULE IS GATED TOO: the read comes before the publish time is
     // set, and a video YouTube did not confirm is not given one.
     const readAt = DRAIN.indexOf('readBack = await yt.readDisclosures(videoId)')
     const schedAt = DRAIN.indexOf("publishAt: String(it.planned_publish_at),")
     check('paid promotion is read back before a publish time is set',
-      readAt > 0 && schedAt > 0 && readAt < schedAt && /if \(!goNow && !missed && !heldBack\) \{/.test(DRAIN),
+      readAt > 0 && schedAt > 0 && readAt < schedAt && /if \(!goNow && !missed && !heldBack(?: && !studioScheduled)?\) \{/.test(DRAIN),
       'a scheduled video went public undisclosed at its time')
     check('every hold starts "Kept private." so a new time can be given to it',
       (DRAIN.match(/`Kept private\. YouTube did not confirm paid promotion/g) ?? []).length === 2 && !/Kept private: /.test(DRAIN))
@@ -1838,7 +1845,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('the old addresses forward to Liftoff',
       /source: '\/launch', destination: '\/liftoff'/.test(CFG) && /source: '\/launchpad', destination: '\/liftoff'/.test(CFG))
     check('the menu has Liftoff and no Launchpad',
-      /href: '\/liftoff', icon: <Rocket size=\{15\} \/>, label: 'Liftoff'/.test(NAV) && !/href: '\/launchpad'/.test(NAV))
+      /href: '\/liftoff', icon: <Rocket size=\{15\} \/>, label: 'Bulk Amazon upload'/.test(NAV) && !/href: '\/launchpad'/.test(NAV))
     check('an Amazon-only batch is handed to Amazon and never uploaded',
       /if \(amazonOnlyBatches\.has\(it\.batch_id\)\) \{/.test(DRAIN) && /handOverToAmazon\(sb, it, `upload-\$\{it\.id\}`/.test(DRAIN),
       'Launchpad let a creator skip YouTube; retiring it without this would take that away')
@@ -1910,8 +1917,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /if \(!videoId\) \{/.test(DRAIN),
     'every retry re-uploaded, and a real channel collected three copies of one video')
   check('the id is written the moment YouTube hands it over',
-    /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\) \}\)/.test(DRAIN),
+    /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\), \.\.\.\(piecesOn \? \{ yt_upload_url: null \} : \{\}\) \}\)/.test(DRAIN),
     'bundling it into the update at the end of the block is how it got lost')
+  check('the upload session is cleared only together with the id',
+    !/function sendInPieces[\s\S]*?update\(\{ yt_upload_url: null \}\)[\s\S]*?\n\}/.test(DRAIN),
+    'cleared first, a run dying between the two writes uploaded the whole video again')
+  check('a used-up YouTube quota is not a failed try',
+    /if \(\/quotaExceeded\|dailyLimitExceeded\|uploadLimitExceeded\/i\.test\(msg\)\) \{[\s\S]{0,200}publish_tries: tries,/.test(DRAIN),
+    'every queued video across every batch was blocked within minutes of the quota running out')
   check('and the worker can actually see it',
     /planned_publish_at,publish_tries,reason,youtube_video_id[,']/.test(DRAIN),
     'a column the query does not select is a resume that never happens')
@@ -1925,7 +1938,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   // AN ATTEMPT THAT NEVER CAME BACK IS NOT THE SAME AS A REFUSAL.
   check('an attempt is recorded while it runs',
-    /reason: `Attempt \$\{tries \+ 1\} of \$\{TRIES\} is running now\.`/.test(DRAIN),
+    /reason: `Attempt \$\{tries \+ 1\} of \$\{TRIES\} is running now\.\$\{/.test(DRAIN) && /Last try: \$\{said0\}/.test(DRAIN),
     'a firing killed mid-upload used to burn a try and write nothing at all')
   check('and three attempts that never reported back say so',
     /stopped before they could report back, which is a time problem rather than a YouTube one/.test(DRAIN)
@@ -2137,9 +2150,19 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /onSent: \(\) => mark\(key, \{ state: 'finishing'/.test(BOARD) && /All sent from your browser/.test(BOARD),
     'a slow line holds the last MB after the browser says 100%, and that upload was flagged as stuck while it finished')
   check('files go up side by side but join the batch in the order picked',
-    /const UPLOAD_LANES = 3/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
+    /const UPLOAD_LANES = 2/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
     && inOrder(BOARD, 'await (i > 0 ? turns[i - 1]', "fetch(`/api/launch/batches/${batchId}/items`"),
     'the batch order is the publishing order, and the fastest upload is not the first video')
+  // A DROP COSTS ONE PIECE, NOT THE FILE. A 288MB video on a 0.3MB/s line
+  // restarted from zero two or three times and still failed.
+  const RES = read('lib/upload-resumable.ts')
+  check('uploads are resumable: 6MB pieces, and a drop picks up where Storage has it',
+    /const CHUNK = 6 \* 1024 \* 1024/.test(RES) && /method: 'HEAD'/.test(RES) && /Upload-Offset/.test(RES)
+    && /await uploadResumable\(\{/.test(BOARD) && inOrder(BOARD, 'await uploadResumable({', 'await uploadWithProgress({'),
+    'every retry used to throw away everything already sent')
+  check('only a resumable upload that cannot start falls back to the single upload',
+    /if \(!\(e instanceof ResumableUnavailable\)\) throw e/.test(BOARD) && /attempt <= 3 && !resumed/.test(BOARD),
+    'a fallback after a partial upload would start the file again')
   check('the tab warns before it is closed mid-upload',
     /addEventListener\('beforeunload', warn\)/.test(BOARD),
     'the upload is the one part of Liftoff that dies with the tab')

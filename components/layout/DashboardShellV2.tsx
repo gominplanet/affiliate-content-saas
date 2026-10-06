@@ -23,7 +23,9 @@
 'use client'
 
 import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
-import { previewOpenToPro } from '@/lib/labs-preview'
+import { previewOpenToPro, canUsePreview } from '@/lib/labs-preview'
+import { hasVideoTools } from '@/lib/amazon-plan'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -102,6 +104,15 @@ interface NavItemDef {
    *  sub-group inside a section (with a little top spacing). Used by the Amazon
    *  consolidated hub to break its long list into Create / Find & earn / etc. */
   subheading?: string
+  /** The pages this row stands for, drawn as a tab bar above each of them
+   *  (SectionTabs). The row is lit on any of them. */
+  tabs?: NavItemDef[]
+  /** Amazon plan: 'included' rows stay in their section, 'inside' rows are
+   *  reached from within another page, anything else goes to More with Pro. */
+  onAmazon?: 'included' | 'inside'
+  /** Other addresses that light this row without being tabs of it (a page's
+   *  own tab that belongs to this row, e.g. Social Push's scheduled queue). */
+  alsoActiveOn?: string[]
 }
 
 interface NavGroupDef {
@@ -126,6 +137,14 @@ interface NavGroupDef {
 // sections stay distinct and steer clear of the brand violet (active state),
 // Oink pink, and amber warnings.
 const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
+  'Find products':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find products & campaigns
+  'Make videos':       { dark: '#FACC15', light: '#A16207' }, // yellow    — the creative core
+  'Blog':              { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — written content
+  'Share':             { dark: '#FB923C', light: '#C2410C' }, // orange    — out to the networks
+  'Work with brands':  { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
+  'Your setup':        { dark: '#94A3B8', light: '#475569' }, // slate     — connections & account
+  'Help':              { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
+  'More with Pro':     { dark: '#C084FC', light: '#7E22CE' }, // purple    — Amazon plan's upgrade shelf
   'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — foundational
   'Create':            { dark: '#FACC15', light: '#A16207' }, // yellow    — creative core
   'Amazon Influencer': { dark: '#FB923C', light: '#C2410C' }, // orange    — Amazon storefront
@@ -144,6 +163,14 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
 
 // Leading icon per section header (matches the Labs flask). Keyed by label.
 const SECTION_ICONS: Record<string, React.ReactNode> = {
+  'Find products': <PackageSearch size={12} />,
+  'Make videos': <Youtube size={12} />,
+  'Blog': <Library size={12} />,
+  'Share': <Share2 size={12} />,
+  'Work with brands': <Handshake size={12} />,
+  'Your setup': <Settings size={12} />,
+  'Help': <LifeBuoy size={12} />,
+  'More with Pro': <Sparkles size={12} />,
   'Set up': <Plug size={12} />,
   'Create': <Sparkles size={12} />,
   'Amazon Influencer': <ShoppingBag size={12} />,
@@ -435,340 +462,239 @@ export default function DashboardShellV2({
   const badgeTier: Tier | string = isAdmin && viewAs !== 'admin' ? viewAs : tier
   const brandBadge = tierBadge(badgeTier)
 
-  // ── Nav definition ────────────────────────────────────────────────────
-  // Mirrors the preview's IA but maps to the real routes. Gates honor the
-  // server-supplied showBuyingGuides + showDeals (Pro/Studio tiering +
-  // 500-post catalogue threshold) and metaEnabled (Instagram Burner).
-  //
-  // IA restructure 2026-06-05: a new "Set up" group sits between Today and
-  // Create. It collects everything a brand-new user has to touch ONCE to
-  // get the platform working for them: WordPress install, integrations,
-  // brand identity, voice training, blog appearance, tutorials. Pulled
-  // those items out of Manage and Settings so onboarding reads
-  // top-to-bottom: see your dashboard -> set things up -> start creating.
-  // The old Manage group folded into Today (Library is a "where am I
-  // now" surface, same as Dashboard).
-  // Build the WP-site shortcut URLs once so the group definition stays
-  // declarative. Both external links — open in a new tab and don't
-  // prefetch. Guarded by wpSiteUrl below so the whole group disappears
-  // for users who haven't connected WordPress yet (avoids a dead nav
-  // entry that does nothing).
-  // wpBase / wpVisitHref / wpAdminHref were used by the now-removed
-  // "Your Blog" sidebar group. The topbar uses `wpSiteUrl` directly
-  // (computes the wp-admin suffix inline) so we no longer need the
-  // pre-computed locals. Kept this comment so the deletion is
-  // explained. 2026-06-08.
+  // Amazon plan: see AMAZON_LOCKED_PREFIXES and orderedGroups below.
+  const amazonView = effectiveTier === 'amazon'
 
+  // ── Nav definition ────────────────────────────────────────────────────
+  // MENU BY JOB (Seb approved the mockup 2026-10-05). The sidebar is grouped by
+  // what a creator is trying to do: find a product, make a video, write for the
+  // blog, share it, work with brands, set things up, get help. Pages that were
+  // one tool spread over several menu rows are ONE row now, and their pages
+  // share a tab bar (the `tabs` of a row, drawn above the page by SectionTabs
+  // below). Every old address still opens; it just lights up its new row and
+  // the right tab. Gates are unchanged: the nav is a hint, the route is the law.
+  //
+  // onAmazon says what the Amazon plan sees: 'included' rows sit in their job
+  // sections, 'inside' rows are reached from within another page (the research
+  // finders inside Product research), and everything else is listed once under
+  // "More with Pro" instead of a locked row in every section.
   const NAV_GROUPS: NavGroupDef[] = [
-    // ── IA RESTRUCTURE 2026-06-12 (onboarding-funnel epic, Phase 1) ──────────
-    // Sidebar regrouped into the funnel-aligned sections a user actually moves
-    // through: SET UP (the 7 onboarding steps, in funnel order) → CREATE →
-    // GROW → COLLABORATE → HELP & COMMUNITY. Dashboard sits headerless at the
-    // top; Plan & Billing in its own small Account group at the bottom.
-    // Hidden (routes alive, just unlinked): Analytics, Title audit, Instagram
-    // Burner — not surfaced for now. The standalone Photobooth "Create" entry
-    // folded into the single Face Models step (same /photobooth route).
-    //
     // Headerless top item.
     {
       label: '',
       items: [
-        { href: '/dashboard', icon: <Home size={15} />, label: 'Dashboard' },
+        { href: '/dashboard', icon: <Home size={15} />, label: 'Dashboard', onAmazon: 'included' },
       ],
     },
     {
-      // SET UP — the onboarding spine, in the exact order the funnel walks a
-      // new user through (Phase 2 turns these into guided Save-&-Next cards):
-      //   1. WordPress      -> get a blog installed + connected (hard gate)
-      //   2. YouTube        -> OAuth connect (channel ID auto-derived; Phase 2)
-      //   3. Affiliate Links-> Geniuslink keys + groups / Amazon tag fallback
-      //   4. Brand Profile  -> name, niches, tone
-      //   5. Voice Training -> teach the AI your writing voice (LEARN)
-      //   6. Customize Blog -> theme colors, layout, hero copy
-      //   7. Face Models    -> upload selfies, train the reference model
-      // NOTE (interim): Affiliate Links + Brand Profile both point at /brand
-      // today (Geniuslink lives inside the brand page). Phase 2 splits
-      // Geniuslink into its own funnel card/route.
-      label: 'Set up',
+      label: 'Find products',
       items: [
-        { href: '/tutorials', icon: <BookOpen size={15} />, label: 'Tutorials' },
-        { href: '/setup', icon: <Wrench size={15} />, label: 'WordPress' },
-        // YouTube gets its OWN focused page (it's the most important integration
-        // — every video→blog flow starts here), separate from the full socials
-        // grid. "Connect Socials" sits at the bottom of SET UP for everything else.
-        { href: '/connect-youtube', icon: <Youtube size={15} />, label: 'YouTube' },
-        { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
-        { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
-        // Customize Blog drives the MVP theme's colors/layout/hero — useless
-        // for content-only ("bring your own theme") users, so hide it for them.
-        { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
-        { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
-        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
-        // External Integrations — connect your own API keys for outside networks
-        // (Levanta, PartnerBoost, Wayward). Paid tiers only (matches the API gate).
-        { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseFinders },
-        // Ads — one home for AdSense + affiliate banners. Shown to everyone:
-        // AdSense injection works on BYO-theme sites too (via the MVP plugin),
-        // and the /ads page itself hides the theme-only banner blocks for
-        // content-only sites.
-        { href: '/ads', icon: <Megaphone size={15} />, label: 'Ads' },
-        // Social Launch Kit — graduated OUT of Labs into SET UP (under Ads),
-        // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
-        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders },
+        // AMZ Research (the whole catalog + Creator Connections) and the Amazon
+        // hub's Research are one job. The Amazon plan opens straight on its own.
+        {
+          href: amazonView ? '/amazon/research' : '/amz-finder', icon: <PackageSearch size={15} />, label: 'Product research', onAmazon: 'included',
+          tabs: [
+            { href: '/amz-finder', icon: null, label: 'Catalog search', gate: !amazonView },
+            { href: '/amazon/research', icon: null, label: 'Amazon research', gate: canAmazonHub },
+          ],
+        },
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier), onAmazon: 'inside' },
+        // Browse, join, save and the pay table are one Creator Connections tool.
+        {
+          href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'Brand campaigns', gate: canBrowseDealRadar(effectiveTier), onAmazon: 'inside',
+          tabs: [
+            { href: '/cc-campaigns', icon: null, label: 'All campaigns' },
+            { href: '/joined-campaigns', icon: null, label: 'Joined' },
+            { href: '/saved-campaigns', icon: null, label: 'Saved' },
+            { href: '/epc-library', icon: null, label: 'Best paying' },
+          ],
+        },
+        // The networks beyond Amazon. Each page is still gated by the member's
+        // own key (Levanta, PartnerBoost, Wayward) or by plan (LTK).
+        {
+          href: '/levanta', icon: <Store size={15} />, label: 'Partner programs',
+          tabs: [
+            { href: '/levanta', icon: null, label: 'Levanta' },
+            { href: '/partnerboost', icon: null, label: 'PartnerBoost and Walmart' },
+            { href: '/wayward', icon: null, label: 'Wayward' },
+            { href: '/ltk', icon: null, label: 'LTK', gate: canUseFinders },
+          ],
+        },
+        { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea lists', gate: canUseFinders },
       ],
     },
     {
-      label: 'Create',
+      label: 'Make videos',
       items: [
-        // Launchpad lives in LABS while under test (moved 2026-08-30). It will
-        // graduate here and lead this group once the full pipeline is verified.
-        // Liftoff graduated out of Labs 2026-09: up to ten videos to YouTube and
-        // every chosen Amazon country from one press. Leads Create, as planned
-        // when it went into Labs. Pro and admin.
-        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Liftoff', gate: isPro, badge: 'New' },
-        { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
-        // Encore (formerly On sale now) graduated out of Labs 2026-09: timely
-        // sale comments on the creator's own YouTube videos, pinned, and edited
-        // when the sale ends. Beside Co-Pilot because both work on their videos.
-        // Pro and admin (lib/labs-preview decides, so nav and routes agree).
-        { href: '/encore', icon: <Repeat size={15} />, label: 'Encore', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: 'New' },
-        // Pinned Comments (was First comments, Labs): a pinned comment with the
-        // product link on each video. New uploads get one automatically; this
-        // page gives the older videos theirs. Out of Labs 2026-09, Pro.
-        { href: '/first-comments', icon: <Pin size={15} />, label: 'Pinned Comments', gate: previewOpenToPro('first_comment') ? isPro : isAdmin, badge: 'New' },
-        // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
-        { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
-        // Jumps straight to the "Published Posts & Social Push" tab — publish or
-        // schedule any existing post to every connected channel.
-        { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
-        // Clip Factory — turn one long video into vertical Reels/TikToks/Shorts.
-        // Graduated from Labs 2026-08; Pro-only (page + APIs already Pro-gated,
-        // capped per lib/usage-cap SHORTS_MONTHLY_CAP, source videos capped at
-        // 10 min). No number repeated here: this comment said 50 after the cap moved.
-        { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isPro },
-        // Deal Radar moved to the RESEARCH section (2026-07-30) — it's a
-        // product-discovery tool, so it lives with the other research finders.
-        // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
-        // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
-        { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier) },
-        // Socials connection moved to SET UP > "Connect Socials" (it's setup,
-        // not a create action). YouTube has its own SET UP > "YouTube" entry.
-        { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
-        { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuidesEff },
-        // Articles — informational (non-product) long-form article generator.
-        // v1 is admin-only while we test it, so it's gated on isAdmin (the REAL
-        // tier, never re-gated by "view as").
-        { href: '/articles', icon: <Newspaper size={15} />, label: 'Articles', gate: canUseArticles },
-        // Idea Lists → Shopping Guide — read an Amazon idea list, score the
-        // products, publish a curated shopping-guide post. Paid tiers.
-        { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea Lists', gate: canUseFinders },
-        // MVP x LTK — paste an LTK link → SEO blog post with the LTK link as the
-        // CTA. Graduated OUT of Labs into Create (right under Buying Guides) and
-        // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
-        { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
-        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
-        // Ended deals: deal posts whose sale is over become lasting reviews at
-        // the same address. Beside Deals Hub, which makes them. Out of Labs 2026-09, Pro.
-        { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended Deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'New' },
+        // The Amazon plan has its six video additions since 2026-10-05 (Seb):
+        // one YouTube channel and Co-Pilot, Bulk Amazon upload, Clip Factory
+        // with its own allowance, YouTube comments and Amazon Live.
+        { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot', onAmazon: 'included' },
+        { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnails', gate: canAmazonHub, onAmazon: 'included' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
-        { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
-        // Shop Burner retired 2026-08 → /instagram-burner redirects to
-        // /clip-factory, which now hosts the single-clip flow AND the ported
-        // batch/schedule mode.
+        // Pro, and the Amazon plan with its own allowance (lib/amazon-plan).
+        { href: '/clip-factory', icon: <Scissors size={15} />, label: 'Clip Factory', gate: hasVideoTools(effectiveTier), onAmazon: 'included' },
+        // Was Liftoff: up to ten videos to YouTube and every chosen Amazon
+        // country from one press. Pro and the Amazon plan.
+        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Bulk Amazon upload', gate: hasVideoTools(effectiveTier), badge: 'New', onAmazon: 'included' },
+        // Pinned Comments and Encore (on sale comments) both write the comment
+        // under the creator's own videos; Encore edits the pinned one.
+        {
+          href: '/first-comments', icon: <Pin size={15} />, label: 'YouTube comments', badge: 'New', onAmazon: 'included',
+          gate: canUsePreview('first_comment', effectiveTier) || canUsePreview('on_sale', effectiveTier),
+          tabs: [
+            { href: '/first-comments', icon: null, label: 'Pinned comments', gate: canUsePreview('first_comment', effectiveTier) },
+            { href: '/encore', icon: null, label: 'On sale comments', gate: canUsePreview('on_sale', effectiveTier) },
+          ],
+        },
+        // Before the show and after it.
+        {
+          href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live', badge: 'New', onAmazon: 'included',
+          gate: canUsePreview('amazon_live', effectiveTier),
+          tabs: [
+            { href: '/amazon-live', icon: null, label: 'Prep', gate: canUsePreview('amazon_live', effectiveTier) },
+            { href: '/live-followup', icon: null, label: 'Follow-up', gate: canUsePreview('live_followup', effectiveTier) },
+          ],
+        },
       ],
     },
     {
-      // AMAZON INFLUENCER — the storefront creator's home: turn a product link
-      // into a thumbnail (MVP Art Director), find products to review, and push
-      // to Pinterest / Instagram / Facebook. Own the Amazon tier; shared into
-      // Studio + Pro. Gated by canAmazonHub so the whole section hides for tiers
-      // that don't include it (empty groups return null).
-      label: 'Amazon Influencer',
+      label: 'Blog',
       items: [
-        { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnail Generator', gate: canAmazonHub },
-        { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', gate: canAmazonHub },
-        { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer', gate: canAmazonHub },
-        // Amazon Live prep: pick products, get the show (lineup, timings, talking
-        // points from the creator's own reviews, teleprompter). Out of Labs 2026-09, Pro.
-        { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live Prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'New' },
-        // Live follow-up: after the Live, a clip per product and a roundup post
-        // from the replay. Drafts only (lib/labs-preview live_followup).
-        { href: '/live-followup', icon: <Scissors size={15} />, label: 'Live Follow-up', gate: previewOpenToPro('live_followup') ? isPro : isAdmin, badge: 'New' },
+        { href: '/content', icon: <Library size={15} />, label: 'Blog posts' },
+        {
+          href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons and guides',
+          tabs: [
+            { href: '/comparison', icon: null, label: 'Comparisons' },
+            { href: '/buying-guides', icon: null, label: 'Buying guides', gate: showBuyingGuidesEff },
+          ],
+        },
+        { href: '/articles', icon: <Newspaper size={15} />, label: 'Articles', gate: canUseArticles },
+        // Deal posts whose sale is over become lasting reviews at the same address.
+        { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'New' },
+        { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO and indexing' },
+        // AdSense injection works on BYO-theme sites too, so shown to everyone.
+        { href: '/ads', icon: <Megaphone size={15} />, label: 'Ads' },
+        // Drives the MVP theme, so useless for content-only ("bring your own
+        // theme") sites.
+        { href: '/customize', icon: <Brush size={15} />, label: 'Blog design', gate: !contentOnly },
+        // Retired for members 2026-10-05 (lib/feature-flags NEWSLETTER_FOR_MEMBERS);
+        // admin keeps it, and the page tells anyone else it has been retired.
+        { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter', gate: NEWSLETTER_FOR_MEMBERS || effectiveTier === 'admin' },
       ],
     },
     {
-      // RESEARCH — where a creator goes to FIND products & campaigns worth
-      // making content about (2026-07-30, renamed from "Source & Earn" and
-      // folded in Deal Radar). AMZ Product Research = the whole Amazon catalogue
-      // + Affiliate+ (Creator Connections). Deal Radar = live Amazon deals.
-      // Levanta / PartnerBoost = external affiliate-program finders. Placed right
-      // under Create. RESEARCH is the FREE-discovery magnet — every signed-in
-      // tier (incl. Free Trial) sees ALL the finders here, so cold prospects can
-      // explore what MVP surfaces. AMZ Research is genuinely free (search is open
-      // to every tier; the page only gates paid ACTIONS). Deal Radar browse is
-      // open. Levanta / PartnerBoost stay visible but their pages show the
-      // upgrade card on trial (paid external-network finders). Section colour
-      // comes from the shared SECTION_ACCENTS wash keyed off this label.
-      label: 'Research',
+      label: 'Share',
       items: [
-        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research' },
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
-        { href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'CC Campaigns', gate: canBrowseDealRadar(effectiveTier) },
-        // Sits next to the browse page on purpose: browsing is where you commit,
-        // this is where you see what the commitments produced.
-        { href: '/joined-campaigns', icon: <Handshake size={15} />, label: 'Joined Campaigns', gate: canBrowseDealRadar(effectiveTier) },
-        { href: '/epc-library', icon: <TrendingUp size={15} />, label: 'EPC Library', gate: canBrowseDealRadar(effectiveTier) },
-        { href: '/saved-campaigns', icon: <Bookmark size={15} />, label: 'Saved Campaigns', gate: canBrowseDealRadar(effectiveTier) },
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
-        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost' },
-        // MVP x Wayward — graduated out of Labs 2026-08. Amazon Attribution catalog
-        // (300k+ products, 20–30% commissions); page/APIs gated by the user's own
-        // Wayward key, so it sits with the other network finders (no tier gate).
-        { href: '/wayward', icon: <ShoppingBag size={15} />, label: 'MVP x Wayward' },
+        // The "Published Posts & Social Push" tab of /content.
+        { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push', alsoActiveOn: ['/content?tab=scheduled'] },
+        // Was Social Influencer: pins, Instagram posts and stories for a product.
+        { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social designs', gate: canAmazonHub, onAmazon: 'included' },
+        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders, onAmazon: 'included' },
+        { href: '/meta', icon: <Users size={15} />, label: 'Meta Hub', gate: previewOpenToPro('facebook_setup') ? isPro : isAdmin, badge: 'New' },
+        // Was Pulse: which hashtags actually earn reach, from your posts and
+        // pooled across MVP per niche.
+        { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isPro },
+        { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier), onAmazon: 'included' },
+        // The Amazon plan includes Passport (lib/feature-access NAV_ACCESS.passport).
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier), onAmazon: 'included' },
+        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
       ],
     },
     {
-      label: 'Grow',
+      label: 'Work with brands',
       items: [
-        // Passport Links — MVP-native geo-routing (each visitor → their own
-        // country's Amazon) + click analytics + Geniuslink-style groups. Graduated
-        // out of Labs 2026-08; Studio + Pro only (gate: canUsePassport).
-        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canUsePassport(effectiveTier) },
-        { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Storefront moved into LABS 2026-08 (gate: isPro) while the SCOUT
-        // full-year + full-catalog sync is finished — released publicly once
-        // ready. See the Labs group below.
-        // Pulse — which hashtags actually earn reach, learned from your posts +
-        // pooled across MVP per niche. Feeds proven tags back into captions.
-        { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
+        // Was Brand Deals: it writes and sends pitch emails.
+        { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand pitches', onAmazon: 'included' },
+        // Inbound messages, the timeline of every brand, and the recap to send them.
+        {
+          href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand inbox', badge: unreadBrand > 0 ? unreadBrand : undefined, onAmazon: 'included',
+          tabs: [
+            { href: '/brand-inquiries', icon: null, label: 'Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
+            { href: '/brand-hub', icon: null, label: 'History' },
+            { href: '/brand-recap', icon: null, label: 'Recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin },
+          ],
+        },
       ],
     },
-    // Site Tools nav group removed 2026-08-15 — the five post-publish utilities
-    // (Title Check, Clean Links, Duplicates, Fix 404s, Fix Formatting) all live
-    // under SEO & Indexing now, reached via the shared SeoHubTabs bar on /seo
-    // and each /tools/* page. A separate top-level group just duplicated them.
-    // The /tools/* routes still exist; they're only no longer a second nav home.
     {
-      label: 'Collaborate',
+      label: 'Your setup',
       items: [
-        // One consolidated timeline of every brand relationship (inbound + pitches + campaigns).
-        { href: '/brand-hub', icon: <History size={15} />, label: 'Brand Hub' },
-        { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
-        // Inbound: brand messages from the blog's "Work with brands" banner.
-        { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
-        // Brand recap: one message per Creator Connections brand with every link
-        // made for its products. Out of Labs 2026-09, Pro.
-        { href: '/brand-recap', icon: <Send size={15} />, label: 'Brand Recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin, badge: 'New' },
-        { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
+        // Everything MVP posts to or reads from. The Amazon plan connects its
+        // social networks inside Social designs (see AMAZON_LOCKED_PREFIXES)
+        // and its one YouTube channel here.
+        {
+          href: amazonView ? '/connect-youtube' : '/setup', icon: <Plug size={15} />, label: 'Connections', onAmazon: 'included',
+          tabs: [
+            { href: '/setup', icon: null, label: 'Blog', gate: !amazonView },
+            { href: '/connect-youtube', icon: null, label: 'YouTube' },
+            { href: '/connect-socials', icon: null, label: 'Socials', gate: !amazonView },
+            { href: '/external-integrations', icon: null, label: 'Other tools', gate: canUseFinders && !amazonView },
+          ],
+        },
+        {
+          href: '/brand', icon: <Palette size={15} />, label: 'Brand and voice', onAmazon: 'included',
+          tabs: [
+            { href: '/brand', icon: null, label: 'Brand profile' },
+            { href: '/learn', icon: null, label: 'Writing voice', gate: !amazonView },
+          ],
+        },
+        { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face models', onAmazon: 'included' },
+        { href: '/agency', icon: <Users size={15} />, label: 'Team' },
+        {
+          href: '/billing', icon: <CreditCard size={15} />, label: 'Plan and usage', onAmazon: 'included',
+          tabs: [
+            { href: '/billing', icon: null, label: 'Plan and billing' },
+            { href: '/usage', icon: null, label: 'Usage' },
+          ],
+        },
       ],
     },
-    // Recommended tools — external partner-affiliate links the user earns
-    // commission on. Placed ABOVE Labs (user request 2026-06-23) so the
-    // revenue-converting discovery links sit higher than the experimental Labs
-    // zone. Each opens in a new tab via external:true. Order is intentional,
-    // The two "Recommended tools" and four "Recommended programs" links were
-    // removed (2026-09): six permanent sidebar slots pointing away from MVP, one
-    // of them to a tool that competes with our own storefront upload, for
-    // affiliate revenue the business does not depend on. The partner pages that
-    // earn the same commissions still exist in the product (/levanta,
-    // /partnerboost, /wayward), so nothing is lost except the outbound nav.
     // LABS: ADMIN ONLY (Seb, 2026-10-02: "make Labs invisible to everyone
     // except me"). Every item here is gated isAdmin, and each page and route
     // refuses non-admins on its own. A feature leaves Labs to reach Pro.
-    // (History:) experimental tools, NOT promoted on
-    // landing/pricing until they graduate out. Retired 2026-07-08 (Social Launch
-    // Kit graduated to SET UP), re-opened 2026-07-11 for Instagram Auto-DM
-    // (Phase 1; dormant until Meta approves the messaging permissions).
     {
       label: 'Labs',
       items: [
-        // Launchpad — the one-button auto pipeline (Co-Pilot + blog + social +
-        // shorts in one). In LABS while we test the full end-to-end run; it
-        // graduates to Create and leads that group once verified. Pro-gated.
-        // Launchpad is the ONE entry for "one video, everywhere": it folds in the
-        // upload + CTA path (CTA Studio) and the Amazon-geos path (Storefront
-        // Sync) as stages, so we don't split one feature across three nav items.
-        // Those two still have their own routes (/cta-studio, /global-sync) for
-        // granular use; they're just not promoted as separate nav entries.
-        // Liftoff (was Launch Batch) — up to ten videos, YouTube and every Amazon
-        // country from one press. Video Launchpad was the one-video version and
-        // is retired into it (/launchpad and /launch forward here; see
-        // next.config.ts); its Amazon-only path is a choice in Liftoff.
-        // Graduated to the top of Create 2026-09.
-        // Back catalogue — the videos YouTube has ALREADY dubbed, sent to one
-        // Amazon storefront through the normal sync pipeline. In LABS while the
-        // trickle scan is proven against a real channel. Deliberately not a
-        // bulk downloader: a run ends in listings, not in a folder of MP4s the
-        // creator still has to upload by hand.
-        // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
-        // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
-        // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
+        // AMZ Storefront: SCOUT-synced Amazon earnings + full-catalog analytics,
+        // here while the full-year + full-storefront sync is finished.
         { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isAdmin },
         // Admin only while in Labs (lib/labs-preview earnings).
         { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: isAdmin },
-        // Storefront Stats (/analytics) retired 2026-08 — the SCOUT-synced AMZ
-        // Storefront dashboard (/brainstorm) is the real per-product earnings
-        // view now, so the Geniuslink-clicks Labs page was dropped to kill the
-        // name clash and the empty state for storefront-only creators.
+        // Dormant until Meta approves the messaging permissions.
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isAdmin },
-        // Brand Radar — server-side storefront + TikTok ingestion (Apify /
-        // SocialCrawl) → the brands a creator has worked with. Ships dark until a
-        // provider token is set; Pro/admin-only while it's experimental.
+        // Brand Radar: storefront + TikTok ingestion into the brands a creator
+        // has worked with. Ships dark until a provider token is set.
         { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isAdmin },
-        // TikTok Shop — add a TikTok Shop product by pasting its link, so the
-        // publishing engine can write about it and point the link back at it.
-        // In LABS while the composer side is built: today it reads and lists
-        // products, it does not yet make a post from one. A showcase cannot be
-        // scanned (it is an in-app mini program with no web page), so this is
-        // deliberately one product at a time and the page says so.
+        // TikTok Shop: add a TikTok Shop product by pasting its link. Reads and
+        // lists products; it does not yet make a post from one.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isAdmin, badge: 'New' },
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Group Post Queue: Sponsored Products and Amazon videos to the Facebook
-        // Page in a batch, then each Page post filled into the Groups by SCOUT.
+        // Group Post Queue: Sponsored Products and Amazon videos in a batch, Group
+        // first with the link (SCOUT fills it), then a Page post linking to it.
         // Admin only while it is tested (lib/labs-preview group_queue).
         { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: isAdmin, badge: 'New' },
-        // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
-        // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
-        // MVP x Wayward graduated out of Labs 2026-08 → now under the network
-        // finders, right below MVP x PartnerBoost.
-        // Clip Factory graduated out of Labs 2026-08 → now lives under Create
-        // (between Social Push and Link in Bio), open to all Pro tiers.
-        // Deal Radar graduated out of Labs 2026-07-27 → now lives under
-        // Create > Social Push, open to all paid tiers.
       ],
     },
     {
-      // HELP & COMMUNITY — support + learning surfaces. "Create a Help Ticket"
-      // (-> /support) ships in Phase 3 with its DB table + admin inbox; the
-      // nav entry is added then.
-      label: 'Help & Community',
+      label: 'Help',
       items: [
-        { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
-        { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
-        { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
-      ],
-    },
-    {
-      // Account — kept reachable; not part of the funnel IA but billing must
-      // always be one click away (upgrades).
-      label: 'Account',
-      items: [
-        { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
-        { href: '/usage', icon: <Gauge size={15} />, label: 'Your usage' },
-        // API Access (/developers) + White-label (/branding) remain hidden.
+        // Was MVP Help Desk: the assistant that answers questions about MVP.
+        { href: '/assistant', icon: <Bot size={15} />, label: 'Ask MVP', onAmazon: 'included' },
+        {
+          href: '/tutorials', icon: <BookOpen size={15} />, label: 'Tutorials and support', onAmazon: 'included',
+          tabs: [
+            { href: '/tutorials', icon: null, label: 'Tutorials' },
+            { href: '/support', icon: null, label: 'Contact support' },
+            { href: '/community', icon: null, label: 'Community' },
+          ],
+        },
       ],
     },
     // Admin-only block. Only added to NAV_GROUPS when isAdmin so
-    // non-admins never see these entries.
-    //
-    // Order: people / health first (Users, Failures), then
-    // dollars + observability (AI Cost, Blog Quality, Template
-    // Performance), then content tooling (Creator Campaigns
-    // catalog, Designer-text playground, News banner), then
-    // ops (Encrypt Secrets). Daily-drivers up top, one-off
-    // tools below.
+    // non-admins never see these entries. Daily drivers up top.
     ...(isAdmin ? [{
       label: 'Admin',
       items: [
@@ -776,9 +702,6 @@ export default function DashboardShellV2({
         { href: '/admin/support-tickets', icon: <LifeBuoy size={15} />, label: 'Support tickets' },
         { href: '/admin/failures', icon: <AlertTriangle size={15} />, label: 'Failures' },
         { href: '/admin/cron', icon: <Activity size={15} />, label: 'Cron health' },
-        // Title audit moved to /tools/title-audit and is now Creator+ accessible.
-        // Admins still reach it via that route (the new gate allows trial+ paid;
-        // admins are 'paid' in this taxonomy). No admin entry needed here. */
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
         { href: '/admin/subscriptions', icon: <CreditCard size={15} />, label: 'Duplicate Subs (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
@@ -796,13 +719,8 @@ export default function DashboardShellV2({
     }] : []),
   ]
 
-  // Amazon-tier sidebar: pull their hub (Amazon Influencer) to the top, then a
-  // divider, then the rest of MVP — with a small "unlock" pill on the sections
-  // their plan doesn't include. Amazon ONLY; every other tier keeps the default
-  // order untouched.
-  const amazonView = effectiveTier === 'amazon'
   // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
-  // their plan (blog / YouTube / newsletter / SEO / blog-tools) gets the upgrade
+  // their plan (blog / YouTube / SEO / blog-tools) gets the upgrade
   // panel instead of the page. Denylist of PATH PREFIXES rather than an
   // allowlist, so account/billing/admin/support + every Amazon and shared
   // research-deal tool stay reachable by default (locking billing would trap the
@@ -812,81 +730,50 @@ export default function DashboardShellV2({
     // Connect Socials isn't an upgrade for Amazon — they connect their approved
     // networks (Facebook, Pinterest, Instagram) from Social Influencer, so point
     // them there instead of showing the generic upsell.
-    { prefix: '/connect-socials', label: 'Connect your socials', redirect: { href: '/amazon/social', cta: 'Go to Social Influencer', body: 'Amazon Influencers connect their approved networks (Facebook, Pinterest and Instagram) right inside Social Influencer, where you also publish your designs. Connect them there in one place.' } },
-    { prefix: '/setup', label: 'WordPress & Blog Setup' },
-    { prefix: '/connect-youtube', label: 'YouTube' },
-    { prefix: '/learn', label: 'Voice Training' },
-    { prefix: '/customize', label: 'Customize Blog' },
-    { prefix: '/co-pilot', label: 'YouTube Co-Pilot' },
-    { prefix: '/content', label: 'Blog Post Generator' },
-    { prefix: '/clip-factory', label: 'Clip Factory' },
-    { prefix: '/comparison', label: 'Comparison Posts' },
+    { prefix: '/connect-socials', label: 'Connect your socials', redirect: { href: '/amazon/social', cta: 'Go to Social designs', body: 'On the Amazon plan you connect your approved networks (Facebook, Pinterest and Instagram) right inside Social designs, where you also publish your designs. Connect them there in one place.' } },
+    { prefix: '/setup', label: 'Blog connection' },
+    { prefix: '/learn', label: 'Writing voice' },
+    { prefix: '/customize', label: 'Blog design' },
+    { prefix: '/content', label: 'Blog posts' },
+    { prefix: '/comparison', label: 'Comparisons' },
     { prefix: '/buying-guides', label: 'Buying Guides' },
-    { prefix: '/idea-lists', label: 'Idea Lists' },
+    { prefix: '/idea-lists', label: 'Idea lists' },
     { prefix: '/deals', label: 'Deals Hub' },
     { prefix: '/script', label: 'Scriptwriter' },
-    { prefix: '/newsletter', label: 'Newsletter' },
+    // While the member newsletter is retired there is nothing to upgrade to,
+    // so the page shows its retired notice instead of an upsell.
+    ...(NEWSLETTER_FOR_MEMBERS ? [{ prefix: '/newsletter', label: 'Newsletter' }] : []),
     { prefix: '/ads', label: 'Ads' },
-    { prefix: '/seo', label: 'SEO & Indexing' },
-    { prefix: '/pulse', label: 'Pulse' },
+    { prefix: '/seo', label: 'SEO and indexing' },
+    { prefix: '/pulse', label: 'Hashtag insights' },
     { prefix: '/tools', label: 'Blog Tools' },
     // Partner-network finders are Creator/Studio/Pro only (the Amazon plan is
     // Amazon-only, and these publish to a WordPress blog the plan doesn't have).
     // External Integrations only holds these finders' API keys, so it locks too.
-    { prefix: '/levanta', label: 'MVP Levanta' },
-    { prefix: '/partnerboost', label: 'MVP PartnerBoost' },
-    { prefix: '/wayward', label: 'MVP Wayward' },
-    { prefix: '/external-integrations', label: 'External Integrations' },
+    { prefix: '/levanta', label: 'Levanta' },
+    { prefix: '/partnerboost', label: 'PartnerBoost and Walmart' },
+    { prefix: '/wayward', label: 'Wayward' },
+    { prefix: '/external-integrations', label: 'Other tools' },
   ]
   const amazonLocked = amazonView
     ? AMAZON_LOCKED_PREFIXES.find((l) => pathname === l.prefix || pathname.startsWith(`${l.prefix}/`) || pathname.startsWith(`${l.prefix}?`))
     : undefined
-  // Section label → the tier that unlocks it. Shown as a pill (amazon view only)
-  // on sections this plan can't use. 'Create' is the blog/YouTube content area,
-  // which the Amazon Influencer plan intentionally excludes.
-  const AMAZON_LOCKED_SECTION: Record<string, string> = { Create: 'Pro' }
-  // Amazon view: the orange hub holds ALL the plan's tools, sub-grouped (Create
-  // / Find & earn / Your brand / Account & help). Everything the Amazon plan
-  // includes lives here; the rest of MVP still renders below (with the walled
-  // garden showing an upgrade panel on access). Items moved into the hub — plus
-  // the research finders surfaced inside the Research hub page — are stripped
-  // from the groups below so nothing shows twice.
-  const AMAZON_HUB: NavGroupDef = {
-    label: 'Amazon Influencer',
-    items: [
-      { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnail Generator', subheading: 'Create' },
-      { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer' },
-      { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
-      { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio' },
-      // AMZ Storefront pulled from the Amazon hub 2026-08 — in LABS (admin/Pro)
-      // until the SCOUT full-year + full-catalog sync is finished.
-      { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', subheading: 'Find & earn' },
-      { href: '/brand-hub', icon: <History size={15} />, label: 'Brand Hub' },
-      { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
-      { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
-      { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile', subheading: 'Your brand' },
-      { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
-      { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk', subheading: 'Account & help' },
-      { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
-      { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
-      { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
-      { href: '/usage', icon: <Gauge size={15} />, label: 'Your usage' },
-    ],
-  }
-  const AMAZON_HUB_HREFS = new Set<string>(
-    AMAZON_HUB.items.map((i) => i.href).concat([
-      // Surfaced INSIDE the Research hub page, so no duplicate sidebar rows.
-      '/amz-finder', '/deal-radar', '/cc-campaigns', '/joined-campaigns', '/saved-campaigns',
-    ]),
-  )
+  // Amazon view: the job sections keep only what the plan includes, and every
+  // other row is listed once under "More with Pro", above Labs and Admin (the
+  // walled garden above shows the upgrade panel when one is opened). Rows the
+  // plan reaches from inside another page ('inside') are not listed twice.
   const orderedGroups: NavGroupDef[] = (() => {
     if (!amazonView) return NAV_GROUPS
-    const dash = NAV_GROUPS.find((g) => !g.label) // headerless Dashboard row stays on top
-    const rest = NAV_GROUPS
-      .filter((g) => g !== dash && g.label !== 'Amazon Influencer')
-      .map((g) => ({ ...g, items: g.items.filter((it) => !AMAZON_HUB_HREFS.has(it.href)) }))
-      .filter((g) => g.items.length > 0)
-    return [dash, AMAZON_HUB, ...rest].filter(Boolean) as NavGroupDef[]
+    const more: NavItemDef[] = []
+    const jobs: NavGroupDef[] = []
+    const staff: NavGroupDef[] = []
+    for (const g of NAV_GROUPS) {
+      if (g.label === 'Labs' || g.label === 'Admin') { staff.push(g); continue }
+      for (const it of g.items) if (!it.onAmazon && it.gate !== false) more.push(it)
+      const keep = g.items.filter((it) => it.onAmazon === 'included')
+      if (keep.length) jobs.push({ ...g, items: keep })
+    }
+    return [...jobs, { label: 'More with Pro', items: more }, ...staff]
   })()
 
   // MY FEATURES, right under the Dashboard row: the starred pages, in the
@@ -895,9 +782,13 @@ export default function DashboardShellV2({
   const groupsWithFavorites: NavGroupDef[] = (() => {
     const seen = new Map<string, NavItemDef>()
     for (const g of orderedGroups) for (const it of g.items) {
-      if (it.gate !== false && !it.external && !seen.has(it.href)) seen.set(it.href, it)
+      if (it.gate !== false && !it.external) {
+        // A page that is now a tab of a merged row (a star placed before the
+        // menu was regrouped) shows as that row.
+        for (const h of [it.href, ...(it.tabs ?? []).filter((t) => t.gate !== false).map((t) => t.href)]) if (!seen.has(h)) seen.set(h, it)
+      }
     }
-    const items = favorites.map((h) => seen.get(h)).filter((it): it is NavItemDef => !!it).map((it) => ({ ...it, subheading: undefined }))
+    const items = Array.from(new Set(favorites.map((h) => seen.get(h)).filter((it): it is NavItemDef => !!it))).map((it) => ({ ...it, subheading: undefined }))
     const mine: NavGroupDef = { label: 'My features', items }
     const dashIdx = orderedGroups.findIndex((g) => !g.label)
     return dashIdx >= 0
@@ -943,18 +834,32 @@ export default function DashboardShellV2({
       }
       return true
     }
-    // Blog Post Generator (/content) vs Social Push (/content?tab=posts): don't
-    // light up the base item when the Social-Push tab is the active one.
+    // Blog posts (/content) vs Social Push (/content?tab=posts and its
+    // scheduled queue): don't light the base item on Social Push's tabs.
     if (href === '/content') {
       if (pathname !== '/content') return false
       if (typeof window !== 'undefined') {
-        return new URLSearchParams(window.location.search).get('tab') !== 'posts'
+        const tab = new URLSearchParams(window.location.search).get('tab')
+        return tab !== 'posts' && tab !== 'scheduled'
       }
       return true
     }
-    return pathname.startsWith(href)
+    return pathname === href || pathname.startsWith(`${href}/`)
     // locTick: force recompute when a page mutates ?tab via replaceState.
   }, [pathname, locTick])
+
+  // A merged row (Brand campaigns, Connections...) is lit on any of its tabs.
+  const itemActive = useCallback(
+    (item: NavItemDef) => isActive(item.href) || (item.tabs ?? []).some((t) => t.gate !== false && isActive(t.href))
+      || (item.alsoActiveOn ?? []).some(isActive),
+    [isActive],
+  )
+  // The row whose tab bar this page wears: one of its open tabs is this page
+  // and it has at least two. Drawn above the page by SectionTabs.
+  const tabbedItem = orderedGroups
+    .flatMap((g) => g.items)
+    .find((it) => it.gate !== false && (it.tabs ?? []).filter((t) => t.gate !== false).length > 1
+      && (it.tabs ?? []).some((t) => t.gate !== false && isActive(t.href)))
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -1075,11 +980,6 @@ export default function DashboardShellV2({
               )
             }
             if (visibleItems.length === 0) return null
-            // Amazon view: a labelled divider after their hub separates "your
-            // plan" from the rest of MVP.
-            const showDividerAfter = amazonView && group.label === 'Amazon Influencer'
-            // Amazon view: "unlock with X" pill on sections this plan can't use.
-            const lockPill = amazonView ? AMAZON_LOCKED_SECTION[group.label] : undefined
             // Per-section header identity (colour + icon), theme-aware, keyed by
             // label. group.accent/group.icon win if a group sets them explicitly.
             const palette = group.label ? SECTION_ACCENTS[group.label] : undefined
@@ -1104,7 +1004,7 @@ export default function DashboardShellV2({
             // Every named section folds to its header (see openSections). The
             // icon-only rail and My features always show their items.
             const collapsibleSection = !railCollapsed && !!group.label && !isFavorites
-            const holdsActive = visibleItems.some((it) => isActive(it.href)) || (group.label === 'Admin' && pathname.startsWith('/admin'))
+            const holdsActive = visibleItems.some((it) => itemActive(it)) || (group.label === 'Admin' && pathname.startsWith('/admin'))
             const sectionOpen = !collapsibleSection || (openSections[group.label] ?? holdsActive)
             return (
               <Fragment key={group.label || 'dashboard'}>
@@ -1124,18 +1024,9 @@ export default function DashboardShellV2({
                     >
                       {headerIcon}
                       {group.label}
-                      {lockPill && (
-                        <span
-                          className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                          title={`Included on ${lockPill.replace('+', ' and up')} plans`}
-                          style={{ background: hexToRgba(headerAccent || '#7C3AED', isDark ? 0.22 : 0.14), color: headerAccent || 'var(--text-faint)' }}
-                        >
-                          {lockPill}
-                        </span>
-                      )}
                       <ChevronDown
                         size={12}
-                        className={cn(lockPill ? 'ml-1' : 'ml-auto', 'transition-transform')}
+                        className="ml-auto transition-transform"
                         style={{ transform: sectionOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                       />
                     </button>
@@ -1156,15 +1047,6 @@ export default function DashboardShellV2({
                           {editingFavorites ? 'Done' : 'Edit'}
                         </button>
                       )}
-                      {lockPill && (
-                        <span
-                          className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                          title={`Included on ${lockPill.replace('+', ' and up')} plans`}
-                          style={{ background: hexToRgba(headerAccent || '#7C3AED', isDark ? 0.22 : 0.14), color: headerAccent || 'var(--text-faint)' }}
-                        >
-                          {lockPill}
-                        </span>
-                      )}
                     </p>
                   )
                 )}
@@ -1183,7 +1065,7 @@ export default function DashboardShellV2({
                         <div className="relative group/nav">
                           <NavItem
                             item={item}
-                            active={isActive(item.href)}
+                            active={itemActive(item)}
                             collapsed={railCollapsed}
                           />
                           {/* THE STAR: pins a feature to My features, or takes it
@@ -1219,13 +1101,6 @@ export default function DashboardShellV2({
                   </p>
                 )}
               </div>
-              {showDividerAfter && (
-                <div className="flex items-center gap-2 px-1 pt-0.5">
-                  <span className="h-px flex-1" style={{ background: 'var(--border)' }} />
-                  <span className="text-[9px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-faint)' }}>More in MVP</span>
-                  <span className="h-px flex-1" style={{ background: 'var(--border)' }} />
-                </div>
-              )}
               </Fragment>
             )
           })}
@@ -1328,11 +1203,16 @@ export default function DashboardShellV2({
           >
             <Menu size={18} />
           </button>
-          {!amazonView && <div className="hidden sm:block min-w-0"><SiteSwitcherChip currentHostname={wpHostname} /></div>}
+          {/* NEVER SHRINK THE CHIP. The phone layout gave its wrapper min-w-0,
+              so on a crowded topbar it shrank to nothing while its text stayed
+              visible, and the search box slid over it and took every click:
+              a Pro member's blog switcher "stopped working". The chip keeps its
+              width; the search box is what gives way. */}
+          {!amazonView && <div className="hidden sm:block flex-shrink-0"><SiteSwitcherChip currentHostname={wpHostname} /></div>}
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
-          <div className="min-w-0 flex-1 md:flex-none"><TopbarSearch isAdmin={isAdmin} /></div>
+          <div className="min-w-0 flex-1 md:flex-initial md:basis-72 md:min-w-[11rem]"><TopbarSearch isAdmin={isAdmin} /></div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Week recap: flashes until this week's recap is opened. */}
@@ -1422,7 +1302,7 @@ export default function DashboardShellV2({
                 ? `${openTickets} open support ticket${openTickets === 1 ? '' : 's'} waiting`
                 : 'Open a support ticket'}
             >
-              <LifeBuoy size={12} /> <span className="hidden sm:inline">Support</span>{ticketAlert ? ` (${openTickets})` : ''}
+              <LifeBuoy size={12} /> <span className="hidden 2xl:inline">Support</span>{ticketAlert ? ` (${openTickets})` : ''}
             </Link>
 
             {/* Theme toggle */}
@@ -1481,6 +1361,7 @@ export default function DashboardShellV2({
           <AnnouncementModal />
           <ReconnectCheckup />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+            {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} />}
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
         </main>
@@ -1606,3 +1487,31 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
   )
 }
 
+
+// The tab bar of a merged row (Brand campaigns, Connections, Brand inbox...),
+// drawn above each of its pages so the pages read as one tool. Only the tabs
+// this account can open are shown; the current page is underlined.
+function SectionTabs({ item, isActive }: { item: NavItemDef; isActive: (href: string) => boolean }) {
+  const tabs = (item.tabs ?? []).filter((t) => t.gate !== false)
+  return (
+    <nav aria-label={item.label} className="mb-5 flex gap-1 overflow-x-auto border-b" style={{ borderColor: 'var(--border)' }}>
+      {tabs.map((t) => {
+        const on = isActive(t.href)
+        return (
+          <Link
+            key={t.href}
+            href={t.href}
+            aria-current={on ? 'page' : undefined}
+            className="-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13.5px] font-semibold transition-colors"
+            style={{ color: on ? 'var(--text)' : 'var(--text-faint)', borderColor: on ? '#7C3AED' : 'transparent' }}
+          >
+            {t.label}
+            {typeof t.badge === 'number' && t.badge > 0 && (
+              <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{t.badge}</span>
+            )}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}

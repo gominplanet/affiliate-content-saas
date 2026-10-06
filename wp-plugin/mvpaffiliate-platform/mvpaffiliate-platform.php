@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.99
+ * Version: 1.1.2
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -147,6 +147,27 @@ add_filter('allowed_redirect_hosts', function ($hosts) {
     $hosts[] = 'mvpaffiliate.io';
     $hosts[] = 'www.mvpaffiliate.io';
     return $hosts;
+});
+
+// ─── No pingbacks to affiliate links (v1.1.0) ────────────────────────────────
+// On every publish or update WordPress visits each link in the post to offer a
+// pingback. Amazon never accepts one, so WordPress never marks the link done
+// and visits it again on the next update. MVP updates posts often, so a site
+// "clicked" its own Passport and Amazon links thousands of times a week, which
+// read as real clicks in MVP (User-Agent "WordPress/x; site") and sends Amazon
+// server traffic on the creator's tag. Affiliate links are taken out of the
+// list before any ping is sent; links to real blogs still get their pingbacks.
+add_action('pre_ping', function (&$links) {
+    if (!is_array($links)) { return; }
+    $links = array_values(array_filter($links, function ($url) {
+        $host = strtolower((string) wp_parse_url((string) $url, PHP_URL_HOST));
+        $path = (string) wp_parse_url((string) $url, PHP_URL_PATH);
+        if ($host === '') { return true; }
+        if (preg_match('/(^|\.)mvpl\.ink$/', $host)) { return false; }
+        if (preg_match('/(^|\.)mvpaffiliate\.io$/', $host) && strpos($path, '/go/') === 0) { return false; }
+        if (preg_match('/(^|\.)(amazon\.[a-z.]+|amzn\.to|amzn\.eu|a\.co|geni\.us|bit\.ly)$/', $host)) { return false; }
+        return true;
+    }));
 });
 
 // ─── SEO: keep thin, auto-generated archives OUT of Google's index ───────────
@@ -3445,11 +3466,17 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $bruteKeySite = 'affiliateos_proxy_brute';
         $bruteIp   = (int) get_transient($bruteKeyIp);
         $bruteSite = (int) get_transient($bruteKeySite);
-        if ($bruteIp >= 5 || $bruteSite >= 50) {
-            return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
-        }
 
-        if (!$stored || strlen($token) !== strlen($stored) || !hash_equals($stored, $token)) {
+        // (v1.1.1) THE TOKEN IS CHECKED FIRST, and the counters apply only to
+        // bad tokens. They were checked first, so fifty bad requests a minute
+        // from anywhere (or from behind a shared CDN address) locked MVP's own
+        // valid calls out too and stopped all publishing to the site. A right
+        // token cannot be guessed, so letting it through costs nothing.
+        $good = $stored && strlen($token) === strlen($stored) && hash_equals($stored, $token);
+        if (!$good) {
+            if ($bruteIp >= 5 || $bruteSite >= 50) {
+                return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
+            }
             set_transient($bruteKeyIp,   $bruteIp + 1,   60);
             set_transient($bruteKeySite, $bruteSite + 1, 60);
             return new WP_REST_Response(['code' => 'bad_token', 'message' => 'Invalid proxy token.'], 401);
@@ -3475,7 +3502,9 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $path = isset($body['path']) ? (string) $body['path'] : '/';
         // Path-shape check: no `..`, no `/wp-admin`, no protocol-relative,
         // and matches a recognisable REST path skeleton.
-        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#', $path) || strpos($path, '..') !== false) {
+        // D: "$" means the very end. Without it, a trailing newline ("/wp/v2/users/me\n")
+        // passed every pattern here while WordPress still routed it (v1.1.1).
+        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#D', $path) || strpos($path, '..') !== false) {
             return new WP_REST_Response(['code' => 'bad_path', 'message' => 'Path must look like /wp/v2/posts'], 400);
         }
         // Hard route allowlist — without this, a leaked proxy_secret = full
@@ -3483,17 +3512,23 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         // /wp/v2/plugins to install a malicious plugin, etc). The dashboard
         // only ever needs these routes; deny everything else.
         $allowed_path_patterns = [
-            '#^/wp/v2/posts(?:/[0-9]+)?$#',
-            '#^/wp/v2/pages(?:/[0-9]+)?$#',
-            '#^/wp/v2/media(?:/[0-9]+)?$#',
-            '#^/wp/v2/tags(?:/[0-9]+)?$#',
-            '#^/wp/v2/categories(?:/[0-9]+)?$#',
-            '#^/wp/v2/users/me$#',
-            '#^/affiliateos/v1/.+$#',
+            '#^/wp/v2/posts(?:/[0-9]+)?$#D',
+            '#^/wp/v2/pages(?:/[0-9]+)?$#D',
+            '#^/wp/v2/media(?:/[0-9]+)?$#D',
+            '#^/wp/v2/tags(?:/[0-9]+)?$#D',
+            '#^/wp/v2/categories(?:/[0-9]+)?$#D',
+            '#^/wp/v2/users/me$#D',
+            '#^/affiliateos/v1/[A-Za-z0-9_/\-]+$#D',
         ];
         $allowed = false;
         foreach ($allowed_path_patterns as $pat) {
             if (preg_match($pat, $path)) { $allowed = true; break; }
+        }
+        // (v1.1.1) The admin's own account is read, never changed, through
+        // the proxy: a POST to /wp/v2/users/me could set the admin's email or
+        // password, which made a leaked proxy secret a full takeover.
+        if ($allowed && $path === '/wp/v2/users/me' && $method !== 'GET') {
+            $allowed = false;
         }
         if (!$allowed) {
             return new WP_REST_Response(['code' => 'forbidden_path', 'message' => 'Proxy route not in allowlist.'], 403);

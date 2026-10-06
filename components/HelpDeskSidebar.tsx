@@ -85,7 +85,7 @@ export function HelpDeskPanel() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        const note = err.error || 'Sorry — I couldn’t get a response just now. Please try again.'
+        const note = err.error || 'Sorry: I couldn’t get a response just now. Please try again.'
         // Surface the error IN the thread, not just a toast that's easy to miss
         // (that's what made it look like "no answer was given").
         setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${note}` }])
@@ -96,7 +96,7 @@ export function HelpDeskPanel() {
 
       const reader = res.body?.getReader()
       if (!reader) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Sorry — I couldn’t read the response. Please try again.' }])
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Sorry: I couldn’t read the response. Please try again.' }])
         setSending(false)
         return
       }
@@ -113,12 +113,12 @@ export function HelpDeskPanel() {
 
       // Never leave the thread blank — if the stream returned nothing, say so
       // instead of pushing an empty bubble.
-      const finalText = assembled.trim() || '⚠️ Sorry — I didn’t catch that. Please try again.'
+      const finalText = assembled.trim() || '⚠️ Sorry: I didn’t catch that. Please try again.'
       setMessages(prev => [...prev, { role: 'assistant', content: finalText }])
       setStreaming('')
     } catch (err) {
-      console.error('Help Desk error:', err)
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error — please try again.' }])
+      console.error('Ask MVP error:', err)
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }])
     } finally {
       setSending(false)
       inputRef.current?.focus()
@@ -132,7 +132,7 @@ export function HelpDeskPanel() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10">
         <div>
-          <h2 className="font-semibold text-gray-900 dark:text-white">MVP Help Desk</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">Ask MVP</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">Ask anything about MVP</p>
         </div>
         <button
@@ -199,7 +199,7 @@ export function HelpDeskPanel() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Ask MVP Help Desk..."
+            placeholder="Ask MVP anything..."
             disabled={sending}
             className="flex-1 px-3 py-2 border border-gray-200 dark:border-white/20 rounded-lg bg-white dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#0071E3] disabled:opacity-50"
           />

@@ -12,13 +12,21 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  // A link that cannot work (expired, already used, or opened in a different
+  // browser from the one that asked for it) never fires PASSWORD_RECOVERY, and
+  // this page used to say "Verifying reset link…" forever. Supabase reports the
+  // expired case in the URL; anything else is given a few seconds.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     // Supabase puts the token in the URL hash — listen for the session
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
+      if (event === 'PASSWORD_RECOVERY') { setReady(true); setFailed(false) }
     })
-    return () => subscription.unsubscribe()
+    const params = `${window.location.search}&${window.location.hash.replace(/^#/, '')}`
+    if (/(^|[?&])error(_code|_description)?=/.test(params)) setFailed(true)
+    const t = setTimeout(() => setFailed(true), 10_000)
+    return () => { subscription.unsubscribe(); clearTimeout(t) }
   }, [supabase])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -36,6 +44,18 @@ export default function ResetPasswordPage() {
     } else {
       router.push('/dashboard')
     }
+  }
+
+  if (!ready && failed) {
+    return (
+      <div className="card p-8 text-center">
+        <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">This reset link did not work</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          It may have expired or been used already, or it opened in a different browser from the one you asked for it in. Request a new one with Forgot password on the sign-in page, and open it in the same browser.
+        </p>
+        <a href="/login" className="text-sm text-[#7C3AED] hover:underline font-medium">Back to sign in</a>
+      </div>
+    )
   }
 
   if (!ready) {

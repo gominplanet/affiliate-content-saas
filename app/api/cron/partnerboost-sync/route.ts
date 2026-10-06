@@ -37,16 +37,20 @@ export async function GET(request: NextRequest) {
     // half hour and nobody else ever refreshed. A failure is remembered for 12
     // hours (system_flags) and the next oldest user is taken; the cache's own
     // synced_at is not touched, so its "last refreshed" stays true.
-    const { data: rows } = await sb.from('pb_finder_cache')
-      .select('user_id, synced_at').order('synced_at', { ascending: true }).limit(500)
-    if (!rows?.length) return NextResponse.json({ ok: true, skipped: 'no synced caches' })
-    const users: Array<{ user_id: string; synced_at: string }> = []
-    for (const r of rows as Array<{ user_id: string; synced_at: string }>) if (!users.some((u) => u.user_id === r.user_id)) users.push(r)
-    const { data: fails } = await sb.from('system_flags').select('key, updated_at').in('key', users.map((u) => `pb_sync_failed:${u.user_id}`))
-    const recentFail = new Set(((fails ?? []) as Array<{ key: string; updated_at: string }>)
-      .filter((f) => Date.now() - Date.parse(f.updated_at) < 12 * 3600_000).map((f) => f.key.slice('pb_sync_failed:'.length)))
-    const oldest = users.find((u) => !recentFail.has(u.user_id))
-    if (!oldest) return NextResponse.json({ ok: true, skipped: 'every stale account failed in the last 12 hours' })
+    //
+    // THE FAILED ACCOUNTS ARE LEFT OUT IN THE QUERY, not after it. Every row of
+    // one user shares its synced_at, so one account with 500 cached products
+    // filled the whole page; when that account had just failed, nobody else
+    // was in the page to fall back to and the sync stood still for 12 hours.
+    const { data: fails } = await sb.from('system_flags').select('key, updated_at')
+      .like('key', 'pb_sync_failed:%').gte('updated_at', new Date(Date.now() - 12 * 3600_000).toISOString())
+    const recentFail = [...new Set(((fails ?? []) as Array<{ key: string }>).map((f) => f.key.slice('pb_sync_failed:'.length)))]
+      .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    let q = sb.from('pb_finder_cache').select('user_id, synced_at').order('synced_at', { ascending: true }).limit(1)
+    if (recentFail.length) q = q.not('user_id', 'in', `(${recentFail.join(',')})`)
+    const { data: rows } = await q
+    const oldest = ((rows ?? []) as Array<{ user_id: string; synced_at: string }>)[0]
+    if (!oldest) return NextResponse.json({ ok: true, skipped: recentFail.length ? 'every stale account failed in the last 12 hours' : 'no synced caches' })
     const markFailed = (uid: string) => sb.from('system_flags').upsert({ key: `pb_sync_failed:${uid}`, active: true, updated_at: new Date().toISOString() }, { onConflict: 'key' })
 
     const ageMs = Date.now() - new Date(oldest.synced_at).getTime()
@@ -63,7 +67,9 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const r = await syncUserCache(admin, userId, token, { deadlineMs: 260_000 })
+      // 200 seconds of the 300: a request already in flight at the deadline
+      // can take 30 more, and a retry as a POST 30 after that.
+      const r = await syncUserCache(admin, userId, token, { deadlineMs: 200_000 })
       if ((r as { timedOut?: boolean }).timedOut) await markFailed(userId)
       return NextResponse.json({ ok: true, refreshed: userId, ...r })
     } catch (e) {

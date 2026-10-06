@@ -11,6 +11,7 @@
  *   - offline.access   — receive a refresh_token for long-lived sessions
  */
 import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 // Re-exported so existing importers of services/twitter keep working, and so
 // the browser-safe copy stays the only definition.
 export { MEDIA_SCOPE, mediaCapability, type MediaCapability } from '@/lib/x-scopes'
@@ -170,7 +171,9 @@ export async function createTweet(
   text: string,
   mediaIds?: string[],
 ): Promise<{ id: string; text: string }> {
-  const payload: { text: string; media?: { media_ids: string[] } } = { text }
+  // DISCLOSED AT THE LAST STEP (lib/social-disclaimer): #ad #sponsored and a
+  // label naming where each link goes, on every path that reaches this call.
+  const payload: { text: string; media?: { media_ids: string[] } } = { text: discloseSocialPost(text, 'twitter') }
   if (mediaIds && mediaIds.length) payload.media = { media_ids: mediaIds }
 
   const res = await fetchWithTimeout(`${TWITTER_API}/2/tweets`, {

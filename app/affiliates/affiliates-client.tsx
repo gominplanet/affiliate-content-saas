@@ -124,7 +124,7 @@ function Hero() {
         <div>
           <span className="eyebrow rise"><span className="d" />MVP Affiliate · Partner Program</span>
           <h1 className="rise d1">Recommend the tool you already use. <span className="grad-text">Earn {CAMPAIGN.commissionPct}%, every month.</span></h1>
-          <p className="lead rise d2">You already know who needs this — every Amazon creator drowning in manual posting. Share your link, they sign up, and you earn {CAMPAIGN.commissionPct}% recurring on every payment they make, for as long as they stay. No caps. No expiry.</p>
+          <p className="lead rise d2">You already know who needs this: every Amazon creator drowning in manual posting. Share your link, they sign up, and you earn {CAMPAIGN.commissionPct}% recurring on every payment they make, for as long as they stay. No caps. No expiry.</p>
           <div className="hero-cta rise d2">
             <a href={CAMPAIGN.signupUrl} target="_blank" rel="noopener" className="btn btn-grad btn-lg">Apply to join →</a>
             <a href="#how" className="btn btn-ghost btn-lg">See how it works</a>
@@ -160,9 +160,9 @@ function Hero() {
 
 function Why() {
   const cards = [
-    { h: `${CAMPAIGN.commissionPct}% recurring — not a one-time bounty`, p: 'Earn every single month your referral stays subscribed. One good recommendation becomes income that compounds, not a single payout you forget about.' },
-    { h: 'It practically sells itself', p: "Every Amazon creator feels the pain of turning videos into blogs, posts, and pitches by hand. You're not selling — you're handing them the fix." },
-    { h: 'You promote with proof', p: "Show your own results. A real before/after from your own workflow beats any ad — and it's the most convincing pitch there is." },
+    { h: `${CAMPAIGN.commissionPct}% recurring, not a one-time bounty`, p: 'Earn every single month your referral stays subscribed. One good recommendation becomes income that compounds, not a single payout you forget about.' },
+    { h: 'It practically sells itself', p: "Every Amazon creator feels the pain of turning videos into blogs, posts, and pitches by hand. You're not selling. You're handing them the fix." },
+    { h: 'You promote with proof', p: "Show your own results. A real before/after from your own workflow beats any ad, and it's the most convincing pitch there is." },
     { h: 'We hand you the assets', p: 'A 60-second demo clip, swipe copy, and ready-to-post social graphics. Drop in your link and go. Need something custom? Just ask.' },
   ]
   return (
@@ -189,7 +189,7 @@ function Why() {
             credit nobody (or the wrong person) and leak the discount. */}
         <div className="dual">
           <Check solid />
-          <p><b>Your audience saves too.</b> When someone signs up through <b>your</b> referral link, they automatically get <b>{CAMPAIGN.audienceDiscount}</b> — and the sale is credited to you. Prefer a code for places a link won&apos;t fit? Mint your own in your dashboard once you&apos;re approved. Either way it&apos;s the same {CAMPAIGN.commissionPct}% to you.</p>
+          <p><b>Your audience saves too.</b> When someone signs up through <b>your</b> referral link, they automatically get <b>{CAMPAIGN.audienceDiscount}</b>, and the sale is credited to you. Prefer a code for places a link won&apos;t fit? Mint your own in your dashboard once you&apos;re approved. Either way it&apos;s the same {CAMPAIGN.commissionPct}% to you.</p>
         </div>
       </div>
     </section>
@@ -198,8 +198,8 @@ function Why() {
 
 function How() {
   const steps = [
-    { h: 'Apply & get approved', p: 'A two-minute application. We approve for fit — creators and reviewers whose audience overlaps with ours. No follower minimums.' },
-    { h: 'Share your link or code', p: `Drop your referral link in video descriptions, posts, and your newsletter — or mint your own promo code for shoutouts where a link won't fit. Either way it carries your audience's ${CAMPAIGN.audienceDiscount} discount and credits the sale to you, with a ${CAMPAIGN.cookieDays}-day cookie so even slow decisions still count.` },
+    { h: 'Apply & get approved', p: 'A two-minute application. We approve for fit: creators and reviewers whose audience overlaps with ours. No follower minimums.' },
+    { h: 'Share your link or code', p: `Drop your referral link in video descriptions, posts, and your newsletter, or mint your own promo code for shoutouts where a link won't fit. Either way it carries your audience's ${CAMPAIGN.audienceDiscount} discount and credits the sale to you, with a ${CAMPAIGN.cookieDays}-day cookie so even slow decisions still count.` },
     { h: 'Earn every month', p: `${CAMPAIGN.commissionPct}% recurring, paid monthly via ${CAMPAIGN.payoutMethod} once you clear $${CAMPAIGN.payoutThreshold}. Watch clicks, signups, and commissions in your dashboard in real time.` },
   ]
   return (
@@ -244,7 +244,7 @@ function Deal() {
                   <div className="dspec" key={s.l}><div className="dl">{s.l}</div><div className="dv">{s.v}</div></div>
                 ))}
               </div>
-              <p className="deal-note">*Founding affiliates earn for the lifetime of every customer. Commission is a share of revenue — it only exists when your referrals are paying. Your audience gets {CAMPAIGN.audienceDiscount} too.</p>
+              <p className="deal-note">*Founding affiliates earn for the lifetime of every customer. Commission is a share of revenue, so it only exists when your referrals are paying. Your audience gets {CAMPAIGN.audienceDiscount} too.</p>
             </div>
             <Estimator />
           </div>
@@ -282,10 +282,10 @@ function Estimator() {
 
 function Product() {
   const feats = [
-    <><b>The agent pipeline</b> turns a video into a full blog post, social fan-out, thumbnails, and brand-pitch emails — automatically.</>,
+    <><b>The agent pipeline</b> turns a video into a full blog post, social fan-out, thumbnails, and brand-pitch emails, automatically.</>,
     <><b>YouTube autopilot</b> watches a channel and drafts content the moment a new video lands.</>,
-    <>A <b>branded review site</b> for every creator — their content, their domain, their links.</>,
-    <>Free to start — <b>{FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs with their own face on them</b>, no card, nothing to connect. That&apos;s an easy first click for your audience.</>,
+    <>A <b>branded review site</b> on Pro: their content, their domain, their links.</>,
+    <>Free for {FREE_TRIAL.trialDays} days: <b>{FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs with their own face on them</b>, no card, nothing to connect. That&apos;s an easy first click for your audience.</>,
   ]
   return (
     <section className="sec alt">
@@ -319,7 +319,7 @@ function Proof() {
       <div className="wrap">
         <div className="quote">
           <div className="qm">“</div>
-          <p>We built this to run our own storefront — top 1% conversion, Top Platinum status. Now we&apos;re paying creators to grow it with us.</p>
+          <p>We built this to run our own storefront: top 1% conversion, Top Platinum status. Now we&apos;re paying creators to grow it with us.</p>
           <div className="by"><b>Seb &amp; Michelle</b> · Founders, MVP Affiliate</div>
           <div className="badges">
             <span className="badge"><Check />Real-time dashboard</span>
@@ -334,13 +334,13 @@ function Proof() {
 
 function Faq() {
   const items = [
-    { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Amazon referral is about $${(TIERS.Amazon * RATE).toFixed(2)}/mo and every Pro referral about $${(TIERS.Pro * RATE).toFixed(2)}/mo — for as long as they stay. Use the estimator above to model your own numbers.` },
+    { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Amazon referral is about $${(TIERS.Amazon * RATE).toFixed(2)}/mo and every Pro referral about $${(TIERS.Pro * RATE).toFixed(2)}/mo, for as long as they stay. Use the estimator above to model your own numbers.` },
     { q: 'When and how do I get paid?', a: `Monthly, via ${CAMPAIGN.payoutMethod}, once your balance clears $${CAMPAIGN.payoutThreshold} and the commission passes a ${CAMPAIGN.clearanceDays}-day refund-protection window. You connect your payout account once during onboarding and commissions land automatically after that.` },
-    { q: 'Does my audience get anything?', a: `Yes — it's a double-sided deal. Anyone who signs up through your referral link automatically gets ${CAMPAIGN.audienceDiscount}, and the sale is credited to you. Prefer a code? Once you're approved you can mint your own promo codes in your dashboard for places a link won't fit — each one carries the same discount and credits you.` },
-    { q: 'How long does the referral cookie last?', a: `${CAMPAIGN.cookieDays} days. If someone clicks your link and signs up any time in that window, the referral is credited to you — so slow decisions still earn.` },
+    { q: 'Does my audience get anything?', a: `Yes, it's a double-sided deal. Anyone who signs up through your referral link automatically gets ${CAMPAIGN.audienceDiscount}, and the sale is credited to you. Prefer a code? Once you're approved you can mint your own promo codes in your dashboard for places a link won't fit, and each one carries the same discount and credits you.` },
+    { q: 'How long does the referral cookie last?', a: `${CAMPAIGN.cookieDays} days. If someone clicks your link and signs up any time in that window, the referral is credited to you, so slow decisions still earn.` },
     { q: 'Do commissions really last for the life of the customer?', a: 'Founding affiliates earn for as long as their referral stays subscribed. You keep earning month after month with zero extra work; the stream stops only if they cancel.' },
-    { q: 'Can I run paid ads to my link?', a: 'Yes — content, email, social, and paid traffic are all welcome. The one rule: no bidding on our brand terms (e.g. "MVP Affiliate") in paid search. Everything else is fair game.' },
-    { q: 'Who is this program for?', a: "Creators, reviewers, and newsletter operators whose audience includes Amazon influencers and content creators. If the people who follow you would benefit from automating their content, you're a fit — reach matters less than relevance." },
+    { q: 'Can I run paid ads to my link?', a: 'Yes. Content, email, social, and paid traffic are all welcome. The one rule: no bidding on our brand terms (e.g. "MVP Affiliate") in paid search. Everything else is fair game.' },
+    { q: 'Who is this program for?', a: "Creators, reviewers, and newsletter operators whose audience includes Amazon influencers and content creators. If the people who follow you would benefit from automating their content, you're a fit. Reach matters less than relevance." },
   ]
   const [open, setOpen] = useState<number | null>(0)
   return (

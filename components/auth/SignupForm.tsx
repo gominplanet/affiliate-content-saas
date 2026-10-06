@@ -14,8 +14,9 @@ import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
+import { safeNextPath } from '@/lib/safe-next'
 
-const PAID_SIGNUP_TIERS = ['creator', 'amazon', 'studio', 'pro']
+const PAID_SIGNUP_TIERS = ['amazon', 'pro']
 
 export default function SignupForm() {
   const router = useRouter()
@@ -43,7 +44,17 @@ export default function SignupForm() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [paidTier, setPaidTier] = useState<string | null>(null)
+  // Yearly chosen on the pricing page (?billing=annual). Was dropped here, so a
+  // logged-out buyer who picked yearly was checked out monthly.
+  const [annual, setAnnual] = useState(false)
   const [path, setPath] = useState<OnboardingPath | null>(null)
+  // WHERE AN INVITE WAS GOING. /agency/accept/[token] sends a logged-out team
+  // member here as ?next=, and this form used to drop it, so they confirmed
+  // their email and landed in trial onboarding with the invite never accepted.
+  const [nextPath, setNextPath] = useState<string | null>(null)
+  // AN INVITED TEAM MEMBER is joining someone else's account, not starting a
+  // trial: the trial pitch told them about free designs they are not getting.
+  const invited = !!nextPath && nextPath.startsWith('/agency/accept/')
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
   // Queue the submit until Turnstile mints a token instead of erroring when the
@@ -81,9 +92,12 @@ export default function SignupForm() {
     // never seen a checkout. The API has always accepted the tier; only this
     // list did not.
     if (t && PAID_SIGNUP_TIERS.includes(t)) setPaidTier(t)
+    setAnnual(sp.get('billing') === 'annual')
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
     setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
+    // Same-origin paths only: it ends up in the post-confirmation redirect.
+    setNextPath(safeNextPath(sp.get('next')))
     // Carried from the ad landing, where they already typed it. Asking for the
     // same address twice on consecutive screens is a drop-off for no reason.
     // Only shape-checked, never trusted: Supabase validates it for real and the
@@ -102,7 +116,7 @@ export default function SignupForm() {
       if (pendingTimer.current) clearTimeout(pendingTimer.current)
       pendingTimer.current = setTimeout(() => {
         setPendingSubmit(false)
-        setError('Couldn’t verify you’re human — please try again.')
+        setError('Couldn’t verify you’re human. Please try again.')
         captchaRef.current?.reset()
         setCaptchaToken(null)
       }, 15000)
@@ -131,8 +145,12 @@ export default function SignupForm() {
             password,
             fullName,
             tier: paidTier,
+            interval: annual ? 'year' : 'month',
             referral: rw?.referral ?? null,
             couponId: rw?.coupon?.id ?? null,
+            // Verified server side: this route creates a confirmed account, so
+            // it cannot lean on Supabase's own captcha check.
+            captchaToken: token,
           }),
         })
         const data = await res.json().catch(() => ({}))
@@ -145,7 +163,7 @@ export default function SignupForm() {
         }
         window.location.href = data.url as string // → Stripe Checkout
       } catch {
-        setError('Connection error — please try again.')
+        setError('Connection error. Please try again.')
         setLoading(false)
       }
       return
@@ -166,7 +184,8 @@ export default function SignupForm() {
         // onboarding that matches what they signed up FOR. An Amazon influencer
         // sent to the default funnel meets "Connect YouTube", required, with
         // every later step locked, which is the end of the road for them.
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(confirmationLandingFor(path ?? 'creator'))}`,
+        // An explicit ?next= (an agency invite) outranks the onboarding landing.
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(nextPath ?? confirmationLandingFor(path ?? 'creator'))}`,
       },
     })
 
@@ -184,7 +203,8 @@ export default function SignupForm() {
       // address and never confirmed was invisible, so a broken confirmation
       // email and a bad audience looked identical. This is the step that tells
       // those two apart, tagged with the door they came through.
-      trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
+      // An invited team member is not a lead from the ads.
+      if (!invited) trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
       setSuccess(true)
     }
   }
@@ -199,8 +219,10 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock{' '}
-          {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'} — no card required.
+          We sent a confirmation link to <strong>{email}</strong>.{' '}
+          {invited
+            ? 'Click it and you go straight back to your team invite to accept it.'
+            : <>Click it to unlock {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'}. No card required, and your free trial runs 30 days.</>}
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
@@ -214,14 +236,18 @@ export default function SignupForm() {
           ad describes a product they did not come for and cannot use. */}
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier
         ? `Start your ${tierLabel} plan`
+        : invited
+          ? 'Create your account to join the team'
         : path === 'amazon'
-          ? 'Start free — designs with your face on them'
-          : 'Start free — 5 reviews on the house'}</h2>
+          ? 'Start your 30-day free trial: designs with your face on them'
+          : 'Start your 30-day free trial: 5 reviews on the house'}</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
-        ? `Create your account, then continue to secure checkout — you go straight to ${tierLabel}, no free trial.`
+        ? `Create your account, then continue to secure checkout. You go straight to ${tierLabel}, no free trial.`
+        : invited
+          ? 'Confirm your email and you come straight back to the invite to accept it.'
         : path === 'amazon'
           ? 'No credit card, no website, no YouTube channel. Confirm your email and you are one Amazon product link away from a finished design you can download.'
-          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.'}</p>
+          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site, unlocked the moment you confirm your email.'}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -283,18 +309,20 @@ export default function SignupForm() {
             ? 'Verifying…'
             : loading
             ? (paidTier ? 'Starting checkout…' : 'Creating account…')
-            : (paidTier ? 'Continue to payment →' : 'Create my free account')}
+            : (paidTier ? 'Continue to payment →' : invited ? 'Create my account' : 'Create my free account')}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
           {paidTier
             ? 'Secure checkout by Stripe · Cancel anytime'
-            : 'No credit card · Cancel anytime · 5 free reviews to try the full workflow'}
+            : invited
+              ? 'No credit card needed to join a team'
+              : 'No credit card · 30 days free · 5 free reviews to try the full workflow'}
         </p>
       </form>
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Already have an account?{' '}
-        <Link href="/login" className="text-[#7C3AED] hover:underline font-medium">
+        <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : '/login'} className="text-[#7C3AED] hover:underline font-medium">
           Sign in
         </Link>
       </p>

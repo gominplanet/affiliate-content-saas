@@ -2,12 +2,14 @@ import { isSellableTier } from '@/lib/tier'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
+import { priceMismatch } from '@/lib/price-guard'
 import { couponToApply } from '@/lib/coupon-guard'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { reportRegistration } from '@/lib/meta-registration'
+import { captchaEnforced, turnstileOk, requestIp, signupIpHash, paidSignupThrottled } from '@/lib/signup-guard'
 
 /**
  * Paid signup in ONE flow: create the account + send the user straight to
@@ -25,20 +27,29 @@ import { reportRegistration } from '@/lib/meta-registration'
  * it by the user_id we stamp on the session + subscription. So an abandoned
  * checkout just leaves a normal trial account, exactly like a trial signup.
  */
-const PAID_TIERS: Tier[] = ['creator', 'amazon', 'studio', 'pro']
+// Only the two plans MVP sells. Creator and Studio were in this list, so a stale
+// /signup?plan=studio link rendered "Start your Studio plan" and then refused it
+// as "Invalid plan." isSellableTier below would refuse them anyway.
+const PAID_TIERS: Tier[] = ['amazon', 'pro']
 
 export async function POST(request: NextRequest) {
   if (SALES_PAUSED) {
     return NextResponse.json({ error: SALES_PAUSED_MESSAGE }, { status: 503 })
   }
 
-  const { email, password, fullName, tier, referral, couponId } = (await request.json()) as {
+  const { email, password, fullName, tier, referral, couponId, interval, captchaToken } = (await request.json()) as {
     email?: string
     password?: string
     fullName?: string
     tier?: Tier
     referral?: string | null
     couponId?: string | null
+    /** 'year' when they picked yearly on the pricing page (?billing=annual).
+     *  This route used to ignore it, so a logged-out buyer who chose $999 a year
+     *  was put on $99 a month. Same fallback as /api/stripe/checkout. */
+    interval?: BillingInterval
+    /** The Turnstile token the signup form collects (lib/signup-guard). */
+    captchaToken?: string | null
   }
 
   const cleanEmail = (email || '').trim().toLowerCase()
@@ -53,7 +64,14 @@ export async function POST(request: NextRequest) {
   if (!tier || !PAID_TIERS.includes(tier) || !isSellableTier(tier)) {
     return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 })
   }
-  const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
+  const annualId = interval === 'year' ? annualPriceIdFor(tier) : null
+  if (interval === 'year' && !annualId) {
+    void alertOps(
+      'Yearly paid signup requested with no annual price configured',
+      `Tier "${tier}" was bought with interval=year but no annual Stripe price is set. The customer was charged MONTHLY. Set it in Vercel and redeploy.`,
+    )
+  }
+  const priceId = annualId ?? PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) {
     return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 })
   }
@@ -69,7 +87,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Billing for this plan is temporarily unavailable. Our team has been alerted — please try again shortly or contact support.' }, { status: 503 })
   }
 
+  // And it must charge the price the page showed (lib/price-guard). Checked
+  // BEFORE the account exists, so a refused buyer is not left half signed up.
+  const mismatch = await priceMismatch(getStripe(), priceId, tier as Tier, annualId ? 'year' : 'month', 'paid signup')
+  if (mismatch) return NextResponse.json({ error: mismatch.error }, { status: mismatch.status })
+
   const admin = createAdminClient()
+
+  // CAPTCHA AND A PER-NETWORK CEILING BEFORE THE ACCOUNT EXISTS (2026-10-06
+  // security audit). This route creates a CONFIRMED account with the service
+  // key, so it skipped the captcha, the confirmation email and Supabase's own
+  // signup limits: a script could mint Free accounts, each with an AI
+  // allowance, from made-up addresses. See lib/signup-guard.ts.
+  const ip = requestIp(request.headers)
+  if (captchaEnforced() && !(await turnstileOk(captchaToken, ip))) {
+    return NextResponse.json({ error: 'Please complete the captcha and try again.', code: 'captcha' }, { status: 400 })
+  }
+  if (await paidSignupThrottled(admin, signupIpHash(ip))) {
+    return NextResponse.json({ error: 'Too many signups from this network just now. Try again in a little while.', code: 'rate_limited' }, { status: 429 })
+  }
 
   // Create the account already email-confirmed. These users are about to pay,
   // so they're real; pre-confirming is what lets us skip the confirmation email
@@ -136,25 +172,44 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const stripe = getStripe()
   const approvedCoupon = await couponToApply(stripe, couponId, 'paid signup')
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    payment_method_types: ['card'],
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer_email: cleanEmail,
-    // Stamp BOTH the session and the subscription with user_id + tier so the
-    // webhook can apply the upgrade regardless of which event arrives first
-    // (mirrors /api/stripe/checkout).
-    metadata: { user_id: userId, tier },
-    subscription_data: { metadata: { user_id: userId, tier } },
-    // Rewardful coupon (double-sided incentive) and manual promo codes are
-    // mutually exclusive on a Checkout session — pick one.
-    // Only an approved or mild coupon (lib/coupon-guard).
-    ...(approvedCoupon ? { discounts: [{ coupon: approvedCoupon }] } : { allow_promotion_codes: true }),
-    // Rewardful affiliate attribution.
-    ...(referral ? { client_reference_id: referral } : {}),
-    success_url: `${appUrl}/billing?upgraded=1`,
-    cancel_url: `${appUrl}/pricing`,
-  })
+  // Meta match-quality cookies, carried to the webhook's Purchase exactly as
+  // /api/stripe/checkout does. This route is where ad-driven buyers pay.
+  const fbp = request.cookies.get('_fbp')?.value || ''
+  const fbc = request.cookies.get('_fbc')?.value || ''
+  // The account exists from here on. A Stripe failure used to escape as a raw
+  // 500, the form said "try again", and the retry answered "an account with
+  // this email already exists". Say what actually happened instead.
+  let session
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: cleanEmail,
+      // Stamp BOTH the session and the subscription with user_id + tier so the
+      // webhook can apply the upgrade regardless of which event arrives first
+      // (mirrors /api/stripe/checkout).
+      metadata: { user_id: userId, tier, ...(fbp ? { fbp } : {}), ...(fbc ? { fbc } : {}) },
+      subscription_data: { metadata: { user_id: userId, tier } },
+      // Rewardful coupon (double-sided incentive) and manual promo codes are
+      // mutually exclusive on a Checkout session — pick one.
+      // Only an approved or mild coupon (lib/coupon-guard).
+      ...(approvedCoupon ? { discounts: [{ coupon: approvedCoupon }] } : { allow_promotion_codes: true }),
+      // Rewardful affiliate attribution.
+      ...(referral ? { client_reference_id: referral } : {}),
+      // Same shape as /api/stripe/checkout: `plan` gives the browser Purchase a
+      // value and `cs` gives it the webhook's event id, so Meta counts the sale
+      // once. Without them every paid signup was reported twice.
+      success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/pricing`,
+    })
+  } catch (e) {
+    console.error('[signup-paid] checkout session failed', e instanceof Error ? e.message : e)
+    return NextResponse.json({
+      error: 'Your account is created, but checkout could not start. Sign in and open Plan & Billing to finish your purchase.',
+      code: 'checkout_failed',
+    }, { status: 502 })
+  }
 
   return NextResponse.json({ url: session.url })
 }

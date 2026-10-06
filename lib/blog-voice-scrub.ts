@@ -64,7 +64,36 @@ export interface VoiceScrubOptions {
    *  When provided, bare @handles in body text get wrapped in <a> tags pointing
    *  here. When absent, bare @handles are LEFT untouched (we won't invent a URL). */
   channelUrl?: string | null
+  /** The post is written from the creator's OWN video: they made it, so a
+   *  sentence saying they did not review, test or use the product is false
+   *  and is taken out. Never set for posts about products the creator has not
+   *  used (from a link), where that sentence is the honest one. */
+  ownVideo?: boolean
 }
+
+/** "I didn't actually review this product", "I haven't tested it myself",
+ *  "we never got to try it": a whole sentence denying the creator's own
+ *  review. Written by the model when the video's words were not captured. */
+// ONLY ABOUT THE PRODUCT ITSELF. The first version took any "I never use",
+// "we couldn't use it", "I didn't use a pencil", which removed real steps and
+// real cons from real reviews ("We couldn't use it in the rain, the seal
+// leaked"). Now a sentence goes only when it says the creator did not
+// review, test or try THIS product: with an "actually", "personally", "yet" or
+// "had a chance to", or a review/test/try verb whose sentence ends right
+// after naming the product ("I haven't tested it myself.").
+const DENY_NEG = String.raw`\b(?:I|we)\s+(?:did\s+not|didn['’]t|have\s+not|haven['’]t)\s+`
+const DENY_ADV = String.raw`(?:actually|personally|yet|been\s+able\s+to|had\s+(?:a|the)\s+chance\s+to|gotten\s+to|got\s+to|get\s+to)\s+`
+const DENY_VERB = String.raw`(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\s+out)?|use[d]?|own(?:ed)?|handle[d]?|get\s+hands-on\s+with)`
+const DENY_OBJ = String.raw`\s+(?:this|these|it|them|the\s+(?:product|item|unit|device|model|one)s?)\b`
+const DENY_TAIL = String.raw`(?:\s+(?:myself|ourselves|personally|yet|out|first-?hand|in\s+person|hands-on))*\s*[.!?]`
+// "I never actually tested this product." counts too, with its adverb.
+const DENY_NEVER = String.raw`\b(?:I|we)\s+(?:have\s+|'ve\s+)?never\s+`
+const OWN_VIDEO_DENIALS = new RegExp(
+  String.raw`(?:^|(?<=[.!?]\s))[^.!?<>]*` +
+  `(?:(?:${DENY_NEG}|${DENY_NEVER})${DENY_ADV}${DENY_VERB}${DENY_OBJ}[^.!?<>]*[.!?]` +
+  `|${DENY_NEG}(?:review(?:ed)?|test(?:ed)?|tr(?:y|ied)(?:\\s+out)?)${DENY_OBJ}${DENY_TAIL})\\s*`,
+  'gi',
+)
 
 // Matches a bare @handle not already inside an attribute value, an existing
 // <a> tag's body, or a URL path. Negative lookbehind excludes the four
@@ -100,6 +129,14 @@ export function scrubVoicePatterns(content: string, opts?: VoiceScrubOptions): V
     // 2) Phrase rewrites in place.
     let rewritten = inner
     let hits = 0
+    if (opts?.ownVideo) {
+      const denials = rewritten.match(OWN_VIDEO_DENIALS)
+      if (denials) {
+        rewritten = rewritten.replace(OWN_VIDEO_DENIALS, '')
+        hits += denials.length
+        if (!rewritten.replace(/<[^>]+>/g, '').trim()) { paragraphsRemoved++; return '' }
+      }
+    }
     for (const [re, repl] of PHRASE_REWRITES) {
       const m = rewritten.match(re)
       if (m) {

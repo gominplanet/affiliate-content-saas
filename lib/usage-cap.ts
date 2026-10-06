@@ -12,6 +12,7 @@
  * generation itself fires multiple model calls.
  */
 import { billingWindow } from '@/lib/tier'
+import { AMAZON_CLIPS_PER_MONTH } from '@/lib/amazon-plan'
 
 /** Primary ai_usage.feature name that appears once per high-level
  *  generation event. Used as the counter for cap checks. */
@@ -20,13 +21,17 @@ export const PRIMARY_FEATURE = {
    *  gpt-image-1 (face), Kontext (product), flux-lora (legacy face), or the
    *  Flux Pro fallback — so summing these feature names = total successful
    *  thumbnail generations. */
-  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_nanobanana_image', 'yt_thumb_ideogram_image'] as string[],
+  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_nanobanana_image', 'yt_thumb_ideogram_image',
+    // The Liftoff / Launchpad product thumbnail (lib/product-thumbnail) is a
+    // thumbnail render too, and counts as one.
+    'product_thumbnail', 'product_thumbnail_clean'] as string[],
   /** Metadata 5-agent swarm; title_strategist runs exactly once per
    *  generation, so counting it = total successful metadata gens. */
   metadata: ['yt_meta_title_strategist'] as string[],
   /** Native Instagram AI image — Pro-only, separately capped from
-   *  YouTube thumbnails (different surface, different aspect ratio). */
-  instagramAi: ['ig_ai_thumbnail_image'] as string[],
+   *  YouTube thumbnails (different surface, different aspect ratio). The
+   *  product-check re-render counts too: every render is one of the allowance. */
+  instagramAi: ['ig_ai_thumbnail_image', 'ig_ai_thumbnail_retry_cost'] as string[],
   /** AI assistant — one row per user message turn. */
   assistant: ['assistant_message'] as string[],
   /** Photobooth headshot — one row per successful generation. */
@@ -74,10 +79,18 @@ export const PRIMARY_FEATURE = {
  */
 export const SHORTS_MONTHLY_CAP = 150
 
+/** Finished clips a plan may render per billing period: Pro 150, the Amazon
+ *  plan 50 since it got Clip Factory on 2026-10-05 (lib/amazon-plan), admin
+ *  unlimited. Every surface that states or enforces the cap asks this. */
+export function shortsCapFor(tier: string): number | null {
+  if (tier === 'admin') return null
+  return tier === 'amazon' ? AMAZON_CLIPS_PER_MONTH : SHORTS_MONTHLY_CAP
+}
+
 /** X posts a Pro user can publish per billing period (admin = unlimited). X is
- *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$20
- *  per Pro user per month. */
-export const X_MONTHLY_CAP = 100
+ *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$15
+ *  per Pro user per month (100 -> 75, Seb 2026-10-05). */
+export const X_MONTHLY_CAP = 75
 
 interface CapCheck {
   used: number
@@ -90,7 +103,8 @@ interface CapCheck {
  * Count how many `features` calls a user has made in their current
  * billing period and compare against `limit`.
  *
- * Returns null on DB error — callers should treat that as "not over
+ * Counts with the service role whatever client is passed (ai_usage has no
+ * member read policy). Returns null on DB error — callers should treat that as "not over
  * cap" rather than blocking the user on a telemetry hiccup. Telemetry
  * must never break a paid action.
  */
@@ -114,7 +128,15 @@ export async function checkUsageCap(
   })
 
   try {
-    const { count } = await supabase
+    // COUNTED WITH THE SERVICE ROLE. ai_usage is service-role only (028: RLS
+    // on, no policies), so a member's own client counts zero rows without an
+    // error, and every cap read as "nothing used yet". The other limiters
+    // (deal-post, find-moments, partner-post) already count this way.
+    // `supabase` stays in the signature for the callers; it is not used here.
+    void supabase
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (createAdminClient() as any)
       .from('ai_usage')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)

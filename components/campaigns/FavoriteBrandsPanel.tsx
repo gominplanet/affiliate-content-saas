@@ -96,7 +96,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
         return
       }
       await load()
-      toast.success(`Refreshed from Amazon — ${totalFound} live ${totalFound === 1 ? 'campaign' : 'campaigns'} found.`, { id: tId, duration: 5000 })
+      toast.success(`Refreshed from Amazon: ${totalFound} live ${totalFound === 1 ? 'campaign' : 'campaigns'} found.`, { id: tId, duration: 5000 })
       onChanged?.()
     } finally { setRefreshingLive(false) }
   }, [brands, load, onChanged])
@@ -117,12 +117,13 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
     try {
       const list = (await fetchCampaigns(b.label, true)).filter(c => !!c.repAsin && !!c.detailsUrl)
       if (list.length === 0) { toast(`No open ${b.label} campaigns right now.`); return }
-      let joined = 0, already = 0, failed = 0, done = 0
+      let joined = 0, already = 0, failed = 0, done = 0, full = 0
       toast.loading(`Accepting 0 of ${list.length}…`, { id: tId, duration: Infinity })
       for (const c of list) {
         try {
           const r = await requestAcceptCampaign(c.detailsUrl)
-          if (r.ok) {
+          if (r.full) full++
+          else if (r.ok) {
             if (r.already) already++
             else joined++
             // Record it locally whether it was a fresh join OR already joined on
@@ -146,9 +147,9 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       // identical to a brand that had nothing left to join. The usual cause is
       // SCOUT being logged out, and that is worth saying out loud because it is
       // the one thing the creator can fix.
-      const line = `${b.label}: accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`
+      const line = `${b.label}: accepted ${joined} · ${already} already joined${full ? ` · ${full} full on Amazon (taken off the list)` : ''}${failed ? ` · ${failed} failed` : ''}`
       if (joined === 0 && already === 0 && failed > 0) {
-        toast.error(`${line}. Nothing was joined — check you're logged into Amazon in this browser, then try again.`, { id: tId, duration: 10_000 })
+        toast.error(`${line}. Nothing was joined. Check you're logged into Amazon in this browser, then try again.`, { id: tId, duration: 10_000 })
       } else {
         toast.success(line, { id: tId, duration: 7000 })
       }
@@ -273,7 +274,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
                 {busy === b.brand ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} Accept all
               </button>
               <button type="button" onClick={() => void messageAll(b)} disabled={busy === b.brand}
-                title="Message this brand through Creator Connections — even with no open slots. Pulls the brand's live campaigns if none are loaded."
+                title="Message this brand through Creator Connections, even with no open slots. Pulls the brand's live campaigns if none are loaded."
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                 <MessageCircle size={13} /> Message all

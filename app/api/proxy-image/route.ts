@@ -31,6 +31,25 @@ export async function GET(request: Request) {
   if (!res.ok) {
     return NextResponse.json({ error: `Upstream ${res.status}` }, { status: 502 })
   }
+  // A redirect may not leave the list either.
+  try {
+    const finalHost = new URL(res.url || url).hostname
+    if (!allowed.some(h => finalHost === h || finalHost.endsWith('.' + h))) {
+      return NextResponse.json({ error: 'URL not allowed' }, { status: 403 })
+    }
+  } catch { /* res.url unreadable: the checked url was fetched */ }
+  // IMAGES ONLY. storage.googleapis.com and the fal and replicate hosts let
+  // anyone upload a file, and this passed the upstream type straight through:
+  // an HTML file uploaded there was served from MVP's own domain, where its
+  // script could act with the creator's session. Anything that is not an
+  // image is refused, and even an image is sent so a browser cannot run it.
+  const upstreamType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+  // (Some buckets label images as octet-stream; those are served as an image
+  // type below, which a browser will not run as a page.)
+  const isImage = /^image\/(?:png|jpe?g|webp|gif|avif)$/.test(upstreamType)
+  if (upstreamType && !isImage && !/^(?:application|binary)\/octet-stream$/.test(upstreamType)) {
+    return NextResponse.json({ error: 'Not an image' }, { status: 415 })
+  }
 
   // Bound the response size so we never buffer a multi-MB asset into the
   // function. The allowed CDNs all serve well-formed Content-Length headers;
@@ -45,11 +64,14 @@ export async function GET(request: Request) {
   if (buffer.byteLength > MAX_BYTES) {
     return NextResponse.json({ error: 'Upstream asset is too large to proxy' }, { status: 413 })
   }
-  const contentType = res.headers.get('content-type') || 'image/jpeg'
+  const contentType = isImage ? upstreamType : 'image/jpeg'
 
   return new NextResponse(buffer, {
     headers: {
       'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Content-Disposition': 'inline',
       'Access-Control-Allow-Origin': '*',
       // CDN images are content-addressed / immutable — cache hard so we don't
       // re-invoke this function for the same image. (Canvas-compositing path

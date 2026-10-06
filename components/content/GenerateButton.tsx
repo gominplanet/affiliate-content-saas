@@ -36,7 +36,7 @@ import { describeImages } from '@/lib/images-status'
 // 'pending' = the job ran past our wait window but is STILL generating in the
 // background (it isn't a failure — it lands in the Library on its own). Shown as
 // calm info, never a red error with a duplicate-causing Retry.
-type GenStatus = 'idle' | 'generating' | 'done' | 'error' | 'pending'
+type GenStatus = 'idle' | 'generating' | 'done' | 'error' | 'pending' | 'notLive'
 
 // Cosmetic step indicator while /api/blog/generate is in flight. The image
 // step is intentionally NOT here — image generation runs fire-and-forget
@@ -52,9 +52,9 @@ const GEN_STEPS = [
   'Reading transcript…',
   'Writing the blog post…',
   'Publishing to WordPress…',
-  'Still working — large posts can take a couple minutes…',
-  'Almost there — finalising the post…',
-  'Running in the background — a busy queue can add a few minutes. Safe to keep browsing…',
+  'Still working: large posts can take a couple minutes…',
+  'Almost there: finalising the post…',
+  'Running in the background: a busy queue can add a few minutes. Safe to keep browsing…',
 ]
 // Hard client-side abort if generation hasn't resolved in this many ms.
 // With the async queue (Phase 4) the request is enqueue + poll: worker
@@ -67,8 +67,11 @@ const GENERATE_ABORT_MS = 840_000 // 14 min (> MAX_POLL_MS 13 min)
 
 export function GenerateButton({
   videoId, existingPost, userTier, blogImagePref, onDone,
-  includeImages: includeImagesProp, onIncludeImagesChange, siteId,
+  includeImages: includeImagesProp, onIncludeImagesChange, siteId, basedOnPostId,
 }: {
+  /** Build on a post MVP already wrote about this product: its facts become
+   *  the writer's source material and the paid web research is skipped. */
+  basedOnPostId?: string | null
   videoId: string
   /** Multi-site (Pro): the blog this generation targets. Passed into the
    *  generate request so a fresh post lands on the chosen site. Omitted/null
@@ -103,6 +106,10 @@ export function GenerateButton({
   // error offers "Run Connection Doctor" instead of a Retry that would just
   // hit the same wall.
   const [needsDoctor, setNeedsDoctor] = useState(false)
+  // NOT LIVE YET IS NOT AN ERROR. MVP writes posts only from public videos
+  // (lib/video-public), and a scheduled one was shown in red with a Retry
+  // that could only fail again. Its go-live time, when YouTube gave one.
+  const [goesLiveAt, setGoesLiveAt] = useState<string | null>(null)
   const [result, setResult] = useState(existingPost || null)
   // In-line "Add images" action on already-published rows. Was previously
   // only available on the older-posts simple list; rich VideoCard rows
@@ -112,7 +119,7 @@ export function GenerateButton({
   const [addingImages, setAddingImages] = useState(false)
   async function addImagesNow() {
     if (!result || !existingPost?.wpPostId) {
-      toast.error('Missing post id — refresh the page and try again')
+      toast.error('Missing post id. Refresh the page and try again')
       return
     }
     setAddingImages(true)
@@ -248,7 +255,7 @@ export function GenerateButton({
     setUserImages(prev => { const n = [...prev]; n[idx] = null; return n })
   }
 
-  async function generate(opts?: { rewriteFeedback?: string }) {
+  async function generate(opts?: { rewriteFeedback?: string; scheduleAt?: string }) {
     setStatus('generating')
     setStepIdx(0)
     setError(null)
@@ -276,19 +283,24 @@ export function GenerateButton({
             includeImages,
             ...(artThumb ? { artDirectorThumbnail: true } : {}),
             ...(siteId ? { siteId } : {}),
+            ...(basedOnPostId && !existingPost ? { basedOnPostId } : {}),
             ...(includeImages && userImages.some(Boolean) ? { userImageUrls: userImages.filter((u): u is string => !!u) } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
+            // Written now, published by WordPress itself at this time: the
+            // one way the server allows a post for a scheduled video, since
+            // it never shows before the video does.
+            ...(opts?.scheduleAt ? { scheduleMode: 'wp-native', scheduledFor: opts.scheduleAt } : {}),
           }, ctrl.signal)
           let d: Record<string, unknown> = {}
-          try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
+          try { d = await r.json() } catch { throw new Error(`Server error (${r.status}): check Vercel logs`) }
           return { res: r, data: d }
         } catch (e) {
           // DOMException name 'AbortError' = our abort fired. Rewrite the
           // message so the user sees something they can act on, not a
           // bare "The user aborted a request."
           if (e instanceof DOMException && e.name === 'AbortError') {
-            throw new Error('Generation took unusually long (>10 min) and the page stopped waiting — the post is likely still finishing in the background. Refresh the page in a minute or two and check your Library before retrying; if it keeps happening, check Vercel logs or your WordPress site.')
+            throw new Error('Generation took unusually long (>10 min) and the page stopped waiting. The post is likely still finishing in the background. Refresh the page in a minute or two and check your Library before retrying; if it keeps happening, check Vercel logs or your WordPress site.')
           }
           // "Failed to fetch" — browser-level TypeError thrown when the
           // connection drops BEFORE any HTTP response (Vercel killed the
@@ -297,7 +309,7 @@ export function GenerateButton({
           // saw the response, so the action is the same as the abort:
           // refresh and check before retrying.
           if (e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(e.message)) {
-            throw new Error('Lost connection to the server before getting a response. The post may have published anyway — refresh the page to check. If it didn\'t land, retry; if it keeps failing, the WordPress site or Vercel function may be down.')
+            throw new Error('Lost connection to the server before getting a response. The post may have published anyway. Refresh the page to check. If it didn\'t land, retry; if it keeps failing, the WordPress site or Vercel function may be down.')
           }
           throw e
         } finally {
@@ -310,10 +322,10 @@ export function GenerateButton({
       // proceeding.
       if (!res.ok && data.reason === 'no_transcript') {
         const proceed = await confirm({
-          title: 'No transcript available — generate anyway?',
+          title: 'No transcript available. Generate anyway?',
           description:
             'Without a transcript the post will be shorter and less specific (no lived experiences to ground on). ' +
-            'Recommended: enable captions in YouTube Studio → Subtitles, then retry — auto-captions usually appear within 24h.',
+            'Recommended: enable captions in YouTube Studio → Subtitles, then retry. Auto-captions usually appear within 24h.',
           confirmLabel: 'Generate anyway',
           cancelLabel: 'Wait for captions',
         })
@@ -328,10 +340,10 @@ export function GenerateButton({
         || /short clip with no product attached/i.test(String(data.error || ''))
       if (!res.ok && notReviewable) {
         const proceed = await confirm({
-          title: 'Short clip with no product — generate anyway?',
+          title: 'Short clip with no product. Generate anyway?',
           description:
             'MVP couldn\'t find a product on this video (no Amazon link or ASIN in the title/description) and the transcript is too thin to ground a review. ' +
-            'Best fix: add the product link to the first lines of the video\'s YouTube description, then retry — you\'ll get a full review with your affiliate link. ' +
+            'Best fix: add the product link to the first lines of the video\'s YouTube description, then retry. You\'ll get a full review with your affiliate link. ' +
             '"Generate anyway" publishes a general post with no affiliate link.',
           confirmLabel: 'Generate anyway',
           cancelLabel: 'I\'ll add the product link',
@@ -358,15 +370,22 @@ export function GenerateButton({
         // Pre-flight blocked the publish: WordPress is refusing writes. Offer the
         // Connection Doctor instead of a Retry (which would replay the same
         // wall). No generation was consumed.
+        if (data.code === 'video_not_public') {
+          setError(errText(data.error) || 'This video is not public on YouTube yet.')
+          setGoesLiveAt(typeof data.goesLiveAt === 'string' ? data.goesLiveAt : null)
+          setStatus('notLive')
+          return
+        }
         if (data.reason === 'wp_connection') {
           setNeedsDoctor(true)
-          setError(errText(data.error) || 'Your WordPress connection is blocked — run the Connection Doctor to fix it, then try again.')
+          setError(errText(data.error) || 'Your WordPress connection is blocked. Run the Connection Doctor to fix it, then try again.')
           setStatus('error')
           return
         }
         throw new Error(errText(data.error) || 'Generation failed')
       }
       setResult({ url: data.wordpressUrl as string, title: data.title as string, held: !!(data.held as { reasons?: string[] } | null)?.reasons?.length })
+      if (opts?.scheduleAt) toast.success(`Written and scheduled. WordPress publishes it ${new Date(opts.scheduleAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}, after your video goes live.`, { duration: 9000 })
 
       // The AI in-article image step lives inside the generate route's
       // after() block. Vercel routinely cuts that block off before the slow
@@ -391,7 +410,7 @@ export function GenerateButton({
       // things — no blocking. 2026-06-08.
       if (includeImages && !userImages.some(Boolean) && data.wordpressPostId) {
         const wpPostId = data.wordpressPostId
-        toast.loading('Generating in-article images… (1-3 minutes — you can keep working)', {
+        toast.loading('Generating in-article images… (1-3 minutes, you can keep working)', {
           id: `img-gen-${wpPostId}`,
           duration: Infinity,  // dismissed by the success/fail toast below
         })
@@ -467,7 +486,7 @@ export function GenerateButton({
       // Raw JSON parse error = server returned an HTML error page instead of JSON
       // (Vercel crash, redirect to login, etc.). Convert to something actionable.
       if (/Unexpected token.*<|is not valid JSON/i.test(message)) {
-        message = 'Server returned an unexpected response — it may have crashed. Check Vercel logs, or try again in a moment.'
+        message = 'Server returned an unexpected response. It may have crashed. Check Vercel logs, or try again in a moment.'
       }
       setError(message)
       // "Still finishing in the background" / "may have published anyway" are NOT
@@ -497,12 +516,12 @@ export function GenerateButton({
             days; old ones that flip back to this state may have been dropped).
             Null/undefined = no signal yet → hide the badge. */}
         {result.indexed === true && (
-          <span className="inline-flex items-center text-[#34c759]" title="Indexed by Google — it shows in search results.">
+          <span className="inline-flex items-center text-[#34c759]" title="Indexed by Google. It shows in search results.">
             <CheckCircle size={12} />
           </span>
         )}
         {result.indexed === false && (
-          <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet — new posts can take days to weeks. Open the SEO page to request indexing.'}>
+          <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet. New posts can take days to weeks. Open the SEO page to request indexing.'}>
             <AlertCircle size={12} />
           </span>
         )}
@@ -541,7 +560,7 @@ export function GenerateButton({
             deliberate text-only post, which the old count-only check couldn't.
             Falls back to the count for legacy rows written before the column. */}
         {result.imagesStatus === 'pending' && (
-          <span className="inline-flex items-center gap-1 text-[#86868b] dark:text-[#8e8e93]" title="In-article images are still generating — this can take 1-3 minutes.">
+          <span className="inline-flex items-center gap-1 text-[#86868b] dark:text-[#8e8e93]" title="In-article images are still generating. This can take 1-3 minutes.">
             <Loader2 size={11} className="animate-spin" /><span className="text-[10px] font-semibold">Images…</span>
           </span>
         )}
@@ -617,6 +636,35 @@ export function GenerateButton({
         style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
         <p className="text-xs" style={{ color: '#b26a00' }}>{error}</p>
         <button onClick={() => window.location.reload()} className="text-xs text-[#7C3AED] hover:underline text-left">Refresh to check →</button>
+      </div>
+    )
+  }
+  if (status === 'notLive') {
+    // Amber, with what the creator can actually do: schedule the post for
+    // after the video, or come back once it is live. No Retry that fails.
+    const liveMs = goesLiveAt ? new Date(goesLiveAt).getTime() : NaN
+    const future = Number.isFinite(liveMs) && liveMs > Date.now()
+    const when = future ? new Date(liveMs).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg px-2.5 py-2"
+        style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+        <p className="text-xs font-semibold" style={{ color: '#b26a00' }}>
+          {when ? `Waiting for the video: it goes live on YouTube ${when}` : 'Waiting for the video to be public on YouTube'}
+        </p>
+        <p className="text-xs" style={{ color: '#b26a00' }}>
+          MVP writes posts only from videos people can watch, so nothing was written.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          {future && (
+            <button onClick={() => generate({ scheduleAt: new Date(liveMs + 10 * 60_000).toISOString() })}
+              className="text-xs font-semibold text-[#7C3AED] hover:underline text-left">
+              Write it now, publish 10 minutes after the video →
+            </button>
+          )}
+          <button onClick={() => { setStatus('idle'); setError(null) }} className="text-xs text-[#6e6e73] hover:underline text-left">
+            {future ? 'Leave it for now' : 'Check again'}
+          </button>
+        </div>
       </div>
     )
   }
@@ -716,7 +764,7 @@ export function GenerateButton({
           <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
             {userImages.some(Boolean)
               ? 'Only the photos you add here go in the article (no AI photos mixed in). Fill more slots for more images.'
-              : 'Optional. By default we generate AI photos of the actual product in different real-world settings — or drop in up to 3 of your own above.'}
+              : 'Optional. By default we generate AI photos of the actual product in different real-world settings, or drop in up to 3 of your own above.'}
           </span>
           {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
         </div>

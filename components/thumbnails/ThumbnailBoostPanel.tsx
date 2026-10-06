@@ -143,7 +143,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
 
   const saveCurrentAsPreset = useCallback(async () => {
     if (!styleReferenceUrl) return
-    const name = typeof window !== 'undefined' ? window.prompt('Name this look (e.g. "Reviews — dark", "Product close-up")', '')?.trim() : ''
+    const name = typeof window !== 'undefined' ? window.prompt('Name this look (e.g. "Reviews, dark", "Product close-up")', '')?.trim() : ''
     if (!name) return
     setSavingPreset(true)
     try {
@@ -328,7 +328,7 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
           )}
           {face && (
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold" style={muted}>Outfit <span className="font-normal text-[#a1a1a6]">— saved to {face.name}</span></span>
+              <span className="text-[10px] font-semibold" style={muted}>Outfit <span className="font-normal text-[#a1a1a6]">: saved to {face.name}</span></span>
               <div className="flex items-center gap-2">
                 <input value={outfit} onChange={e => setOutfit(e.target.value)} onBlur={() => { void saveOutfit() }} placeholder="e.g. a white lab coat" maxLength={120} disabled={disabled}
                   className={`flex-1 ${input} focus:border-[#FF9500]`} />
@@ -338,16 +338,16 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold" style={muted}>Badge text <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+              <span className="text-[10px] font-semibold" style={muted}>Badge text <span className="font-normal text-[#a1a1a6]">: overrides auto</span></span>
               <input value={boost.badgeText} onChange={e => boost.setBadgeText(e.target.value)} maxLength={18} disabled={disabled} placeholder="e.g. MAX POWER!" className={input} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold" style={muted}>Red word <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+              <span className="text-[10px] font-semibold" style={muted}>Red word <span className="font-normal text-[#a1a1a6]">: overrides auto</span></span>
               <input value={boost.accentWord} onChange={e => boost.setAccentWord(e.target.value)} maxLength={24} disabled={disabled} placeholder="e.g. STRONG" className={input} />
             </label>
           </div>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold" style={muted}>Describe the scene <span className="font-normal text-[#a1a1a6]">— pose, mood, background</span></span>
+            <span className="text-[10px] font-semibold" style={muted}>Describe the scene <span className="font-normal text-[#a1a1a6]">: pose, mood, background</span></span>
             <textarea value={boost.scenePrompt} onChange={e => boost.setScenePrompt(e.target.value.slice(0, 400))} disabled={disabled} rows={2}
               placeholder="e.g. me holding the bottle, shocked face, bright kitchen, big arrow at the stain"
               className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition resize-none disabled:opacity-60" />

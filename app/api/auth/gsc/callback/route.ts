@@ -10,6 +10,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { listGscSites, resolveGscProperty } from '@/lib/gsc'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -18,22 +19,14 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
-  // Decode state up front so both success + error can return to wherever the
-  // flow began (e.g. Brand Profile). New format JSON { uid, rt }; legacy = uid.
-  let userId: string | null = null
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so a callback URL can never be replayed. The return
+  // path (e.g. Brand Profile) comes from the httpOnly cookie.
+  const verified = await consumeOAuthState('gsc', state, `${appUrl}/api/auth/gsc/callback`)
+  const userId: string | null = verified?.uid ?? null
   let returnTo = ''
-  if (state) {
-    try {
-      const decoded = Buffer.from(state, 'base64url').toString('utf-8')
-      if (decoded.startsWith('{')) {
-        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string }
-        userId = typeof parsed.uid === 'string' ? parsed.uid : null
-        if (typeof parsed.rt === 'string' && /^\/(?!\/)/.test(parsed.rt)) returnTo = parsed.rt
-      } else {
-        userId = decoded
-      }
-    } catch { /* ignore — fall back to session */ }
-  }
+  const rt = verified?.data.rt
+  if (typeof rt === 'string' && /^\/(?!\/)/.test(rt)) returnTo = rt
 
   const dest = (params: string) =>
     returnTo
@@ -44,12 +37,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(dest(`gsc_error=${encodeURIComponent(error || 'no_code')}`))
   }
 
-  if (!userId) {
+  // THE STATE MUST BE OURS AND NAME THE SIGNED-IN USER (2026-10-06 audit). Same
+  // hole as the YouTube callback: a link carrying someone else's Google code
+  // and no state put THEIR Search Console on the clicker's account.
+  {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+    if (!user) return NextResponse.redirect(`${appUrl}/login`)
+    if (!userId || userId !== user.id) {
+      console.warn('[gsc/callback] state mismatch, possible CSRF', { hasState: !!userId, sessionUid: user.id })
+      return NextResponse.redirect(dest(`gsc_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`))
+    }
   }
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
   let step = 'token_exchange'
   try {

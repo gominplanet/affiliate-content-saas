@@ -29,7 +29,7 @@ import { TIERS } from '@/lib/tier'
 import NextImage from 'next/image'
 import {
   ShoppingBag, Rocket, Wand2, Share2, BadgePercent, Radar, UserSquare, Store,
-  FileText, Youtube, Scale, Mail, TrendingUp, ArrowRight,
+  FileText, Youtube, Scale, TrendingUp, ArrowRight, Upload,
 } from 'lucide-react'
 
 type Panel = {
@@ -58,8 +58,10 @@ const PANELS: Panel[] = [
     forWho: 'You sell on your Amazon storefront and socials',
     icon: <ShoppingBag size={22} />,
     logo: '/png/mvp-affiliate-amz.png',
-    headline: 'No blog. No YouTube.\nJust your storefront.',
-    blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals.',
+    // "No YouTube" came off on 2026-10-05 (Seb): the plan now includes one
+    // YouTube channel, Co-Pilot and Clip Factory. A channel stays optional.
+    headline: 'No blog needed.\nJust your storefront.',
+    blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, upload review videos in bulk, cut them into Reels, publish everywhere at once, and land paid brand deals.',
     // From TIERS, not typed in. These read $79 / $129 against a real 99 / 179,
     // so the landing page quoted a price Stripe does not charge.
     price: `$${TIERS.amazon.price}`,
@@ -69,21 +71,22 @@ const PANELS: Panel[] = [
     secondary: { label: 'Compare all plans', href: '/pricing' },
     bullets: [
       { icon: <Wand2 size={16} />, text: 'Incredible Amazon video-review thumbnails, one click' },
-      { icon: <Share2 size={16} />, text: 'Pins, Reels & Facebook designs, posted to all three' },
+      { icon: <Share2 size={16} />, text: 'Pins, Instagram & Facebook designs, posted to all three' },
       { icon: <BadgePercent size={16} />, text: 'Creator Connections: a daily brand-deal digest matched to you' },
       { icon: <Radar size={16} />, text: 'Amazon product research + live, verified Deal Radar' },
       { icon: <UserSquare size={16} />, text: 'Your own face on every design' },
+      { icon: <Upload size={16} />, text: 'Bulk Amazon upload, YouTube Co-Pilot and Clip Factory Reels' },
     ],
   },
   {
     accent: '#7C3AED',
     tint: 'rgba(124,58,237,',
     eyebrow: 'Creators & Marketers · full suite',
-    forWho: 'You have a blog or a YouTube channel',
+    forWho: 'You want a blog of your own',
     icon: <Rocket size={22} />,
     logo: '/png/mvp-affiliate-pro.png',
     headline: 'The whole content pipeline,\nin your voice.',
-    blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, a newsletter and a week of social, all written in your own voice.',
+    blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, scripts and a week of social, all written in your own voice.',
     // Read, like the Amazon panel above. These were typed as $49 / $99 against a
     // real Pro price of $199 / $399, which is the kind of wrong that only
     // survives in a component nobody renders.
@@ -96,15 +99,14 @@ const PANELS: Panel[] = [
       { icon: <FileText size={16} />, text: 'Full product-review blog on your WordPress, in your voice' },
       { icon: <Youtube size={16} />, text: 'YouTube video → blog, thumbnails, scripts & social posts' },
       { icon: <Scale size={16} />, text: 'Comparison posts & buying guides that win search' },
-      { icon: <Mail size={16} />, text: 'Your own newsletter, with scheduling & segments' },
-      { icon: <Store size={16} />, text: 'Auto-post to 9+ networks, plus the full Amazon storefront toolkit' },
+      { icon: <Store size={16} />, text: `Auto-post to ${TIERS.pro.socials.length} networks, plus everything in the Amazon plan` },
     ],
   },
 ]
 
 export default function AudienceSplit() {
   return (
-    <section className="px-5 sm:px-8 pt-12 sm:pt-16 pb-4 relative">
+    <section id="roles" className="px-5 sm:px-8 pt-12 sm:pt-16 pb-4 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto mb-9">
           <span
@@ -160,7 +162,7 @@ export default function AudienceSplit() {
                 <div className="pt-5 border-t flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
                   <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
                     From <span className="font-extrabold text-[19px]" style={{ color: 'var(--text)' }}>{p.price}</span>/mo{' '}
-                    <span className="line-through text-[12px]" style={{ color: 'var(--text-faint)' }}>{p.regular}</span>
+                    {p.regular !== p.price && <span className="line-through text-[12px]" style={{ color: 'var(--text-faint)' }}>{p.regular}</span>}
                   </span>
                   <a href={p.href} className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl text-[13.5px] font-semibold text-white shadow-sm transition-all group-hover:gap-2.5" style={{ backgroundColor: p.accent }}>
                     {p.cta} <ArrowRight size={15} />

@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Bookmark, ShoppingCart, Sparkles, X, Loader2, CheckCircle2, ExternalLink, MessageCircle } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
+import { fetchUnlessMade } from '@/lib/already-made-client'
 
 const CYAN = '#0E7490'
 
@@ -53,7 +54,7 @@ export default function PartnerBoostSaved({ reloadKey }: { reloadKey: number }) 
   async function generate(it: SavedItem) {
     setGen(g => ({ ...g, [it.id]: { loading: true } }))
     try {
-      const res = await fetch('/api/walmart/generate', {
+      const res = await fetchUnlessMade('/api/walmart/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           product: {
@@ -68,7 +69,7 @@ export default function PartnerBoostSaved({ reloadKey }: { reloadKey: number }) 
       if (!j.ok) { setGen(g => ({ ...g, [it.id]: { error: j.error || 'Generation failed' } })); return }
       setGen(g => ({ ...g, [it.id]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
-      setGen(g => ({ ...g, [it.id]: { error: 'Network error during generation.' } }))
+      setGen(g => ({ ...g, [it.id]: { error: 'No answer in time. The post may still be publishing, so check your blog before trying again.' } }))
     }
   }
 

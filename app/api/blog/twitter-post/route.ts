@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -12,12 +13,14 @@ import {
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { fetchOgImage } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { checkXPostCap, reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
+import { checkXPostCap, xCapMessage } from '@/lib/x-cap'
+import { postToXWithOneRetry, xPostKey, XPostError, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -25,9 +28,10 @@ const TWEET_HARD_LIMIT = 280
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     // X / Twitter auto-publish is a Pro-only feature.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
     const twCap = evaluateSocialCap(twSocialCount)
     if (!dryRun && twCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to X ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to X ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'twitter',
       }, { status: 429 })
@@ -87,7 +91,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile,voice_fingerprint')
+      .select('name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,11 +165,11 @@ export async function POST(request: NextRequest) {
         .replace(/<[^>]+>/g, '')
         .slice(0, 1200)
 
-      const voiceNote = brand?.voice_summary
-        ? `\n\nVoice guidance: ${brand.voice_summary}`
-        : ''
       const learnBlock = creatorVoiceBlock(brand)
 
+      // A PROVIDER ERROR IS NOT A SENTENCE. Uncaught, an overload or refusal
+      // fell to the catch at the bottom and reached the modal as the raw
+      // provider JSON. Nothing has been posted yet, so say so plainly.
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 300,
@@ -173,7 +177,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single tweet for this product review article.
 
-Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The tweet text alone (BEFORE the URL is appended) must be ${generationBudget} characters or fewer.
@@ -188,7 +192,13 @@ Content preview: ${plainContent}
 
 Return ONLY the tweet text.`,
         }],
+      }).catch((e: unknown) => {
+        console.error('[twitter-post] caption writer failed', e instanceof Error ? e.message : e)
+        return null
       })
+      if (!msg) {
+        return NextResponse.json({ error: 'The tweet could not be written just now, so nothing was posted to X. Please try again in a moment.' }, { status: 502 })
+      }
 
       tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
       recordAnthropicUsage(msg, {
@@ -213,15 +223,17 @@ Return ONLY the tweet text.`,
     const finalText = `${tweetText} ${twShareUrl}`
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })
+      // THE PREVIEW IS WHAT POSTS: createTweet discloses (and refits to 280).
+      return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText: discloseSocialPost(finalText, 'twitter') })
     }
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────
-    // Reserve a slot atomically right before posting (the early check above is
-    // just for a fast over-cap 429 before we spend a caption). Refund on failure.
-    const xres = await reserveXPost(supabase, user.id)
-    if (!xres.ok) {
-      return NextResponse.json({ error: xCapMessage(xres.resetLabel), limitReached: true }, { status: 429 })
+    // One re-attempt per post, then MVP drops it (lib/x-retry): X bills every
+    // request, failed ones too. Checked here, before the image upload (also a
+    // request to X); the cap slot is reserved per request inside the helper.
+    const xKey = xPostKey('blog', postId!)
+    if (await xFailedAttempts(user.id, xKey) >= X_ATTEMPTS_PER_POST) {
+      return NextResponse.json({ error: xDroppedMessage(), xDropped: true }, { status: 409 })
     }
 
     // ── 5a. The picture ────────────────────────────────────────────────────
@@ -259,13 +271,33 @@ Return ONLY the tweet text.`,
       ?? pick(await fetchOgImage(post.wordpress_url as string))
       ?? pick(post.hero_source_url)
 
-    const media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
+    let media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
 
     let tweet
     try {
-      tweet = await createTweet(accessToken, finalText, media.mediaIds)
+      tweet = await postToXWithOneRetry({
+        supabase, userId: user.id, key: xKey,
+        // On the re-attempt after a 401, refresh the token first: sending the
+        // same dead token again would be a charge for a known answer.
+        tweet: async (previous) => {
+          if (previous && /\b401\b|unauthorized/i.test(previous) && integration.twitter_refresh_token) {
+            const r = await refreshAccessToken(integration.twitter_refresh_token)
+            accessToken = r.access_token
+            await supabase.from('integrations').update(encryptIntegrationWrite({
+              twitter_access_token: r.access_token,
+              twitter_refresh_token: r.refresh_token ?? integration.twitter_refresh_token,
+              twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
+            })).eq('user_id', user.id)
+            media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
+          }
+          return createTweet(accessToken, finalText, media.mediaIds)
+        },
+      })
     } catch (e) {
-      await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
+      if (e instanceof XPostError && /X posts for this billing period/.test(e.message)) {
+        return NextResponse.json({ error: e.message, limitReached: true }, { status: 429 })
+      }
+      if (e instanceof XPostError) return NextResponse.json({ error: e.message, xDropped: e.dropped }, { status: 502 })
       throw e
     }
     // The reservation already counted this post (no recordXPost).
@@ -275,7 +307,7 @@ Return ONLY the tweet text.`,
     await supabase
       .from('blog_posts')
       .update({ twitter_post_id: tweet.id })
-      .eq('id', postId)
+      .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the tweet.
     await recordSocialPermalink(supabase, postId!, 'x', socialPermalink.x(tweet.id))
     await incrementSocialCount(supabase, postId!, 'twitter')

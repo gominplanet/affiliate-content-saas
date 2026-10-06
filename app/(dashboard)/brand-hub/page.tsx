@@ -98,10 +98,11 @@ export default function BrandHubPage() {
     <div className="max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Handshake size={22} className="text-[#7C3AED]" /> Brand Hub
+          <Handshake size={22} className="text-[#7C3AED]" /> Brand history
         </h1>
         <p className="text-sm text-[var(--text-3)] mt-1">
           Every brand you&apos;ve talked to, in one place. Inbound inquiries, pitches you sent, and Amazon campaigns, all on one timeline per brand.
+          <span className="block mt-1 text-[12px]">Formerly Brand Hub.</span>
         </p>
       </div>
 

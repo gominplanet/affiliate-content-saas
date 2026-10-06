@@ -54,7 +54,7 @@ export default function StorefrontCatalog() {
   const runImport = useCallback(async () => {
     let clean = url.trim()
     if (!/amazon\.[a-z.]+\/shop\//i.test(clean)) {
-      setMsg({ ok: false, text: 'Paste your storefront link — it looks like amazon.com/shop/yourname' })
+      setMsg({ ok: false, text: 'Paste your storefront link. It looks like amazon.com/shop/yourname' })
       return
     }
     // Force an absolute https:// URL. Without the scheme the extension resolves it
@@ -72,12 +72,12 @@ export default function StorefrontCatalog() {
           ok: true,
           text: r.count
             ? (r.partial
-                ? `Imported ${r.count} product${r.count === 1 ? '' : 's'} so far — your storefront has more than one pass can read. Click Import full storefront again to pick up the rest.`
+                ? `Imported ${r.count} product${r.count === 1 ? '' : 's'} so far: your storefront has more than one pass can read. Click Import full storefront again to pick up the rest.`
                 : `Imported ${r.count} product${r.count === 1 ? '' : 's'} from your storefront.`)
-            : 'Checked your storefront — nothing new to add.',
+            : 'Checked your storefront: nothing new to add.',
         })
       } else if (r.error === 'not-installed') {
-        setMsg({ ok: false, text: 'Install SCOUT first — it reads your public storefront. Then Import again.' })
+        setMsg({ ok: false, text: 'Install SCOUT first. It reads your public storefront. Then Import again.' })
       } else if (r.error === 'bad-url') {
         setMsg({ ok: false, text: 'That link isn’t a storefront URL. It should look like amazon.com/shop/yourname.' })
       } else if (r.error === 'no-products') {
@@ -86,7 +86,7 @@ export default function StorefrontCatalog() {
         setMsg({ ok: false, text: `Couldn’t read your storefront just now${r.error ? ` (${r.error})` : ''}. Open it once on Amazon, then Import again.` })
       }
     } catch {
-      setMsg({ ok: false, text: 'Import failed — try again in a moment.' })
+      setMsg({ ok: false, text: 'Import failed: try again in a moment.' })
     } finally { setImporting(false) }
   }, [url, load])
 
@@ -149,7 +149,7 @@ export default function StorefrontCatalog() {
           <p className="font-bold text-[14px]" style={{ color: 'var(--text)' }}>Your full storefront</p>
           {data?.hasData && (
             <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-              — {int(data.total ?? 0)} products{typeof data.withEarnings === 'number' ? `, ${int(data.withEarnings)} earning` : ''}{typeof data.withVideo === 'number' ? `, ${int(data.withVideo)} with video` : ''}
+              {int(data.total ?? 0)} products{typeof data.withEarnings === 'number' ? `, ${int(data.withEarnings)} earning` : ''}{typeof data.withVideo === 'number' ? `, ${int(data.withVideo)} with video` : ''}
             </span>
           )}
         </div>
@@ -191,7 +191,7 @@ export default function StorefrontCatalog() {
         </div>
       ) : !all.length ? (
         <div className="p-6 text-[13px]" style={{ color: 'var(--text-soft)' }}>
-          No storefront products imported yet. Paste your storefront link above and click Import — SCOUT reads it in the background.
+          No storefront products imported yet. Paste your storefront link above and click Import. SCOUT reads it in the background.
         </div>
       ) : (
         <>

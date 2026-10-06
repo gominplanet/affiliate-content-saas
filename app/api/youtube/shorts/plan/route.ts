@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
+import { findMomentsLimit, recordFindMoments } from '@/lib/find-moments-limit'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchTranscriptCues, cuesToText, normalizeCues, parseSrtCues } from '@/lib/shorts-transcript'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
@@ -29,10 +30,11 @@ import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
-import { planShorts } from '@/lib/shorts-planner'
+import { planShorts, reelWindow } from '@/lib/shorts-planner'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 // Transcription of a longer uploaded video can take a while — give it room.
 export const maxDuration = 300
@@ -68,9 +70,9 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .single()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Shorts Studio is a Pro feature. Upgrade to turn your long videos into ready-to-post Shorts.',
+        error: 'Clip Factory is part of the Amazon and Pro plans. Upgrade to turn your long videos into ready-to-post clips.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })
@@ -93,6 +95,12 @@ export async function POST(request: Request) {
       cues?: Array<{ text?: string; offset?: number; duration?: number }>
       /** The whole video as one clip, no moments picked (Labs whole_video). */
       whole?: boolean
+    }
+    // Ten searches for moments a day (lib/find-moments-limit). Posting the
+    // whole video is not a search and is not counted.
+    if ((body as { whole?: boolean }).whole !== true) {
+      const daily = await findMomentsLimit(user.id, tier)
+      if (daily) return daily
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,7 +138,11 @@ export async function POST(request: Request) {
         }, { status: 403 })
       }
       const apiKey = process.env.YOUTUBE_API_KEY
-      const snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null
+      // A USED-UP ALLOWANCE IS NOT A BAD LINK: it throws, and says so.
+      let snip: Awaited<ReturnType<typeof fetchYouTubeVideoSnippet>> = null
+      try { snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null } catch {
+        return NextResponse.json({ error: 'YouTube’s daily allowance is used up, so MVP could not look this video up. Nothing was added. Try again after midnight Pacific.', quotaExceeded: true }, { status: 503 })
+      }
       if (!snip) return NextResponse.json({ error: "We couldn't find that YouTube video — double-check the link." }, { status: 404 })
       // Cap source length at 10 minutes BEFORE creating a row — transcription
       // cost scales with duration and shorts only use a 15–30s window, so longer
@@ -239,6 +251,9 @@ export async function POST(request: Request) {
     if (cues.length === 0 && youtubeVideoId && ingestConfigured() && transcriptionConfigured()) {
       const audioUrl = await ingestAudio(youtubeVideoId, user.id)
       if (audioUrl) {
+        // The audio pull goes through the metered proxy, like the ingest route,
+        // which records it. This one did not, so it never reached the ceiling.
+        recordUsage({ userId: user.id, tier, feature: 'shorts_ingest', model: 'youtube-ingest', images: 1 })
         cues = await transcribeToCues(audioUrl)
         if (cues.length > 0) {
           cuesFromWhisper = true
@@ -248,7 +263,13 @@ export async function POST(request: Request) {
         if (p) { try { await sb.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
     }
-    // 3. Official YouTube Data API captions via the creator's OAuth token.
+    // 3. youtube-transcript scraper: free (often IP-blocked on cloud).
+    if (cues.length === 0 && youtubeVideoId) {
+      cues = await fetchTranscriptCues(youtubeVideoId)
+    }
+    // 4. Official YouTube Data API captions via the creator's OAuth token,
+    //    LAST: a caption list and download cost 250 of the one daily YouTube
+    //    quota every MVP account shares.
     if (cues.length === 0 && youtubeVideoId) {
       try {
         const token = await getChannelOAuthToken(supabase, user.id, (video.channel_id as string | null) ?? null)
@@ -256,11 +277,7 @@ export async function POST(request: Request) {
           const srt = await createYouTubeOAuthService(token).getCaptionSrt(youtubeVideoId)
           if (srt) cues = parseSrtCues(srt)
         }
-      } catch { /* fall through to the scraper */ }
-    }
-    // 4. youtube-transcript scraper — last resort (often IP-blocked on cloud).
-    if (cues.length === 0 && youtubeVideoId) {
-      cues = await fetchTranscriptCues(youtubeVideoId)
+      } catch { /* no transcript from YouTube */ }
     }
     if (cues.length === 0) {
       const canUpload = !/^https:\/\//i.test(sourceUrl)
@@ -340,13 +357,22 @@ export async function POST(request: Request) {
     }
 
     const anthropic = createAnthropicClient()
+    // Meta Hub asks for Reels: longer, complete segments sized to the source
+    // (lib/shorts-planner reelWindow), capped at Facebook's 90s Page Reel limit.
+    const reel = (body as { format?: string }).format === 'reel'
+    const sourceSec = Number(video.duration_seconds) || (cues.length ? cues[cues.length - 1].end : 0)
+    const lengths = reel ? reelWindow(sourceSec) : {}
     const clips = await planShorts(anthropic, {
       cues, videoTitle, niches, tone, voiceBlock,
+      ...lengths,
+      format: reel ? 'reel' : 'short',
       count: Math.min(10, Math.max(1, Number(body.count) || 5)),
       sourceDescription,
       excludeRanges,
       telemetry: { userId: user.id, tier },
     })
+    // A search that found moments counts toward today's ten.
+    if (clips.length > 0) recordFindMoments(user.id, tier)
     if (clips.length === 0) {
       return NextResponse.json({ error: 'No strong Short-worthy moments were found in this video.', noClips: true }, { status: 422 })
     }

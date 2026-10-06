@@ -10,7 +10,7 @@
  * This is the same plan/ingest/render pipeline the ShortsStudioModal uses, minus
  * the publish pills (publishing happens in Clip Factory's own stage).
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check, Trash2 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
@@ -50,8 +50,10 @@ async function safeJson(res: Response): Promise<any> {
 }
 
 export function ShortsCreatePanel({
-  videoId, youtubeVideoId, videoTitle, onUseClip, allowWhole = false,
+  videoId, youtubeVideoId, videoTitle, onUseClip, allowWhole = false, reel = false,
 }: {
+  /** Meta Hub: Facebook Reels, longer complete moments (lib/shorts-planner reelWindow). */
+  reel?: boolean
   /** Offer "Post the whole video" (Labs whole_video). */
   allowWhole?: boolean
   videoId: string
@@ -94,7 +96,11 @@ export function ShortsCreatePanel({
 
   useEffect(() => { void load() }, [load])
 
-  const findShorts = useCallback(async (whole = false) => {
+  // Set below: SCOUT fetching the creator's own video from YouTube Studio.
+  // Answers whether the file came in.
+  const getFromStudioRef = useRef<(() => Promise<boolean>) | null>(null)
+
+  const findShorts = useCallback(async (whole = false, autoStudio = true) => {
     setPlanning(true); setError(null)
     try {
       // Pull the timestamped transcript from the creator's OWN browser via SCOUT
@@ -110,13 +116,25 @@ export function ShortsCreatePanel({
       }
       const res = await fetch('/api/youtube/shorts/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}), ...(whole ? { whole: true } : {}) }),
+        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}), ...(whole ? { whole: true } : {}), ...(reel ? { format: 'reel' } : {}) }),
       })
       const data = await safeJson(res)
       if (!res.ok) {
+        // The daily find-moments limit is not a plan wall, so no upgrade
+        // prompt: just the reason and when it resets (lib/find-moments-limit).
+        if (data.limitReached && data.cap === 'shorts_find') throw new Error(data.error || 'You have reached today\'s limit for finding moments.')
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-        // No captions and no file: show the way in (Get it from YouTube
-        // Studio, or drop the file), which used to be named but not shown.
+        // NO CAPTIONS: GET THE VIDEO, DON'T STOP. YouTube sometimes will not
+        // hand over the captions; a creator then read "bring the video in"
+        // and compared MVP with tools that just carry on. So SCOUT fetches
+        // their own video from YouTube Studio right away, MVP transcribes the
+        // file, and Find Shorts runs again by itself, once. Only when that
+        // fails too is the way in shown, with SCOUT's own reason.
+        if (data.needsUpload && autoStudio && youtubeVideoId && getFromStudioRef.current) {
+          toast('YouTube would not give MVP the captions. SCOUT is getting your video from YouTube Studio so MVP can transcribe it…', { duration: 9000 })
+          const got = await getFromStudioRef.current()
+          if (got) { setPlanning(false); return await findShorts(whole, false) }
+        }
         if (data.needsUpload) setNeedsUpload(true)
         throw new Error(data.error || 'Could not find Shorts')
       }
@@ -134,7 +152,7 @@ export function ShortsCreatePanel({
     } finally {
       setPlanning(false)
     }
-  }, [videoId, youtubeVideoId])
+  }, [videoId, youtubeVideoId, reel])
 
 
   // YouTube refused the download, now or on an earlier visit (the failed
@@ -146,8 +164,8 @@ export function ShortsCreatePanel({
   // downloaded from YouTube on MVP's server (which YouTube blocks).
   const [fromStudio, setFromStudio] = useState<'idle' | 'working' | 'done'>('idle')
   const [studioError, setStudioError] = useState<string | null>(null)
-  const getFromStudio = useCallback(async () => {
-    if (!youtubeVideoId) return
+  const getFromStudio = useCallback(async (): Promise<boolean> => {
+    if (!youtubeVideoId) return false
     setFromStudio('working'); setStudioError(null)
     try {
       const a = await fetch('/api/youtube/shorts/studio-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId }) })
@@ -170,11 +188,14 @@ export function ShortsCreatePanel({
       const atj = await safeJson(at)
       if (!at.ok || !atj.ok) throw new Error(atj.error || 'The file did not attach.')
       setHasSource(true); setNeedsUpload(false); setFromStudio('done')
-      toast.success('Your video is in, from YouTube Studio. Press Find Shorts or Render again.')
+      toast.success('Your video is in, from YouTube Studio.')
+      return true
     } catch (e) {
       setFromStudio('idle'); setStudioError(errText(e))
+      return false
     }
   }, [videoId, youtubeVideoId])
+  useEffect(() => { getFromStudioRef.current = getFromStudio }, [getFromStudio])
 
   // Remove a clip from the list. Posted clips stay posted on the platforms.
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -224,12 +245,47 @@ export function ShortsCreatePanel({
       notifyShortsUsageChanged()
       toast.success('Short rendered')
     } catch (e) {
+      // THE CONNECTION DROPPED, NOT THE RENDER. "Failed to fetch" is the
+      // browser saying it lost MVP before an answer came back; a heavy render
+      // (split screen) can still finish on the server. So MVP looks before it
+      // says anything, for up to three minutes, and never shows those words.
+      if (e instanceof TypeError) {
+        const before = { status: clip.status, url: clip.renderedUrl }
+        toast('The connection dropped while rendering. Checking whether the Short finished…')
+        for (let i = 0; i < 18; i++) {
+          await new Promise((r) => setTimeout(r, 10_000))
+          try {
+            const res = await fetch(`/api/youtube/shorts?videoId=${encodeURIComponent(videoId)}`, { cache: 'no-store' })
+            const data = await res.json().catch(() => ({}))
+            const now = (data.shorts as ShortRow[] | undefined)?.find((c) => c.id === clip.id)
+            if (!now) continue
+            if (now.status === 'rendered' && (now.renderedUrl !== before.url || before.status !== 'rendered')) {
+              setClips(prev => prev.map(c => (c.id === clip.id ? now : c)))
+              notifyShortsUsageChanged()
+              toast.success('Short rendered')
+              setRenderingId(null)
+              return
+            }
+            if (now.status === 'failed' && now.renderError && now.renderError !== clip.renderError) {
+              setClips(prev => prev.map(c => (c.id === clip.id ? now : c)))
+              toast.error(now.renderError)
+              setRenderingId(null)
+              return
+            }
+          } catch { /* still offline: keep looking */ }
+        }
+        const said = 'The connection to MVP dropped while this Short was rendering, and three minutes later it still had not finished. Press Render Short again.'
+        toast.error(said)
+        setClips(prev => prev.map(c => (c.id === clip.id ? { ...c, status: 'failed', renderError: said } : c)))
+        setRenderingId(null)
+        return
+      }
       toast.error(errText(e))
       setClips(prev => prev.map(c => (c.id === clip.id ? { ...c, status: 'failed', renderError: errText(e) } : c)))
     } finally {
-      setRenderingId(null)
+      setRenderingId((cur) => (cur === clip.id ? null : cur))
     }
-  }, [canRender, styleById, captionsById, layoutById])
+  }, [canRender, styleById, captionsById, layoutById, videoId])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
@@ -262,8 +318,9 @@ export function ShortsCreatePanel({
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-md">
-          <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{videoTitle}</span> — we find the strongest
-          15–30s moments and cut them for you. Subtitles are word-for-word from what you actually said.
+          <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{videoTitle}</span>: {reel
+            ? <>we find complete moments that make sense on their own (up to 90 seconds on a video over 3 minutes, Facebook&apos;s limit for Page Reels) and cut them for you.</>
+            : <>we find the strongest 15 to 30 second moments and cut them for you.</>} Subtitles are word-for-word from what you actually said.
         </p>
         <div className="shrink-0 flex flex-wrap items-center gap-2">
         {allowWhole && (
@@ -302,7 +359,7 @@ export function ShortsCreatePanel({
           {youtubeVideoId && (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <button
-                onClick={getFromStudio}
+                onClick={() => { void getFromStudio() }}
                 disabled={fromStudio === 'working'}
                 className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: PURPLE }}
@@ -319,7 +376,7 @@ export function ShortsCreatePanel({
             targetColumn="source_video_url"
             extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
             label="Drop the full video (the long one) here"
-            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
+            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it. It never touches YouTube."
             onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(youtubeRefused ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
           />
         </div>
@@ -361,7 +418,7 @@ export function ShortsCreatePanel({
                       <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: PURPLE }}>
                         {clip.score > 0 ? `${clip.score}/100` : clip.startSec === 0 ? 'Whole video' : 'Your clip'}
                       </span>
-                      <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)}–{fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
+                      <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)} to {fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
                       {ytLink && <a href={ytLink} target="_blank" rel="noreferrer" className="text-[11px] inline-flex items-center gap-0.5 hover:underline" style={{ color: PURPLE }}><ExternalLink size={10} /> Watch moment</a>}
                     </div>
                     {editingId === clip.id && editDraft ? (

@@ -1,0 +1,59 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// THE PRIVACY POLICY MEETS YOUTUBE'S REQUIREMENTS AND SAYS WHAT THE CODE DOES.
+//
+// Google reviews the policy against the app for the YouTube API quota audit
+// (2026-10-05). YouTube API Developer Policies III.A.2 lists what it must
+// contain, and III.E.4 how long YouTube data may be kept: refreshed or deleted
+// every 30 days, deleted within 7 days of a disconnect. Each promise here is
+// checked against the code that keeps it.
+//
+// Run: npx tsx scripts/test-privacy-policy.ts
+import { readFileSync } from 'node:fs'
+
+const failures: string[] = []
+const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
+const r = (p: string) => readFileSync(p, 'utf8')
+const P = r('app/privacy/page.tsx')
+const text = P.slice(P.indexOf('return ('))
+
+// ── III.A.2 ─────────────────────────────────────────────────────────────────
+check('says it uses YouTube API Services', /uses <strong>YouTube API Services<\/strong>/.test(text))
+check('links the Google Privacy Policy at the address the policy names', text.includes('href="http://www.google.com/policies/privacy"'))
+check('links the YouTube Terms of Service', text.includes('href="https://www.youtube.com/t/terms"'))
+check('says what it accesses, stores, uses and shares', /What we access\./.test(text) && /What we store\./.test(text) && /What we do with it/.test(text) && /Who we share it with\./.test(text))
+check('names the AI providers YouTube text is processed by', /processed by\s+the AI providers listed in section 9/.test(text) && /Anthropic, OpenAI, Google \(Gemini\)/.test(text))
+check('discloses cookies and device storage', /Cookies and Data Stored on Your Device/.test(text) && /_fbp/.test(text))
+check('says whether third parties serve ads in the App', /does not let third parties serve advertisements/.test(text))
+check('links Google\'s security settings page for revoking access', text.includes('href="https://security.google.com/settings/security/permissions"'))
+check('gives a contact for questions and complaints', /questions, complaints/.test(text) && /mailto:us@gominplanet\.com/.test(text))
+check('states the Limited Use commitment', /Limited Use requirements/.test(text))
+
+// ── III.E.4: the retention it promises is the retention the code enforces ──
+check('promises 30-day refresh, deletion on disconnect, and 30 days after a Google-side revoke',
+  /refreshed from YouTube at\s+least every 30 days, or deleted/.test(text) && /straight away/.test(text) && /deleted within 30 days/.test(text))
+const D = r('app/api/auth/youtube/disconnect/route.ts')
+check('disconnect revokes at Google and empties the stored YouTube data',
+  /oauth2\.googleapis\.com\/revoke/.test(D) && /await clearYouTubeData\(sb, user\.id\)/.test(D))
+const R = r('lib/youtube-retention.ts')
+check('the retention pass refreshes rows older than 30 days', /export const YT_REFRESH_DAYS = 30/.test(R) && /export async function retentionPass/.test(R))
+check('and empties what YouTube no longer shows or a revoked login cannot read',
+  /if \(!f\) \{ gone\.push\(id\); continue \}/.test(R) && /if \(got\.revoked\) \{ await clearYouTubeData/.test(R) && /if \(!connected\) \{\s*await clearYouTubeData/.test(R))
+check('the emptied fields include every YouTube field the policy lists',
+  ['title', 'description', 'thumbnail_url', 'view_count', 'transcript'].every((f) => new RegExp(`\\b${f}:`).test(R.slice(R.indexOf('YT_CLEARED_FIELDS'), R.indexOf('} as const')))))
+const V = JSON.parse(r('vercel.json')) as { crons: Array<{ path: string }> }
+check('the retention pass runs every day', V.crons.some((c) => c.path === '/api/cron/youtube-data-retention'))
+check('migration 406 adds the refresh stamp, safe to run twice', /add column if not exists yt_refreshed_at/.test(r('supabase/migrations/406_youtube_data_retention.sql')))
+
+// ── it does not promise what the product does not do ───────────────────────
+check('no claim that nothing runs in the background (scheduled uploads and comments do)',
+  !/no background scheduling/i.test(text) && !/never post, upload, or change anything in the background/i.test(text))
+check('describes background actions honestly', /Some of these run in the background after you set them up/.test(text))
+check('no dash punctuation in the policy text', !/[—–]| - /.test(text.replace(/className="[^"]*"/g, '')))
+
+if (failures.length) {
+  console.error(`\n❌ privacy-policy: ${failures.length} failure(s)\n`)
+  for (const f of failures) console.error(`   • ${f}`)
+  process.exit(1)
+}
+console.log('✓ privacy-policy: meets YouTube API policy III.A.2, and the retention it promises is the retention the code enforces')

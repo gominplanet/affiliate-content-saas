@@ -13,8 +13,8 @@ export default function PulsePage() {
   return (
     <>
       <PageHero
-        title="Pulse"
-        subtitle="Which hashtags actually earn reach — learned from your posts and pooled across MVP, then fed back into every caption automatically."
+        title="Hashtag insights"
+        subtitle={<>Which hashtags actually earn reach, learned from your posts and pooled across MVP, then fed back into every caption automatically.<span className="block mt-1 text-[12px]">Formerly Pulse.</span></>}
       />
 
       <div className="max-w-3xl space-y-5">
@@ -26,11 +26,11 @@ export default function PulsePage() {
           <ul className="space-y-3 text-[13px] text-[#6e6e73] dark:text-[#a1a1a6]">
             <li className="flex gap-2.5">
               <TrendingUp size={15} className="text-[#34c759] flex-shrink-0 mt-0.5" />
-              <span><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Measures lift, not views.</b> Every Reel you publish is scored by how far it beat your own average reach — so results are fair whether you have 500 followers or 50k.</span>
+              <span><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Measures lift, not views.</b> Every Reel you publish is scored by how far it beat your own average reach, so results are fair whether you have 500 followers or 50k.</span>
             </li>
             <li className="flex gap-2.5">
               <Users size={15} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
-              <span><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Learns from everyone, per niche.</b> Your own history leads, and the pooled signal across all MVP creators in your niche fills the gaps — so proven tags help you from day one. Only aggregate tag performance is shared; never your posts or numbers.</span>
+              <span><b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Learns from everyone, per niche.</b> Your own history leads, and the pooled signal across all MVP creators in your niche fills the gaps, so proven tags help you from day one. Only aggregate tag performance is shared; never your posts or numbers.</span>
             </li>
             <li className="flex gap-2.5">
               <Sparkles size={15} className="text-[#ff9500] flex-shrink-0 mt-0.5" />

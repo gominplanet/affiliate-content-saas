@@ -44,7 +44,7 @@ export default function AdminCcImportPage() {
   const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
   const [backfillDone, setBackfillDone] = useState(false)
   // Server-side background drain (cron): status + start/stop.
-  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean } | null>(null)
+  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean; hidden?: number; hideSkipped?: string } | null>(null)
   const [bgStarting, setBgStarting] = useState(false)
   // One-click auto-load: SCOUT downloads Amazon's two exports itself (no manual
   // ZIP download + upload).
@@ -71,7 +71,7 @@ export default function AdminCcImportPage() {
   async function autoLoad() {
     if (autoLoading) return
     setAutoLoading(true)
-    const t = toast.loading('SCOUT is downloading your Amazon exports. This can take several minutes — keep this tab open.')
+    const t = toast.loading('SCOUT is downloading your Amazon exports. This can take several minutes. Keep this tab open.')
     try {
       const res = await requestCcCatalogScan()
       toast.dismiss(t)
@@ -128,6 +128,22 @@ export default function AdminCcImportPage() {
     } finally { setBgStarting(false) }
   }, [bgStarting, loadCounts, addOnly])
 
+  // Mark campaigns missing from the upload already merged as full (cron +
+  // migration 403). Nothing is deleted; a later upload or live refresh reopens.
+  const hideMissing = useCallback(async () => {
+    if (bgStarting) return
+    setBgStarting(true); setErr(null)
+    try {
+      const r = await fetch('/api/admin/import-cc-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'hide-missing', addOnly: true, confirm: true }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not start hiding the missing campaigns.')
+      toast.success(d.message || 'Hiding campaigns missing from this upload in the background.')
+      await loadCounts()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start hiding the missing campaigns.')
+    } finally { setBgStarting(false) }
+  }, [bgStarting, loadCounts])
+
   const stopBackground = useCallback(async () => {
     try {
       await fetch('/api/admin/import-cc-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'stop-background' }) })
@@ -176,12 +192,12 @@ export default function AdminCcImportPage() {
           // 4xx (not 409) = a real, non-resumable problem: auth, empty staging, or
           // a missing migration. Surface it and stop.
           if (r.status >= 400 && r.status < 500) {
-            throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
+            throw new Error(d.detail ? `${d.error || 'Merge failed'}: ${d.detail}` : (d.error || 'Merge failed'))
           }
           // 5xx now only happens for a missing DB function (non-resumable). Everything
           // else the endpoint reports as done:false so we just resume.
           if (!r.ok) {
-            throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
+            throw new Error(d.detail ? `${d.error || 'Merge failed'}: ${d.detail}` : (d.error || 'Merge failed'))
           }
         } catch (netErr) {
           // Network blip (fetch threw) — back off and retry the resumable call.
@@ -215,11 +231,11 @@ export default function AdminCcImportPage() {
         // Progress? Merging rows, or purging (upsert phase already drained), both count.
         const madeProgress = did > 0 || Number(d.purged ?? 0) > 0 || d.purging === true
         stalls = madeProgress ? 0 : stalls + 1
-        if (stalls > MAX_STALLS) throw new Error('Merge isn’t making progress — check the database, then click Merge again.')
+        if (stalls > MAX_STALLS) throw new Error('Merge isn’t making progress. Check the database, then click Merge again.')
         setRemaining(d.remaining == null ? null : Number(d.remaining)) // null → "Merging…"
         if (!madeProgress) await sleep(2000) // a no-progress cycle: back off before retrying
       }
-      throw new Error('Merge hit the safety cap — click Merge again to continue.')
+      throw new Error('Merge hit the safety cap. Click Merge again to continue.')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Merge failed'
       setErr(msg); toast.error(msg)
@@ -252,7 +268,7 @@ export default function AdminCcImportPage() {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ after }),
         })
         const d = await r.json()
-        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Backfill failed'} — ${d.detail}` : (d.error || 'Backfill failed'))
+        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Backfill failed'}: ${d.detail}` : (d.error || 'Backfill failed'))
         after = d.after
         total += Number(d.filled ?? 0)
         setBackfillFilled(total)
@@ -263,7 +279,7 @@ export default function AdminCcImportPage() {
           return
         }
       }
-      throw new Error('Backfill is taking unusually long — click again to continue.')
+      throw new Error('Backfill is taking unusually long. Click again to continue.')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Backfill failed'
       setErr(msg); toast.error(msg)
@@ -351,7 +367,7 @@ export default function AdminCcImportPage() {
 
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <StatCard label="Staged (this week's upload)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" hint="Total rows in staging. Merging flags them in place — this doesn't count down. Clears when you upload next week's CSV." />
+        <StatCard label="Staged (this week's upload)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" hint="Total rows in staging. Merging flags them in place. This doesn't count down. Clears when you upload next week's CSV." />
         <StatCard label="Live catalog" value={approx(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
         <StatCard
           label="Enriched (of enrichable)"
@@ -446,7 +462,7 @@ export default function AdminCcImportPage() {
         <button
           onClick={() => startBackground()}
           disabled={!canMerge || merging || bgStarting || !!drain?.active}
-          title="Kick off the merge on the server and close the tab — a cron drains it to completion, no need to keep this open."
+          title="Kick off the merge on the server and close the tab: a cron drains it to completion, no need to keep this open."
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-50"
           style={{ borderColor: '#7C3AED', color: '#7C3AED' }}>
           {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>{backgroundLabel(addOnly)}</>}
@@ -456,6 +472,14 @@ export default function AdminCcImportPage() {
           style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        {addOnly && counts?.hasStaged && !drain?.active && (
+          <button onClick={hideMissing} disabled={merging || bgStarting}
+            title="Mark campaigns that are not in this upload as full. Nothing is deleted."
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            Hide campaigns missing from this upload
+          </button>
+        )}
       </div>
 
       {/* Background-drain status — the cron owns the work; the tab can be closed. */}
@@ -464,15 +488,19 @@ export default function AdminCcImportPage() {
           <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-              {drain.phase === 'purge'
+              {drain.phase === 'hide' || (drain.phase === 'purge' && drain.mode === 'add-only')
+                ? 'Marking campaigns missing from this upload as full. Nothing is deleted. You can close this tab.'
+                : drain.phase === 'purge'
                 ? 'Merge done, cleaning up campaigns that fell out of the CSV. You can close this tab.'
                 : drain.mode === 'add-only'
                   ? 'Adding in the background, removing nothing. You can close this tab.'
                   : 'Merging in the background. You can close this tab.'}
             </p>
             <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              {drain.phase === 'purge'
-                ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> campaigns{typeof drain.purged === 'number' && drain.purged > 0 ? `, removed ${drain.purged.toLocaleString()}` : ''}. This final sweep walks the whole catalog once (a few minutes) — most stay, so the number to watch is &ldquo;Checked&rdquo;, not &ldquo;removed&rdquo;.</>
+              {drain.phase === 'hide' || (drain.phase === 'purge' && drain.mode === 'add-only')
+                ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> catalogue campaigns, marked <b>{Number(drain.hidden ?? 0).toLocaleString()}</b> full. Amazon&rsquo;s export leaves out campaigns that can no longer be joined; any that come back in a later upload reopen by themselves.</>
+                : drain.phase === 'purge'
+                ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> campaigns{typeof drain.purged === 'number' && drain.purged > 0 ? `, removed ${drain.purged.toLocaleString()}` : ''}. This final sweep walks the whole catalog once (a few minutes). Most stay, so the number to watch is &ldquo;Checked&rdquo;, not &ldquo;removed&rdquo;.</>
                 : <>Merged <b>{Number(drain.upserted ?? 0).toLocaleString()}</b> so far. A cron continues every minute until done. Staged / Live counts above update live.</>}
             </p>
           </div>
@@ -491,7 +519,11 @@ export default function AdminCcImportPage() {
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
             <b style={{ color: '#1f8a3a' }}>Background merge finished.</b>{' '}
             {drain.purgeSkipped === true || drain.mode === 'add-only'
-              ? 'Nothing was removed: add-only was ticked, so campaigns missing from the upload were left alone. '
+              ? typeof drain.hidden === 'number' && !drain.hideSkipped
+                ? `Nothing was removed. ${drain.hidden.toLocaleString()} campaigns missing from the upload were marked full, so they no longer show open spots; any that come back in a later upload reopen. `
+                : drain.hideSkipped
+                  ? `Nothing was removed. Campaigns missing from the upload were NOT marked full (${drain.hideSkipped}), so they still show their old spot counts. `
+                  : 'Nothing was removed: add-only was ticked, so campaigns missing from the upload were left alone. '
               : typeof drain.purged === 'number' && drain.purged > 0
                 ? `Removed ${drain.purged.toLocaleString()} fallen-out campaigns. `
                 : 'The cleanup sweep ran and found nothing to remove. '}
@@ -609,7 +641,7 @@ export default function AdminCcImportPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
             style={{ background: '#7C3AED' }}>
             {backfilling
-              ? <><Loader2 size={15} className="animate-spin" /> Backfilling{backfillFilled != null ? ` — ${backfillFilled.toLocaleString()}` : '…'}</>
+              ? <><Loader2 size={15} className="animate-spin" /> Backfilling{backfillFilled != null ? `: ${backfillFilled.toLocaleString()}` : '…'}</>
               : <><Database size={15} /> Backfill ASINs from names</>}
           </button>
           {backfillDone && backfillFilled != null && (

@@ -89,7 +89,7 @@ export default function OpengraphImage() {
           <Arrow />
           <Step label="An SEO blog post" sub="written in your own voice" />
           <Arrow />
-          <Step label="Posted everywhere" sub="socials, pins, newsletter" />
+          <Step label="Posted everywhere" sub="socials, pins, your blog" />
         </div>
 
         {/* The part affiliates care about most, and the domain. */}

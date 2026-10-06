@@ -24,6 +24,12 @@
 // somebody deciding what to pay for.
 
 import { SELLABLE_TIERS, TIERS } from '@/lib/tier'
+import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 
 const n = (v: number | null | undefined, fallback = 'unlimited') => (v == null ? fallback : String(v))
 
@@ -46,7 +52,7 @@ export function planCompareRows(): CompareRow[] {
   return [
     {
       label: 'Who it is for',
-      amazon: 'You post Amazon products to your storefront and socials',
+      amazon: 'You post Amazon products and review videos to your storefront and socials',
       ladder: 'You publish reviews on a site of your own, with or without a YouTube channel',
       decisive: true,
     },
@@ -74,14 +80,68 @@ export function planCompareRows(): CompareRow[] {
     },
     {
       label: 'Ready-to-post designs',
-      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Reels · ${n(A.facebookPostsPerMonth)} Facebook`,
-      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Reels · ${n(P.facebookPostsPerMonth)} Facebook`,
+      // igPostsPerMonth counts Instagram posts and Stories (the 'ig' and 'story'
+      // formats in generate-thumbnail), not Reels: Reels are Clip Factory's.
+      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Instagram posts · Facebook reuses them`,
+      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Instagram posts · Facebook reuses them`,
     },
     {
       label: 'Publishes to',
-      amazon: `${A.socials.length} networks: Facebook, Instagram and Pinterest`,
-      ladder: `Your blog, plus ${P.socials.length} networks`,
+      // YouTube is in here since Seb, 2026-10-05, and is optional: the plan
+      // still asks for no channel to start ("Nothing to connect" above).
+      amazon: `Your Amazon storefront, ${AMAZON_YOUTUBE_CHANNELS} YouTube channel if you connect one, and ${A.socials.length} networks: Facebook, Instagram and Pinterest`,
+      ladder: `Your blog, your storefront, up to ${n(P.youtubeChannels)} YouTube channels, and ${P.socials.length} networks: those three plus X, Threads, TikTok, LinkedIn, Bluesky and Telegram`,
       decisive: true,
+    },
+    // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
+    // members). Each Amazon number is the constant the route enforces.
+    {
+      label: 'Bulk Amazon upload',
+      amazon: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and to YouTube when connected`,
+      ladder: `Up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront and YouTube`,
+    },
+    {
+      label: 'YouTube channels',
+      amazon: `${AMAZON_YOUTUBE_CHANNELS}, optional`,
+      ladder: `${n(P.youtubeChannels)}`,
+    },
+    {
+      label: 'YouTube Co-Pilot (titles, descriptions, tags)',
+      amazon: `${AMAZON_COPILOT_RUNS_PER_MONTH} runs a month`,
+      ladder: `${n(P.metadataGensPerMonth)} runs a month`,
+    },
+    {
+      label: 'Pinned and On sale comments on your videos',
+      amazon: 'Included',
+      ladder: 'Included',
+    },
+    {
+      label: 'Amazon Live prep and follow-up',
+      amazon: `Up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month`,
+      // lib/amazon-live-limit counts only the Amazon plan.
+      ladder: 'No monthly limit',
+    },
+    {
+      label: 'Clip Factory',
+      amazon: `${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month, posted to Instagram and Facebook Reels`,
+      ladder: `${SHORTS_MONTHLY_CAP} clips a month, also to TikTok and YouTube Shorts`,
+    },
+    {
+      label: 'Deal posts from Deal Radar',
+      amazon: `Up to ${n(A.dealsPerMonth)} a month to Pinterest, Facebook, an Instagram card and Story`,
+      ladder: P.dealsPerMonth == null ? 'From your monthly generations' : `Up to ${P.dealsPerMonth} a month`,
+    },
+    // Pro only: the Amazon plan walls these off (AMAZON_LOCKED_PREFIXES in
+    // DashboardShellV2 includes /levanta) and has vaSeats: 0.
+    {
+      label: 'Partner programs: Levanta, PartnerBoost, Wayward, LTK',
+      amazon: 'Not included',
+      ladder: 'Turn their campaigns into posts with your links',
+    },
+    {
+      label: 'Team seats',
+      amazon: 'Not included',
+      ladder: `${n(P.vaSeats)}, each with its own permissions`,
     },
     {
       label: 'Messaging brands on Creator Connections',
@@ -141,9 +201,11 @@ export function trackCards(): TrackCard[] {
   return [
     {
       key: 'amazon',
-      eyebrow: 'No website · no YouTube',
+      // "no YouTube" came off on 2026-10-05 (Seb): the plan now includes one
+      // YouTube channel, Co-Pilot and Clip Factory. A channel is still optional.
+      eyebrow: 'No website needed · YouTube optional',
       title: 'I post Amazon products',
-      blurb: 'Turn any product link into a finished thumbnail or a ready-to-post design with your face on it, publish it to Facebook, Instagram and Pinterest, and get matched to paid brand deals.',
+      blurb: 'Turn any product link into a finished thumbnail or a ready-to-post design with your face on it, upload review videos to your storefront in bulk, cut them into Reels, publish to Facebook, Instagram and Pinterest, and get matched to paid brand deals.',
       tell: 'If you do not have a blog and do not want one, this is your plan.',
       price: `$${TIERS.amazon.price} a month`,
       href: '/amazon-influencer',
@@ -156,7 +218,7 @@ export function trackCards(): TrackCard[] {
       // old title turned this door away from everybody who has not started yet,
       // which is the group the product is best at serving.
       title: 'I want a site of my own',
-      blurb: 'Turn your videos and product links into full written reviews on your own site, with thumbnails, metadata, scripts, a newsletter and social posts, all in your voice. No site yet? MVP builds you one.',
+      blurb: 'Turn your videos and product links into full written reviews on your own site, with thumbnails, metadata, scripts and social posts, all in your voice. No site yet? MVP builds you one.',
       tell: 'Bring a WordPress site or let MVP set one up for you. Either way, this is your plan.',
       // THE CHEAPEST PLAN SOMEONE CAN ACTUALLY BUY on this track, read from
       // SELLABLE_TIERS. It said "From $49", which is Creator: a frozen tier that

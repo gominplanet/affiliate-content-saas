@@ -135,39 +135,88 @@ const METADATA_HOSTS = new Set([
   'metadata',
 ])
 
-/** Recognize raw IP literals that resolve to private/reserved space.
- *  IPv4 and basic IPv6 forms covered. */
-function isPrivateIpLiteral(host: string): boolean {
-  // IPv6 loopback / link-local / unique-local
-  // (Bracket-stripped at URL parse time by URL constructor.)
-  if (host === '::1' || host === '::' || host.startsWith('fe80:') || host.startsWith('fc00:') || host.startsWith('fd00:')) {
-    return true
-  }
+/** Recognize hosts that are, or resolve by name to, private/reserved space.
+ *  IPv4, IPv6 (bracketed or not, including IPv4-mapped) and "localhost". */
+function isPrivateIpLiteral(rawHost: string): boolean {
+  // URL keeps the brackets on an IPv6 hostname ("[::1]"), so the checks
+  // below never matched one: [::1] and [::ffff:7f00:1] reached loopback.
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host.includes(':')) return isPrivateIpv6(host)
+  return isPrivateIpv4(host)
+}
 
-  // IPv4 patterns
+function isPrivateIpv4(host: string): boolean {
   const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (!m) return false
   const [a, b, c, d] = m.slice(1).map(n => parseInt(n, 10))
   if ([a, b, c, d].some(n => isNaN(n) || n < 0 || n > 255)) return false
-
-  // 10.0.0.0/8 — RFC1918
-  if (a === 10) return true
-  // 172.16.0.0/12 — RFC1918
-  if (a === 172 && b >= 16 && b <= 31) return true
-  // 192.168.0.0/16 — RFC1918
-  if (a === 192 && b === 168) return true
-  // 127.0.0.0/8 — loopback
-  if (a === 127) return true
-  // 169.254.0.0/16 — link-local INCLUDING 169.254.169.254 (cloud metadata)
-  if (a === 169 && b === 254) return true
-  // 0.0.0.0/8 — current network / unspecified
-  if (a === 0) return true
-  // 100.64.0.0/10 — carrier-grade NAT (RFC6598)
-  if (a === 100 && b >= 64 && b <= 127) return true
-  // 224.0.0.0/4 — multicast
-  if (a >= 224 && a <= 239) return true
-  // 240.0.0.0/4 — reserved
-  if (a >= 240) return true
-
+  if (a === 10) return true                          // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true   // 172.16.0.0/12
+  if (a === 192 && b === 168) return true            // 192.168.0.0/16
+  if (a === 127) return true                         // loopback
+  if (a === 169 && b === 254) return true            // link-local, incl. cloud metadata
+  if (a === 0) return true                           // this network
+  if (a === 100 && b >= 64 && b <= 127) return true  // carrier-grade NAT
+  if (a === 192 && b === 0 && c === 0) return true   // IETF protocol assignments
+  if (a === 198 && (b === 18 || b === 19)) return true // benchmarking
+  if (a >= 224) return true                          // multicast + reserved
   return false
+}
+
+/** Expand an IPv6 literal to its eight 16-bit groups, or null. */
+function ipv6Groups(host: string): number[] | null {
+  let h = host
+  // A trailing dotted IPv4 (::ffff:127.0.0.1) becomes two groups.
+  const v4 = h.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (v4) {
+    const n = v4.slice(1).map(x => parseInt(x, 10))
+    if (n.some(x => x > 255)) return null
+    h = h.slice(0, h.length - v4[0].length) + ((n[0] << 8) | n[1]).toString(16) + ':' + ((n[2] << 8) | n[3]).toString(16)
+  }
+  const halves = h.split('::')
+  if (halves.length > 2) return null
+  const parse = (part: string) => part ? part.split(':').map(x => (/^[0-9a-f]{1,4}$/.test(x) ? parseInt(x, 16) : NaN)) : []
+  const head = parse(halves[0]), tail = halves.length === 2 ? parse(halves[1]) : []
+  if ([...head, ...tail].some(x => isNaN(x))) return null
+  if (halves.length === 1) return head.length === 8 ? head : null
+  const zeros = 8 - head.length - tail.length
+  if (zeros < 1) return null
+  return [...head, ...Array(zeros).fill(0), ...tail]
+}
+
+function isPrivateIpv6(host: string): boolean {
+  const g = ipv6Groups(host)
+  if (!g) return true // not a host we can read: refuse rather than guess
+  if (g.every(x => x === 0)) return true                                   // ::
+  if (g.slice(0, 7).every(x => x === 0) && g[7] === 1) return true          // ::1
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d): the IPv4 rules.
+  if (g.slice(0, 5).every(x => x === 0) && (g[5] === 0xffff || g[5] === 0)) {
+    return isPrivateIpv4(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`)
+  }
+  if (g[0] === 0x64 && g[1] === 0xff9b) {                                    // NAT64
+    return isPrivateIpv4(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`)
+  }
+  if ((g[0] & 0xfe00) === 0xfc00) return true   // fc00::/7 unique local
+  if ((g[0] & 0xffc0) === 0xfe80) return true   // fe80::/10 link-local
+  if ((g[0] & 0xff00) === 0xff00) return true   // multicast
+  return false
+}
+
+/**
+ * fetch a user-supplied URL with every redirect hop checked. `redirect:
+ * 'follow'` checked only the first address, so a public page that answered
+ * 302 to an internal one was fetched anyway. Each hop is resolved and checked
+ * (assertPublicHttpUrlResolved) before it is requested; at most five hops.
+ * Throws SsrfBlocked on a refused hop.
+ */
+export async function safeFetch(raw: string, init: RequestInit = {}, opts: { allowHttp?: boolean } = {}): Promise<Response> {
+  let url = raw
+  for (let hop = 0; hop < 6; hop++) {
+    await assertPublicHttpUrlResolved(url, opts)
+    const res = await fetch(url, { ...init, redirect: 'manual', signal: init.signal ?? AbortSignal.timeout(15_000) })
+    if (res.status < 300 || res.status >= 400 || !res.headers.get('location')) return res
+    url = new URL(res.headers.get('location') as string, url).toString()
+  }
+  throw new SsrfBlocked('Too many redirects.')
 }

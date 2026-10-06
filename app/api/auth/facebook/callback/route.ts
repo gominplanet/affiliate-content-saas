@@ -5,6 +5,7 @@ import { clearConnectionHealth } from '@/lib/connection-probe'
 import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/facebook'
 import { syncFacebookAccounts } from '@/lib/social-accounts'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
+  // CONSUME THE ONE-TIME STATE FIRST (lib/oauth-state): the cookie is deleted
+  // whatever happens next, so this callback URL can never be replayed.
+  const verified = await consumeOAuthState('facebook', state, redirectUri)
+  const stateUserId = verified?.uid ?? null
+
   if (error || !code) {
     return NextResponse.redirect(`${setupUrl}?fb_error=access_denied`)
   }
@@ -25,15 +31,14 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-    // CSRF check (2026-06-02 audit fix): require the OAuth state to
-    // match the current session user. Without this, an attacker can
-    // lure a victim to a crafted Facebook authorize URL that binds
-    // the attacker's Page (with attacker access token) into the
-    // victim's MVP account on callback. We pass user.id as `state`
-    // at start; if it's missing or doesn't match, abort.
-    if (!state || state !== user.id) {
-      console.warn('[facebook/callback] state mismatch — possible CSRF', { hasState: !!state, sessionUid: user.id })
-      return NextResponse.redirect(`${setupUrl}?fb_error=state_mismatch`)
+    // CSRF check (2026-06-02 audit fix): the state must be the one-time one
+    // this browser started, and it must name the current session user.
+    // Without this, an attacker can lure a victim to a crafted Facebook
+    // authorize URL that binds the attacker's Page (with attacker access
+    // token) into the victim's MVP account on callback.
+    if (!stateUserId || stateUserId !== user.id) {
+      console.warn('[facebook/callback] state mismatch, possible CSRF', { hasState: !!state, sessionUid: user.id })
+      return NextResponse.redirect(`${setupUrl}?fb_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`)
     }
 
     // Exchange code → short-lived token → long-lived token
@@ -43,7 +48,10 @@ export async function GET(request: NextRequest) {
     // Fetch pages the user manages
     const pages = await getPages(longToken)
     if (pages.length === 0) {
-      return NextResponse.redirect(`${setupUrl}?fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
+      // NO TOKEN IN THE URL (2026-10-06 security audit). This carried the
+      // long-lived Facebook user token as a debug_token query param, so it sat in browser
+      // history, server logs and any Referer the setup page sent. Nothing read it.
+      return NextResponse.redirect(`${setupUrl}?fb_error=no_pages`)
     }
 
     // Pick the active page. On a RECONNECT, keep whatever page the user had
@@ -96,7 +104,10 @@ export async function GET(request: NextRequest) {
     // otherwise the old failures stay the newest outcomes and it keeps nagging.
     await clearChannelFailures(supabase, user.id, 'facebook')
     await clearConnectionHealth(supabase, user.id, 'facebook')
-    return NextResponse.redirect(`${setupUrl}?fb_connected=1`)
+    // Started from Meta Hub: back to Meta Hub, where step 1 now shows a tick.
+    const res = NextResponse.redirect(request.cookies.get('fb_return')?.value === 'meta' ? `${appUrl}/meta?fb_connected=1` : `${setupUrl}?fb_connected=1`)
+    res.cookies.delete('fb_return')
+    return res
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.redirect(`${setupUrl}?fb_error=${encodeURIComponent(msg)}`)

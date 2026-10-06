@@ -15,6 +15,7 @@
 // on the list three times and make the counts read as three times the work.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { buildCampaignLibrary, type ContentPiece, type JoinedCampaign } from '@/lib/campaign-library'
 import { mergeCampaignRows, displayTitle, isJoined, type CampaignRow } from '@/lib/campaign-rows'
@@ -224,8 +225,10 @@ async function load() {
       sb.from('cc_campaign_catalog')
         .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, sales_rank, sales_rank_category')
         .in('campaign_id', part)),
+    // Service role: keepa_product_cache has no member policy (288), so the
+    // member's own client read it as empty, with no error to say so.
     spread<KeepaRow>(chunk(asins), part =>
-      sb.from('keepa_product_cache')
+      (createAdminClient() as any).from('keepa_product_cache') // eslint-disable-line @typescript-eslint/no-explicit-any
         .select('asin, image_url, sales_rank, sales_rank_category, monthly_sold, price_now_cents, price_avg_cents, price_lowest_cents, discount_pct, deal_quality, empty')
         .in('asin', part)),
     spread<PostRow>(chunk(postIds), part =>

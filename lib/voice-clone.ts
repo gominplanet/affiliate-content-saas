@@ -8,10 +8,14 @@
 // Consent is the caller's responsibility (the API route requires an explicit
 // consent flag) — you must have the right to clone the voice in the samples.
 
+import { DUBS_ENABLED } from '@/lib/markets'
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
 
 export function voiceCloneConfigured(): boolean {
+  // Dubs are off (lib/markets DUBS_ENABLED), so no voice is cloned.
+  if (!DUBS_ENABLED) return false
   return !!process.env.ELEVENLABS_API_KEY
 }
 
@@ -32,6 +36,7 @@ export async function createClonedVoice(
   audioUrls: string[],
   name: string,
 ): Promise<CloneResult> {
+  if (!DUBS_ENABLED) throw new Error('Voice dubbing is switched off.')
   const key = process.env.ELEVENLABS_API_KEY
   if (!key) throw new Error('Voice cloning is not configured.')
   const urls = audioUrls.filter(u => /^https:\/\//i.test(u)).slice(0, 5)

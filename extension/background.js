@@ -41,10 +41,13 @@ async function pushCampaignsToMvp(token, campaigns) {
   }
 }
 
+// RENAMED IN 1.40.8: a second pushEarningsToMvp further down (Amazon
+// earnings) replaced this one, so storefront syncs posted to the earnings
+// route and nothing was stored after 2026-09-19.
 // POST scraped Amazon Influencer earnings into MVP (Storefront Stats v2), from
 // the worker (same CSP-avoidance reason as pushCampaignsToMvp). Returns
 // { reached, ok, upserted, error }.
-async function pushEarningsToMvp(earnings, totals) {
+async function pushStorefrontToMvp(earnings, totals) {
   const rows = Array.isArray(earnings) ? earnings : []
   const tot = Array.isArray(totals) ? totals : []
   if (rows.length === 0 && tot.length === 0) return { reached: true, ok: true, upserted: 0 }
@@ -437,6 +440,134 @@ async function fetchYouTubeTranscript({ youtubeVideoId, callerTabId }) {
     return out || { ok: false, error: 'no-result' }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'transcript-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// ── Post the first comment, at no quota (MVP_YT_POST_COMMENT) ─────────────
+// MVP used to post first comments through YouTube's Data API, 50 units each
+// from the one daily quota every MVP account shares. SCOUT posts it instead,
+// as the creator, through the same connection YouTube's own watch page uses
+// to post a comment, so it works from a tab behind the creator's own and
+// costs MVP nothing. Pinning stays as it is (pinYouTubeComment).
+//
+// ONLY AS THE VIDEO'S OWN CHANNEL, ONLY ON A PUBLIC VIDEO, ONLY ONCE. The page
+// must show the owner's Edit video link (so the comment cannot come from
+// another channel the browser is switched to), the video must not be private,
+// and a comment with the same words already on it is reported back instead of
+// a second one being posted.
+function postCommentInPage(videoId, text) {
+  return (async () => {
+    const out = { ok: false, steps: [] }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const say = (x) => out.steps.push(x)
+    const norm = (x) => String(x || '').replace(/\s+/g, ' ').trim()
+    try {
+      let pr = null, data = null
+      for (let i = 0; i < 40 && !(pr && data); i++) { pr = window.ytInitialPlayerResponse || null; data = window.ytInitialData || null; if (!(pr && data)) await sleep(250) }
+      if (!pr || !data || !pr.videoDetails || pr.videoDetails.videoId !== videoId) { out.error = 'page-not-ready'; out.detail = 'The video page did not load its data'; return out }
+      if (pr.videoDetails.isPrivate === true) { out.notPublic = true; out.detail = 'The video is not public yet'; return out }
+      const raw = JSON.stringify(data)
+      if (raw.indexOf('studio.youtube.com/video/' + videoId) < 0) { out.error = 'not-owner'; out.detail = 'YouTube in this browser is not signed in as the channel that owns this video, so nothing was posted'; return out }
+      say('owner: yes')
+      const cfg = (k) => { try { return window.ytcfg && window.ytcfg.get ? window.ytcfg.get(k) : undefined } catch (e) { return undefined } }
+      const key = cfg('INNERTUBE_API_KEY'), context = cfg('INNERTUBE_CONTEXT')
+      if (!key || !context) { out.error = 'no-config'; out.detail = 'The page had no YouTube settings to post with'; return out }
+      // Signed in as the page is: the same SAPISID hash YouTube's own page sends.
+      const cookie = (n) => { const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : '' }
+      const sapisid = cookie('SAPISID') || cookie('__Secure-3PAPISID')
+      if (!sapisid) { out.error = 'not-signed-in'; out.detail = 'YouTube in this browser is not signed in'; return out }
+      const ts = Math.floor(Date.now() / 1000)
+      const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(ts + ' ' + sapisid + ' ' + location.origin))
+      const hash = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: 'SAPISIDHASH ' + ts + '_' + hash,
+        'X-Origin': location.origin,
+        'X-Goog-AuthUser': String(cfg('SESSION_INDEX') || '0'),
+        'X-Youtube-Client-Name': String(cfg('INNERTUBE_CONTEXT_CLIENT_NAME') || '1'),
+        'X-Youtube-Client-Version': String(cfg('INNERTUBE_CLIENT_VERSION') || ''),
+      }
+      const page = cfg('DELEGATED_SESSION_ID')
+      if (page) headers['X-Goog-PageId'] = String(page)
+      const call = async (path, body) => {
+        const r = await fetch('/youtubei/v1/' + path + '?key=' + encodeURIComponent(key) + '&prettyPrint=false', { method: 'POST', credentials: 'include', headers, body: JSON.stringify(Object.assign({ context }, body)) })
+        const t = await r.text()
+        return { status: r.status, text: t }
+      }
+      // The comments section's own token, as the page would load it.
+      const find = (o, test, depth) => {
+        if (!o || typeof o !== 'object' || (depth || 0) > 60) return null
+        if (test(o)) return o
+        for (const k in o) { const f = find(o[k], test, (depth || 0) + 1); if (f) return f }
+        return null
+      }
+      const section = find(data, (o) => o.sectionIdentifier === 'comment-item-section')
+      const contObj = section ? find(section, (o) => o.continuationCommand && o.continuationCommand.token) : null
+      const token = contObj && contObj.continuationCommand.token
+      if (!token) {
+        out.error = /comments are turned off/i.test(raw) ? 'comments-off' : 'no-comments-section'
+        out.detail = out.error === 'comments-off' ? 'Comments are turned off on this video' : 'The video page had no comments section to post into'
+        return out
+      }
+      const next = await call('next', { continuation: token })
+      if (next.status !== 200) { out.error = 'next-' + next.status; out.detail = 'YouTube did not load the comments (' + next.status + ')'; return out }
+      say('comments: loaded')
+      // ALREADY THERE? The same words already on the video are this comment,
+      // posted by a run that never reported back.
+      const want = norm(text)
+      let nj = null
+      try { nj = JSON.parse(next.text) } catch (e) {}
+      const already = nj ? find(nj, (o) => {
+        const p = o.commentEntityPayload && o.commentEntityPayload.properties
+        if (p && p.commentId && norm(p.content && p.content.content) === want) return true
+        if (o.commentRenderer && o.commentRenderer.commentId && norm(((o.commentRenderer.contentText || {}).runs || []).map((r) => r.text).join('')) === want) return true
+        return false
+      }) : null
+      if (already) {
+        out.ok = true; out.already = true
+        out.commentId = (already.commentEntityPayload && already.commentEntityPayload.properties.commentId) || (already.commentRenderer && already.commentRenderer.commentId)
+        out.detail = 'This comment was already on the video'
+        return out
+      }
+      const pm = next.text.match(/"createCommentParams":"([^"]+)"/)
+      if (!pm) {
+        out.error = /comments are turned off/i.test(next.text) ? 'comments-off' : 'no-comment-box'
+        out.detail = out.error === 'comments-off' ? 'Comments are turned off on this video' : 'YouTube offered no comment box on this video'
+        return out
+      }
+      const made = await call('comment/create_comment', { createCommentParams: pm[1], commentText: String(text) })
+      if (made.status !== 200) { out.error = 'create-' + made.status; out.detail = 'YouTube did not take the comment (' + made.status + ')'; return out }
+      const idm = made.text.match(/"commentId":"([A-Za-z0-9_.-]{10,80})"/)
+      const failed = /STATUS_FAILED|"errorMessage"/.test(made.text) && !idm
+      if (!idm || failed) { out.error = 'no-comment-id'; out.detail = 'YouTube answered, but not with the new comment, so it may not be posted'; out.debugText = made.text.slice(0, 300); return out }
+      out.ok = true
+      out.commentId = idm[1]
+      out.detail = 'Posted by the video’s own channel'
+      say('posted')
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'threw'
+      out.detail = 'SCOUT hit an error posting the comment: ' + out.error
+      return out
+    }
+  })()
+}
+
+async function postYouTubeComment({ youtubeVideoId, text }) {
+  if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{11}$/.test(youtubeVideoId)) return { ok: false, error: 'bad-video-id' }
+  if (!text || String(text).length > 10000) return { ok: false, error: 'bad-text' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://www.youtube.com/watch?v=' + youtubeVideoId, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await new Promise((r) => setTimeout(r, 1500))
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: postCommentInPage, args: [youtubeVideoId, String(text)] })
+    return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'post-exception' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
   }
@@ -3285,7 +3416,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_PUSH_EARNINGS') {
-    pushEarningsToMvp(msg.earnings).then(sendResponse)
+    pushStorefrontToMvp(msg.earnings).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_PUSH_IDEA_LISTS') {
@@ -3621,17 +3752,48 @@ function acceptCampaignInPage() {
   const exact = (t) => /^(accept|accept campaign|accept this campaign|accept affiliate\+? campaign|accept offer|accept & continue)$/i.test(t)
   const loose = (t) => /\baccept\b/i.test(t) && !/accept all|accepted|accept sponsored/i.test(t)
   const bodyTxt = document.body ? (document.body.innerText || '') : ''
+  // FULL FIRST. A full campaign's page says so ("maximum number of accepted
+  // creators", "no spots left"...), and that sentence contains "accepted", so
+  // checked after the already-accepted test it read as "Already accepted,
+  // you're in" for a campaign nobody can join. A failure must not look like
+  // success.
+  const FULL = /(campaign|offer) (is |has )?(now )?(full|filled|closed)|no (more )?(spots?|slots?|openings|availability)( (left|available|remaining))?|(spots?|slots?) (are )?(all )?(filled|taken|full)|reached (its |the )?(maximum|max|limit|capacity)|maximum (number of )?(accepted )?creators|no longer (accepting|available)|fully (booked|subscribed|claimed)|\b0 (spots?|slots?)( left| available| remaining)?\b|campaign (has )?ended/i
+  const fullHit = bodyTxt.match(FULL)
+  const said = (m) => {
+    if (!m) return ''
+    const i = Math.max(0, (m.index || 0) - 60)
+    return bodyTxt.slice(i, (m.index || 0) + m[0].length + 60).replace(/\s+/g, ' ').trim().slice(0, 180)
+  }
   let btn = controls().find((e) => exact(norm(e)))
   if (!btn) btn = controls().find((e) => loose(norm(e)))
+  if (btn && (btn.disabled || btn.getAttribute('aria-disabled') === 'true') && fullHit) {
+    return { ok: false, full: true, reason: 'full', said: said(fullHit) }
+  }
   if (!btn) {
-    // No accept control — if the page already reads as accepted, call it done.
-    if (/\baccepted\b/i.test(bodyTxt) && !/accept\b/i.test(bodyTxt)) return { ok: true, accepted: true, already: true }
+    if (fullHit) return { ok: false, full: true, reason: 'full', said: said(fullHit) }
+    // No accept control. Already accepted only on Amazon's own words for it.
+    if (/already accepted|you('ve| have) accepted|campaign accepted|\baccepted\b/i.test(bodyTxt) && !/accept\b/i.test(bodyTxt)) return { ok: true, accepted: true, already: true }
     return { ok: false, reason: 'accept-button-not-found', sample: controls().map((e) => norm(e)).filter(Boolean).slice(0, 14) }
   }
   const label = norm(btn)
   try { btn.scrollIntoView({ block: 'center' }) } catch (e) {}
   btn.click()
-  return { ok: true, accepted: true, clicked: label }
+  // preFull: wording already on the page before the click, so the check after
+  // it only counts what Amazon said in answer.
+  return { ok: true, accepted: true, clicked: label, preFull: said(fullHit) }
+}
+
+// After the click: what did Amazon answer? A full campaign can show its Accept
+// button and refuse only once pressed, so the click alone is not "joined".
+function acceptOutcomeInPage() {
+  const bodyTxt = document.body ? (document.body.innerText || '') : ''
+  const FULL = /(campaign|offer) (is |has )?(now )?(full|filled|closed)|no (more )?(spots?|slots?|openings|availability)( (left|available|remaining))?|(spots?|slots?) (are )?(all )?(filled|taken|full)|reached (its |the )?(maximum|max|limit|capacity)|maximum (number of )?(accepted )?creators|no longer (accepting|available)|fully (booked|subscribed|claimed)|\b0 (spots?|slots?)( left| available| remaining)?\b|campaign (has )?ended/i
+  const m = bodyTxt.match(FULL)
+  if (m) {
+    const i = Math.max(0, (m.index || 0) - 60)
+    return { full: true, said: bodyTxt.slice(i, (m.index || 0) + m[0].length + 60).replace(/\s+/g, ' ').trim().slice(0, 180) }
+  }
+  return { full: false }
 }
 
 // Read the PRODUCTS a Creator Connections campaign covers.
@@ -3687,7 +3849,7 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
     for (let i = 0; i < 6; i++) {
       const res = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
       const r = res && res[0] && res[0].result
-      if (r && r.ok) return r
+      if (r && (r.ok || r.full)) return r
       await _sleep(700)
     }
     return null
@@ -3705,6 +3867,7 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
     } catch (e) {}
 
     let r = await tryAccept()
+    if (r && r.full) return r
     // Button never rendered headless → bring the tab forward once, retry, return.
     if (!r) {
       try {
@@ -3717,6 +3880,14 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
       }
     }
     if (r && r.ok) await _sleep(1500) // let the click commit before we close
+    // A click is not a join until Amazon has not refused it: read the page again.
+    if (r && r.ok && r.clicked) {
+      try {
+        const vr = await chrome.scripting.executeScript({ target: { tabId }, func: acceptOutcomeInPage })
+        const v = vr && vr[0] && vr[0].result
+        if (v && v.full && v.said !== (r.preFull || '')) return { ok: false, full: true, reason: 'full', said: v.said, clicked: r.clicked }
+      } catch (e) {}
+    }
     return r || { ok: false, error: 'accept-button-not-found' }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? e.message : 'accept-exception' }
@@ -6331,7 +6502,7 @@ async function scanStorefrontEarningsBackground() {
       })
       const r = (results && results[0] && results[0].result) || null
       if (r && r.ok && !r.signedOut && ((r.rows && r.rows.length) || (r.totals && r.totals.length))) {
-        const push = await pushEarningsToMvp(r.rows, r.totals)
+        const push = await pushStorefrontToMvp(r.rows, r.totals)
         return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
       }
       if (r && r.signedOut) return { ok: false, error: 'signed-out' }
@@ -6354,7 +6525,7 @@ async function scanStorefrontEarningsBackground() {
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
     if ((!r.rows || !r.rows.length) && (!r.totals || !r.totals.length)) return { ok: true, count: 0 }
-    const push = await pushEarningsToMvp(r.rows, r.totals)
+    const push = await pushStorefrontToMvp(r.rows, r.totals)
     return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
@@ -8692,7 +8863,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 9
+  const KIT_VERSION = 21
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8965,11 +9136,27 @@ function studioKitInstallInPage() {
   const page = (dlg) => {
     const vt = visibleText(dlg).toLowerCase()
     if (/\bpublic\b/.test(vt) && /\bprivate\b/.test(vt) && /\bunlisted\b/.test(vt)) return 'visibility'
+    // VISIBILITY WITH THE SCHEDULE OPEN folds Private, Unlisted and Public
+    // away, and a draft left there reopened as "a page SCOUT did not
+    // recognise", so its window read as never opened.
+    if (/save or publish|set as instant premiere|before you publish|select a date to make your video public/.test(vt)) return 'visibility'
     if (/copyright/.test(vt) && /community guidelines|we.ll check your video|checking/.test(vt)) return 'checks'
     if (/end screen/.test(vt) && /\bcards\b/.test(vt)) return 'elements'
     if (/none of the above/.test(vt)) return 'adsuit'
     if (/made for kids|title \(required\)|add a title/.test(vt)) return 'details'
     if (/monetization/.test(vt) && /(^|\n)(on|off)(\n|$)/.test(vt)) return 'monetization'
+    // BY THE PAGE'S OWN HEADING, when its contents say nothing yet. A fresh
+    // upload's Monetization page has no On or Off chosen while YouTube runs
+    // its checks, and a whole upload stopped there as "a page SCOUT did not
+    // recognise". The big heading at the top of each page names it.
+    const NAMES = { 'details': 'details', 'monetization': 'monetization', 'ad suitability': 'adsuit', 'video elements': 'elements', 'checks': 'checks', 'initial check': 'checks', 'visibility': 'visibility' }
+    for (const el of all(dlg)) {
+      const t = String(el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
+      if (!t || t.length > 20 || !Object.prototype.hasOwnProperty.call(NAMES, t) || !visible(el)) continue
+      let fs = 0
+      try { fs = parseFloat(getComputedStyle(el).fontSize) || 0 } catch (e) {}
+      if (fs >= 22) return NAMES[t]
+    }
     return 'unknown'
   }
   const buttonSample = (scope) => Array.from(new Set(all(scope).filter((el) => isBtn(el) && visible(el)).map((el) => (deepText(el) || attrLabel(el)).slice(0, 40)).filter(Boolean))).slice(0, 40)
@@ -8978,7 +9165,13 @@ function studioKitInstallInPage() {
   const next = async (dlg) => {
     const from = page(dlg)
     const btn = await waitFor(() => { const b = nextBtn(dlg); return b && !isDisabled(b) ? b : null }, 20000, 400)
-    if (!btn) return { ok: false, from, detail: 'The Next button stayed greyed out on the ' + from + ' page' }
+    if (!btn) {
+      // WHY IT IS GREY, in Studio's own words: a red field says what it
+      // wants (a title too long, tags over 500, a character it refuses).
+      const errs = Array.from(new Set(all(dlg).filter((el) => visible(el) && /error|invalid/i.test(String(el.id || '') + ' ' + String(el.className || '') + ' ' + String(el.getAttribute && el.getAttribute('aria-invalid') === 'true' ? 'invalid' : '')))
+        .map((el) => norm(deepText(el))).filter((t) => t && t.length < 160))).slice(0, 3)
+      return { ok: false, from, detail: 'The Next button stayed greyed out on the ' + from + ' page' + (errs.length ? '. Studio shows: ' + errs.join(' / ') : '') }
+    }
     click(btn)
     const to = await waitFor(() => { const p = page(dlg); return p !== from ? p : null }, 15000, 400)
     return to ? { ok: true, from, to } : { ok: false, from, detail: 'Pressed Next, but Studio stayed on the ' + from + ' page' }
@@ -9008,8 +9201,11 @@ function studioKitInstallInPage() {
     if (!ready) { out.detail = 'Studio never showed the video page or an Edit draft button'; out.debug.buttons = buttonSample(document); return out }
     if (ready === 'draft') {
       click(findBtn(/^edit draft$/i, document))
-      const opened = await waitFor(() => { const d = mainDialog(); return d && page(d) !== 'unknown' ? d : null }, 20000, 400)
-      if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); return out }
+      let opened = await waitFor(() => { const d = mainDialog(); return d && page(d) !== 'unknown' ? d : null }, 15000, 400)
+      // OPEN IS OPEN. A window that came up on a page SCOUT cannot name is
+      // still the draft's window: it goes back to Details below.
+      if (!opened) opened = mainDialog()
+      if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); out.debug.text = visibleText(document).slice(0, 300); return out }
     }
     // A draft somebody already clicked through reopens on the page they left
     // it on. The steps start at Details, so go back there first.
@@ -9217,23 +9413,32 @@ K.steps.monetization = async (out, o) => {
       // VISIBLE ONLY. The draft window keeps its other pages in the page, and
       // a hidden child-input on one of them was clicked instead of this one:
       // nothing opened, and the step said there was no On choice.
-      const byChild = all(dlg).find((el) => el.id === 'child-input' && visible(el) && /\b(on|off)\b/i.test(deepText(el) || attrLabel(el)))
+      const byChild = all(dlg).find((el) => el.id === 'child-input' && visible(el) && /\b(on|off|select)\b/i.test(deepText(el) || attrLabel(el)))
       if (byChild) return byChild
       for (const el of all(dlg)) {
         if (!visible(el)) continue
         const t = deepText(el)
-        if (!/^(on|off)$/i.test(t)) continue
+        if (!/^(on|off|select)$/i.test(t)) continue
         const r = el.getAttribute && el.getAttribute('role')
         const tag = (el.tagName || '').toLowerCase()
         if (isBtn(el) || r === 'combobox' || r === 'listbox' || /dropdown|select|trigger/.test(tag)) return el
       }
-      for (const el of all(dlg)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) return el }
+      for (const el of all(dlg)) { if (visible(el) && /^(on|off|select)$/i.test(deepText(el))) return el }
       return null
     }
     const state = () => { const t = trigger(); const s = t ? deepText(t) : ''; return /^on\b/i.test(s) ? 'on' : /^off\b/i.test(s) ? 'off' : null }
     out.readBack.before = state()
-    if (!o.on) { out.skipped = true; out.detail = 'Left as it was: ' + (out.readBack.before || 'unknown'); return out }
-    if (out.readBack.before === 'on') { out.ok = true; out.readBack.monetization = 'on'; out.detail = 'Monetization was already On'; return out }
+    // A FRESH UPLOAD HAS NO ANSWER YET ("Select"), and Studio will not move
+    // past the page without one ("Your video needs a monetization setting").
+    // So an unanswered box is answered either way: On when asked for, Off
+    // when the batch says no. One already answered is left alone unless On
+    // was asked for.
+    const unset = !out.readBack.before && !!trigger()
+    if (!o.on && !unset) { out.skipped = true; out.detail = 'Left as it was: ' + (out.readBack.before || 'unknown'); return out }
+    const wantWord = o.on ? 'on' : 'off'
+    const wantStart = new RegExp('^' + wantWord + '\\b', 'i')
+    const wantExact = new RegExp('^' + wantWord + '$', 'i')
+    if (out.readBack.before === wantWord) { out.ok = true; out.readBack.monetization = wantWord; out.detail = 'Monetization was already ' + (o.on ? 'On' : 'Off'); return out }
     const t = trigger()
     if (!t) { out.skipped = true; out.detail = 'No monetization switch on this channel'; return out }
     // THE ON CHOICE, however Studio draws it: a radio whose label starts with
@@ -9243,13 +9448,13 @@ K.steps.monetization = async (out, o) => {
     const findOn = (before) => {
       const scopes = dialogsNow().filter((x) => !before.includes(x)).concat([document])
       for (const sc of scopes) {
-        const byOnId = byId('radio-on', sc)
+        const byOnId = byId('radio-' + wantWord, sc)
         if (byOnId && visible(byOnId)) return byOnId
-        const r = all(sc).find((el) => isRadio(el) && visible(el) && /^on\b/i.test(ctrlText(el)))
+        const r = all(sc).find((el) => isRadio(el) && visible(el) && wantStart.test(ctrlText(el)))
         if (r) return r
         const opt = all(sc).find((el) => {
           const role = el.getAttribute && el.getAttribute('role')
-          return (role === 'option' || role === 'menuitemradio' || role === 'menuitem') && visible(el) && /^on\b/i.test(ctrlText(el))
+          return (role === 'option' || role === 'menuitemradio' || role === 'menuitem') && visible(el) && wantStart.test(ctrlText(el))
         })
         if (opt) return opt
       }
@@ -9257,20 +9462,20 @@ K.steps.monetization = async (out, o) => {
       // checks the circle beside it, as a hand does.
       const smallest = (list) => list.sort((x, y) => (x.getBoundingClientRect().width * x.getBoundingClientRect().height) - (y.getBoundingClientRect().width * y.getBoundingClientRect().height))[0] || null
       for (const sc of dialogsNow().filter((x) => !before.includes(x))) {
-        const w = smallest(all(sc).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
+        const w = smallest(all(sc).filter((el) => visible(el) && wantExact.test(deepText(el))))
         if (w) return w
       }
       // OR ANYWHERE, IF IT WAS NOT THERE BEFORE THE CLICK. SCOUT's own record
       // from a real run: the click opened the menu and a plain <span>On</span>
       // appeared, in no popup Studio marks as one, so none of the above saw
       // it. An "On" that appeared with the click is the choice.
-      const fresh = all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && !onBefore.has(el))
+      const fresh = all(document).filter((el) => visible(el) && wantExact.test(deepText(el)) && !onBefore.has(el))
       const f1 = smallest(fresh)
       if (f1) return f1
       // Or an On that was already drawn (a menu Studio keeps in the page and
       // only shows), when it sits in something option-like.
       const optionish = (el) => { let x = el; for (let i = 0; i < 8 && x; i++) { if (/radio|option|item|listbox|menu/i.test((x.tagName || '') + ' ' + ((x.getAttribute && x.getAttribute('role')) || ''))) return true; x = up(x) } return false }
-      return smallest(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && optionish(el)))
+      return smallest(all(document).filter((el) => visible(el) && wantExact.test(deepText(el)) && optionish(el)))
     }
     // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
     // real button, and a click on the label opens nothing; its button-like
@@ -9282,7 +9487,7 @@ K.steps.monetization = async (out, o) => {
     // never heard it. A click on the innermost "Off" passes through every one
     // of them on its way up, the way a hand's does.
     let inner = t
-    for (const el of all(t)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) inner = el }
+    for (const el of all(t)) { if (visible(el) && /^(on|off|select)$/i.test(deepText(el))) inner = el }
     const openers = [inner]
     let e = up(inner)
     for (let i = 0; i < 8 && e && e !== t; i++) { if (/monetization|trigger|dropdown|container/i.test((e.tagName || '') + ' ' + (e.id || ''))) openers.push(e); e = up(e) }
@@ -9295,7 +9500,7 @@ K.steps.monetization = async (out, o) => {
     let onBefore = new Set()
     for (const opener of openers) {
       before = dialogsNow()
-      onBefore = new Set(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
+      onBefore = new Set(all(document).filter((el) => visible(el) && wantExact.test(deepText(el))))
       click(opener)
       out.debug.tried.push(((opener.tagName || '') + ' ' + (deepText(opener) || attrLabel(opener)).slice(0, 30)).trim())
       onOpt = await waitFor(() => findOn(before), 4000, 300)
@@ -9305,7 +9510,7 @@ K.steps.monetization = async (out, o) => {
       if (dialogsNow().some((x) => !before.includes(x))) { onOpt = await waitFor(() => findOn(before), 3000, 300); break }
     }
     if (!onOpt) {
-      out.detail = 'Clicked the monetization switch, but no On choice appeared'
+      out.detail = 'Clicked the monetization switch, but no ' + (o.on ? 'On' : 'Off') + ' choice appeared'
       out.debug.buttons = buttonSample(document)
       out.debug.radios = all(document).filter((el) => isRadio(el) && visible(el)).map((el) => ctrlText(el).slice(0, 40)).slice(0, 12)
       out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
@@ -9334,7 +9539,7 @@ K.steps.monetization = async (out, o) => {
     const nextOrDone = await waitFor(() => findBtn(/^(next|done|save)$/i, scopeNow(), { enabled: true }), 5000, 300)
     out.readBack.menuButton = nextOrDone ? (deepText(nextOrDone) || attrLabel(nextOrDone)) : null
     if (nextOrDone) { click(nextOrDone); await sleep(1200) }
-    out.readBack.rating = await K.rate(o, out)
+    out.readBack.rating = o.on ? await K.rate(o, out) : 'not-asked'
     // WAYS TO EARN KEEPS NOTHING UNTIL ITS OWN SAVE. The draft saves as it
     // goes; a video's page does not.
     if (o.page) {
@@ -9346,11 +9551,11 @@ K.steps.monetization = async (out, o) => {
       }
     }
     out.readBack.monetization = state()
-    out.ok = out.readBack.monetization === 'on' && (!o.page || out.readBack.saved !== false)
+    out.ok = out.readBack.monetization === wantWord && (!o.page || out.readBack.saved !== false)
     const said = out.readBack.rating === 'submitted' ? ' Rating: None of the above, submitted.'
       : out.readBack.rating === 'not-asked' ? ' The rating was not asked for, so it was cancelled.'
       : out.readBack.rating === 'failed' ? ' The rating could not be submitted: ' + (out.readBack.ratingWhy || 'see Studio') + '.' : ''
-    out.detail = (out.ok ? 'Monetization On. Read back from Studio.' : 'Chose On, but Studio still shows ' + (out.readBack.monetization || 'nothing')) + said
+    out.detail = (out.ok ? 'Monetization ' + (o.on ? 'On' : 'Off') + '. Read back from Studio.' : 'Chose ' + (o.on ? 'On' : 'Off') + ', but Studio still shows ' + (out.readBack.monetization || 'nothing')) + said
     if (out.ok && out.readBack.rating === 'failed') { out.ok = false; out.partial = true }
     return out
   }
@@ -9648,7 +9853,33 @@ K.steps.monetization = async (out, o) => {
     // greyed out, and reported the Save it never managed to press.
     const addBtn = () => all(dlg).find((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen') || null
     const editorOpen = () => (findBtn(/^discard changes$/i, document) && /import from latest video/i.test(visibleText(document)) ? true : null)
+    // THE EDITOR, WITH OR WITHOUT ITS TEMPLATES. Studio shows "Import from
+    // latest video" only on an empty end screen. On a video that already has
+    // one (imported during the upload) it opens straight onto the elements,
+    // and that open editor read as "the editor did not open".
+    const editorUp = () => (findBtn(/^discard changes$/i, document) || all(document).some((el) => visible(el) && /endscreen.*editor|ytve-endscreen/i.test(el.tagName || '')) ? true : null)
     const editorSave = () => findBtn(/^save$/i, document, { enabled: true })
+    // ALREADY THERE: nothing is changed, the editor is left the way a person
+    // leaves it with no changes (Discard, or its close button).
+    const alreadyHas = async () => {
+      out.readBack.endScreen = true
+      out.readBack.alreadyThere = true
+      const discard = findBtn(/^discard changes$/i, document, { enabled: true })
+      const close = discard || all(document).find((el) => isBtn(el) && visible(el) && /^close$/i.test(attrLabel(el) || deepText(el)))
+      if (close) click(close)
+      await sleep(1200)
+      const leave = findBtn(/^discard$/i, document, { enabled: true })
+      if (leave) click(leave)
+      out.ok = true
+      out.detail = 'The video already has an end screen, so SCOUT left it as it is'
+      return out
+    }
+    const openedEditor = async (ms) => {
+      if (!(await waitFor(editorUp, ms, 500))) return null
+      // The templates panel can draw a moment after the editor itself.
+      if (await waitFor(editorOpen, 5000, 500)) return await inEditor()
+      return await alreadyHas()
+    }
     const inEditor = async () => {
       const label = all(document).find((el) => visible(el) && /^import from latest video$/i.test(deepText(el)))
       const targets = []
@@ -9719,14 +9950,16 @@ K.steps.monetization = async (out, o) => {
       }
       out.debug.rowTarget = target ? ((target.tagName || '').toLowerCase() + ':' + (attrLabel(target) || deepText(target) || '').slice(0, 40)) : 'label'
       click(target || label)
-      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      const viaRow = await openedEditor(25000)
+      if (viaRow) return viaRow
       out.detail = 'Pressed End screen on the Details page, but the editor did not open'
       out.debug.buttons = buttonSample(document)
       out.debug.url = location.href.slice(0, 160)
       return out
     }
     if (o.page) {
-      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      const viaPage = await openedEditor(25000)
+      if (viaPage) return viaPage
       out.detail = 'The video\u2019s end-screen page did not open the editor'
       out.debug.buttons = buttonSample(document)
       out.debug.url = location.href.slice(0, 160)
@@ -9843,7 +10076,7 @@ K.steps.monetization = async (out, o) => {
     const dlg = mainDialog()
     if (!dlg || page(dlg) !== 'visibility') { out.detail = 'The Visibility page is not open'; return out }
     const v = o.visibility || { mode: 'keep' }
-    if (v.mode === 'keep') { out.skipped = true; out.detail = 'Left as a draft, as you chose. Nothing was published or scheduled.'; return out }
+    if (v.mode === 'keep') { out.skipped = true; out.detail = 'Not touched here: MVP sets the time itself.'; return out }
     const doneBtn = () => byId('done-button', dlg) || findBtn(/^(schedule|publish|save)$/i, dlg)
     const finish = async (wantRe, sayRe) => {
       const b = doneBtn()
@@ -9851,21 +10084,86 @@ K.steps.monetization = async (out, o) => {
       out.readBack.finalButton = lbl
       if (!b || !wantRe.test(lbl)) { out.detail = 'The last button reads "' + lbl + '", not what was asked, so SCOUT did not press it'; return false }
       if (isDisabled(b)) { out.detail = 'The ' + lbl + ' button is greyed out'; return false }
-      click(b)
-      const said = await waitFor(() => {
-        const vt = visibleText(document).toLowerCase()
-        if (sayRe.test(vt)) return 'said'
-        if (!mainDialog()) return 'closed'
-        return null
-      }, 25000, 600)
+      // NOTHING OPEN OVER IT. A time list or date picker left open can take
+      // the press for itself and close, and Schedule then "did not work"
+      // with nothing on screen to say why.
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
+      await sleep(400)
+      const press = async () => {
+        click(doneBtn() || b)
+        return waitFor(() => {
+          const vt = visibleText(document).toLowerCase()
+          if (sayRe.test(vt)) return 'said'
+          if (!mainDialog()) return 'closed'
+          return null
+        }, 25000, 600)
+      }
+      let said = await press()
+      // PRESSED ONCE MORE, ONLY IF NOTHING MOVED: still the Visibility page,
+      // its button still there and not greyed. A second press on a page that
+      // did move would land on whatever Studio opened next.
+      if (!said) {
+        const d2 = mainDialog()
+        const b2 = doneBtn()
+        if (d2 && page(d2) === 'visibility' && b2 && !isDisabled(b2) && wantRe.test(deepText(b2) || attrLabel(b2))) {
+          const ap = findBtn(/^apply$/i, d2, { enabled: true })
+          if (ap) { click(ap); await sleep(1200); out.readBack.appliedBeforeSecondPress = true }
+          out.readBack.pressedTwice = true
+          said = await press()
+        }
+      }
       out.readBack.confirmation = said
+      if (!said) {
+        // WHAT STUDIO SHOWED INSTEAD, in its own words: the top window's
+        // text, so the next fix is not a guess.
+        const d3 = mainDialog()
+        const shown = d3 ? norm(visibleText(d3)).slice(0, 160) : ''
+        out.debug.afterPress = shown
+        out.debug.buttons = buttonSample(d3 || document)
+        out.detail = 'Pressed ' + lbl + ', but Studio did not confirm it' + (shown ? ' (it showed: "' + shown.slice(0, 90) + '")' : '')
+        return false
+      }
       const close = findBtn(/^close$/i, document)
       if (close) click(close)
-      return !!said
+      return true
     }
     if (v.mode === 'public' || v.mode === 'private' || v.mode === 'unlisted') {
-      const radio = all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '$', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
-      if (!radio) { out.detail = 'Could not find the ' + v.mode + ' option'; out.debug.buttons = buttonSample(dlg); return out }
+      const findRadio = () => all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '\\b', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
+      // FOLDED AWAY BY THE SCHEDULE. With Studio's Schedule section open, the
+      // Save or publish section (Private, Unlisted, Public) is folded shut, and
+      // the Private fallback after a failed schedule found no Private at all.
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
+      if (!findRadio()) {
+        // Every way back to it, in turn: Studio's own expand button, the
+        // "Save or publish" heading itself, then folding the Schedule
+        // section shut again (the two sections open one at a time).
+        const tries = [
+          () => byId('first-container-expand-button', dlg),
+          () => all(dlg).find((el) => visible(el) && (isBtn(el) || (el.getAttribute && el.getAttribute('role') === 'button') || /expand/i.test(el.id || '')) && /^save or publish\b/i.test(deepText(el))),
+          () => { let best = null, len = 1e9; for (const el of all(dlg)) { if (!visible(el)) continue; const t = norm(deepText(el)); if (/^save or publish\b/i.test(t) && t.length < len) { best = el; len = t.length } } return best },
+          () => byId('second-container-expand-button', dlg),
+        ]
+        for (const t of tries) {
+          if (findRadio()) break
+          const el = t()
+          if (!el) continue
+          click(el)
+          await waitFor(findRadio, 4000, 300)
+        }
+      }
+      let radio = findRadio()
+      // STILL FOLDED: Studio's own radio, found by its name, pressed where it
+      // is. Only believed if Studio then reads it back as chosen.
+      if (!radio) {
+        const hidden = all(dlg).find((el) => isRadio(el) && String((el.getAttribute && el.getAttribute('name')) || '').toLowerCase() === v.mode)
+        if (hidden) { click(hidden); await sleep(700); if (isChecked(hidden)) radio = hidden }
+      }
+      if (!radio) {
+        out.detail = 'Could not find the ' + v.mode + ' option'
+        out.debug.buttons = buttonSample(dlg)
+        out.debug.text = norm(visibleText(dlg)).slice(0, 200)
+        return out
+      }
       if (!isChecked(radio)) { click(radio); await sleep(700) }
       out.readBack.visibility = isChecked(radio) ? v.mode : null
       if (!out.readBack.visibility) { out.detail = 'Chose ' + v.mode + ', but Studio did not keep it'; return out }
@@ -9913,12 +10211,46 @@ K.steps.monetization = async (out, o) => {
     // Date: open the picker, type the date into its box.
     const before = dialogsNow()
     click(trigger())
+    // THE DATE BOX, however Studio draws the picker: a box already holding a
+    // date, or the text box inside a date picker, in the popup or the page.
+    // ONLY THE PICKER'S OWN BOX. A search of the whole page on the second go
+    // (the draft reopened over the video's edit page) could type the date
+    // into a box behind the window, and Studio's date stayed on today:
+    // "Typed Oct 30, but Studio shows Oct 3". The popup that opened, or a box
+    // inside a date picker, or a box in the Visibility window; never the page.
+    const inDatePicker = (el) => { let x = el; for (let i = 0; i < 10 && x; i++) { if (/date-?picker|datepicker|calendar/i.test((x.tagName || '') + ' ' + (x.id || ''))) return true; x = up(x) } return false }
     const dateInput = await waitFor(() => {
-      const d = newDialog(before) || document
-      return all(d).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /\d{4}/.test(el.value || '')) || null
-    }, 6000, 300)
-    if (!dateInput) { out.detail = 'Opened the date picker, but found no date box'; out.debug.buttons = buttonSample(document); return out }
-    setVal(dateInput, dateStr)
+      const textBoxes = (d) => all(d).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && el.type !== 'checkbox' && el.type !== 'radio')
+      const dateLike = (el) => /\d{4}/.test(el.value || '') || /^[A-Za-z]{3,9}\.? \d{1,2}/.test(el.value || '')
+      const pop = newDialog(before)
+      if (pop) { const ins = textBoxes(pop); const hit = ins.find(dateLike) || ins.find(inDatePicker) || ins[0]; if (hit) return hit }
+      const picker = textBoxes(document).find((el) => inDatePicker(el) && dateLike(el)) || textBoxes(document).find(inDatePicker)
+      if (picker) return picker
+      return textBoxes(dlg).find((el) => dateLike(el) && !/^\d{1,2}:\d{2}/.test(el.value || '')) || null
+    }, 8000, 300)
+    if (!dateInput) {
+      out.detail = 'Opened the date picker, but found no date box'
+      out.debug.buttons = buttonSample(document)
+      out.debug.inputs = all(document).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el)).map((el) => (el.type || '') + ':' + String(el.value || '').slice(0, 20) + ':' + String(attrLabel(el) || '').slice(0, 20)).slice(0, 10)
+      return out
+    }
+    // TYPED, AS A KEYBOARD DOES. A value dropped into the box with its
+    // setter left Studio's picker on today ("Typed Oct 30, but Studio shows
+    // Oct 3"): the picker reads key-by-key input. Select all, type the date,
+    // press Enter; the setter only if typing did not land.
+    const typeInto = async (input, val) => {
+      try {
+        input.focus()
+        if (input.select) input.select()
+        document.execCommand('selectAll', false)
+        document.execCommand('insertText', false, val)
+        await sleep(300)
+        for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+      } catch (e) {}
+    }
+    await typeInto(dateInput, dateStr)
+    await sleep(800)
+    if (norm(dateInput.value) !== dateStr && !(trigger() && new Date(deepText(trigger())).getDate() === D)) setVal(dateInput, dateStr)
     // No Escape to close the picker: Escape also closes the whole draft
     // window. Enter in the date box closes the picker on its own.
     // READ WHEN STUDIO HAS CAUGHT UP. The button under the picker kept showing
@@ -9933,6 +10265,39 @@ K.steps.monetization = async (out, o) => {
     }
     let matched = await waitFor(dateMatches, 6000, 300)
     if (!matched && newDialog(before) && trigger()) { click(trigger()); matched = await waitFor(dateMatches, 4000, 300) }
+    if (!matched && trigger()) {
+      // ONE SLOWER GO, as a person types: picker opened again, its box
+      // emptied, each character its own keystroke, then Enter.
+      out.readBack.dateSecondGo = true
+      const before2 = dialogsNow()
+      if (!newDialog(before)) click(trigger())
+      await sleep(800)
+      const pop2 = newDialog(before2) || newDialog(before)
+      const box2 = (pop2 && all(pop2).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el))) ||
+        all(document).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && inDatePicker(el))
+      if (box2) {
+        try {
+          box2.focus()
+          if (box2.select) box2.select()
+          document.execCommand('selectAll', false)
+          document.execCommand('delete', false)
+          for (const ch of dateStr) {
+            box2.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }))
+            document.execCommand('insertText', false, ch)
+            box2.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }))
+            await sleep(40)
+          }
+          await sleep(300)
+          for (const type of ['keydown', 'keypress', 'keyup']) box2.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+        } catch (e) {}
+        matched = await waitFor(dateMatches, 6000, 300)
+        if (!matched && (newDialog(before2) || newDialog(before)) && trigger()) { click(trigger()); matched = await waitFor(dateMatches, 4000, 300) }
+      }
+      if (!matched) {
+        out.debug.dateBox = box2 ? String(box2.value || '').slice(0, 30) + ' in ' + String((up(up(box2)) || {}).tagName || '').toLowerCase() : 'no box'
+        out.debug.inputs = all(document).filter((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el)).map((el) => (el.type || '') + ':' + String(el.value || '').slice(0, 20) + ':' + (inDatePicker(el) ? 'picker' : '')).slice(0, 10)
+      }
+    }
     const shownDate = matched || (trigger() ? deepText(trigger()) : '')
     const dateOk = !!matched
     out.readBack.date = shownDate
@@ -9944,8 +10309,8 @@ K.steps.monetization = async (out, o) => {
     const twelve = /[ap]\.?m/i.test(timeInput.value)
     const pad = (n) => String(n).padStart(2, '0')
     const timeStr = twelve ? ((H % 12 || 12) + ':' + pad(Mi) + ' ' + (H < 12 ? 'AM' : 'PM')) : (pad(H) + ':' + pad(Mi))
-    setVal(timeInput, timeStr)
-    await sleep(900)
+    await typeInto(timeInput, timeStr)
+    await sleep(700)
     const readTime = (s) => {
       const x = norm(s).match(/^(\d{1,2}):(\d{2})\s?([ap])?/i)
       if (!x) return null
@@ -9953,16 +10318,231 @@ K.steps.monetization = async (out, o) => {
       if (x[3] && /p/i.test(x[3])) h += 12
       return h * 60 + parseInt(x[2], 10)
     }
+    if (readTime(timeInput.value) !== H * 60 + Mi) { setVal(timeInput, timeStr); await sleep(700) }
     out.readBack.time = norm(timeInput.value)
     if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled'; return out }
+    // THE BOX SHOWING IT IS NOT STUDIO KEEPING IT. A KeyboardEvent built in a
+    // script ignores keyCode, so the Enter above reached Studio as key 0, and
+    // a picker that waits for 13 never took the time: the box read 7:09 PM,
+    // and Apply put back 1:00 PM on both videos of a batch (2026-10-05).
+    // Committed here as a person does: Enter that says 13, then leaving the box.
+    const pressEnter = (el) => {
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        const ev = new KeyboardEvent(type, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, composed: true })
+        try { Object.defineProperty(ev, 'keyCode', { get: () => 13 }); Object.defineProperty(ev, 'which', { get: () => 13 }) } catch (e) {}
+        el.dispatchEvent(ev)
+      }
+    }
+    const commitTime = async (input) => {
+      try {
+        pressEnter(input)
+        input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }))
+        input.blur()
+      } catch (e) {}
+      await sleep(600)
+    }
+    await commitTime(timeInput)
+    const findTimeBox = () => all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}/.test(norm(el.value)))
+    // Studio's own list of times under the box: the exact one is clicked, as
+    // a person picking from it would. Only an exact match; a time is never
+    // moved to the nearest entry.
+    const listedTimes = () => all(document).filter((el) => visible(el) && el.getAttribute && (el.getAttribute('role') === 'option' || /paper-item/i.test(el.tagName || '')) && readTime(deepText(el)) != null)
+    const pickListedTime = async (input) => {
+      click(input)
+      await sleep(700)
+      const hit = listedTimes().find((el) => readTime(deepText(el)) === H * 60 + Mi)
+      if (!hit) return false
+      click(hit)
+      await sleep(600)
+      return true
+    }
     // Premiere stays off.
     const prem = pickCheckbox('premiere', dlg)
     if (prem && isChecked(prem)) { click(prem); await sleep(500) }
     out.readBack.premiere = prem ? isChecked(prem) : null
     if (prem && isChecked(prem)) { out.detail = 'Set as Premiere is ticked and would not untick, so nothing was scheduled'; return out }
+    // APPLY FIRST. Studio's schedule panel now keeps the date and time to
+    // itself until its own Apply is pressed, and Schedule pressed before
+    // that does nothing: the window stayed on "Saved as private", pressed
+    // twice, with Apply sitting next to the date. Pressed here, then the
+    // date and time read again before Schedule.
+    const applyBtn = () => findBtn(/^apply$/i, dlg, { enabled: true })
+    out.readBack.applyShown = !!applyBtn()
+    if (applyBtn()) {
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur() } catch (e) {}
+      click(applyBtn())
+      await waitFor(() => (!applyBtn() ? true : null), 5000, 300)
+      await sleep(600)
+      out.readBack.applied = !applyBtn()
+      // Still showing the date asked for (when the panel is still open; a
+      // panel that folded shut after Apply shows the time on its heading).
+      if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
+      let tBox = findTimeBox()
+      if (tBox && readTime(tBox.value) !== H * 60 + Mi) {
+        // ONE MORE GO before giving up on the schedule: from Studio's list
+        // when the time is on it, typed and committed again when it is not,
+        // then Apply again. What Studio showed is kept for the next fix.
+        out.readBack.timeAfterApply = norm(tBox.value)
+        out.readBack.timeSecondGo = (await pickListedTime(tBox)) ? 'list' : 'typed'
+        tBox = findTimeBox() || tBox
+        if (out.readBack.timeSecondGo === 'typed') { await typeInto(tBox, timeStr); await commitTime(tBox) }
+        if (applyBtn()) { click(applyBtn()); await waitFor(() => (!applyBtn() ? true : null), 5000, 300); await sleep(600) }
+        tBox = findTimeBox()
+        if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply again, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
+        if (tBox && readTime(tBox.value) !== H * 60 + Mi) {
+          out.debug.timeList = listedTimes().map((el) => deepText(el)).slice(0, 8)
+          out.detail = 'Pressed Apply, but Studio then showed ' + out.readBack.timeAfterApply + ' instead of ' + timeStr + ', and again (' + norm(tBox.value) + ') on a second go, so nothing was scheduled'
+          return out
+        }
+      }
+    }
+    // WAS THE TIME READ BACK AFTER APPLY, OR ONLY TYPED. When the panel folds
+    // shut after Apply neither box is there to read, and the time reported
+    // was the one asked for. MVP's fallback for a day YouTube's API cannot be
+    // asked trusts only a schedule read back here (1.40.8).
+    const tAfter = findTimeBox()
+    out.readBack.timeVerified = !out.readBack.applyShown
+      || (!!tAfter && readTime(tAfter.value) === H * 60 + Mi && (!trigger() || !!dateMatches()))
     const ok = await finish(/^schedule$/i, /video scheduled|scheduled for/)
     out.ok = ok
-    if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')'
+    if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')' + (out.readBack.timeVerified ? '' : '. Studio folded the panel after Apply, so the time was not read back')
+    return out
+  }
+
+  // ── A NEW UPLOAD'S OWN WORDS (Liftoff, uploaded through Studio) ─────────
+  // Studio names a new upload after its file. The title and description are
+  // typed into Studio's own boxes the way a person types, and read back. Made
+  // for kids is answered No here as well: a fresh upload has no answer, and
+  // Studio does not move past Details without one.
+  K.steps.uploadText = async (out, o) => {
+    const dlg = await waitFor(() => { const d = mainDialog(); return d && page(d) === 'details' ? d : null }, 20000, 500)
+    if (!dlg) { out.detail = 'The upload’s Details page is not open'; return out }
+    const boxes = () => all(dlg).filter((el) => el.getAttribute && el.getAttribute('contenteditable') === 'true' && visible(el))
+    const near = (el) => attrLabel(el) + ' ' + (el.id || '') + ' ' + ((up(el) || {}).id || '') + ' ' + ((up(up(el)) || {}).id || '') + ' ' + ((up(up(up(el))) || {}).id || '')
+    const titleBox = () => boxes().find((el) => /title/i.test(near(el))) || boxes()[0] || null
+    const descBox = () => boxes().find((el) => /tell viewers|description/i.test(near(el))) || boxes().find((el) => el !== titleBox()) || null
+    const typeInto = async (box, text) => {
+      if (!box) return false
+      try { box.focus() } catch (e) {}
+      try { document.execCommand('selectAll', false); document.execCommand('delete', false) } catch (e) {}
+      await sleep(250)
+      try { document.execCommand('insertText', false, text) } catch (e) {}
+      await sleep(500)
+      const now = norm(box.innerText || box.textContent || '')
+      const want = norm(text)
+      if (now === want) return true
+      // THE LINKS ARE WHAT EARN. Studio may tidy spacing, but every link MVP
+      // wrote must be in the box, or the read-back fails and MVP sets the
+      // description itself.
+      const links = want.match(/https?:\/\/\S+/g) || []
+      return now.slice(0, 40) === want.slice(0, 40) && Math.abs(now.length - want.length) <= 20 && links.every((l) => now.includes(l))
+    }
+    const tb = await waitFor(titleBox, 15000, 400)
+    const tOk = o.title ? await typeInto(tb, String(o.title).slice(0, 100)) : true
+    const dOk = o.description ? await typeInto(descBox(), String(o.description).slice(0, 4900)) : true
+    out.readBack.title = tOk
+    out.readBack.description = dOk
+    const kids = await answerRadio('kids', /not made for kids/i, dlg)
+    out.readBack.notForKids = kids.found ? kids.confirmed : null
+    out.ok = tOk && dOk && kids.confirmed
+    out.detail = out.ok
+      ? 'Title, description and Not made for kids set. Read back from Studio.'
+      : 'Studio did not keep: ' + [tOk ? '' : 'the title', dOk ? '' : 'the description', kids.confirmed ? '' : 'Not made for kids'].filter(Boolean).join(', ')
+    return out
+  }
+
+  // ── A NEW UPLOAD'S TAGS (Liftoff, uploaded through Studio) ──────────────
+  // Behind "Show more" on Details. Typed as a person types, a comma after
+  // each, and read back as the chips Studio made. Studio caps tags at 500
+  // characters, so the list is trimmed to fit before it is typed.
+  K.steps.uploadTags = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The upload’s Details page is not open'; return out }
+    const want = []
+    let len = 0
+    for (const t of (Array.isArray(o.tags) ? o.tags : [])) {
+      const v = norm(String(t)).replace(/[<>,]/g, '').slice(0, 100)
+      if (!v || want.includes(v)) continue
+      // YOUTUBE'S OWN COUNT: a tag with a space counts its quotes too, and a
+      // list over 500 turns the Tags box red and greys out Next, which is
+      // where a whole upload stopped. Kept under 460, as MVP's API path does.
+      const add = (want.length ? 1 : 0) + v.length + (/\s/.test(v) ? 2 : 0)
+      if (len + add > 460) break
+      want.push(v); len += add
+    }
+    if (!want.length) { out.ok = true; out.skipped = true; out.detail = 'No tags to add'; return out }
+    const tagInput = () => all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /tags/i.test(attrLabel(el) + ' ' + ((up(el) || {}).id || '') + ' ' + ((up(up(el)) || {}).id || '') + ' ' + ((up(up(up(el))) || {}).id || ''))) || null
+    if (!tagInput()) {
+      const more = byId('toggle-button', dlg) || findBtn(/^show more$/i, dlg)
+      if (more && /show more/i.test(deepText(more) || attrLabel(more))) { click(more); await waitFor(tagInput, 6000, 300) }
+    }
+    const input = tagInput()
+    if (!input) { out.detail = 'Could not find the Tags box (under Show more)'; out.debug.buttons = buttonSample(dlg); return out }
+    const chips = () => {
+      let host = input
+      for (let i = 0; i < 6 && host; i++) { if (/tags|chip-bar/i.test((host.id || '') + ' ' + (host.tagName || ''))) break; host = up(host) }
+      // A tag extension (vidIQ) puts a score in front of each chip ("38
+      // GENICOOK freezer tray"), so the number is taken off before comparing.
+      return all(host || dlg).filter((el) => /chip/i.test(el.tagName || '') && visible(el)).map((el) => norm(deepText(el)).replace(/\s*(remove|close|cancel)\s*$/i, '').replace(/^\d{1,3}\s+/, '')).filter(Boolean)
+    }
+    const before = chips().length
+    try { input.focus() } catch (e) {}
+    for (const t of want) {
+      try { document.execCommand('insertText', false, t + ',') } catch (e) {}
+      await sleep(120)
+      if (norm(input.value)) {
+        for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+        await sleep(120)
+      }
+    }
+    await sleep(600)
+    const have = chips()
+    out.readBack.tags = have.length - before
+    const missing = want.filter((t) => !have.some((c) => c.toLowerCase() === t.toLowerCase() || c.toLowerCase().indexOf(t.toLowerCase()) >= 0))
+    out.ok = have.length - before >= Math.max(1, want.length - 1) || missing.length === 0
+    out.detail = out.ok ? (want.length - missing.length) + ' of ' + want.length + ' tags in Studio. Read back as chips.' : 'Studio kept ' + Math.max(0, have.length - before) + ' of ' + want.length + ' tags'
+    return out
+  }
+
+  // ── A NEW UPLOAD'S PLAYLIST ─────────────────────────────────────────────
+  // Picked by its name in Studio's own Playlists list, then read back off the
+  // dropdown, which shows the playlists the video is in.
+  K.steps.uploadPlaylist = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The upload’s Details page is not open'; return out }
+    const name = norm(o.playlist || '')
+    if (!name) { out.ok = true; out.skipped = true; out.detail = 'No playlist was chosen'; return out }
+    const trigger = () => {
+      const host = all(dlg).find((el) => /playlist/i.test(el.tagName || '') && visible(el)) || null
+      const scope = host || dlg
+      return all(scope).find((el) => visible(el) && (/dropdown-trigger/i.test(el.tagName || '') || (el.getAttribute && el.getAttribute('role') === 'button' && /playlist|select/i.test(deepText(el) + ' ' + attrLabel(el))))) || null
+    }
+    const tr = await waitFor(trigger, 8000, 400)
+    if (!tr) { out.detail = 'Could not find the Playlists box'; out.debug.buttons = buttonSample(dlg); return out }
+    if (new RegExp('(^|,\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s*,|$)', 'i').test(norm(deepText(tr)))) { out.ok = true; out.detail = 'Already in “' + name + '”'; return out }
+    const before = dialogsNow()
+    click(tr)
+    const box = await waitFor(() => {
+      const d = newDialog(before) || null
+      const scope = d || document
+      return all(scope).find((el) => isCheckbox(el) && visible(el) && norm(labelOf(el)).toLowerCase() === name.toLowerCase()) || null
+    }, 8000, 300)
+    if (!box) {
+      out.detail = 'Your playlist “' + name + '” is not in Studio’s list'
+      const close = findBtn(/^(done|close|cancel)$/i, newDialog(before) || document)
+      if (close) click(close)
+      return out
+    }
+    if (!isChecked(box)) { click(box); await sleep(600) }
+    const ticked = isChecked(box)
+    const done = findBtn(/^done$/i, newDialog(before) || document)
+    if (done) click(done)
+    await sleep(900)
+    const shown = norm(trigger() ? deepText(trigger()) : '')
+    out.readBack.playlist = shown
+    out.ok = ticked && shown.toLowerCase().includes(name.toLowerCase())
+    out.detail = out.ok ? 'Added to “' + name + '”. Read back from Studio.' : 'Ticked “' + name + '”, but Studio shows “' + shown + '”'
     return out
   }
 
@@ -10050,7 +10630,7 @@ async function runStudioDraft(tabId, videoId, want) {
       return steps
     }
     if (!pg || pg === 'gone' || pg === 'unknown') {
-      steps.push({ step: 'unknown', ok: false, detail: pg === 'gone' ? 'The draft window closed before Visibility' : 'SCOUT did not recognise this page of the draft', debug: where.debug })
+      steps.push({ step: 'unknown', ok: false, detail: pg === 'gone' ? 'The draft window closed before Visibility' : 'SCOUT did not recognise this page of the draft' + (where.debug && where.debug.text ? ' (it showed: "' + String(where.debug.text).replace(/\s+/g, ' ').slice(0, 140) + '")' : ''), debug: where.debug })
       return steps
     }
     if (done.has(pg)) {
@@ -10093,6 +10673,365 @@ async function runStudioDraft(tabId, videoId, want) {
   }
   steps.push({ step: 'unknown', ok: false, detail: 'SCOUT went through more pages than a draft has, and stopped' })
   return steps
+}
+
+// ── LIFTOFF UPLOADS THROUGH YOUTUBE STUDIO (MVP_STUDIO_UPLOAD) ──────────────
+// An upload through YouTube's API costs 1,600 of the one daily quota every MVP
+// account shares, so MVP could upload about six videos a day for everyone
+// together. Studio uploads cost nothing from it: SCOUT opens Studio's upload
+// box in the creator's own signed-in Chrome, puts the finished file in it, and
+// walks the same dialog a person would (the drafts walker above): title and
+// description, Not made for kids, paid promotion Yes, AI use No, notify as the
+// batch says, then Save as Private. MVP sets the time afterwards, as it does
+// for every Liftoff video.
+//
+// ONE UPLOAD PER VIDEO, EVER. The new video's id is kept the moment Studio
+// shows it, so a run asked again for the same Liftoff video answers with that
+// id instead of uploading a second copy. It is forgotten only when the file
+// never finished sending, which is the one case that needs a new upload.
+function studioUploadFileInPage(fileUrl, fileName, expectedChannel) {
+  return (async () => {
+    const out = { ok: false, detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const all = (root) => { const acc = []; const w = (r) => { let e; try { e = r.querySelectorAll('*') } catch (x) { return } for (const el of e) { acc.push(el); if (el.shadowRoot) w(el.shadowRoot) } }; w(root || document); return acc }
+    try {
+      // Read by studioChannelInPage (ytcfg lives in the page's own world;
+      // this runs in SCOUT's, where Studio's rules on downloads do not apply).
+      const onChannel = String(expectedChannel && expectedChannel.on || '')
+      expectedChannel = expectedChannel && expectedChannel.want
+      out.debug.channel = onChannel
+      if (expectedChannel && onChannel && onChannel !== expectedChannel) {
+        out.error = 'wrong-channel'
+        out.detail = 'Studio is on a different channel (' + onChannel + ') from the one this batch is for, so nothing was uploaded. Switch channel in YouTube, or reconnect the right one in MVP.'
+        return out
+      }
+      const dialog = () => all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog') || null
+      let input = null
+      for (let i = 0; i < 60 && !input; i++) {
+        const d = dialog()
+        input = (d ? all(d) : all(document)).find((el) => el.tagName === 'INPUT' && el.type === 'file') || null
+        if (!input) await sleep(500)
+      }
+      if (!input) { out.error = 'no-picker'; out.detail = 'Studio’s upload box did not open'; return out }
+      // The finished video, from MVP's storage, into this browser.
+      let res
+      try { res = await fetch(fileUrl, { credentials: 'omit' }) } catch (e) { out.error = 'file-fetch-blocked'; out.detail = 'This browser could not download the video from MVP'; return out }
+      if (!res.ok) { out.error = 'file-http-' + res.status; out.detail = 'MVP’s copy of the video could not be read (' + res.status + ')'; return out }
+      const blob = await res.blob()
+      out.debug.bytes = blob.size
+      if (!blob.size) { out.error = 'empty-file'; out.detail = 'The video file was empty'; return out }
+      const file = new File([blob], fileName || 'video.mp4', { type: blob.type && /^video\//.test(blob.type) ? blob.type : 'video/mp4' })
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      // Studio moves to Details and starts sending. The video's own link
+      // ("youtu.be/<id>") is in the dialog as soon as Studio has an id.
+      let id = null
+      const end = Date.now() + 180000
+      while (!id && Date.now() < end) {
+        const d = dialog()
+        const tx = (document.body ? document.body.innerText : '') || ''
+        if (/daily upload limit|upload limit reached/i.test(tx)) { out.error = 'upload-limit'; out.detail = 'YouTube says this channel has reached its own daily upload limit (uploadLimitExceeded)'; return out }
+        if (d) {
+          for (const el of all(d)) {
+            const href = (el.tagName === 'A' && el.href) ? String(el.href) : ''
+            const m = href.match(/(?:youtu\.be\/|\/shorts\/|[?&]v=)([A-Za-z0-9_-]{11})/)
+            if (m) { id = m[1]; break }
+          }
+        }
+        if (!id) await sleep(1000)
+      }
+      if (!id) { out.error = 'no-video-id'; out.detail = 'The file went in, but Studio did not show the video’s link within three minutes'; return out }
+      out.ok = true
+      out.videoId = id
+      out.detail = 'Studio took the file and gave it an id'
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'threw'
+      out.detail = 'SCOUT hit an error in Studio: ' + out.error
+      return out
+    }
+  })()
+}
+
+// The designed thumbnail into a new upload's Details page. SCOUT's own world,
+// like the video, and read back as the preview Studio shows for a file it took.
+// Shorts may have no thumbnail box; that is said, and MVP sets it instead.
+function studioUploadThumbInPage(url) {
+  return (async () => {
+    const out = { step: 'thumbnail', ok: false, detail: '', readBack: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const all = (root) => { const acc = []; const w = (r) => { let e; try { e = r.querySelectorAll('*') } catch (x) { return } for (const el of e) { acc.push(el); if (el.shadowRoot) w(el.shadowRoot) } }; w(root || document); return acc }
+    try {
+      if (!/^https:\/\//.test(String(url || ''))) { out.ok = true; out.skipped = true; out.detail = 'No designed thumbnail to set'; return out }
+      const dlg = all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog') || document
+      const input = all(dlg).find((el) => el.tagName === 'INPUT' && el.type === 'file' && /image/i.test(el.accept || '')) || null
+      if (!input) { out.unavailable = true; out.detail = 'Studio offers no thumbnail upload on this video'; return out }
+      // READ BACK IN THE THUMBNAIL BOX ITSELF. Counting new preview images
+      // anywhere in the dialog passed on Studio's own frame previews, and a
+      // video read "thumbnail set" with no thumbnail on it. Only the box
+      // around this file input counts, and only an image the size of ours.
+      const up = (el) => (el ? (el.parentElement || (el.parentNode && el.parentNode.host) || null) : null)
+      let box = null
+      for (let e = up(input), i = 0; e && i < 10; e = up(e), i++) { if (/thumbnail/i.test(e.tagName || '')) box = e }
+      if (!box) { out.unavailable = true; out.detail = 'Studio’s thumbnail box was not where SCOUT expected, so MVP sets the thumbnail instead'; return out }
+      const previews = () => all(box).filter((el) => el.tagName === 'IMG' && /^(blob:|data:image)/.test(String(el.src || '')) && el.naturalWidth > 0)
+      const before = previews().map((el) => el.src)
+      let res
+      try { res = await fetch(url, { credentials: 'omit' }) } catch (e) { out.detail = 'This browser could not download the thumbnail from MVP'; return out }
+      if (!res.ok) { out.detail = 'MVP’s thumbnail could not be read (' + res.status + ')'; return out }
+      const blob = await res.blob()
+      if (!blob.size || blob.size > 2 * 1024 * 1024) { out.detail = blob.size ? 'The thumbnail is over YouTube’s 2MB limit' : 'The thumbnail file was empty'; return out }
+      const type = /^image\/(jpeg|png)$/.test(blob.type) ? blob.type : 'image/jpeg'
+      const dt = new DataTransfer()
+      dt.items.add(new File([blob], type === 'image/png' ? 'thumbnail.png' : 'thumbnail.jpg', { type }))
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      let seen = false
+      for (let i = 0; i < 40 && !seen; i++) { await sleep(500); seen = previews().some((el) => before.indexOf(el.src) < 0) }
+      const txt = (document.body && document.body.innerText) || ''
+      if (/thumbnail (couldn.t|could not|failed)|verify your account|verification/i.test(txt) && !seen) { out.detail = 'Studio would not take a custom thumbnail on this channel (it may need phone verification)'; return out }
+      out.ok = seen
+      out.verified = seen
+      out.readBack.preview = seen
+      out.detail = seen ? 'Thumbnail set. Read back as Studio’s preview.' : 'The thumbnail went in, but Studio showed no preview of it'
+      return out
+    } catch (e) {
+      out.detail = 'SCOUT hit an error setting the thumbnail: ' + ((e && e.message) || 'threw')
+      return out
+    }
+  })()
+}
+
+// Which channel Studio is on, from the page's own settings (MAIN world).
+function studioChannelInPage() {
+  try { return String((window.ytcfg && window.ytcfg.get && window.ytcfg.get('CHANNEL_ID')) || '') } catch (e) { return '' }
+}
+
+// How far Studio has got with sending the file: 'uploading' (with a
+// percentage when shown), 'done' once Studio has all of it, or 'error' with
+// Studio's own words.
+function studioUploadProgressInPage() {
+  try {
+    const parts = []
+    const visit = (n) => {
+      for (const c of Array.from(n.childNodes || [])) {
+        if (c.nodeType === 3) { const v = String(c.nodeValue || '').trim(); if (v) parts.push(v) }
+        else if (c.nodeType === 1) { const t = c.tagName; if (t === 'STYLE' || t === 'SCRIPT' || t === 'TEMPLATE') continue; if (c.shadowRoot) visit(c.shadowRoot); visit(c) }
+      }
+    }
+    visit(document.body || document)
+    const text = parts.join(' ').replace(/\s+/g, ' ')
+    const pct = text.match(/uploading[^%]{0,40}?(\d{1,3})\s*%/i)
+    if (/upload failed|processing abandoned|upload couldn.t be completed|daily upload limit/i.test(text)) {
+      const m = text.match(/(upload failed[^.]{0,120}|processing abandoned[^.]{0,120}|upload couldn.t be completed[^.]{0,120}|daily upload limit[^.]{0,120})/i)
+      return { state: 'error', text: m ? m[1] : 'Studio reported a failed upload' }
+    }
+    if (pct) return { state: 'uploading', percent: Number(pct[1]), text: pct[0] }
+    if (/upload complete|uploads complete|checks complete|processing (?:hd|sd|up to)|processing will begin|finished processing|video uploaded/i.test(text)) return { state: 'done', text: 'Upload complete' }
+    if (/\buploading\b/i.test(text)) return { state: 'uploading', percent: null, text: 'Uploading' }
+    // Nothing about an upload on the page: the caller decides what that means.
+    return { state: 'idle', percent: null, text: '' }
+  } catch (e) { return { state: 'idle', percent: null, text: '' } }
+}
+
+const STUDIO_UPLOADS_KEY = 'mvp_studio_uploads'
+let _studioUploadBusy = false
+
+async function scanStudioUpload(o) {
+  const steps = []
+  const channelId = (o && o.channelId && /^UC[\w-]{20,}$/.test(String(o.channelId))) ? String(o.channelId) : null
+  if (!channelId) return { ok: false, error: 'no-channel', detail: 'MVP did not say which channel to upload to', steps }
+  if (!o || !/^https:\/\//.test(String(o.fileUrl || ''))) return { ok: false, error: 'no-file', detail: 'MVP did not give the video file', steps }
+  let map = {}
+  try { const st = await chrome.storage.local.get([STUDIO_UPLOADS_KEY]); map = st[STUDIO_UPLOADS_KEY] || {} } catch (e) {}
+  const forget = async () => { if (!o.itemId) return; try { delete map[o.itemId]; await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+  if (o.itemId && map[o.itemId] && map[o.itemId].sent) {
+    return { ok: true, already: true, videoId: map[o.itemId].videoId, saved: map[o.itemId].saved === true, did: map[o.itemId].did || null, steps: [{ step: 'upload', ok: true, detail: 'SCOUT already uploaded this one (' + map[o.itemId].videoId + ')' }] }
+  }
+  _studioChannelId = channelId
+  _studioAbort = false
+  let tabId = null
+  let front = async () => {}
+  let back = async () => {}
+  const keepAlive = startKeepAlive()
+  try {
+    // STUDIO MUST BE ON SCREEN WHILE SCOUT FILLS IT IN. Chrome barely draws a
+    // tab that is behind another one and slows its timers to a crawl, and in
+    // one Studio's upload window never showed its Details page to SCOUT at
+    // all: the file went in, and nothing else did. So the tab opens behind,
+    // takes the file, comes to the front only for the steps that need the
+    // window drawn, and the creator's own tab is put back each time.
+    let prevTab = null
+    try { const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }); prevTab = a || null } catch (e) {}
+    const tab = await chrome.tabs.create({ url: 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', active: false })
+    tabId = tab.id
+    front = async () => {
+      try {
+        const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+        if (a && a.id !== tabId) prevTab = a
+        await chrome.tabs.update(tabId, { active: true })
+        if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true })
+      } catch (e) {}
+      await _sleep(1500)
+    }
+    back = async () => {
+      if (!prevTab || prevTab.id === tabId) return
+      try {
+        await chrome.tabs.update(prevTab.id, { active: true })
+        if (prevTab.windowId != null) await chrome.windows.update(prevTab.windowId, { focused: true })
+      } catch (e) {}
+    }
+    await waitForTabLoad(tabId, 45000)
+    await _sleep(3500)
+    let onChannel = ''
+    try {
+      const cr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioChannelInPage })
+      onChannel = String((cr && cr[0] && cr[0].result) || '')
+    } catch (e) {}
+    // SCOUT's own world: the download from MVP is not subject to Studio's
+    // page rules there, and the file box is the same element in both.
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: studioUploadFileInPage, args: [String(o.fileUrl), String(o.fileName || 'video.mp4'), { want: channelId, on: onChannel }] })
+    const up = (r && r[0] && r[0].result) || { ok: false, error: 'no-result', detail: 'Studio did not answer' }
+    steps.push({ step: 'upload', ok: !!up.ok, detail: up.detail || '', debug: up.debug })
+    if (!up.ok || !up.videoId) return { ok: false, error: up.error || 'upload-failed', detail: up.detail || '', steps }
+    const videoId = up.videoId
+    if (o.itemId) {
+      map[o.itemId] = { videoId, sent: false, at: Date.now() }
+      const keys = Object.keys(map)
+      if (keys.length > 300) delete map[keys[0]]
+      try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {}
+    }
+    // ── ONE VISIT ON SCREEN PER VIDEO ─────────────────────────────────────
+    // Studio comes to the front once: its own words, the tags, the
+    // thumbnail, the playlist, then every page and Save, all while the file
+    // is still going up (Studio saves the settings and keeps sending). Then
+    // the creator gets Chrome back, and the file finishes behind them.
+    const vis0 = o.visibility && typeof o.visibility === 'object' ? o.visibility : null
+    const pickVisibility = () => {
+      const v = vis0 && vis0.mode === 'schedule' && vis0.publishAt ? { mode: 'schedule', publishAt: String(vis0.publishAt) }
+        : vis0 && vis0.mode === 'public' ? { mode: 'public' } : { mode: 'private' }
+      // A time already gone is not scheduled in the past: saved Private, and
+      // MVP asks the creator for a new time.
+      if (v.mode === 'schedule' && !(Date.parse(v.publishAt) > Date.now() + 3 * 60000)) return { mode: 'private' }
+      return v
+    }
+    const visOk = (list) => { const x = list.find((s) => s && s.step === 'visibility'); return !!(x && x.ok) }
+    await front()
+    steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadText', { title: o.title || '', description: o.description || '' }), { step: 'text' }))
+    if (Array.isArray(o.tags) && o.tags.length) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadTags', { tags: o.tags }), { step: 'tags' }))
+    if (o.thumbnailUrl) {
+      try {
+        const tr = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: studioUploadThumbInPage, args: [String(o.thumbnailUrl)] })
+        steps.push((tr && tr[0] && tr[0].result) || { step: 'thumbnail', ok: false, detail: 'Studio did not answer' })
+      } catch (e) { steps.push({ step: 'thumbnail', ok: false, detail: 'SCOUT could not reach the Studio tab' }) }
+    }
+    if (o.playlist) steps.push(Object.assign({}, await studioDraftExec(tabId, 'uploadPlaylist', { playlist: o.playlist }), { step: 'playlist' }))
+    let visibility = pickVisibility()
+    // NEVER LEFT A DRAFT OVER THE DATE. A schedule Studio would not take is
+    // saved Private on the spot, from the same Visibility page: the video is
+    // out of draft, and MVP sets its time itself afterwards.
+    const privateIfScheduleFailed = async (list) => {
+      const v = list.find((x) => x && x.step === 'visibility')
+      if (!v || v.ok || visibility.mode !== 'schedule') return list
+      const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
+      list.push(Object.assign({}, p, { step: 'visibility', detail: p.ok ? 'The time could not be set in Studio, so it was saved Private and MVP sets the time' : 'The time could not be set in Studio, and saving it Private did not work either: ' + (p.detail || 'no reason given') }))
+      if (p.ok) visibility = { mode: 'private' }
+      return list
+    }
+    const firstWalk = await privateIfScheduleFailed(await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility })))
+    for (const x of firstWalk) steps.push(x)
+    let saved = firstWalk.some((x) => x && x.step === 'visibility' && x.ok)
+    await back()
+
+    // ── THE FILE FINISHES BEHIND ──────────────────────────────────────────
+    // Sending needs no screen. The tab stays until Studio has every byte,
+    // because closing it mid-send loses the upload.
+    const sendEnd = Date.now() + 60 * 60000
+    let prog = null, seenUploading = false, quiet = 0, unread = 0
+    while (Date.now() < sendEnd) {
+      // A READ THAT FAILED IS NOT A QUIET PAGE. A closed or crashed Studio tab
+      // made every read throw, those counted as "nothing uploading", and two
+      // minutes later the run said "Studio has the whole file" over an upload
+      // that was abandoned (1.40.8). A tab that is gone ends the send; reads
+      // that keep failing on a live tab end it after two minutes too.
+      let readFailed = false
+      try {
+        const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioUploadProgressInPage })
+        prog = (pr && pr[0] && pr[0].result) || null
+      } catch (e) { prog = null; readFailed = true }
+      if (readFailed) {
+        let alive = true
+        try { await chrome.tabs.get(tabId) } catch (e) { alive = false }
+        if (!alive) { prog = { state: 'error', text: 'the Studio tab closed before the file finished sending' }; break }
+        if (++unread >= 24) { prog = { state: 'error', text: 'SCOUT could not read the upload progress for two minutes, so it cannot say the file arrived' }; break }
+        await _sleep(5000)
+        continue
+      }
+      unread = 0
+      if (prog && (prog.state === 'done' || prog.state === 'error')) break
+      if (prog && prog.state === 'uploading') { seenUploading = true; quiet = 0 }
+      else quiet++
+      // Nothing about the upload on screen any more: finished, once it was
+      // seen going (20 seconds), or after two minutes if it never showed.
+      if ((seenUploading && quiet >= 4) || quiet >= 24) { prog = { state: 'done', text: 'No upload left in progress' }; break }
+      await _sleep(5000)
+    }
+    if (!prog || prog.state !== 'done') {
+      await forget()
+      steps.push({ step: 'sending', ok: false, detail: prog && prog.state === 'error' ? 'Studio says: ' + prog.text : 'The file did not finish sending within an hour' })
+      return { ok: false, error: 'not-sent', detail: steps[steps.length - 1].detail, steps }
+    }
+    steps.push({ step: 'sending', ok: true, detail: 'Studio has the whole file' })
+    if (o.itemId) { map[o.itemId] = { videoId, sent: true, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+
+    // ── A SAVE THAT DID NOT TAKE IS DONE AGAIN, ON THE DRAFT, NOW ─────────
+    // Only Save in Studio takes a video out of draft (YouTube's API cannot),
+    // so SCOUT opens the draft and saves it in this same run, rather than
+    // leaving a Try again for the creator. The plain address: a channel one
+    // gives Studio's "something went wrong" on a video's edit page.
+    if (!saved && !_studioAbort) {
+      try {
+        await chrome.tabs.update(tabId, { url: 'https://studio.youtube.com/video/' + videoId + '/edit' })
+        await waitForTabLoad(tabId, 30000)
+        await front()
+        await _sleep(2500)
+        const op = Object.assign({}, await studioDraftExec(tabId, 'open', {}), { step: 'open' })
+        steps.push(Object.assign({}, op, { detail: 'Second go at saving: ' + (op.detail || '') }))
+        visibility = pickVisibility()
+        if (op.ok && op.isDraft) {
+          const again = await privateIfScheduleFailed(await runStudioDraft(tabId, videoId, Object.assign({}, o.want || {}, { visibility })))
+          for (const x of again) steps.push(Object.assign({}, x, { detail: 'Second go: ' + (x.detail || '') }))
+          saved = again.some((x) => x && x.step === 'visibility' && x.ok)
+        } else if (op.ok && op.isDraft === false) {
+          // Studio shows it as a normal video now: it was saved after all.
+          // Its real visibility is read back from YouTube by MVP.
+          saved = true
+          visibility = { mode: 'private' }
+        }
+      } catch (e) {
+        steps.push({ step: 'open', ok: false, detail: 'Second go at saving could not open the draft: ' + ((e && e.message) || 'error') })
+      }
+      await back()
+    }
+
+    const okStep = (n) => { const x = steps.find((s) => s && s.step === n); return x ? !!x.ok && !x.skipped : null }
+    const thumbStep = steps.find((x) => x && x.step === 'thumbnail')
+    // The LAST visibility step that saved is the one that set the schedule.
+    const savedVis = steps.filter((x) => x && x.step === 'visibility' && x.ok).pop()
+    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), thumbVerified: !!(thumbStep && thumbStep.verified === true), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null,
+      scheduleVerified: !!(saved && visibility.mode === 'schedule' && savedVis && savedVis.readBack && savedVis.readBack.timeVerified === true) }
+    if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, did, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
+    const tried = steps.filter((s) => s && !s.skipped)
+    return { ok: tried.every((s) => s.ok), videoId, saved, did, steps }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'failed', steps }
+  } finally {
+    stopKeepAlive(keepAlive)
+    await back()
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
 }
 
 async function scanStudioFinish(videoId, opts, callerTabId) {
@@ -10172,6 +11111,14 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       }
       if (open && open.ok && open.isDraft) {
         const draftSteps = await runStudioDraft(tabId, videoId, want)
+        // A DRAFT MVP ASKED TO SAVE is never left a draft over the date: a
+        // schedule Studio would not take is saved Private on the spot, and
+        // MVP sets the time itself.
+        const vs = draftSteps.find((x) => x && x.step === 'visibility')
+        if (want.privateIfScheduleFails && vs && !vs.ok && want.visibility && want.visibility.mode === 'schedule') {
+          const p = await studioDraftExec(tabId, 'visibility', { visibility: { mode: 'private' } })
+          draftSteps.push(Object.assign({}, p, { step: 'visibility', savedPrivate: !!p.ok, detail: p.ok ? 'The time could not be set in Studio, so it was saved Private and MVP sets the time' : 'The time could not be set in Studio, and saving it Private did not work either: ' + (p.detail || 'no reason given') }))
+        }
         return summarise([open].concat(draftSteps), 'draft')
       }
       // Neither a draft nor a video page: say so, rather than running the
@@ -10757,7 +11704,9 @@ async function liftoffSave(patch) {
   return next
 }
 function liftoffWake(minutes) {
-  try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(120, minutes)) }) } catch (e) {}
+  // Up to a day: a first comment due tomorrow wakes the tab at its time,
+  // rather than every two hours until then.
+  try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(1440, minutes)) }) } catch (e) {}
 }
 
 // A background tab is ours when SCOUT opened it, or when its address says so:
@@ -11255,6 +12204,33 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true
   }
+  if (msg.type === 'MVP_STUDIO_UPLOAD') {
+    // Liftoff: upload a finished video through YouTube Studio, which costs
+    // nothing from MVP's shared YouTube quota (see scanStudioUpload). One at
+    // a time, and never while another Studio run is going.
+    if (_studioBusy || _studioUploadBusy) { sendResponse({ ok: false, steps: [], error: 'busy' }); return false }
+    _studioBusy = true
+    _studioUploadBusy = true
+    // THE TIMEOUT SAYS WHICH VIDEO, when YouTube had already given it an id
+    // (kept locally the moment it did). Without it MVP saw "no video" and the
+    // next try uploaded a second copy (1.40.8).
+    const timeout = setTimeout(async () => {
+      _studioAbort = true
+      let videoId = null
+      try {
+        const itemId = msg.opts && msg.opts.itemId
+        const got = itemId ? await chrome.storage.local.get(STUDIO_UPLOADS_KEY) : null
+        const rec = got && got[STUDIO_UPLOADS_KEY] && got[STUDIO_UPLOADS_KEY][itemId]
+        videoId = (rec && rec.videoId) || null
+      } catch (e) {}
+      sendResponse({ ok: false, steps: [], error: 'timeout', videoId, saved: false, detail: videoId ? 'SCOUT ran out of time after YouTube created the video, so it may still be a draft in Studio' : undefined })
+    }, 70 * 60000)
+    scanStudioUpload(msg.opts || {})
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })
+      .finally(() => { _studioBusy = false; _studioUploadBusy = false })
+    return true
+  }
   if (msg.type === 'MVP_STUDIO_VIDEO_FILE') {
     // Clip Factory: the creator's own video file, fetched in their Studio
     // session and uploaded straight to MVP (see fetchStudioVideoFile).
@@ -11342,10 +12318,36 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Fill a post into the creator's Facebook Group and leave it for them to
     // press Post. See prefillFacebookGroup.
     const timeout = setTimeout(() => sendResponse({ ok: false, filled: false, error: 'SCOUT took too long. If the Group opened, the post is copied: paste it in.' }), 240000)
-    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text })
+    prefillFacebookGroup({ groupUrl: msg.groupUrl, text: msg.text, media: msg.media })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
+  }
+  if (msg.type === 'MVP_FB_ACCESS') {
+    // Facebook setup's third step: is SCOUT allowed on Facebook, and if asked,
+    // ask the creator now (the same Allow window the first Group fill shows),
+    // so the first real post does not stop on a permission prompt.
+    (async () => {
+      let has = false
+      try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
+      if (!has && msg.ask) has = await askFacebookAccess()
+      return { granted: !!has }
+    })().then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_FB_GROUP_POST_STATUS') {
+    // MVP asks whether the Group post it filled has gone up yet, and where.
+    readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))
+    return true // async
+  }
+  if (msg.type === 'MVP_YT_POST_COMMENT') {
+    // A first comment, posted as the creator from a tab behind theirs, at no
+    // YouTube quota (see postYouTubeComment). The answer carries the new id.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
+    postYouTubeComment({ youtubeVideoId: msg.youtubeVideoId, text: msg.text })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_YT_PIN_COMMENT') {
     // MVP posted a sale comment and asks SCOUT to pin it, in the creator's
@@ -12194,7 +13196,26 @@ function askFacebookAccess() {
   })
 }
 
-async function prefillFacebookGroup({ groupUrl, text }) {
+// The thumbnail is fetched here, not in the Facebook page, so the page script
+// gets a data URL it can turn into a file without any cross-site request.
+async function fbImageDataUrl(url) {
+  try {
+    const u = new URL(String(url || ''))
+    if (u.protocol !== 'https:') return null
+    const res = await fetch(u.toString())
+    if (!res.ok) return null
+    const blob = await res.blob()
+    if (!/^image\//.test(blob.type) || blob.size > 15 * 1024 * 1024) return null
+    return await new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(typeof r.result === 'string' ? r.result : null)
+      r.onerror = () => resolve(null)
+      r.readAsDataURL(blob)
+    })
+  } catch (e) { return null }
+}
+
+async function prefillFacebookGroup({ groupUrl, text, media }) {
   const url = fbGroupUrl(groupUrl)
   if (!url) return { ok: false, filled: false, error: 'That Group link does not look like a Facebook Group (facebook.com/groups/…). Check it in Brand Profile.' }
   const body = String(text || '').trim().slice(0, 8000)
@@ -12217,8 +13238,27 @@ async function prefillFacebookGroup({ groupUrl, text }) {
       if (t && t.status === 'complete') break
       await sleep(400)
     }
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body] })
+    // The hero: the thumbnail as an attached photo, or the YouTube link Facebook
+    // turns into a playable card. Anything else is ignored.
+    let hero = null
+    if (media && media.kind === 'video' && /^https:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]{11}/.test(String(media.url || ''))) {
+      hero = { kind: 'video', url: String(media.url) }
+    } else if (media && media.kind === 'thumbnail' && media.url) {
+      const dataUrl = await fbImageDataUrl(media.url)
+      hero = dataUrl ? { kind: 'thumbnail', dataUrl } : { kind: 'thumbnail', failed: true }
+    } else if (media && media.kind === 'clip' && /^https:\/\//i.test(String(media.url || ''))) {
+      // A Clip Factory clip, attached as the video itself. Fetched inside the
+      // Facebook page (the clip hosts allow it), not passed through here: a
+      // clip is tens of megabytes.
+      hero = { kind: 'clip', url: String(media.url) }
+    }
+    // The listener goes in BEFORE the fill, so the moment the creator presses
+    // Post, Facebook's own answer (which carries the new post's address) is
+    // already being watched for. See watchGroupPost.
+    try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [true] }) } catch (e) {}
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
+    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body))
     return out
   } catch (e) {
     return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
@@ -12227,7 +13267,7 @@ async function prefillFacebookGroup({ groupUrl, text }) {
 }
 
 // Runs in the Facebook Group page. Self-contained: executeScript serializes it.
-async function fillGroupComposerInPage(text) {
+async function fillGroupComposerInPage(text, hero) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const steps = []
   const fail = (error) => ({ ok: false, filled: false, error, steps: steps.join('; ') })
@@ -12262,17 +13302,399 @@ async function fillGroupComposerInPage(text) {
   steps.push('box: open')
   box.focus()
   await sleep(200)
+  const dialog = box.closest('[role="dialog"]') || document
+  const pasteText = (t) => {
+    try {
+      const dt = new DataTransfer()
+      dt.setData('text/plain', t)
+      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    } catch (e) {}
+  }
+  const hasYouTubeCard = () => !!dialog.querySelector('a[href*="youtube.com"], a[href*="youtu.be"], img[src*="ytimg.com"]')
+  let mediaNote = ''
+
+  // VIDEO FIRST, LINK LAST. Facebook builds the card from the first link it
+  // sees in the box and keeps it after that text is gone. So the YouTube link
+  // goes in alone, the card appears, the box is CLEARED, the post goes in, and
+  // the YouTube link goes back at the very END: the affiliate link is the
+  // first thing people read, and the video card stays.
+  //
+  // The clear is checked. Facebook's editor ignores a plain select-all, which
+  // is how the YouTube link used to stay stuck on the first line with the post
+  // glued after it on the same line.
+  const boxText = () => (box.innerText || '').replace(/\u200b/g, '').trim()
+  const selectAllInBox = () => {
+    box.focus()
+    const sel = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(box)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+  const clearBox = async () => {
+    for (let attempt = 0; attempt < 4 && boxText(); attempt++) {
+      try {
+        selectAllInBox()
+        if (attempt % 2 === 0) document.execCommand('delete', false)
+        else box.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }))
+      } catch (e) {}
+      await sleep(250)
+    }
+    return !boxText()
+  }
+  const caretToEnd = () => {
+    box.focus()
+    const sel = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(box)
+    range.collapse(false)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+  let videoAtEnd = false
+  if (hero && hero.kind === 'video') {
+    pasteText(hero.url)
+    let card = false
+    for (let i = 0; i < 20 && !card; i++) { await sleep(400); card = hasYouTubeCard() }
+    const cleared = await clearBox()
+    await sleep(300)
+    steps.push(card ? 'video card: built' : 'video card: not built')
+    steps.push(cleared ? 'youtube link: cleared from the top' : 'youtube link: stuck at the top')
+    videoAtEnd = cleared
+    if (!card) mediaNote = 'Facebook did not build the video card, so it will show a card for the first link instead. Paste the YouTube link at the top if you want the video.'
+    else if (!cleared) mediaNote = 'The YouTube link stayed on the first line. Delete that line and paste it at the end if you want the affiliate link first.'
+  }
+
   const head = text.replace(/\s+/g, ' ').trim().slice(0, 24)
   const took = () => (box.innerText || '').replace(/\s+/g, ' ').indexOf(head) >= 0
+  pasteText(text)
+  await sleep(600)
+  let how = ''
+  if (took()) how = 'pasted'
+  else {
+    try { document.execCommand('insertText', false, text) } catch (e) {}
+    await sleep(600)
+    if (took()) how = 'typed'
+  }
+  if (!how) return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  steps.push('text: ' + how)
+
+  // The YouTube link back at the end, under the post. Checked like the text.
+  if (videoAtEnd) {
+    caretToEnd()
+    pasteText('\n\n' + hero.url)
+    await sleep(500)
+    let atEnd = boxText().endsWith(hero.url)
+    if (!atEnd) {
+      try { caretToEnd(); document.execCommand('insertText', false, '\n\n' + hero.url) } catch (e) {}
+      await sleep(500)
+      atEnd = boxText().endsWith(hero.url)
+    }
+    steps.push(atEnd ? 'youtube link: at the end' : 'youtube link: not added at the end')
+    if (!atEnd && !mediaNote) mediaNote = 'The video card is on, but the YouTube link did not go in at the end. Paste it under the post if you want it in the text.'
+  }
+
+  if (hero && hero.kind === 'video' && !mediaNote) {
+    await sleep(800)
+    mediaNote = hasYouTubeCard() ? 'The playable video card is on it.' : 'Facebook swapped the video card for another link\'s card. Remove that card and paste the YouTube link at the top if you want the video.'
+    steps.push('video card: ' + (hasYouTubeCard() ? 'kept' : 'replaced'))
+  }
+
+  // THUMBNAIL AFTER THE TEXT. An attached photo replaces any link card, so it
+  // goes last; the links in the text stay clickable.
+  if (hero && hero.kind === 'thumbnail') {
+    if (hero.failed || !hero.dataUrl) {
+      mediaNote = 'SCOUT could not download the thumbnail, so none is attached. Add it yourself if you want it.'
+      steps.push('thumbnail: download failed')
+    } else {
+      const before = dialog.querySelectorAll('img').length
+      try {
+        const bin = atob(hero.dataUrl.split(',')[1] || '')
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const type = (hero.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/jpeg'
+        const file = new File([bytes], 'thumbnail.' + (type.split('/')[1] || 'jpg'), { type })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        box.focus()
+        box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      } catch (e) {}
+      let attached = false
+      for (let i = 0; i < 25 && !attached; i++) {
+        await sleep(400)
+        attached = Array.from(dialog.querySelectorAll('img')).some((im) => /^blob:|^data:/.test(im.src || '')) || dialog.querySelectorAll('img').length > before
+      }
+      mediaNote = attached ? 'The thumbnail is attached.' : 'The thumbnail did not attach, so add it yourself if you want it.'
+      steps.push('thumbnail: ' + (attached ? 'attached' : 'not attached'))
+    }
+  }
+  // THE CLIP AFTER THE TEXT, like the thumbnail: an attached video replaces
+  // any link card, and the links in the text stay clickable. Pasted as a file
+  // first; if Facebook ignores that, through the composer's Photo/video
+  // button and its file box. Believed only when the dialog shows a video.
+  if (hero && hero.kind === 'clip') {
+    let file = null
+    try {
+      const res = await fetch(hero.url)
+      if (res.ok) {
+        const blob = await res.blob()
+        if (/^video\//.test(blob.type || 'video/mp4') && blob.size > 0 && blob.size <= 1024 * 1024 * 1024) {
+          file = new File([blob], 'clip.mp4', { type: blob.type || 'video/mp4' })
+        }
+      }
+    } catch (e) {}
+    if (!file) {
+      steps.push('clip: download failed')
+      return { ok: true, filled: true, steps: steps.join('; '), clipAttached: false, media: 'SCOUT could not download the clip, so the video is not attached. Add it yourself before you press Post, or the Group post goes out without it.' }
+    }
+    const hasVideo = () => !!dialog.querySelector('video') || /uploading|processing|téléversement|subiendo/i.test(dialog.innerText || '')
+    try {
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      box.focus()
+      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    } catch (e) {}
+    let attached = false
+    for (let i = 0; i < 15 && !attached; i++) { await sleep(400); attached = hasVideo() }
+    if (!attached) {
+      const mediaBtn = Array.from(dialog.querySelectorAll('[role="button"], [aria-label]')).find((el) => visible(el) && /^(photo\/video|photo or video|photo\/vid|foto\/vídeo|photo\/vidéo)/i.test((el.getAttribute('aria-label') || el.innerText || '').trim()))
+      if (mediaBtn) { mediaBtn.click(); await sleep(900) }
+      const input = Array.from(dialog.querySelectorAll('input[type="file"]')).find((el) => /video|\*/i.test(el.getAttribute('accept') || '*')) || dialog.querySelector('input[type="file"]')
+      if (input) {
+        try {
+          const dt = new DataTransfer()
+          dt.items.add(file)
+          input.files = dt.files
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+        } catch (e) {}
+        for (let i = 0; i < 40 && !attached; i++) { await sleep(500); attached = hasVideo() }
+      }
+      steps.push('clip: ' + (mediaBtn ? 'media button' : 'no media button') + ', ' + (input ? 'file box' : 'no file box'))
+    }
+    steps.push('clip: ' + (attached ? 'attached' : 'not attached'))
+    return { ok: true, filled: true, steps: steps.join('; '), clipAttached: attached, media: attached ? 'The clip is attached. Wait for it to finish uploading, then press Post.' : 'The clip did not attach. Add it yourself with Photo/video before you press Post.' }
+  }
+  return { ok: true, filled: true, steps: steps.join('; '), media: mediaNote || undefined }
+}
+
+// SEEING THE GROUP POST GO UP.
+//
+// After a fill, MVP offers to share the Group post on the creator's Page, and
+// the Page post should link to THAT post, not just the Group. Facebook only
+// gives the post an address once the creator presses Post, so SCOUT watches
+// the tab for it, three ways, best first:
+//   1. Facebook's own "story created" answer, read by a listener put in the
+//      page before the fill (installGroupPostHook). It carries the new URL.
+//   2. The tab itself landing on the post's address.
+//   3. The new post appearing in the Group feed, matched on a line of its
+//      text, with its timestamp link read for the address.
+// It still never clicks anything that posts. The answer says which way found
+// it, and "posted, address unknown" and "never saw it" are their own states,
+// so MVP never offers a Page post linking to a guess.
+const FB_GROUP_POST_RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+const fbGroupWatches = new Map()
+
+// A line of THIS post that no older post shares: the opening line of the
+// write-up (the hook). NEVER the longest line: that was the disclosure ("This
+// post contains affiliate links... Amazon Associate..."), the same on every
+// post, and SCOUT matched an older Group post with it and handed MVP that
+// post's address: a Reel went out linking to the wrong product. Lines every
+// post shares (links, hashtags, the CTA lines, the disclosure) are left out.
+function groupSnippet(text) {
+  const SHARED = /https?:\/\/|affiliate|commission|amazon associate|qualifying purchases|#ad\b|grab it|watch the full review|link in (my )?bio|^#/i
+  const lines = String(text || '').split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter((l) => l.length >= 12 && !SHARED.test(l))
+  return (lines[0] || '').slice(0, 40)
+}
+
+// Runs in the page's MAIN world so it can see Facebook's own requests.
+function installGroupPostHook(markOld) {
+  if (markOld) {
+    window.__scoutGroupPost = null
+    window.__scoutGroupCreated = false
+    try { document.querySelectorAll('[role="article"], [aria-posinset]').forEach((a) => a.setAttribute('data-scout-old', '1')) } catch (e) {}
+  }
+  if (window.__scoutGroupHook) return 'ready'
+  window.__scoutGroupHook = true
+  const RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  const NAME = /StoryCreate|ComposerStory|CreatePost|GroupPost/i
+  const describe = (body) => {
+    try {
+      if (typeof body === 'string') return body
+      if (body instanceof URLSearchParams) return body.toString()
+      if (body instanceof FormData) return String(body.get('fb_api_req_friendly_name') || '')
+    } catch (e) {}
+    return ''
+  }
+  const look = (reqBody, txt) => {
+    if (window.__scoutGroupPost || !txt) return
+    if (!NAME.test(describe(reqBody))) return
+    window.__scoutGroupCreated = true
+    const flat = String(txt).replace(/\\\//g, '/').replace(/\\u002F/gi, '/')
+    const m = flat.match(RE)
+    if (m) { window.__scoutGroupPost = { url: m[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'facebook' }; return }
+    // No URL in the answer: build it from the post id and this Group.
+    // Facebook names the new post's number several ways; a video post often
+    // carries only one of the later ones.
+    const id = (flat.match(/"(?:post_id|top_level_post_id|legacy_story_hideable_id|story_fbid|mf_story_key)"\s*:\s*"?(\d{6,})"?/) || [])[1]
+    const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
+    if (id && slug) window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }
+  }
   try {
-    const dt = new DataTransfer()
-    dt.setData('text/plain', text)
-    box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    const X = XMLHttpRequest.prototype
+    const send = X.send
+    X.send = function (body) {
+      try { if (NAME.test(describe(body))) this.addEventListener('load', () => { try { look(body, this.responseText) } catch (e) {} }) } catch (e) {}
+      return send.apply(this, arguments)
+    }
   } catch (e) {}
-  await sleep(600)
-  if (took()) { steps.push('text: pasted'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  try { document.execCommand('insertText', false, text) } catch (e) {}
-  await sleep(600)
-  if (took()) { steps.push('text: typed'); return { ok: true, filled: true, steps: steps.join('; ') } }
-  return fail('The post box opened but the text did not go in. The post is copied: click in the box and paste it.')
+  try {
+    const f = window.fetch
+    window.fetch = function (input, init) {
+      const p = f.apply(this, arguments)
+      try {
+        const b = init && init.body
+        if (NAME.test(describe(b))) p.then((r) => r.clone().text()).then((t) => look(b, t)).catch(() => {})
+      } catch (e) {}
+      return p
+    }
+  } catch (e) {}
+  return 'installed'
+}
+
+// Runs in the page's MAIN world, once every couple of seconds while watching.
+function readGroupPostState(snippet) {
+  const visible = (el) => !!el && el.getClientRects().length > 0
+  const out = {
+    hook: !!window.__scoutGroupHook,
+    net: window.__scoutGroupPost || null,
+    created: !!window.__scoutGroupCreated,
+    dialog: Array.from(document.querySelectorAll('[role="dialog"] [contenteditable="true"]')).some(visible),
+    seen: false,
+    feedUrl: null,
+    // Facebook's notice while a video post is still being processed.
+    processing: /processing video|video in your post is being processed|vidéo est en cours de traitement|se está procesando el video/i.test(document.body ? document.body.innerText : ''),
+  }
+  if (out.net || !snippet) return out
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ')
+  // ONLY A POST THAT IS NEW. Facebook redraws its feed, so the "old" marks put
+  // on the posts already there can vanish; a post whose own time stamp says
+  // hours, days or a date is never the one just made.
+  const OLD_STAMP = /^(\d+\s?(h|hr|hrs|hour|hours|d|day|days|w|wk|wks|y|yr|yrs))$|^yesterday|^[a-z]{3,9}\.? \d{1,2}(,? \d{4})?$|^\d{1,2} [a-z]{3,9}/i
+  const isOld = (a) => Array.from(a.querySelectorAll('a[role="link"], a[href*="/posts/"], a[href*="/permalink/"], a[href*="/reel/"]'))
+    .some((l) => OLD_STAMP.test((l.innerText || '').trim()))
+  const arts = Array.from(document.querySelectorAll('[role="article"], [aria-posinset]'))
+    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0 && !isOld(a))
+  if (!arts.length) return out
+  out.seen = true
+  const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[href]'))) {
+      const m = String(l.href || '').match(RE)
+      if (m) { out.feedUrl = 'https://www.facebook.com' + m[0] + '/'; return out }
+    }
+    // A VIDEO posted in a Group has no Group post address: its timestamp opens
+    // it as a Reel (facebook.com/reel/<id>), which shows the video with the
+    // post's text and links. That is its address, so it is the one used.
+    for (const l of Array.from(a.querySelectorAll('a[href]'))) {
+      const v = String(l.href || '').match(/\/reel\/(\d{6,})/)
+      if (v) { out.feedUrl = 'https://www.facebook.com/reel/' + v[1] + '/'; return out }
+    }
+  }
+  // Facebook fills in the timestamp link's real address on hover. Hover only
+  // the timestamp, never anything else.
+  for (const a of arts) {
+    for (const l of Array.from(a.querySelectorAll('a[role="link"]'))) {
+      const t = (l.innerText || '').trim()
+      if (!(l.getAttribute('href') === '#' || /^(\d+\s?[smhdw]|just now|now|\d+\s?(min|mins|hr|hrs))$/i.test(t))) continue
+      // Hovered on every look, not once: Facebook fills the timestamp's link
+      // in on hover, and a post still settling can drop it again. A hover is
+      // never a click.
+      try {
+        for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) l.dispatchEvent(new MouseEvent(type, { bubbles: true }))
+        l.dispatchEvent(new FocusEvent('focus'))
+      } catch (e) {}
+    }
+  }
+  return out
+}
+
+async function saveGroupWatch(id, st) {
+  const v = { ...st, updatedAt: Date.now() }
+  fbGroupWatches.set(id, v)
+  try { await chrome.storage.session.set({ ['fbw_' + id]: v }) } catch (e) {}
+}
+
+async function readGroupWatch(id) {
+  if (!id) return { state: 'unknown' }
+  const live = fbGroupWatches.get(id)
+  if (live) return live
+  let st = null
+  try { const o = await chrome.storage.session.get('fbw_' + id); st = o['fbw_' + id] || null } catch (e) {}
+  if (!st) return { state: 'unknown' }
+  // Chrome restarted SCOUT mid-watch: the watch is gone, so say so rather than
+  // leave MVP waiting on a "watching" that will never change.
+  if (st.state === 'watching') return { state: 'lost' }
+  return st
+}
+
+function watchGroupPost(tabId, snippet) {
+  const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const ka = startKeepAlive()
+  void (async () => {
+    const started = Date.now()
+    let dialogGoneAt = 0
+    let seenAt = 0
+    try {
+      await saveGroupWatch(id, { state: 'watching' })
+      while (Date.now() - started < 30 * 60 * 1000) {
+        await sleep(2000)
+        let tab = null
+        try { tab = await chrome.tabs.get(tabId) } catch (e) {}
+        if (!tab) return await saveGroupWatch(id, { state: 'closed' })
+        const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
+        if (onPost) return await saveGroupWatch(id, { state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
+        const onReel = String(tab.url || '').match(/^https:\/\/(?:www|web|m)\.facebook\.com\/reel\/(\d{6,})/)
+        if (onReel) return await saveGroupWatch(id, { state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
+        let r = null
+        try {
+          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet] })
+          r = res && res[0] && res[0].result
+        } catch (e) {}
+        if (!r) continue
+        // The page reloaded and took the listener with it: put it back, but
+        // without marking posts old, since the new one may already be there.
+        if (!r.hook) { try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [false] }) } catch (e) {} }
+        const url = (r.net && r.net.url) || r.feedUrl
+        if (url) return await saveGroupWatch(id, { state: 'posted', url, via: r.net ? r.net.via : 'feed' })
+        if (r.seen || r.created) {
+          if (!seenAt) seenAt = Date.now()
+          // Give the timestamp link time to fill in before giving up on it. A
+          // VIDEO post is created at once but only reaches the feed when
+          // Facebook has processed the video, a minute or more: 20 seconds
+          // gave up on a clip post that was simply still processing.
+          // Facebook's own "Processing video" notice on the page means the post
+          // is still coming: no clock runs while it shows.
+          if (r.processing && !r.seen) seenAt = Date.now()
+          const patience = r.seen ? 45000 : 6 * 60 * 1000
+          if (Date.now() - seenAt > patience) return await saveGroupWatch(id, { state: 'posted_no_link' })
+        }
+        if (!r.dialog) {
+          if (!dialogGoneAt) dialogGoneAt = Date.now()
+          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await saveGroupWatch(id, { state: 'not_seen' })
+        } else {
+          dialogGoneAt = 0
+        }
+        await saveGroupWatch(id, { state: 'watching' })
+      }
+      await saveGroupWatch(id, { state: 'timeout' })
+    } catch (e) {
+      await saveGroupWatch(id, { state: 'lost' })
+    } finally {
+      stopKeepAlive(ka)
+    }
+  })()
+  return id
 }

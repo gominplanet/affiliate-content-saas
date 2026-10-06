@@ -44,7 +44,7 @@ const BG_RAW = read('extension/background.js')
 const slice = (from: string, len: number) => { const at = BG.indexOf(from); return at < 0 ? '' : BG.slice(at, at + len) }
 
 // ── the kit ──────────────────────────────────────────────────────────────
-const kit = slice('function studioKitInstallInPage()', 60000)
+const kit = slice('function studioKitInstallInPage()', 120000)
 check('the draft toolkit exists', kit.length > 0)
 const kitClick = kit.slice(kit.indexOf('const click = (el) =>'), kit.indexOf('const click = (el) =>') + 500)
 check('the kit clicks once',
@@ -145,7 +145,8 @@ const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
   check('a video MVP has not synced can still be given its product',
     /if \(!rowId\) return NextResponse\.json\(\{ ok: true, asin, title, imageUrl, stored: false \}\)/.test(read('app/api/youtube/videos/set-product/route.ts')))
   check('the thumbnail already made for this product is offered before a new one',
-    /const recalledThumb = useSavedProductImage\(effectiveAsin\)/.test(CPP) && /<SavedProductImage\s+saved=\{recalledThumb\.saved\}/.test(CPP)
+    // Asked once the card is open (expanded), not on mount for every listed video.
+    /const recalledThumb = useSavedProductImage\((?:expanded \? )?effectiveAsin(?: : null)?\)/.test(CPP) && /<SavedProductImage\s+saved=\{recalledThumb\.saved\}/.test(CPP)
     && /setThumbnailModel\('recalled'\)/.test(CPP) && /if \(thumbnailModel === 'recalled'\) \{ setSavedProductImage\('saved'\); return \}/.test(CPP))
 }
 {

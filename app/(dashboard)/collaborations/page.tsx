@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import MadeBefore from '@/components/product/MadeBefore'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { CollaborationsGuide } from '@/components/guide/tool-guides'
@@ -266,12 +267,12 @@ export default function CollaborationsPage() {
     return (
       <FeatureLockedCard
         icon={<Handshake size={28} strokeWidth={1.8} />}
-        feature="Brand Deals"
+        feature="Brand pitches"
         description="Drop a brand name. MVP researches their products + storefront, drafts a personalized pitch email that sells your work, and pulls in your real channel stats as proof of distribution. Built on the same playbook a proven brand-outreach pro uses to land deals."
         bullets={[
           'AI researches each brand + the angle that fits your channel',
           'Pulls your cross-platform reach automatically (no manual stats lookup)',
-          'Editable subject line + email body — copy and send from your own inbox',
+          'Editable subject line + email body. Copy and send from your own inbox',
           'Track which brands you pitched, when, and the outcome',
           'Amazon: 60 drafted pitches / month · Pro: 100 / month (messaging brands is unlimited on both)',
         ]}
@@ -285,8 +286,8 @@ export default function CollaborationsPage() {
     <>
       <PageHero
         guide={<CollaborationsGuide />}
-        title="Brand Deals"
-        subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
+        title="Brand pitches"
+        subtitle={<>Fill this out and we&apos;ll research the brand and write a pitch email that sells your work, ready to copy and send.<span className="block mt-1 text-[12px]">Formerly Brand Deals.</span></>}
       />
 
       {/* Saved Outreach Profile — fills every Creator Connections "Message Brand"
@@ -311,7 +312,7 @@ export default function CollaborationsPage() {
             Recommended: free media kit template
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            A media kit is the quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Oink for Influencers has a clean, free template: fill it in once, host it (Notion / Google Doc / Canva share link / PDF), then <strong>paste the public URL in the &ldquo;Media kit URL&rdquo; field below</strong> and every pitch email will include it.
+            A media kit is the quick and polished way to show your stats to curious brands: one clickable link instead of typing reach numbers into every reply. Oink for Influencers has a clean, free template: fill it in once, host it (Notion / Google Doc / Canva share link / PDF), then <strong>paste the public URL in the &ldquo;Media kit URL&rdquo; field below</strong> and every pitch email will include it.
           </p>
           <a
             href="https://oinkforinfluencers.com/get-your-free-media-kit/"
@@ -333,11 +334,21 @@ export default function CollaborationsPage() {
           </div>
           <div>
             <label className={lbl}>Brand website <span className="text-[#86868b]">(optional)</span></label>
-            <input value={brandUrl} onChange={e => setBrandUrl(e.target.value)} placeholder="brand.com — so Brand Hub links to them" className="input-field text-sm w-full" />
+            <input value={brandUrl} onChange={e => setBrandUrl(e.target.value)} placeholder="brand.com, so Brand Hub links to them" className="input-field text-sm w-full" />
+          </div>
+          {/* An email already written to this brand: reuse it instead of paying
+              to write it again (lib/made-before). */}
+          <div className="sm:col-span-2 empty:hidden">
+            <MadeBefore brand={brandName} only={['collab']}
+              heading="You already wrote to this brand. Load that email to reuse or edit it, or write a new one."
+              onLoad={(it) => {
+                const row = history.find((h) => h.id === it.id)
+                if (row?.generated_email) { setEmailBody(row.generated_email); setSubject('') }
+              }} />
           </div>
           <div className="sm:col-span-2">
             <label className={lbl}>Product name or ASIN <span className="text-[#86868b]">(the specific product you want to pitch)</span></label>
-            <input value={productOrAsin} onChange={e => setProductOrAsin(e.target.value)} placeholder="e.g. Acme Cordless Drill — or B0XXXXXXXX" className="input-field text-sm w-full" />
+            <input value={productOrAsin} onChange={e => setProductOrAsin(e.target.value)} placeholder="e.g. Acme Cordless Drill, or B0XXXXXXXX" className="input-field text-sm w-full" />
           </div>
           <div>
             <label className={lbl}>Amazon storefront</label>
@@ -405,7 +416,7 @@ export default function CollaborationsPage() {
         <label className={lbl}>Which platforms do you want to offer for this collaboration?</label>
         {allPlatforms.length === 0 ? (
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-4">
-            No connected channels found. Connect socials in Setup and add your blog/YouTube in Brand Profile — they&apos;ll appear here.
+            No connected channels found. Connect socials in Setup and add your blog/YouTube in Brand Profile. They&apos;ll appear here.
           </p>
         ) : (
           <div className="flex flex-wrap gap-1.5 mb-4">
@@ -457,7 +468,7 @@ export default function CollaborationsPage() {
             <YesNo value={copyrightFee} onChange={setCopyrightFee} />
           </div>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1">
-            A copyright fee gives the brand full usage rights to your review video — they can repost and promote it on their own sites and channels, as much and as long as they want.
+            A copyright fee gives the brand full usage rights to your review video. They can repost and promote it on their own sites and channels, as much and as long as they want.
           </p>
           {copyrightFee && (
             <div>
@@ -471,7 +482,7 @@ export default function CollaborationsPage() {
           </div>
           {livestreams && (
             <div>
-              <label className={lbl}>Your best livestream link <span className="text-[#86868b]">(optional — shown as proof in the pitch)</span></label>
+              <label className={lbl}>Your best livestream link <span className="text-[#86868b]">(optional, shown as proof in the pitch)</span></label>
               <input value={livestreamLink} onChange={e => setLivestreamLink(e.target.value)} placeholder="e.g. youtube.com/live/… or twitch.tv/…" className="input-field text-sm w-full" />
             </div>
           )}
@@ -495,7 +506,7 @@ export default function CollaborationsPage() {
             <input value={collabsDone} onChange={e => setCollabsDone(e.target.value)} placeholder="e.g. 12 brand collabs, 40+ sponsored reviews" className="input-field text-sm w-full" />
           </div>
           <div>
-            <label className={lbl}>Example links of your best work <span className="text-[#86868b]">(up to 3 — most-viewed videos / highest-quality work)</span></label>
+            <label className={lbl}>Example links of your best work <span className="text-[#86868b]">(up to 3, most-viewed videos / highest-quality work)</span></label>
             <div className="flex flex-col gap-2">
               {[0, 1, 2].map(i => (
                 <input
@@ -580,7 +591,7 @@ export default function CollaborationsPage() {
             rows={16}
             className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 leading-relaxed resize-y focus:outline-none focus:border-[#7C3AED]/50"
           />
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">Edit anything before you send — copy the subject and body separately into your email.</p>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">Edit anything before you send. Copy the subject and body separately into your email.</p>
         </div>
       )}
 

@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { CustomizeGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   RefreshCw, Sparkles, AlertCircle, Check,
@@ -269,6 +271,12 @@ export default function CustomizePage() {
   // comment opt-in can be turned on in the same place). null = still loading.
   const [newsletterOn, setNewsletterOn] = useState<boolean | null>(null)
   const [newsletterSaving, setNewsletterSaving] = useState(false)
+  // The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
+  // so its two controls here (the comment opt-in and the mid-article form) are
+  // hidden unless the viewer is admin. The customizations route also pushes
+  // the form switched off, so a stale saved toggle cannot bring it back.
+  const viewerTier = useEffectiveTier()
+  const showNewsletter = NEWSLETTER_FOR_MEMBERS || viewerTier === 'admin'
   // Installed WP plugin version — Connection-only needs 1.0.93+ to take effect, so
   // the card can tell the creator whether any WordPress step is required.
   // undefined = still checking, null = couldn't read (assume needs update).
@@ -469,7 +477,7 @@ export default function CustomizePage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok || json.error) { toast.error(json.error || `Save failed (${res.status})`); return }
       if (json.wordpress === 'failed') {
-        const msg = json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.'
+        const msg = json.wordpressError || 'WordPress push failed. Check your credentials in Site & Integrations.'
         setWpPushError(msg)
         toast.error(msg)
       } else {
@@ -481,7 +489,7 @@ export default function CustomizePage() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ showBio: data.layout.aboutBio }),
         }).catch(() => {})
-        toast.success('Saved — pushed to your blog.')
+        toast.success('Saved: pushed to your blog.')
       }
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } catch (err) {
@@ -517,7 +525,7 @@ export default function CustomizePage() {
   if (loading) {
     return (
       <>
-        <PageHero title="Customize Blog" subtitle="Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking." />
+        <PageHero title="Blog design" subtitle="Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking." />
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-8">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -529,8 +537,8 @@ export default function CustomizePage() {
     <>
       <PageHero
         guide={<CustomizeGuide />}
-        title="Customize Blog"
-        subtitle="Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking."
+        title="Blog design"
+        subtitle={<>Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking.<span className="block mt-1 text-[12px]">Formerly Customize Blog.</span></>}
         actions={
           <div className="flex items-center gap-2">
             <button onClick={purgeCache} disabled={purging || saving} className="btn-secondary flex items-center gap-2"
@@ -585,14 +593,14 @@ export default function CustomizePage() {
           </div>
           {data.layout.connectionOnly && (
             <p className="text-[11px] mt-3 font-medium" style={{ color: '#7C3AED' }}>
-              On — MVP is connected and posting, but making no changes to your blog layout.
+              On: MVP is connected and posting, but making no changes to your blog layout.
             </p>
           )}
           {/* Point the creator to the one possible WordPress step (a plugin
               update), or reassure them there's nothing to do. */}
           {connOnlyReady ? (
             <p className="text-[11px] mt-2 flex items-center gap-1" style={{ color: '#16a34a' }}>
-              <Check size={12} /> Nothing to do on WordPress — your MVP plugin already supports this.
+              <Check size={12} /> Nothing to do on WordPress: your MVP plugin already supports this.
             </p>
           ) : pluginVer !== undefined ? (
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>
@@ -621,7 +629,7 @@ export default function CustomizePage() {
         {/* Reviewer Trust Block — author byline at top of every post */}
         <Section
           title="Reviewer Trust Block"
-          description={`Shown at the top of every blog post, right under the headline. Tells Google + AI Overviews who's actually behind the review (E-E-A-T signal — big ranking lift), and tells readers "this is a real human" so they don't bounce. Defaults pull from your Brand Profile; override here per blog if you want.`}
+          description={`Shown at the top of every blog post, right under the headline. Tells Google + AI Overviews who's actually behind the review (E-E-A-T signal, big ranking lift), and tells readers "this is a real human" so they don't bounce. Defaults pull from your Brand Profile; override here per blog if you want.`}
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
@@ -664,7 +672,7 @@ export default function CustomizePage() {
                     maxLength={300}
                     className="input-field w-full resize-y"
                   />
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">The single most important field — concrete numbers + how long you've been doing this beats vague "passionate about reviews" claims. {data.authorBlock.tagline.length}/300</p>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">The single most important field. Concrete numbers + how long you've been doing this beats vague "passionate about reviews" claims. {data.authorBlock.tagline.length}/300</p>
                 </div>
 
                 <div>
@@ -676,7 +684,7 @@ export default function CustomizePage() {
                     placeholder="https://…/your-headshot.jpg"
                     className="input-field w-full"
                   />
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">Defaults to Brand Profile → Headshot. Use a real photo (face visible) — animated avatars hurt trust signals.</p>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Defaults to Brand Profile → Headshot. Use a real photo (face visible): animated avatars hurt trust signals.</p>
                   {data.authorBlock.photoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={data.authorBlock.photoUrl} alt="Reviewer headshot preview" className="mt-2 rounded-full object-cover border border-[var(--border-2)]" style={{ width: 56, height: 56 }} />
@@ -693,7 +701,7 @@ export default function CustomizePage() {
                       placeholder="https://youtube.com/@you"
                       className="input-field w-full"
                     />
-                    <p className="text-[11px] text-[var(--text-3)] mt-1">Where the "More about me" link goes — YouTube channel, About page, etc.</p>
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">Where the "More about me" link goes: YouTube channel, About page, etc.</p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Link label</label>
@@ -715,7 +723,7 @@ export default function CustomizePage() {
         {/* Post dates */}
         <Section
           title="Post dates"
-          description="Show or hide the date on your posts — the byline date on articles and cards, “Updated” stamps, and the homepage date column. Hiding dates keeps reviews looking evergreen; search engines still see the real dates in your page data either way."
+          description="Show or hide the date on your posts: the byline date on articles and cards, “Updated” stamps, and the homepage date column. Hiding dates keeps reviews looking evergreen; search engines still see the real dates in your page data either way."
         >
           <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
             <div>
@@ -854,7 +862,7 @@ export default function CustomizePage() {
                 : <ToggleLeft size={28} />}
             </button>
           </div>
-          {data.layout.enableComments && (
+          {showNewsletter && data.layout.enableComments && (
             <label className="flex items-start gap-3 p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)] cursor-pointer">
               <input
                 type="checkbox"
@@ -926,15 +934,15 @@ export default function CustomizePage() {
         </Section>
 
         {/* Mid-article newsletter form */}
-        <Section
+        {showNewsletter && <Section
           title="Mid-article newsletter form"
-          description="Capture emails mid-read while attention is highest. Inserts an inline subscribe form after the Nth paragraph of every single review post. Best converting placement for affiliate sites — typically 1-3% of readers vs <0.5% sidebar-only."
+          description="Capture emails mid-read while attention is highest. Inserts an inline subscribe form after the Nth paragraph of every single review post. Best converting placement for affiliate sites, typically 1-3% of readers vs <0.5% sidebar-only."
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
               <div>
                 <p className="text-sm font-medium text-[var(--text)]">Show on every post</p>
-                <p className="text-xs text-[var(--text-3)]">Site-wide toggle. Uses your existing MVP newsletter list — same signups as the sidebar form.</p>
+                <p className="text-xs text-[var(--text-3)]">Site-wide toggle. Uses your existing MVP newsletter list: same signups as the sidebar form.</p>
               </div>
               <button
                 onClick={() => updateNewsletterInline({ enabled: !data.newsletterInline.enabled })}
@@ -960,7 +968,7 @@ export default function CustomizePage() {
                       <option key={n} value={n}>After paragraph {n}</option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">3-4 is the sweet spot — past the hook, before the reader bounces. If the post has fewer paragraphs than this, the form appends at the end so it still has a shot.</p>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">3-4 is the sweet spot: past the hook, before the reader bounces. If the post has fewer paragraphs than this, the form appends at the end so it still has a shot.</p>
                 </div>
 
                 <div>
@@ -972,7 +980,7 @@ export default function CustomizePage() {
                     maxLength={120}
                     className="input-field w-full"
                   />
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">Curiosity-driven beats generic — "Get the next review in your inbox" converts about half as well as "The 5 best Amazon finds I tested this month".</p>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Curiosity-driven beats generic. "Get the next review in your inbox" converts about half as well as "The 5 best Amazon finds I tested this month".</p>
                 </div>
 
                 <div>
@@ -984,7 +992,7 @@ export default function CustomizePage() {
                     rows={2}
                     className="input-field w-full resize-y"
                   />
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">One short sentence. Include the "no spam" reassurance — it lifts opt-ins.</p>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">One short sentence. Include the "no spam" reassurance. It lifts opt-ins.</p>
                 </div>
 
                 <div>
@@ -1000,7 +1008,7 @@ export default function CustomizePage() {
               </>
             )}
           </div>
-        </Section>
+        </Section>}
 
         {/* "Work with brands" banner settings moved to the Brand Inquiries page
             (Collaborate → Brand Inquiries), co-located with the inbox they feed.
@@ -1010,7 +1018,7 @@ export default function CustomizePage() {
         {/* Pick of the Day */}
         <Section
           title="Pick of the Day"
-          description="A featured post that rotates automatically every 24 hours. Shows in the sidebar, the homepage, or both. Picked randomly from all published posts — same pick all day for every visitor, different pick each day."
+          description="A featured post that rotates automatically every 24 hours. Shows in the sidebar, the homepage, or both. Picked randomly from all published posts: same pick all day for every visitor, different pick each day."
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
@@ -1108,7 +1116,7 @@ export default function CustomizePage() {
                   <p className="text-[11px] text-[var(--text-3)] mt-1">
                     {data.pickOfDay.rotation === '12h' && 'A new pick at midnight and noon (server time). Same pick for every visitor in each window.'}
                     {data.pickOfDay.rotation === '24h' && 'A new pick at midnight (server time). Same pick all day for every visitor.'}
-                    {data.pickOfDay.rotation === 'pinned' && 'Locked to the post you choose below — no rotation.'}
+                    {data.pickOfDay.rotation === 'pinned' && 'Locked to the post you choose below: no rotation.'}
                   </p>
                 </div>
 
@@ -1133,13 +1141,13 @@ export default function CustomizePage() {
         {/* Featured posts (Editor's Picks curation) */}
         <Section
           title="Featured posts (Editor's Picks)"
-          description="Hand-pick what leads your homepage. Slot 1 is the big Editor's Pick hero; slots 2–5 fill the Editor's Picks row. Anything left on Automatic shows your newest post — pin your best reviews so a fresh batch of posts can never bump them off the top."
+          description="Hand-pick what leads your homepage. Slot 1 is the big Editor's Pick hero; slots 2 to 5 fill the Editor's Picks row. Anything left on Automatic shows your newest post. Pin your best reviews so a fresh batch of posts can never bump them off the top."
         >
           <div className="flex flex-col gap-3">
             {data.featuredPosts.map((url, i) => (
               <div key={i}>
                 <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">
-                  {i === 0 ? 'Hero — the big Editor’s Pick' : `Editor’s Picks row · card ${i}`}
+                  {i === 0 ? 'Hero: the big Editor’s Pick' : `Editor’s Picks row · card ${i}`}
                 </label>
                 <select
                   value={url}
@@ -1149,7 +1157,7 @@ export default function CustomizePage() {
                   })}
                   className="input-field text-sm"
                 >
-                  <option value="">Automatic — latest post</option>
+                  <option value="">Automatic: latest post</option>
                   {/* Keep a saved URL selectable even if it fell out of the
                       200-post dropdown window (or the post was unpublished). */}
                   {url && !pubPosts.some(p => p.url === url) && (
@@ -1162,7 +1170,7 @@ export default function CustomizePage() {
               </div>
             ))}
             <p className="text-[11px] text-[var(--text-3)]">
-              Pinned posts never show twice on the homepage — every other section skips them automatically. Save, then refresh your blog to see the new lineup.
+              Pinned posts never show twice on the homepage: every other section skips them automatically. Save, then refresh your blog to see the new lineup.
             </p>
           </div>
         </Section>
@@ -1198,7 +1206,7 @@ export default function CustomizePage() {
         {/* Site verification / head meta tags */}
         <Section
           title="Site Verification & Meta Tags"
-          description="Prove you own this site so outside services unlock their tools for you — Google Search Console (see your search traffic + get pages indexed), Pinterest (Rich Pins), Bing Webmaster, Facebook, and affiliate networks like Impact. Each gives you a short verification <meta> tag; paste it here and MVP drops it into every page's <head>, so the check passes without you ever editing WordPress."
+          description="Prove you own this site so outside services unlock their tools for you: Google Search Console (see your search traffic + get pages indexed), Pinterest (Rich Pins), Bing Webmaster, Facebook, and affiliate networks like Impact. Each gives you a short verification <meta> tag; paste it here and MVP drops it into every page's <head>, so the check passes without you ever editing WordPress."
         >
           <div className="flex flex-col gap-2">
             {/* Plain-language how-to so non-technical creators aren't left guessing
@@ -1206,9 +1214,9 @@ export default function CustomizePage() {
             <div className="rounded-xl border border-[var(--border-2)] bg-[var(--surface-2)] px-4 py-3 text-xs text-[var(--text-2)] leading-relaxed">
               <p className="font-semibold text-[var(--text)] mb-1.5">How to use it</p>
               <ol className="list-decimal pl-4 space-y-1">
-                <li>On the service (e.g. <strong>Google Search Console → add your site → choose &ldquo;HTML tag&rdquo;</strong>), copy the whole line it gives you — it looks like <code className="bg-[var(--surface)] px-1 rounded">&lt;meta name=&quot;…&quot; content=&quot;…&quot;&gt;</code>.</li>
+                <li>On the service (e.g. <strong>Google Search Console → add your site → choose &ldquo;HTML tag&rdquo;</strong>), copy the whole line it gives you. It looks like <code className="bg-[var(--surface)] px-1 rounded">&lt;meta name=&quot;…&quot; content=&quot;…&quot;&gt;</code>.</li>
                 <li>Click <strong>Add meta tag</strong> below, paste one full tag per box, then hit <strong>Save changes</strong> at the top.</li>
-                <li>Go back to that service and click its <strong>Verify</strong> button — it&rsquo;ll now find the tag on your live site. It stays on every page, so verification keeps passing.</li>
+                <li>Go back to that service and click its <strong>Verify</strong> button: it&rsquo;ll now find the tag on your live site. It stays on every page, so verification keeps passing.</li>
               </ol>
             </div>
             {data.headMetaTags.map((tag, i) => (
@@ -1241,8 +1249,7 @@ export default function CustomizePage() {
               <Plus size={15} /> Add meta tag
             </button>
             <p className="text-xs text-[var(--text-3)] leading-relaxed mt-1">
-              Only <code className="bg-[var(--surface-2)] px-1 rounded">&lt;meta&gt;</code> tags are allowed —
-              anything else (scripts, styles, arbitrary HTML) is stripped server-side for security. Changes
+              Only <code className="bg-[var(--surface-2)] px-1 rounded">&lt;meta&gt;</code> tags are allowed: anything else (scripts, styles, arbitrary HTML) is stripped server-side for security. Changes
               go live on your next save.
             </p>
           </div>
@@ -1250,14 +1257,14 @@ export default function CustomizePage() {
 
         <Section
           title="Analytics & Tracking"
-          description="See your blog traffic in Google Analytics. Most people only need the simple GA4 path below — paste one ID and you're done. No code to copy anywhere."
+          description="See your blog traffic in Google Analytics. Most people only need the simple GA4 path below. Paste one ID and you're done. No code to copy anywhere."
         >
           <div className="flex flex-col gap-6">
 
             {/* ── Easy path: GA4 Measurement ID (injects gtag.js directly) ── */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-[var(--text)] flex items-center gap-2">
-                Google Analytics 4 — Measurement ID
+                Google Analytics 4: Measurement ID
                 <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#34c759]/15 text-[#1c7a35]">Recommended</span>
               </label>
               <input
@@ -1269,28 +1276,28 @@ export default function CustomizePage() {
                 className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]"
               />
               {data.analytics.ga4Id && !/^G-[A-Z0-9]{4,12}$/.test(data.analytics.ga4Id) && (
-                <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like a GA4 Measurement ID — it should be <code>G-</code> followed by letters/numbers (e.g. <code>G-ABC123XYZ</code>). A <code>GTM-</code> ID goes in the box below instead. It won&apos;t inject until the format is valid.</p>
+                <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like a GA4 Measurement ID. It should be <code>G-</code> followed by letters/numbers (e.g. <code>G-ABC123XYZ</code>). A <code>GTM-</code> ID goes in the box below instead. It won&apos;t inject until the format is valid.</p>
               )}
 
               <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
                 <summary className="cursor-pointer font-medium text-[var(--text)] select-none">How do I find my GA4 Measurement ID? (step by step)</summary>
                 <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
                   <li>Go to <a href="https://analytics.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">analytics.google.com</a> and sign in with the Google account you want to own your stats.</li>
-                  <li><b>First time using Analytics?</b> Click <b>Start measuring</b>, then create an <b>Account</b> (your name or brand) and a <b>Property</b> (your blog) — set your country, currency, and time zone.</li>
+                  <li><b>First time using Analytics?</b> Click <b>Start measuring</b>, then create an <b>Account</b> (your name or brand) and a <b>Property</b> (your blog): set your country, currency, and time zone.</li>
                   <li>When it asks what you want to measure, choose <b>Web</b>. Enter your blog&apos;s full URL (e.g. <code>https://yourblog.com</code>) and a stream name, then click <b>Create stream</b>.</li>
-                  <li>You&apos;ll land on <b>Web stream details</b>. Your <b>Measurement ID</b> is at the top right — it looks like <code>G-XXXXXXXXXX</code>. Copy it.</li>
+                  <li>You&apos;ll land on <b>Web stream details</b>. Your <b>Measurement ID</b> is at the top right. It looks like <code>G-XXXXXXXXXX</code>. Copy it.</li>
                   <li><b>Already had Analytics set up?</b> Click the <b>gear ⚙ (Admin)</b> at the bottom-left → under <b>Property</b> click <b>Data streams</b> → click your web stream → copy the <b>Measurement ID</b> at the top.</li>
                   <li>Paste it into the box above and click <b>Save</b> at the top of this page.</li>
-                  <li><b>Check it works:</b> open your blog in a new tab, then in Analytics go to <b>Reports → Realtime</b>. Within ~30 seconds you should see <b>1 active user</b> (that&apos;s you). Full reports (sessions, top pages, traffic sources) fill in over the next 24–48 hours.</li>
+                  <li><b>Check it works:</b> open your blog in a new tab, then in Analytics go to <b>Reports → Realtime</b>. Within ~30 seconds you should see <b>1 active user</b> (that&apos;s you). Full reports (sessions, top pages, traffic sources) fill in over the next 24 to 48 hours.</li>
                 </ol>
-                <p className="mt-3 text-[var(--text-3)]">No code to paste anywhere — the theme injects Google&apos;s official tag for you the moment a valid <code>G-</code> ID is saved.</p>
+                <p className="mt-3 text-[var(--text-3)]">No code to paste anywhere. The theme injects Google&apos;s official tag for you the moment a valid <code>G-</code> ID is saved.</p>
               </details>
             </div>
 
             {/* ── Advanced path: Google Tag Manager ── */}
             <div className="flex flex-col gap-2 border-t border-[var(--border-2)] pt-5">
               <label className="text-sm font-medium text-[var(--text)] flex items-center gap-2">
-                Google Tag Manager — Container ID
+                Google Tag Manager: Container ID
                 <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--text-3)]">Advanced · optional</span>
               </label>
               <input
@@ -1302,21 +1309,21 @@ export default function CustomizePage() {
                 className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]"
               />
               {data.analytics.gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(data.analytics.gtmId) && (
-                <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
+                <p className="text-xs text-[#ff9500]">⚠ ID format looks off. Should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
               )}
               <p className="text-xs text-[var(--text-3)] leading-relaxed">
                 Most creators can skip this. <b className="text-[var(--text-2)]">Just want Google Analytics? Use the GA4 box above and leave this blank.</b>
               </p>
 
               <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
-                <summary className="cursor-pointer font-medium text-[var(--text)] select-none">What is Tag Manager — and when do I need it?</summary>
-                <p className="mt-3">Tag Manager is a single dashboard for running <b>several</b> marketing tags at once — Google Ads, Meta/Facebook Pixel, Pinterest tag, custom conversions. If you only want blog traffic stats, you don&apos;t need it.</p>
+                <summary className="cursor-pointer font-medium text-[var(--text)] select-none">What is Tag Manager, and when do I need it?</summary>
+                <p className="mt-3">Tag Manager is a single dashboard for running <b>several</b> marketing tags at once: Google Ads, Meta/Facebook Pixel, Pinterest tag, custom conversions. If you only want blog traffic stats, you don&apos;t need it.</p>
                 <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
-                  <li>Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">tagmanager.google.com</a> — it gives you a <code>GTM-XXXXXXX</code> ID.</li>
-                  <li>Paste that ID into the box above and click <b>Save</b>. The theme adds both GTM snippets (head + body) for you — no code to copy.</li>
+                  <li>Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">tagmanager.google.com</a>: it gives you a <code>GTM-XXXXXXX</code> ID.</li>
+                  <li>Paste that ID into the box above and click <b>Save</b>. The theme adds both GTM snippets (head + body) for you: no code to copy.</li>
                   <li>Inside Tag Manager, add the tags you want (your GA4 tag, Meta Pixel, etc.) and <b>Publish</b> the container.</li>
                 </ol>
-                <p className="mt-3 text-[var(--text-3)]"><b>Don&apos;t double up:</b> if you put your GA4 tag inside Tag Manager, leave the GA4 box above blank — using both counts every visit twice.</p>
+                <p className="mt-3 text-[var(--text-3)]"><b>Don&apos;t double up:</b> if you put your GA4 tag inside Tag Manager, leave the GA4 box above blank. Using both counts every visit twice.</p>
               </details>
             </div>
           </div>

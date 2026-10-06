@@ -174,11 +174,11 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ asin: campaign.asin, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl }),
         }).catch(() => {})
-        toast.success(`Found a Creator Connections campaign${brand ? ` from ${brand}` : ''} — you can auto-send now.`)
+        toast.success(`Found a Creator Connections campaign${brand ? ` from ${brand}` : ''}: you can auto-send now.`)
       } else if (r.ok) {
         setFindMiss(`No live campaign matched${typeof r.scanned === 'number' ? ` (checked ${r.scanned})` : ''}. You can still copy the pitch.`)
       } else if (r.error === 'not-installed') {
-        if (o?.silent) setFindMiss('Connect SCOUT to auto-send this on Amazon — otherwise copy the pitch below.')
+        if (o?.silent) setFindMiss('Connect SCOUT to auto-send this on Amazon. Otherwise copy the pitch below.')
         else toast.error('Install / enable SCOUT to search Creator Connections.')
       } else if (r.error === 'timeout') {
         setFindMiss('The Creator Connections search timed out. You can still copy the pitch, or try again.')
@@ -227,17 +227,17 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
 
   const copyAll = useCallback(async () => {
     const toSend = segments.map(s => s.trim()).filter(Boolean)
-    if (toSend.length === 0) { toast.error('Nothing to copy — draft a message first.'); return }
+    if (toSend.length === 0) { toast.error('Nothing to copy. Draft a message first.'); return }
     try {
       await navigator.clipboard.writeText(toSend.join('\n\n'))
-      toast.success(`Copied ${toSend.length} message${toSend.length === 1 ? '' : 's'} — paste them to the brand.`)
+      toast.success(`Copied ${toSend.length} message${toSend.length === 1 ? '' : 's'}: paste them to the brand.`)
       onClose()
-    } catch { toast.error('Copy failed — select the text above and copy manually.') }
+    } catch { toast.error('Copy failed: select the text above and copy manually.') }
   }, [segments, onClose])
 
   const send = useCallback(async () => {
     const toSend = segments.map(s => s.trim()).filter(Boolean)
-    if (toSend.length === 0) { toast.error('Nothing to send — draft a message first.'); return }
+    if (toSend.length === 0) { toast.error('Nothing to send. Draft a message first.'); return }
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
     setSending(true)
     setSendProgress(3)
@@ -274,7 +274,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
         // Full diag (incl. the Send-button candidates SCOUT saw) → console.
         // eslint-disable-next-line no-console
         console.warn('[MVP] send-brand failed — full diagnostic:', r)
-        toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'} — open the browser console (⌥⌘J) for details.`, { duration: 12000 })
+        toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'}: open the browser console (⌥⌘J) for details.`, { duration: 12000 })
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Send failed')
@@ -397,7 +397,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
           <div className="px-5 pt-3">
             {liveDetailsUrl ? (
               <div className="flex items-center gap-2 text-[12px] rounded-lg px-3 py-2" style={{ background: 'rgba(52,199,89,0.10)', color: '#248a3d' }}>
-                <Radar size={14} /> Creator Connections campaign found{liveBrand ? ` · ${liveBrand}` : ''} — this will auto-send on Amazon.
+                <Radar size={14} /> Creator Connections campaign found{liveBrand ? ` · ${liveBrand}` : ''}: this will auto-send on Amazon.
               </div>
             ) : (
               <>
@@ -405,11 +405,11 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
                   className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
                   style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
                   {finding ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
-                  {finding ? 'Searching Creator Connections…' : 'Search Creator Connections — can I auto-send this?'}
+                  {finding ? 'Searching Creator Connections…' : 'Search Creator Connections. Can I auto-send this?'}
                 </button>
                 {finding && (
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
-                    SCOUT is checking Amazon in the background (search + ID match). This can take a minute — you won&apos;t leave this page.
+                    SCOUT is checking Amazon in the background (search + ID match). This can take a minute. You won&apos;t leave this page.
                   </p>
                 )}
                 {findMiss && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-soft)' }}>{findMiss}</p>}
@@ -430,9 +430,9 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
         </div>
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
           {canSend
-            ? <>SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session — in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.</>
+            ? <>SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session, in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.</>
             : finding
-            ? <>Checking Creator Connections for this campaign so SCOUT can auto-send it on Amazon — the button flips to <b>Send</b> the moment it&apos;s found. You can copy the pitch now instead if you&apos;d rather.</>
+            ? <>Checking Creator Connections for this campaign so SCOUT can auto-send it on Amazon. The button flips to <b>Send</b> the moment it&apos;s found. You can copy the pitch now instead if you&apos;d rather.</>
             : <>No live Creator Connections chat found for this one, so Amazon has no brand chat to auto-send through. Copy the pitch and send it wherever you reach the brand (email, their site, or their CC campaign if they run one).</>}
         </p>
       </div>

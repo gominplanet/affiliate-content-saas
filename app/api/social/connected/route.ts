@@ -20,6 +20,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveSocialAccount } from '@/lib/social-accounts'
@@ -31,10 +32,15 @@ import {
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const supabase = await createServerClient()
-  const auth = await getAuthAndOwner(supabase)
+  const session = await createServerClient()
+  const auth = await getAuthAndOwner(session)
   if (auth.error) return auth.error
   const { ownerId } = auth
+  // A Virtual Assistant's session cannot read the owner's integrations row
+  // (migration 320), so a VA saw every channel as disconnected. The server
+  // reads it for them; only yes/no and labels go back, never a token.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = auth.isOwner ? session : (createAdminClient() as any)
 
   // select('*'), exactly like lib/deal-social-publish. NOT a shortcut.
   //

@@ -127,10 +127,12 @@ export function ShortsStudioModal({
   const [ttPost, setTtPost] = useState<{ id: string; url: string; caption: string } | null>(null)
   const [igPost, setIgPost] = useState<{ id: string; url: string; caption: string } | null>(null)
 
+  // A TIMED-OUT RENDER ANSWERS WITH AN HTML 504, NOT JSON. Every read below
+  // falls back to a sentence instead of surfacing "Unexpected token '<'".
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/youtube/shorts?videoId=${encodeURIComponent(videoId)}`)
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) throw new Error(data.error || 'Failed to load')
       setClips(data.shorts || [])
       setHasSource(!!data.hasSource)
@@ -153,7 +155,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId, youtubeVideoId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.limitReached) {
           dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -180,7 +182,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.ingestDisabled) setIngestEnabled(false)
         if (data.limitReached) dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -212,7 +214,7 @@ export function ShortsStudioModal({
           trimSilence: trimById[clip.id] === true,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Upload the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering Shorts is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -248,7 +250,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shortId: clipId, ...editDraft }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) throw new Error(data.error || 'Save failed')
       if (data.short) setClips(prev => prev.map(c => (c.id === clipId ? data.short : c)))
       setEditingId(null); setEditDraft(null)
@@ -291,7 +293,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip), tags: buildYouTubeTags(clip.hashtags, clip.hook) }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         // Missing upload scope — grant it via incremental auth, then retry.
         if (data.reconnectRequired) {
@@ -349,9 +351,9 @@ export function ShortsStudioModal({
           {/* Intro + action */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-md">
-              We find the strongest 15–30s moments and cut them for you. If the transcript isn&apos;t on YouTube,
+              We find the strongest 15 to 30s moments and cut them for you. If the transcript isn&apos;t on YouTube,
               upload the video and we&apos;ll transcribe it ourselves. Subtitles are word-for-word from what you
-              actually said — nothing invented.
+              actually said: nothing invented.
             </p>
             <button
               onClick={findShorts}
@@ -376,7 +378,7 @@ export function ShortsStudioModal({
                     style={{ backgroundColor: PURPLE }}
                   >
                     {preparing ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                    {preparing ? 'Preparing video…' : 'Fetch this video automatically — no upload'}
+                    {preparing ? 'Preparing video…' : 'Fetch this video automatically: no upload'}
                   </button>
                   <p className="text-[10px] text-[#86868b] text-center mt-1.5">
                     We download it for you and cut the clips. Takes a few minutes.
@@ -385,15 +387,15 @@ export function ShortsStudioModal({
               )}
               <div>
                 <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-                  {ingestEnabled ? 'Or upload the video yourself' : 'Upload the full video once — we transcribe it and cut your clips from it'}
+                  {ingestEnabled ? 'Or upload the video yourself' : 'Upload the full video once. We transcribe it and cut your clips from it'}
                 </p>
                 <ShortVideoUpload
                   videoId={videoId}
                   targetColumn="source_video_url"
                   extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
                   label="Drop the full video (the long one) here"
-                  helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
-                  onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts'); }}
+                  helpText="MP4, under 300 MB. We transcribe it and cut every clip from it. It never touches YouTube."
+                  onUploaded={async () => { setHasSource(true); toast.success('Video uploaded: hit Find Shorts'); }}
                 />
               </div>
             </div>
@@ -457,7 +459,7 @@ export function ShortsStudioModal({
                             {clip.score}/100
                           </span>
                           <span className="text-[11px] text-[#86868b] tabular-nums">
-                            {fmt(clip.startSec)}–{fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s
+                            {fmt(clip.startSec)} to {fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s
                           </span>
                           {ytLink && (
                             <a href={ytLink} target="_blank" rel="noreferrer" className="text-[11px] inline-flex items-center gap-0.5 hover:underline" style={{ color: PURPLE }}>

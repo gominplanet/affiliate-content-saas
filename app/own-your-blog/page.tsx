@@ -49,7 +49,7 @@ import { SALES_PAUSED } from '@/lib/sales-paused'
 import MetaTrack from '@/components/analytics/MetaTrack'
 
 export const metadata: Metadata = {
-  title: 'Own the blog Amazon cannot take away | MVP Affiliate',
+  title: 'Own the blog Amazon cannot take away',
   description:
     'Your Amazon storefront is rented. MVP turns the reviews you are already filming into SEO articles, social posts and shoppable clips on a blog that is yours forever.',
   // An ad landing page has no business in search results competing with the
@@ -140,17 +140,22 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Will this get my Amazon account in trouble?',
-    a: 'No. Sending traffic to Amazon from your own site is what the Associates programme is for, and off-site content is how most established affiliates earn. Your disclosure goes on every post automatically.',
+    a: 'No. Sending traffic to Amazon from your own site is what the Associates programme is for, and off-site content is how most established affiliates earn. Your disclosure goes on every post automatically, and every social post carries #ad and #sponsored with each link labelled.',
   },
   {
     q: 'What if it does not work for me?',
-    a: `Start on the free tier with no card. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}, no questions.`,
+    a: `Start the free trial with no card. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}, no questions.`,
   },
   {
     q: 'How much of my time does this take?',
     a: 'You film the review, which you are doing anyway. Connect the channel once and each new video turns into a published article and a week of social posts without you opening anything.',
   },
 ]
+
+// Re-rendered every 10 minutes so the November 1 price change shows without a
+// deploy. This page prints both plan prices (AdPricingTable) and was fully
+// static, so it would have kept quoting the old ones after checkout moved on.
+export const revalidate = 600
 
 export default function OwnYourBlogPage() {
   const hasProof = TESTIMONIALS.length > 0
@@ -163,7 +168,7 @@ export default function OwnYourBlogPage() {
           the logo is the most-clicked escape route there is. */}
       <header className="px-6 lg:px-8 pt-7">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
-          <NextImage src="/png/mvp-affiliate-pro.png" alt="MVP Affiliate" width={120} height={32} className="h-7 w-auto" priority />
+          <NextImage src="/png/mvp-affiliate-pro.png" alt="MVP Affiliate" width={28} height={28} className="h-7 w-7" priority />
         </div>
       </header>
 
@@ -338,7 +343,7 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start free with no card. Connect a channel, pick a video, and read what it writes before you decide anything. You get {TIERS.trial.lifetimeMax} full published reviews on the free tier to make your mind up with.
+            Start free with no card. Connect a channel, pick a video, and read what it writes before you decide anything. You get {TIERS.trial.lifetimeMax} full published reviews on the free trial to make your mind up with.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
@@ -390,7 +395,7 @@ export default function OwnYourBlogPage() {
           the one lie this page cannot afford. */}
       {SALES_PAUSED && (
         <p className="px-6 pb-10 text-center text-[13px] text-black/50">
-          New subscriptions are paused right now. The free tier is still open.
+          New subscriptions are paused right now. The free trial is still open.
         </p>
       )}
 

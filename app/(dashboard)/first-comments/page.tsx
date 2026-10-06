@@ -16,7 +16,7 @@ export default function FirstCommentsPage() {
 
   if (tier !== null && canUsePreview('first_comment', tier)) return <OlderVideos />
   // Not on this plan: say so and how to get it, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="Pinned Comments" body="Pinned Comments posts and pins a first comment with your product link on every video, new and old, and keeps it up to date." />
+  if (tier !== null) return <ProUpgradePanel feature="Pinned comments" body="Pinned comments posts and pins a first comment with your product link on every video, new and old, and keeps it up to date." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

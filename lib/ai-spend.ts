@@ -20,7 +20,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { costOf, type UsageRow } from '@/lib/ai-usage'
-import { TIERS, normalizeTier, nextTierFor, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { freeTrialWindow, freeTrialExpiredBlock, FREE_TRIAL_OVER_MESSAGE } from '@/lib/free-trial'
+import { accountSignupISO } from '@/lib/free-trial-signup'
 
 /** First instant of the current calendar month, UTC, as an ISO string. */
 function startOfMonthUtcIso(): string {
@@ -77,9 +79,9 @@ export function globalDailyCeilingUsd(): number | null {
  * Total USD of AI cost this account has incurred since the start of the
  * current calendar month. Returns 0 on any error (fail-open).
  */
-export async function monthlyAiSpendUsd(userId: string): Promise<number> {
+export async function monthlyAiSpendUsd(userId: string, sinceISO?: string): Promise<number> {
   if (!userId) return 0
-  const since = startOfMonthUtcIso()
+  const since = sinceISO || startOfMonthUtcIso()
   try {
     const admin = createAdminClient()
 
@@ -121,6 +123,9 @@ export interface SpendStatus {
   /** Fraction 0–1 of the ceiling used (0 when no ceiling). */
   fraction: number
   tier: Tier
+  /** True when a free account's trial window has closed. Counts as exceeded:
+   *  an expired trial gets no more free AI from any gated route. */
+  trialOver: boolean
 }
 
 /** The tier's monthly AI-spend ceiling, or null if uncapped. */
@@ -137,10 +142,32 @@ export function ceilingForTier(tier: unknown): number | null {
 export async function spendStatus(userId: string, tier: unknown): Promise<SpendStatus> {
   const t = normalizeTier(tier)
   const ceiling = ceilingForTier(t)
-  const spent = await monthlyAiSpendUsd(userId)
-  const exceeded = ceiling != null && spent >= ceiling
-  const fraction = ceiling != null && ceiling > 0 ? Math.min(1, spent / ceiling) : 0
-  return { spent, ceiling, exceeded, fraction, tier: t }
+
+  // THE FREE TRIAL IS ONE WINDOW, NOT A MONTH. Two leaks lived here while the
+  // trial ceiling was summed per calendar month and nothing but the thumbnail,
+  // photobooth and face routes asked whether the trial had ended:
+  //   - a trial that spans the 1st got its $15 twice, and
+  //   - an EXPIRED trial kept every text route (captions, scripts, the
+  //     assistant, pin copy...) at $15 a month for as long as the account
+  //     existed, which with a paid video ad buying signups is the leak that
+  //     scales with every abandoned account.
+  // So a trial sums its spend from signup, and an expired trial is exceeded.
+  // An unreadable signup date keeps the calendar month and never expires, as
+  // freeTrialWindow promises: a lookup failure must not lock an account.
+  let since: string | undefined
+  let trialOver = false
+  if (t === 'trial') {
+    const signupISO = await accountSignupISO(userId)
+    if (signupISO) {
+      since = freeTrialWindow(signupISO).startISO
+      trialOver = freeTrialExpiredBlock({ tier: t, signupISO }) != null
+    }
+  }
+
+  const spent = await monthlyAiSpendUsd(userId, since)
+  const exceeded = trialOver || (ceiling != null && spent >= ceiling)
+  const fraction = trialOver ? 1 : ceiling != null && ceiling > 0 ? Math.min(1, spent / ceiling) : 0
+  return { spent, ceiling, exceeded, fraction, tier: t, trialOver }
 }
 
 /**
@@ -154,6 +181,20 @@ export async function checkSpendCeiling(
 ): Promise<{ allowed: boolean; status: SpendStatus }> {
   const status = await spendStatus(userId, tier)
   return { allowed: !status.exceeded, status }
+}
+
+/**
+ * Which plan the spend pause offers. ONLY THE TWO PLANS ON SALE: the blog
+ * ladder in nextTierFor sent a free account nowhere ("contact support") and a
+ * legacy Creator account to Studio, a plan nobody can buy. Free goes to Amazon,
+ * everything below Pro goes to Pro, Pro and admin have nowhere to go.
+ */
+export function spendUpgradeFor(tier: unknown): { tier: Tier; label: string; limit: number | null } | null {
+  const t = normalizeTier(tier)
+  if (t === 'pro' || t === 'admin') return null
+  const to: Tier = t === 'trial' ? 'amazon' : 'pro'
+  // limit stays null: the ceiling is dollars, and dollars never reach the user.
+  return { tier: to, label: TIERS[to].label, limit: null }
 }
 
 /**
@@ -179,7 +220,7 @@ export async function spendGate(userId: string, tier: unknown): Promise<NextResp
     const globalSpent = await globalDailySpendUsd()
     if (globalSpent >= globalCeiling) {
       return NextResponse.json({
-        error: 'Generation is paused for a short while due to unusually high platform-wide demand. Please try again later — your usage limits are unaffected.',
+        error: 'Generation is paused for a short while due to unusually high platform-wide demand. Please try again later. Your usage limits are unaffected.',
         limitReached: true,
         cap: 'global',
       }, { status: 503 })
@@ -188,12 +229,25 @@ export async function spendGate(userId: string, tier: unknown): Promise<NextResp
 
   const status = await spendStatus(userId, tier)
   if (!status.exceeded) return null
-  const next = nextTierFor(status.tier, 'postsPerMonth')
+  const next = spendUpgradeFor(status.tier)
   // NEVER surface the underlying AI cost/ceiling to the user — no dollars, no
   // "AI usage", no spend object. Keep the pause message about generation only.
+  // A TRIAL NEVER "RESETS ON THE 1ST": its window is one-off, so saying so
+  // promised free AI that was never coming back.
+  if (status.tier === 'trial') {
+    return NextResponse.json({
+      error: status.trialOver
+        ? FREE_TRIAL_OVER_MESSAGE
+        : `You have used the free AI on this trial. ${next ? `Upgrade to ${next.label} to keep making designs.` : 'Upgrade to keep making designs.'}`,
+      limitReached: true,
+      cap: status.trialOver ? 'trial' : 'spend',
+      currentTier: status.tier,
+      upgrade: next,
+    }, { status: 403 })
+  }
   return NextResponse.json({
     error:
-      `Generation is paused on this account for now — it resets on the 1st. ` +
+      `Generation is paused on this account for now. It resets on the 1st. ` +
       `${next ? `Upgrade to ${next.label} for a higher monthly limit.` : 'Contact support if you need it raised sooner.'}`,
     limitReached: true,
     cap: 'spend',

@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { MAX_ITEMS } from '@/lib/launch-batch'
+import { hasVideoTools } from '@/lib/amazon-plan'
 
 export const runtime = 'nodejs'
 
@@ -62,8 +63,8 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Liftoff is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
+  if (!hasVideoTools(integ?.tier)) {
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   const body = await req.json().catch(() => ({})) as { name?: string; timezone?: string }

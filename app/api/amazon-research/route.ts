@@ -104,7 +104,9 @@ export async function GET(request: Request) {
     const isAdmin = tier === 'admin'
     if (tier === 'trial') {
       const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0)
-      const { count } = await supabase
+      // Service role: ai_usage has no member read policy (028), so the
+      // member's own client counted 0 and the daily cap never closed.
+      const { count } = await createAdminClient()
         .from('ai_usage').select('id', { count: 'exact', head: true })
         .eq('user_id', user.id).eq('feature', 'amazon_research')
         .gte('created_at', startOfDay.toISOString())

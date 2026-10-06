@@ -18,7 +18,7 @@ export default function EncorePage() {
 
   if (tier !== null && canUsePreview('on_sale', tier)) return <OnSale />
   // Not on this plan: say so and how to get it, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="Encore" body="Encore finds the products you already reviewed that are on sale today, writes a timely comment and post for each, and pins them, so an old video earns again." />
+  if (tier !== null) return <ProUpgradePanel feature="On sale comments" body="On sale comments finds the products you already reviewed that are on sale today, writes a timely comment and post for each, and pins them, so an old video earns again." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

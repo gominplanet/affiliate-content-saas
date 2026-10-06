@@ -162,7 +162,7 @@ export default function IdeaListsPage() {
         // something to pick from.
         if (l && !l.hasItems && active.url) {
           const ok = await ensureListProducts(active.listId!, active.url)
-          if (!ok) toast('Loaded the first products from Amazon — SCOUT reads the full set in the background.')
+          if (!ok) toast('Loaded the first products from Amazon. SCOUT reads the full set in the background.')
         }
       }
       const payload = active.source === 'synced' ? { listId: active.listId, listUrl: active.url } : { items: active.items }
@@ -212,14 +212,14 @@ export default function IdeaListsPage() {
     if (active.source === 'synced') {
       const l = synced.find(s => s.id === active.listId)
       if (l && !l.hasItems) {
-        if (!active.url) { toast.error('No Amazon link for this list — paste its URL above instead.'); return }
+        if (!active.url) { toast.error('No Amazon link for this list. Paste its URL above instead.'); return }
         // SCOUT reads the list in a hidden background tab (user stays here) and
         // closes it. Falls back to a foreground tab only if SCOUT isn't available.
         setSyncing(true)
         const ok = await ensureListProducts(active.listId!, active.url)
         setSyncing(false)
         if (!ok) { toast.error('Couldn’t finish reading this list. Click Create again to retry.'); return }
-        toast.success('Products synced — building your guide')
+        toast.success('Products synced: building your guide')
       }
     }
     setGenerating(true); setDone(null)
@@ -263,11 +263,11 @@ export default function IdeaListsPage() {
           </div>
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">MVP scores every product against its own ranking criteria — live price, rating, reviews, demand and current deals — and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">MVP scores every product against its own ranking criteria (live price, rating, reviews, demand and current deals) and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
           </div>
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. It writes the post</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">You pick the size (Top 10–20). MVP writes an SEO title, intro, a real blurb per product, a conclusion and a designed thumbnail — each pick with your affiliate link, plus a CTA to your full list.</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">You pick the size (Top 10 to 20). MVP writes an SEO title, intro, a real blurb per product, a conclusion and a designed thumbnail: each pick with your affiliate link, plus a CTA to your full list.</p>
           </div>
         </div>
         <p className="text-[11px] text-[#86868b] mt-3 leading-snug">
@@ -302,7 +302,7 @@ export default function IdeaListsPage() {
           )}
           {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems && (
             <div className="rounded-lg border border-[#7C3AED]/40 bg-[#7C3AED]/10 p-2.5 text-[11px] text-[#5b3aa6] dark:text-[#c9b6ff] mb-3">
-              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, SCOUT reads every product from Amazon in the background (no tab to babysit — you stay right here), then builds the guide automatically.
+              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, SCOUT reads every product from Amazon in the background (no tab to babysit, you stay right here), then builds the guide automatically.
             </div>
           )}
           {/* Mode: MVP picks (auto) vs I choose (manual) */}
@@ -333,7 +333,7 @@ export default function IdeaListsPage() {
           ) : (
             <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tick the products you want <span className="font-normal text-[#86868b]">— ranked by MVP to help you choose</span></p>
+                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tick the products you want <span className="font-normal text-[#86868b]">: ranked by MVP to help you choose</span></p>
                 <p className="text-[12px] font-bold text-[#7C3AED]">{selected.size} selected</p>
               </div>
               {ranking ? (

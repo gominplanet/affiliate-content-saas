@@ -1,3 +1,5 @@
+import { rememberLinkDestination } from '@/lib/social-disclaimer'
+
 const GENIUSLINK_API = 'https://api.geni.us'
 
 /** Optional per-link overrides. When omitted, behavior matches the legacy
@@ -243,6 +245,14 @@ export class GeniuslinkService {
 
   /** Wrap any destination URL and return the short URL + code (for analytics). */
   async createLinkWithCode(destination: string, label: string, opts: CreateLinkOpts = {}): Promise<{ url: string; code: string | null }> {
+    const out = await this.mintLinkWithCode(destination, label, opts)
+    // A geni.us link cannot say where it lands; the code that minted it can.
+    // Recorded for the label in front of it (lib/social-disclaimer).
+    rememberLinkDestination(out.url, destination)
+    return out
+  }
+
+  private async mintLinkWithCode(destination: string, label: string, opts: CreateLinkOpts = {}): Promise<{ url: string; code: string | null }> {
     // Caller-resolved group wins; otherwise fall back to the default
     // (cached lookup of YouTube Links / first enabled group).
     const groupId = opts.groupId ?? (await this.getDefaultGroupId())

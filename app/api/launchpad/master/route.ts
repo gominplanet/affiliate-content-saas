@@ -13,6 +13,7 @@ import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcri
 import { cuesToText } from '@/lib/shorts-transcript'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { recordUsage } from '@/lib/ai-usage'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -104,7 +105,13 @@ export async function POST(req: Request) {
   void (async () => {
     try {
       const [t, textThumb] = await Promise.allSettled([
-        (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
+        (async () => {
+          if (!transcriptionConfigured()) return ''
+          const cues = await transcribeToCues(videoUrl)
+          // A Whisper run is paid whatever it returns; booked so it reaches the ceiling.
+          recordUsage({ userId: user.id, tier, feature: 'launchpad_transcribe', model: 'fal-whisper', images: 1 })
+          return cuesToText(cues).slice(0, 20000)
+        })(),
         seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, faceId, noHuman }),
       ])
       const patch: Record<string, unknown> = {}

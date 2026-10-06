@@ -14,7 +14,7 @@ import AffiliateSetup from '@/components/amazon/AffiliateSetup'
 import PageExplainer from '@/components/amazon/PageExplainer'
 
 export const metadata: Metadata = {
-  title: 'Social Influencer — Amazon Influencer',
+  title: 'Social designs',
   description: 'Turn a thumbnail into Pinterest, Instagram and Facebook posts.',
 }
 
@@ -25,7 +25,7 @@ export default function AmazonSocialPage() {
         <div className="flex items-center gap-2 mb-3">
           <Share2 size={14} className="text-[#d97706]" />
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
-            Amazon Influencer · Social Influencer
+            Share · Social designs
           </span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>

@@ -149,7 +149,7 @@ export default function ProductSignalCard({
 
         {m.hasVideo && (
           <div className="inline-flex items-center gap-1 text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 w-fit"
-               title="This listing has a product-carousel video — great for a Short or Reel">
+               title="This listing has a product-carousel video: great for a Short or Reel">
             <Video size={12} /> Has video
           </div>
         )}

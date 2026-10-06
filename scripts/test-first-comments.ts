@@ -4,7 +4,7 @@
 // Encore adding its sale to that comment instead of a second one.
 
 import { readFileSync } from 'node:fs'
-import { firstCommentDue } from '../lib/first-comments'
+import { firstCommentDue, statusBatches } from '../lib/first-comments'
 import { productLinkIn, withLinkDisclosure, fallbackFirstComment } from '../lib/first-comment-text'
 import { canUsePreview } from '../lib/labs-preview'
 
@@ -23,9 +23,14 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
     !firstCommentDue({ publish_at: iso(now + 5 * H), last_checked_at: iso(now - 10 * H) }, now))
   check('its time has come: asked every run for a day',
     firstCommentDue({ publish_at: iso(now - 0.2 * H), last_checked_at: iso(now - 0.1 * H) }, now))
+  // On shared six-hour slots (2026-10-07), so a login's videos come due in the
+  // same run and share one batched call. Pinned to 03:00 UTC, mid-slot.
+  const mid = Date.UTC(2026, 9, 7, 3, 0, 0)
   check('no schedule: at most every six hours',
-    !firstCommentDue({ publish_at: null, last_checked_at: iso(now - 2 * H) }, now)
-    && firstCommentDue({ publish_at: null, last_checked_at: iso(now - 7 * H) }, now))
+    !firstCommentDue({ publish_at: null, last_checked_at: iso(mid - 2 * H) }, mid)
+    && firstCommentDue({ publish_at: null, last_checked_at: iso(mid - 7 * H) }, mid))
+  check('videos last checked at different times come due in the same run',
+    [0.5, 2, 5].every((h) => firstCommentDue({ publish_at: null, last_checked_at: iso(Date.UTC(2026, 9, 7, 6, 0, 0) - h * H) }, Date.UTC(2026, 9, 7, 6, 5, 0))))
   const CRON = read('app/api/cron/first-comments/route.ts')
   check('the job only checks the due ones, and is scheduled',
     /\.filter\(\(r\) => firstCommentDue\(r, now\)\)/.test(CRON) && /"\/api\/cron\/first-comments"/.test(read('vercel.json')))
@@ -37,7 +42,7 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   check('only a public video gets the comment, from its own channel',
     inOrder(L, "if (status.privacy !== 'public')", 'yt.postComment(') && inOrder(L, 'me.id !== status.channelId', 'yt.postComment('))
   check('what happened is saved: posted with the id, or failed with why, and a used-up quota waits',
-    /state: 'posted', comment_id: id/.test(L) && /state: 'failed', last_error: error/.test(L) && /if \(\/quota\/i\.test\(msg\)\)/.test(L))
+    /state: 'posted', comment_id: id/.test(L) && /state: 'failed', last_error: error/.test(L) && /if \(isQuotaError\(e\)\) \{\s*\/\/ A used-up daily limit/.test(L))
   const R = read('app/api/youtube/first-comment/route.ts')
   check('a video never gets a second first comment', inOrder(R, "existing?.state === 'posted' && existing.comment_id", 'postFirstCommentIfPublic('))
   check('it is Pro (out of Labs, September), behind the same switch', /canUsePreview\('first_comment'/.test(R) && canUsePreview('first_comment', 'admin') && canUsePreview('first_comment', 'pro') && !canUsePreview('first_comment', 'trial'))
@@ -127,6 +132,54 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
   check('every first comment problem can be tried again or dismissed',
     /onClick=\{\(\) => void retry\(r\)\}/.test(CP) && /onClick=\{\(\) => void dismiss\(r\.id\)\}/.test(CP)
     && /body\.action === 'dismiss'/.test(read('app/api/youtube/first-comment/[id]/route.ts')))
+}
+
+// 2026-10-07: forgetting a deleted video deleted its row, and the row's blog
+// posts, drafts, scheduled posts and clips went with it (on delete cascade).
+check('a deleted video keeps its row when anything was made from it',
+  /if \(vid\?\.id && !\(await holdsMadeContent\(sb, vid\.id\)\)\) await sb\.from\('youtube_videos'\)\.delete\(\)/.test(read('lib/first-comments.ts'))
+  && /for \(const table of \['blog_posts', 'social_drafts', 'scheduled_posts', 'youtube_shorts'\]\)/.test(read('lib/first-comments.ts')))
+
+// 2026-10-06: the shared 10,000 a day ran out most days, and every waiting
+// video cost a unit each run for its first day. One videos.list call answers
+// 50 videos for the same unit, so the cron asks per login, 50 at a time.
+{
+  const rows = [
+    ...Array.from({ length: 120 }, (_, i) => ({ id: `a${i}`, user_id: 'u1', channel_id: 'UCa' as string | null })),
+    ...Array.from({ length: 3 }, (_, i) => ({ id: `b${i}`, user_id: 'u1', channel_id: null as string | null })),
+    { id: 'c0', user_id: 'u2', channel_id: 'UCa' as string | null },
+  ]
+  const b = statusBatches(rows)
+  check('one status call per login per up to 50 videos',
+    b.map((x) => x.length).join(',') === '50,50,20,3,1'
+    && b.every((x) => x.every((r) => r.user_id === x[0].user_id && r.channel_id === x[0].channel_id)), b.map((x) => x.length).join(','))
+  check('the longest waiting are still asked first', b[0][0].id === 'a0' && statusBatches([rows[121], rows[0]])[0][0].id === 'b1')
+  const YT = read('services/youtube/index.ts')
+  check('the batched check asks 50 ids per videos.list call, with the parts the single check uses',
+    /async getVideoStatuses\(videoIds: string\[\]\)/.test(YT) && /part: 'snippet,status', id: uniq\.slice\(i, i \+ 50\)\.join\(','\)/.test(YT))
+  const CRON = read('app/api/cron/first-comments/route.ts')
+  check('the cron asks once per batch and hands each row its answer',
+    /for \(const batch of statusBatches\(askable\)\)/.test(CRON)
+    && (CRON.match(/getVideoStatuses\(/g) ?? []).length === 1 && !/getVideoStatus\(/.test(CRON)
+    && /await postFirstCommentIfPublic\(sb, row, pre\.get\(row\.id\)\)/.test(CRON))
+  check('a batch that threw is no answer for every row in it, and a quota refusal stops further batches',
+    /catch \(e\) \{[^}]*for \(const r of batch\) pre\.set\(r\.id, \{ error: e \}\)\s*if \(isQuotaError\(e\)\) refused = true/.test(CRON)
+    && /if \(refused\) \{ notAsked \+= batch\.length; continue \}/.test(CRON))
+  check('absent from the batch answer is "cannot see", not gone', /pre\.set\(r\.id, \{ status: seen\.get\(r\.youtube_video_id\) \?\? null \}\)/.test(CRON))
+  const L = read('lib/first-comments.ts')
+  check('a failed batch writes nothing off: the row waits before any fail, fallback or delete',
+    /if \(pre && 'error' in pre\) return noAnswer\(pre\.error\)/.test(L)
+    && inOrder(L, "if (pre && 'error' in pre) return noAnswer(", 'const others = ')
+    && inOrder(L, "if (pre && 'error' in pre) return noAnswer(", "from('video_first_comments').delete()")
+    && /const noAnswer = async[\s\S]{0,400}update\(\{\s*last_checked_at: at,/.test(L) && !/const noAnswer = async[\s\S]{0,400}state: 'failed'/.test(L))
+  check('without a batched answer the status is asked as before (the Post button)',
+    /if \(pre\) status = pre\.status\s*else \{\s*try \{ status = await yt\.getVideoStatus\(row\.youtube_video_id\) \}/.test(L)
+    && /postFirstCommentIfPublic\(admin, row\)/.test(read('app/api/youtube/first-comment/route.ts')))
+  check('quota is read with isQuotaError everywhere here', /isQuotaError\(e\)/.test(L) && !/\/quota\/i/.test(L))
+  const now = Date.parse('2026-09-25T12:00:00Z')
+  check('a known time still ahead is not asked about even once',
+    !firstCommentDue({ publish_at: new Date(now + 60_000).toISOString(), last_checked_at: null }, now)
+    && firstCommentDue({ publish_at: new Date(now - 60_000).toISOString(), last_checked_at: null }, now))
 }
 
 if (failures.length) {

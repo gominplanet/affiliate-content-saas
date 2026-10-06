@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
-import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
+import MadeBefore from '@/components/product/MadeBefore'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
@@ -39,6 +40,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [faceId, setFaceId] = useState('')
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [reusedNote, setReusedNote] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
@@ -148,6 +150,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No design came back. Try again.')
       setThumbUrl(url)
+      // Facebook reuses the product's thumbnail or Instagram design rather than
+      // designing a new one; say so, so a reused picture never passes for new.
+      setReusedNote(typeof data.reusedNote === 'string' ? data.reusedNote : null)
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
@@ -185,13 +190,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       // Tell the queue on this page to reload, so a post they just scheduled
       // appears in the list right below instead of after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
-      // Publishing is the approval. Remember the design against the product so
-      // the next surface can offer it back. Skipped when this WAS the recalled
-      // image — re-uploading identical bytes buys nothing.
-      if (!usingSaved && thumbUrl) {
-        const a = /^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : asinFromAmazonUrl(raw)
-        if (a) void saveProductImage({ asin: a, imageUrl: thumbUrl, surface: cfg.label })
-      }
+      // The design itself was kept as this product's Instagram or Facebook
+      // design when it was made (lib/design-memory), and is NOT saved over the
+      // product's 16:9 thumbnail, where it became the next YouTube thumbnail.
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Post failed. Try again.')
     } finally { setPubBusy(false) }
@@ -268,6 +269,12 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
           </>
         )}
         <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
+        {/* A design of this exact shape MVP already made: post it again for free. */}
+        <div className="empty:hidden">
+          <MadeBefore asin={resolvedAsin} only={['design']} formats={[cfg.format]}
+            heading={`You already have a ${cfg.label} design for this product. Reuse it for free, or design a new one.`}
+            onUseImage={(url) => { setThumbUrl(url); setUsingSaved(true); if (product.trim()) writeCaption(product.trim()) }} />
+        </div>
         {saved && (
           <SavedProductImage
             saved={saved}
@@ -280,9 +287,14 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
-          {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
+          {genBusy ? <><Loader2 size={16} className="animate-spin" /> {network === 'facebook' ? 'Getting the picture…' : 'Designing…'}</> : <><Wand2 size={16} /> {network === 'facebook' ? 'Use this product\'s picture' : thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
         </button>
         {genError && <p className="text-[13px] text-[#b91c1c] dark:text-[#f87171] flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5" />{genError}</p>}
+        {network === 'facebook' && !genError && (
+          <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+            {reusedNote || 'Facebook uses the thumbnail or Instagram design you already have for this product. With neither, MVP makes the product\'s thumbnail once and reuses it everywhere.'}
+          </p>
+        )}
       </div>
 
       {thumbUrl && (
@@ -343,10 +355,16 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
               <div className={`flex flex-col gap-1.5 rounded-lg border p-3 ${result.note ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-[#34c759]/30 bg-[#34c759]/5'}`}>
                 {result.scheduledAt ? (
                   <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}><CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}</span>
-                ) : (
+                ) : result.postUrl ? (
                   <a href={result.postUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
                     {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Posted <ExternalLink size={13} />
                   </a>
+                ) : (
+                  // NO ADDRESS, NO LINK. Instagram did not report this post's
+                  // address, and a guessed one was dead, so it says Posted only.
+                  <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
+                    {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Posted
+                  </span>
                 )}
                 {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
               </div>

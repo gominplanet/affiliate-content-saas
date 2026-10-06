@@ -139,7 +139,7 @@ function DigestToggle() {
       if (!res.ok) { setEnabled(!next); toast.error(data.error || 'Could not update.'); return }
       // Trust the server's persisted value so the button reflects reality.
       setEnabled(data.enabled === true)
-      toast.success(data.enabled ? 'Weekly digest on — a "top deals in your niche" roundup will auto-post to your blog each week.' : 'Weekly digest off.')
+      toast.success(data.enabled ? 'Weekly digest on: a "top deals in your niche" roundup will auto-post to your blog each week.' : 'Weekly digest off.')
     } catch { setEnabled(!next); toast.error('Could not update.') } finally { setSaving(false) }
   }
   if (enabled === null) return null
@@ -160,13 +160,13 @@ function DigestToggle() {
               <button onClick={() => setShowInfo(false)} className="text-muted-foreground hover:text-foreground"><CloseIcon size={14} /></button>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Turn this on and MVP <strong className="text-foreground">automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week</strong> — completely hands-off.
+              Turn this on and MVP <strong className="text-foreground">automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week</strong>: completely hands-off.
             </p>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground leading-relaxed list-disc pl-4">
               <li>Picks the best <strong className="text-foreground">price-verified</strong> deals in your niche (no fake markdowns).</li>
               <li>Wraps every product in <strong className="text-foreground">your affiliate link</strong>.</li>
               <li>Publishes a full post to your site with the affiliate disclosure + SEO built in.</li>
-              <li>It only posts to your <strong className="text-foreground">blog</strong> — nothing goes to your socials.</li>
+              <li>It only posts to your <strong className="text-foreground">blog</strong>: nothing goes to your socials.</li>
             </ul>
             <p className="text-[11px] text-muted-foreground mt-2">Toggle off anytime; nothing already published is removed.</p>
           </div>
@@ -292,9 +292,11 @@ export default function DealRadarPage() {
       const res = await fetch('/api/deal-radar/roundup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asins: [...selected] }),
       })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Could not build the roundup.'); return }
-      toast.success(`Roundup post published — ${data.count} deals.`)
+      // A gateway timeout is an HTML page, and the roundup may still be
+      // publishing behind it, so that case says so instead of "could not".
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || (res.status >= 502 ? TIMED_OUT_POST : 'Could not build the roundup.'), { duration: 12000 }); return }
+      toast.success(`Roundup post published: ${data.count} deals.`)
       setSelected(new Set())
       if (data.url) window.open(data.url, '_blank')
     } catch { toast.error('Could not build the roundup.') } finally { setRoundupBusy(false) }
@@ -439,7 +441,7 @@ export default function DealRadarPage() {
         <a href="/billing" className="flex items-center gap-2.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm transition hover:bg-violet-500/15">
           <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white flex-shrink-0"><Sparkles size={14} /></span>
           <span className="text-foreground">
-            <strong>You&apos;re on the free plan — browse every deal.</strong>{' '}
+            <strong>You&apos;re on the free plan. Browse every deal.</strong>{' '}
             <span className="text-muted-foreground">Upgrade to turn any deal into a blog post or social post in one click.</span>
           </span>
           <ArrowRight size={15} className="ml-auto flex-shrink-0 text-violet-600" />
@@ -457,7 +459,7 @@ export default function DealRadarPage() {
       {ticker.length > 0 && (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-2">
-            <TrendingUp size={14} /> Double wins — on sale AND paying a bounty
+            <TrendingUp size={14} /> Double wins: on sale AND paying a bounty
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {ticker.map((d) => (
@@ -513,10 +515,10 @@ export default function DealRadarPage() {
             title="Only deals whose ASIN matches a campaign in your uploaded Creator Connections catalog (pays an elevated commission)">Creator Connections</FilterToggle>
           <FilterToggle active={lightningOnly} onClick={() => setLightningOnly((v) => !v)} icon={<Zap size={14} />}
             tone="amber"
-            title="Only Amazon Lightning Deals — time-limited flash sales">Lightning</FilterToggle>
+            title="Only Amazon Lightning Deals: time-limited flash sales">Lightning</FilterToggle>
           <FilterToggle active={videoOnly} onClick={() => setVideoOnly((v) => !v)} icon={<Video size={14} />}
             tone="fuchsia"
-            title="Only listings with a product-carousel video — better conversion, and ready-made b-roll for a Short or Reel">Has video</FilterToggle>
+            title="Only listings with a product-carousel video: better conversion, and ready-made b-roll for a Short or Reel">Has video</FilterToggle>
 
           <div className="ml-auto flex items-center gap-2">
             {hasFilters && (
@@ -628,6 +630,8 @@ export default function DealRadarPage() {
 // occasion:'auto' → a "low price alert" article year-round when no event.
 // Shared by the main DealCard and the double-win TickerCard so both get the
 // same "Writing… → View post" flow.
+const TIMED_OUT_POST = 'No answer in time. The post may still be publishing, so check your blog before trying again.'
+
 function useMakePost(d: Deal) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
@@ -639,7 +643,7 @@ function useMakePost(d: Deal) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ asin: d.asin, occasion: 'auto', ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
       })
-      return { res, data: await res.json() }
+      return { res, data: await res.json().catch(() => ({})) }
     }
     try {
       let { res, data } = await submit(false)
@@ -650,7 +654,7 @@ function useMakePost(d: Deal) {
         if (!ok) { setGen('idle'); return }
         ;({ res, data } = await submit(true))
       }
-      if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
+      if (!res.ok) { toast.error(data.error || (res.status >= 502 ? TIMED_OUT_POST : 'Could not create the post.'), { duration: 12000 }); setGen('idle'); return }
       setPostUrl(data.url || null); setGen('done')
       toast.success('Deal post published.')
       // Auto-watch the product so we can alert if it hits a new low or the price
@@ -685,7 +689,7 @@ function SaveDealButton({ deal: d, variant = 'quiet' }: { deal: Deal; variant?: 
           rating: d.rating, hasVideo: d.hasVideo, marketplace: 'us',
         }),
       })
-      if (res.ok) { setSaved(true); toast.success('Saved — make the post in Social Influencer') }
+      if (res.ok) { setSaved(true); toast.success('Saved. Make the post in Social designs') }
       else toast.error('Could not save. Try again.')
     } catch { toast.error('Could not save. Try again.') } finally { setBusy(false) }
   }, [d, saved, busy])
@@ -697,7 +701,7 @@ function SaveDealButton({ deal: d, variant = 'quiet' }: { deal: Deal; variant?: 
       return (
         <a href="/amazon/social"
           className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 transition">
-          <Check size={14} /> Saved — make the post <ArrowRight size={13} />
+          <Check size={14} /> Saved: make the post <ArrowRight size={13} />
         </a>
       )
     }
@@ -783,7 +787,7 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
       {d.postedUrl && gen !== 'done' && (
         <a href={d.postedUrl} target="_blank" rel="noopener noreferrer"
            className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
-          <Check size={12} /> You&apos;ve posted this — view it
+          <Check size={12} /> You&apos;ve posted this. View it
         </a>
       )}
       {locked ? (
@@ -936,7 +940,7 @@ function VerdictBadge({ verdict: v }: { verdict: DealVerdict }) {
 // stays a handy reference once they do. Dismissible (remembered per browser).
 function HowItWorks({ onDismiss }: { onDismiss: () => void }) {
   const steps = [
-    { icon: <Search size={16} />, title: 'Browse live deals', body: 'Filter by niche, discount, and rating — or search for anything.' },
+    { icon: <Search size={16} />, title: 'Browse live deals', body: 'Filter by niche, discount, and rating, or search for anything.' },
     { icon: <ShieldCheck size={16} />, title: 'Trust the badge', body: 'We check each deal’s price history. Green = a genuine low. Amber = a fake discount to skip.' },
     { icon: <TrendingUp size={16} />, title: 'Catch double wins', body: 'The green strip up top = on sale AND paying you an elevated commission.' },
     { icon: <Send size={16} />, title: 'Publish in one move', body: 'Make a blog post for SEO, or Quick post straight to your socials. Your affiliate link is attached for you.' },
@@ -959,7 +963,7 @@ function HowItWorks({ onDismiss }: { onDismiss: () => void }) {
       <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span className="font-semibold text-foreground">Badges:</span>
         <span className="inline-flex items-center gap-1"><ShieldCheck size={12} className="text-emerald-700" /> All-time low / real discount</span>
-        <span className="inline-flex items-center gap-1"><ShieldAlert size={12} className="text-amber-600" /> Around usual price — likely fake</span>
+        <span className="inline-flex items-center gap-1"><ShieldAlert size={12} className="text-amber-600" /> Around usual price, likely fake</span>
         <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-emerald-700" /> Pays a Creator Connections bounty</span>
       </div>
     </div>
@@ -974,47 +978,47 @@ function DealRadarGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Radar size={18} />,
       title: 'What Deal Radar is',
-      body: <>Deal Radar scans Amazon for real, live price drops in your niche and refreshes every few hours. Instead of hunting for something to promote, you open the page and the deals are already waiting — each one ready to become a blog post or a social post with your affiliate link built in.</>,
+      body: <>Deal Radar scans Amazon for real, live price drops in your niche and refreshes every few hours. Instead of hunting for something to promote, you open the page and the deals are already waiting: each one ready to become a blog post or a social post with your affiliate link built in.</>,
     },
     {
       icon: <BadgePercent size={18} />,
       title: 'Reading a deal card',
-      body: <>Every card shows the current price, the discount, the star rating and review count, and — when we know it — how many people <strong>bought it this month</strong> (real demand) and your <strong>estimated commission per sale</strong>. The bigger the discount, the demand, and the payout, the better the opportunity.</>,
+      body: <>Every card shows the current price, the discount, the star rating and review count, and (when we know it) how many people <strong>bought it this month</strong> (real demand) and your <strong>estimated commission per sale</strong>. The bigger the discount, the demand, and the payout, the better the opportunity.</>,
     },
     {
       icon: <ShieldCheck size={18} />,
       title: 'The trust badge (this is the important one)',
       body: <>A “40% off” sticker means nothing if the price was quietly raised first. We check each product’s real price history and score it for you:
         <span className="mt-2 flex flex-col gap-1.5">
-          <span className="inline-flex items-start gap-1.5"><ShieldCheck size={14} className="text-emerald-600 mt-0.5 shrink-0" /> <span><strong>Green — all-time low / genuine discount.</strong> The deal is real. Promote with confidence.</span></span>
-          <span className="inline-flex items-start gap-1.5"><ShieldAlert size={14} className="text-amber-600 mt-0.5 shrink-0" /> <span><strong>Amber — around its usual price.</strong> The “discount” is likely fake. Skip it, or wait.</span></span>
+          <span className="inline-flex items-start gap-1.5"><ShieldCheck size={14} className="text-emerald-600 mt-0.5 shrink-0" /> <span><strong>Green: all-time low / genuine discount.</strong> The deal is real. Promote with confidence.</span></span>
+          <span className="inline-flex items-start gap-1.5"><ShieldAlert size={14} className="text-amber-600 mt-0.5 shrink-0" /> <span><strong>Amber: around its usual price.</strong> The “discount” is likely fake. Skip it, or wait.</span></span>
         </span>
         Turn on the <strong>Real deals</strong> filter to hide the fakes entirely.</>,
     },
     {
       icon: <Sparkles size={18} />,
       title: 'Double wins & Creator Connections',
-      body: <>The green strip at the top of the page is the jackpot: products that are <strong>on sale AND paying you an elevated Creator Connections bounty</strong> at the same time. A <span className="inline-flex items-center gap-0.5 font-medium text-emerald-700 dark:text-emerald-400"><Sparkles size={12} /> +% Creator Connections</span> line on any card means Amazon is paying extra to promote it right now — that rate is exact, not an estimate.</>,
+      body: <>The green strip at the top of the page is the jackpot: products that are <strong>on sale AND paying you an elevated Creator Connections bounty</strong> at the same time. A <span className="inline-flex items-center gap-0.5 font-medium text-emerald-700 dark:text-emerald-400"><Sparkles size={12} /> +% Creator Connections</span> line on any card means Amazon is paying extra to promote it right now. That rate is exact, not an estimate.</>,
     },
     {
       icon: <Flame size={18} />,
       title: '“Best opportunity” & Top pick',
-      body: <>The default sort is <strong>Best opportunity</strong> — a single score that blends discount depth, whether the deal is genuine, real monthly demand, review count, and any bounty. Cards scoring near the top get a <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400"><Flame size={12} /> Top pick</span> badge. Start there and you’re promoting the strongest deals first.</>,
+      body: <>The default sort is <strong>Best opportunity</strong>: a single score that blends discount depth, whether the deal is genuine, real monthly demand, review count, and any bounty. Cards scoring near the top get a <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400"><Flame size={12} /> Top pick</span> badge. Start there and you’re promoting the strongest deals first.</>,
     },
     {
       icon: <Zap size={18} />,
       title: 'Lightning deals',
-      body: <>A <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Zap size={12} /> Lightning</span> deal only runs for a few hours — the card shows a live “Ends in Xh Ym” countdown so you can post while it’s hot. The <strong>Lightning</strong> filter shows only deals whose window is still open; once one ends it drops out automatically.</>,
+      body: <>A <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Zap size={12} /> Lightning</span> deal only runs for a few hours. The card shows a live “Ends in Xh Ym” countdown so you can post while it’s hot. The <strong>Lightning</strong> filter shows only deals whose window is still open; once one ends it drops out automatically.</>,
     },
     {
       icon: <Search size={18} />,
       title: 'Filters, sorting & saved searches',
-      body: <>Narrow the feed by category, minimum discount, rating, <strong>Real deals</strong>, <strong>Creator Connections</strong>, <strong>Lightning</strong>, or <strong>Has video</strong> (listings with a product-carousel video — better conversion, and ready-made b-roll for a Short or Reel) — or just search (“air fryer”, “dog bed”). Sort by best opportunity, biggest discount, best sellers, highest commission, or ending soonest. Found a combination you like? Hit <strong>Save these filters</strong> and it becomes a one-tap chip next time.</>,
+      body: <>Narrow the feed by category, minimum discount, rating, <strong>Real deals</strong>, <strong>Creator Connections</strong>, <strong>Lightning</strong>, or <strong>Has video</strong> (listings with a product-carousel video, better conversion, and ready-made b-roll for a Short or Reel), or just search (“air fryer”, “dog bed”). Sort by best opportunity, biggest discount, best sellers, highest commission, or ending soonest. Found a combination you like? Hit <strong>Save these filters</strong> and it becomes a one-tap chip next time.</>,
     },
     {
       icon: <ArrowRight size={18} />,
       title: 'Turn a deal into a blog post',
-      body: <><strong>Make blog post</strong> writes a full, SEO-complete article for the product and publishes it to your WordPress — headline, FAQ, internal links, image alt text, and the required affiliate disclosure are all handled. Pricing is written in <strong>relative</strong> terms (“a great price right now”, “X% off”) rather than an exact dollar figure, so the post doesn’t go stale the moment the price shifts.</>,
+      body: <><strong>Make blog post</strong> writes a full, SEO-complete article for the product and publishes it to your WordPress. Headline, FAQ, internal links, image alt text, and the required affiliate disclosure are all handled. Pricing is written in <strong>relative</strong> terms (“a great price right now”, “X% off”) rather than an exact dollar figure, so the post doesn’t go stale the moment the price shifts.</>,
     },
     {
       icon: <Send size={18} />,
@@ -1024,17 +1028,17 @@ function DealRadarGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Layers size={18} />,
       title: 'Roundups',
-      body: <>Tap <strong>＋ Add to roundup</strong> on a few cards, then <strong>Create roundup post</strong> to bundle your hand-picked deals into one curated “best deals” article — perfect for a weekly “Top 5 in [niche]” post. Pick at least two.</>,
+      body: <>Tap <strong>＋ Add to roundup</strong> on a few cards, then <strong>Create roundup post</strong> to bundle your hand-picked deals into one curated “best deals” article: perfect for a weekly “Top 5 in [niche]” post. Pick at least two.</>,
     },
     {
       icon: <TrendingUp size={18} />,
       title: 'Price Alerts & keeping posts fresh',
-      body: <>On your dashboard, <strong>Price Alerts</strong> tells you when a product you’ve posted about hits a genuine new all-time low (a reason to re-share) or when its price drifted from what your post implies. One tap re-posts the drop, or <strong>Refresh price</strong> quietly updates the wording in your existing post to match reality — no rewrite needed.</>,
+      body: <>On your dashboard, <strong>Price Alerts</strong> tells you when a product you’ve posted about hits a genuine new all-time low (a reason to re-share) or when its price drifted from what your post implies. One tap re-posts the drop, or <strong>Refresh price</strong> quietly updates the wording in your existing post to match reality: no rewrite needed.</>,
     },
     {
       icon: <Mail size={18} />,
       title: 'Weekly digest',
-      body: <>Flip the <strong>Weekly digest</strong> toggle (top right) and MVP automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week — price-verified picks, your affiliate links, hands-off. It posts to your blog only; nothing goes to your socials.</>,
+      body: <>Flip the <strong>Weekly digest</strong> toggle (top right) and MVP automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week. Price-verified picks, your affiliate links, hands-off. It posts to your blog only; nothing goes to your socials.</>,
     },
   ]
 
@@ -1066,14 +1070,14 @@ function DealRadarGuide({ onClose }: { onClose: () => void }) {
             </div>
           ))}
           <div className="rounded-lg bg-muted/60 px-3.5 py-3 text-[12px] text-muted-foreground leading-relaxed">
-            <strong className="text-foreground">Affiliate links & disclosure are automatic.</strong> Whether you make a blog post or a quick social post, your Amazon tag (or Geniuslink) is attached and the FTC affiliate disclosure is added for you — you never have to paste a link or a disclaimer by hand.
+            <strong className="text-foreground">Affiliate links & disclosure are automatic.</strong> Whether you make a blog post or a quick social post, your Amazon tag (or Geniuslink) is attached and the FTC affiliate disclosure is added for you. You never have to paste a link or a disclaimer by hand.
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t shrink-0">
           <span className="text-xs text-muted-foreground">You can reopen this anytime from <span className="font-medium text-foreground">Full guide</span> at the top.</span>
-          <Button size="sm" onClick={onClose}>Got it — show me the deals</Button>
+          <Button size="sm" onClick={onClose}>Got it: show me the deals</Button>
         </div>
       </div>
     </div>
@@ -1107,7 +1111,7 @@ function EmptyState({ hasFilters, isAdmin, onClear, onRefresh }: { hasFilters: b
       {/* Non-interactive preview so the page shows what real deals look like. */}
       <div className="mt-10">
         <div className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Example — this is what your deals will look like
+          Example: this is what your deals will look like
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-w-3xl mx-auto pointer-events-none select-none opacity-90">
           {SAMPLE_DEALS.map((s, i) => <SampleCard key={i} s={s} />)}

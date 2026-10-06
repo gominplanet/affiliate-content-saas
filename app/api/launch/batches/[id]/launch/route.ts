@@ -28,6 +28,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { scheduleItems, datesBeforeToday, cadenceLabel } from '@/lib/launch-schedule'
 import { withOwnSchedules, withYouTubeChoice, withAmazonLater, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { hasVideoTools } from '@/lib/amazon-plan'
+import { usesStudioUpload } from '@/lib/studio-upload'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -39,8 +41,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Liftoff is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
+  if (!hasVideoTools(integ?.tier)) {
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,8 +100,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // uploader will use, costs one quota unit and cannot be skipped.
   if (!amazonOnly && batch.youtube_channel_id) {
     const { live, error: liveErr } = await liveUploadChannel(sb, user.id, batch.youtube_channel_id)
-    if (!live) return NextResponse.json({ error: liveErr || 'YouTube did not say which channel this login uploads to.' }, { status: 409 })
-    if (live.id !== batch.youtube_channel_id) {
+    // A USED-UP ALLOWANCE IS NOT A WRONG CHANNEL. A batch SCOUT uploads in
+    // Studio checks the channel there itself (Studio on another channel stops
+    // it with "wrong-channel", nothing uploaded), so the quota running out
+    // does not stop it from launching. Every other failed check still does.
+    const quotaOnly = !live && /quota|dailyLimitExceeded/i.test(String(liveErr || '')) && usesStudioUpload(integ?.tier)
+    if (!live && !quotaOnly) return NextResponse.json({ error: liveErr || 'YouTube did not say which channel this login uploads to.' }, { status: 409 })
+    if (live && live.id !== batch.youtube_channel_id) {
       const { data: named } = await sb.from('youtube_channels').select('channel_title')
         .eq('user_id', user.id).eq('channel_id', batch.youtube_channel_id).maybeSingle()
       return NextResponse.json({ error: wrongChannelMessage(String(named?.channel_title || batch.youtube_channel_id), live.title) }, { status: 409 })
@@ -226,6 +233,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const { error: nowErr } = await sb.from('launch_items')
       .update({ publish_now: true }).in('id', nowIds).eq('user_id', user.id)
     if (nowErr) publishNowRecorded = false
+  }
+  // AND THE REST ARE NOT "NOW", even if an earlier launch said they were. A
+  // held video given a new time kept its old flag and went public early.
+  // Allowed to fail for the same reason as above.
+  {
+    const laterIds = ready.map((r) => r.id).filter((rid) => !nowIds.includes(rid))
+    if (laterIds.length > 0) await sb.from('launch_items').update({ publish_now: false }).in('id', laterIds).eq('user_id', user.id)
   }
 
   // ── write the plan onto the rows, and CHECK each write ───────────────────

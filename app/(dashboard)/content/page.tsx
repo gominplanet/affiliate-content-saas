@@ -3,6 +3,7 @@
 // entry after a new client component entered its import graph (a stale build
 // cache dropped content/page.tsx#default from the manifest → RSC render error).
 
+import { canUsePreview } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
@@ -47,6 +48,7 @@ import {
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 import { amazonProductUrlRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
+import MadeBefore from '@/components/product/MadeBefore'
 
 // COST CONTROL (2026-06-12): master switch for every multi-video bulk
 // GENERATION action (bulk generate, bulk schedule, bulk rewrite). Off by
@@ -171,6 +173,9 @@ interface ScheduledItem {
   /** On a blog_publish row: the social platforms queued to cascade after the
    *  post publishes. Summarized as chips on the card. */
   cascade?: string[]
+  /** On a synthetic blog_publish row: the part of `cascade` with a pending
+   *  row. A ticked platform missing here was never queued (not connected). */
+  queued?: string[]
 }
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
@@ -374,7 +379,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       if (updErr) throw new Error(updErr.message || 'Save failed')
       setUrl(publicUrl)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed')
+      setErr(errText(e) || 'Upload failed')
     } finally {
       setBusy(false)
     }
@@ -383,11 +388,13 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
   async function remove() {
     setBusy(true); setErr(null)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      // Supabase reports a refused write in `error`, it does not throw: without
+      // this check the photo vanished here and stayed on the video.
+      const { error: updErr } = await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Remove failed')
       setUrl(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Remove failed')
+      setErr(errText(e) || 'Remove failed')
     } finally {
       setBusy(false)
     }
@@ -483,7 +490,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
       if (updErr) throw new Error(updErr.message || 'Save failed')
       setUrl(publicUrl)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed')
+      setErr(errText(e) || 'Upload failed')
     } finally {
       setBusy(false)
     }
@@ -492,11 +499,13 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
   async function remove() {
     setBusy(true); setErr(null)
     try {
+      // A refused write comes back in `error`, not as a throw (see above).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
+      const { error: updErr } = await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Remove failed')
       setUrl(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Remove failed')
+      setErr(errText(e) || 'Remove failed')
     } finally {
       setBusy(false)
     }
@@ -534,7 +543,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          title="Optional. Upload a custom thumbnail for the blog post's main hero image. If you skip this, the YouTube video's thumbnail is used as the hero — and only the hero (it's never repeated inside the article, since the video is already embedded there)."
+          title="Optional. Upload a custom thumbnail for the blog post's main hero image. If you skip this, the YouTube video's thumbnail is used as the hero, and only the hero (it's never repeated inside the article, since the video is already embedded there)."
           className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-gray-300 dark:border-white/15 text-[#1d1d1f] dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
@@ -547,7 +556,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
         <span className="font-semibold">Blog thumbnail.</span>{' '}
         {url
           ? 'Your uploaded image is this post’s hero. The YouTube video stays embedded inside the article.'
-          : 'Optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero — hero only, never repeated inside the article, since the video is already embedded there.'}
+          : 'Optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero. Hero only, never repeated inside the article, since the video is already embedded there.'}
       </InfoTip>
       {err && <span className="basis-full text-[10px] text-[#ff3b30]">{err}</span>}
     </>
@@ -655,7 +664,7 @@ function CategoryPicker({
         className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none max-w-[180px]"
         title={hasPublishedPost ? 'Change the category on this published post' : 'Pick a category before generating'}
       >
-        <option value="">— Category —</option>
+        <option value="">Category</option>
         {userNiches.length > 0 && (
           <optgroup label="Your brand niches">
             {userNiches.map(c => <option key={c} value={c}>{c}</option>)}
@@ -784,9 +793,9 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
           ?
         </span>
         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 rounded-xl text-[11px] leading-relaxed bg-[#1c1c1e] text-[#f5f5f7] border border-white/10 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity z-30">
-          <b>Brand tags &amp; keywords</b> — if a brand asked you to tag them or include specific
+          <b>Brand tags &amp; keywords</b>: if a brand asked you to tag them or include specific
           hashtags/phrases, add up to {MAX_TAGS} here (e.g. <i>#kingpavonini</i>).
-          Type one and press <b>Enter</b> — it saves instantly and shows as a chip; click a
+          Type one and press <b>Enter</b>: it saves instantly and shows as a chip; click a
           chip&apos;s × to remove it. When you Generate (or Rebuild) this post, they&apos;re inserted
           <b> word-for-word at the very top of the article</b>.
         </span>
@@ -894,6 +903,8 @@ const VideoCard = memo(function VideoCardImpl({
   // actions below. Only meaningful before a post exists / before a schedule is
   // pending; those states show their own rows.
   const [genPanelOpen, setGenPanelOpen] = useState(false)
+  // An earlier post about the same product to build this one on (made-before).
+  const [basedOnPostId, setBasedOnPostId] = useState<string | null>(null)
   // Connected social channels for the cascade list. Only the channels
   // the cron worker can publish to are included (no IG/Pinterest/TikTok
   // — they use their own direct-publish routes).
@@ -1040,6 +1051,10 @@ const VideoCard = memo(function VideoCardImpl({
                 upgrade: data.upgrade,
               },
             )
+            // The button is a spinner while publishingAll is on: leaving it on
+            // here kept "Generating blog post…" spinning forever over a cap.
+            setPublishingAll(false)
+            setPublishAllStep('')
             return
           }
           throw new Error(errText(data.error) || 'Blog generation failed')
@@ -1059,7 +1074,7 @@ const VideoCard = memo(function VideoCardImpl({
         // and-forget with a toast (1-3 min); socials below run in parallel.
         if (newWpPostId && includeImages) {
           const wpId = newWpPostId
-          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
+          toast.loading('Generating in-article images… (1-3 min, runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
           ;(async () => {
             try {
               const ir = await fetch('/api/blog/refresh-images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wordpressPostId: wpId }) })
@@ -1070,7 +1085,7 @@ const VideoCard = memo(function VideoCardImpl({
                 toast.error(`${(idata.error as string) || 'Couldn’t add in-article images.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
               }
             } catch (e) {
-              toast.error(`${e instanceof Error ? e.message : 'Image step failed.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
+              toast.error(`${errText(e) || 'Image step failed.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
             }
           })()
         }
@@ -1083,7 +1098,7 @@ const VideoCard = memo(function VideoCardImpl({
         const stillRunning = /still (being generated|finishing) in the background|taking longer than usual|may have published|likely still finishing/i.test(msg)
         setPublishAllError(
           stillRunning
-            ? 'Post is still generating — it’ll appear in your Library shortly. Once it’s live, click “Publish to all” on that row to post your socials.'
+            ? 'Post is still generating. It’ll appear in your Library shortly. Once it’s live, click “Publish to all” on that row to post your socials.'
             : msg,
         )
         setPublishingAll(false)
@@ -1111,18 +1126,27 @@ const VideoCard = memo(function VideoCardImpl({
       tasks.push(
         fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, ...(extra || {}) }) })
           .then(async (r) => {
-            if (r.ok) { onOk(); postedKeys.push(patchKey); return }
+            if (r.ok) {
+              onOk(); postedKeys.push(patchKey)
+              // A Facebook fan-out answers 200 when ANY Page took it. The Pages
+              // that did not are failures, and are listed with the rest.
+              const ok = await r.json().catch(() => ({})) as { results?: Array<{ ok?: boolean; page?: string | null; error?: string }> }
+              for (const m of (Array.isArray(ok.results) ? ok.results : []).filter(x => x && x.ok === false)) {
+                failures.push(`${label} (${m.page ? `${m.page}: ` : ''}${m.error || 'failed'})`)
+              }
+              return
+            }
             const d = await r.json().catch(() => ({} as { error?: string; rateLimited?: boolean }))
             // Rate limit (e.g. X's free-tier daily cap) → a clean, actionable
             // note rather than a raw HTTP error. The post published everywhere
             // else; the user can retry this one platform later.
             if (r.status === 429 || d.rateLimited) {
-              failures.push(`${label} (daily limit reached — try again later)`)
+              failures.push(`${label} (daily limit reached, try again later)`)
             } else {
               failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
             }
           })
-          .catch((e) => { failures.push(`${label} (${e instanceof Error ? e.message : 'network error'})`) }),
+          .catch((e) => { failures.push(`${label} (${errText(e) || 'network error'})`) }),
       )
     }
 
@@ -1143,16 +1167,21 @@ const VideoCard = memo(function VideoCardImpl({
           const pv = await fetch('/api/blog/pinterest-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
           const d = await pv.json().catch(() => ({} as Record<string, unknown>))
           if (!pv.ok) throw new Error((d.error as string) || `preview failed (HTTP ${pv.status})`)
+          // The SAME description the preview modal posts: write-up, hashtags,
+          // disclaimer, compliance tags. Sending the bare write-up made a
+          // Publish-all pin differ from every pin the creator had previewed.
+          const tags = Array.isArray(d.hashtags) && d.hashtags.length ? (d.hashtags as string[]).map(t => `#${t}`).join(' ') : ''
+          const description = [d.description, tags, d.disclaimer, d.complianceTags].filter(Boolean).join('\n\n')
           const pp = await fetch('/api/blog/pinterest-post', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postId: currentPostId, title: d.title, description: d.description, imageBase64: d.imageBase64, mediaType: d.mediaType, fallbackImageUrl: d.fallbackImageUrl }),
+            body: JSON.stringify({ postId: currentPostId, title: d.title, description, imageBase64: d.imageBase64, mediaType: d.mediaType, fallbackImageUrl: d.fallbackImageUrl }),
           })
           const r = await pp.json().catch(() => ({} as { error?: string }))
           if (!pp.ok) throw new Error(r.error || `Pinterest rejected the pin (HTTP ${pp.status})`)
           setPinPosted(true)
           postedKeys.push('pinterestPinId')
         } catch (e) {
-          failures.push(`Pinterest (${e instanceof Error ? e.message : 'error'})`)
+          failures.push(`Pinterest (${errText(e) || 'error'})`)
         }
       })())
     }
@@ -1239,16 +1268,27 @@ const VideoCard = memo(function VideoCardImpl({
 
   async function handleDelete() {
     if (!post?.postId) return
+    // NOT THE TRASH. /api/blog/delete calls WordPress with force=true, which
+    // skips the trash, so "restorable for ~30 days" promised an undo that
+    // does not exist.
     if (!(await confirm({
       title: 'Delete this post from WordPress and remove it here?',
-      description: 'The post is moved to WordPress\' trash (restorable for ~30 days) and unlinked from this video.',
+      description: 'The post is deleted from WordPress permanently (it skips the WordPress trash) and unlinked from this video.',
       confirmLabel: 'Delete post',
       destructive: true,
     }))) return
     setDeleting(true)
     try {
       const res = await fetch('/api/blog/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: post.postId }) })
+      // A refused delete used to do nothing at all: the spinner stopped and
+      // the card stayed, with no word on why.
       if (res.ok) onDelete(post.postId)
+      else {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        toast.error(d.error || `Could not delete the post (HTTP ${res.status}).`)
+      }
+    } catch (e) {
+      toast.error(errText(e) || 'Could not delete the post.')
     } finally { setDeleting(false) }
   }
 
@@ -1284,7 +1324,7 @@ const VideoCard = memo(function VideoCardImpl({
             ) : (
               <button
                 onClick={onDismiss}
-                title="Hide this video from the list — MVP won't suggest a post for it. Bring it back anytime via 'Show hidden' above the list."
+                title="Hide this video from the list. MVP won't suggest a post for it. Bring it back anytime via 'Show hidden' above the list."
                 className="inline-flex items-center gap-1 text-xs font-medium text-[#ff3b30] hover:text-[#d70015] transition-colors"
               >
                 <X size={11} /> Ignore
@@ -1367,7 +1407,7 @@ const VideoCard = memo(function VideoCardImpl({
               <button
                 type="button"
                 onClick={() => setScheduleOpen(true)}
-                title="Generate now, publish later — pick a date/time and which socials to push"
+                title="Generate now, publish later. Pick a date/time and which socials to push"
                 className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
               >
                 <Calendar size={12} /> Schedule for later
@@ -1439,7 +1479,7 @@ const VideoCard = memo(function VideoCardImpl({
               ) : (
                 <Link
                   href="/pricing"
-                  title="Publish All is a Pro feature — click to upgrade"
+                  title="Publish All is a Pro feature. Click to upgrade"
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-gradient-to-br from-[#7C3AED] to-[#7b61ff] opacity-90 hover:opacity-100 hover:shadow-md transition-all"
                 >
                   <Sparkles size={12} />
@@ -1462,7 +1502,7 @@ const VideoCard = memo(function VideoCardImpl({
                   onClick={() => setScheduleOpen(true)}
                   title={post
                     ? 'Schedule a social cascade for this already-live post'
-                    : 'Generate now, publish later — pick a date/time and which socials to push'}
+                    : 'Generate now, publish later. Pick a date/time and which socials to push'}
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
                 >
                   <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule for later'}
@@ -1494,7 +1534,7 @@ const VideoCard = memo(function VideoCardImpl({
                   Reel/Story/Image choice) so users don't think it's broken. */}
               {instagramConnected && post && (
                 <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                  Instagram posts a video or image, so it&apos;s not in Publish-all — share it from the Instagram button.
+                  Instagram posts a video or image, so it&apos;s not in Publish-all. Share it from the Instagram button.
                 </span>
               )}
             </div>
@@ -1516,11 +1556,26 @@ const VideoCard = memo(function VideoCardImpl({
               Everything below <span className="font-semibold text-[#7C3AED]">Generate post</span> is optional. Hit Generate post and we handle the rest.
             </p>
           )}
+          {/* ALREADY WRITTEN ABOUT THIS PRODUCT. Another video of the same
+              product may already have its post; say so before a new one is
+              paid for, so the creator can link or update that one instead
+              (lib/made-before). */}
+          {(!post && genPanelOpen) && (
+            <div className="mb-2.5 empty:hidden">
+              <MadeBefore asin={(video.asin as string | null) ?? null} video={(video.youtube_video_id as string | null) ?? null}
+                only={['blog', 'deal', 'campaign']}
+                buildOnId={basedOnPostId}
+                onBuildOn={(it) => setBasedOnPostId((cur) => (cur === it.id ? null : it.id))}
+                heading={basedOnPostId
+                  ? 'Building on your earlier post: its facts carry over, the new post is written fresh for this video and links back to it.'
+                  : 'You already have a post about this product. Open it, build the new one on it (it reuses the research), or write a new one.'} />
+            </div>
+          )}
           {/* Fresh Generate-now panel → stack every option vertically so it reads
               as a short checklist. Post-exists rows keep the compact horizontal
               tool row (Generate / Category / Edit / Delete). */}
           <div className={(!post && genPanelOpen) ? 'flex flex-col items-start gap-2.5' : 'flex items-center gap-x-4 gap-y-1.5 flex-wrap'}>
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImagesTouched} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} basedOnPostId={basedOnPostId} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImagesTouched} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1750,7 +1805,7 @@ const VideoCard = memo(function VideoCardImpl({
               {instagramConnected && !!(video as unknown as { instagram_video_url?: string | null }).instagram_video_url && (
                 <button
                   onClick={() => setIgCoverOpen(true)}
-                  title="Pick the still frame Instagram shows as your Reel cover — no need to edit it in the IG app after posting"
+                  title="Pick the still frame Instagram shows as your Reel cover: no need to edit it in the IG app after posting"
                   className="inline-flex items-center gap-1 px-2.5 py-2 rounded-full text-[11px] font-semibold border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
                 >
                   <ImagePlus size={12} /> Reel cover
@@ -1857,6 +1912,9 @@ const VideoCard = memo(function VideoCardImpl({
                   publishTargetLabel: fbPageLabel,
                   // Let the modal show a Page dropdown when >1 connected Page.
                   facebookPages: fbAccounts.map(a => ({ id: a.id, name: a.displayName || 'Facebook Page', isDefault: a.isDefault })),
+                  // Group first, one click (Labs facebook_setup): the Group gets
+                  // the affiliate post, the Page gets a post linking to it.
+                  groupFirst: canUsePreview('facebook_setup', userTier),
                 }
               : {}
             return (
@@ -1928,7 +1986,7 @@ const VideoCard = memo(function VideoCardImpl({
             <div className="rounded-xl border border-[#E1306C]/30 bg-[#E1306C]/5 p-3 flex items-start gap-3">
               <AlertCircle size={14} className="text-[#E1306C] mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story posted — add the affiliate link sticker on your phone (5 sec)</p>
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story posted: add the affiliate link sticker on your phone (5 sec)</p>
                 <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
                   Instagram&apos;s API doesn&apos;t expose link stickers. Open Instagram → your Story → tap sticker icon → Link sticker → paste:
                 </p>
@@ -2007,6 +2065,12 @@ const VideoCard = memo(function VideoCardImpl({
           // through a quick window-level patch below — kept inline so
           // we don't have to widen every onGenerated caller.
           setScheduleOpen(false)
+          // CASCADE-ONLY SCHEDULES THE SOCIALS, NOT THE POST. With a live post
+          // (existingPostId set), schedule-cascade-only never touches
+          // scheduled_for, so patching it here put a "Scheduled" pill on a
+          // published post and hid its Publish-to-all and Schedule-socials
+          // buttons until a reload.
+          if (post?.postId) return
           // Defer to the next tick so onClose's setState has flushed.
           // The patch event handler in the parent's posts state writer
           // merges scheduled_for + schedule_mode in alongside the
@@ -2141,7 +2205,7 @@ function ScheduledList({
         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No scheduled posts yet</p>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm leading-relaxed">
           When you publish to a social, tick <strong>Schedule for later</strong> in the preview modal
-          to queue it for a future time. The cron worker fires automatically — no need to keep the
+          to queue it for a future time. The cron worker fires automatically: no need to keep the
           app open.
         </p>
       </div>
@@ -2212,7 +2276,9 @@ function ScheduledList({
         <ScheduleEditModal
           blogPostId={editSchedule.blog_post_id}
           scheduledAt={editSchedule.scheduled_at}
-          platforms={editSchedule.cascade ?? []}
+          // What is really queued. A ticked-but-unconnected platform used to
+          // show ON here, so it could never be added once it was connected.
+          platforms={editSchedule.queued ?? editSchedule.cascade ?? []}
           title={editSchedule.blog_posts?.title ?? null}
           link={editSchedule.blog_posts?.wordpress_url ?? null}
           bodies={editSchedule.cascadeBodies ?? {}}
@@ -2268,7 +2334,7 @@ function ScheduledList({
           <div
             key={item.id}
             className={`card p-4 flex items-start gap-3 ${indent ? 'ml-8 border-l-2 border-l-[#7C3AED]/40' : ''}`}
-            title={indent ? 'Child of the parent above — fires after the parent publishes' : undefined}
+            title={indent ? 'Child of the parent above. Fires after the parent publishes' : undefined}
           >
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
@@ -2299,6 +2365,20 @@ function ScheduledList({
                   <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Then posts to:</span>
                   {item.cascade.map((p) => {
                     const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: '#7C3AED' }
+                    // TICKED IS NOT QUEUED. A platform chosen while it was not
+                    // connected has no pending push and will not post; a solid
+                    // chip said it would. Dashed, grey, and says so.
+                    if (item.queued && !item.queued.includes(p)) {
+                      return (
+                        <span
+                          key={p}
+                          title={`${m.label} was ticked but is not queued (it was not connected). Connect it, then Edit schedule to add it.`}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-dashed border-[#86868b]/60 text-[#86868b]"
+                        >
+                          {m.label}: not queued
+                        </span>
+                      )
+                    }
                     // Solid chips read clearly in BOTH themes because the brand
                     // color IS the background (theme-independent) with white text.
                     // The black-branded platforms (X, Threads, TikTok) can't use a
@@ -2739,7 +2819,13 @@ export default function ContentPage() {
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const uid = user.id
+    // A VIRTUAL ASSISTANT works in the owner's library: the owner's videos,
+    // posts and brand (readable to a VA, migration 116), and the owner's
+    // connected socials, which every post goes through (lib/agency-publish).
+    // Reading by the VA's own id showed them an empty account.
+    const who = await fetch('/api/agency/whoami', { cache: 'no-store' }).then((r) => r.json()).catch(() => null) as { isVa?: boolean; ownerId?: string } | null
+    const isVa = !!(who?.isVa && who.ownerId)
+    const uid = isVa ? (who!.ownerId as string) : user.id
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -2831,14 +2917,14 @@ export default function ContentPage() {
 
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }, brandTagRows] = await Promise.all([
       fetchAllVideos(),
-      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
+      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', uid).single(),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', uid).single(),
       // `scheduled_for` + `schedule_mode` were added in migration 104.
       // Cast to any because the supabase-generated types haven't been
       // regenerated yet — same pattern as other post-migration selects
       // in the codebase. Drop after `gen types` runs.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,images_hosted_count,images_status,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,images_hosted_count,images_status,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', uid).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -2846,7 +2932,7 @@ export default function ContentPage() {
       // /api/cron/refresh-indexing and on-demand by the SEO page's Check button.
       // Lets us show a ✓ / ⏳ / ✗ badge on the Content page so users don't have
       // to leave to know whether Google has indexed each post.
-      sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', user.id),
+      sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', uid),
       // Per-video brand tags (migration 160), loaded SEPARATELY from the main
       // youtube_videos COLS select on purpose: that select has no column-drop
       // fallback, so a pre-migration DB (column absent) would empty the whole
@@ -2855,7 +2941,7 @@ export default function ContentPage() {
       // Bounded to the same newest-MAX_VIDEOS window the main list loads (same
       // published_at desc order), so we never pull the user's entire catalog a
       // second time just for tags, and every loaded video still gets its tag.
-      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id).order('published_at', { ascending: false, nullsFirst: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
+      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', uid).order('published_at', { ascending: false, nullsFirst: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
     ])
 
     // Merge brand_tags into the video rows by id (best-effort; absent → null).
@@ -2894,6 +2980,20 @@ export default function ContentPage() {
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(metaOn && !!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     setTiktokConnected(!!(i as Record<string, unknown>)?.tiktok_access_token && !!(i as Record<string, unknown>)?.tiktok_open_id)
+    if (isVa) {
+      // The VA's session cannot read the owner's integrations row, so the
+      // flags above all read "not connected". Ask the server, which reads the
+      // owner's connections and sends back only which platforms are on.
+      try {
+        const d = await fetch('/api/social/connected', { cache: 'no-store' }).then((r) => r.json())
+        const on = new Set<string>(Array.isArray(d?.connected) ? d.connected : [])
+        setFbConnected(on.has('facebook')); setPinterestConnected(on.has('pinterest')); setThreadsConnected(on.has('threads'))
+        setLinkedInConnected(on.has('linkedin')); setTwitterConnected(on.has('twitter')); setBlueskyConnected(on.has('bluesky'))
+        setTelegramConnected(on.has('telegram')); setInstagramConnected(on.has('instagram')); setTiktokConnected(on.has('tiktok'))
+      } catch { /* the flags stay off, and posting says why */ }
+      // The owner's WordPress is set up if they have published posts.
+      setChecks((c) => (c ? { ...c, wpReady: c.wpReady || ((blogPosts as unknown[] | null)?.length ?? 0) > 0 } : c))
+    }
     const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
     setUserTier(resolvedTier)
     // Pro multi-account: load connected Facebook Pages + Instagram accounts so
@@ -2913,7 +3013,20 @@ export default function ContentPage() {
     setBrandDisclaimer((b?.affiliate_disclaimer as string | null) ?? '')
     setBrandFacebookGroups(Array.isArray(b?.facebook_groups) ? (b!.facebook_groups as Array<{ name: string; url: string }>) : [])
     setBlogImagePref(typeof b?.blog_image_count === 'number' ? (b.blog_image_count as number) : null)
-    setVideos(vids)
+    // ONLY VIDEOS PEOPLE CAN WATCH. MVP writes posts only from public videos
+    // (lib/video-public), so a scheduled one listed here could only be
+    // refused: "...is scheduled on YouTube and goes public...", in red, with
+    // a Retry. It joins the list on its own once its time has passed. A video
+    // that already has a post stays, so nothing written ever disappears.
+    {
+      const withPost = new Set(((blogPosts as Array<{ video_id?: string | null }> | null) ?? []).map((p) => p.video_id).filter(Boolean) as string[])
+      const now = Date.now()
+      const live = (vids as Record<string, unknown>[]).filter((v) => {
+        const at = v.published_at ? Date.parse(String(v.published_at)) : NaN
+        return !(Number.isFinite(at) && at > now) || withPost.has(String(v.id))
+      })
+      setVideos(live as typeof vids)
+    }
 
     // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
     // lingers in blog_posts, which would otherwise leave its source video stuck
@@ -3001,7 +3114,7 @@ export default function ContentPage() {
       const { data: schedRows } = await (sb as any)
         .from('scheduled_posts')
         .select('blog_post_id,platform,status,updated_at')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .gte('updated_at', thirtyDaysAgo)
         .order('updated_at', { ascending: false })
         .limit(500)
@@ -3080,7 +3193,9 @@ export default function ContentPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any).__mvpBrandModalOpen) return
       const now = Date.now()
-      if (now - lastAutoRefreshRef.current < 30_000) return // 30s throttle
+      // Five minutes: each refocus asks YouTube for the newest videos, from the
+      // one daily quota every MVP account shares. The Refresh button is not limited.
+      if (now - lastAutoRefreshRef.current < 300_000) return
       lastAutoRefreshRef.current = now
       refreshActiveTabRef.current()
     }
@@ -3187,7 +3302,7 @@ export default function ContentPage() {
       return { ok: true }
     } catch (e) {
       const aborted = e instanceof DOMException && e.name === 'AbortError'
-      return { ok: false, error: aborted ? 'Timed out talking to Pinterest. Try again.' : (e instanceof Error ? e.message : 'Publish failed') }
+      return { ok: false, error: aborted ? 'Timed out talking to Pinterest. Try again.' : (errText(e) || 'Publish failed') }
     } finally {
       clearTimeout(timer)
       setPinPublishingFor(null)
@@ -3195,18 +3310,26 @@ export default function ContentPage() {
   }
 
   /** Load the user's scheduled posts list. Called when they open the Scheduled tab. */
+  // THE LATEST LOAD WINS. A tab click and the tab effect both fire on the first
+  // open, and a save refreshes while another load is out; whichever answered
+  // last used to win, so an older list could land over a newer one (a removed
+  // platform reappearing). Each load takes a ticket and only the newest writes.
+  const scheduledLoadSeq = useRef(0)
   async function loadScheduled() {
+    const seq = ++scheduledLoadSeq.current
     setScheduledLoading(true)
     setScheduledError(null)
     try {
       const res = await fetch('/api/blog/scheduled-list')
       const data = await res.json().catch(() => ({}))
+      if (seq !== scheduledLoadSeq.current) return
       if (!res.ok) throw new Error(data.error || 'Failed to load scheduled posts')
       setScheduledItems((data.scheduled ?? []) as ScheduledItem[])
     } catch (err) {
+      if (seq !== scheduledLoadSeq.current) return
       setScheduledError(err instanceof Error ? err.message : 'Failed to load scheduled posts')
     } finally {
-      setScheduledLoading(false)
+      if (seq === scheduledLoadSeq.current) setScheduledLoading(false)
     }
   }
 
@@ -3233,7 +3356,7 @@ export default function ContentPage() {
       toast.success('Published. It is live on your blog now.')
       await loadScheduled()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not publish it.')
+      toast.error(errText(e) || 'Could not publish it.')
     } finally {
       setPublishingNow(null)
     }
@@ -3254,15 +3377,25 @@ export default function ContentPage() {
         body: JSON.stringify({ id }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Cancel failed')
-      // Reflect locally — flip status to cancelled
-      setScheduledItems(items => items?.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i) ?? null)
+      if (!res.ok) {
+        // 409: it already ran or was cancelled elsewhere, so this list is out
+        // of date. Reload it rather than leave a "Pending" row that is not.
+        if (res.status === 409) void loadScheduled()
+        throw new Error(data.error || 'Cancel failed')
+      }
+      // Reflect locally — flip status to cancelled. The route cancels a
+      // parent's pending children too, so flip those as well: they used to
+      // stay "Pending" under a cancelled parent until the next reload.
+      setScheduledItems(items => items?.map(i => (i.id === id || (i.parent_id === id && i.status === 'pending')) ? { ...i, status: 'cancelled' as const } : i) ?? null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Cancel failed')
     }
   }
 
+  // Same ticket rule as loadScheduled: only the newest load writes.
+  const wpPostsLoadSeq = useRef(0)
   async function loadWpPosts() {
+    const seq = ++wpPostsLoadSeq.current
     setPostsLoading(true)
     try {
       // Fetch WP posts + Supabase video_id map in parallel
@@ -3270,7 +3403,9 @@ export default function ContentPage() {
         fetch('/api/wordpress/posts'),
         supabase.auth.getUser(),
       ])
-      const data = await res.json()
+      // An HTML 504 is not JSON; report the status rather than a parse error.
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (seq !== wpPostsLoadSeq.current) return
       if (!res.ok || data.error) {
         setFixCatResult(`Failed to load posts: ${data.error || res.status}`)
         setPostsLoaded(true)
@@ -3347,12 +3482,13 @@ export default function ContentPage() {
         }
       })
 
+      if (seq !== wpPostsLoadSeq.current) return
       setAllBlogPosts(merged)
       setPostsLoaded(true)
     } catch (e) {
-      setFixCatResult(`Failed to load posts: ${e instanceof Error ? e.message : String(e)}`)
+      if (seq === wpPostsLoadSeq.current) setFixCatResult(`Failed to load posts: ${errText(e) || String(e)}`)
     } finally {
-      setPostsLoading(false)
+      if (seq === wpPostsLoadSeq.current) setPostsLoading(false)
     }
   }
 
@@ -3404,7 +3540,7 @@ export default function ContentPage() {
         body: JSON.stringify({ wordpressPostId: wpPostId }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'} — refresh the post to see them.` : (data.error || 'Image refresh failed'))
+      setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'}: refresh the post to see them.` : (data.error || 'Image refresh failed'))
       // 2026-06-08: bump the local bodyImagesCount so the orange "needs images"
       // warning badge disappears without a full page reload. Same fix pattern
       // as the Co-Pilot auto-refresh (commit cd57807) — DB write success
@@ -3422,7 +3558,7 @@ export default function ContentPage() {
         })
       }
     } catch (e) {
-      setImgToast(e instanceof Error ? e.message : 'Image refresh failed')
+      setImgToast(errText(e) || 'Image refresh failed')
     } finally {
       setRefreshingImagesId(null)
     }
@@ -3431,18 +3567,28 @@ export default function ContentPage() {
   async function deletePostFromList(wpPostId: number) {
     if (!(await confirm({
       title: 'Delete this post from WordPress?',
-      description: 'The post will be removed from your blog and unlinked here. WordPress moves it to its trash where you can restore for ~30 days.',
+      description: 'The post is deleted from your blog permanently (it skips the WordPress trash) and unlinked here.',
       confirmLabel: 'Delete post',
       destructive: true,
     }))) return
     setDeletingPostId(wpPostId)
     try {
-      await fetch('/api/blog/delete', {
+      // CHECK THE ANSWER. The row used to leave the list whatever the server
+      // said, so a post WordPress refused to delete looked deleted until the
+      // next reload brought it back.
+      const res = await fetch('/api/blog/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wpPostId }),
       })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        toast.error(d.error || `Could not delete the post (HTTP ${res.status}).`)
+        return
+      }
       setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
+    } catch (e) {
+      toast.error(errText(e) || 'Could not delete the post.')
     } finally {
       setDeletingPostId(null)
     }
@@ -3452,26 +3598,39 @@ export default function ContentPage() {
     if (selectedPostIds.size === 0) return
     if (!(await confirm({
       title: `Delete ${selectedPostIds.size} post${selectedPostIds.size !== 1 ? 's' : ''}?`,
-      description: 'These posts will be moved to WordPress\' trash (restorable for ~30 days) and unlinked here. This cannot be undone from MVP.',
+      description: 'These posts are deleted from WordPress permanently (they skip the WordPress trash) and unlinked here. This cannot be undone.',
       confirmLabel: 'Delete posts',
       destructive: true,
     }))) return
     setBulkDeleting(true)
     const ids = [...selectedPostIds]
     let deleted = 0
+    // Counted by the answer, not by the attempt: "Deleted 5" over two refusals
+    // was the plan, not the result. Failures stay selected for a retry.
+    const failed: number[] = []
+    let firstError = ''
     for (const wpPostId of ids) {
       try {
-        await fetch('/api/blog/delete', {
+        const res = await fetch('/api/blog/delete', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ wpPostId }),
         })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({} as { error?: string }))
+          failed.push(wpPostId)
+          if (!firstError) firstError = d.error || `HTTP ${res.status}`
+          continue
+        }
         setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
         deleted++
-      } catch { /* continue */ }
+      } catch (e) {
+        failed.push(wpPostId)
+        if (!firstError) firstError = errText(e) || 'network error'
+      }
     }
-    setSelectedPostIds(new Set())
-    setFixCatResult(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.`)
+    setSelectedPostIds(new Set(failed))
+    setFixCatResult(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.${failed.length ? ` ${failed.length} could not be deleted and are still selected (${firstError}).` : ''}`)
     setBulkDeleting(false)
   }
 
@@ -3479,7 +3638,7 @@ export default function ContentPage() {
     const toRewrite = allBlogPosts.filter(p => selectedPostIds.has(p.id) && p.videoId)
     const skipped = selectedPostIds.size - toRewrite.length
     if (toRewrite.length === 0) {
-      setFixCatResult('No selected posts have a linked video — cannot rewrite.')
+      setFixCatResult('No selected posts have a linked video. Cannot rewrite.')
       return
     }
     setBulkRewriting(true)
@@ -3504,7 +3663,7 @@ export default function ContentPage() {
         }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkRewriteProgress(null)
@@ -3555,7 +3714,7 @@ export default function ContentPage() {
         }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkGenerateProgress(null)
@@ -3563,7 +3722,7 @@ export default function ContentPage() {
     setSelectedVideoIds(new Set())
     if (failed > 0 || skipped > 0) {
       const parts = [`${success} generated`]
-      if (skipped > 0) parts.push(`${skipped} skipped (short clips with no product — add the product link to the video description to include them)`)
+      if (skipped > 0) parts.push(`${skipped} skipped (short clips with no product, add the product link to the video description to include them)`)
       if (failed > 0) parts.push(`${failed} failed${firstError ? ` (${firstError})` : ''}`)
       setFixCatResult(parts.join(' · '))
     }
@@ -3593,7 +3752,7 @@ export default function ContentPage() {
         else { failed++; if (!firstError) firstError = data.error || `HTTP ${res.status}` }
       } catch (e) {
         failed++
-        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+        if (!firstError) firstError = errText(e) || 'Network error'
       }
     }
     setBulkCategoryProgress(null)
@@ -3780,8 +3939,8 @@ export default function ContentPage() {
       } else if (data.fixed === 0) {
         setFixCatResult(data.message || 'All posts already had categories.')
       } else {
-        const partial = data.partial ? ` — ${data.partial}` : ''
-        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine)${partial}.`)
+        const partial = data.partial ? `. ${data.partial}` : ''
+        setFixCatResult(`Done: ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine)${partial}.`)
       }
     } catch {
       setFixCatResult('Something went wrong.')
@@ -4293,23 +4452,26 @@ export default function ContentPage() {
     })
   }, [recentMatched, hideShared, sharedRequired, posts])
 
+  const isSocialTab = activeTab === 'posts' || activeTab === 'scheduled'
   return (
     <>
       <PageHero
         guide={<ContentGuide />}
-        title="Blog Post Generator"
-        subtitle={
+        // The title follows the tab: the published and scheduled tabs are what
+        // the sidebar calls Social Push, the video tabs are Blog posts.
+        title={isSocialTab ? 'Social Push' : 'Blog posts'}
+        subtitle={<>{
           loading ? 'Loading…' :
           activeTab === 'scheduled'
             ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
             : activeTab === 'posts'
-            ? `This is your whole live blog, not a list of drafts. Every published article shows here so you can push it out to your connected socials (Facebook, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest) from its card — re-share any post, any time. Use "Hide shared" to tuck away ones you've already sent everywhere. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
+            ? `This is your whole live blog, not a list of drafts. Every published article shows here so you can push it out to your connected socials (Facebook, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest) from its card. Re-share any post, any time. Use "Hide shared" to tuck away ones you've already sent everywhere. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
               ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
                 ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
-        }
+        }{!isSocialTab && <span className="block mt-1 text-[12px]">Formerly Blog Post Generator.</span>}</>}
         actions={
           <div className="flex items-center gap-2">
             <SitePicker value={siteId} onChange={setSiteId} compact />
@@ -4342,7 +4504,7 @@ export default function ContentPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         <ToolButton tint="violet" icon={<Sparkles size={18} />} label="New post from a link" desc="Product link or ASIN → live post"
           onClick={() => setFromLinkOpen(true)}
-          title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it." />
+          title="No video? Create a post from a product link or ASIN. MVP researches, writes and publishes it." />
 
         <ToolButton tint="amber" icon={<Tags size={18} />} label="Fix Categories"
           desc={catPreviewLoading ? 'Loading preview…' : 'Auto-assign each post'}
@@ -4355,13 +4517,13 @@ export default function ContentPage() {
 
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
-          title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
+          title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends: tone, sign-off, and template" />
         <ToolButton tint="violet" icon={<Rocket size={18} />} label="Auto-pilot" desc="One post a day, hands-off" active={autoPilotOn}
           onClick={() => setAutoPilotOpen(true)}
           title="Turn on to auto-publish one blog post a day from your next un-blogged video (hero + images, no social)" />
         <ToolButton tint="violet" icon={<Link2 size={18} />} label="Link settings" desc="Blog / affiliate / both"
           onClick={() => setLinkModeOpen(true)}
-          title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
+          title="Choose where posted links point (blog, affiliate, or both) for Facebook, LinkedIn, and Bluesky" />
 
         {(activeTab === 'horizontal' || activeTab === 'vertical') && (
           <>
@@ -4603,7 +4765,7 @@ export default function ContentPage() {
               return (
                 <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts live yet</p>
-                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here — from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here, from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
                 </div>
               )
             }
@@ -4617,7 +4779,7 @@ export default function ContentPage() {
               return (
                 <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    {allShared ? 'All caught up — every post is shared to your socials.' : <>No posts match &ldquo;{postSearch}&rdquo;</>}
+                    {allShared ? 'All caught up: every post is shared to your socials.' : <>No posts match &ldquo;{postSearch}&rdquo;</>}
                   </p>
                   <button onClick={() => allShared ? setHideShared(false) : setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">
                     {allShared ? 'Show all posts' : 'Clear search'}
@@ -4636,7 +4798,7 @@ export default function ContentPage() {
                   <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                     {matched.length}{postQuery && matched.length !== stream.length ? ` of ${stream.length}` : ''} post{matched.length !== 1 ? 's' : ''}
                     {totalPages > 1 && (
-                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1}–{end}</span>
+                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1} to {end}</span>
                     )}
                   </h3>
                   <div className="flex items-center gap-3">
@@ -4647,7 +4809,7 @@ export default function ContentPage() {
                       style={hideShared
                         ? { background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }
                         : { background: 'transparent', borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text-soft, #6e6e73)' }}
-                      title="Hide posts already shared to your connected socials — X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
+                      title="Hide posts already shared to your connected socials. X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
                     >
                       {hideShared ? '✓ Hiding shared' : 'Hide shared'}
                     </button>
@@ -4878,7 +5040,7 @@ export default function ContentPage() {
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm">
             {activeTab === 'vertical'
-              ? 'No YouTube Shorts yet — these are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
+              ? 'No YouTube Shorts yet. These are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
               : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Shorts → Social tab to publish them as Reels.'}
           </p>
           <button onClick={() => syncVideos()} disabled={syncing} className="btn-secondary text-xs">
@@ -4934,7 +5096,7 @@ export default function ContentPage() {
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="views">Most viewed</option>
-              <option value="title">Title A–Z</option>
+              <option value="title">Title A to Z</option>
             </select>
             {filtersActive && (
               <button
@@ -4953,7 +5115,7 @@ export default function ContentPage() {
                 {filtersActive
                   ? `Showing ${displayVideos.length} of ${currentTabVideos.length} videos`
                   : activeTab === 'vertical'
-                    ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
+                    ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}: source for Instagram Reels & Stories`
                     : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts`}
               </span>
             </div>
@@ -5494,7 +5656,7 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
           {label}
           {active && <span className="text-[9px] font-bold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#16a34a', color: '#fff', letterSpacing: '0.03em' }}>ON</span>}
         </span>
-        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On — auto-publishing' : desc}</span>
+        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On: auto-publishing' : desc}</span>
       </span>
     </button>
   )

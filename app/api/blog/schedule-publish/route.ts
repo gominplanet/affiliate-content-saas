@@ -50,6 +50,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
 import type { ScheduleMode, SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
@@ -78,9 +79,10 @@ const GENERATE_BUDGET_MS = 290_000
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // A Virtual Assistant publishes through the owner's accounts (lib/agency-publish).
+    const pub = await getPublishContext(await createServerClient())
+    if ('error' in pub) return pub.error
+    const { supabase, user } = pub
 
     const body = (await request.json()) as {
       videoId?: string
@@ -225,7 +227,7 @@ export async function POST(request: Request) {
         generateUrl,
       })
       const surfaceMsg = genJson.error
-        || (genRes.status === 404 ? `Internal generate route returned 404 — check NEXT_PUBLIC_APP_URL / host config (tried ${generateUrl})` : null)
+        || (genRes.status === 404 ? `Internal generate route returned 404. Check NEXT_PUBLIC_APP_URL / host config (tried ${generateUrl})` : null)
         || `Blog generation failed (HTTP ${genRes.status}). ${bodySnippet ? `Response: ${bodySnippet.slice(0, 200)}` : 'Check server logs.'}`
       return NextResponse.json(
         { error: surfaceMsg },
@@ -485,7 +487,7 @@ export async function POST(request: Request) {
         console.error('[schedule-publish] child insert failed (hard):', childErr.message)
         return NextResponse.json(
           {
-            error: `Blog generated, but social pushes failed to queue. Cause: ${childErr.message}. The blog post is in WordPress — you can push to socials manually from the Library row once it goes live.`,
+            error: `Blog generated, but social pushes failed to queue. Cause: ${childErr.message}. The blog post is in WordPress, so you can push to socials manually from its card once it goes live.`,
             postId: blogPostId,
             wordpressPostId: wpPostId,
             wordpressUrl: wpUrl,

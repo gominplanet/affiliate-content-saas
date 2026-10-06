@@ -47,7 +47,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
   }, [onClose, busy])
 
   async function generate() {
-    if (!link.trim() && !name.trim()) { toast.error('Paste a product link or ASIN — or at least the product name.'); return }
+    if (!link.trim() && !name.trim()) { toast.error('Paste a product link or ASIN, or at least the product name.'); return }
     setBusy(true)
     setPhase('write')
     try {
@@ -124,7 +124,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
             </span>
             <div>
               <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>New post from a link</h2>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>No video needed — paste any product or service link and MVP researches, writes &amp; publishes it.</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>No video needed. Paste any product or service link and MVP researches, writes &amp; publishes it.</p>
             </div>
           </div>
           <button onClick={() => !busy && onClose()} className="p-1 rounded-md hover:opacity-70" style={{ color: 'var(--text-2)' }} aria-label="Close"><X size={18} /></button>
@@ -133,7 +133,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
         {done ? (
           <div className="p-5">
             <div className="rounded-lg p-3 text-sm mb-4" style={{ background: 'rgba(52,199,89,0.1)', border: '1px solid rgba(52,199,89,0.3)', color: '#34c759' }}>
-              ✓ Published: <strong>{done.title}</strong>. It’s in your Posts tab now — ready to schedule or push to socials.
+              ✓ Published: <strong>{done.title}</strong>. It’s in your Posts tab now, ready to schedule or push to socials.
             </div>
             <div className="flex items-center gap-2">
               {done.url && (
@@ -147,11 +147,11 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
         ) : (
           <div className="p-5 space-y-3.5">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product or service link <span style={{ color: 'var(--text-faint)' }}>(any store, brand, SaaS or affiliate link — or an Amazon ASIN)</span></label>
-              <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Any product or service URL — a store page, brand site, SaaS page, affiliate link, or Amazon ASIN" className={inputCls} style={inputStyle} />
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product or service link <span style={{ color: 'var(--text-faint)' }}>(any store, brand, SaaS or affiliate link, or an Amazon ASIN)</span></label>
+              <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Any product or service URL: a store page, brand site, SaaS page, affiliate link, or Amazon ASIN" className={inputCls} style={inputStyle} />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product / service name <span style={{ color: 'var(--text-faint)' }}>(optional — helps if the link is a cloaked redirect)</span></label>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product / service name <span style={{ color: 'var(--text-faint)' }}>(optional, helps if the link is a cloaked redirect)</span></label>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anker 737 Power Bank, or Notion, Audible…" className={inputCls} style={inputStyle} />
             </div>
             <div>
@@ -183,7 +183,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
               </p>
             </div>
             <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-              Works for any product or service — Amazon, any online store, or a SaaS/subscription. MVP researches it (the link, its name, and the web), writes a review in your voice grounded in real facts, recloaks your link with Geniuslink if connected, and adds a hero image. Counts as one post.
+              Works for any product or service: Amazon, any online store, or a SaaS/subscription. MVP researches it (the link, its name, and the web), writes a review in your voice grounded in real facts, recloaks your link with Geniuslink if connected, and adds a hero image. Counts as one post.
             </p>
             <button
               onClick={generate}
@@ -195,7 +195,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
                     ? <><Loader2 size={15} className="animate-spin" /> Reading the product page with SCOUT…</>
                     : phase === 'images'
                     ? <><Loader2 size={15} className="animate-spin" /> Adding your images…</>
-                    : <><Loader2 size={15} className="animate-spin" /> Researching &amp; writing… (~1–2 min)</>)
+                    : <><Loader2 size={15} className="animate-spin" /> Researching &amp; writing… (~1 to 2 min)</>)
                 : <><Sparkles size={15} /> Generate &amp; publish</>}
             </button>
           </div>

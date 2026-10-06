@@ -23,7 +23,8 @@ async function owner() {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if ('error' in auth && auth.error) return { error: auth.error }
-  return { ownerId: (auth as { ownerId: string }).ownerId }
+  const a = auth as { ownerId: string; user: { id: string } }
+  return { ownerId: a.ownerId, isOwner: a.ownerId === a.user.id }
 }
 
 export async function GET() {
@@ -52,6 +53,8 @@ export async function POST(req: Request) {
     patch.pinterest_product_dest = b.pref
   }
   if (b.pinterestTag !== undefined) {
+    // The tracking ID decides who is paid for a click: the owner's to set.
+    if (!o.isOwner) return NextResponse.json({ error: 'Only the account owner can change the Amazon tracking ID.' }, { status: 403 })
     const tag = String(b.pinterestTag).trim()
     if (tag && !/^[A-Za-z0-9-]{3,40}$/.test(tag)) {
       return NextResponse.json({ error: 'That does not look like an Amazon tracking ID. It is letters, numbers and dashes, like yourtag-pin-20.' }, { status: 400 })

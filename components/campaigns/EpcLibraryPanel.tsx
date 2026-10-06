@@ -90,9 +90,9 @@ const money = (c: number | null | undefined) => (c != null ? `$${(c / 100).toFix
 const SCAN_ERROR: Record<ScoutError, string> = {
   'not-installed': 'SCOUT isn’t connected. Install the extension, then open your Creator Connections → Sponsored Products tab and scan again.',
   'no-cc-tab': 'Open your Amazon “Creator Connections Check → Sponsored Products” tab in another tab, then scan again.',
-  'content-script-unreachable': 'Your Creator Connections tab needs a reload — refresh it once, then scan again.',
+  'content-script-unreachable': 'Your Creator Connections tab needs a reload. Refresh it once, then scan again.',
   'scan-failed': 'Couldn’t read the opportunities grid. Make sure you’re on the Sponsored Products view, then scan again.',
-  'timeout': 'The scan ran long and timed out — a shorter opportunities list scans faster. Try again.',
+  'timeout': 'The scan ran long and timed out: a shorter opportunities list scans faster. Try again.',
 }
 
 function budgetStyle(b: string | null): { bg: string; color: string } {
@@ -249,7 +249,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       if (added > 0) {
         toast.success(`Added ${added.toLocaleString()} new ${added === 1 ? 'opportunity' : 'opportunities'}${dupes ? ` · ${dupes.toLocaleString()} already in your library` : ''}.`)
       } else {
-        toast.info(`No new opportunities in this stretch — all ${scanned.toLocaleString()} were already saved. Scan again: SCOUT picks up deeper each time (and loops back to the top once it has covered your whole Accepted list). Accepting more campaigns on Amazon adds new ones too.`, { duration: 8_000 })
+        toast.info(`No new opportunities in this stretch: all ${scanned.toLocaleString()} were already saved. Scan again: SCOUT picks up deeper each time (and loops back to the top once it has covered your whole Accepted list). Accepting more campaigns on Amazon adds new ones too.`, { duration: 8_000 })
       }
       await load(q, sort, filters)
     } catch {
@@ -298,11 +298,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           if (res.diag?.raw) parts.push(`raw: ${res.diag.raw}`)
           if (res.sample) parts.push(`sample: ${res.sample}`)
           if (res.diag?.capBody) parts.push(`reqBody: ${res.diag.capBody}`)
-          setDebug(parts.length ? `EPC API load — ${parts.join(' · ')}` : null)
+          setDebug(parts.length ? `EPC API load: ${parts.join(' · ')}` : null)
         } catch { /* ignore */ }
       }
       if (res.canceled) {
-        toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far — they're saved.`)
+        toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far: they're saved.`)
       } else if (!res.ok) {
         const why = res.error === 'not-installed' ? 'SCOUT isn’t installed.'
           // Two different empties, and they need two different answers. Amazon
@@ -310,11 +310,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           // campaigns"; not being able to ask at all is a "open the tab once".
           // One message covered both and sent creators to re-open a tab that
           // was never the problem.
-          : res.error === 'no-rows-any-status' ? 'Amazon answered, and reported no Sponsored Products campaigns in any status — not new, not accepted, not active. If you know you have accepted campaigns, open your Sponsored Products tab on Amazon, check they are listed there, then try again.'
+          : res.error === 'no-rows-any-status' ? 'Amazon answered, and reported no Sponsored Products campaigns in any status: not new, not accepted, not active. If you know you have accepted campaigns, open your Sponsored Products tab on Amazon, check they are listed there, then try again.'
           : (res.error === 'no-rows' || res.error === 'no-accepted-set') ? 'Couldn’t read any EPC rows (see the details line below). Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'no-capture' ? 'Couldn’t read Amazon’s list request. Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'unauthorized' ? 'Amazon rejected the request. Sign in to Creator Connections on Amazon, then retry.'
-          : res.error === 'throttled' ? `Amazon throttled the load at ${res.loaded.toLocaleString()}. What loaded is saved — run it again to continue.`
+          : res.error === 'throttled' ? `Amazon throttled the load at ${res.loaded.toLocaleString()}. What loaded is saved. Run it again to continue.`
           : `Load stopped (${res.error || 'unknown'}). ${res.loaded ? `${res.loaded.toLocaleString()} saved.` : ''}`
         toast.error(why)
       } else {
@@ -520,7 +520,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             style={{ background: 'rgba(255,149,0,0.10)', border: '1px solid rgba(255,149,0,0.30)' }}>
             <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
               <b style={{ color: '#b45309' }}>Catalogue is due for a refresh.</b>{' '}
-              Last updated {when}. MVP refreshes every 48 hours — run “Load all from Amazon” to bring it current.
+              Last updated {when}. MVP refreshes every 48 hours. Run “Load all from Amazon” to bring it current.
             </span>
             <button onClick={loadViaApi} disabled={apiLoading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-70 shrink-0"
@@ -560,14 +560,14 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         {isAdmin && total > 0 && (
           <div ref={cleanupRef} className="relative">
             <button onClick={openCleanup} disabled={cleaning}
-              title="Trim the library to what's live. EPC cards show no end date, so this uses the last time SCOUT saw each product — anything not seen in a while has likely dropped out of EPC."
+              title="Trim the library to what's live. EPC cards show no end date, so this uses the last time SCOUT saw each product: anything not seen in a while has likely dropped out of EPC."
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
               style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
               {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
               {cleaning ? 'Working…' : 'Clean up'}
             </button>
             {cleanupOpen && cleanupData && (
-              <div className="mvp-panel absolute right-0 top-full mt-2 z-50 w-[320px] rounded-xl border p-3.5 shadow-xl">
+              <div className="mvp-panel absolute right-0 top-full mt-2 z-50 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border p-3.5 shadow-xl">
                 <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Trim the EPC library</p>
                 <p className="text-[11.5px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
                   EPC cards don&rsquo;t show an end date, so we use the last time a scan saw each product. Do a full scan pass first so live products are freshly stamped, then remove the stragglers.
@@ -735,7 +735,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
           body: JSON.stringify({ asin: p.asin, title: p.title || p.asin }),
         })
         const d = await res.json().catch(() => ({}))
-        if (res.ok && d.url) { await write(d.url, 'Passport Link copied — it geo-routes each visitor.'); return }
+        if (res.ok && d.url) { await write(d.url, 'Passport Link copied. It geo-routes each visitor.'); return }
         toast.error(d.error || 'Could not create the link.')
       } finally { setLinking(false) }
       return
@@ -826,8 +826,8 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
           className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border disabled:opacity-60"
           style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED', background: 'rgba(124,58,237,0.06)' }}
           title={passportEnabled
-            ? 'Copy your Passport Link — sends each visitor to their own country’s Amazon and tracks clicks'
-            : 'Copy your affiliate link to drop offsite (YouTube, socials, blog) — EPC pays on those clicks'}>
+            ? 'Copy your Passport Link. Sends each visitor to their own country’s Amazon and tracks clicks'
+            : 'Copy your affiliate link to drop offsite (YouTube, socials, blog). EPC pays on those clicks'}>
           {linking ? <><Loader2 size={13} className="animate-spin" /> Building…</>
             : copied ? <><Check size={13} /> Link copied</>
             : <><LinkIcon size={13} /> {passportEnabled ? 'Get Passport Link' : 'Get affiliate link'}</>}

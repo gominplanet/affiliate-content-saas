@@ -33,6 +33,7 @@ export async function GET(request: Request) {
   if (!secret) return NextResponse.json({ error: 'CRON_SECRET not set on server' }, { status: 500 })
   if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const started = Date.now()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
 
@@ -47,7 +48,10 @@ export async function GET(request: Request) {
       .limit(3000)
     if (error) throw error
     const ids = ((data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id)
-    ownerIds = [...new Set(ids)].slice(0, MAX_USERS_PER_RUN)
+    // SHUFFLED, NOT THE SAME FIFTEEN. The read has no order, so it returned the
+    // same owners every run: fifteen sites that still refuse uploads were
+    // retried every six hours and every flagged owner after them never was.
+    ownerIds = [...new Set(ids)].sort(() => Math.random() - 0.5).slice(0, MAX_USERS_PER_RUN)
   } catch {
     return NextResponse.json({ ok: true, skipped: 'thumbnail_blocked column not present or unreadable' })
   }
@@ -75,8 +79,13 @@ export async function GET(request: Request) {
     }
   } catch { /* the flagged owners above still run */ }
 
+  // STOP STARTING OWNERS WITH TIME TO FINISH ONE. Forty owners of uploads ran
+  // past the limit on slow hosts, and a run killed mid-owner reports nothing.
+  const left = () => maxDuration * 1000 - 20_000 - (Date.now() - started)
   const results: Array<{ ownerId: string; fixed?: number; stillBlocked?: number; error?: string; recent?: boolean }> = []
+  let deferred = 0
   for (const ownerId of recentIds) {
+    if (left() < 60_000) { deferred++; continue }
     try {
       const r = await reattachThumbnailsForOwner(admin, ownerId, { limit: 10, onlyKnownMissing: true })
       results.push({ ownerId, fixed: r.fixed, stillBlocked: r.stillBlocked, recent: true })
@@ -85,6 +94,7 @@ export async function GET(request: Request) {
     }
   }
   for (const ownerId of ownerIds) {
+    if (left() < 60_000) { deferred++; continue }
     try {
       const r = await reattachThumbnailsForOwner(admin, ownerId, { limit: 40 })
       results.push({ ownerId, fixed: r.fixed, stillBlocked: r.stillBlocked })
@@ -95,5 +105,5 @@ export async function GET(request: Request) {
 
   const totalFixed = results.reduce((s, r) => s + (r.fixed ?? 0), 0)
   const totalStillBlocked = results.reduce((s, r) => s + (r.stillBlocked ?? 0), 0)
-  return NextResponse.json({ ok: true, users: ownerIds.length, recentUsers: recentIds.length, totalFixed, totalStillBlocked, results })
+  return NextResponse.json({ ok: true, users: ownerIds.length, recentUsers: recentIds.length, deferred, totalFixed, totalStillBlocked, results })
 }

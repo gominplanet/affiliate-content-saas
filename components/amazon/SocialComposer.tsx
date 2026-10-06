@@ -96,7 +96,7 @@ export default function SocialComposer() {
           </div>
         ) : items.length === 0 ? (
           <p className="text-[13px] leading-relaxed py-2" style={{ color: 'var(--text-soft)' }}>
-            No saved products yet. In <Link href="/amazon/research" className="font-semibold hover:underline" style={{ color: '#d97706' }}>Research</Link> (AMZ Finder, Deal Radar, CC Campaigns), tap <span className="font-semibold">Save</span> on a product and it shows up here, ready to turn into a Pin or post.
+            No saved products yet. In <Link href="/amazon/research" className="font-semibold hover:underline" style={{ color: '#d97706' }}>Research</Link> (AMZ Finder, Deal Radar, Brand campaigns), tap <span className="font-semibold">Save</span> on a product and it shows up here, ready to turn into a Pin or post.
           </p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">

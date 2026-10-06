@@ -3,11 +3,12 @@
 // /api/group-queue — Group Post Queue (LABS, admin while it is tested,
 // lib/labs-preview.ts group_queue).
 //
-// The Pages + Groups route, in batches. Meta lets no app post into a Group, and
-// a Group is where an affiliate link draws the most attention from Facebook's
-// spam checks. So the affiliate link goes on the creator's PAGE through the
-// API, and the Group gets a teaser pointing at that Page post, filled in by
-// SCOUT for the creator to press Post.
+// The Group-first route (the Facebook hub's one rule), in batches: the GROUP
+// gets the post with the affiliate link, filled in by SCOUT for the creator to
+// press Post, and the PAGE gets a short post linking to that Group post. A
+// link to a Group post stays on Facebook, so the Page never spends the outside
+// links Meta rations. The Page post itself goes through
+// /api/blog/facebook-group-teaser, which accepts only a Group link.
 //
 // GET ?source=epc&minEpc=&minDiscount=&maxPrice=&limit=
 //     Sponsored Products from the creator's EPC Library.
@@ -16,9 +17,10 @@
 //     Both also return the saved Facebook Groups and the disclosure.
 // POST { action: 'write', items: [{ key, kind, title, brand?, discountPct?, description? }] }
 //     One short post per item, no link and no price (we add the link).
-// POST { action: 'page', item: { kind, asin, title, imageUrl?, caption, vdpUrl? } }
-//     Publish one item to the Facebook Page. Returns the Page post's URL, or
-//     the reason it did not go out. Nothing reads as posted without that URL.
+// POST { action: 'compose', item: { kind, asin, title, caption, vdpUrl? } }
+//     The Group post's full text: the affiliate link first, in the creator's
+//     link style, the disclosure, the words, and #ad #sponsored. Says when the
+//     link fell back to a plain one.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -31,10 +33,9 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
-import { executeDealQuickPost } from '@/lib/deal-quick-post'
-import { publishDealToSocials } from '@/lib/deal-social-publish'
+import { composeCaption } from '@/lib/social-link-mode'
 import { resolveCloakedLinkDetailed, cloakFallbackNote, getLinkStyle } from '@/lib/link-cloak'
-import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { amazonVideoPage } from '@/lib/brand-content'
 
 export const runtime = 'nodejs'
@@ -199,13 +200,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ captions, failed })
   }
 
-  if (body.action === 'page') {
+  if (body.action === 'compose') {
     const it = body.item || {}
     const kind = it.kind === 'video' ? 'video' : 'epc'
     const asin = String(it.asin || '').trim().toUpperCase()
     const title = String(it.title || '').trim().slice(0, 300)
     const caption = String(it.caption || '').trim().slice(0, 1500)
-    const imageUrl = typeof it.imageUrl === 'string' && /^https:\/\//.test(it.imageUrl) ? it.imageUrl : null
     if (!ASIN_RE.test(asin)) return NextResponse.json({ error: 'This item has no product to link to.' }, { status: 400 })
     if (!caption) return NextResponse.json({ error: 'Write the post first.' }, { status: 400 })
 
@@ -215,42 +215,35 @@ export async function POST(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const intRow = decryptIntegrationRow(rawInt as any)
     const tag = String((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
-
-    if (kind === 'epc') {
-      const out = await executeDealQuickPost({
-        db: admin, userId: g.ownerId, tier: g.tier, intRow: intRow ?? null,
-        asin, platforms: ['facebook'], story: false, caption, title: title || null, imageUrl,
-        // Sponsored Products are Amazon clicks: never redirected to a shop.
-        useShowcase: false,
-      })
-      if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
-      const fb = out.results.find((r) => r.platform === 'facebook')
-      if (!fb) return NextResponse.json({ error: 'Nothing was posted. MVP had no product details for this item.' }, { status: 502 })
-      return NextResponse.json({ ok: fb.ok, url: fb.ok ? fb.url : undefined, error: fb.ok ? undefined : fb.error, linkNote: out.geniuslinkNote || out.destinationNote || null }, { status: fb.ok ? 200 : 502 })
-    }
-
-    // Video: the creator's own Amazon video page, tagged, so the click lands on
-    // their review with the product under it.
-    const vdpUrl = String(it.vdpUrl || '').trim()
-    if (!/^https:\/\/(www\.)?amazon\.[a-z.]+\/vdp\/[a-z0-9]+/i.test(vdpUrl)) return NextResponse.json({ error: 'This video has no public Amazon page to link to.' }, { status: 400 })
     const style = await getLinkStyle(admin, g.ownerId)
     if (!tag && style.style !== 'passport') return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
-    const u = new URL(vdpUrl)
-    if (tag) u.searchParams.set('tag', tag)
+
+    // The plain link: the product page, or the creator's own Amazon video page
+    // (so the click lands on their review with the product under it).
+    let destination: string
+    if (kind === 'video') {
+      const vdpUrl = String(it.vdpUrl || '').trim()
+      if (!/^https:\/\/(www\.)?amazon\.[a-z.]+\/vdp\/[a-z0-9]+/i.test(vdpUrl)) return NextResponse.json({ error: 'This video has no public Amazon page to link to.' }, { status: 400 })
+      const u = new URL(vdpUrl)
+      if (tag) u.searchParams.set('tag', tag)
+      destination = u.toString()
+    } else {
+      destination = `https://www.amazon.com/dp/${asin}${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`
+    }
+    // Cloaked in the creator's link style, as the Facebook channel. A video
+    // passes no ASIN, so Passport cannot geo-route it away from the video page.
     const cloak = await resolveCloakedLinkDetailed({
-      supabase: admin, userId: g.ownerId, destination: u.toString(), asin: null,
-      channel: 'facebook', source: 'facebook', label: title || 'Amazon video', config: style, destinationOverride: 'amazon',
+      supabase: admin, userId: g.ownerId, destination, asin: kind === 'video' ? null : asin,
+      channel: 'facebook', source: 'facebook', label: title || asin, config: style, destinationOverride: 'amazon',
     })
     const { data: brand } = await admin.from('brand_profiles').select('affiliate_disclaimer').eq('user_id', g.ownerId).maybeSingle()
-    const disclaimer = String(brand?.affiliate_disclaimer || '').trim() || AFFILIATE_DISCLAIMER_DEFAULT
-    const results = await publishDealToSocials({
-      supabase: admin, userId: g.ownerId,
-      deal: { asin, title: title || asin, imageUrl },
-      link: cloak.url, baseCaption: caption, disclaimer, platforms: ['facebook'],
-    })
-    const fb = results[0]
-    if (!fb) return NextResponse.json({ error: 'Nothing was posted.' }, { status: 502 })
-    return NextResponse.json({ ok: fb.ok, url: fb.ok ? fb.url : undefined, error: fb.ok ? undefined : fb.error, linkNote: cloakFallbackNote(cloak) }, { status: fb.ok ? 200 : 502 })
+    const disclosure = String(brand?.affiliate_disclaimer || '').trim() || AFFILIATE_DISCLAIMER_DEFAULT
+    // The Group post opens with the link, like every Group post MVP fills.
+    const composed = kind === 'video'
+      ? [`🎬 Watch my video review on Amazon 👉 ${cloak.url}\n${disclosure}`, caption].join('\n\n')
+      : composeCaption({ product: true, content: 'none', writeUp: caption, blogUrl: null, videoUrl: null, affiliateLink: cloak.url, disclosure, amazonDestination: true })
+    const text = discloseSocialPost(composed, 'facebook', { known: { [cloak.url]: 'amazon' } })
+    return NextResponse.json({ ok: true, text, link: cloak.url, linkNote: cloakFallbackNote(cloak) })
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

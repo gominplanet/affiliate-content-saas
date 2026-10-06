@@ -286,7 +286,7 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
       {/* Column mapping */}
       {headers.length > 0 && phase !== 'done' && (
         <div className="mt-4">
-          <p className="text-[12px] font-semibold mb-2" style={{ color: 'var(--text)' }}>Match your columns <span className="font-normal" style={{ color: 'var(--text-faint)' }}>(auto-guessed — fix any that look wrong)</span></p>
+          <p className="text-[12px] font-semibold mb-2" style={{ color: 'var(--text)' }}>Match your columns <span className="font-normal" style={{ color: 'var(--text-faint)' }}>(auto-guessed, fix any that look wrong)</span></p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {FIELDS.map(f => (
               <label key={f.key} className="flex items-center gap-2 text-[12px]">
@@ -299,7 +299,7 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
                   disabled={phase === 'uploading'}
                   className="flex-1 h-8 text-[12px] rounded-md border bg-white dark:bg-[#1c1c1e] px-2 min-w-0"
                   style={{ borderColor: mapping[f.key] ? 'var(--border)' : (f.required ? 'rgba(225,29,72,0.5)' : 'var(--border)'), color: 'var(--text)' }}>
-                  <option value="">— none —</option>
+                  <option value="">none</option>
                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
               </label>

@@ -303,8 +303,13 @@ Return ONLY the caption text.` }],
         asin, productTitle: deal.title as string,
         caption: baseCaption || undefined,
         postType: 'feed',
+        // THE SAME DESTINATION AS EVERY OTHER CHANNEL IN THIS POST. Without it a
+        // showcase deal put an Amazon tile on Link in Bio, so the "Link in bio"
+        // caption sent Instagram shoppers to the store the creator opted out of.
+        useShowcase: destination.kind === 'showcase',
+        showcaseUrl: destination.kind === 'showcase' ? destination.url : null,
       })
-      results.push({ platform: 'instagram', ok: true, url: ig.url })
+      results.push({ platform: 'instagram', ok: true, url: ig.url ?? undefined })
       if (ig.note && !geniuslinkNote) geniuslinkNote = ig.note
     } catch (e) {
       results.push({ platform: 'instagram', ok: false, error: e instanceof Error ? e.message : 'Instagram post failed.' })

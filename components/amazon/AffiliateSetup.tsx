@@ -217,7 +217,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
               <input value={geniuslinkKey} onChange={e => setGeniuslinkKey(e.target.value)} placeholder="Geniuslink API key" className={inputCls} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium" style={{ color: 'var(--text-soft)' }}>API secret {alreadyHasSecret && <span style={{ color: '#34c759' }}>— saved, leave blank to keep</span>}</span>
+              <span className="text-[11px] font-medium" style={{ color: 'var(--text-soft)' }}>API secret {alreadyHasSecret && <span style={{ color: '#34c759' }}>: saved, leave blank to keep</span>}</span>
               <input type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder={alreadyHasSecret ? '••••••••' : 'Geniuslink API secret'} className={inputCls} />
             </label>
             <a href="https://geni.us/account/api" target="_blank" rel="noreferrer" className="text-[11px] hover:underline" style={{ color: '#7C3AED' }}>Where do I find these?</a>

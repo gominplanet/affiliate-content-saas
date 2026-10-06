@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -430,7 +430,13 @@ export async function requestAcceptAndSendBrand(detailsUrl: string, message: str
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, accepted: resp.accepted }
 }
 
-export interface AcceptCampaignResult { ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }
+export interface AcceptCampaignResult {
+  ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string
+  /** Amazon said the campaign is full; MVP has marked it full in the catalogue. */
+  full?: boolean
+  /** Amazon's own words about it, when SCOUT read them. */
+  said?: string
+}
 
 /**
  * "Accept on Amazon" from the /epc list: SCOUT opens the campaign's details page
@@ -459,11 +465,28 @@ export async function requestCampaignAsins(detailsUrl: string): Promise<{ ok: bo
 export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptCampaignResult> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string; full?: boolean; said?: string }>(
     { type: 'MVP_CC_ACCEPT', detailsUrl },
     95000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
+  // FULL ON AMAZON: the catalogue still showed spots, so mark it full for every
+  // creator (app/api/cc/campaign-full), and say it plainly, wherever the Accept
+  // was pressed. Every caller shows `reason` on a failed accept.
+  if (resp.full) {
+    let marked = false
+    try {
+      const campaignId = new URL(detailsUrl).searchParams.get('campaignId') || ''
+      if (campaignId) {
+        const r = await fetch('/api/cc/campaign-full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId }), signal: AbortSignal.timeout(15000) })
+        marked = !!(await r.json().catch(() => null))?.marked
+      }
+    } catch { /* the message still says it is full */ }
+    return {
+      ok: false, full: true, error: 'full', said: resp.said,
+      reason: `This campaign is full on Amazon, so it can't be joined right now.${marked ? ' MVP has taken it off the list for everyone.' : ''}`,
+    }
+  }
   return { ok: !!resp.ok, accepted: resp.accepted, already: resp.already, error: resp.error, reason: resp.reason }
 }
 
@@ -953,7 +976,8 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
-export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string }
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** A clip was asked for: whether the dialog showed the video. */ clipAttached?: boolean; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean }
+export type FacebookGroupMedia = { kind: 'thumbnail' | 'video' | 'clip'; url: string } | null
 
 /**
  * Ask SCOUT to open one of the creator's Facebook Groups and fill MVP's post
@@ -965,7 +989,7 @@ export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; erro
  * in the box, so the page can tell "ready, press Post" apart from every kind
  * of "it did not go in", and say which.
  */
-export async function requestFacebookGroupPrefill(groupUrl: string, text: string): Promise<FacebookGroupPrefillResult> {
+export async function requestFacebookGroupPrefill(groupUrl: string, text: string, media: FacebookGroupMedia = null): Promise<FacebookGroupPrefillResult> {
   const status = await getScoutStatus()
   if (!status.installed) {
     return { ok: false, filled: false, error: 'SCOUT is not installed or not switched on in this browser, so nothing was filled. The post is copied: paste it in the Group yourself.' }
@@ -973,8 +997,61 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   if (!scoutAtLeast(status.version, SCOUT_FB_GROUP_MIN_VERSION)) {
     return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and filling Group posts needs ${SCOUT_FB_GROUP_MIN_VERSION}. Chrome updates it by itself soon. Until then the post is copied: paste it in the Group yourself.` }
   }
-  const res = await sendToExtension<FacebookGroupPrefillResult>({ type: 'MVP_FB_GROUP_PREFILL', groupUrl, text }, 245_000)
-  return res || { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+  // A clip needs SCOUT 1.40.0: an older one would fill the text and leave the
+  // video out, a Group post without the thing it is about. Stopped, and said.
+  if (media?.kind === 'clip' && !scoutAtLeast(status.version, SCOUT_FB_GROUP_CLIP_MIN_VERSION)) {
+    return { ok: false, filled: false, error: `Your SCOUT is version ${status.version ?? 'unknown'}, and attaching a clip to a Group post needs ${SCOUT_FB_GROUP_CLIP_MIN_VERSION}. Chrome updates it by itself soon; nothing was filled.` }
+  }
+  // An older SCOUT fills the text but cannot attach the hero, and says nothing
+  // about it. Said here instead, so "no image" is never a silent difference.
+  const canMedia = scoutAtLeast(status.version, SCOUT_FB_GROUP_MEDIA_MIN_VERSION)
+  const res = await sendToExtension<FacebookGroupPrefillResult>({ type: 'MVP_FB_GROUP_PREFILL', groupUrl, text, media: canMedia ? media : null }, 245_000)
+  if (res && res.filled && media && !canMedia) {
+    return { ...res, media: `Your SCOUT (${status.version}) can't attach the ${media.kind === 'video' ? 'video card' : 'thumbnail'} yet; it needs ${SCOUT_FB_GROUP_MEDIA_MIN_VERSION}. Add it yourself for now.` }
+  }
+  // canWatch says whether this SCOUT will report the post going up, so an
+  // older one shows "paste the link" instead of a wait that never ends.
+  const canWatch = scoutAtLeast(status.version, SCOUT_FB_GROUP_WATCH_MIN_VERSION) && !!res?.watchId
+  return res ? { ...res, canWatch } : { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+}
+
+/** Is SCOUT allowed on Facebook (Facebook setup, step 3). ask: show the Allow
+ *  window now when it is not. 'old' is a SCOUT that cannot answer: it asks
+ *  on the first Group fill instead. Resolves, never throws. */
+export async function requestFacebookAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_FB_ACCESS_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
+  const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_FB_ACCESS', ask }, ask ? 185_000 : 10_000)
+  return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
+}
+
+/** Where the Group post SCOUT filled stands, after the creator presses Post.
+ *  posted: `url` is the post's own address. posted_no_link: SCOUT saw it go
+ *  up but could not read its address. not_seen / closed / timeout / lost /
+ *  unknown: SCOUT has no address, and says why. */
+export interface FacebookGroupPostStatus {
+  state: 'watching' | 'posted' | 'posted_no_link' | 'not_seen' | 'closed' | 'timeout' | 'lost' | 'unknown'
+  url?: string
+  via?: string
+}
+
+export async function getFacebookGroupPostStatus(watchId: string): Promise<FacebookGroupPostStatus> {
+  const res = await sendToExtension<FacebookGroupPostStatus>({ type: 'MVP_FB_GROUP_POST_STATUS', watchId }, 8_000)
+  return res && res.state ? res : { state: 'unknown' }
+}
+
+export interface PostCommentResult { ok: boolean; commentId?: string; already?: boolean; notPublic?: boolean; error?: string; detail?: string; steps?: string[] }
+
+/**
+ * Post a first comment as the creator, from a tab behind theirs, at no
+ * YouTube quota (SCOUT 1.26.0+). Only as the video's own channel, only on a
+ * public video, and never twice: a comment with the same words already on the
+ * video is answered with its id.
+ */
+export async function requestPostComment(youtubeVideoId: string, text: string): Promise<PostCommentResult> {
+  const res = await sendToExtension<PostCommentResult>({ type: 'MVP_YT_POST_COMMENT', youtubeVideoId, text }, 80_000)
+  return res || { ok: false, error: 'timeout', detail: 'SCOUT did not answer' }
 }
 
 export async function requestPinComment(youtubeVideoId: string, commentId: string): Promise<PinCommentResult> {
@@ -1770,6 +1847,9 @@ export interface StudioFinishOpts {
   /** The product's name. When given, SCOUT only tags a result whose name
    *  shares words with it, and says so when the top result does not. */
   productTitle?: string
+  /** Drafts only: a schedule Studio will not take is saved Private instead,
+   *  so the video leaves draft and MVP sets the time (Liftoff's own drafts). */
+  privateIfScheduleFails?: boolean
   /** Drafts only: the last page of the modal. See StudioVisibility. */
   visibility?: StudioVisibility
   /** Run from Liftoff's background tab: Studio opens behind, never in front,
@@ -1813,8 +1893,8 @@ export async function liftoffAlive(): Promise<void> {
   await sendToExtension({ type: 'MVP_LIFTOFF_ALIVE' }, 4000)
 }
 
-export async function liftoffDone(more: boolean, signature: string): Promise<void> {
-  await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes: 5 }, 6000)
+export async function liftoffDone(more: boolean, signature: string, nextInMinutes = 5): Promise<void> {
+  await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes }, 6000)
 }
 
 /**
@@ -1843,6 +1923,58 @@ export async function requestStudioFinish(
   )
   if (!resp) return { ok: false, steps: [], error: 'timeout' }
   return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error, path: resp.path }
+}
+
+export interface StudioUploadOpts {
+  itemId: string
+  channelId: string
+  fileUrl: string
+  fileName: string
+  title: string
+  description: string
+  /** The drafts walker's answers (paid promotion, AI use, notify). SCOUT
+   *  always saves the upload as Private; MVP sets its time afterwards. */
+  want: Partial<StudioFinishOpts>
+  /** Set on Details by SCOUT 1.26.0+, so none of them costs MVP's quota. */
+  tags?: string[]
+  thumbnailUrl?: string | null
+  /** The playlist's name, as Studio's list shows it. */
+  playlist?: string | null
+  /** Schedule at the video's time, Public for one agreed to go now, else Private. */
+  visibility?: { mode: 'schedule'; publishAt: string } | { mode: 'public' } | { mode: 'private' }
+  background?: boolean
+}
+
+export interface StudioUploadResult {
+  ok: boolean
+  videoId?: string
+  saved?: boolean
+  already?: boolean
+  error?: string
+  detail?: string
+  /** What SCOUT set and read back (1.26.0+). */
+  did?: Record<string, unknown> | null
+  steps: StudioFinishStep[]
+}
+
+/**
+ * Liftoff: upload one finished video through YouTube Studio (SCOUT 1.25.0+),
+ * which costs nothing from MVP's shared YouTube quota. SCOUT keeps the new
+ * video's id the moment Studio shows it, so asking again for the same item
+ * answers with that id rather than uploading a second copy.
+ */
+export async function requestStudioUpload(opts: StudioUploadOpts): Promise<StudioUploadResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; videoId?: string; saved?: boolean; already?: boolean; error?: string; detail?: string; did?: Record<string, unknown> | null; steps?: StudioFinishStep[] }>(
+    { type: 'MVP_STUDIO_UPLOAD', opts: { ...opts, want: { ...opts.want, notifySubscribers: opts.want.notifySubscribers === true } } },
+    // SCOUT allows the file an hour to send and gives up at 70 minutes.
+    72 * 60_000,
+  )
+  if (!resp) return { ok: false, steps: [], error: 'timeout' }
+  return {
+    ok: !!resp.ok, videoId: resp.videoId, saved: resp.saved, already: resp.already,
+    error: resp.error, detail: resp.detail, did: resp.did ?? null, steps: Array.isArray(resp.steps) ? resp.steps : [],
+  }
 }
 
 export interface YtSaveRecipe {

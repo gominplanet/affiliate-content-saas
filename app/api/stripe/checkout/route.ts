@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
-import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, planChangeTarget, type BillingInterval } from '@/lib/stripe'
+import { priceMismatch } from '@/lib/price-guard'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
@@ -23,9 +24,10 @@ export async function POST(request: NextRequest) {
     tier: Tier
     referral?: string | null
     couponId?: string | null
-    /** 'year' buys the annual price for this tier. Anything else, including
-     *  absent, means monthly, so every existing caller keeps its behaviour
-     *  without being touched. */
+    /** 'year' buys the annual price for this tier. For a NEW subscription
+     *  anything else, including absent, means monthly. For an in-place plan
+     *  change, absent means the member's CURRENT interval (lib/stripe
+     *  planChangeTarget), which is what the upgrade preview quoted. */
     interval?: BillingInterval
     /** Customer-facing promotion code the user typed (e.g. "EARLY20"), NOT a
      *  Stripe promo_… object id. Only used by the in-place swap below — fresh
@@ -101,6 +103,9 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   const stripe = getStripe()
+  // The Stripe price must charge what the page showed (lib/price-guard).
+  const mismatch = await priceMismatch(stripe, priceId, tier as Tier, annualId ? 'year' : 'month', 'checkout')
+  if (mismatch) return NextResponse.json({ error: mismatch.error }, { status: mismatch.status })
   const approvedCoupon = await couponToApply(stripe, couponId, 'checkout')
 
   // Meta match-quality signals. `_fbp` is the pixel's browser id and `_fbc`
@@ -136,6 +141,22 @@ export async function POST(request: NextRequest) {
       const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
       const item = live?.items.data[0]
       if (live && item) {
+        // SAME PRICE THE PREVIEW QUOTED: the member's current interval unless
+        // they picked one, and a member who joined before the November 1 price
+        // change keeps that price level on whichever plan they move to
+        // (lib/stripe planChangeTarget). Everyone else moves to the new-member
+        // price.
+        const change = planChangeTarget(tier, interval, item.price)
+        const changePriceId = change.priceId ?? priceId
+        // A yearly member kept on yearly with no yearly price for this tier is
+        // moved to monthly. The preview told them; ops should know too. (An
+        // explicit yearly request was already reported above.)
+        if (change.fellBackToMonthly && !wantsAnnual) {
+          void alertOps(
+            'Yearly plan change with no annual price configured',
+            `A yearly member moved to "${tier}" but no yearly price resolves for it, so they were moved to MONTHLY. Set STRIPE_PRICE_${String(tier).toUpperCase()}_ANNUAL in Vercel and redeploy.`,
+          )
+        }
         // Resolve a typed promotion code FIRST — before both the
         // already-on-plan short-circuit and any subscription write. Two
         // reasons: a bad code becomes a clean 400 with nothing changed, and
@@ -173,9 +194,15 @@ export async function POST(request: NextRequest) {
           } catch { /* already released or completed — fine */ }
         }
 
-        // Already on this price → no plan change to make. Apply the discount
+        // Already on this plan → no plan change to make. Apply the discount
         // on its own if they supplied one, rather than saying nothing happened.
-        if (item.price?.id === priceId) {
+        // "This plan" is ANY price the tier has had at the same interval, not
+        // just today's: a member who joined Pro at $199 and re-selects Pro (to
+        // cancel a queued downgrade, say) keeps $199 rather than being moved to
+        // the $299 new-member price as if it were an upgrade.
+        const tierIds = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST] ?? []
+        const sameInterval = (item.price?.recurring?.interval ?? 'month') === change.interval
+        if (item.price?.id === changePriceId || (sameInterval && !!item.price?.id && tierIds.includes(item.price.id))) {
           if (promotionCodeId) {
             await stripe.subscriptions.update(live.id, {
               discounts: [{ promotion_code: promotionCodeId }],
@@ -189,7 +216,7 @@ export async function POST(request: NextRequest) {
 
         // Upgrade or downgrade? Compare real Stripe amounts rather than
         // assuming tier order, so a future price change can't invert this.
-        const newPrice = await stripe.prices.retrieve(priceId)
+        const newPrice = await stripe.prices.retrieve(changePriceId)
         const isUpgrade = (newPrice.unit_amount ?? 0) > (item.price?.unit_amount ?? 0)
         const canSchedule = ['active', 'trialing'].includes(live.status)
 
@@ -216,7 +243,7 @@ export async function POST(request: NextRequest) {
                 end_date: p0.end_date,
               },
               {
-                items: [{ price: priceId, quantity: 1 }],
+                items: [{ price: changePriceId, quantity: 1 }],
                 proration_behavior: 'none',
                 // Stamp so the webhook resolves user + tier directly when this
                 // phase activates and fires customer.subscription.updated.
@@ -232,7 +259,7 @@ export async function POST(request: NextRequest) {
         }
 
         const updated = await stripe.subscriptions.update(live.id, {
-          items: [{ id: item.id, price: priceId }],
+          items: [{ id: item.id, price: changePriceId }],
           // UPGRADE → bill the difference NOW. With 'create_prorations' the
           // charge was deferred to the next invoice, so someone could move to
           // a higher plan, get the bigger limits instantly, and pay nothing
@@ -291,7 +318,7 @@ export async function POST(request: NextRequest) {
           await sendMetaEvent({
             eventName: 'Purchase',
             // Keyed on the proration invoice: stable, and unique per upgrade.
-            eventId: purchaseEventId(inv?.id || `${live.id}_${priceId}`),
+            eventId: purchaseEventId(inv?.id || `${live.id}_${changePriceId}`),
             value: chargedAmount,
             currency: 'USD',
             email: user.email,

@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs'
 import { MVP_FEATURES_DOC } from '../lib/assistant-features-doc'
 import { TIERS, SELLABLE_TIERS } from '../lib/tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from '../lib/usage-cap'
+import { AMAZON_CLIPS_PER_MONTH } from '../lib/amazon-plan'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -68,10 +69,11 @@ const SRC = readFileSync('lib/assistant-features-doc.ts', 'utf8')
   // constant works whatever the constant is.
   const stated = [...DOC.matchAll(/(\d+)\s+(?:finished\s+)?(?:clips|Shorts)\b/gi)]
     .map((m) => Number(m[1]))
-    .filter((n) => n !== SHORTS_MONTHLY_CAP)
-  check('the doc states no Shorts figure other than the enforced cap',
+    // Seb 2026-10-05: the Amazon plan has its own enforced clip cap.
+    .filter((n) => n !== SHORTS_MONTHLY_CAP && n !== AMAZON_CLIPS_PER_MONTH)
+  check('the doc states no Shorts figure other than the enforced caps',
     stated.length === 0,
-    `found ${stated.join(', ')} against an enforced ${SHORTS_MONTHLY_CAP}`)
+    `found ${stated.join(', ')} against an enforced ${SHORTS_MONTHLY_CAP} (Pro) / ${AMAZON_CLIPS_PER_MONTH} (Amazon)`)
 }
 
 // ── every sellable plan's numbers match the product ─────────────────────────
@@ -85,8 +87,8 @@ const SRC = readFileSync('lib/assistant-features-doc.ts', 'utf8')
       ['Video scripts', t.scriptsPerMonth],
       ['Art Director thumbnails', t.thumbnailsPerMonth],
       ['WordPress sites', t.sites],
-      ['Virtual Assistant seats', t.vaSeats],
-      ['Help Desk messages', t.assistantMessagesPerMonth],
+      ['Team seats', t.vaSeats],
+      ['Ask MVP messages', t.assistantMessagesPerMonth],
     ]
     for (const [label, value] of numbered) {
       if (!value) continue  // 0 / null means the row is not rendered at all

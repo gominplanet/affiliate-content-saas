@@ -24,6 +24,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 
 export const maxDuration = 30
 export const runtime = 'nodejs'
@@ -63,6 +64,18 @@ function rateLimited(key: string, perMinute: number): boolean {
 
 /** Loose host-match so "https://site.com/" and "https://www.site.com" both
  *  resolve to the same integrations row. */
+/** Paid answers one site may serve per rolling day.
+ *
+ *  A PUBLIC ENDPOINT BILLS THE CREATOR. The per-minute limiter above is
+ *  per-instance and resets on every cold start, so on its own it allowed ~60 a
+ *  minute per site, all day, from anyone with the site URL: tens of thousands
+ *  of model calls a day, each one counted against that creator's own monthly
+ *  ceiling, which a stranger could drain until the creator's real generations
+ *  stopped. A blog widget answering a hundred visitors a day is a busy blog;
+ *  past that it is a script. Counted from ai_usage, so it holds across
+ *  instances. */
+const PRODUCT_FINDER_DAILY_CAP = 100
+
 function hostKey(u: string): string {
   try {
     const { host } = new URL(u)
@@ -95,12 +108,33 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integRows } = await (admin as any)
     .from('integrations')
-    .select('user_id, wordpress_url')
+    .select('user_id, wordpress_url, tier')
     .not('wordpress_url', 'is', null)
     .limit(1000)
   const match = (integRows ?? []).find((r: { wordpress_url: string }) => hostKey(r.wordpress_url) === wantHost)
   if (!match) return cors({ error: 'Site not registered' }, 404)
   const userId = match.user_id as string
+
+  // BOUND WHAT A STRANGER CAN SPEND, BEFORE ANY PAID WORK. The daily cap holds
+  // across instances; the spend ceiling (which also closes an expired trial)
+  // stops the widget from spending past what the creator's own plan allows.
+  // Both fail open on a telemetry error, like every other gate here.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (admin as any)
+      .from('ai_usage')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('feature', 'product_finder')
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    if ((count ?? 0) >= PRODUCT_FINDER_DAILY_CAP) {
+      return cors({ error: 'The product finder is resting for today. Browse the reviews in the meantime.' }, 429)
+    }
+  } catch { /* fail open: the ceiling below still applies */ }
+  const spend = await checkSpendCeiling(userId, (match as { tier?: string | null }).tier)
+  if (!spend.allowed) {
+    return cors({ error: 'The product finder is resting for now. Browse the reviews in the meantime.' }, 503)
+  }
 
   // 2. Brand name (for the widget's title — "Ask Gomin" etc.)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -248,8 +282,12 @@ Rules:
         }
       }).filter(Boolean) as PickOut[]
     }
-  } catch {
-    // Fall through with empty picks rather than 500-ing the widget.
+  } catch (err) {
+    // A FAILED ANSWER IS NOT "NO MATCH". This used to return empty picks, which
+    // the widget shows as "Nothing in our reviews matches that", so a provider
+    // outage looked exactly like a thin catalogue. Say it failed instead.
+    console.error('[product-finder]', err instanceof Error ? err.message : err)
+    return cors({ error: 'The product finder could not answer just now. Please try again in a moment.' }, 502)
   }
 
   return cors({ picks: picksOut, brand, _meta: { catalogue: reviews.length } }, 200)

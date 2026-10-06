@@ -150,7 +150,7 @@ function CopyBlock({ title, text, children }: { title: string; text: string; chi
     <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{title}</span>
-        <button type="button" onClick={() => { void navigator.clipboard.writeText(text); toast.success('Copied') }}
+        <button type="button" onClick={() => { navigator.clipboard.writeText(text).then(() => toast.success('Copied'), () => toast.error('Could not copy. Select the text and copy it by hand.')) }}
           className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
           <Copy size={11} /> Copy
         </button>
@@ -294,7 +294,7 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare, selectable,
                   {v.views != null && <span style={{ color: 'var(--text-faint)' }}> · {v.views.toLocaleString()} views</span>}
                   {v.isShort === true && (
                     <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(220,38,38,0.1)', color: '#DC2626' }}
-                      title="Links in Shorts comments are not clickable, so Encore does not comment on Shorts">
+                      title="Links in Shorts comments are not clickable, so On sale comments does not comment on Shorts">
                       Short
                     </span>
                   )}
@@ -446,10 +446,14 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 function SaleCommentRow({ c, onChange }: { c: SaleComment; onChange: () => void }) {
   const [busy, setBusy] = useState<'out' | 'pin' | null>(null)
   const watch = `https://www.youtube.com/watch?v=${c.youtube_video_id}&lc=${encodeURIComponent(c.comment_id)}`
+  // A USED-UP ALLOWANCE IS A WAIT, NOT A FAILURE: amber, and the cron edits
+  // it after the reset by itself (lib/sale-comments, app/api/cron/sale-comments).
+  const quotaWait = c.state === 'failed' && /daily limit|quota|allowance/i.test(c.last_error || '')
   const state = c.state === 'on_sale' ? { text: 'Says it is on sale', color: ACCENT }
     : c.state === 'updated' ? { text: `Sale taken out ${when(c.updated_at)}`, color: '#10B981' }
       : c.state === 'gone' ? { text: 'No longer on YouTube', color: 'var(--text-soft)' }
-        : { text: 'Could not update', color: '#ef4444' }
+        : quotaWait ? { text: 'Waiting for YouTube', color: '#d97706' }
+          : { text: 'Could not update', color: '#ef4444' }
   async function takeOut() {
     setBusy('out')
     try {
@@ -481,7 +485,7 @@ function SaleCommentRow({ c, onChange }: { c: SaleComment; onChange: () => void 
         </span>
         <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>Posted {when(c.posted_at)}{c.sale_label ? ` · ${c.sale_label}` : ''}</span>
       </div>
-      {c.state === 'failed' && c.last_error && <p className="text-[11.5px] mt-1" style={{ color: '#ef4444' }}>{c.last_error} MVP tries again every few hours while the sale is over.</p>}
+      {c.state === 'failed' && c.last_error && <p className="text-[11.5px] mt-1" style={{ color: quotaWait ? '#d97706' : '#ef4444' }}>{c.last_error} MVP tries again every few hours while the sale is over.</p>}
       {c.pinned === false && c.pin_error && <p className="text-[11.5px] mt-1" style={{ color: '#d97706' }}>Not pinned: {c.pin_error}</p>}
       {c.state !== 'gone' && (
         <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -598,8 +602,8 @@ export default function OnSale() {
     <div className="max-w-4xl mx-auto">
       <PageHero
         accent={ACCENT}
-        title="Encore"
-        subtitle="Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, Encore writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts."
+        title="On sale comments"
+        subtitle={<>Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, MVP writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts.<span className="block mt-1 text-[12px]">Formerly Encore.</span></>}
       />
 
       {/* HOW IT WORKS, in the order it happens: a real sequence, so numbered. */}

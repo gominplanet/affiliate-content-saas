@@ -28,7 +28,7 @@ export default function PurgeCacheTopbarButton() {
       if (!res.ok) {
         toast.error(data.error || 'Could not clear the cache', { id: t })
       } else {
-        toast.success('Cache cleared — your latest changes are live', { id: t })
+        toast.success('Cache cleared: your latest changes are live', { id: t })
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not clear the cache', { id: t })
@@ -51,7 +51,7 @@ export default function PurgeCacheTopbarButton() {
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
       title="Clear your WordPress cache so brand/theme changes show up on the live site right away"
     >
-      <RefreshCw size={11} className={busy ? 'animate-spin' : ''} /> {busy ? 'Clearing…' : 'Clear Cache'}
+      <RefreshCw size={11} className={busy ? 'animate-spin' : ''} /><span className="hidden 2xl:inline">{busy ? 'Clearing…' : 'Clear Cache'}</span>
     </button>
   )
 }
