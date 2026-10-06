@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>SCOUT: allow TRYBE</title>
+<style>
+body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:24px;color:#11151D;background:#fff}
+h1{font-size:18px;margin:0 0 8px}
+p{margin:0 0 14px;color:#566070}
+button{font:700 15px system-ui,sans-serif;background:#7C3AED;color:#fff;border:0;border-radius:9px;padding:11px 18px;cursor:pointer}
+button.no{background:none;color:#566070;font-weight:500;padding:11px 8px}
+#said{margin-top:12px;font-size:14px}
+</style></head><body>
+<h1>Let SCOUT work in TRYBE?</h1>
+<p>SCOUT will read the brands in TRYBE's Discover Brands and, only for the requests you approve in MVP, press Request to Join and send your message.</p>
+<p>Chrome asks once. You can take it back any time in SCOUT's extension settings.</p>
+<button id="allow" type="button">Allow on TRYBE</button>
+<button id="no" class="no" type="button">Not now</button>
+<p id="said" role="status"></p>
+<script src="trybe-allow.js"></script>
+</body></html>

@@ -12323,6 +12323,30 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, filled: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_ACCESS') {
+    // TRYBE outreach (Labs): is SCOUT allowed on TRYBE, and if asked, ask now.
+    (async () => {
+      let has = await hasTrybeAccess()
+      if (!has && msg.ask) has = await askTrybeAccess()
+      return { granted: !!has }
+    })().then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_TRYBE_SCAN') {
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 590000)
+    trybeScan({ knownNames: Array.isArray(msg.knownNames) ? msg.knownNames.slice(0, 2000) : [], max: msg.max }, sender && sender.tab ? sender.tab.id : null)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
+  if (msg.type === 'MVP_TRYBE_SEND') {
+    // Past the press, a late answer is 'unconfirmed', never 'failed'.
+    const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 110000)
+    trybeSend({ url: msg.url, name: msg.name, message: msg.message }, sender && sender.tab ? sender.tab.id : null)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ outcome: 'failed', error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_FB_ACCESS') {
     // Facebook setup's third step: is SCOUT allowed on Facebook, and if asked,
     // ask the creator now (the same Allow window the first Group fill shows),
@@ -13697,4 +13721,395 @@ function watchGroupPost(tabId, snippet) {
     }
   })()
   return id
+}
+
+// ── TRYBE outreach (Labs) ────────────────────────────────────────────────────
+// TRYBE (jointrybe.com) has no API for creators. Its Discover Brands page lists
+// brands; a brand opens in a popup with Visit website and Request to Join;
+// Request to Join asks for a message and a Send Request press. MVP drafts the
+// messages and holds the queue and the daily cap. SCOUT does two things only,
+// in the creator's own signed-in TRYBE tab:
+//
+//   MVP_TRYBE_SCAN  read the list, then open each brand not seen before and read
+//                   its popup: id, categories, pay, stats, website, about, and
+//                   whether TRYBE already shows it as requested.
+//   MVP_TRYBE_SEND  open one brand, press Request to Join, put the message in,
+//                   press Send Request, and report what TRYBE showed after.
+//
+// Everything is found by the words on screen ("Request to Join", "Send
+// Request", "Visit website"), not by class names, which TRYBE's build changes.
+//
+// IT REPORTS WHAT IT SAW. A send is 'sent' only when the message box closed
+// after Send Request. Pressed but not seen closing is 'unconfirmed', which MVP
+// keeps counted against the cap and asks the creator to check. Anything that
+// stops before the press is 'failed' and frees the slot. `steps` names how far
+// it got.
+//
+// The tab is a real, focused one: TRYBE's popups are React, and a background
+// tab is where a UI like that stops rendering (the Creator Connections lesson).
+// SCOUT returns the creator to the tab they were on when it is done.
+const TRYBE_ORIGINS = ['https://jointrybe.com/*', 'https://*.jointrybe.com/*']
+const TRYBE_DISCOVER = 'https://jointrybe.com/creator/discover'
+
+function askTrybeAccess() {
+  return new Promise((resolve) => {
+    let done = false
+    let winId = null
+    const finish = (granted) => {
+      if (done) return
+      done = true
+      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
+      try { chrome.windows.onRemoved.removeListener(onClosed) } catch (e) {}
+      resolve(!!granted)
+    }
+    const onMsg = (m) => { if (m && m.type === 'SCOUT_TRYBE_ALLOW_RESULT') finish(m.granted) }
+    const onClosed = (id) => { if (id === winId) setTimeout(() => finish(false), 300) }
+    chrome.runtime.onMessage.addListener(onMsg)
+    chrome.windows.onRemoved.addListener(onClosed)
+    chrome.windows.create({ url: chrome.runtime.getURL('trybe-allow.html'), type: 'popup', width: 480, height: 340, focused: true })
+      .then((w) => { winId = w && w.id })
+      .catch(() => finish(false))
+    setTimeout(() => finish(false), 180000)
+  })
+}
+
+async function hasTrybeAccess() {
+  try { return await chrome.permissions.contains({ origins: TRYBE_ORIGINS }) } catch (e) { return false }
+}
+
+function trybeSafeUrl(raw) {
+  try {
+    const u = new URL(String(raw || ''))
+    if (u.protocol !== 'https:' || !/(^|\.)jointrybe\.com$/i.test(u.hostname)) return null
+    return u.toString()
+  } catch (e) { return null }
+}
+
+async function trybeRun(func, args, tabId) {
+  const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args: args || [] })
+  return res && res[0] ? res[0].result : null
+}
+
+async function trybeBackTo(callerTabId) {
+  if (callerTabId == null) return
+  try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {}
+}
+
+// In page: is this TRYBE's discover screen, a sign-in screen, or still loading?
+function trybePageStateInPage() {
+  const path = location.pathname || ''
+  const text = (document.body && document.body.innerText) || ''
+  if (/log ?in|sign ?in|auth/i.test(path) || document.querySelector('input[type=password]')) return 'signin'
+  if (/Discover Brands/i.test(text)) return 'discover'
+  return 'loading'
+}
+
+// In page: the brand rows on Discover Brands, scrolled until no more load or
+// enough unseen ones are found. Rows are the smallest clickable blocks that
+// hold a logo and one or two lines of text.
+async function trybeListRowsInPage(knownNames, want) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const known = new Set((knownNames || []).map(norm))
+  const read = () => {
+    const out = []
+    const seen = new Set()
+    const cands = Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
+      const r = el.getBoundingClientRect()
+      if (r.width < 300 || r.height < 40 || r.height > 170) return false
+      if (!el.querySelector('img')) return false
+      const lines = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+      if (lines.length < 1 || lines.length > 3) return false
+      if (/pending requests|requested$|discover brands|search brand/i.test(lines.join(' '))) return false
+      return true
+    })
+    // Innermost: a candidate with no candidate inside it. Brand rows run the
+    // width of the list; the category chips above it are a fraction of that.
+    const inner0 = cands.filter((el) => !cands.some((o) => o !== el && el.contains(o)))
+    const widest = Math.max(0, ...inner0.map((el) => el.getBoundingClientRect().width))
+    const inner = inner0.filter((el) => el.getBoundingClientRect().width >= widest * 0.6)
+    for (const el of inner) {
+      const lines = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+      const name = lines[0]
+      if (!name || name.length > 80 || seen.has(norm(name))) continue
+      seen.add(norm(name))
+      const cats = (lines[1] || '').split(/\s*[•·|]\s*/).map((s) => s.trim()).filter(Boolean)
+      out.push({ name, categories: cats })
+    }
+    return out
+  }
+  let rows = read()
+  for (let i = 0; i < 25; i++) {
+    const unseen = rows.filter((r) => !known.has(norm(r.name))).length
+    if (unseen >= want) break
+    const before = rows.length
+    window.scrollTo(0, document.body.scrollHeight)
+    // The list may scroll inside its own box rather than the page.
+    const all = Array.from(document.querySelectorAll('*')).filter((el) => el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY))
+    for (const el of all) el.scrollTop = el.scrollHeight
+    await sleep(1400)
+    rows = read()
+    if (rows.length === before) {
+      await sleep(1200)
+      rows = read()
+      if (rows.length === before) break
+    }
+  }
+  return { rows, total: rows.length }
+}
+
+// In page: open one brand by name and read its popup, then close it.
+async function trybeReadBrandInPage(name) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
+  const byText = (re, root) => Array.from((root || document).querySelectorAll('button, a, [role=button]')).find((b) => visible(b) && re.test(String(b.innerText || b.textContent || '').trim()))
+  const steps = []
+  const want = norm(name)
+
+  // The row: the smallest block with a logo whose first line is this name.
+  const row = Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
+    if (!el.querySelector('img') || !visible(el)) return false
+    const first = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]
+    return norm(first) === want
+  }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0]
+  if (!row) return { ok: false, error: 'row-not-found', steps }
+  row.scrollIntoView({ block: 'center' })
+  await sleep(300)
+  row.click()
+  steps.push('opened')
+
+  // The popup: whatever holds Request to Join (or a requested state) once the
+  // address carries ?brand=.
+  let dialog = null, joinBtn = null, requestedBtn = null
+  for (let i = 0; i < 40; i++) {
+    await sleep(250)
+    joinBtn = byText(/^request to join/i)
+    requestedBtn = byText(/^(requested|pending|request sent|cancel request|withdraw)/i)
+    const anchor = joinBtn || requestedBtn || byText(/visit website/i)
+    if (anchor && /[?&]brand=/.test(location.search)) {
+      dialog = anchor.closest('[role=dialog], [aria-modal=true]')
+      if (!dialog) { let el = anchor; while (el && el !== document.body) { if (getComputedStyle(el).position === 'fixed') { dialog = el; break } el = el.parentElement } }
+      dialog = dialog || document.body
+      break
+    }
+  }
+  if (!dialog) return { ok: false, error: 'popup-not-seen', steps }
+  steps.push('popup')
+
+  const params = new URLSearchParams(location.search)
+  const brandId = params.get('brand') || ''
+  const brandUrl = location.href
+  const lines = String(dialog.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+  const before = (label) => { const i = lines.findIndex((l) => new RegExp('^' + label + '\\b', 'i').test(l)); return i > 0 ? lines[i - 1] : null }
+  const rating = (lines.join(' ').match(/([0-5](?:\.\d)?)\s*\((\d[\d,]*)\s*reviews?\)/i) || [])
+  const pay = lines.find((l) => /\$\s?[\d,.]+/.test(l) && /per|submission|video|post/i.test(l)) || null
+  const catLine = lines.find((l) => /•/.test(l)) || null
+  const aboutAt = lines.findIndex((l) => /^about$/i.test(l))
+  const about = aboutAt >= 0 ? lines.slice(aboutAt + 1).filter((l) => !/^(request to join|requested|pending|visit website)/i.test(l)).join(' ').slice(0, 2000) : null
+
+  // Website: a plain link when TRYBE uses one; otherwise press the button with
+  // window.open caught, so nothing actually opens.
+  let website = null
+  const visit = byText(/visit website/i, dialog)
+  if (visit) {
+    const a = visit.closest('a') || (visit.tagName === 'A' ? visit : null)
+    if (a && a.href && !/jointrybe\.com/i.test(a.href)) website = a.href
+    if (!website) {
+      const realOpen = window.open
+      try {
+        window.open = function (u) { website = String(u || ''); return null }
+        visit.click()
+        await sleep(400)
+      } finally { window.open = realOpen }
+      if (website && /jointrybe\.com/i.test(website)) website = null
+    }
+  }
+
+  const out = {
+    brandId,
+    brandUrl,
+    name: lines.find((l) => norm(l) === want) || name,
+    categories: catLine ? catLine.split(/\s*•\s*/).map((s) => s.trim()).filter(Boolean) : [],
+    payText: pay,
+    rating: rating[1] ? parseFloat(rating[1]) : null,
+    reviews: rating[2] ? parseInt(rating[2].replace(/,/g, ''), 10) : null,
+    creatorEarnings: before('creator earnings'),
+    totalCreators: before('total creators'),
+    trybeScore: before('trybe score'),
+    website,
+    about,
+    alreadyRequested: !joinBtn && !!requestedBtn,
+  }
+  steps.push('read')
+
+  // Close: Escape, then the X, then Back.
+  const isOpen = () => /[?&]brand=/.test(location.search) || !!byText(/^request to join/i)
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(500)
+  if (isOpen()) {
+    const x = Array.from(dialog.querySelectorAll('button, [role=button]')).find((b) => /close/i.test(b.getAttribute('aria-label') || '') || (!String(b.innerText || '').trim() && b.querySelector('svg') && b.getBoundingClientRect().left > dialog.getBoundingClientRect().left + dialog.getBoundingClientRect().width / 2))
+    if (x) { x.click(); await sleep(600) }
+  }
+  if (isOpen()) { history.back(); await sleep(900) }
+  steps.push(isOpen() ? 'not-closed' : 'closed')
+  return { ok: !!brandId, error: brandId ? null : 'no-brand-id', brand: out, steps }
+}
+
+async function trybeScan({ knownNames, max }, callerTabId) {
+  if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+  const want = Math.max(1, Math.min(60, Number(max) || 30))
+  const ka = startKeepAlive()
+  let tabId = null
+  const brands = []
+  const failures = []
+  try {
+    const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    let state = 'loading'
+    for (let i = 0; i < 20 && state === 'loading'; i++) {
+      await _sleep(750)
+      state = await trybeRun(trybePageStateInPage, [], tabId)
+    }
+    if (state === 'signin') return { ok: false, error: 'not-signed-in' }
+    if (state !== 'discover') return { ok: false, error: 'discover-not-found' }
+    await _sleep(1500)
+    const list = await trybeRun(trybeListRowsInPage, [knownNames || [], want], tabId)
+    const rows = (list && list.rows) || []
+    if (!rows.length) return { ok: false, error: 'no-rows', listed: 0 }
+    const known = new Set((knownNames || []).map((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()))
+    const todo = rows.filter((r) => !known.has(String(r.name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())).slice(0, want)
+    for (const r of todo) {
+      let res = null
+      try { res = await trybeRun(trybeReadBrandInPage, [r.name], tabId) } catch (e) { res = { ok: false, error: e && e.message ? e.message : 'error' } }
+      if (res && res.ok && res.brand) brands.push(res.brand)
+      else failures.push({ name: r.name, error: (res && res.error) || 'error', steps: res && res.steps })
+      // An unhurried pace between brands, like a person reading.
+      await _sleep(1200 + Math.round(Math.random() * 1800))
+      // A popup that would not close: reload the list before the next one.
+      if (res && res.steps && res.steps.includes('not-closed')) {
+        await chrome.tabs.update(tabId, { url: TRYBE_DISCOVER })
+        await waitForTabLoad(tabId, 30000)
+        await _sleep(2500)
+        await trybeRun(trybeListRowsInPage, [[], todo.length], tabId)
+      }
+    }
+    return { ok: true, listed: rows.length, brands, failures }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception', brands, failures }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    await trybeBackTo(callerTabId)
+    stopKeepAlive(ka)
+  }
+}
+
+// In page: one Request to Join, start to finish.
+async function trybeSendInPage(name, message) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
+  const byText = (re, root) => Array.from((root || document).querySelectorAll('button, a, [role=button]')).find((b) => visible(b) && re.test(String(b.innerText || b.textContent || '').trim()))
+  const steps = []
+  const want = norm(name)
+  const fail = (error) => ({ outcome: 'failed', error, steps })
+
+  const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  const popupFor = () => {
+    const anchor = byText(/^request to join/i) || byText(/^(requested|pending|request sent|cancel request|withdraw)/i)
+    if (!anchor) return null
+    let d = anchor.closest('[role=dialog], [aria-modal=true]')
+    if (!d) { let el = anchor; while (el && el !== document.body) { if (getComputedStyle(el).position === 'fixed') { d = el; break } el = el.parentElement } }
+    d = d || document.body
+    const lines = String(d.innerText || '').split('\n').map(norm)
+    return lines.includes(want) ? d : null
+  }
+
+  if (/log ?in|sign ?in|auth/i.test(location.pathname) || document.querySelector('input[type=password]')) return fail('not-signed-in')
+
+  // The deep link usually opens the brand's popup. If not, find its row.
+  let dialog = await waitFor(popupFor, 9000)
+  if (!dialog) {
+    const row = Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
+      if (!el.querySelector('img') || !visible(el)) return false
+      const first = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]
+      return norm(first) === want
+    }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0]
+    if (row) { row.scrollIntoView({ block: 'center' }); await sleep(300); row.click(); steps.push('row') }
+    dialog = await waitFor(popupFor, 9000)
+  }
+  if (!dialog) {
+    // Not on screen: type the name into TRYBE's own Search Brand box.
+    const search = Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(i.placeholder || ''))
+    if (search) {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      search.focus(); set.call(search, name)
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      steps.push('searched')
+      const hit = await waitFor(() => Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
+        if (!el.querySelector('img') || !visible(el)) return false
+        const first = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]
+        return norm(first) === want
+      }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0], 8000)
+      if (hit) { hit.click(); dialog = await waitFor(popupFor, 9000) }
+    }
+  }
+  if (!dialog) return fail('brand-not-found')
+  steps.push('popup')
+
+  const join = byText(/^request to join/i, dialog)
+  if (!join) { steps.push('already'); return { outcome: 'already', steps } }
+  join.click()
+  steps.push('join')
+
+  const box = await waitFor(() => Array.from(document.querySelectorAll('textarea')).find(visible), 10000)
+  const sendBtn = await waitFor(() => byText(/^send request/i), 10000)
+  if (!box || !sendBtn) return fail(box ? 'send-button-not-found' : 'message-box-not-found')
+
+  // React keeps its own copy of the value: set it the way a keystroke would.
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  box.focus()
+  setter.call(box, message)
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  box.dispatchEvent(new Event('change', { bubbles: true }))
+  await sleep(700)
+  if (String(box.value).trim() !== String(message).trim()) return fail('message-did-not-take')
+  steps.push('typed')
+  // A beat before pressing, like someone rereading it.
+  await sleep(1500 + Math.round(Math.random() * 2000))
+  if (sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true') return fail('send-disabled')
+  sendBtn.click()
+  steps.push('pressed')
+
+  // Sent means the message box went away. Anything else is unconfirmed.
+  const gone = await waitFor(() => !document.body.contains(box) || !visible(box), 15000)
+  if (gone) { steps.push('closed'); return { outcome: 'sent', steps } }
+  const err = Array.from(document.querySelectorAll('[role=alert], [class*=toast], [class*=error]')).map((e) => String(e.innerText || '').trim()).filter(Boolean)[0] || null
+  return { outcome: 'unconfirmed', error: err || 'TRYBE did not close the request box.', steps }
+}
+
+async function trybeSend({ url, name, message }, callerTabId) {
+  if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
+  const safe = trybeSafeUrl(url)
+  if (!safe) return { outcome: 'failed', error: 'bad-url' }
+  if (!name || !message || !String(message).trim()) return { outcome: 'failed', error: 'no-message' }
+  const ka = startKeepAlive()
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: safe, active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(1500)
+    const res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
+    if (!res) return { outcome: 'failed', error: 'no-answer-from-page' }
+    if (res.outcome === 'sent') await _sleep(1200)
+    return res
+  } catch (e) {
+    return { outcome: 'failed', error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    await trybeBackTo(callerTabId)
+    stopKeepAlive(ka)
+  }
 }
