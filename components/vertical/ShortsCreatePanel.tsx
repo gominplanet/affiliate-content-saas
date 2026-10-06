@@ -235,6 +235,9 @@ export function ShortsCreatePanel({
       const data = await safeJson(res)
       if (!res.ok) {
         if (data.needsUpload) { setHasSource(false); setNeedsUpload(true); throw new Error(data.error || 'Prepare the source video first.') }
+        // Nothing was rendered and the clip it has is untouched, so the card
+        // keeps its state: only the reason is shown.
+        if (data.noCaptions) { toast.error(data.error || 'This clip has no transcript saved, so there are no captions to add.', { duration: 12000 }); return }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Render failed')
       }

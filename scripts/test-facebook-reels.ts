@@ -48,6 +48,15 @@ check('a refused download shows the upload box, even for a video from YouTube',
   /setNeedsUpload\(true\)/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| youtubeRefused\)/.test(PANEL))
 check('no message names a button that is not on the page', !/Upload or pick a short/.test(PANEL + RENDER))
 check('the whole video is labelled, not scored 0/100', /'Whole video'/.test(PANEL) && /clip\.score > 0 \?/.test(PANEL))
+// CAPTIONS ON A WHOLE VIDEO (2026-10-06): it was saved with no words, so it
+// rendered with Captions ticked and came out with none, looking like success.
+check('the whole-video clip carries the transcript words', /const subtitles = sliceCuesToWindow\(cues, 0, total\)/.test(PLAN)
+  && /hashtags: \[\], subtitles, status: 'suggested'/.test(PLAN) && !/subtitles: \[\], status: 'suggested'/.test(PLAN))
+check('pressing it again gives an older whole-video clip its words', /row\.subtitles\.length === 0\) && subtitles\.length > 0/.test(PLAN))
+check('captions asked for with no words saved is refused, not rendered bare',
+  /if \(withCaptions && rawCues\.length === 0\)/.test(RENDER) && /noCaptions: true/.test(RENDER)
+  && RENDER.indexOf('if (withCaptions && rawCues.length === 0)') < RENDER.indexOf('await renderShort(')
+  && /if \(data\.noCaptions\)/.test(PANEL))
 
 const SHORTS = readFileSync('app/api/youtube/shorts/route.ts', 'utf8')
 check('a clip can be removed, the creator\'s own only', /export async function DELETE/.test(SHORTS) && /\.delete\(\)\.eq\('id', shortId\)\.eq\('user_id', user\.id\)/.test(SHORTS) && /removeClip\(clip\)/.test(PANEL))

@@ -122,6 +122,18 @@ export async function POST(request: Request) {
     // Cues are stored WORD-level (one entry per spoken word, clip-relative) so
     // the caption engine can animate word-by-word.
     const rawCues = (Array.isArray(short.subtitles) ? short.subtitles : []) as CaptionChunk[]
+    // CAPTIONS ASKED FOR, NO WORDS TO BURN: say so instead of rendering a
+    // clean clip and calling it done. A whole-video clip made before
+    // 2026-10-06 was saved with no words; pressing its button again adds them.
+    if (withCaptions && rawCues.length === 0) {
+      const whole = Number(short.start_sec) === 0 && short.reason === 'The whole video, as you asked.'
+      return NextResponse.json({
+        error: whole
+          ? 'This clip has no transcript saved, so there are no captions to add. Press Post the whole video again to add the words, then Re-render. Or untick Captions to render it without them.'
+          : 'This clip has no transcript saved, so there are no captions to add. Press Find Shorts again, or untick Captions to render it without them.',
+        noCaptions: true,
+      }, { status: 422 })
+    }
     // Flag "power words" (numbers, $/%, shouted or high-emphasis terms) so the
     // render service can accent-color them in the burned captions — the visual
     // that makes Hormozi/Opus-style captions pop. Backward-compatible: an older

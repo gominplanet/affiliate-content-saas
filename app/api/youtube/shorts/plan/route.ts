@@ -31,6 +31,7 @@ import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
 import { planShorts, reelWindow } from '@/lib/shorts-planner'
+import { sliceCuesToWindow } from '@/lib/shorts-captions'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
@@ -336,12 +337,24 @@ export async function POST(request: Request) {
       const lastCue = cues.reduce((m, c) => Math.max(m, Number(c.end) || 0), 0)
       const total = Math.round(((Number(video.duration_seconds) || 0) || lastCue) * 10) / 10
       if (!(total >= 3)) return NextResponse.json({ error: 'MVP could not tell how long this video is, so it could not make it one clip. Upload the video file once, then try again.' }, { status: 422 })
+      // THE WORDS GO WITH IT. Until 2026-10-06 this clip was saved with no
+      // subtitles, so a whole video rendered with Captions ticked came out
+      // with no captions at all. Same verbatim, clip-relative words a moment
+      // clip carries.
+      const subtitles = sliceCuesToWindow(cues, 0, total)
+        .map(c => ({ startSec: c.start, endSec: c.end, text: c.text }))
       // Pressed again: the whole-video clip already there is the answer, not a
-      // second copy of it.
+      // second copy of it. One saved before the words were kept gets them now.
       const { data: had } = await sb.from('youtube_shorts').select('*')
         .eq('user_id', user.id).eq('video_id', video.id).eq('start_sec', 0).eq('reason', 'The whole video, as you asked.')
         .order('created_at', { ascending: false }).limit(1)
       if (had && had.length) {
+        const row = had[0] as { id: string; subtitles?: unknown }
+        if ((!Array.isArray(row.subtitles) || row.subtitles.length === 0) && subtitles.length > 0) {
+          const { data: healed } = await sb.from('youtube_shorts').update({ subtitles, updated_at: new Date().toISOString() })
+            .eq('id', row.id).eq('user_id', user.id).select('*')
+          if (healed && healed.length) had.splice(0, 1, healed[0])
+        }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return NextResponse.json({ ok: true, shorts: (had as any[]).map(rowToShort), whole: true, video: { id: video.id as string, youtubeVideoId, title: videoTitle } })
       }
@@ -349,7 +362,7 @@ export async function POST(request: Request) {
         user_id: user.id, video_id: video.id, youtube_video_id: youtubeVideoId,
         start_sec: 0, end_sec: total,
         hook: '', caption: videoTitle, reason: 'The whole video, as you asked.', score: 0,
-        hashtags: [], subtitles: [], status: 'suggested',
+        hashtags: [], subtitles, status: 'suggested',
       }).select('*')
       if (oneErr) return NextResponse.json({ error: oneErr.message }, { status: 500 })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
