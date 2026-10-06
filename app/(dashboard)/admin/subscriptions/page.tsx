@@ -38,7 +38,7 @@ export default function AdminDuplicateSubsPage() {
       if (!res.ok) { toast.error(d.error || 'Scan failed'); return }
       setDups(Array.isArray(d.duplicates) ? d.duplicates : [])
       setScanned(true)
-    } catch { toast.error('Scan failed — try again.') }
+    } catch { toast.error('Scan failed: try again.') }
     finally { setLoading(false) }
   }
 
@@ -57,7 +57,7 @@ export default function AdminDuplicateSubsPage() {
       else toast.success(`Refunded $${d.amount} on ${sub.id}.`)
       // Re-scan so the list reflects the change.
       await scan()
-    } catch { toast.error('Action failed — try again.') }
+    } catch { toast.error('Action failed: try again.') }
     finally { setBusy(null) }
   }
 
@@ -104,7 +104,7 @@ export default function AdminDuplicateSubsPage() {
                   <div className="min-w-0 text-xs">
                     <p className="font-medium text-[var(--text)]">
                       {s.planTier}{s.amount != null ? ` · $${s.amount}/${s.interval || 'mo'}` : ''} · <span className="text-[var(--text-3)]">{s.status}</span>
-                      {i === 0 && <span className="ml-2 text-[10px] font-bold text-[#34c759]">OLDEST — likely keep</span>}
+                      {i === 0 && <span className="ml-2 text-[10px] font-bold text-[#34c759]">OLDEST: likely keep</span>}
                     </p>
                     <p className="text-[var(--text-3)] mt-0.5 truncate">
                       {s.id} · created {s.created ? new Date(s.created).toLocaleDateString() : '?'}

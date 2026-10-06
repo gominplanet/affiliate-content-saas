@@ -149,7 +149,7 @@ function BannerBlockEditor({
             {block.enabled ? <ToggleRight size={20} className="text-[#7C3AED]" /> : <ToggleLeft size={20} />}
           </button>
           <span className="text-sm font-medium text-[var(--text)]">Affiliate Banner</span>
-          {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled — won&apos;t show on site)</span>}
+          {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled, won&apos;t show on site)</span>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setOpen(o => !o)} className="text-[var(--text-3)] hover:text-[var(--text)]">
@@ -252,11 +252,11 @@ function BannerBlockEditor({
                 value={block.html}
                 onChange={e => onChange({ ...block, html: e.target.value })}
                 rows={6}
-                placeholder={'Paste your affiliate HTML here — Impact, ShareASale, CJ, custom iframes, etc.\n\nExample:\n<a href="https://…"><img src="https://…" /></a>'}
+                placeholder={'Paste your affiliate HTML here: Impact, ShareASale, CJ, custom iframes, etc.\n\nExample:\n<a href="https://…"><img src="https://…" /></a>'}
                 className="input-field w-full font-mono text-xs resize-y"
               />
               <p className="text-[11px] text-[var(--text-3)] mt-1.5">
-                The HTML is output as-is on your site. Displayed at 350px wide — height follows the content.
+                The HTML is output as-is on your site. Displayed at 350px wide. Height follows the content.
               </p>
             </div>
           )}
@@ -341,10 +341,10 @@ export default function AdsPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok || json.error) { toast.error(json.error || `Save failed (${res.status})`); return }
       if (json.wordpress === 'failed') {
-        toast.error(json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.')
+        toast.error(json.wordpressError || 'WordPress push failed. Check your credentials in Site & Integrations.')
       } else {
         fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
-        toast.success('Saved — pushed to your blog.')
+        toast.success('Saved: pushed to your blog.')
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed')
@@ -387,7 +387,7 @@ export default function AdsPage() {
         <PageHero
           guide={<AdsGuide />}
           title="Ads"
-          subtitle="Everything that earns on your blog — Google AdSense plus your affiliate banners. Changes push straight to your site."
+          subtitle="Everything that earns on your blog: Google AdSense plus your affiliate banners. Changes push straight to your site."
         />
         <div className="pt-1"><SaveButton /></div>
       </div>
@@ -402,7 +402,7 @@ export default function AdsPage() {
           {/* Google AdSense */}
           <Section
             title="Google AdSense"
-            description="Earn ad revenue alongside your affiliate links. Paste your AdSense Publisher ID and MVP verifies your site, adds Google's official Auto-ads code to every page, and serves your ads.txt — no WordPress editing. Google then places ads automatically across your posts."
+            description="Earn ad revenue alongside your affiliate links. Paste your AdSense Publisher ID and MVP verifies your site, adds Google's official Auto-ads code to every page, and serves your ads.txt: no WordPress editing. Google then places ads automatically across your posts."
           >
             <div className="flex flex-col gap-2">
               {/* Auto-injection works on the MVP theme OR the MVP plugin (so
@@ -410,7 +410,7 @@ export default function AdsPage() {
                   Only sites running NEITHER have to add Google's snippet. */}
               <div className="rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] px-3 py-2.5 text-xs text-[var(--text-2)] leading-relaxed">
                 <b className="text-[var(--text)]">Works on the MVP theme or plugin.</b> MVP injects the
-                <code> &lt;head&gt;</code> code and serves <code>ads.txt</code> for you — including on a bring-your-own-theme site (the MVP plugin handles it). Just keep your MVP theme/plugin on the latest version (your site shows an &ldquo;Update available&rdquo; when there is one). Only a site running neither would need to paste Google&apos;s code manually.
+                <code> &lt;head&gt;</code> code and serves <code>ads.txt</code> for you, including on a bring-your-own-theme site (the MVP plugin handles it). Just keep your MVP theme/plugin on the latest version (your site shows an &ldquo;Update available&rdquo; when there is one). Only a site running neither would need to paste Google&apos;s code manually.
               </div>
               <label className="text-sm font-medium text-[var(--text)]">AdSense Publisher ID</label>
               <input
@@ -427,7 +427,7 @@ export default function AdsPage() {
                 className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]"
               />
               {data.adsenseClientId && !/^ca-pub-\d{10,20}$/.test(data.adsenseClientId) && (
-                <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like an AdSense Publisher ID — it should be <code>ca-pub-</code> followed by ~16 digits (e.g. <code>ca-pub-1234567890123456</code>). You can also paste your whole AdSense code snippet and we&apos;ll pull the ID out. It won&apos;t go live until the format is valid.</p>
+                <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like an AdSense Publisher ID. It should be <code>ca-pub-</code> followed by ~16 digits (e.g. <code>ca-pub-1234567890123456</code>). You can also paste your whole AdSense code snippet and we&apos;ll pull the ID out. It won&apos;t go live until the format is valid.</p>
               )}
               <p className="text-xs text-[var(--text-3)] leading-relaxed">
                 Once saved, MVP adds the verification meta tag + Auto-ads script to every page and serves <code>/ads.txt</code> for you. Then switch on <b>Auto ads</b> in your AdSense dashboard and Google places ads automatically.
@@ -435,9 +435,9 @@ export default function AdsPage() {
               <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
                 <summary className="cursor-pointer font-medium text-[var(--text)] select-none">How do I find my Publisher ID + turn ads on? (step by step)</summary>
                 <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
-                  <li>Go to <a href="https://adsense.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">adsense.google.com</a> and sign in (or sign up — it&apos;s free).</li>
-                  <li>Add your blog&apos;s domain as a site. Your <b>Publisher ID</b> looks like <code>ca-pub-1234567890123456</code> — find it under <b>Account → Settings → Account information</b>.</li>
-                  <li>Paste that ID into the box above and click <b>Save</b>. MVP adds the verification code and <code>ads.txt</code> for you — no WordPress editing.</li>
+                  <li>Go to <a href="https://adsense.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">adsense.google.com</a> and sign in (or sign up, it&apos;s free).</li>
+                  <li>Add your blog&apos;s domain as a site. Your <b>Publisher ID</b> looks like <code>ca-pub-1234567890123456</code>: find it under <b>Account → Settings → Account information</b>.</li>
+                  <li>Paste that ID into the box above and click <b>Save</b>. MVP adds the verification code and <code>ads.txt</code> for you: no WordPress editing.</li>
                   <li>Back in AdSense, finish the <b>site review</b> (Google checks your site has content + the code, which is already in place). Approval can take a few hours up to a couple of weeks.</li>
                   <li>Once approved, open <b>Ads → By site</b>, switch on <b>Auto ads</b>, and pick your ad types. Google starts placing ads across your blog automatically.</li>
                 </ol>
@@ -519,8 +519,8 @@ export default function AdsPage() {
               <span className="text-sm font-medium text-[var(--text)]">Show this strip on the homepage</span>
               <span className="text-xs text-[var(--text-3)]">
                 {data.homepageAdsEnabled
-                  ? 'On — empty slots will show an "Advertise here" placeholder.'
-                  : 'Off — strip is hidden from the homepage.'}
+                  ? 'On: empty slots will show an "Advertise here" placeholder.'
+                  : 'Off: strip is hidden from the homepage.'}
               </span>
             </label>
             <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 transition-opacity ${data.homepageAdsEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
@@ -542,7 +542,7 @@ export default function AdsPage() {
                     <label className="flex flex-col items-center justify-center aspect-video rounded-lg border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] cursor-pointer transition-colors text-center px-3">
                       <ImageIcon size={18} className="mb-1.5 opacity-50" />
                       <span>Upload JPG or PNG</span>
-                      <span className="text-[10px] opacity-70 mt-0.5">16:9 — same shape as a post thumbnail</span>
+                      <span className="text-[10px] opacity-70 mt-0.5">16:9: same shape as a post thumbnail</span>
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"

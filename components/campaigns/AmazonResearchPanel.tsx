@@ -229,10 +229,10 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
           {/* MVP picks — MVP's onsite buy-to-review rulebook (carousel-verified). */}
           <button
             onClick={() => {
-              if (!canAct) { toast.error('MVP picks is a paid feature — plain research stays free. Upgrade to unlock carousel-verified, buy-to-review products.'); return }
+              if (!canAct) { toast.error('MVP picks is a paid feature. Plain research stays free. Upgrade to unlock carousel-verified, buy-to-review products.'); return }
               setMvpPicks(v => !v)
             }}
-            title="MVP picks: MVP's onsite buy-to-review criteria — $25+ price, 3.8★+, 50+ reviews, real monthly demand, and an open video carousel on the product page. Slower (each pick is verified) and paid-only."
+            title="MVP picks: MVP's onsite buy-to-review criteria: $25+ price, 3.8★+, 50+ reviews, real monthly demand, and an open video carousel on the product page. Slower (each pick is verified) and paid-only."
             className={`inline-flex items-center gap-1.5 h-9 rounded-full px-3.5 text-sm font-semibold border transition ${mvpPicks ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
             style={mvpPicks
               ? { background: '#7C3AED', borderColor: '#7C3AED', color: '#fff' }
@@ -278,12 +278,12 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
         <div className="text-center py-14 px-6" style={{ color: 'var(--text-faint)' }}>
           <SlidersHorizontal size={26} className="mx-auto mb-3" style={{ color: 'rgba(124,58,237,0.4)' }} />
           <p className="text-sm font-medium" style={{ color: 'var(--text-soft)' }}>Search the whole Amazon catalogue</p>
-          <p className="text-[12px] mt-1 max-w-sm mx-auto leading-relaxed">Type a keyword or pick a category, rating, review or best-seller filter above and results appear here — every product links with your own Associates tag.</p>
+          <p className="text-[12px] mt-1 max-w-sm mx-auto leading-relaxed">Type a keyword or pick a category, rating, review or best-seller filter above and results appear here: every product links with your own Associates tag.</p>
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
           {mvpPicks
-            ? "Nothing cleared MVP's bar here — carousel, demand, rating and price floors are strict. Try another keyword or category."
+            ? "Nothing cleared MVP's bar here. Carousel, demand, rating and price floors are strict. Try another keyword or category."
             : 'No products match those filters : try widening them.'}
           {debug && (
             <div className="mt-3 text-[11px] font-mono break-all max-w-2xl mx-auto" style={{ color: 'var(--text-faint)' }}>
@@ -403,7 +403,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
         </button>
       )}
       <div className="flex items-center gap-1.5">
-        <button onClick={onToggleSave} title={saved ? 'Saved — click to remove' : 'Save for later'}
+        <button onClick={onToggleSave} title={saved ? 'Saved: click to remove' : 'Save for later'}
           className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
           style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
           {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}

@@ -123,8 +123,8 @@ export default function DailyCcDigest() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ campaignId, feedback: next }),
       })
-      if (next === 'down') toast.message('Got it — fewer like this next time.')
-      else if (next === 'up') toast.message('Noted — more like this.')
+      if (next === 'down') toast.message('Got it: fewer like this next time.')
+      else if (next === 'up') toast.message('Noted: more like this.')
     } catch { /* optimistic; ignore write failure */ }
   }
 
@@ -289,7 +289,7 @@ function CampaignCard({ c, reaction, saved, onReact, onToggleSave, onContact, on
           <button
             onClick={accept}
             disabled={accepting}
-            title="Accept this campaign on Amazon via SCOUT — no tab-hopping"
+            title="Accept this campaign on Amazon via SCOUT: no tab-hopping"
             className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 hover:bg-accent disabled:opacity-50"
           >
             {accepting ? <Loader2 size={12} className="animate-spin" /> : <Handshake size={12} />} {accepting ? 'Accepting…' : 'Accept'}
@@ -309,7 +309,7 @@ function CampaignCard({ c, reaction, saved, onReact, onToggleSave, onContact, on
         </button>
         <button
           onClick={onToggleSave}
-          title={saved ? 'Saved — click to remove' : 'Save to Saved Campaigns'}
+          title={saved ? 'Saved: click to remove' : 'Save to Saved Campaigns'}
           className={`inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 transition ${
             saved ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'hover:bg-accent'
           }`}

@@ -135,7 +135,7 @@ export default function WordPressSitesManager() {
             </p>
             <p>
               Your plan publishes to {data.cap.max} site{data.cap.max === 1 ? '' : 's'}. The rest stay
-              connected and your WordPress content is untouched — MVP just won&rsquo;t publish or refresh
+              connected and your WordPress content is untouched. MVP just won&rsquo;t publish or refresh
               them until you reactivate. The <strong>active</strong> {data.cap.max === 1 ? 'site is the one marked default below' : 'sites are the first below'}.
               To keep a different blog active instead, press its <Star size={11} className="inline align-text-bottom text-[#7C3AED]" /> star to make it the default.
               {' '}<a href="/billing" className="text-[#7C3AED] font-medium hover:underline">Upgrade to Pro</a> to reactivate all {data.sites.length}.
@@ -155,7 +155,7 @@ export default function WordPressSitesManager() {
           <p className="text-xs text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
             <strong>How routing works:</strong> rewriting an existing post stays on its
             original site. Fresh generations publish to the site marked <strong>default</strong>
-            {' '}below — change the default with the star button. Compare & Guides has its
+            {' '}below: change the default with the star button. Compare & Guides has its
             own &ldquo;Publish to&rdquo; picker.
           </p>
         </div>
@@ -170,15 +170,15 @@ export default function WordPressSitesManager() {
         <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What the buttons do:</span>
         <span className="inline-flex items-center gap-1">
           <Star size={11} className="text-[#7C3AED]" />
-          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Star</strong> — set as default (fresh blog posts publish here)
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Star</strong>: set as default (fresh blog posts publish here)
         </span>
         <span className="inline-flex items-center gap-1">
           <Pencil size={11} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
-          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pencil</strong> — rename the label (just for your site picker)
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pencil</strong>: rename the label (just for your site picker)
         </span>
         <span className="inline-flex items-center gap-1">
           <Trash2 size={11} className="text-[#ff3b30]" />
-          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Trash</strong> — disconnect this site (does NOT delete WordPress posts)
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Trash</strong>: disconnect this site (does NOT delete WordPress posts)
         </span>
       </div>
 
@@ -361,7 +361,7 @@ function SiteRow({
               {site.paused && (
                 <span
                   className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-[#ff9500]/15 text-[#ff9500]"
-                  title="Over your plan's site limit — kept connected but not publishing. Star it to make it active, or upgrade to Pro."
+                  title="Over your plan's site limit. Kept connected but not publishing. Star it to make it active, or upgrade to Pro."
                 >
                   <PauseCircle size={9} /> Paused
                 </span>
@@ -634,7 +634,7 @@ function AddSiteModal({
             before the token/app-password fields. */}
         <div className="flex items-center justify-between gap-3 rounded-xl border border-[#7C3AED]/30 bg-[#7C3AED]/[0.05] px-3.5 py-3 mb-4">
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Don&apos;t have this blog yet? We recommend <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Hostinger</strong> — under $3/mo, free domain year one, 1-click WordPress, and <strong className="text-[#7C3AED]">20% off through our link</strong>.
+            Don&apos;t have this blog yet? We recommend <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Hostinger</strong>: under $3/mo, free domain year one, 1-click WordPress, and <strong className="text-[#7C3AED]">20% off through our link</strong>.
           </p>
           <a
             href="https://geni.us/MVPhosting"
@@ -642,7 +642,7 @@ function AddSiteModal({
             rel="noopener noreferrer"
             className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            Get Hostinger — 20% off <ExternalLink size={12} />
+            Get Hostinger: 20% off <ExternalLink size={12} />
           </a>
         </div>
 
@@ -690,7 +690,7 @@ function AddSiteModal({
               <li className="flex items-start gap-2">
                 <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
                 <span>
-                  In the left sidebar, click <strong>MVP Affiliate</strong>. (If you don&apos;t see it: install the plugin first — <a href="/api/download/plugin" className="text-[#7C3AED] hover:underline">download mvpaffiliate-platform.zip</a> → Plugins → Add New → Upload Plugin → Activate.)
+                  In the left sidebar, click <strong>MVP Affiliate</strong>. (If you don&apos;t see it: install the plugin first: <a href="/api/download/plugin" className="text-[#7C3AED] hover:underline">download mvpaffiliate-platform.zip</a> → Plugins → Add New → Upload Plugin → Activate.)
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -703,7 +703,7 @@ function AddSiteModal({
               </li>
             </ol>
             <p className="mt-3 text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-              No plugin access? Use the <button type="button" onClick={() => setMode('appPassword')} className="text-[#7C3AED] hover:underline font-medium">Application Password tab</button> instead — manual but works on any WordPress install.
+              No plugin access? Use the <button type="button" onClick={() => setMode('appPassword')} className="text-[#7C3AED] hover:underline font-medium">Application Password tab</button> instead: manual but works on any WordPress install.
             </p>
           </details>
         )}
@@ -743,7 +743,7 @@ function AddSiteModal({
             <li className="flex items-start gap-2">
               <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">5</span>
               <span>
-                WordPress shows a 24-character password ONCE — copy it (spaces are fine) and paste below.
+                WordPress shows a 24-character password ONCE. Copy it (spaces are fine) and paste below.
               </span>
             </li>
           </ol>
@@ -774,7 +774,7 @@ function AddSiteModal({
             placeholder="e.g. Wine Reviews"
             value={label}
             onChange={setLabel}
-            hint="Just for you — shown in the site picker."
+            hint="Just for you. Shown in the site picker."
           />
 
           {mode === 'token' ? (
@@ -783,7 +783,7 @@ function AddSiteModal({
               placeholder="Paste the long string from wp-admin → MVP Affiliate"
               value={token}
               onChange={setToken}
-              hint="One-line base64 token. Contains the site URL, username, and Application Password — all encoded."
+              hint="One-line base64 token. Contains the site URL, username, and Application Password: all encoded."
               type="password"
             />
           ) : (
@@ -823,10 +823,10 @@ function AddSiteModal({
             />
             <span className="min-w-0">
               <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                Content-only — keep my existing theme &amp; plugins
+                Content-only: keep my existing theme &amp; plugins
               </span>
               <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mt-0.5">
-                MVP will only write &amp; publish articles to this site — it won&rsquo;t change your
+                MVP will only write &amp; publish articles to this site. It won&rsquo;t change your
                 design, install the MVP theme/plugin, or add MVP-only blog tools. Buy links render
                 as plain themed text links. You can change this later in the site&rsquo;s settings.
               </span>

@@ -57,7 +57,7 @@ export default function AdminAnnouncementPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
-      setMsg({ ok: true, text: 'Published — every user sees it on the dashboard until they dismiss it.' })
+      setMsg({ ok: true, text: 'Published: every user sees it on the dashboard until they dismiss it.' })
       setTitle(''); setBody(''); setCtaLabel(''); setCtaHref(''); setVariant('news')
       await loadCurrent()
     } catch (err) {
@@ -78,7 +78,7 @@ export default function AdminAnnouncementPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Hide failed')
-      setMsg({ ok: true, text: 'Banner hidden — no announcement is showing now.' })
+      setMsg({ ok: true, text: 'Banner hidden: no announcement is showing now.' })
       await loadCurrent()
     } catch (err) {
       setMsg({ ok: false, text: err instanceof Error ? err.message : 'Hide failed' })
@@ -152,7 +152,7 @@ export default function AdminAnnouncementPage() {
         <div className="card p-5 space-y-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93]">Publish a new announcement</p>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed -mt-2">
-            Publishing replaces the current banner and re-shows to everyone — even people who dismissed the last one.
+            Publishing replaces the current banner and re-shows to everyone, even people who dismissed the last one.
           </p>
 
           <div>

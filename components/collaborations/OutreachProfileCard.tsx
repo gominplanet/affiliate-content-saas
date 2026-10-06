@@ -38,9 +38,9 @@ const EMPTY: Profile = {
 
 // Greeting presets — {brand} is filled in per message. First is warm/OINK-style.
 const GREETINGS = [
-  'Hey {brand}, you may or may not know us from our Amazon storefront —',
+  'Hey {brand}, you may or may not know us from our Amazon storefront. ',
   'Hi {brand} team,',
-  'Hello {brand}, thanks for running this campaign —',
+  'Hello {brand}, thanks for running this campaign. ',
 ]
 
 // Common creator categories to tick (plus any already saved).
@@ -85,7 +85,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
         body: JSON.stringify({ outreachProfile: p }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
-      toast.success('Outreach profile saved — every brand message now uses it.')
+      toast.success('Outreach profile saved: every brand message now uses it.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed')
     } finally { setSaving(false) }
@@ -105,7 +105,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Brand Outreach Profile</h3>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Saved once, used on every &quot;Message Brand&quot; draft — greeting, credibility, offer, links &amp; sample address.</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Saved once, used on every &quot;Message Brand&quot; draft. Greeting, credibility, offer, links &amp; sample address.</p>
         </div>
         {open ? <ChevronDown size={18} style={{ color: 'var(--text-2)' }} /> : <ChevronRight size={18} style={{ color: 'var(--text-2)' }} />}
       </button>
@@ -131,9 +131,9 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
               </div>
 
               <div>
-                <label className={label} style={labelStyle}>Who you are / credibility <span style={{ color: 'var(--text-faint)' }}>(must be true — goes out verbatim)</span></label>
+                <label className={label} style={labelStyle}>Who you are / credibility <span style={{ color: 'var(--text-faint)' }}>(must be true, goes out verbatim)</span></label>
                 <textarea value={p.intro} onChange={e => set('intro', e.target.value)} rows={2}
-                  placeholder="e.g. We're Seb & Michelle from Gominplanet — Top Platinum Level Influencers since 2022 with 6,000+ video reviews and 4,000+ brand collaborations."
+                  placeholder="e.g. We're Seb & Michelle from Gominplanet. Top Platinum Level Influencers since 2022 with 6,000+ video reviews and 4,000+ brand collaborations."
                   className={inputCls} style={inputStyle} />
               </div>
 

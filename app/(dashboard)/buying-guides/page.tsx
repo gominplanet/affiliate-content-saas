@@ -359,7 +359,7 @@ export default function BuyingGuidesPage() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `Rebuild failed (${r.status})`)
-      toast.success('Guide rebuilt — links, hero & CTA refreshed.', {
+      toast.success('Guide rebuilt: links, hero & CTA refreshed.', {
         action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
         duration: 10_000,
       })
@@ -413,11 +413,11 @@ export default function BuyingGuidesPage() {
       <FeatureLockedCard
         icon={<BookOpen size={28} strokeWidth={1.8} />}
         feature="Buying Guides"
-        description='Long-form "Best [topic]" round-ups in your voice — either auto-curated from your existing review catalogue or built from a handful of YouTube URLs you specify. Slots picks into Best Overall / Best Budget / Best for X, writes the guide, publishes to WordPress.'
+        description='Long-form "Best [topic]" round-ups in your voice: either auto-curated from your existing review catalogue or built from a handful of YouTube URLs you specify. Slots picks into Best Overall / Best Budget / Best for X, writes the guide, publishes to WordPress.'
         bullets={[
           'Two ways to start: pick from your catalogue OR paste 2-10 YouTube URLs of your own',
           '"Pick from my catalogue" auto-curates 5-7 best-fit reviews (unlocks at 500+ published posts)',
-          '"Pick my own" works immediately — no catalogue threshold',
+          '"Pick my own" works immediately: no catalogue threshold',
           'Auto-slots picks into Best Overall, Best Budget, Best for X categories',
           'Tagged "buying-guide" in WordPress for clean filtering',
           'Full Auto (publish immediately) or Let Me See (approve picks first) sub-modes',
@@ -461,7 +461,7 @@ export default function BuyingGuidesPage() {
                   }} />
                 </div>
                 <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>
-                  {remaining > 0 ? `${remaining} more to unlock.` : 'Refresh — you should be unlocked.'}
+                  {remaining > 0 ? `${remaining} more to unlock.` : 'Refresh: you should be unlocked.'}
                 </p>
               </div>
               <Button
@@ -540,8 +540,8 @@ export default function BuyingGuidesPage() {
                     </>
                   ) : (
                     <>
-                      Paste 2–10 YouTube URLs (one product per video). MVP ranks them, writes a &ldquo;best for ___&rdquo; guide, generates images, and publishes to your blog tagged{' '}
-                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--text)' }}>buying-guide</span>. No catalogue threshold — works from day one.
+                      Paste 2 to 10 YouTube URLs (one product per video). MVP ranks them, writes a &ldquo;best for ___&rdquo; guide, generates images, and publishes to your blog tagged{' '}
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--text)' }}>buying-guide</span>. No catalogue threshold. Works from day one.
                     </>
                   )}
                 </p>
@@ -631,7 +631,7 @@ export default function BuyingGuidesPage() {
           <form onSubmit={generateManual} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
-                Topic / title <span style={{ color: 'var(--text-2)' }}>(optional — MVP infers it from your videos)</span>
+                Topic / title <span style={{ color: 'var(--text-2)' }}>(optional, MVP infers it from your videos)</span>
               </label>
               <input
                 type="text"
@@ -647,7 +647,7 @@ export default function BuyingGuidesPage() {
 
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
-                YouTube video URLs <span style={{ color: 'var(--text-2)' }}>({manualValidCount}/{MAX_MANUAL_URLS} — one product per video)</span>
+                YouTube video URLs <span style={{ color: 'var(--text-2)' }}>({manualValidCount}/{MAX_MANUAL_URLS}: one product per video)</span>
               </label>
               <div className="flex flex-col gap-2">
                 {manualUrls.map((u, i) => (
@@ -810,7 +810,7 @@ export default function BuyingGuidesPage() {
         ) : suggestions.length === 0 ? (
           <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-2)' }}>
             <p>No topic clusters with 3+ reviews yet.</p>
-            <p className="text-xs mt-2">You can still type any topic above — the AI will pull whatever matches.</p>
+            <p className="text-xs mt-2">You can still type any topic above. The AI will pull whatever matches.</p>
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -874,7 +874,7 @@ export default function BuyingGuidesPage() {
                       disabled={rebuildingId === g.id || !!deletingId}
                       className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition hover:border-violet-300 disabled:opacity-40"
                       style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
-                      title="Rebuild this guide in place — refresh product links, hero image & CTA (same URL, ~1-2 min)"
+                      title="Rebuild this guide in place. Refresh product links, hero image & CTA (same URL, ~1-2 min)"
                     >
                       {rebuildingId === g.id
                         ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Rebuilding…</>

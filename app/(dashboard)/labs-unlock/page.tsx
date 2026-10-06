@@ -38,7 +38,7 @@ function LabsUnlockForm() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError((data.error as string) || 'Could not unlock — try again.')
+        setError((data.error as string) || 'Could not unlock. Try again.')
         setLoading(false)
         return
       }
@@ -47,7 +47,7 @@ function LabsUnlockForm() {
       router.replace(next)
       router.refresh()
     } catch {
-      setError('Network error — try again.')
+      setError('Network error: try again.')
       setLoading(false)
     }
   }
@@ -61,7 +61,7 @@ function LabsUnlockForm() {
         >
           <FlaskConical size={26} />
         </div>
-        <h1 className="text-xl font-semibold mb-1">Labs — early access</h1>
+        <h1 className="text-xl font-semibold mb-1">Labs: early access</h1>
         <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-6">
           These experimental tools are invite-only for now. Enter the access password to continue.
         </p>
@@ -100,7 +100,7 @@ function LabsUnlockForm() {
         </form>
 
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-5">
-          Don&apos;t have the password? Labs is in limited preview — reach out and we&apos;ll get you in.
+          Don&apos;t have the password? Labs is in limited preview. Reach out and we&apos;ll get you in.
         </p>
       </div>
     </div>

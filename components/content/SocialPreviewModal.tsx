@@ -485,7 +485,7 @@ export function SocialPreviewModal({
                   onChange={e => setText(e.target.value)}
                   rows={9}
                   className="w-full text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none leading-relaxed font-mono resize-none"
-                  placeholder="Post body — edit freely"
+                  placeholder="Post body: edit freely"
                 />
               </div>
 

@@ -134,9 +134,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     try {
       await navigator.clipboard.writeText(message)
       setCopied(true); setTimeout(() => setCopied(false), 1800)
-      toast.success('Message copied — paste it anywhere')
+      toast.success('Message copied: paste it anywhere')
     } catch {
-      toast.error('Couldn’t copy — select the text and copy manually')
+      toast.error('Couldn’t copy: select the text and copy manually')
     }
   }
 
@@ -210,7 +210,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         setCcDiag(byAsin.reason ? `Background send: ${byAsin.reason}` : null)
         setCcNote({ kind: 'info', text: `Sent ${byAsin.groups} of your message${byAsin.groups === 1 ? '' : 's'} to ${byAsin.brand || 'the brand'} on Creator Connections, but the rest didn’t go through. Open the chat (Open this campaign) and send the remaining part, or use Copy message.` })
         if (byAsin.campaignId) setCcDetailsUrl(`https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(byAsin.campaignId)}&type=affiliate-plus&status=opportunity`)
-        toast('Partly sent — finish the last message in the chat', { icon: '⚠️' })
+        toast('Partly sent: finish the last message in the chat', { icon: '⚠️' })
         return
       }
       // Not sent via the API (SCOUT hasn't learned the send yet, or this brand isn't
@@ -226,7 +226,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         // an open opportunity you haven't accepted (accept it, then Send lands in the
         // chat), or the brand genuinely isn't on Creator Connections.
         setCcNote({ kind: 'info', text: asinReason === 'no-campaign-for-asin'
-          ? 'SCOUT didn’t find an accepted Creator Connections campaign for this product. If the brand has an open opportunity, click Open Campaigns to accept it, then Send again — otherwise email the brand (Copy message / Email).'
+          ? 'SCOUT didn’t find an accepted Creator Connections campaign for this product. If the brand has an open opportunity, click Open Campaigns to accept it, then Send again. Otherwise email the brand (Copy message / Email).'
           : 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
         return
       }
@@ -269,8 +269,8 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           // Accept). Everything else = the chat is open with your recap typed in.
           const needsAccept = direct.reason === 'no-message-button' || direct.reason === 'no-message-brand-button'
           setCcNote({ kind: 'info', text: needsAccept
-            ? 'SCOUT opened this brand’s campaign in a new tab. You haven’t accepted it yet, so there’s no chat to send into: click Accept in that tab, then the “Message brand” box appears — your recap is already on your clipboard (Copy message), so paste and Send.'
-            : 'SCOUT opened the brand chat in a new tab with your message ready. Switch to that tab and click Send to finish (if a “sharing personal information” box appears, click OK). It may already have gone through — check the chat.' })
+            ? 'SCOUT opened this brand’s campaign in a new tab. You haven’t accepted it yet, so there’s no chat to send into: click Accept in that tab, then the “Message brand” box appears. Your recap is already on your clipboard (Copy message), so paste and Send.'
+            : 'SCOUT opened the brand chat in a new tab with your message ready. Switch to that tab and click Send to finish (if a “sharing personal information” box appears, click OK). It may already have gone through. Check the chat.' })
           toast('Finish in the Amazon tab SCOUT just opened', { icon: '➡️' })
           // Put the CLEAN recap on the clipboard (never `ccText` — that carries the
           // ---- Add to Message Group ---- markers, which must never be pasted into
@@ -327,7 +327,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             setCcDiag(`${directReason ? `Direct: ${directReason} · ` : ''}SCOUT looked for “${d.wantBrand || catBrand || asin}” → ${parts.join(' · ')}`)
           }
           if (inCatalog === true) {
-            setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again — or use Copy message / Email.` })
+            setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again, or use Copy message / Email.` })
           } else {
             setCcNote({ kind: 'info', text: 'Couldn’t confirm a Creator Connections campaign for this product right now. Use Copy message or Email, or try Open Campaigns to check on Amazon.' })
           }
@@ -522,7 +522,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             <div>
               <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Links to include</p>
               {data.links.length === 0 ? (
-                <p className="text-xs text-[#86868b]">No shareable links found yet — publish this post / its socials first.</p>
+                <p className="text-xs text-[#86868b]">No shareable links found yet. Publish this post / its socials first.</p>
               ) : (
                 <div className="flex flex-col gap-1">
                   {data.links.map(l => (
@@ -671,7 +671,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 const dbg = await requestCcSendDebug()
                 if (!dbg.ok) { setCcDiag(`SCOUT diagnostic unavailable (${dbg.error || 'no response'}). Is SCOUT 1.11.87+ loaded?`); return }
                 const summary = `SCOUT: recipe ${dbg.hasRecipe ? 'LEARNED ✓' : 'not learned yet'} · ${dbg.ringCount || 0} send-request(s) captured`
-                try { await navigator.clipboard.writeText(JSON.stringify(dbg, null, 2)); setCcDiag(`${summary} — full capture copied to clipboard, paste it to Seb.`) }
+                try { await navigator.clipboard.writeText(JSON.stringify(dbg, null, 2)); setCcDiag(`${summary}: full capture copied to clipboard, paste it to Seb.`) }
                 catch { setCcDiag(summary) }
               }}
               className="self-start text-[10px] underline text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"

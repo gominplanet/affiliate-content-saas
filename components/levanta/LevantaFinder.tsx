@@ -168,7 +168,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
               MVP Finder <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary criteria</span>
             </p>
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              One scan sweeps every brand you&rsquo;re partnered with on Levanta and keeps only the products worth a review — vetted for real commission, price, demand, rating and Levanta&rsquo;s own earnings-per-click, ranked best-first. Products you&rsquo;ve already generated are skipped.
+              One scan sweeps every brand you&rsquo;re partnered with on Levanta and keeps only the products worth a review: vetted for real commission, price, demand, rating and Levanta&rsquo;s own earnings-per-click, ranked best-first. Products you&rsquo;ve already generated are skipped.
             </p>
             <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: CYAN }}>
               <SlidersHorizontal size={11} /> Customize how your brand messages are written
@@ -202,7 +202,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
 
           <input
             value={focus} onChange={(e) => setFocus(e.target.value)} disabled={running}
-            placeholder="Focus (optional) — e.g. kitchen"
+            placeholder="Focus (optional): e.g. kitchen"
             className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:outline-none w-[190px] disabled:opacity-60"
             style={{ borderColor: 'var(--border)' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !running) runScan() }}
@@ -212,7 +212,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70"
             style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? 'Scanning…' : (willAppend ? 'Scan again — more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
+            {running ? 'Scanning…' : (willAppend ? 'Scan again: more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
           </button>
 
           {/* Draft / live */}

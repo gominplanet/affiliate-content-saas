@@ -266,7 +266,7 @@ function RevenueByCategory({ products }: { products: Product[] }) {
     byCat.set(cat, (byCat.get(cat) ?? 0) + p.revenue)
   }
   const enriched = [...byCat.entries()].filter(([c]) => c !== 'Uncategorized').length
-  if (enriched === 0) return <Empty msg="Category data is still syncing — this fills in over the next few loads as your products get categorized." />
+  if (enriched === 0) return <Empty msg="Category data is still syncing. This fills in over the next few loads as your products get categorized." />
   const rows = [...byCat.entries()].map(([label, val]) => ({ label, val })).sort((a, b) => b.val - a.val)
   const top = rows.filter(r => r.label !== 'Uncategorized').slice(0, 6)
   const rest = rows.filter(r => r.label !== 'Uncategorized').slice(6).reduce((s, r) => s + r.val, 0)
@@ -298,12 +298,12 @@ export default function StorefrontCharts({ period, series, products }: Props) {
         <div className="rounded-2xl border p-4 sm:p-5 mb-3" style={{ borderColor: 'rgba(234,88,12,0.25)', background: 'linear-gradient(180deg, rgba(234,88,12,0.05), transparent)' }}>
           <p className="font-bold text-[13.5px] mb-2" style={{ color: 'var(--text)' }}>How to read these</p>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
-            <li><b style={{ color: 'var(--text)' }}>Earnings trend</b> — your earnings per period over time. Line going up = you're growing. The single "am I winning?" chart.</li>
-            <li><b style={{ color: 'var(--text)' }}>Top earners</b> — the products that actually pay you, biggest first. Post more of what's at the top.</li>
-            <li><b style={{ color: 'var(--text)' }}>Conversion vs clicks</b> — each bubble is a product (size = earnings). Far right + low = lots of clicks but few buy → change the angle or creative. High up = converts well; if it's also small, push more traffic to it.</li>
-            <li><b style={{ color: 'var(--text)' }}>Earnings concentration</b> — the line shows what % of earnings your top few products make. A line that shoots up fast = you're reliant on 2–3 winners (risky if one dies).</li>
-            <li><b style={{ color: 'var(--text)' }}>Biggest movers</b> — what changed most vs last period. Green = grew, red = dropped. Chase the greens, check why the reds fell.</li>
-            <li><b style={{ color: 'var(--text)' }}>Revenue mix / by category</b> — where your sales volume comes from, by product and by category. Shows if you're a one-category shop or spread out.</li>
+            <li><b style={{ color: 'var(--text)' }}>Earnings trend</b>: your earnings per period over time. Line going up = you're growing. The single "am I winning?" chart.</li>
+            <li><b style={{ color: 'var(--text)' }}>Top earners</b>: the products that actually pay you, biggest first. Post more of what's at the top.</li>
+            <li><b style={{ color: 'var(--text)' }}>Conversion vs clicks</b>: each bubble is a product (size = earnings). Far right + low = lots of clicks but few buy → change the angle or creative. High up = converts well; if it's also small, push more traffic to it.</li>
+            <li><b style={{ color: 'var(--text)' }}>Earnings concentration</b>: the line shows what % of earnings your top few products make. A line that shoots up fast = you're reliant on 2 to 3 winners (risky if one dies).</li>
+            <li><b style={{ color: 'var(--text)' }}>Biggest movers</b>: what changed most vs last period. Green = grew, red = dropped. Chase the greens, check why the reds fell.</li>
+            <li><b style={{ color: 'var(--text)' }}>Revenue mix / by category</b>: where your sales volume comes from, by product and by category. Shows if you're a one-category shop or spread out.</li>
           </ul>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -325,7 +325,7 @@ export default function StorefrontCharts({ period, series, products }: Props) {
           <ChartCard title="Revenue mix" hint="Where your revenue comes from, by product.">
             <RevenueMix products={products} />
           </ChartCard>
-          <ChartCard title="Revenue by category" hint="Which categories drive your sales — one-category shop, or spread out?">
+          <ChartCard title="Revenue by category" hint="Which categories drive your sales: one-category shop, or spread out?">
             <RevenueByCategory products={products} />
           </ChartCard>
         </div>

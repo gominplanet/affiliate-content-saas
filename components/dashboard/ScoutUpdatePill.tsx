@@ -132,10 +132,10 @@ export default function ScoutUpdatePill() {
               What is SCOUT? <span className="font-normal" style={{ color: 'var(--text-faint, #86868b)' }}>Free Chrome extension</span>
             </p>
             <p className="text-[12px] leading-relaxed mt-1.5" style={{ color: 'var(--text-soft, #6e6e73)' }}>
-              SCOUT runs in your browser and makes a few things noticeably better — it captures real frames from your YouTube videos for sharper thumbnails, reads Amazon product details when our server is blocked, and finds your on-Amazon videos for brand recaps. It&apos;s optional, but recommended.
+              SCOUT runs in your browser and makes a few things noticeably better. It captures real frames from your YouTube videos for sharper thumbnails, reads Amazon product details when our server is blocked, and finds your on-Amazon videos for brand recaps. It&apos;s optional, but recommended.
             </p>
             <p className="text-[12px] leading-relaxed mt-3" style={{ color: 'var(--text-soft, #6e6e73)' }}>
-              One click from the Chrome Web Store — click <b>Add to Chrome</b>, and Chrome keeps it updated automatically.
+              One click from the Chrome Web Store. Click <b>Add to Chrome</b>, and Chrome keeps it updated automatically.
             </p>
             <a
               href={SCOUT_STORE_LISTING_URL}

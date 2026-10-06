@@ -81,7 +81,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
       if (!res.ok) throw new Error(d.error || 'Could not save')
       setState({ socials: [], cadence: 'daily', days: [], ...d.autopilot })
       onChange?.(d.autopilot?.enabled === true)
-      if (patch.enabled !== undefined) toast.success(patch.enabled ? 'Auto-pilot on — one post a day' : 'Auto-pilot off')
+      if (patch.enabled !== undefined) toast.success(patch.enabled ? 'Auto-pilot on: one post a day' : 'Auto-pilot off')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save')
     } finally {
@@ -204,7 +204,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                                 )
                               })}
                             </div>
-                            <p className="text-[10px] text-[#86868b] mt-1">Pick {o.cap} {o.cap === 1 ? 'day' : 'days'}.{state.days.length > 0 ? '' : ' No day picked yet — it won’t post until you choose.'}</p>
+                            <p className="text-[10px] text-[#86868b] mt-1">Pick {o.cap} {o.cap === 1 ? 'day' : 'days'}.{state.days.length > 0 ? '' : ' No day picked yet. It won’t post until you choose.'}</p>
                           </div>
                         )}
                       </div>
@@ -243,7 +243,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                         type="button"
                         disabled={saving || !usable}
                         onClick={() => toggleSocial(s.key)}
-                        title={note ? `${s.label} — ${note}` : s.label}
+                        title={note ? `${s.label}: ${note}` : s.label}
                         className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
                         style={{
                           borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)',
@@ -260,7 +260,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                     )
                   })}
                 </div>
-                <p className="text-[10px] text-[#86868b] mt-1.5">When the daily post goes live it also posts to the channels you pick here (default caption: title + link). Channels not on your plan or not connected are greyed out — <a href="/connect-socials" className="text-[#7C3AED] font-medium">connect more</a>.</p>
+                <p className="text-[10px] text-[#86868b] mt-1.5">When the daily post goes live it also posts to the channels you pick here (default caption: title + link). Channels not on your plan or not connected are greyed out: <a href="/connect-socials" className="text-[#7C3AED] font-medium">connect more</a>.</p>
               </div>
             )}
 

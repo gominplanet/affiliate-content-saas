@@ -98,7 +98,7 @@ export default function AdminSupportTicketsPage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Failed to save')
-      toast.success((payload.admin_response || payload.imageUrl) ? 'Reply sent — the user will see it in MVP.' : 'Ticket updated.')
+      toast.success((payload.admin_response || payload.imageUrl) ? 'Reply sent: the user will see it in MVP.' : 'Ticket updated.')
       setDrafts(prev => { const n = { ...prev }; delete n[id]; return n })
       setImageDrafts(prev => { const n = { ...prev }; delete n[id]; return n })
       await load()
@@ -115,7 +115,7 @@ export default function AdminSupportTicketsPage() {
     <>
       <PageHero
         title="Support tickets (admin)"
-        subtitle="Reply here and the user reads it back inside MVP. Each ticket is a full thread — reply as many times as needed; a user's reply reopens it. New activity also emails you."
+        subtitle="Reply here and the user reads it back inside MVP. Each ticket is a full thread. Reply as many times as needed; a user's reply reopens it. New activity also emails you."
       />
 
       <div className="flex items-center gap-2 mb-5">

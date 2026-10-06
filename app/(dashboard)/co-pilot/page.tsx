@@ -477,7 +477,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           >
             <Calendar size={15} /> Yes, show my YouTube schedule
           </button>
-          <p className="text-[11px] text-[#a1a1a6] dark:text-[#6e6e73]">Loads once, then stays cached — only new uploads are fetched after.</p>
+          <p className="text-[11px] text-[#a1a1a6] dark:text-[#6e6e73]">Loads once, then stays cached. Only new uploads are fetched after.</p>
         </div>
       </div>
     )
@@ -1139,7 +1139,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
 
   const saveCurrentAsPreset = useCallback(async () => {
     if (!styleReferenceUrl) return
-    const name = typeof window !== 'undefined' ? window.prompt('Name this style preset (e.g. "Reviews — dark", "Product close-up")', '')?.trim() : ''
+    const name = typeof window !== 'undefined' ? window.prompt('Name this style preset (e.g. "Reviews, dark", "Product close-up")', '')?.trim() : ''
     if (!name) return
     setSavingPreset(true)
     try {
@@ -1487,7 +1487,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       // "Failed to fetch" = browser-level TypeError; the server never responded
       // (Vercel hit maxDuration, ISP hiccup, etc.). Give an actionable message.
       setError(msg === 'Failed to fetch'
-        ? 'Request timed out — please try again'
+        ? 'Request timed out. Please try again'
         : msg)
     } finally {
       setGenerating(false)
@@ -1556,7 +1556,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
           }),
         })
         const data = await safeJson(res)
-        if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
+        if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status}: apply failed`)
         const warns = Array.isArray(data.warnings) ? (data.warnings as string[]) : []
         const quotaHit = data.quotaHit === true || warns.some(w => /quotaExceeded|exceeded your/i.test(w))
         // statusOk === false means the videos.update STATUS call failed — so the
@@ -1568,7 +1568,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         if (data.statusOk === false && !holdStatus) {
           setApplyError(
             quotaHit
-              ? `YouTube's daily API quota is used up right now, so nothing reached YouTube${publishAt ? ' — the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
+              ? `YouTube's daily API quota is used up right now, so nothing reached YouTube${publishAt ? ': the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
               : `Couldn't apply to YouTube: ${warns.join(' · ') || 'unknown error'}`,
           )
           return
@@ -1625,11 +1625,11 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         }),
       })
       const data = await safeJson(res)
-      if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — update failed`)
+      if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status}: update failed`)
       setApplied(true)
       void queueFirstComment()
       if (data.thumbnailWarning) {
-        setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
+        setApplyError(`Metadata applied ✓. Thumbnail not uploaded: ${data.thumbnailWarning}`)
       }
       // Panel stays expanded; the post-apply "Finish on YouTube" card's
       // "Dismiss" (dismissFinish) collapses it and moves the video on.
@@ -1967,7 +1967,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     }
     // YouTube's thumbnail endpoint rejects > 2 MB
     if (file.size > 2 * 1024 * 1024) {
-      setThumbnailError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — YouTube caps thumbnails at 2 MB. Compress and try again.`)
+      setThumbnailError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB: YouTube caps thumbnails at 2 MB. Compress and try again.`)
       return
     }
     const reader = new FileReader()
@@ -2042,7 +2042,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       for (const f of Array.from(files).slice(0, room)) {
         if (!f.type.startsWith('image/')) continue
         if (f.size > 10 * 1024 * 1024) {
-          setThumbnailError(`${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB — keep each photo under 10 MB.`)
+          setThumbnailError(`${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB: keep each photo under 10 MB.`)
           continue
         }
         const ext = (f.name.split('.').pop() || 'jpg').toLowerCase()
@@ -2275,7 +2275,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       if (!res.ok && data.scrapeFailed && cardAsin && !opts?.productImageUrlsOverride) {
         try {
           if (await isExtensionAvailable()) {
-            setThumbnailStatus('Amazon blocked our server — grabbing the product through SCOUT…')
+            setThumbnailStatus('Amazon blocked our server. Grabbing the product through SCOUT…')
             if (canCompare && compareOn && compareResult && compareResult.length > 1) {
               toast.warning('Amazon blocked the product photos, so this thumbnail shows one product, not the comparison. Try again later for all of them.')
             }
@@ -2658,7 +2658,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
             ) : (
               <span
                 className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0]"
-                title="Private with no scheduled publish date — it won't go live on its own. Set a publish date in YouTube Studio (or publish it) to make it live."
+                title="Private with no scheduled publish date. It won't go live on its own. Set a publish date in YouTube Studio (or publish it) to make it live."
               >
                 <Lock size={9} className="text-[#ff9500]" /> Private · not scheduled
               </span>
@@ -2746,7 +2746,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
             )}
             {!cardAsin && !generating && (
               <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] italic">
-                No ASIN in the title — we&apos;ll use a product link from your description if there is one (Amazon or a direct store link, wrapped with your Geniuslink), otherwise we write everything around the video&apos;s topic.
+                No ASIN in the title. We&apos;ll use a product link from your description if there is one (Amazon or a direct store link, wrapped with your Geniuslink), otherwise we write everything around the video&apos;s topic.
               </span>
             )}
             <a href={ytUrl} target="_blank" rel="noopener noreferrer"
@@ -2799,7 +2799,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       match before publishing. */}
                   {productDiscoverySource === 'search' && (
                     <span
-                      title="No ASIN was in your YouTube title — we identified this product from your title text and found it on Amazon. Double-check it's the right match before publishing."
+                      title="No ASIN was in your YouTube title. We identified this product from your title text and found it on Amazon. Double-check it's the right match before publishing."
                       className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] border border-[#5856d6]/30"
                     >
                       <Sparkles size={9} /> Auto-discovered
@@ -2840,9 +2840,9 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                 ? <>{geniuslinkError}</>
                 : geniuslinkSkippedByStyle
                 ? <>⚠️ Geniuslink not used. {geniuslinkError}</>
-                : <>⚠️ Geniuslink not used — {geniuslinkError}.{' '}
+                : <>⚠️ Geniuslink not used: {geniuslinkError}.{' '}
                     {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)
-                      ? <>This is usually a temporary Geniuslink hiccup — your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
+                      ? <>This is usually a temporary Geniuslink hiccup: your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
                       : <>Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.</>}
                   </>}
             </div>
@@ -2853,7 +2853,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
               there. If it does, the creator should NOT publish until it's fixed. */}
           {affiliateUrl && geniuslinkVerified === false && (
             <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff3b30]/10 border border-[#ff3b30]/20 text-xs text-[#ff3b30]">
-              ⚠️ Your affiliate link didn&rsquo;t land in the description. Hit <strong>Regenerate</strong> before publishing — don&rsquo;t post this one as-is.
+              ⚠️ Your affiliate link didn&rsquo;t land in the description. Hit <strong>Regenerate</strong> before publishing: don&rsquo;t post this one as-is.
             </div>
           )}
 
@@ -3026,10 +3026,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       <ChevronDown size={12} className="ml-auto text-[#86868b] transition-transform group-open:rotate-180" />
                     </summary>
                     <ul className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face (optional).</strong> A few clear, well-lit photos from different angles — MVP renders your real likeness and auto-checks every thumbnail for a match. No face model? Choose &ldquo;No face&rdquo; for a product-only scene.</li>
-                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Describe the thumbnail you want.</strong> Use the box below to set the scene, mood, your pose or background — e.g. &ldquo;shocked face, bright kitchen, big arrow at the stain.&rdquo; The product photo is pulled from your Amazon link automatically — you don&apos;t need to upload one.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face (optional).</strong> A few clear, well-lit photos from different angles. MVP renders your real likeness and auto-checks every thumbnail for a match. No face model? Choose &ldquo;No face&rdquo; for a product-only scene.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Describe the thumbnail you want.</strong> Use the box below to set the scene, mood, your pose or background: e.g. &ldquo;shocked face, bright kitchen, big arrow at the stain.&rdquo; The product photo is pulled from your Amazon link automatically. You don&apos;t need to upload one.</li>
                       <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Headline is automatic.</strong> MVP writes the headline from the product itself. After it generates, you can edit the text or hit Regenerate.</li>
-                      <li>Thumbnails are AI-generated, so glance at the variants and regenerate if one isn&apos;t quite right — it&apos;s normal to take a couple of tries.</li>
+                      <li>Thumbnails are AI-generated, so glance at the variants and regenerate if one isn&apos;t quite right. It&apos;s normal to take a couple of tries.</li>
                     </ul>
                   </details>
 
@@ -3073,7 +3073,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       </div>
                     ) : (
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                        No trained face yet — <a href="/photobooth" className="text-[#7C3AED] hover:underline font-medium">add your face</a> to put yourself on the thumbnail, or use <strong>Product Only</strong> below for a product-only scene.
+                        No trained face yet: <a href="/photobooth" className="text-[#7C3AED] hover:underline font-medium">add your face</a> to put yourself on the thumbnail, or use <strong>Product Only</strong> below for a product-only scene.
                       </p>
                     )}
 
@@ -3188,7 +3188,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                         const draft = outfitDraft[activeId] ?? (face.outfit_pref || '')
                         return (
                           <label className="flex flex-col gap-1">
-                            <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Outfit <span className="font-normal text-[#a1a1a6]">— saved to {face.name}</span></span>
+                            <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Outfit <span className="font-normal text-[#a1a1a6]">: saved to {face.name}</span></span>
                             <div className="flex items-center gap-2">
                               <input
                                 value={draft}
@@ -3208,13 +3208,13 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       {/* Custom badge + accent word (override the auto toggles). */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <label className="flex flex-col gap-1">
-                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Badge text <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Badge text <span className="font-normal text-[#a1a1a6]">: overrides auto</span></span>
                           <input value={thumbBadge} onChange={e => setThumbBadge(e.target.value)} maxLength={18} disabled={generatingThumbnail}
                             placeholder="e.g. MAX POWER!"
                             className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
                         </label>
                         <label className="flex flex-col gap-1">
-                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Red word <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Red word <span className="font-normal text-[#a1a1a6]">: overrides auto</span></span>
                           <input value={thumbAccentWord} onChange={e => setThumbAccentWord(e.target.value)} maxLength={24} disabled={generatingThumbnail}
                             placeholder="e.g. STRONG"
                             className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
@@ -3223,7 +3223,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
 
                       {/* Describe your thumbnail — free-text scene direction. */}
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Describe the scene <span className="font-normal text-[#a1a1a6]">— pose, mood, background</span></span>
+                        <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Describe the scene <span className="font-normal text-[#a1a1a6]">: pose, mood, background</span></span>
                         <textarea
                           id="scene-prompt"
                           value={scenePrompt}
@@ -3266,7 +3266,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                     ) : (
                       <>
                         <label htmlFor="product-url" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
-                          Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">{cardAsin ? '(override)' : '(optional — recommended)'}</span>
+                          Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">{cardAsin ? '(override)' : '(optional, recommended)'}</span>
                         </label>
                         <input
                           id="product-url"
@@ -3331,7 +3331,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                           </div>
                         </div>
                         <div className="px-4 pb-3 space-y-1.5">
-                          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">One click from the Chrome Web Store — Chrome installs it and keeps it updated automatically.</p>
+                          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">One click from the Chrome Web Store. Chrome installs it and keeps it updated automatically.</p>
                         </div>
                         <div className="px-4 pb-4 flex items-center gap-2">
                           <a
@@ -3348,7 +3348,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                             onClick={() => isExtensionAvailable().then(ok => setExtensionInstalled(ok))}
                             className="text-xs text-[#FF9500] hover:underline"
                           >
-                            I installed it — check again
+                            I installed it. Check again
                           </button>
                         </div>
                       </div>
@@ -3437,7 +3437,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
-                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">No photo needed — product scene</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">No photo needed: product scene</p>
                       </div>
                       <ChevronDown size={13} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
                     </button>
@@ -3476,7 +3476,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                   {/* Inline expand: Product Only */}
                   {thumbnailMode === 'product-only' && (
                     <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#34c759]/5 border border-[#34c759]/20">
-                      <p className="text-[11px] font-semibold text-[#34c759]">Product scene — no face needed</p>
+                      <p className="text-[11px] font-semibold text-[#34c759]">Product scene: no face needed</p>
                       <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">MVP places your product in a professional scene with your video title.</p>
                       <button
                         onClick={() => {
@@ -3616,7 +3616,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                             👎
                           </button>
                           {thumbnailFeedbackSent && (
-                            <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                            <span className="text-[10px] text-[#86868b]">Thanks, saved.</span>
                           )}
                         </div>
                       )}
@@ -3632,11 +3632,11 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                 <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
                   <span className="w-7 h-7 rounded-full bg-[#ff9500]/15 border border-[#ff9500]/40 text-[#ff9500] text-sm font-bold flex items-center justify-center flex-shrink-0">3</span>
                   <div>
-                    <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned Comment <span className="text-[11px] font-normal text-[#86868b]">— optional</span></p>
+                    <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned Comment <span className="text-[11px] font-normal text-[#86868b]">: optional</span></p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                       {canFirstComment
                         ? 'MVP posts this as the first comment the moment the video is public, and SCOUT pins it for you.'
-                        : "YouTube's API can't pin — copy & paste this after your video goes live"}
+                        : "YouTube's API can't pin. Copy & paste this after your video goes live"}
                     </p>
                   </div>
                 </div>
@@ -3708,7 +3708,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                         onChange={e => setProSettings(s => ({ ...s, playlistId: e.target.value || null }))}
                         className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                       >
-                        <option value="">— None —</option>
+                        <option value="">None</option>
                         {playlists.map(p => (
                           <option key={p.id} value={p.id}>{p.title}</option>
                         ))}
@@ -4041,7 +4041,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
               Pick a thumbnail headline
             </h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Four product-specific options written for THIS video — pick the one you like, or write your own (max 5 words). This is the title MVP bakes onto your thumbnail.
+              Four product-specific options written for THIS video. Pick the one you like, or write your own (max 5 words). This is the title MVP bakes onto your thumbnail.
             </p>
 
             <div className="flex flex-col gap-2 mb-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -4485,7 +4485,7 @@ export default function StudioPage() {
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
         const data = await res.json()
         if (!res.ok) {
-          setError(data.error || 'Failed to load more drafts — try Refresh.')
+          setError(data.error || 'Failed to load more drafts. Try Refresh.')
           break
         }
         const incoming = (data.drafts as DraftVideo[] | undefined) || []
@@ -4529,7 +4529,7 @@ export default function StudioPage() {
         if (selectedChannelId) params.set('channelId', selectedChannelId)
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
         const data = await res.json()
-        if (!res.ok) { setError(data.error || 'Failed to load more drafts — try Refresh.'); break }
+        if (!res.ok) { setError(data.error || 'Failed to load more drafts. Try Refresh.'); break }
         const incoming = (data.drafts as DraftVideo[] | undefined) || []
         setDrafts(prev => {
           const seen = new Set(prev.map(v => v.youtubeVideoId))
@@ -4733,7 +4733,7 @@ export default function StudioPage() {
                 <AlertCircle size={14} className="text-[#7C3AED]" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video. Pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
                 <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
                   <li className="flex gap-2">
                     <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
@@ -4741,7 +4741,7 @@ export default function StudioPage() {
                   </li>
                   <li className="flex gap-2">
                     <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
-                    <span>Same thing — we still write the review and link out to wherever you sell it.</span>
+                    <span>Same thing: we still write the review and link out to wherever you sell it.</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
@@ -4749,7 +4749,7 @@ export default function StudioPage() {
                   </li>
                 </ul>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
-                  <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
+                  <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name: e.g.{' '}
                   <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
                 </p>
               </div>
@@ -4768,12 +4768,12 @@ export default function StudioPage() {
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect YouTube to unlock the autopilot</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back to YouTube. One-time Google OAuth — revoke anytime.
+              We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back to YouTube. One-time Google OAuth. Revoke anytime.
             </p>
             <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2 mb-4">
               <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
-                <strong>Tip for product reviews:</strong> add the Amazon ASIN to the video file name or YouTube title — e.g.{' '}
-                <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. It&apos;s optional — it just pins the exact product for accurate Amazon data + your affiliate link.
+                <strong>Tip for product reviews:</strong> add the Amazon ASIN to the video file name or YouTube title: e.g.{' '}
+                <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. It&apos;s optional: it just pins the exact product for accurate Amazon data + your affiliate link.
               </p>
             </div>
             <a
@@ -4821,7 +4821,7 @@ export default function StudioPage() {
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
                 { id: 'todo' as const, label: '📝 Needs metadata', sub: 'Drafts that still need their title, description, tags and thumbnail generated (the orange ASIN pill marks the ones with a detected product)' },
-                { id: 'shipped' as const, label: '🚀 Metadata sent', sub: 'Handled — MVP generated or pushed the metadata, or the video is already scheduled/live. Re-generate any of it anytime.' },
+                { id: 'shipped' as const, label: '🚀 Metadata sent', sub: 'Handled: MVP generated or pushed the metadata, or the video is already scheduled/live. Re-generate any of it anytime.' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
@@ -4899,7 +4899,7 @@ export default function StudioPage() {
                   </p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
                     {activeTab === 'shipped'
-                      ? <>Generate metadata on a video (or schedule/publish it on YouTube) — handled videos land here.</>
+                      ? <>Generate metadata on a video (or schedule/publish it on YouTube). Handled videos land here.</>
                       : <>Switch tabs above to see your other videos.</>}
                   </p>
                 </>
@@ -4910,7 +4910,7 @@ export default function StudioPage() {
                   </p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
                     {includePublished
-                      ? 'YouTube returned an empty list. If you just uploaded, try Refresh in a minute — YouTube can take time to index new videos.'
+                      ? 'YouTube returned an empty list. If you just uploaded, try Refresh in a minute. YouTube can take time to index new videos.'
                       : <>Upload a video to YouTube Studio as <strong>private</strong> or <strong>unlisted</strong>, hit Refresh, and it&apos;ll show up here. Or tick <em>Include published</em> above to see videos that are already live.</>}
                   </p>
                 </>
@@ -4960,7 +4960,7 @@ export default function StudioPage() {
                     className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold rounded-xl bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                   >
                     {loadingMore
-                      ? <><Loader2 size={14} className="animate-spin" /> Loaded {drafts.length} so far — still scanning YouTube…</>
+                      ? <><Loader2 size={14} className="animate-spin" /> Loaded {drafts.length} so far: still scanning YouTube…</>
                       : <><RefreshCw size={14} /> Load all {includePublished ? 'videos' : 'drafts'} from YouTube</>}
                   </button>
                   {!loadingMore && (
@@ -4972,7 +4972,7 @@ export default function StudioPage() {
               )}
               {!activeQuery && !nextPageToken && drafts.length >= 25 && (
                 <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-6">
-                  All caught up — every {includePublished ? 'uploaded video' : 'draft'} on your channel is loaded.
+                  All caught up: every {includePublished ? 'uploaded video' : 'draft'} on your channel is loaded.
                 </p>
               )}
             </>

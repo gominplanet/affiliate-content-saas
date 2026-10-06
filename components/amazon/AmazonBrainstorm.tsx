@@ -81,7 +81,7 @@ function fmtPeriod(period: Period, start?: string | null, end?: string | null): 
   if (period === 'ytd') return `${ys} year to date`
   if (period === 'monthly') return `${MONTHS[(ms || 1) - 1]} ${ys}`
   const s = `${MONTHS[(ms || 1) - 1]} ${ds}`
-  if (end) { const [, me, de] = end.split('-').map(Number); return `${s} – ${MONTHS[(me || 1) - 1]} ${de}` }
+  if (end) { const [, me, de] = end.split('-').map(Number); return `${s} to ${MONTHS[(me || 1) - 1]} ${de}` }
   return s
 }
 function fmtDate(iso: string): string {
@@ -198,7 +198,7 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
               disabled={accepting || !camp.detailsUrl}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap disabled:opacity-60"
               style={{ backgroundColor: ACCENT }}
-              title={camp.detailsUrl ? 'Accept this campaign on Amazon via SCOUT' : 'No campaign link yet — open it in CC Campaigns'}
+              title={camp.detailsUrl ? 'Accept this campaign on Amazon via SCOUT' : 'No campaign link yet. Open it in CC Campaigns'}
             >
               {accepting ? <><Loader2 size={13} className="animate-spin" /> Accepting…</> : <><Handshake size={13} /> Accept on Amazon</>}
             </button>
@@ -252,7 +252,7 @@ function StorefrontHealth({ products }: { products: Product[] }) {
     return (
       <div className="rounded-2xl border p-4 mb-6 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <HeartPulse size={16} style={{ color: GREEN }} />
-        <span className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Storefront looks healthy — every product getting traffic is converting.</span>
+        <span className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Storefront looks healthy: every product getting traffic is converting.</span>
       </div>
     )
   }
@@ -288,7 +288,7 @@ function StorefrontHealth({ products }: { products: Product[] }) {
             </div>
           ))}
           <div className="px-4 py-2 text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-            Clicks-no-sales usually means the product went unavailable or doesn&apos;t convert — replace it. Falling = earnings dropped 75%+ vs last period. &ldquo;Replace&rdquo; opens AMZ Research to find a better product in the same space.
+            Clicks-no-sales usually means the product went unavailable or doesn&apos;t convert. Replace it. Falling = earnings dropped 75%+ vs last period. &ldquo;Replace&rdquo; opens AMZ Research to find a better product in the same space.
           </div>
         </div>
       )}
@@ -392,7 +392,7 @@ export default function AmazonBrainstorm() {
         if (best) { setPeriodState(best); try { localStorage.setItem(PERIOD_KEY, best) } catch { /* ignore */ } }
       }
     } catch {
-      setError('Network error — try again.')
+      setError('Network error: try again.')
     } finally {
       setLoading(false)
     }
@@ -412,9 +412,9 @@ export default function AmazonBrainstorm() {
         // SCOUT reads the range the creator has on screen; if they set "This
         // Year" the rows land as ytd — jump them to that view so the year shows.
         if (r.count) { setPeriod('ytd'); await load('ytd') } else { await load(period) }
-        setSyncMsg({ ok: true, text: r.count ? `Synced ${r.count} product${r.count === 1 ? '' : 's'} from your Amazon report.` : 'Checked Amazon — open your report (set This Year) and Sync again.' })
+        setSyncMsg({ ok: true, text: r.count ? `Synced ${r.count} product${r.count === 1 ? '' : 's'} from your Amazon report.` : 'Checked Amazon: open your report (set This Year) and Sync again.' })
       } else if (r.error === 'not-installed') {
-        setSyncMsg({ ok: false, text: 'Install SCOUT first — it reads your Amazon report. Then click Sync again.' })
+        setSyncMsg({ ok: false, text: 'Install SCOUT first. It reads your Amazon report. Then click Sync again.' })
       } else if (r.error === 'signed-out') {
         setSyncMsg({ ok: false, text: 'Sign in to Amazon Associates in this browser, then click Sync again.' })
       } else {
@@ -424,7 +424,7 @@ export default function AmazonBrainstorm() {
         setSyncMsg({ ok: false, text: `Couldn't read your Amazon report just now${why}. Open your report on Amazon (set This Year), leave the tab open, then Sync again.` })
       }
     } catch {
-      setSyncMsg({ ok: false, text: 'Sync failed — try again in a moment.' })
+      setSyncMsg({ ok: false, text: 'Sync failed: try again in a moment.' })
     } finally {
       setSyncing(false)
     }
@@ -439,7 +439,7 @@ export default function AmazonBrainstorm() {
       setSuggestions(Array.isArray(json.suggestions) ? json.suggestions : [])
       setGrounded(json.grounded !== false)
     } catch {
-      setAiError('Network error — try again.')
+      setAiError('Network error: try again.')
     } finally {
       setAiBusy(false)
     }
@@ -552,7 +552,7 @@ export default function AmazonBrainstorm() {
             <p className="text-[12px] mt-2" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>
           )}
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-            One click and SCOUT reads your Amazon report in the background (latest + recent past periods) and closes the tab — nothing to babysit.
+            One click and SCOUT reads your Amazon report in the background (latest + recent past periods) and closes the tab: nothing to babysit.
           </p>
         </div>
       )}
@@ -576,7 +576,7 @@ export default function AmazonBrainstorm() {
             <ol className="text-[12px] mt-2.5 leading-relaxed list-decimal pl-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
               <li>Open your <a href="https://affiliate-program.amazon.com/home/reports" target="_blank" rel="noopener noreferrer" className="font-semibold underline" style={{ color: ACCENT }}>Amazon report</a>, set the range to <span className="font-semibold" style={{ color: 'var(--text)' }}>This Year</span> and group by <span className="font-semibold" style={{ color: 'var(--text)' }}>Linked Product</span>.</li>
               <li>Leave that tab open and click <span className="font-semibold" style={{ color: 'var(--text)' }}>Sync from Amazon</span> (top right). SCOUT reads the whole-year table on screen (Amazon only lets you <em>download</em> 31 days, so reading it is the way to get the year).</li>
-              <li>For your full income, Sync once on the <span className="font-medium">Commissions</span> tab, then click the <span className="font-medium">Creator Connections</span> summary tab on Amazon and Sync again — MVP adds both together.</li>
+              <li>For your full income, Sync once on the <span className="font-medium">Commissions</span> tab, then click the <span className="font-medium">Creator Connections</span> summary tab on Amazon and Sync again. MVP adds both together.</li>
             </ol>
           </details>
         </div>
@@ -674,7 +674,7 @@ export default function AmazonBrainstorm() {
             {tab === 'performance'
               ? 'How your storefront is performing this period.'
               : tab === 'optimize'
-                ? 'What to fix next — the fastest money hiding in your catalog.'
+                ? 'What to fix next. The fastest money hiding in your catalog.'
                 : 'Every brand you feature, and the ones you can pitch for a paid deal.'}
           </p>
         </>
@@ -712,7 +712,7 @@ export default function AmazonBrainstorm() {
 
           {data?.totalsSource === 'summary' && (
             <p className="text-[11.5px] -mt-4 mb-6 px-1" style={{ color: 'var(--text-faint)' }}>
-              Headline totals are your full Amazon report (all products). The cards below are your top {data.productCount ?? products.length} earners — the ones worth posting more of.
+              Headline totals are your full Amazon report (all products). The cards below are your top {data.productCount ?? products.length} earners: the ones worth posting more of.
             </p>
           )}
           </>
@@ -917,7 +917,7 @@ export default function AmazonBrainstorm() {
             <div>
               <p className="font-bold text-[15px]" style={{ color: 'var(--text)' }}>Turn the numbers into your next posts</p>
               <p className="text-[13px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                MVP reads the table above plus your open brand campaigns and niche, then hands you specific next moves — amplify your best earners, re-angle high-click products that under-convert, chase your strongest campaigns. Each is one click from being made.
+                MVP reads the table above plus your open brand campaigns and niche, then hands you specific next moves: amplify your best earners, re-angle high-click products that under-convert, chase your strongest campaigns. Each is one click from being made.
               </p>
             </div>
           </div>

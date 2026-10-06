@@ -117,7 +117,7 @@ export function BodyImageSlots({
       <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
         {value.some(Boolean)
           ? 'Only the photos you add here go in the article (no AI photos mixed in). Fill more slots for more images.'
-          : 'Optional. By default we generate AI photos of the actual product in different real-world settings — or drop in up to 3 of your own above.'}
+          : 'Optional. By default we generate AI photos of the actual product in different real-world settings, or drop in up to 3 of your own above.'}
       </span>
       {err && <span className="text-[10px] text-[#ff3b30]">{err}</span>}
     </div>

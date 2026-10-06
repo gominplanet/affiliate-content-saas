@@ -76,7 +76,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
   }, [])
 
   async function runSync() {
-    setSyncing(true); setError(''); setNote('Syncing your PartnerBoost catalog — this can take a couple of minutes…')
+    setSyncing(true); setError(''); setNote('Syncing your PartnerBoost catalog. This can take a couple of minutes…')
     try {
       const res = await fetch('/api/partnerboost/sync', { method: 'POST' })
       const j = await res.json()
@@ -198,7 +198,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
               MVP Finder <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary criteria</span>
             </p>
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              One scan sweeps every brand you&rsquo;ve joined across Walmart, Amazon &amp; DTC and keeps only the products worth a review — vetted for commission, price and category, ranked by estimated earnings per sale. Products you&rsquo;ve already generated are skipped.
+              One scan sweeps every brand you&rsquo;ve joined across Walmart, Amazon &amp; DTC and keeps only the products worth a review: vetted for commission, price and category, ranked by estimated earnings per sale. Products you&rsquo;ve already generated are skipped.
             </p>
             <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: CYAN }}>
               <SlidersHorizontal size={11} /> Customize how your brand messages are written
@@ -220,7 +220,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
             ))}
           </div>
           <input value={focus} onChange={(e) => setFocus(e.target.value)} disabled={running}
-            placeholder="Focus (optional) — e.g. kitchen"
+            placeholder="Focus (optional): e.g. kitchen"
             className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border focus:outline-none w-[190px] disabled:opacity-60"
             style={{ borderColor: 'var(--border)' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !running) runScan() }} />
@@ -228,7 +228,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70"
             style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? 'Scanning…' : (willAppend ? 'Scan again — more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
+            {running ? 'Scanning…' : (willAppend ? 'Scan again: more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
           </button>
           <button onClick={runSync} disabled={syncing || running}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
@@ -251,8 +251,8 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
               // STALE IS SAID, not shown as "instant". The half-hourly refresh
               // failing used to leave a month-old catalogue looking current.
               ? <span style={{ color: '#d97706' }}>{syncInfo.count.toLocaleString()} products cached, last refreshed {timeAgo(syncInfo.syncedAt)}. The automatic refresh has not succeeded since then, so commissions and deals may be out of date. Press Sync to see why.</span>
-              : <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>)
-            : 'Not synced yet — your first scan runs live (slower). Sync once for instant scans.'}
+              : <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''}: scans are instant</>)
+            : 'Not synced yet: your first scan runs live (slower). Sync once for instant scans.'}
         </div>
       </div>
 

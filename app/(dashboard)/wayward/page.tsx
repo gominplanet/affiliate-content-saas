@@ -237,7 +237,7 @@ export default function WaywardPage() {
         </Link>
       </div>
       <p className="text-sm text-[#6e6e73] dark:text-[#a1a1a6] mb-4">
-        Browse Wayward&apos;s Amazon Attribution catalog, filter by brand, and mint an attributed Amazon link per product — measured and paid back to your Wayward account.
+        Browse Wayward&apos;s Amazon Attribution catalog, filter by brand, and mint an attributed Amazon link per product, measured and paid back to your Wayward account.
       </p>
 
       {needsToken ? (

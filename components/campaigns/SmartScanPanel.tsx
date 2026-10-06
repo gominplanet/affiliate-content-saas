@@ -144,7 +144,7 @@ export default function SmartScanPanel({
     const saved = savedAsins.has(asin.toUpperCase())
     return (
       <button onClick={onClick}
-        title={saved ? 'Saved for later — click to remove' : 'Save for later'}
+        title={saved ? 'Saved for later. Click to remove' : 'Save for later'}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
         style={saved
           ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' }
@@ -217,7 +217,7 @@ export default function SmartScanPanel({
         setHasMore(!!data.hasMore)
         setProgress(null)
         const dl = dropLine(data.drops)
-        const more = data.hasMore ? ' Scan again for more — the catalog digs deeper each time.' : ' That’s the full catalog for this search.'
+        const more = data.hasMore ? ' Scan again for more. The catalog digs deeper each time.' : ' That’s the full catalog for this search.'
         setNote(`Found ${freshMatches.length} MVP-approved campaign${freshMatches.length === 1 ? '' : 's'} from the catalog, instantly.${dl}${more}`)
         return
       }
@@ -246,9 +246,9 @@ export default function SmartScanPanel({
     if (!res.ok) {
       setError(
         res.error === 'not-installed'
-          ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
+          ? 'SCOUT isn’t connected. Install it (see "How it works" above), then scan again.'
           : res.error === 'timeout'
-            ? 'The scan ran long and timed out — try again; a shorter opportunities list scans faster.'
+            ? 'The scan ran long and timed out. Try again; a shorter opportunities list scans faster.'
             : res.error === 'sponsored-tab'
               ? 'Your Creator Connections tab is on "Sponsored Products for Creators". Switch it to the "Affiliate+ campaigns" tab (or close it and let SCOUT open its own), then scan again.'
               : `Scan failed (${res.error || 'unknown'}). Open your Creator Connections tab once, then retry.`,
@@ -270,7 +270,7 @@ export default function SmartScanPanel({
     cacheResolvedLinks(scored); cacheProductSignals(scored) // pre-warm: instant messaging + image-rich Browse
     const s = res.stats
     const dl = dropLine(s?.drops)
-    if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dl}`)
+    if (s?.blocked) setNote(`Amazon asked for a pause partway through. These results are partial. Wait ~15 minutes before scanning again.${dl}`)
     else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dl}`)
     else if (dl) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dl}`)
     // Then the live spot counts for what was scanned, so campaigns that filled
@@ -284,7 +284,7 @@ export default function SmartScanPanel({
 
   // ── CAMPAIGNS OFF — onsite Amazon search, verified in waves ──────────────
   async function runOnsite() {
-    if (!focus.trim()) { setError('Enter a keyword — the onsite search needs one (e.g. "massage gun").'); return }
+    if (!focus.trim()) { setError('Enter a keyword. The onsite search needs one (e.g. "massage gun").'); return }
     const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
     const verified: FinderProduct[] = []
     const exclude: string[] = []
@@ -292,7 +292,7 @@ export default function SmartScanPanel({
     let blocked = false
     let dry = false
     for (let wave = 1; wave <= MAX_WAVES && verified.length < count; wave++) {
-      setProgress(`Verified ${verified.length}/${count} — live-checking products on Amazon (wave ${wave})…`)
+      setProgress(`Verified ${verified.length}/${count}: live-checking products on Amazon (wave ${wave})…`)
       const res = await requestProductSearch(focus, {
         priceMin: ONSITE_RULES.minPrice,
         minRating: ONSITE_RULES.minRating,
@@ -304,7 +304,7 @@ export default function SmartScanPanel({
         excludeAsins: exclude,
       })
       if (!res.ok) {
-        if (res.error === 'not-installed') { setError('SCOUT isn’t connected — install it (see "How it works" above), then search again.'); return }
+        if (res.error === 'not-installed') { setError('SCOUT isn’t connected. Install it (see "How it works" above), then search again.'); return }
         if (res.error === 'intl-permission-needed') { setError('That marketplace needs a one-time permission: open the SCOUT extension popup and switch on "International Amazon (CA · UK · AU)", then search again.'); return }
         if (res.error === 'amazon-blocked') { blocked = true; break }
         if (res.error === 'no-results') { dry = wave === 1; break }
@@ -332,7 +332,7 @@ export default function SmartScanPanel({
     if (totalDrops.rating) bits.push(`rating ×${totalDrops.rating}`)
     if (totalDrops.unreadable) bits.push(`couldn't read the page ×${totalDrops.unreadable}`)
     const dropLine = bits.length ? ` Dropped on: ${bits.join(' · ')}.` : ''
-    if (blocked) setNote(`Amazon asked for a pause — results are partial. Wait ~15 minutes before searching again.${dropLine}`)
+    if (blocked) setNote(`Amazon asked for a pause. Results are partial. Wait ~15 minutes before searching again.${dropLine}`)
     else if (verified.length < count && dry) setNote(`The search pool ran dry at ${verified.length} MVP-approved product${verified.length !== 1 ? 's' : ''} for this keyword.${dropLine}`)
     else if (dropLine) setNote(`Every result below is live-verified.${dropLine}`)
   }
@@ -347,7 +347,7 @@ export default function SmartScanPanel({
       if (mode === 'campaigns') await runCampaigns()
       else await runOnsite()
     } catch {
-      setError('Search failed unexpectedly — reload the page and try again.')
+      setError('Search failed unexpectedly. Reload the page and try again.')
       setProgress(null)
     } finally {
       setRunning(false)
@@ -380,8 +380,8 @@ export default function SmartScanPanel({
             </p>
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
               {mode === 'campaigns'
-                ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue or saved for later are skipped.</>
-                : <>SCOUT searches Amazon directly and live-verifies each product on its page — price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
+                ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time: vetted for real commission, runway, demand, product quality and review visibility, and ranked with the buy-to-review math. Products already in your queue or saved for later are skipped.</>
+                : <>SCOUT searches Amazon directly and live-verifies each product on its page: price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
             </p>
             <p className="text-[11px] leading-relaxed mt-2 rounded-lg px-2.5 py-2" style={{ color: 'var(--text-faint)', background: 'rgba(124,58,237,0.06)' }}>
               <b style={{ color: 'var(--text-soft)' }}>How to use it:</b>{' '}
@@ -399,7 +399,7 @@ export default function SmartScanPanel({
           {/* Focus vs Wide — how strict MVP's picks are. */}
           {mode === 'campaigns' && (
             <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}
-              title="MVP Focus: the tightest picks, following MVP's Profitability Rules — best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
+              title="MVP Focus: the tightest picks, following MVP's Profitability Rules, for the best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
               <Chip on={ruleMode === 'focus'} label="MVP Focus" onClick={() => { setRuleMode('focus'); restartSearch() }} />
               <Chip on={ruleMode === 'wide'} label="Wide" onClick={() => { setRuleMode('wide'); restartSearch() }} />
             </div>
@@ -408,7 +408,7 @@ export default function SmartScanPanel({
             value={focus}
             onChange={e => { setFocus(e.target.value); setScanOffset(0); setHasMore(false) }}
             onKeyDown={e => { if (e.key === 'Enter' && !running) run() }}
-            placeholder={mode === 'campaigns' ? 'Focus (optional) — e.g. massage gun' : 'Keyword — e.g. massage gun'}
+            placeholder={mode === 'campaigns' ? 'Focus (optional): e.g. massage gun' : 'Keyword: e.g. massage gun'}
             disabled={running}
             className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none w-[200px] disabled:opacity-60"
             style={{ color: 'var(--text)' }}
@@ -447,7 +447,7 @@ export default function SmartScanPanel({
             {running
               ? (mode === 'onsite' ? 'Verifying…' : 'Scanning… (a few minutes)')
               : (mode === 'onsite' ? 'Find products'
-                  : (mode === 'campaigns' && matches && matches.length > 0 && hasMore ? 'Scan again — more' : 'Smart Scan'))}
+                  : (mode === 'campaigns' && matches && matches.length > 0 && hasMore ? 'Scan again: more' : 'Smart Scan'))}
           </button>
         </div>
       </div>
@@ -455,8 +455,8 @@ export default function SmartScanPanel({
       {running && (
         <div className="px-4 pb-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>
           {progress || (mode === 'campaigns'
-            ? 'Sweeping the grid, then deep-checking the best candidates one by one — paced so Amazon stays happy. Please don’t browse Amazon while this runs.'
-            : `Searching ${marketHost}, then live-verifying each candidate on its product page — paced so Amazon stays happy. Bigger result counts take longer. Please don’t browse Amazon while this runs.`)}
+            ? 'Sweeping the grid, then deep-checking the best candidates one by one, paced so Amazon stays happy. Please don’t browse Amazon while this runs.'
+            : `Searching ${marketHost}, then live-verifying each candidate on its product page, paced so Amazon stays happy. Bigger result counts take longer. Please don’t browse Amazon while this runs.`)}
         </div>
       )}
       {error && <div className="px-4 pb-3 text-[12px] text-[#ff3b30]">{error}</div>}
@@ -478,7 +478,7 @@ export default function SmartScanPanel({
         <div className="border-t border-gray-100 dark:border-white/10">
           <div className="px-4 py-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
             {matches.length === 0
-              ? 'Nothing cleared MVP’s bar this pass — that’s the vetting doing its job. Try again when new opportunities land.'
+              ? 'Nothing cleared MVP’s bar this pass. That’s the vetting doing its job. Try again when new opportunities land.'
               : <>Found <b style={{ color: 'var(--text)' }}>{matches.length}</b> campaign{matches.length !== 1 ? 's' : ''} worth your time{skippedCovered > 0 ? ` · ${skippedCovered} already in your queue skipped` : ''}.</>}
           </div>
           <div className="divide-y divide-gray-100 dark:divide-white/10">
@@ -560,8 +560,8 @@ export default function SmartScanPanel({
         <div className="border-t border-gray-100 dark:border-white/10">
           <div className="px-4 py-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
             {products.length === 0
-              ? 'No products cleared MVP’s bar for this keyword — that’s the vetting doing its job. Try a broader or different keyword.'
-              : <><b style={{ color: 'var(--text)' }}>{products.length}</b> MVP-approved product{products.length !== 1 ? 's' : ''} — each one live-verified on {marketHost}. Confident buy-to-review picks.</>}
+              ? 'No products cleared MVP’s bar for this keyword. That’s the vetting doing its job. Try a broader or different keyword.'
+              : <><b style={{ color: 'var(--text)' }}>{products.length}</b> MVP-approved product{products.length !== 1 ? 's' : ''}: each one live-verified on {marketHost}. Confident buy-to-review picks.</>}
           </div>
           <div className="divide-y divide-gray-100 dark:divide-white/10">
             {products.map((p) => (

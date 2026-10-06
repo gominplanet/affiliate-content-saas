@@ -202,7 +202,7 @@ export function PinterestPreviewModal({
             {/* Hashtags — relevant, SEO + viral, auto-appended */}
             {data.hashtags.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1.5">Tags — auto-appended</p>
+                <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1.5">Tags: auto-appended</p>
                 <div className="flex flex-wrap gap-1.5">
                   {data.hashtags.map(t => (
                     <span key={t} className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#E60023]/8 text-[#c0001a] dark:text-[#ff6b81]">#{t}</span>
@@ -217,7 +217,7 @@ export function PinterestPreviewModal({
                 near-white and vanished on the cream in dark mode) for full
                 legibility in both themes. */}
             <div className="rounded-lg p-3" style={{ background: '#fff8f0', border: '1px solid #ffe4cc' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: '#b35a00' }}>Affiliate disclaimer + tags — auto-appended</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: '#b35a00' }}>Affiliate disclaimer + tags: auto-appended</p>
               <p className="text-xs leading-relaxed" style={{ color: '#3a3a3c' }}>{data.disclaimer}</p>
               <p className="text-xs font-semibold mt-1.5" style={{ color: '#c0001a' }}>{data.complianceTags}</p>
             </div>
@@ -259,7 +259,7 @@ export function PinterestPreviewModal({
               ) : destLink ? (
                 <a href={destLink} target="_blank" rel="noopener noreferrer" className="block text-[11px] text-[#7C3AED] hover:underline break-all">{destLink}</a>
               ) : (
-                <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>
+                <p className="text-[11px] text-[#ff3b30]">No blog URL. This post can&apos;t be pinned.</p>
               )}
               {linkTarget === 'product' && (
                 <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">Links straight to the full Amazon page with your tag. Pinterest blocks short and redirect links, so this one is never shortened. The affiliate disclosure above is always included.</p>

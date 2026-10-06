@@ -60,7 +60,7 @@ export default function StorefrontOpportunities() {
           </p>
         </div>
         <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
-          You already made the video — these just aren&rsquo;t turning into Amazon sales. Fix the cheap stuff first: check the affiliate link in the description still works, refresh the pinned comment, and re-share. This is your fastest money.
+          You already made the video. These just aren&rsquo;t turning into Amazon sales. Fix the cheap stuff first: check the affiliate link in the description still works, refresh the pinned comment, and re-share. This is your fastest money.
         </p>
       </div>
 

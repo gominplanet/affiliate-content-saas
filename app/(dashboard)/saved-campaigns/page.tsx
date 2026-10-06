@@ -92,7 +92,7 @@ export default function SavedCampaignsPage() {
     <>
       <PageHero
         title="Saved Campaigns"
-        subtitle="Every campaign you've saved — from Creator Connections or MVP x Wayward. Revisit it, message the brand, or remove it for good."
+        subtitle="Every campaign you've saved, from Creator Connections or MVP x Wayward. Revisit it, message the brand, or remove it for good."
       />
 
       {items === null ? (
@@ -167,7 +167,7 @@ export default function SavedCampaignsPage() {
                     onClick={() => accept(s)}
                     disabled={accepting === s.id}
                     className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center disabled:opacity-50"
-                    title="Accept this campaign on Amazon via SCOUT — no tab-hopping"
+                    title="Accept this campaign on Amazon via SCOUT: no tab-hopping"
                   >
                     {accepting === s.id ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
                     {accepting === s.id ? 'Accepting via SCOUT…' : 'Accept campaign'}

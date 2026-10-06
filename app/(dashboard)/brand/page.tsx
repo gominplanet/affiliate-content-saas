@@ -345,7 +345,7 @@ function socialUrlWarning(raw: string, label: string, hosts: string[]): string |
 
   // A bare email address in a link field.
   if (/^mailto:/i.test(v) || /^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(v)) {
-    return `That looks like an email address. Put it in Contact email below — this field wants your ${label} link.`
+    return `That looks like an email address. Put it in Contact email below. This field wants your ${label} link.`
   }
 
   let host: string
@@ -974,7 +974,7 @@ export default function BrandPage() {
       <PageHero
         guide={<BrandProfileGuide />}
         title="Brand Profile"
-        subtitle="The single source of truth for every review you generate. The agent team reads this before writing — so your reviews actually sound like you."
+        subtitle="The single source of truth for every review you generate. The agent team reads this before writing, so your reviews actually sound like you."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -1131,7 +1131,7 @@ export default function BrandPage() {
                   className="input-field"
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                  The quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. It is also the link in the &quot;Let&apos;s Work Together&quot; line of your YouTube descriptions, unless you set a Brand collaborations URL below. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
+                  The quick and polished way to show your stats to curious brands: one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. It is also the link in the &quot;Let&apos;s Work Together&quot; line of your YouTube descriptions, unless you set a Brand collaborations URL below. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
                 </p>
               </div>
 
@@ -1318,7 +1318,7 @@ export default function BrandPage() {
                         className="input-field text-xs font-mono"
                       />
                       {geniuslinkCredLooksWrong(geniuslinkKey) && glTest.status !== 'ok' && (
-                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API key — it should be a long hex string like <code>e353413c5f52…</code>, not an email or store name.</p>
+                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API key. It should be a long hex string like <code>e353413c5f52…</code>, not an email or store name.</p>
                       )}
                     </div>
                     <div>
@@ -1333,7 +1333,7 @@ export default function BrandPage() {
                         className="input-field text-xs font-mono"
                       />
                       {geniuslinkCredLooksWrong(geniuslinkSecret) && glTest.status !== 'ok' && (
-                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API secret — copy the exact Secret from Geniuslink → Tools → &ldquo;Integrate with our API&rdquo;.</p>
+                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API secret. Copy the exact Secret from Geniuslink → Tools → &ldquo;Integrate with our API&rdquo;.</p>
                       )}
                     </div>
                   </div>
@@ -1352,7 +1352,7 @@ export default function BrandPage() {
                       </button>
                       {glTest.status === 'ok' && (
                         <span className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
-                          <Check size={12} /> Working{typeof glTest.groupCount === 'number' ? ` — ${glTest.groupCount} group${glTest.groupCount === 1 ? '' : 's'} on your account` : ''}
+                          <Check size={12} /> Working{typeof glTest.groupCount === 'number' ? `: ${glTest.groupCount} group${glTest.groupCount === 1 ? '' : 's'} on your account` : ''}
                         </span>
                       )}
                       {glTest.status === 'fail' && (
@@ -1640,7 +1640,7 @@ export default function BrandPage() {
                 )}
               </div>
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-                Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its clicks, impressions and ranking, and the real queries readers use to find it — the data behind your SEO score. We never write to it.
+                Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its clicks, impressions and ranking, and the real queries readers use to find it: the data behind your SEO score. We never write to it.
               </p>
               {gscConnected ? (
                 <button
@@ -1707,10 +1707,10 @@ export default function BrandPage() {
               </label>
             </div>
             {data.contact_preference === 'website' && !data.website_url && (
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Blog URL above or generated YouTube descriptions will fall back to your email.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up: set your Blog URL above or generated YouTube descriptions will fall back to your email.</p>
             )}
             {data.contact_preference === 'email' && !data.contact_email && (
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Contact email below or generated YouTube descriptions will fall back to your blog.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up: set your Contact email below or generated YouTube descriptions will fall back to your blog.</p>
             )}
           </div>
 
@@ -1776,7 +1776,7 @@ export default function BrandPage() {
               Paste the links to Facebook Groups you run. Facebook lets no app post in a Group, so when you share a post, Fill with SCOUT opens each Group and puts the post in the box, and you press Post. Groups are where your Amazon links go: Facebook limits how many link posts a Page gets.
             </p>
             {data.facebook_groups.length === 0 && (
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No groups yet — add one to enable one-click sharing.</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No groups yet: add one to enable one-click sharing.</p>
             )}
             <div className="space-y-2">
               {data.facebook_groups.map((g, i) => (
@@ -1905,7 +1905,7 @@ export default function BrandPage() {
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Header Banner <span className="text-[#86868b] font-normal">(optional)</span></h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
               The wide image at the top of every blog page. Recommended <strong>1920×240 px</strong> (8:1).
-              Falls back to the Brand Logo if you don&apos;t upload one. Center your logo + tagline — narrow viewports letterbox, never crop.
+              Falls back to the Brand Logo if you don&apos;t upload one. Center your logo + tagline. Narrow viewports letterbox, never crop.
             </p>
             <div className="flex items-center gap-4">
               {data.header_banner_url ? (
@@ -1932,7 +1932,7 @@ export default function BrandPage() {
                 </label>
                 {data.header_banner_url && !bannerUploading && (
                   <p className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
-                    <Check size={12} /> Saved — stays on your blog until you replace it
+                    <Check size={12} /> Saved: stays on your blog until you replace it
                   </p>
                 )}
                 <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">PNG, JPG or WebP · Auto-saved · Theme update (1.3.8+) required</p>
@@ -1956,7 +1956,7 @@ export default function BrandPage() {
                 onChange={(e) => set('author_bio', e.target.value)}
                 rows={4}
                 maxLength={600}
-                placeholder="A few sentences about who you are and why readers should trust your reviews — e.g. &quot;I'm Jane, and I've tested 200+ kitchen gadgets over 6 years. I only recommend gear I'd buy again with my own money.&quot;"
+                placeholder="A few sentences about who you are and why readers should trust your reviews: e.g. &quot;I'm Jane, and I've tested 200+ kitchen gadgets over 6 years. I only recommend gear I'd buy again with my own money.&quot;"
                 className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm text-[#1d1d1f] dark:text-[#f5f5f7] resize-y"
                 style={{ borderColor: 'var(--border-bright, #d2d2d7)' }}
               />
@@ -1965,7 +1965,7 @@ export default function BrandPage() {
               </p>
             </div>
 
-            <p className="text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-2">Photo — a round headshot (or logo) shown next to your bio. Recommended <strong>500×500 px</strong> square, displayed circular.</p>
+            <p className="text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-2">Photo: a round headshot (or logo) shown next to your bio. Recommended <strong>500×500 px</strong> square, displayed circular.</p>
             <div className="flex items-center gap-4">
               {data.headshot_url ? (
                 <div className="relative group w-20 h-20 rounded-full border border-gray-200 dark:border-white/10 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -1998,9 +1998,9 @@ export default function BrandPage() {
           <div className="card p-5">
             <div className="flex items-center gap-1.5 mb-1">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand Tone</h2>
-              <InfoTip>Combine 2–3 for a richer voice. The Voice Matcher agent blends them — e.g. &quot;Conversational + Bold&quot; reads punchier than either alone. Skip this and posts default to neutral-professional.</InfoTip>
+              <InfoTip>Combine 2 to 3 for a richer voice. The Voice Matcher agent blends them: e.g. &quot;Conversational + Bold&quot; reads punchier than either alone. Skip this and posts default to neutral-professional.</InfoTip>
             </div>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select all that apply — these blend into your review voice.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select all that apply. These blend into your review voice.</p>
             <div className="flex flex-col gap-1">
               {TONE_OPTIONS.map((tone) => {
                 const active = data.tone.includes(tone)
@@ -2035,9 +2035,9 @@ export default function BrandPage() {
                   onChange={(e) => set('post_length', e.target.value)}
                   className="input-field text-xs"
                 >
-                  <option value="short">Short (600–900 words)</option>
-                  <option value="medium">Medium (900–1,500 words)</option>
-                  <option value="long">Long (1,500–2,500 words)</option>
+                  <option value="short">Short (600 to 900 words)</option>
+                  <option value="medium">Medium (900 to 1,500 words)</option>
+                  <option value="long">Long (1,500 to 2,500 words)</option>
                   <option value="deep">Deep-dive (2,500+ words)</option>
                 </select>
               </div>
@@ -2053,7 +2053,7 @@ export default function BrandPage() {
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
                   Images per article
-                  <InfoTip>How many AI photos drop inside each post body. They&rsquo;re always spaced through the article — never side-by-side, never at the very start or end. Pick &ldquo;0&rdquo; if you prefer text-only posts. &ldquo;Default&rdquo; scales with length (1 per ~750 words) up to the 2-image max. Each image adds a little AI cost, so 2 is the ceiling.</InfoTip>
+                  <InfoTip>How many AI photos drop inside each post body. They&rsquo;re always spaced through the article, never side-by-side, never at the very start or end. Pick &ldquo;0&rdquo; if you prefer text-only posts. &ldquo;Default&rdquo; scales with length (1 per ~750 words) up to the 2-image max. Each image adds a little AI cost, so 2 is the ceiling.</InfoTip>
                 </label>
                 {(() => {
                   // Hard global cap of 2 in-body images per post (2026-06-26
@@ -2077,7 +2077,7 @@ export default function BrandPage() {
                       {options.map((o) =>
                         o === 'default'
                           ? <option key="default" value="default">Default (auto, word-scaled)</option>
-                          : <option key={o} value={String(o)}>{o === 0 ? '0 — text only, no images' : `${o} image${o === 1 ? '' : 's'} per post`}</option>
+                          : <option key={o} value={String(o)}>{o === 0 ? '0: text only, no images' : `${o} image${o === 1 ? '' : 's'} per post`}</option>
                       )}
                     </select>
                   )
@@ -2086,7 +2086,7 @@ export default function BrandPage() {
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
                   CTA style
-                  <InfoTip>How the review asks for the click. &quot;Soft recommendation&quot; closes like advice — low-pressure. &quot;Direct CTA&quot; is an explicit, confident ask. (Pros/cons and comparison blocks are controlled separately under Post Sections below.)</InfoTip>
+                  <InfoTip>How the review asks for the click. &quot;Soft recommendation&quot; closes like low-pressure advice. &quot;Direct CTA&quot; is an explicit, confident ask. (Pros/cons and comparison blocks are controlled separately under Post Sections below.)</InfoTip>
                 </label>
                 <select
                   value={data.cta_style === 'soft_recommendation' ? 'soft_recommendation' : data.cta_style === 'direct_cta' ? 'direct_cta' : 'soft_recommendation'}
@@ -2117,7 +2117,7 @@ export default function BrandPage() {
                   Post sections
                 </div>
                 <div className="text-[11px] text-[#6e6e73] dark:text-[#a8a8ad] mb-3 leading-snug">
-                  Each block below appears in every generated post by default. Untick any you don&apos;t want — useful if you prefer a pure narrative review driven by your video transcript with no structured add-ons.
+                  Each block below appears in every generated post by default. Untick any you don&apos;t want. Useful if you prefer a pure narrative review driven by your video transcript with no structured add-ons.
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {([
@@ -2156,10 +2156,10 @@ export default function BrandPage() {
                   <div className="flex-1">
                     <div className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
                       Include a &quot;What we&apos;d improve&quot; section
-                      <InfoTip>Adds a dedicated section to every review that addresses the manufacturer directly — 1–3 specific design, build, or packaging things the brand should fix in the next version. Distinct from the Cons list (which covers consumer-facing friction). This block reads as polite critique addressed to the maker, which builds editorial credibility but lands more critical in tone — so it&apos;s opt-in. The AI grounds every point in the actual transcript or product info; it will never invent a flaw to fill the section.</InfoTip>
+                      <InfoTip>Adds a dedicated section to every review that addresses the manufacturer directly: 1 to 3 specific design, build, or packaging things the brand should fix in the next version. Distinct from the Cons list (which covers consumer-facing friction). This block reads as polite critique addressed to the maker, which builds editorial credibility but lands more critical in tone, so it&apos;s opt-in. The AI grounds every point in the actual transcript or product info; it will never invent a flaw to fill the section.</InfoTip>
                     </div>
                     <div className="text-[11px] text-[#6e6e73] dark:text-[#a8a8ad] mt-0.5 leading-snug">
-                      Adds a 3-bullet &quot;what could be better&quot; block between the body and FAQ. Editorial credibility boost — but only turn on if your voice can carry the extra critique.
+                      Adds a 3-bullet &quot;what could be better&quot; block between the body and FAQ. Editorial credibility boost, but only turn on if your voice can carry the extra critique.
                     </div>
                   </div>
                 </label>
@@ -2200,7 +2200,7 @@ export default function BrandPage() {
               <div className="pt-4 border-t border-gray-100 dark:border-white/10">
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Blog header &amp; footer</h3>
-                  <InfoTip>Set the background of your blog&apos;s top header bar and its footer. Leave on default, or pick any color — the text and icons adjust automatically to stay readable on whatever color you choose.</InfoTip>
+                  <InfoTip>Set the background of your blog&apos;s top header bar and its footer. Leave on default, or pick any color. The text and icons adjust automatically to stay readable on whatever color you choose.</InfoTip>
                 </div>
                 <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-4">Optional. Default is a clean light header and a soft-charcoal footer.</p>
 

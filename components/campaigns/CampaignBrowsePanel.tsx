@@ -267,15 +267,15 @@ export default function CampaignBrowsePanel({
   // returns nothing, so it can't unlock the shared catalog for them.
   async function verifyCcAccess() {
     if (verifying) return
-    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access — this can take a minute…')
+    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access. This can take a minute…')
     try {
       const res = await requestCcSmartScan(campaignRules('wide'))
       if (!res.ok) {
         setVerifyMsg(
           res.error === 'not-installed'
-            ? 'SCOUT isn’t connected — install and connect it (see "Connect" above), then try again.'
+            ? 'SCOUT isn’t connected. Install and connect it (see "Connect" above), then try again.'
             : res.error === 'timeout'
-              ? 'That ran long and timed out — try again in a moment.'
+              ? 'That ran long and timed out. Try again in a moment.'
               : 'We couldn’t confirm a Creator Connections grid for your account. Open your Creator Connections tab once, then try again.',
         )
         return
@@ -287,13 +287,13 @@ export default function CampaignBrowsePanel({
       const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) {
         setLocked(false); setVerifyMsg(null)
-        toast.success('Creator Connections access confirmed — Browse all is unlocked.')
+        toast.success('Creator Connections access confirmed. Browse all is unlocked.')
         void load()
       } else {
         setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
       }
     } catch {
-      setVerifyMsg('Verification failed unexpectedly — reload the page and try again.')
+      setVerifyMsg('Verification failed unexpectedly. Reload the page and try again.')
     } finally {
       setVerifying(false)
     }
@@ -357,7 +357,7 @@ export default function CampaignBrowsePanel({
           {/* MVP picks — MVP's Focus rulebook over the catalog (carousel required). */}
           <button
             onClick={() => setMvpPicks(v => !v)}
-            title="MVP picks: MVP's proven campaign criteria — 10%+ commission, 90+ days runway, $20–2000, 100+ sold/mo, 3★+, a product-carousel video, and no food/pharmacy/clothing."
+            title="MVP picks uses MVP's proven campaign criteria: 10%+ commission, 90+ days runway, $20 to 2000, 100+ sold/mo, 3★+, a product-carousel video, and no food/pharmacy/clothing."
             className={`h-9 text-sm font-semibold rounded-full px-3.5 inline-flex items-center gap-1.5 border transition-all active:scale-[0.97] ${mvpPicks ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
             style={mvpPicks
               ? { background: '#7C3AED', color: '#fff', borderColor: '#7C3AED' }
@@ -376,7 +376,7 @@ export default function CampaignBrowsePanel({
                   if (gapOn) { setVideoBand(''); setMinRecentSales(0); setSort('commission') }
                   else { setVideoBand('none'); setMinRecentSales(v => Math.max(v, 100)); setSort('recentSales'); setMvpPicks(false) }
                 }}
-                title="Content Gap: products people are buying (100+/mo) that have NO product-carousel video yet — low competition, easy to be first. Sorted by most bought."
+                title="Content Gap: products people are buying (100+/mo) that have NO product-carousel video yet. Low competition, easy to be first. Sorted by most bought."
                 className={`h-9 text-sm font-semibold rounded-full px-3.5 inline-flex items-center gap-1.5 border transition-all active:scale-[0.97] ${gapOn ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
                 style={gapOn
                   ? { background: '#0ea5e9', color: '#fff', borderColor: '#0ea5e9' }
@@ -429,8 +429,8 @@ export default function CampaignBrowsePanel({
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
           {mvpPicks
-            ? "Nothing cleared MVP's bar in this slice yet — the rulebook is strict and only enriched campaigns qualify. Try a keyword or turn MVP picks off to browse everything."
-            : hasFilters ? 'No campaigns match those filters — try widening them.' : 'No campaigns in the catalog right now — check back soon.'}
+            ? "Nothing cleared MVP's bar in this slice yet. The rulebook is strict and only enriched campaigns qualify. Try a keyword or turn MVP picks off to browse everything."
+            : hasFilters ? 'No campaigns match those filters. Try widening them.' : 'No campaigns in the catalog right now. Check back soon.'}
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -635,7 +635,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
             </button>
           )}
           <div className="flex items-center gap-1.5">
-            <button onClick={onToggleSave} title={saved ? 'Saved — click to remove' : 'Save for later'}
+            <button onClick={onToggleSave} title={saved ? 'Saved: click to remove' : 'Save for later'}
               className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
               style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
               {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}

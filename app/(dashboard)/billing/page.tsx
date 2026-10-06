@@ -265,15 +265,15 @@ export default function BillingPage() {
         const msg = alreadyOnPlan
           ? downgradeCancelled
             // Re-selecting the current plan released a queued downgrade.
-            ? `Your scheduled downgrade was cancelled — you're staying on ${label}.`
+            ? `Your scheduled downgrade was cancelled. You're staying on ${label}.`
             : discountApplied
             // They were already on the plan and redeemed a code — say the code
             // landed, not "nothing to do", which is what it used to report.
-            ? `Promo code applied to your ${label} plan — you'll see it on your next invoice.`
+            ? `Promo code applied to your ${label} plan: you'll see it on your next invoice.`
             : `You're already on ${label}.`
           : chargedNow
-            ? `Switched to ${label} — we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
-            : `Switched to ${label} — your unused time is credited against your next invoice.`
+            ? `Switched to ${label}: we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
+            : `Switched to ${label}: your unused time is credited against your next invoice.`
         toast.success(msg, { duration: 7_000 })
         if (warning) toast.warning(warning, { duration: 10_000 })
         setTimeout(() => window.location.reload(), warning ? 3_000 : 1400)
@@ -299,7 +299,7 @@ export default function BillingPage() {
           <strong>Scheduled change:</strong> your plan moves to{' '}
           {TIERS[pendingDowngrade.tier as Tier]?.label ?? pendingDowngrade.tier} on{' '}
           {new Date(pendingDowngrade.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.{' '}
-          You keep your current plan until then — re-select your current plan below to keep it.
+          You keep your current plan until then. Re-select your current plan below to keep it.
         </div>
       )}
 
@@ -439,7 +439,7 @@ export default function BillingPage() {
                 </div>
                 {usagePct >= 90 && (
                   <p className="text-xs text-[#ff3b30] mt-2">
-                    {usagePct >= 100 ? 'You\'ve used every post on this plan. Upgrade to keep generating.' : 'You\'re close to your cap — upgrade now to avoid being blocked mid-generation.'}
+                    {usagePct >= 100 ? 'You\'ve used every post on this plan. Upgrade to keep generating.' : 'You\'re close to your cap. Upgrade now to avoid being blocked mid-generation.'}
                   </p>
                 )}
 

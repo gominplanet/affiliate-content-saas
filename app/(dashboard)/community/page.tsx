@@ -13,7 +13,7 @@ import { FACEBOOK_GROUP_URL } from '@/lib/community'
 export const metadata: Metadata = { title: 'Community' }
 
 const WHATS_INSIDE: Array<{ icon: typeof LifeBuoy; title: string; body: string }> = [
-  { icon: LifeBuoy, title: 'Get support', body: 'Stuck on setup, an integration, or a generation? Ask the group — we and other creators are in there to help.' },
+  { icon: LifeBuoy, title: 'Get support', body: 'Stuck on setup, an integration, or a generation? Ask the group. We and other creators are in there to help.' },
   { icon: Trophy, title: 'Share your wins', body: 'Post the reviews, channels, and rankings that are working for you. Real examples beat theory.' },
   { icon: Handshake, title: 'Brand-outreach tips', body: 'Swap notes on pitching brands and landing collabs with creators doing it.' },
   { icon: Gift, title: 'Member-only offers', body: 'First to hear about new features, product drops, and offers we share with the community.' },
@@ -24,7 +24,7 @@ export default function CommunityPage() {
     <>
       <PageHero
         title="Community"
-        subtitle="Join the MVP Affiliate Facebook group — get support, share what's working, and catch member-only offers. We're in there too."
+        subtitle="Join the MVP Affiliate Facebook group. Get support, share what's working, and catch member-only offers. We're in there too."
       />
 
       <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -70,7 +70,7 @@ export default function CommunityPage() {
 
         <div className="card p-5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
           <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">House rules</p>
-          <p>Be kind, keep self-promo to wins/showcases, and don&apos;t DM members without consent. We&apos;re a focused community — keep it useful for everyone.</p>
+          <p>Be kind, keep self-promo to wins/showcases, and don&apos;t DM members without consent. We&apos;re a focused community. Keep it useful for everyone.</p>
         </div>
       </div>
     </>

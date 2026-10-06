@@ -96,7 +96,7 @@ export default function TrybeCrossCheck() {
 
           {res && worked.length > 0 && (
             <div className="mt-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>You already feature these — warm pitch</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>You already feature these: warm pitch</p>
               <div className="flex flex-wrap gap-2">
                 {worked.map(m => (
                   <span key={m.name} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.06)', color: 'var(--text)' }}>

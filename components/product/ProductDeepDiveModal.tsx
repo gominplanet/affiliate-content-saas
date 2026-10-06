@@ -215,7 +215,7 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
                 const months = data.monthsTracked ?? 0
                 const soldLine = data.monthlySold ? ` · ~${data.monthlySold.toLocaleString()}+/mo` : ''
                 const headline = data.sellsConsistently
-                  ? `Steady seller — ranked every month${months ? ` for ${months} month${months === 1 ? '' : 's'}` : ''}${soldLine}`
+                  ? `Steady seller: ranked every month${months ? ` for ${months} month${months === 1 ? '' : 's'}` : ''}${soldLine}`
                   : `Ranked ${months} of the last 12 months${soldLine}`
                 return (
                   <div className="rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border-2)' }}>
@@ -277,7 +277,7 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
                               style={m.available
                                 ? { background: 'rgba(5,150,105,0.12)', color: '#059669' }
                                 : { background: 'var(--surface-2,rgba(0,0,0,0.05))', color: 'var(--text-faint)', textDecoration: 'line-through' }}
-                              title={`${m.label} — ${m.available ? 'available' : 'not found'}`}>
+                              title={`${m.label}: ${m.available ? 'available' : 'not found'}`}>
                               {m.code}
                             </span>
                           ))}

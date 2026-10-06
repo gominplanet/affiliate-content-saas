@@ -13,7 +13,7 @@ const TUTORIALS = [
   {
     id: 'aBo0ruDuVuE',
     title: 'Step 1: Onboarding Walkthrough',
-    description: 'A complete setup guide — from connecting WordPress and YouTube to generating your first blog post and pushing it everywhere.',
+    description: 'A complete setup guide, from connecting WordPress and YouTube to generating your first blog post and pushing it everywhere.',
     category: 'Getting Started',
     accent: '#7C3AED',
   },
@@ -34,7 +34,7 @@ const TUTORIALS = [
   {
     id: '6YVGN_8EQh8',
     title: 'Step 4: Blog posts',
-    description: 'Turn any YouTube review into a full, SEO-optimized blog post on your WordPress site — automatically.',
+    description: 'Turn any YouTube review into a full, SEO-optimized blog post on your WordPress site, automatically.',
     category: 'Getting Started',
     accent: '#059669',
   },
@@ -48,7 +48,7 @@ const TUTORIALS = [
   {
     id: 'cWHZh3LRlLg',
     title: 'Step 6: Complete Walkthrough',
-    description: 'A full tour of MVP Affiliate with every extra feature explained — so you know exactly what the platform can do.',
+    description: 'A full tour of MVP Affiliate with every extra feature explained, so you know exactly what the platform can do.',
     category: 'Getting Started',
     accent: '#0891B2',
   },

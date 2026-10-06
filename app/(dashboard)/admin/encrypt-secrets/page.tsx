@@ -114,7 +114,7 @@ export default function EncryptSecretsAdminPage() {
     <>
       <PageHero
         title="Encrypt secrets at rest"
-        subtitle="One-time migration: encrypts every WordPress credential + social OAuth token in the database with AES-256-GCM. Idempotent — already-encrypted rows are skipped."
+        subtitle="One-time migration: encrypts every WordPress credential + social OAuth token in the database with AES-256-GCM. Idempotent: already-encrypted rows are skipped."
       />
 
       {/* ── 1. Key check banner ─────────────────────────────────────────── */}
@@ -150,7 +150,7 @@ export default function EncryptSecretsAdminPage() {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-              Step 1 — Dry run (no writes)
+              Step 1: Dry run (no writes)
             </h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
               Inspects every row in <code>integrations</code>, <code>wordpress_sites</code>, and <code>social_accounts</code>.
@@ -190,10 +190,10 @@ export default function EncryptSecretsAdminPage() {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-              Step 2 — Encrypt for real
+              Step 2: Encrypt for real
             </h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              Only enabled once the dry run has succeeded. Encrypts every plaintext secret in place. Idempotent — re-runs skip already-encrypted rows.
+              Only enabled once the dry run has succeeded. Encrypts every plaintext secret in place. Idempotent: re-runs skip already-encrypted rows.
               After this completes, the data on disk is AES-256-GCM ciphertext; reads transparently decrypt.
             </p>
           </div>
@@ -235,10 +235,10 @@ export default function EncryptSecretsAdminPage() {
         </div>
 
         {!keyOk && (
-          <p className="text-[11px] text-[#86868b] mt-2">⚠️ Disabled — MVP_CRYPTO_KEY isn&apos;t loaded.</p>
+          <p className="text-[11px] text-[#86868b] mt-2">⚠️ Disabled: MVP_CRYPTO_KEY isn&apos;t loaded.</p>
         )}
         {keyOk && !dryRunSuccess && (
-          <p className="text-[11px] text-[#86868b] mt-2">⚠️ Disabled — run the dry run first so you can review what will change.</p>
+          <p className="text-[11px] text-[#86868b] mt-2">⚠️ Disabled: run the dry run first so you can review what will change.</p>
         )}
 
         {realRunResult && (
@@ -263,7 +263,7 @@ function ResultPanel({ result }: { result: MigrationResponse }) {
   return (
     <div className="border border-gray-200 dark:border-white/10 rounded-lg p-3">
       <p className={`text-xs font-semibold mb-2 ${result.dryRun ? 'text-[#7C3AED]' : 'text-[#34c759]'}`}>
-        {result.dryRun ? 'DRY RUN — no writes performed' : '✓ MIGRATION COMPLETED'}
+        {result.dryRun ? 'DRY RUN: no writes performed' : '✓ MIGRATION COMPLETED'}
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">

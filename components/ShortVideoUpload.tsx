@@ -80,7 +80,7 @@ export function ShortVideoUpload({
       return
     }
     if (file.size > MAX_BYTES) {
-      setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — keep it under 300 MB.`)
+      setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB: keep it under 300 MB.`)
       return
     }
     // Clip Factory caps SOURCE videos at 10 minutes (transcription cost scales
@@ -93,7 +93,7 @@ export function ShortVideoUpload({
     if (isSource) {
       try { durationSec = await readVideoDuration(file) } catch { /* unreadable → 0 */ }
       if (durationSec > 600) {
-        setError(`That video is ${Math.round(durationSec / 60)} minutes. Clip Factory works on videos up to 10 minutes — trim it first.`)
+        setError(`That video is ${Math.round(durationSec / 60)} minutes. Clip Factory works on videos up to 10 minutes. Trim it first.`)
         return
       }
     }

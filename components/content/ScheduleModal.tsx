@@ -374,7 +374,7 @@ export default function ScheduleModal({
         // quietly does less than asked is never a surprise.
         if (json.skippedPlatforms?.length) {
           const names = json.skippedPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
-          toast.warning(`${names} skipped — not connected yet`, {
+          toast.warning(`${names} skipped, not connected yet`, {
             description: 'Connect it in Connect Socials and it’ll be included next time.',
             duration: 8_000,
           })
@@ -394,7 +394,7 @@ export default function ScheduleModal({
         const wpImgId = json.wordpressPostId
         if (!cascadeOnly && includeImages && typeof wpImgId === 'number') {
           const imgToastId = `sch-img-${wpImgId}`
-          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: imgToastId, duration: Infinity })
+          toast.loading('Generating in-article images… (1-3 min, runs in the background)', { id: imgToastId, duration: Infinity })
           void fetch('/api/blog/refresh-images', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -548,7 +548,7 @@ export default function ScheduleModal({
           {cascadeOnly && (
             <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 p-3 text-xs">
               <p className="font-medium" style={{ color: 'var(--text, #F5F5F7)' }}>This post is already live.</p>
-              <p style={{ color: 'var(--text-faint, rgba(255,255,255,0.6))' }}>Only the social cascade gets queued — no generation, no WP status change.</p>
+              <p style={{ color: 'var(--text-faint, rgba(255,255,255,0.6))' }}>Only the social cascade gets queued: no generation, no WP status change.</p>
             </div>
           )}
 

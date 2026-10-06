@@ -376,7 +376,7 @@ export default function AdminUsersPage() {
     <>
       <PageHero
         title="Admin · Users"
-        subtitle="Look up a user by email and bump their tier. Changes are immediate — affects their next request."
+        subtitle="Look up a user by email and bump their tier. Changes are immediate: affects their next request."
       />
 
       <div className="card p-5 max-w-2xl">
@@ -613,7 +613,7 @@ export default function AdminUsersPage() {
                 <input
                   value={msgSubject}
                   onChange={e => { setMsgSubject(e.target.value); setMsgConfirm(false) }}
-                  placeholder="Subject — e.g. Your Telegram posts are fixed"
+                  placeholder="Subject: e.g. Your Telegram posts are fixed"
                   maxLength={200}
                   className="input-field text-sm w-full"
                 />
@@ -646,7 +646,7 @@ export default function AdminUsersPage() {
                   </button>
                   {msgConfirm && !msgSending && (
                     <span className="text-xs text-[#ff9500] flex items-center gap-1">
-                      <AlertCircle size={12} /> Sends to {user.email} — click again to confirm.
+                      <AlertCircle size={12} /> Sends to {user.email}: click again to confirm.
                     </span>
                   )}
                   {msgError && (

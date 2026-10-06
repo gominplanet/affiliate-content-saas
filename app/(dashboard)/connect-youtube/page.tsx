@@ -71,7 +71,7 @@ export default function ConnectYouTubePage() {
       } else if (decoded === 'same_channel') {
         // Not a failure — Google returned a channel they already had. Tell them
         // how to actually reach the other one.
-        toast('That’s the channel you already connected. To add a different one, sign in with the other Google account — or if it’s a Brand channel on the same login, switch your active YouTube channel at youtube.com first, then click “Connect another channel” again.', { duration: 12000 })
+        toast('That’s the channel you already connected. To add a different one, sign in with the other Google account, or if it’s a Brand channel on the same login, switch your active YouTube channel at youtube.com first, then click “Connect another channel” again.', { duration: 12000 })
         void load()
       } else {
         toast.error(`Couldn’t connect YouTube: ${decoded}`)
@@ -98,7 +98,7 @@ export default function ConnectYouTubePage() {
     <>
       <PageHero
         title="YouTube"
-        subtitle="The heart of MVP — connect once and we can pull your videos and drafts to turn any of them into a blog post. One click, sign in with Google, done. We figure out your channel automatically."
+        subtitle="The heart of MVP. Connect once and we can pull your videos and drafts to turn any of them into a blog post. One click, sign in with Google, done. We figure out your channel automatically."
       />
 
       <div className="max-w-2xl">

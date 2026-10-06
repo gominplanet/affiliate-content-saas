@@ -15,7 +15,7 @@ import { useState } from 'react'
 
 const TEMPLATE_OPTIONS = [
   { id: '', label: '(let the picker choose)' },
-  { id: '__random__', label: '🎲 Random — what users will see' },
+  { id: '__random__', label: '🎲 Random: what users will see' },
   { id: 'block-display', label: 'Block Display' },
   { id: 'banner-pill', label: 'Banner Pill' },
   { id: 'badge-score', label: 'Badge Score' },
@@ -86,7 +86,7 @@ export default function DesignerTextTestPage() {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Designer Text Overlay — Playground</h1>
+        <h1 className="text-2xl font-bold">Designer Text Overlay: Playground</h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Paste a base image URL (a clean thumbnail with no text), provide a headline, and the picker will choose
           a designer template + render it on top. Use the dropdown to force a specific template for comparison.
@@ -193,7 +193,7 @@ export default function DesignerTextTestPage() {
                 <div className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded space-y-1">
                   <div className="font-semibold">⚠️ Overlay render failed at step: <span className="font-mono">{result.renderError.step}</span></div>
                   <div className="font-mono text-xs whitespace-pre-wrap">{result.renderError.message}</div>
-                  <div className="text-xs text-red-600">Image above is the bare base — text overlay was skipped.</div>
+                  <div className="text-xs text-red-600">Image above is the bare base. Text overlay was skipped.</div>
                 </div>
               )}
               <div className="bg-gray-50 border rounded-lg p-3 text-xs font-mono space-y-2">

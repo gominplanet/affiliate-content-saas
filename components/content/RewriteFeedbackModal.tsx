@@ -54,7 +54,7 @@ export function RewriteFeedbackModal({
         </h3>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
           Each post can be rebuilt <span className="font-semibold">up to {REBUILD_CAP} times</span>
-          {usedN != null ? <> — you&apos;ve used <span className="font-semibold">{usedN} of {REBUILD_CAP}</span></> : null}.
+          {usedN != null ? <>: you&apos;ve used <span className="font-semibold">{usedN} of {REBUILD_CAP}</span></> : null}.
           Tell us what was missing so the next draft is actually different.
         </p>
         <textarea
@@ -62,7 +62,7 @@ export function RewriteFeedbackModal({
           onChange={(e) => onChange(e.target.value)}
           rows={5}
           autoFocus
-          placeholder="e.g. The post focused too much on price — I wanted more on the build quality and a stronger opening hook. Also missing: comparison to the model I mentioned at minute 4."
+          placeholder="e.g. The post focused too much on price. I wanted more on the build quality and a stronger opening hook. Also missing: comparison to the model I mentioned at minute 4."
           className="w-full text-sm p-3 rounded-lg bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none leading-relaxed"
         />
         <div className="flex items-center justify-end gap-2 mt-4">
@@ -82,8 +82,8 @@ export function RewriteFeedbackModal({
         </div>
         <p className="text-[10px] text-[#86868b] mt-3">
           {thisOne != null
-            ? `Heads up — this is rebuild ${thisOne} of ${REBUILD_CAP} for this post. After ${REBUILD_CAP}, further changes are made manually in WordPress.`
-            : `Heads up — each post can be rebuilt up to ${REBUILD_CAP} times. After that, further changes are made manually in WordPress.`}
+            ? `Heads up: this is rebuild ${thisOne} of ${REBUILD_CAP} for this post. After ${REBUILD_CAP}, further changes are made manually in WordPress.`
+            : `Heads up: each post can be rebuilt up to ${REBUILD_CAP} times. After that, further changes are made manually in WordPress.`}
         </p>
       </div>
     </div>

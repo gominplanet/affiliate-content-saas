@@ -164,7 +164,7 @@ export function InstagramDirectModal({
             </span>
             <div>
               <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post Short to Instagram</h3>
-              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Direct push — no blog post needed</p>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Direct push: no blog post needed</p>
             </div>
           </div>
           <button
@@ -285,7 +285,7 @@ export function InstagramDirectModal({
 
               <div>
                 <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5">
-                  Caption (AI-generated — edit freely)
+                  Caption (AI-generated, edit freely)
                 </label>
                 <textarea
                   value={caption}
@@ -314,8 +314,8 @@ export function InstagramDirectModal({
                   ))}
                 </div>
                 <p className="text-[10px] text-[#86868b] mt-1.5">
-                  {mode === 'reel' && 'Reels carry the caption — most reach.'}
-                  {mode === 'story' && 'Stories are 24h. Caption is ignored — IG drops it for Story posts.'}
+                  {mode === 'reel' && 'Reels carry the caption and get the most reach.'}
+                  {mode === 'story' && 'Stories are 24h. Caption is ignored. IG drops it for Story posts.'}
                   {mode === 'both' && 'Best of both: Reel for reach + Story for the 24h spike.'}
                 </p>
               </div>

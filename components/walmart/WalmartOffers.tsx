@@ -149,7 +149,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
       const j = await res.json()
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
       setResults((m) => ({ ...m, [o.key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
-      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ' — link cloaked via Geniuslink' : ''}`)
+      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ': link cloaked via Geniuslink' : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally {
@@ -206,7 +206,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{title ?? 'Walmart Offers'}</p>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>{subtitle ?? 'The whole Walmart catalog on PartnerBoost, filtered by MVP’s rules — not just brands you’ve joined. Ranked by estimated $/sale.'}</p>
+          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>{subtitle ?? 'The whole Walmart catalog on PartnerBoost, filtered by MVP’s rules, not just brands you’ve joined. Ranked by estimated $/sale.'}</p>
         </div>
       </div>
 
@@ -286,7 +286,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                         {o.posted && !done && (
                           <a href={o.posted} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
-                            <Check size={12} /> You&apos;ve posted this — view it
+                            <Check size={12} /> You&apos;ve posted this. View it
                           </a>
                         )}
                         {done ? (

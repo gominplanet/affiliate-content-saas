@@ -197,7 +197,7 @@ export default function LearnPage() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Let MVP fill in the gaps</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-              Once you&apos;ve published a few posts, MVP can read them and suggest answers for the fields you haven&apos;t filled in yet. Your existing answers are never overwritten — gaps only.
+              Once you&apos;ve published a few posts, MVP can read them and suggest answers for the fields you haven&apos;t filled in yet. Your existing answers are never overwritten: gaps only.
             </p>
             <div className="flex items-center gap-3 mt-3 flex-wrap">
               <button

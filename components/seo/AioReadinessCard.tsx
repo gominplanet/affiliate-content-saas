@@ -49,7 +49,7 @@ export default function AioReadinessCard() {
         <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)' }}><Bot size={17} style={{ color: AIO }} /></div>
         <div>
           <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>AI-answer readiness</p>
-          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>Your next generated post gets an AIO score here — how likely ChatGPT, Perplexity, and Google AI Overviews are to quote it.</p>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>Your next generated post gets an AIO score here: how likely ChatGPT, Perplexity, and Google AI Overviews are to quote it.</p>
         </div>
       </div>
     )

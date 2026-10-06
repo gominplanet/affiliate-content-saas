@@ -39,7 +39,7 @@ export default function ScoutTopbarButton() {
       rel="noopener noreferrer"
       title={sideloaded
         ? "You're on the older manually-installed SCOUT, which Chrome can't auto-update. Reinstall from the Chrome Web Store once and Chrome keeps it current from then on (remove the old load-unpacked copy after)."
-        : 'Install the SCOUT browser extension from the Chrome Web Store — one click, auto-updating. Amazon Creator Connections scout, Co-Pilot frame capture, and the Amazon video finder for brand recaps.'}
+        : 'Install the SCOUT browser extension from the Chrome Web Store: one click, auto-updating. Amazon Creator Connections scout, Co-Pilot frame capture, and the Amazon video finder for brand recaps.'}
       className="px-3 py-2 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1.5 transition-transform hover:-translate-y-0.5"
       style={sideloaded
         ? { color: '#fff', background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)', boxShadow: '0 2px 10px rgba(124,58,237,0.35)' }

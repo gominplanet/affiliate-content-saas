@@ -42,8 +42,8 @@ interface VideoMeta {
 }
 
 const PRIVACY_LABELS: Record<PrivacyLevel, string> = {
-  PUBLIC_TO_EVERYONE: 'Public — anyone can see',
-  MUTUAL_FOLLOW_FRIENDS: 'Friends — mutual follows only',
+  PUBLIC_TO_EVERYONE: 'Public: anyone can see',
+  MUTUAL_FOLLOW_FRIENDS: 'Friends: mutual follows only',
   FOLLOWER_OF_CREATOR: 'Followers only',
   SELF_ONLY: 'Only me (private)',
 }
@@ -136,7 +136,7 @@ export default function TikTokDirectVideoPublishPage() {
             setPublishStatus('failed')
             setPublishError(json.error || 'TikTok never confirmed the post. Open the TikTok app to check, or try posting again.')
           } else {
-            setPublishError(json.error || 'Status check failed — retrying.')
+            setPublishError(json.error || 'Status check failed. Retrying.')
           }
           return
         }
@@ -161,7 +161,7 @@ export default function TikTokDirectVideoPublishPage() {
         if (!settled && ticks >= MAX_TICKS) {
           settled = true
           setPublishStatus('failed')
-          setPublishError('TikTok is still processing after several minutes — it may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
+          setPublishError('TikTok is still processing after several minutes. It may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
         }
       }
     }
@@ -215,7 +215,7 @@ export default function TikTokDirectVideoPublishPage() {
     <>
       <PageHero
         title="Post Short to TikTok"
-        subtitle="Direct push from your Vertical Videos — no blog post needed. Pick how it should appear, then publish."
+        subtitle="Direct push from your Vertical Videos: no blog post needed. Pick how it should appear, then publish."
         actions={
           <button onClick={() => router.back()} className="btn-secondary text-sm">
             <X size={14} /> Cancel
@@ -263,7 +263,7 @@ export default function TikTokDirectVideoPublishPage() {
 
           <div className="mb-4">
             <label className="block text-[11px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5">
-              Caption (AI-generated — edit freely)
+              Caption (AI-generated, edit freely)
             </label>
             <textarea
               value={caption}
@@ -289,7 +289,7 @@ export default function TikTokDirectVideoPublishPage() {
                 const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
                 return (
                   <option key={opt} value={opt} disabled={blockedForBranded}>
-                    {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ' — not allowed for branded content' : ''}
+                    {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ': not allowed for branded content' : ''}
                   </option>
                 )
               })}
@@ -360,7 +360,7 @@ export default function TikTokDirectVideoPublishPage() {
             <div className="mb-3 card p-3 border-[#7C3AED]/20 bg-[#7C3AED]/5">
               <p className="text-xs text-[#7C3AED] flex items-center gap-1.5">
                 <Loader2 size={12} className="animate-spin" />
-                Sent to TikTok. Processing — usually 1-3 minutes. You can close this page; the result shows on the Vertical Videos row.
+                Sent to TikTok. Processing, usually 1-3 minutes. You can close this page; the result shows on the Vertical Videos row.
               </p>
             </div>
           )}

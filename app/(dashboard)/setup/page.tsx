@@ -199,7 +199,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
       <div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Where should your reviews live?</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Two very different paths. Pick one — you can always come back and run the other later for a second site.
+          Two very different paths. Pick one: you can always come back and run the other later for a second site.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -215,7 +215,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
           <div className="flex-1">
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">I already have a WordPress blog</p>
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-              Plug MVP into your existing site. Reviews land as drafts on your current theme — your design, your settings, untouched.
+              Plug MVP into your existing site. Reviews land as drafts on your current theme: your design, your settings, untouched.
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
               {[
@@ -247,7 +247,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
           <div className="flex-1">
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Build me a new review site from scratch</p>
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-              Point a blank WordPress install at us and walk away. Theme, pages, navigation, sidebar, footer, branding — all wired up automatically from your Brand Profile.
+              Point a blank WordPress install at us and walk away. Theme, pages, navigation, sidebar, footer, branding: all wired up automatically from your Brand Profile.
             </p>
             <div className="flex flex-col gap-1.5 mb-1">
               {[
@@ -276,7 +276,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
 
       {/* Bottom clarification */}
       <div className="rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-4 py-3 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-        <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not sure which to pick?</strong> If you already have posts, subscribers, or a design you care about — choose <strong>existing site</strong>. The setup wizard is only for blank new installs and will overwrite default WordPress content.
+        <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not sure which to pick?</strong> If you already have posts, subscribers, or a design you care about, choose <strong>existing site</strong>. The setup wizard is only for blank new installs and will overwrite default WordPress content.
       </div>
     </div>
   )
@@ -342,18 +342,18 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         </button>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Two steps: install our small plugin (so WordPress allows the redirect back to us), then click Connect. The plugin handles the bridge — you never type a password and never paste a token.
+          Two steps: install our small plugin (so WordPress allows the redirect back to us), then click Connect. The plugin handles the bridge. You never type a password and never paste a token.
         </p>
       </div>
 
       {/* Step 1 — install the bridge plugin */}
       <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-5">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Step 1 — Install MVP Affiliate plugin</p>
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Step 1: Install MVP Affiliate plugin</p>
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b]">Required once</span>
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          WordPress blocks cross-site redirects by default — our plugin whitelists MVP so the one-click connect can work, then quietly powers theme, banner, and footer features.
+          WordPress blocks cross-site redirects by default. Our plugin whitelists MVP so the one-click connect can work, then quietly powers theme, banner, and footer features.
         </p>
         <a href="/api/download/plugin" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
           <Download size={14} /> Download plugin
@@ -366,9 +366,9 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
 
       {/* Step 2 — one-click connect */}
       <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-5">
-        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Step 2 — Connect WordPress</p>
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Step 2: Connect WordPress</p>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Enter your site URL. We&apos;ll bounce you to <code className="text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">wp-admin/authorize-application.php</code> — WordPress&apos;s own permission screen. Click &ldquo;Yes, I approve&rdquo; and you&apos;ll land back here connected.
+          Enter your site URL. We&apos;ll bounce you to <code className="text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">wp-admin/authorize-application.php</code>: WordPress&apos;s own permission screen. Click &ldquo;Yes, I approve&rdquo; and you&apos;ll land back here connected.
         </p>
         <form onSubmit={startOneClick} className="flex items-center gap-2">
           <input
@@ -396,7 +396,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
           onClick={() => setShowTokenFallback(v => !v)}
           className="text-xs text-[#6e6e73] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
         >
-          {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced — for sites that block Application Passwords)'}
+          {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced, for sites that block Application Passwords)'}
         </button>
 
         {showTokenFallback && (
@@ -447,7 +447,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
         </div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Get hosting + a domain</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Your blog needs to live somewhere. Hostinger is what we recommend — under $3/month, a free domain for year one, and <strong>20% off through our link</strong>.
+          Your blog needs to live somewhere. Hostinger is what we recommend: under $3/month, a free domain for year one, and <strong>20% off through our link</strong>.
         </p>
       </div>
 
@@ -463,7 +463,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
               <strong className="text-[#7C3AED]">20% off through our link</strong> · free domain (year one) · 1-click WordPress installer · fast SSD hosting · free SSL.
             </p>
             <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
-              Sign up for Hostinger — 20% off → <ExternalLink size={13} />
+              Sign up for Hostinger: 20% off → <ExternalLink size={13} />
             </a>
           </div>
         </div>
@@ -476,20 +476,20 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
           <div className="flex items-start gap-2 p-2 rounded-lg bg-[#34c759]/5 border border-[#34c759]/20">
             <Check size={14} className="text-[#34c759] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Premium plan — $2.99/mo</p>
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Premium plan: $2.99/mo</p>
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">The sweet spot. Free domain, 100 sites, unmetered bandwidth.</p>
             </div>
           </div>
           <div className="flex items-start gap-2 p-2 rounded-lg">
             <X size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Single plan — too restricted (no email, 1 site only)</p>
+              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Single plan: too restricted (no email, 1 site only)</p>
             </div>
           </div>
           <div className="flex items-start gap-2 p-2 rounded-lg">
             <X size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Business plan — overkill, upgrade later if you need it</p>
+              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Business plan: overkill, upgrade later if you need it</p>
             </div>
           </div>
         </div>
@@ -527,7 +527,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button onClick={onNext} className="btn-primary">Done — I have hosting <ChevronRight size={15} /></button>
+        <button onClick={onNext} className="btn-primary">Done: I have hosting <ChevronRight size={15} /></button>
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Already have hosting elsewhere? Skip ahead.</p>
       </div>
     </div>
@@ -576,14 +576,14 @@ function Step2({ onNext }: { onNext: () => void }) {
           { title: 'Click "Auto Installer" → WordPress', desc: 'Hostinger&apos;s 1-click WordPress installer.' },
           {
             title: 'Fill in 3 fields',
-            desc: 'Site name (anything — change later). Admin email (yours). Admin password: click Generate.',
+            desc: 'Site name (anything, change later). Admin email (yours). Admin password: click Generate.',
             highlight: true,
             highlightContent: (
               <div className="flex items-start gap-2 mt-2 p-2.5 rounded-lg bg-[#7C3AED]/10 border border-[#7C3AED]/20">
                 <Lock size={13} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
                   <strong>Save the admin password in your password manager BEFORE clicking anywhere else.</strong>{' '}
-                  This is the password for your WordPress admin — losing it means reinstalling WordPress.
+                  This is the password for your WordPress admin. Losing it means reinstalling WordPress.
                 </p>
               </div>
             ),
@@ -609,7 +609,7 @@ function Step2({ onNext }: { onNext: () => void }) {
         <div className="mb-4">
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider mb-1">Now connect it to MVP (~3 min)</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-            Two clicks: install our plugin into the WordPress you just installed, then generate a token. The plugin handles theme, layout, banners, footer — everything else is automatic.
+            Two clicks: install our plugin into the WordPress you just installed, then generate a token. The plugin handles theme, layout, banners, footer: everything else is automatic.
           </p>
         </div>
 
@@ -617,7 +617,7 @@ function Step2({ onNext }: { onNext: () => void }) {
         <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 p-3 mb-4 flex items-start gap-2">
           <Clock size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            <strong>Before continuing:</strong> visit your domain in a browser. If it shows a Hostinger placeholder (not a &ldquo;DNS propagating&rdquo; or &ldquo;site not found&rdquo; page), you&apos;re good. If not, give it 15-30 min and refresh — DNS sometimes takes a beat after install.
+            <strong>Before continuing:</strong> visit your domain in a browser. If it shows a Hostinger placeholder (not a &ldquo;DNS propagating&rdquo; or &ldquo;site not found&rdquo; page), you&apos;re good. If not, give it 15-30 min and refresh. DNS sometimes takes a beat after install.
           </p>
         </div>
 
@@ -655,7 +655,7 @@ function Step2({ onNext }: { onNext: () => void }) {
             {[
               <>In the MVP Affiliate menu, click <strong>Install &amp; activate MVP Affiliate theme</strong> → wait 10 sec for the green ✓.</>,
               <>Click <strong>Generate Connection Token</strong> → a long string appears.</>,
-              <><strong>Copy it</strong> — you&apos;ll paste it on the next screen.</>,
+              <><strong>Copy it</strong>: you&apos;ll paste it on the next screen.</>,
             ].map((node, i) => (
               <li key={i} className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
@@ -686,13 +686,13 @@ function Step3({ data, onChange, onNext }: { data: BrandData; onChange: (d: Bran
         </div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Make it yours (optional)</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Logo, headshot, bio, social links. All fields are optional — skip anything you don&apos;t have yet and come back to add it from your Brand Profile after launch.
+          Logo, headshot, bio, social links. All fields are optional. Skip anything you don&apos;t have yet and come back to add it from your Brand Profile after launch.
         </p>
       </div>
 
       <div className="flex flex-col gap-5 p-5 bg-[#f5f5f7] dark:bg-[#000] rounded-xl">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Visuals</p>
-        <ImageUpload label="Brand logo" hint="Square or circle — shown as your site favicon and in the footer." shape="square" value={data.logo} onChange={v => set('logo', v)} />
+        <ImageUpload label="Brand logo" hint="Square or circle. Shown as your site favicon and in the footer." shape="square" value={data.logo} onChange={v => set('logo', v)} />
         <ImageUpload label="Your photo / headshot" hint="Used on your About page to put a face to the brand." shape="circle" value={data.headshot} onChange={v => set('headshot', v)} />
       </div>
 
@@ -822,7 +822,7 @@ function Step4({
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Paste your Connection Token</p>
           </div>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Get your token from <strong>wp-admin → MVP Affiliate → Generate Connection Token</strong>. The token contains your site URL, username, and a secure Application Password — paste it below and we&apos;ll handle the rest.
+            Get your token from <strong>wp-admin → MVP Affiliate → Generate Connection Token</strong>. The token contains your site URL, username, and a secure Application Password. Paste it below and we&apos;ll handle the rest.
           </p>
         </div>
 
@@ -835,7 +835,7 @@ function Step4({
             rows={4}
             className="input-field font-mono text-xs resize-y"
           />
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">A long base64 string. Don&apos;t worry about line breaks — paste it however WordPress copied it.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">A long base64 string. Don&apos;t worry about line breaks. Paste it however WordPress copied it.</p>
         </div>
       </div>
 
@@ -887,7 +887,7 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-4 text-left w-full max-w-md">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">What&apos;s next:</p>
         <ul className="text-xs text-[#6e6e73] dark:text-[#ebebf0] space-y-1.5 list-disc list-inside">
-          <li>Finish your Brand Profile — tone, writing sample, CTA style</li>
+          <li>Finish your Brand Profile: tone, writing sample, CTA style</li>
           <li>Connect your YouTube channel below</li>
           <li>Come back to Content and generate your first post</li>
         </ul>
@@ -920,7 +920,7 @@ function DisconnectRestart() {
         return
       }
       try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
-      toast.success('WordPress disconnected — restarting setup…')
+      toast.success('WordPress disconnected: restarting setup…')
       window.location.href = '/onboarding'
     } catch {
       toast.error('Something went wrong. Try again.')
@@ -932,7 +932,7 @@ function DisconnectRestart() {
     <div className="card p-5 border border-[#ff3b30]/25">
       <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Disconnect &amp; start over</p>
       <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed mb-3">
-        Disconnect this WordPress site and go back through the guided setup from step&nbsp;1. Your YouTube, Brand Profile, voice training and face models are kept — only the WordPress connection is reset.
+        Disconnect this WordPress site and go back through the guided setup from step&nbsp;1. Your YouTube, Brand Profile, voice training and face models are kept. Only the WordPress connection is reset.
       </p>
       {!confirming ? (
         <button
@@ -1299,7 +1299,7 @@ function SetupPageInner() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Posting trouble?</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-              Run the connection doctor — it pinpoints the exact plugin, firewall, or CDN rule blocking writes and gives you click-by-click fix steps.
+              Run the connection doctor. It pinpoints the exact plugin, firewall, or CDN rule blocking writes and gives you click-by-click fix steps.
             </p>
           </div>
           <a href="/setup/wp-doctor" className="btn-secondary text-xs flex-shrink-0">
@@ -1315,7 +1315,7 @@ function SetupPageInner() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand customizations</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-              Logo, headshot, About bio, contact email, social links — all live in your Brand Profile and push to your default WordPress site on every save.
+              Logo, headshot, About bio, contact email, social links: all live in your Brand Profile and push to your default WordPress site on every save.
             </p>
           </div>
           <a href="/brand" className="btn-secondary text-xs flex-shrink-0">
@@ -1331,11 +1331,11 @@ function SetupPageInner() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Need hosting for a new blog? <span className="text-[#7C3AED]">Save 20%</span></p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-              We recommend <strong>Hostinger</strong> — under $3/month, a free domain for year one, and a 1-click WordPress installer. <strong>20% off through our link.</strong> It&apos;s exactly what MVP is built to publish to.
+              We recommend <strong>Hostinger</strong>: under $3/month, a free domain for year one, and a 1-click WordPress installer. <strong>20% off through our link.</strong> It&apos;s exactly what MVP is built to publish to.
             </p>
           </div>
           <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5">
-            Get Hostinger — 20% off <ExternalLink size={13} />
+            Get Hostinger: 20% off <ExternalLink size={13} />
           </a>
         </div>
 

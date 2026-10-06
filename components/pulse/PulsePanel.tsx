@@ -82,7 +82,7 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#7C3AED]/12 text-[#7C3AED]"><Activity size={15} /></span>
         <div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pulse</p>
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">What actually earns reach — your best hashtags and posting times. Lift = how far a post beat your own average.</p>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">What actually earns reach: your best hashtags and posting times. Lift = how far a post beat your own average.</p>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
         {data.collecting && (
           <div className="flex items-center gap-2 text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">
             <Loader2 size={13} className="animate-spin text-[#7C3AED]" />
-            Learning from your posts — {data.sampleCount}/{data.minForPersonal} measured so far. Your personal ranking unlocks once a few more Reels have their numbers in.
+            Learning from your posts: {data.sampleCount}/{data.minForPersonal} measured so far. Your personal ranking unlocks once a few more Reels have their numbers in.
           </div>
         )}
 

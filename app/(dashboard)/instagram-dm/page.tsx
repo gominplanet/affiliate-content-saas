@@ -117,7 +117,7 @@ function InstagramDm() {
       </div>
       <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
         When someone comments your keyword on an Instagram <em>or Facebook</em> post, MVP automatically DMs
-        them the right affiliate link — no manual replies, no “link in bio.”
+        them the right affiliate link: no manual replies, no “link in bio.”
       </p>
 
       {/* Pending-approval banner */}
@@ -126,7 +126,7 @@ function InstagramDm() {
         <Info size={15} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
         <span>
           <strong style={{ color: 'var(--text)' }}>Setup now, live after Meta approval.</strong> Instagram
-          messaging needs Meta&apos;s sign-off on MVP&apos;s app (in progress). Configure it here — the auto-DM
+          messaging needs Meta&apos;s sign-off on MVP&apos;s app (in progress). Configure it here. The auto-DM
           starts sending the moment approval lands.
         </span>
       </div>
@@ -145,7 +145,7 @@ function InstagramDm() {
           <div className="rounded-2xl border p-5 flex flex-col gap-5"
             style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
             <div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Global rule — every post you publish</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Global rule: every post you publish</p>
               <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
                 Comment the keyword on any MVP-published Instagram or Facebook post → MVP DMs that post&apos;s own affiliate link.
               </p>
@@ -179,7 +179,7 @@ function InstagramDm() {
                 className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm font-mono"
                 style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }} />
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
-                Use <code>{'{link}'}</code> where the post&apos;s link goes. Keep the opt-out line — Meta requires it.
+                Use <code>{'{link}'}</code> where the post&apos;s link goes. Keep the opt-out line. Meta requires it.
               </p>
             </div>
 
@@ -216,7 +216,7 @@ function InstagramDm() {
             <div className="flex-1">
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Want a Reel with its own trigger word + link?</p>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
-                Head to Clip Factory — make a clip or pick a Short, add a CTA, paste a product link, and flip on
+                Head to Clip Factory. Make a clip or pick a Short, add a CTA, paste a product link, and flip on
                 Auto-DM. Each one you publish shows up below.
               </p>
               <Link href="/clip-factory"

@@ -536,7 +536,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          title="Optional. Upload a custom thumbnail for the blog post's main hero image. If you skip this, the YouTube video's thumbnail is used as the hero — and only the hero (it's never repeated inside the article, since the video is already embedded there)."
+          title="Optional. Upload a custom thumbnail for the blog post's main hero image. If you skip this, the YouTube video's thumbnail is used as the hero, and only the hero (it's never repeated inside the article, since the video is already embedded there)."
           className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-gray-300 dark:border-white/15 text-[#1d1d1f] dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
@@ -549,7 +549,7 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
         <span className="font-semibold">Blog thumbnail.</span>{' '}
         {url
           ? 'Your uploaded image is this post’s hero. The YouTube video stays embedded inside the article.'
-          : 'Optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero — hero only, never repeated inside the article, since the video is already embedded there.'}
+          : 'Optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero. Hero only, never repeated inside the article, since the video is already embedded there.'}
       </InfoTip>
       {err && <span className="basis-full text-[10px] text-[#ff3b30]">{err}</span>}
     </>
@@ -657,7 +657,7 @@ function CategoryPicker({
         className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none max-w-[180px]"
         title={hasPublishedPost ? 'Change the category on this published post' : 'Pick a category before generating'}
       >
-        <option value="">— Category —</option>
+        <option value="">Category</option>
         {userNiches.length > 0 && (
           <optgroup label="Your brand niches">
             {userNiches.map(c => <option key={c} value={c}>{c}</option>)}
@@ -786,9 +786,9 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
           ?
         </span>
         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 rounded-xl text-[11px] leading-relaxed bg-[#1c1c1e] text-[#f5f5f7] border border-white/10 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity z-30">
-          <b>Brand tags &amp; keywords</b> — if a brand asked you to tag them or include specific
+          <b>Brand tags &amp; keywords</b>: if a brand asked you to tag them or include specific
           hashtags/phrases, add up to {MAX_TAGS} here (e.g. <i>#kingpavonini</i>).
-          Type one and press <b>Enter</b> — it saves instantly and shows as a chip; click a
+          Type one and press <b>Enter</b>: it saves instantly and shows as a chip; click a
           chip&apos;s × to remove it. When you Generate (or Rebuild) this post, they&apos;re inserted
           <b> word-for-word at the very top of the article</b>.
         </span>
@@ -1063,7 +1063,7 @@ const VideoCard = memo(function VideoCardImpl({
         // and-forget with a toast (1-3 min); socials below run in parallel.
         if (newWpPostId && includeImages) {
           const wpId = newWpPostId
-          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
+          toast.loading('Generating in-article images… (1-3 min, runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
           ;(async () => {
             try {
               const ir = await fetch('/api/blog/refresh-images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wordpressPostId: wpId }) })
@@ -1087,7 +1087,7 @@ const VideoCard = memo(function VideoCardImpl({
         const stillRunning = /still (being generated|finishing) in the background|taking longer than usual|may have published|likely still finishing/i.test(msg)
         setPublishAllError(
           stillRunning
-            ? 'Post is still generating — it’ll appear in your Library shortly. Once it’s live, click “Publish to all” on that row to post your socials.'
+            ? 'Post is still generating. It’ll appear in your Library shortly. Once it’s live, click “Publish to all” on that row to post your socials.'
             : msg,
         )
         setPublishingAll(false)
@@ -1121,7 +1121,7 @@ const VideoCard = memo(function VideoCardImpl({
             // note rather than a raw HTTP error. The post published everywhere
             // else; the user can retry this one platform later.
             if (r.status === 429 || d.rateLimited) {
-              failures.push(`${label} (daily limit reached — try again later)`)
+              failures.push(`${label} (daily limit reached, try again later)`)
             } else {
               failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
             }
@@ -1288,7 +1288,7 @@ const VideoCard = memo(function VideoCardImpl({
             ) : (
               <button
                 onClick={onDismiss}
-                title="Hide this video from the list — MVP won't suggest a post for it. Bring it back anytime via 'Show hidden' above the list."
+                title="Hide this video from the list. MVP won't suggest a post for it. Bring it back anytime via 'Show hidden' above the list."
                 className="inline-flex items-center gap-1 text-xs font-medium text-[#ff3b30] hover:text-[#d70015] transition-colors"
               >
                 <X size={11} /> Ignore
@@ -1371,7 +1371,7 @@ const VideoCard = memo(function VideoCardImpl({
               <button
                 type="button"
                 onClick={() => setScheduleOpen(true)}
-                title="Generate now, publish later — pick a date/time and which socials to push"
+                title="Generate now, publish later. Pick a date/time and which socials to push"
                 className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
               >
                 <Calendar size={12} /> Schedule for later
@@ -1443,7 +1443,7 @@ const VideoCard = memo(function VideoCardImpl({
               ) : (
                 <Link
                   href="/pricing"
-                  title="Publish All is a Pro feature — click to upgrade"
+                  title="Publish All is a Pro feature. Click to upgrade"
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-gradient-to-br from-[#7C3AED] to-[#7b61ff] opacity-90 hover:opacity-100 hover:shadow-md transition-all"
                 >
                   <Sparkles size={12} />
@@ -1466,7 +1466,7 @@ const VideoCard = memo(function VideoCardImpl({
                   onClick={() => setScheduleOpen(true)}
                   title={post
                     ? 'Schedule a social cascade for this already-live post'
-                    : 'Generate now, publish later — pick a date/time and which socials to push'}
+                    : 'Generate now, publish later. Pick a date/time and which socials to push'}
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
                 >
                   <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule for later'}
@@ -1498,7 +1498,7 @@ const VideoCard = memo(function VideoCardImpl({
                   Reel/Story/Image choice) so users don't think it's broken. */}
               {instagramConnected && post && (
                 <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                  Instagram posts a video or image, so it&apos;s not in Publish-all — share it from the Instagram button.
+                  Instagram posts a video or image, so it&apos;s not in Publish-all. Share it from the Instagram button.
                 </span>
               )}
             </div>
@@ -1769,7 +1769,7 @@ const VideoCard = memo(function VideoCardImpl({
               {instagramConnected && !!(video as unknown as { instagram_video_url?: string | null }).instagram_video_url && (
                 <button
                   onClick={() => setIgCoverOpen(true)}
-                  title="Pick the still frame Instagram shows as your Reel cover — no need to edit it in the IG app after posting"
+                  title="Pick the still frame Instagram shows as your Reel cover: no need to edit it in the IG app after posting"
                   className="inline-flex items-center gap-1 px-2.5 py-2 rounded-full text-[11px] font-semibold border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
                 >
                   <ImagePlus size={12} /> Reel cover
@@ -1950,7 +1950,7 @@ const VideoCard = memo(function VideoCardImpl({
             <div className="rounded-xl border border-[#E1306C]/30 bg-[#E1306C]/5 p-3 flex items-start gap-3">
               <AlertCircle size={14} className="text-[#E1306C] mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story posted — add the affiliate link sticker on your phone (5 sec)</p>
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story posted: add the affiliate link sticker on your phone (5 sec)</p>
                 <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
                   Instagram&apos;s API doesn&apos;t expose link stickers. Open Instagram → your Story → tap sticker icon → Link sticker → paste:
                 </p>
@@ -2163,7 +2163,7 @@ function ScheduledList({
         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No scheduled posts yet</p>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm leading-relaxed">
           When you publish to a social, tick <strong>Schedule for later</strong> in the preview modal
-          to queue it for a future time. The cron worker fires automatically — no need to keep the
+          to queue it for a future time. The cron worker fires automatically: no need to keep the
           app open.
         </p>
       </div>
@@ -2290,7 +2290,7 @@ function ScheduledList({
           <div
             key={item.id}
             className={`card p-4 flex items-start gap-3 ${indent ? 'ml-8 border-l-2 border-l-[#7C3AED]/40' : ''}`}
-            title={indent ? 'Child of the parent above — fires after the parent publishes' : undefined}
+            title={indent ? 'Child of the parent above. Fires after the parent publishes' : undefined}
           >
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
@@ -3461,7 +3461,7 @@ export default function ContentPage() {
         body: JSON.stringify({ wordpressPostId: wpPostId }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'} — refresh the post to see them.` : (data.error || 'Image refresh failed'))
+      setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'}: refresh the post to see them.` : (data.error || 'Image refresh failed'))
       // 2026-06-08: bump the local bodyImagesCount so the orange "needs images"
       // warning badge disappears without a full page reload. Same fix pattern
       // as the Co-Pilot auto-refresh (commit cd57807) — DB write success
@@ -3536,7 +3536,7 @@ export default function ContentPage() {
     const toRewrite = allBlogPosts.filter(p => selectedPostIds.has(p.id) && p.videoId)
     const skipped = selectedPostIds.size - toRewrite.length
     if (toRewrite.length === 0) {
-      setFixCatResult('No selected posts have a linked video — cannot rewrite.')
+      setFixCatResult('No selected posts have a linked video. Cannot rewrite.')
       return
     }
     setBulkRewriting(true)
@@ -3620,7 +3620,7 @@ export default function ContentPage() {
     setSelectedVideoIds(new Set())
     if (failed > 0 || skipped > 0) {
       const parts = [`${success} generated`]
-      if (skipped > 0) parts.push(`${skipped} skipped (short clips with no product — add the product link to the video description to include them)`)
+      if (skipped > 0) parts.push(`${skipped} skipped (short clips with no product, add the product link to the video description to include them)`)
       if (failed > 0) parts.push(`${failed} failed${firstError ? ` (${firstError})` : ''}`)
       setFixCatResult(parts.join(' · '))
     }
@@ -3837,8 +3837,8 @@ export default function ContentPage() {
       } else if (data.fixed === 0) {
         setFixCatResult(data.message || 'All posts already had categories.')
       } else {
-        const partial = data.partial ? ` — ${data.partial}` : ''
-        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine)${partial}.`)
+        const partial = data.partial ? `. ${data.partial}` : ''
+        setFixCatResult(`Done: ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine)${partial}.`)
       }
     } catch {
       setFixCatResult('Something went wrong.')
@@ -4402,7 +4402,7 @@ export default function ContentPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         <ToolButton tint="violet" icon={<Sparkles size={18} />} label="New post from a link" desc="Product link or ASIN → live post"
           onClick={() => setFromLinkOpen(true)}
-          title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it." />
+          title="No video? Create a post from a product link or ASIN. MVP researches, writes and publishes it." />
 
         <ToolButton tint="amber" icon={<Tags size={18} />} label="Fix Categories"
           desc={catPreviewLoading ? 'Loading preview…' : 'Auto-assign each post'}
@@ -4415,13 +4415,13 @@ export default function ContentPage() {
 
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
-          title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
+          title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends: tone, sign-off, and template" />
         <ToolButton tint="violet" icon={<Rocket size={18} />} label="Auto-pilot" desc="One post a day, hands-off" active={autoPilotOn}
           onClick={() => setAutoPilotOpen(true)}
           title="Turn on to auto-publish one blog post a day from your next un-blogged video (hero + images, no social)" />
         <ToolButton tint="violet" icon={<Link2 size={18} />} label="Link settings" desc="Blog / affiliate / both"
           onClick={() => setLinkModeOpen(true)}
-          title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
+          title="Choose where posted links point (blog, affiliate, or both) for Facebook, LinkedIn, and Bluesky" />
 
         {(activeTab === 'horizontal' || activeTab === 'vertical') && (
           <>
@@ -4663,7 +4663,7 @@ export default function ContentPage() {
               return (
                 <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts live yet</p>
-                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here — from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here, from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
                 </div>
               )
             }
@@ -4677,7 +4677,7 @@ export default function ContentPage() {
               return (
                 <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    {allShared ? 'All caught up — every post is shared to your socials.' : <>No posts match &ldquo;{postSearch}&rdquo;</>}
+                    {allShared ? 'All caught up: every post is shared to your socials.' : <>No posts match &ldquo;{postSearch}&rdquo;</>}
                   </p>
                   <button onClick={() => allShared ? setHideShared(false) : setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">
                     {allShared ? 'Show all posts' : 'Clear search'}
@@ -4696,7 +4696,7 @@ export default function ContentPage() {
                   <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                     {matched.length}{postQuery && matched.length !== stream.length ? ` of ${stream.length}` : ''} post{matched.length !== 1 ? 's' : ''}
                     {totalPages > 1 && (
-                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1}–{end}</span>
+                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1} to {end}</span>
                     )}
                   </h3>
                   <div className="flex items-center gap-3">
@@ -4707,7 +4707,7 @@ export default function ContentPage() {
                       style={hideShared
                         ? { background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }
                         : { background: 'transparent', borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text-soft, #6e6e73)' }}
-                      title="Hide posts already shared to your connected socials — X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
+                      title="Hide posts already shared to your connected socials. X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
                     >
                       {hideShared ? '✓ Hiding shared' : 'Hide shared'}
                     </button>
@@ -4938,7 +4938,7 @@ export default function ContentPage() {
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm">
             {activeTab === 'vertical'
-              ? 'No YouTube Shorts yet — these are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
+              ? 'No YouTube Shorts yet. These are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
               : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Shorts → Social tab to publish them as Reels.'}
           </p>
           <button onClick={() => syncVideos()} disabled={syncing} className="btn-secondary text-xs">
@@ -4994,7 +4994,7 @@ export default function ContentPage() {
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="views">Most viewed</option>
-              <option value="title">Title A–Z</option>
+              <option value="title">Title A to Z</option>
             </select>
             {filtersActive && (
               <button
@@ -5013,7 +5013,7 @@ export default function ContentPage() {
                 {filtersActive
                   ? `Showing ${displayVideos.length} of ${currentTabVideos.length} videos`
                   : activeTab === 'vertical'
-                    ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
+                    ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}: source for Instagram Reels & Stories`
                     : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts`}
               </span>
             </div>
@@ -5554,7 +5554,7 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
           {label}
           {active && <span className="text-[9px] font-bold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#16a34a', color: '#fff', letterSpacing: '0.03em' }}>ON</span>}
         </span>
-        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On — auto-publishing' : desc}</span>
+        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On: auto-publishing' : desc}</span>
       </span>
     </button>
   )

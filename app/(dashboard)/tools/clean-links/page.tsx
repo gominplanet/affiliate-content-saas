@@ -43,13 +43,13 @@ export default function CleanLinksPage() {
         toast.success(
           data.postsWithIssues > 0
             ? `Found ${data.duplicateTagsFound} duplicate tag${data.duplicateTagsFound === 1 ? '' : 's'} across ${data.postsWithIssues} post${data.postsWithIssues === 1 ? '' : 's'}.`
-            : 'No duplicate-tag artifacts found — nothing to clean. 🎉',
+            : 'No duplicate-tag artifacts found: nothing to clean. 🎉',
         )
       } else {
         toast.success(`Cleaned ${data.postsUpdated} post${data.postsUpdated === 1 ? '' : 's'}.`)
       }
     } catch {
-      toast.error('Network error — try again.')
+      toast.error('Network error: try again.')
     } finally { setBusy(false) }
   }
 
@@ -59,7 +59,7 @@ export default function CleanLinksPage() {
     <div className="max-w-3xl mx-auto px-4 py-6">
       <PageHero
         title="Clean affiliate links"
-        subtitle="Removes duplicate affiliate-tag leftovers from old plugins (like Lasso). Free — no rewriting, no images."
+        subtitle="Removes duplicate affiliate-tag leftovers from old plugins (like Lasso). Free: no rewriting, no images."
       />
       <SeoHubTabs />
 
@@ -81,7 +81,7 @@ export default function CleanLinksPage() {
         <input
           value={category}
           onChange={e => setCategory(e.target.value)}
-          placeholder="e.g. blog — leave blank to scan all published posts"
+          placeholder="e.g. blog: leave blank to scan all published posts"
           className="input-field h-9 px-3 text-sm w-full mb-4"
         />
 
@@ -105,7 +105,7 @@ export default function CleanLinksPage() {
               ? <Wand2 size={16} className="text-[#7C3AED]" />
               : <CheckCircle2 size={16} className="text-[#34c759]" />}
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {result.dryRun ? 'Preview' : 'Applied'} — scanned {result.scanned} posts
+              {result.dryRun ? 'Preview' : 'Applied'}: scanned {result.scanned} posts
             </p>
           </div>
 
@@ -127,7 +127,7 @@ export default function CleanLinksPage() {
                       <ExternalLink size={11} className="flex-shrink-0" />
                     </a>
                     <span className="text-xs text-[#86868b] flex-shrink-0">
-                      {p.fixed} fixed{!result.dryRun && (p.updated ? ' ✓' : ' — failed')}
+                      {p.fixed} fixed{!result.dryRun && (p.updated ? ' ✓' : ': failed')}
                     </span>
                   </li>
                 ))}

@@ -138,7 +138,7 @@ export default function GenerateOptionsModal({
               </div>
             )}
             {opts.socials.length > 0 && opts.publish === 'draft' && (
-              <p className="text-[10.5px] mt-1.5" style={{ color: '#b45309' }}>Socials only fire when the post publishes live — switch Publish to Live below.</p>
+              <p className="text-[10.5px] mt-1.5" style={{ color: '#b45309' }}>Socials only fire when the post publishes live. Switch Publish to Live below.</p>
             )}
           </Section>
 

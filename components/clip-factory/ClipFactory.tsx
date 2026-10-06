@@ -1256,7 +1256,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                           {genLoading ? 'Designing…' : 'Create box'}
                         </button>
                       </div>
-                      <p className="text-[10px] text-[#86868b] mt-1.5">1–6 words work best. New boxes are saved to My boxes and selected automatically.</p>
+                      <p className="text-[10px] text-[#86868b] mt-1.5">1 to 6 words work best. New boxes are saved to My boxes and selected automatically.</p>
                     </div>
                   )}
 

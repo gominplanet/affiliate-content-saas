@@ -39,7 +39,7 @@ export default function WpConnectionDoctorButton() {
   return (
     <a
       href="/setup/wp-doctor"
-      title="A recent publish was blocked by your WordPress site (firewall or plugin). Click to run the Connection Doctor — it names the exact cause and gives fix steps."
+      title="A recent publish was blocked by your WordPress site (firewall or plugin). Click to run the Connection Doctor. It names the exact cause and gives fix steps."
       className="px-3 py-2 rounded-lg text-[12px] font-semibold text-white inline-flex items-center gap-1.5 transition-transform hover:-translate-y-0.5"
       style={{ background: 'linear-gradient(135deg, #F5A623 0%, #E8890B 100%)', boxShadow: '0 2px 10px rgba(232,137,11,0.35)' }}
     >

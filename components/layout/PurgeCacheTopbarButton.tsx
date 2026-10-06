@@ -28,7 +28,7 @@ export default function PurgeCacheTopbarButton() {
       if (!res.ok) {
         toast.error(data.error || 'Could not clear the cache', { id: t })
       } else {
-        toast.success('Cache cleared — your latest changes are live', { id: t })
+        toast.success('Cache cleared: your latest changes are live', { id: t })
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not clear the cache', { id: t })

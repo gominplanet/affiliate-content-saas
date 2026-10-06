@@ -376,7 +376,7 @@ export function ShortsCreatePanel({
             targetColumn="source_video_url"
             extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
             label="Drop the full video (the long one) here"
-            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
+            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it. It never touches YouTube."
             onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(youtubeRefused ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
           />
         </div>
@@ -418,7 +418,7 @@ export function ShortsCreatePanel({
                       <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: PURPLE }}>
                         {clip.score > 0 ? `${clip.score}/100` : clip.startSec === 0 ? 'Whole video' : 'Your clip'}
                       </span>
-                      <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)}–{fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
+                      <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)} to {fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
                       {ytLink && <a href={ytLink} target="_blank" rel="noreferrer" className="text-[11px] inline-flex items-center gap-0.5 hover:underline" style={{ color: PURPLE }}><ExternalLink size={10} /> Watch moment</a>}
                     </div>
                     {editingId === clip.id && editDraft ? (

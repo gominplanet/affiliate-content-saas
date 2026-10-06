@@ -10,7 +10,7 @@ import PageExplainer from '@/components/amazon/PageExplainer'
 import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
 
 export const metadata: Metadata = {
-  title: 'Research — Amazon Influencer',
+  title: 'Research: Amazon Influencer',
   description: 'Find products and brand campaigns worth reviewing.',
 }
 

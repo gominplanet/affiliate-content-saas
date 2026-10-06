@@ -52,9 +52,9 @@ const GEN_STEPS = [
   'Reading transcript…',
   'Writing the blog post…',
   'Publishing to WordPress…',
-  'Still working — large posts can take a couple minutes…',
-  'Almost there — finalising the post…',
-  'Running in the background — a busy queue can add a few minutes. Safe to keep browsing…',
+  'Still working: large posts can take a couple minutes…',
+  'Almost there: finalising the post…',
+  'Running in the background: a busy queue can add a few minutes. Safe to keep browsing…',
 ]
 // Hard client-side abort if generation hasn't resolved in this many ms.
 // With the async queue (Phase 4) the request is enqueue + poll: worker
@@ -119,7 +119,7 @@ export function GenerateButton({
   const [addingImages, setAddingImages] = useState(false)
   async function addImagesNow() {
     if (!result || !existingPost?.wpPostId) {
-      toast.error('Missing post id — refresh the page and try again')
+      toast.error('Missing post id. Refresh the page and try again')
       return
     }
     setAddingImages(true)
@@ -293,14 +293,14 @@ export function GenerateButton({
             ...(opts?.scheduleAt ? { scheduleMode: 'wp-native', scheduledFor: opts.scheduleAt } : {}),
           }, ctrl.signal)
           let d: Record<string, unknown> = {}
-          try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
+          try { d = await r.json() } catch { throw new Error(`Server error (${r.status}): check Vercel logs`) }
           return { res: r, data: d }
         } catch (e) {
           // DOMException name 'AbortError' = our abort fired. Rewrite the
           // message so the user sees something they can act on, not a
           // bare "The user aborted a request."
           if (e instanceof DOMException && e.name === 'AbortError') {
-            throw new Error('Generation took unusually long (>10 min) and the page stopped waiting — the post is likely still finishing in the background. Refresh the page in a minute or two and check your Library before retrying; if it keeps happening, check Vercel logs or your WordPress site.')
+            throw new Error('Generation took unusually long (>10 min) and the page stopped waiting. The post is likely still finishing in the background. Refresh the page in a minute or two and check your Library before retrying; if it keeps happening, check Vercel logs or your WordPress site.')
           }
           // "Failed to fetch" — browser-level TypeError thrown when the
           // connection drops BEFORE any HTTP response (Vercel killed the
@@ -309,7 +309,7 @@ export function GenerateButton({
           // saw the response, so the action is the same as the abort:
           // refresh and check before retrying.
           if (e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(e.message)) {
-            throw new Error('Lost connection to the server before getting a response. The post may have published anyway — refresh the page to check. If it didn\'t land, retry; if it keeps failing, the WordPress site or Vercel function may be down.')
+            throw new Error('Lost connection to the server before getting a response. The post may have published anyway. Refresh the page to check. If it didn\'t land, retry; if it keeps failing, the WordPress site or Vercel function may be down.')
           }
           throw e
         } finally {
@@ -322,10 +322,10 @@ export function GenerateButton({
       // proceeding.
       if (!res.ok && data.reason === 'no_transcript') {
         const proceed = await confirm({
-          title: 'No transcript available — generate anyway?',
+          title: 'No transcript available. Generate anyway?',
           description:
             'Without a transcript the post will be shorter and less specific (no lived experiences to ground on). ' +
-            'Recommended: enable captions in YouTube Studio → Subtitles, then retry — auto-captions usually appear within 24h.',
+            'Recommended: enable captions in YouTube Studio → Subtitles, then retry. Auto-captions usually appear within 24h.',
           confirmLabel: 'Generate anyway',
           cancelLabel: 'Wait for captions',
         })
@@ -340,10 +340,10 @@ export function GenerateButton({
         || /short clip with no product attached/i.test(String(data.error || ''))
       if (!res.ok && notReviewable) {
         const proceed = await confirm({
-          title: 'Short clip with no product — generate anyway?',
+          title: 'Short clip with no product. Generate anyway?',
           description:
             'MVP couldn\'t find a product on this video (no Amazon link or ASIN in the title/description) and the transcript is too thin to ground a review. ' +
-            'Best fix: add the product link to the first lines of the video\'s YouTube description, then retry — you\'ll get a full review with your affiliate link. ' +
+            'Best fix: add the product link to the first lines of the video\'s YouTube description, then retry. You\'ll get a full review with your affiliate link. ' +
             '"Generate anyway" publishes a general post with no affiliate link.',
           confirmLabel: 'Generate anyway',
           cancelLabel: 'I\'ll add the product link',
@@ -378,7 +378,7 @@ export function GenerateButton({
         }
         if (data.reason === 'wp_connection') {
           setNeedsDoctor(true)
-          setError(errText(data.error) || 'Your WordPress connection is blocked — run the Connection Doctor to fix it, then try again.')
+          setError(errText(data.error) || 'Your WordPress connection is blocked. Run the Connection Doctor to fix it, then try again.')
           setStatus('error')
           return
         }
@@ -410,7 +410,7 @@ export function GenerateButton({
       // things — no blocking. 2026-06-08.
       if (includeImages && !userImages.some(Boolean) && data.wordpressPostId) {
         const wpPostId = data.wordpressPostId
-        toast.loading('Generating in-article images… (1-3 minutes — you can keep working)', {
+        toast.loading('Generating in-article images… (1-3 minutes, you can keep working)', {
           id: `img-gen-${wpPostId}`,
           duration: Infinity,  // dismissed by the success/fail toast below
         })
@@ -486,7 +486,7 @@ export function GenerateButton({
       // Raw JSON parse error = server returned an HTML error page instead of JSON
       // (Vercel crash, redirect to login, etc.). Convert to something actionable.
       if (/Unexpected token.*<|is not valid JSON/i.test(message)) {
-        message = 'Server returned an unexpected response — it may have crashed. Check Vercel logs, or try again in a moment.'
+        message = 'Server returned an unexpected response. It may have crashed. Check Vercel logs, or try again in a moment.'
       }
       setError(message)
       // "Still finishing in the background" / "may have published anyway" are NOT
@@ -516,12 +516,12 @@ export function GenerateButton({
             days; old ones that flip back to this state may have been dropped).
             Null/undefined = no signal yet → hide the badge. */}
         {result.indexed === true && (
-          <span className="inline-flex items-center text-[#34c759]" title="Indexed by Google — it shows in search results.">
+          <span className="inline-flex items-center text-[#34c759]" title="Indexed by Google. It shows in search results.">
             <CheckCircle size={12} />
           </span>
         )}
         {result.indexed === false && (
-          <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet — new posts can take days to weeks. Open the SEO page to request indexing.'}>
+          <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet. New posts can take days to weeks. Open the SEO page to request indexing.'}>
             <AlertCircle size={12} />
           </span>
         )}
@@ -560,7 +560,7 @@ export function GenerateButton({
             deliberate text-only post, which the old count-only check couldn't.
             Falls back to the count for legacy rows written before the column. */}
         {result.imagesStatus === 'pending' && (
-          <span className="inline-flex items-center gap-1 text-[#86868b] dark:text-[#8e8e93]" title="In-article images are still generating — this can take 1-3 minutes.">
+          <span className="inline-flex items-center gap-1 text-[#86868b] dark:text-[#8e8e93]" title="In-article images are still generating. This can take 1-3 minutes.">
             <Loader2 size={11} className="animate-spin" /><span className="text-[10px] font-semibold">Images…</span>
           </span>
         )}
@@ -764,7 +764,7 @@ export function GenerateButton({
           <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
             {userImages.some(Boolean)
               ? 'Only the photos you add here go in the article (no AI photos mixed in). Fill more slots for more images.'
-              : 'Optional. By default we generate AI photos of the actual product in different real-world settings — or drop in up to 3 of your own above.'}
+              : 'Optional. By default we generate AI photos of the actual product in different real-world settings, or drop in up to 3 of your own above.'}
           </span>
           {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
         </div>

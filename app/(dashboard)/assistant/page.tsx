@@ -214,7 +214,7 @@ export default function AssistantPage() {
           <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
             <Plus size={13} /> New chat
           </button>
-          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40" title="What MVP remembers about you — view, import from another AI tool, or clear">
+          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40" title="What MVP remembers about you: view, import from another AI tool, or clear">
             <Brain size={13} /> Memory
           </button>
           <div className="flex-1 overflow-y-auto flex flex-col gap-1">
@@ -319,15 +319,15 @@ export default function AssistantPage() {
               </div>
               <button onClick={() => setMemoryOpen(false)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={16} /></button>
             </div>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what MVP remembers about you across all chats. It updates itself as you talk — and you can seed it by importing your history from any AI tool you&apos;ve been using.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what MVP remembers about you across all chats. It updates itself as you talk, and you can seed it by importing your history from any AI tool you&apos;ve been using.</p>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Current memory</label>
             <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0a0a0a] p-3 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap min-h-[60px] mb-4">
-              {memory || <span className="text-[#86868b]">Nothing yet — chat a bit, or import below.</span>}
+              {memory || <span className="text-[#86868b]">Nothing yet: chat a bit, or import below.</span>}
             </div>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Import knowledge</label>
-            <p className="text-[11px] text-[#86868b] mb-2">Paste anything you want it to know — or upload a text/markdown/JSON export from another AI tool. We distill the durable facts and merge them in (we don&apos;t store the raw dump).</p>
+            <p className="text-[11px] text-[#86868b] mb-2">Paste anything you want it to know, or upload a text/markdown/JSON export from another AI tool. We distill the durable facts and merge them in (we don&apos;t store the raw dump).</p>
             <textarea
               value={importText}
               onChange={e => setImportText(e.target.value)}

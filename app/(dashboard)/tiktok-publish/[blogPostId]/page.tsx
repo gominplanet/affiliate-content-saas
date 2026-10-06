@@ -53,8 +53,8 @@ interface BlogPostMeta {
 }
 
 const PRIVACY_LABELS: Record<PrivacyLevel, string> = {
-  PUBLIC_TO_EVERYONE: 'Public — anyone can see',
-  MUTUAL_FOLLOW_FRIENDS: 'Friends — mutual follows only',
+  PUBLIC_TO_EVERYONE: 'Public: anyone can see',
+  MUTUAL_FOLLOW_FRIENDS: 'Friends: mutual follows only',
   FOLLOWER_OF_CREATOR: 'Followers only',
   SELF_ONLY: 'Only me (private)',
 }
@@ -196,11 +196,11 @@ export default function TikTokPublishPage() {
     v.onloadedmetadata = () => {
       const dur = v.duration
       const w = v.videoWidth, h = v.videoHeight
-      if (dur && dur < 3) warns.push('Video is under 3s — TikTok may reject it.')
-      if (dur && dur > 600) warns.push('Video is over 10 minutes — trim it before posting.')
+      if (dur && dur < 3) warns.push('Video is under 3s. TikTok may reject it.')
+      if (dur && dur > 600) warns.push('Video is over 10 minutes. Trim it before posting.')
       if (w && h) {
         const ratio = w / h
-        if (ratio > 0.62) warns.push('This isn\'t a 9:16 vertical video — it\'ll be letterboxed or cropped.')
+        if (ratio > 0.62) warns.push('This isn\'t a 9:16 vertical video. It\'ll be letterboxed or cropped.')
       }
       finish()
     }
@@ -209,7 +209,7 @@ export default function TikTokPublishPage() {
     // Size via a HEAD request (best-effort; storage returns content-length).
     void fetch(url, { method: 'HEAD' }).then(r => {
       const len = Number(r.headers.get('content-length') || 0)
-      if (len > 287 * 1024 * 1024) warns.push('File is close to the 300 MB cap — compress it if the post fails.')
+      if (len > 287 * 1024 * 1024) warns.push('File is close to the 300 MB cap. Compress it if the post fails.')
       finish()
     }).catch(() => { /* ignore — non-fatal */ })
     return () => { cancelled = true }
@@ -386,7 +386,7 @@ export default function TikTokPublishPage() {
             <div className="mb-4 rounded-xl border border-dashed border-[#d2d2d7] dark:border-white/15 bg-[#f5f5f7]/60 dark:bg-white/[0.03] p-4">
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add a vertical video to post</p>
               <p className="text-xs text-[#86868b] mb-3">
-                TikTok needs a 9:16 video. Add one here — it&apos;s shared with Instagram, so you only do this once.
+                TikTok needs a 9:16 video. Add one here. It&apos;s shared with Instagram, so you only do this once.
               </p>
               {meta.videoId ? (
                 <>
@@ -437,7 +437,7 @@ export default function TikTokPublishPage() {
                       {renders === null ? (
                         <p className="text-xs text-[#86868b]">Loading your videos…</p>
                       ) : renders.length === 0 ? (
-                        <p className="text-xs text-[#86868b]">No vertical videos made yet — upload or burn one above.</p>
+                        <p className="text-xs text-[#86868b]">No vertical videos made yet. Upload or burn one above.</p>
                       ) : (
                         <div className="grid grid-cols-4 gap-2">
                           {renders.map(r => (
@@ -463,7 +463,7 @@ export default function TikTokPublishPage() {
                 </>
               ) : (
                 <p className="text-xs text-[#9a5d00] bg-[#ff9500]/8 border border-[#ff9500]/20 rounded-lg p-2.5">
-                  This post isn&apos;t linked to a video, so there&apos;s no 9:16 render to post. TikTok needs a video — start from a YouTube Short / video-backed post instead.
+                  This post isn&apos;t linked to a video, so there&apos;s no 9:16 render to post. TikTok needs a video. Start from a YouTube Short / video-backed post instead.
                 </p>
               )}
             </div>
@@ -499,7 +499,7 @@ export default function TikTokPublishPage() {
                 const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
                 return (
                   <option key={opt} value={opt} disabled={blockedForBranded}>
-                    {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ' — not allowed for branded content' : ''}
+                    {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ': not allowed for branded content' : ''}
                   </option>
                 )
               })}
@@ -606,7 +606,7 @@ export default function TikTokPublishPage() {
             <div className="mb-3 card p-3 border-[#7C3AED]/20 bg-[#7C3AED]/5">
               <p className="text-xs text-[#7C3AED] flex items-center gap-1.5">
                 <Loader2 size={12} className="animate-spin" />
-                Sent to TikTok. Processing — usually 1-3 minutes. You can close this page; the result will show on the Content page.
+                Sent to TikTok. Processing, usually 1-3 minutes. You can close this page; the result will show on the Content page.
               </p>
             </div>
           )}
@@ -692,7 +692,7 @@ export default function TikTokPublishPage() {
                     onChange={e => { setScheduleAt(e.target.value); setScheduledMsg(null); setScheduleError(null) }}
                     className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                   />
-                  <p className="text-[11px] text-[#86868b] mt-1">Uses your settings + caption above. Fires automatically — you can close the page.</p>
+                  <p className="text-[11px] text-[#86868b] mt-1">Uses your settings + caption above. Fires automatically: you can close the page.</p>
                   {scheduledMsg && <p className="mt-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> {scheduledMsg}</p>}
                   {scheduleError && <p className="mt-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> {scheduleError}</p>}
                   <div className="flex gap-2 mt-2">

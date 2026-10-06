@@ -48,8 +48,8 @@ interface VideoMeta {
 }
 
 const PRIVACY_LABELS: Record<PrivacyLevel, string> = {
-  PUBLIC_TO_EVERYONE: 'Public — anyone can see',
-  MUTUAL_FOLLOW_FRIENDS: 'Friends — mutual follows only',
+  PUBLIC_TO_EVERYONE: 'Public: anyone can see',
+  MUTUAL_FOLLOW_FRIENDS: 'Friends: mutual follows only',
   FOLLOWER_OF_CREATOR: 'Followers only',
   SELF_ONLY: 'Only me (private)',
 }
@@ -221,7 +221,7 @@ export function TikTokDirectModal({
             setPublishStatus('failed')
             setPublishError(json.error || 'TikTok never confirmed the post. Open the TikTok app to check, or try posting again.')
           } else {
-            setPublishError(json.error || 'Status check failed — retrying.')
+            setPublishError(json.error || 'Status check failed. Retrying.')
           }
           return
         }
@@ -235,7 +235,7 @@ export function TikTokDirectModal({
         } else if (json.status === 'inbox') {
           settled = true
           setPublishStatus('inbox')
-          setPublishError(json.errorMessage || 'TikTok routed it to your app inbox — open the TikTok app to publish.')
+          setPublishError(json.errorMessage || 'TikTok routed it to your app inbox. Open the TikTok app to publish.')
           if (onPosted) onPosted()
         } else if (json.status === 'failed') {
           settled = true
@@ -256,7 +256,7 @@ export function TikTokDirectModal({
         if (!settled && ticks >= MAX_TICKS) {
           settled = true
           setPublishStatus('failed')
-          setPublishError('TikTok is still processing after several minutes — it may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
+          setPublishError('TikTok is still processing after several minutes. It may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
         }
       }
     }
@@ -479,7 +479,7 @@ export function TikTokDirectModal({
             </span>
             <div>
               <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post Short to TikTok</h3>
-              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Direct push — no blog post needed</p>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Direct push: no blog post needed</p>
             </div>
           </div>
           <button
@@ -612,7 +612,7 @@ export function TikTokDirectModal({
               {/* Caption */}
               <div>
                 <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5">
-                  Caption (AI-generated — edit freely)
+                  Caption (AI-generated, edit freely)
                 </label>
                 <textarea
                   value={caption}
@@ -639,7 +639,7 @@ export function TikTokDirectModal({
                     const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
                     return (
                       <option key={opt} value={opt} disabled={blockedForBranded}>
-                        {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ' — not allowed for branded content' : ''}
+                        {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ': not allowed for branded content' : ''}
                       </option>
                     )
                   })}
@@ -653,7 +653,7 @@ export function TikTokDirectModal({
                     onClick={() => setPrivacy('PUBLIC_TO_EVERYONE')}
                     className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#34c759]/50 px-2.5 py-1 text-[11px] font-medium text-[#248a3d] hover:bg-[#34c759]/10"
                   >
-                    Recommended: Public — anyone can see
+                    Recommended: Public, anyone can see
                   </button>
                 )}
                 {brandedNoPrivate && (
@@ -729,7 +729,7 @@ export function TikTokDirectModal({
                 <div className="rounded-lg border-[#7C3AED]/20 bg-[#7C3AED]/5 p-3 flex flex-col gap-1">
                   <p className="text-xs text-[#7C3AED] flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin" />
-                    Sent to TikTok. Processing — 1-3 min.
+                    Sent to TikTok. Processing: 1-3 min.
                   </p>
                   {rawStatus && (
                     <p className="text-[10px] text-[#86868b]">TikTok status: <span className="font-mono">{rawStatus}</span></p>
@@ -849,7 +849,7 @@ export function TikTokDirectModal({
               // scroll back to it. Put the choice RIGHT HERE, above the button,
               // as big tap targets so there's nothing to hunt for.
               <div className="mx-5 mt-3 rounded-xl border-2 border-[#ff0050]/40 bg-[#ff0050]/5 px-4 py-3">
-                <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">One more step — who can see this video?</p>
+                <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">One more step. Who can see this video?</p>
                 <p className="text-[11px] text-[#86868b] mb-2.5">TikTok requires you to choose. Tap one to turn on the Post button.</p>
                 <div className="flex flex-wrap gap-2">
                   {info.privacyLevelOptions.map(opt => {
@@ -874,7 +874,7 @@ export function TikTokDirectModal({
                 {!info ? 'Loading your TikTok settings…'
                   : !meta?.videoUrl ? 'Preparing your video…'
                   : commercialNeedsChoice ? 'Tell TikTok whether this promotes you, a brand, or both.'
-                  : brandedNoPrivate ? "Branded content can't be set to private — pick a public or friends option."
+                  : brandedNoPrivate ? "Branded content can't be set to private. Pick a public or friends option."
                   : 'Finish the required fields above to post.'}
               </p>
             )

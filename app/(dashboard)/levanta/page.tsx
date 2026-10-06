@@ -160,7 +160,7 @@ export default function LevantaPage() {
       <PageHero
         guide={<LevantaGuide />}
         title="MVP x Levanta"
-        subtitle="Browse your Levanta brands and turn any Amazon product into a published review — with a real commissionable Levanta tracking link, written in your voice."
+        subtitle="Browse your Levanta brands and turn any Amazon product into a published review, with a real commissionable Levanta tracking link, written in your voice."
         accent="rgba(34,211,238,0.32)"
       />
 
@@ -168,13 +168,13 @@ export default function LevantaPage() {
         <FeatureLockedCard
           icon={<ShoppingBag size={28} strokeWidth={1.8} />}
           feature="MVP x Levanta"
-          description="Sweep every brand you're partnered with on Levanta (the Amazon Creator network, often paying above standard Associates), and MVP's finder surfaces the products worth promoting — each with a real commissionable tracking link and a fact-grounded post written in your voice."
+          description="Sweep every brand you're partnered with on Levanta (the Amazon Creator network, often paying above standard Associates), and MVP's finder surfaces the products worth promoting: each with a real commissionable tracking link and a fact-grounded post written in your voice."
           bullets={[
             'One scan across all your partnered Levanta brands',
-            'MVP profitability criteria — commission, price, rating, EPC',
+            'MVP profitability criteria: commission, price, rating, EPC',
             'Save winners + message the brand right from the results',
             'Generate a published, affiliate-linked review per product',
-            'Part of Source & Earn — also unlocks AMZ + PartnerBoost finders',
+            'Part of Source & Earn: also unlocks AMZ + PartnerBoost finders',
           ]}
           requiredTier="creator"
           currentTier={normalizeTier(tier)}
@@ -196,7 +196,7 @@ export default function LevantaPage() {
         </summary>
         <div className="px-4 pb-4 text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           <p className="mb-3">
-            Levanta is an Amazon-focused affiliate network — it pays creators a commission (often above standard
+            Levanta is an Amazon-focused affiliate network. It pays creators a commission (often above standard
             Amazon Associates) and gives a real tracking link per product. MVP x Levanta reads the brands you&rsquo;re
             partnered with and turns their products into published, affiliate-linked reviews.
           </p>
@@ -207,7 +207,7 @@ export default function LevantaPage() {
               <a href={LEVANTA_DASHBOARD} target="_blank" rel="noopener noreferrer"
                 className="font-medium inline-flex items-center gap-0.5" style={{ color: CYAN }}>
                 Open Levanta <ExternalLink size={11} />
-              </a>{' '}— API access is approval-gated, so request it from Levanta if you don&rsquo;t see it.
+              </a>. API access is approval-gated, so request it from Levanta if you don&rsquo;t see it.
             </li>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> Paste your Levanta
@@ -219,18 +219,18 @@ export default function LevantaPage() {
           <ol className="list-decimal pl-5 space-y-1.5" start={3}>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Partner with brands in Levanta.</span> Approve
-              the brands you want to promote in the Levanta dashboard — they show here as{' '}
+              the brands you want to promote in the Levanta dashboard. They show here as{' '}
               <span style={{ color: '#10B981', fontWeight: 600 }}>Partnered</span>. <span className="font-medium">Refresh</span> to pull in new ones.
             </li>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Browse.</span> Open a brand to see its
-              products — each shows the commission %, price, and rating.
+              products: each shows the commission %, price, and rating.
             </li>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Generate.</span> Hit <span className="font-medium">Generate post</span> on
               any product. MVP mints a Levanta tracking link for that ASIN, pulls the real Amazon listing for specs &amp;
               images, writes a fact-grounded review in your voice (cloaked via Geniuslink if connected), and saves to
-              WordPress — <span className="font-medium">draft</span> or <span className="font-medium">live</span>, per the toggle below.
+              WordPress: <span className="font-medium">draft</span> or <span className="font-medium">live</span>, per the toggle below.
             </li>
           </ol>
           <p className="mt-3 text-[12px]">
@@ -264,7 +264,7 @@ export default function LevantaPage() {
         <>
           <LevantaFinder onSavedChange={() => setSavedReloadKey((k) => k + 1)} />
           <p className="text-[11px] leading-relaxed -mt-3 mb-5 px-1" style={{ color: 'var(--text-faint)' }}>
-            MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your Levanta campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
+            MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your Levanta campaigns using criteria that have been fruitful for influencers over the past 4 years: actual results depend on the product, your content, and your audience.
           </p>
           <LevantaSaved reloadKey={savedReloadKey} />
           <div className="flex items-center gap-2 mb-3">

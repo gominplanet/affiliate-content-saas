@@ -33,7 +33,7 @@ export default function SocialLaunchKitPage() {
           'Ready-to-paste name, @handle, bios, category and keywords per platform',
           'On-brand banner + avatar generated from your Brand Profile',
           'A written-in-your-voice first post to launch with',
-          'Step-by-step setup with deep links — then connect it for auto-posting',
+          'Step-by-step setup with deep links, then connect it for auto-posting',
         ]}
         requiredTier="creator"
         currentTier={gateTier}
@@ -55,7 +55,7 @@ export default function SocialLaunchKitPage() {
         <Rocket size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           Everything is generated from your <a href="/brand" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> and voice, so it sounds like you.
-          You still click the final &quot;create&quot; on each platform — MVP can&apos;t make the account for you — but every field and image is done. Once it&apos;s live, connect it in <a href="/connect-socials" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Connect Socials</a> to auto-post.
+          You still click the final &quot;create&quot; on each platform (MVP can&apos;t make the account for you) but every field and image is done. Once it&apos;s live, connect it in <a href="/connect-socials" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Connect Socials</a> to auto-post.
         </p>
       </div>
 

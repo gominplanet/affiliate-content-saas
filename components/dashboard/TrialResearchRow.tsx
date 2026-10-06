@@ -25,7 +25,7 @@ export default function TrialResearchRow() {
   if (tier !== 'trial') return null
   return (
     <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.20)' }}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-1" style={{ color: '#7C3AED' }}>Free research — start here</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-1" style={{ color: '#7C3AED' }}>Free research: start here</p>
       <p className="text-sm mb-3" style={{ color: 'var(--text-soft)' }}>Find products worth reviewing. No card, no setup.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {TOOLS.map((t) => (

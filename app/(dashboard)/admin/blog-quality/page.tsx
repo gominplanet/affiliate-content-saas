@@ -215,7 +215,7 @@ export default async function BlogQualityPage() {
       <div>
         <h1 className="text-2xl font-bold">Blog Quality</h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
-          Post-generation self-check telemetry — last 90 days across <b>{d.totalPosts.toLocaleString()}</b> posts.
+          Post-generation self-check telemetry. Last 90 days across <b>{d.totalPosts.toLocaleString()}</b> posts.
           Tracks the 9-item audit-rule hardening shipped June 2026.
         </p>
       </div>

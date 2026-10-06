@@ -36,15 +36,15 @@ const statusConfig: Record<FailureStatus, { label: string; style: string }> = {
 
 const friendlyError: Record<string, string> = {
   WP_AUTH_401:            "Couldn't connect to your blog. Your WordPress password may need updating.",
-  ANTHROPIC_RATE_LIMIT:   'Content generation was busy — will retry automatically shortly.',
+  ANTHROPIC_RATE_LIMIT:   'Content generation was busy. Will retry automatically shortly.',
   YOUTUBE_QUOTA_EXCEEDED: 'YouTube sync is paused for today and will resume automatically overnight.',
-  GEMINI_EMPTY_RESPONSE:  "Couldn't generate content for this video — try retrying manually.",
+  GEMINI_EMPTY_RESPONSE:  "Couldn't generate content for this video. Try retrying manually.",
 }
 
 const friendlyFix: Record<string, string> = {
   WP_AUTH_401:            'Go to Blog Setup → Integrations and re-enter your WordPress password.',
-  ANTHROPIC_RATE_LIMIT:   'No action needed — the job is queued and will retry automatically. If this keeps happening, consider upgrading your plan.',
-  YOUTUBE_QUOTA_EXCEEDED: 'No action needed — YouTube resets daily limits overnight and the sync will resume automatically.',
+  ANTHROPIC_RATE_LIMIT:   'No action needed. The job is queued and will retry automatically. If this keeps happening, consider upgrading your plan.',
+  YOUTUBE_QUOTA_EXCEEDED: 'No action needed. YouTube resets daily limits overnight and the sync will resume automatically.',
   GEMINI_EMPTY_RESPONSE:  'Click Retry below. If it fails again, try editing the video title to be more specific.',
 }
 
@@ -102,7 +102,7 @@ function FailureRow({
         onResolved(failure.id)
       }
     } catch {
-      setRetryError('Network error — check your connection')
+      setRetryError('Network error: check your connection')
     } finally {
       setRetrying(false)
     }
@@ -272,7 +272,7 @@ function ThumbnailBlocksPanel() {
         </p>
       </div>
       <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-        These sites are publishing posts with no featured image — almost always a host firewall / security plugin blocking uploads to <code>/wp-json/wp/v2/media</code>. Reach out so they allowlist it, then they can hit “Re-attach missing thumbnails” on their SEO page.
+        These sites are publishing posts with no featured image, almost always a host firewall / security plugin blocking uploads to <code>/wp-json/wp/v2/media</code>. Reach out so they allowlist it, then they can hit “Re-attach missing thumbnails” on their SEO page.
       </p>
       <div className="flex flex-col gap-1">
         {sites.slice(0, 20).map(s => (
@@ -400,7 +400,7 @@ export default function FailuresPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-sm text-[#86868b]">
-                    {failures.length === 0 ? 'No issues — everything looks good.' : 'No issues in this category.'}
+                    {failures.length === 0 ? 'No issues: everything looks good.' : 'No issues in this category.'}
                   </td>
                 </tr>
               )}

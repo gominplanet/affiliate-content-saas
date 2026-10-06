@@ -189,7 +189,7 @@ export default function WalmartPBPage() {
       const j = await res.json()
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
       setResults((m) => ({ ...m, [key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
-      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ' — link cloaked via Geniuslink' : ''}`)
+      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ': link cloaked via Geniuslink' : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally {
@@ -218,13 +218,13 @@ export default function WalmartPBPage() {
         <FeatureLockedCard
           icon={<Store size={28} strokeWidth={1.8} />}
           feature="MVP x PartnerBoost"
-          description="Sweep every brand you've joined on PartnerBoost — Walmart, Amazon and DTC — and MVP's finder surfaces the products worth promoting, each with a cloaked deep-link tracking base and a fact-grounded post written in your voice."
+          description="Sweep every brand you've joined on PartnerBoost (Walmart, Amazon and DTC) and MVP's finder surfaces the products worth promoting, each with a cloaked deep-link tracking base and a fact-grounded post written in your voice."
           bullets={[
             'One scan across all your joined PartnerBoost brands (Walmart / Amazon / DTC)',
-            'MVP criteria — commission, price, category — ranked by estimated $/sale',
+            'MVP criteria (commission, price, category) ranked by estimated $/sale',
             'Cached catalog for instant full-coverage results',
             'Save winners + message the brand right from the results',
-            'Part of Source & Earn — also unlocks AMZ + Levanta finders',
+            'Part of Source & Earn: also unlocks AMZ + Levanta finders',
           ]}
           requiredTier="creator"
           currentTier={normalizeTier(tier)}
@@ -248,7 +248,7 @@ export default function WalmartPBPage() {
         <div className="px-4 pb-4 text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           <p className="mb-3">
             Brand Boost turns brands from your <span className="font-medium" style={{ color: 'var(--text)' }}>PartnerBoost</span> account
-            into published, affiliate-linked posts. PartnerBoost is the affiliate network it reads from — it can&rsquo;t
+            into published, affiliate-linked posts. PartnerBoost is the affiliate network it reads from. It can&rsquo;t
             join programs for you, so the joining happens there and the publishing happens here.
           </p>
 
@@ -256,7 +256,7 @@ export default function WalmartPBPage() {
           <ol className="list-decimal pl-5 space-y-1.5 mb-3">
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Create a PartnerBoost account.</span> It&rsquo;s
-              free — this is the network Brand Boost pulls brands and products from.{' '}
+              free: this is the network Brand Boost pulls brands and products from.{' '}
               <a href={PB_DASHBOARD} target="_blank" rel="noopener noreferrer"
                 className="font-medium inline-flex items-center gap-0.5" style={{ color: '#0E7490' }}>
                 Open PartnerBoost <ExternalLink size={11} />
@@ -274,7 +274,7 @@ export default function WalmartPBPage() {
           <ol className="list-decimal pl-5 space-y-1.5" start={3}>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Join brands in PartnerBoost.</span> Open a
-              program and accept the brand&rsquo;s terms — some approve instantly, others need the merchant&rsquo;s OK. Use{' '}
+              program and accept the brand&rsquo;s terms. Some approve instantly, others need the merchant&rsquo;s OK. Use{' '}
               <span className="font-medium">Join more in PartnerBoost</span> below, then come back and <span className="font-medium">Refresh</span>{' '}
               to pull in your new <span style={{ color: '#10B981', fontWeight: 600 }}>Joined</span> brands.
             </li>
@@ -287,7 +287,7 @@ export default function WalmartPBPage() {
               <span className="font-medium" style={{ color: 'var(--text)' }}>Generate.</span> Expand a Joined brand&rsquo;s
               <span className="font-medium"> Products</span> and hit <span className="font-medium">Generate post</span> on any item.
               MVP writes a fact-grounded review in your voice, uses the real product image, cloaks the affiliate link (via
-              Geniuslink if you&rsquo;ve connected it), and saves it to WordPress — as a <span className="font-medium">draft</span> or{' '}
+              Geniuslink if you&rsquo;ve connected it), and saves it to WordPress: as a <span className="font-medium">draft</span> or{' '}
               <span className="font-medium">live</span>, per the toggle below.
             </li>
           </ol>
@@ -325,7 +325,7 @@ export default function WalmartPBPage() {
         <>
           <PartnerBoostFinder onSavedChange={() => setSavedReloadKey((k) => k + 1)} />
           <p className="text-[11px] leading-relaxed -mt-3 mb-5 px-1" style={{ color: 'var(--text-faint)' }}>
-            MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your PartnerBoost campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
+            MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your PartnerBoost campaigns using criteria that have been fruitful for influencers over the past 4 years: actual results depend on the product, your content, and your audience.
           </p>
           <PartnerBoostSaved reloadKey={savedReloadKey} />
           {/* The full Walmart catalog (all offers, not just joined brands), run
@@ -438,7 +438,7 @@ export default function WalmartPBPage() {
                     {b.allow_sml && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
                         style={{ background: 'rgba(34,211,238,0.12)', color: '#0E7490' }}
-                        title="Deep-linking enabled — any product URL on this brand can be affiliate-wrapped">
+                        title="Deep-linking enabled: any product URL on this brand can be affiliate-wrapped">
                         deep-link
                       </span>
                     )}

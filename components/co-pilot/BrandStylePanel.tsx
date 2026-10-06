@@ -119,7 +119,7 @@ export default function BrandStylePanel({
         throw new Error(e.error || 'Save failed')
       }
       setHasSaved(true)
-      toast.success('Saved as your default — new thumbnails start from this')
+      toast.success('Saved as your default. New thumbnails start from this')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save your default')
     } finally { setBusy(false) }
@@ -157,7 +157,7 @@ export default function BrandStylePanel({
       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Thumbnail style</span>
-          <span className="text-[10px] text-[#86868b]">border, accent &amp; face for every thumbnail — save it to reuse</span>
+          <span className="text-[10px] text-[#86868b]">border, accent &amp; face for every thumbnail. Save it to reuse</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -181,8 +181,8 @@ export default function BrandStylePanel({
 
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-[11px] text-[#86868b]">Face</span>
-        {faceChip(null, 'Off', "Don't lock a face — use the video frame as-is")}
-        {faceChip('no-human', 'Product only', 'No creator face — a product-only thumbnail')}
+        {faceChip(null, 'Off', "Don't lock a face. Use the video frame as-is")}
+        {faceChip('no-human', 'Product only', 'No creator face: a product-only thumbnail')}
         {faceModels.map(fm => faceChip(fm.id, fm.name, `Lock ${fm.name}'s likeness from your Photobooth photos`))}
         {faceModels.length > 1 && faceChip('random', '🎲 Random', 'MVP picks one of your face models at random each generation')}
         {faceModels.length === 0 && (

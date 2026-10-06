@@ -252,7 +252,7 @@ export default function ScriptPage() {
   const blocked = usage && !usage.allowed
   const subtitle = (() => {
     if (!usage) return 'Paste a product, pick a style, get a film-ready script in your voice.'
-    if (!usage.allowed) return 'Paid feature — generate film-ready scripts grounded in real product info.'
+    if (!usage.allowed) return 'Paid feature: generate film-ready scripts grounded in real product info.'
     if (usage.cap === null) return 'Unlimited generations. Pick a style and go.'
     return `${usage.used} of ${usage.cap} scripts used this month${usage.resetLabel ? ` · resets ${usage.resetLabel}` : ''}.`
   })()
@@ -268,7 +268,7 @@ export default function ScriptPage() {
         feature="Video Script & Shot List"
         description="Paste a product, pick a style (Hands-On / Long-Term), and get a film-ready script in your voice. Built on a UGC review playbook with scripted hook + verdict, talking-point middle, and a subject-only shot list."
         bullets={[
-          '3 hook variants per generation — pick the one that fits',
+          '3 hook variants per generation. Pick the one that fits',
           'Scripted hook + verdict (word-for-word) + talking-point middle',
           'Subject-only shot list (no over-direction)',
           'Hands-On + Long-Term include an auto vertical-short cutdown (TikTok / Reels / Shorts)',
@@ -356,7 +356,7 @@ export default function ScriptPage() {
               <div className="text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
                 You&apos;ll get <strong>3 hook variants</strong> to pick from, a beat-by-beat structure with scripted hook + verdict, talking points for the middle, and a subject-only shot list.
                 {(style === 'hands_on' || style === 'long_term') && <> A <strong>vertical short cutdown</strong> is written from scratch for TikTok / Reels / YT Shorts.</>}
-                {' '}Each script applies a UGC playbook from seasoned reviewers — hook strategy, where the trade-off lives, no on-camera CTA — woven into your own voice.
+                {' '}Each script applies a UGC playbook from seasoned reviewers (hook strategy, where the trade-off lives, no on-camera CTA) woven into your own voice.
               </div>
             </div>
 
@@ -367,7 +367,7 @@ export default function ScriptPage() {
             )}
 
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md leading-relaxed">Written in your brand voice, using a UGC review playbook from seasoned creators — grounded in the real product info we scrape.</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md leading-relaxed">Written in your brand voice, using a UGC review playbook from seasoned creators, grounded in the real product info we scrape.</p>
               <button
                 onClick={() => void generate()}
                 disabled={generating || !input.trim()}
@@ -396,7 +396,7 @@ export default function ScriptPage() {
       {recent.length > 0 && (
         <div className="card p-5 mt-6">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Recent scripts</p>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Click any to re-open it. The script body stays exactly as MVP wrote it — no re-generation, no token cost.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Click any to re-open it. The script body stays exactly as MVP wrote it: no re-generation, no token cost.</p>
           <div className="flex flex-col gap-1.5">
             {recent.map(s => {
               const meta = STYLE_META[s.style] ?? STYLE_META.hands_on
@@ -477,11 +477,11 @@ function UpsellCard({ usage }: { usage: UsageInfo }) {
         </div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Get film-ready scripts in your voice</h2>
         <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed max-w-xl mb-4">
-          {usage.reason || 'Video scripts are a Pro feature.'} Paste a product, pick a style, get a film-ready script written in your brand voice — applying a UGC review playbook built with seasoned creators so the structure, hooks, and verdict land the way reviews actually convert.
+          {usage.reason || 'Video scripts are a Pro feature.'} Paste a product, pick a style, get a film-ready script written in your brand voice: applying a UGC review playbook built with seasoned creators so the structure, hooks, and verdict land the way reviews actually convert.
         </p>
         <ul className="text-[13px] text-[#3a3a3c] dark:text-[#d2d2d7] mb-5 flex flex-col gap-1.5 max-w-lg">
-          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Hands-On Test · Long-Term Review — time-based styles</span></li>
-          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Vertical short cutdown written fresh — not lifted from the long master</span></li>
+          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Hands-On Test · Long-Term Review: time-based styles</span></li>
+          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Vertical short cutdown written fresh, not lifted from the long master</span></li>
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>{TIERS.pro.scriptsPerMonth} generations per month on Pro</span></li>
         </ul>
         <a
@@ -519,7 +519,7 @@ function ScriptOutput({
 
   function copyEntireScript() {
     const parts: string[] = []
-    parts.push(`${productTitle} — ${meta.label}`)
+    parts.push(`${productTitle}: ${meta.label}`)
     if (script.summary) parts.push(`\n${script.summary}\n`)
     if (script.hooks && script.hooks.length > 0) {
       parts.push(`\n## HOOKS (pick one before filming)\n`)
@@ -584,7 +584,7 @@ function ScriptOutput({
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] uppercase tracking-wide text-[#5856d6] font-semibold flex items-center gap-1">
-              <Eye size={11} /> Pick your hook — 3 options
+              <Eye size={11} /> Pick your hook: 3 options
             </p>
             <p className="text-[10px] text-[#86868b]">Tap one to lock it in for filming.</p>
           </div>

@@ -100,7 +100,7 @@ export default function FacebookDmStatus() {
     <div className="rounded-2xl border p-4 flex flex-col gap-3" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
       <div className="flex items-center gap-2">
         <Facebook size={16} className="text-[#1877F2]" />
-        <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Facebook Auto-DM — connection status</p>
+        <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Facebook Auto-DM: connection status</p>
         <button onClick={run} disabled={loading}
           className="ml-auto text-[11px] inline-flex items-center gap-1 disabled:opacity-50" style={{ color: 'var(--text-faint)' }}>
           {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Re-run
@@ -123,12 +123,12 @@ export default function FacebookDmStatus() {
           {/* Checklist */}
           {c && (
             <div className="flex flex-col gap-1.5 text-[13px]" style={{ color: 'var(--text-soft)' }}>
-              <Row state={c.pageConnected} label={c.pageConnected ? `Page connected${c.pageName ? ` — ${c.pageName}` : ''}` : 'No Facebook Page connected'} />
+              <Row state={c.pageConnected} label={c.pageConnected ? `Page connected${c.pageName ? `: ${c.pageName}` : ''}` : 'No Facebook Page connected'} />
               <Row state={c.appSecretSet} label="Webhook signature secret set (FACEBOOK_APP_SECRET)" />
-              <Row state={c.tokenHasMessagingScopes} label={c.tokenHasMessagingScopes === false ? `Token messaging scopes — missing: ${c.missingScopes.join(', ')}` : 'Token has messaging scopes (pages_messaging…)'} />
+              <Row state={c.tokenHasMessagingScopes} label={c.tokenHasMessagingScopes === false ? `Token messaging scopes missing: ${c.missingScopes.join(', ')}` : 'Token has messaging scopes (pages_messaging…)'} />
               <Row state={c.appSubscribedToFeed} label="App subscribed to Page “feed” webhook (Meta dashboard)" />
-              <Row state={c.feedSubscribed} label={c.feedSubscribed === false ? 'This Page subscribed to “feed” — no' : `This Page subscribed to “feed”${c.subscribedFields.length ? ` (${c.subscribedFields.join(', ')})` : ''}`} />
-              <Row state={c.autoDmEnabled} label={c.autoDmEnabled ? `Auto-DM enabled — keyword “${c.keyword ?? '—'}”` : 'Auto-DM toggle is OFF'} />
+              <Row state={c.feedSubscribed} label={c.feedSubscribed === false ? 'This Page subscribed to “feed”: no' : `This Page subscribed to “feed”${c.subscribedFields.length ? ` (${c.subscribedFields.join(', ')})` : ''}`} />
+              <Row state={c.autoDmEnabled} label={c.autoDmEnabled ? `Auto-DM enabled: keyword “${c.keyword ?? '—'}”` : 'Auto-DM toggle is OFF'} />
             </div>
           )}
 
@@ -153,7 +153,7 @@ export default function FacebookDmStatus() {
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-faint)' }}>Recent attempts</p>
             {data.recentSends.length === 0 ? (
               <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-                No rows yet — meaning no webhook has fired. Comment your keyword on a Page post, then Re-run. If it stays empty, Meta isn’t delivering the event (an app/Page feed-subscription issue above).
+                No rows yet, meaning no webhook has fired. Comment your keyword on a Page post, then Re-run. If it stays empty, Meta isn’t delivering the event (an app/Page feed-subscription issue above).
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>

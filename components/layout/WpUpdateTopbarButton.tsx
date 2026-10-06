@@ -45,7 +45,7 @@ export default function WpUpdateTopbarButton() {
     try {
       const res = await fetch('/api/wordpress/self-update', { method: 'POST' })
       const data = await res.json().catch(() => ({}))
-      if (res.status === 409) throw new Error(data.error || 'Plugin too old for one-click update — update once in wp-admin → Plugins.')
+      if (res.status === 409) throw new Error(data.error || 'Plugin too old for one-click update. Update once in wp-admin → Plugins.')
       if (!res.ok && !data.results) throw new Error(data.error || 'Update failed')
       if (data.results) {
         const fails: string[] = []
@@ -74,7 +74,7 @@ export default function WpUpdateTopbarButton() {
     <button
       onClick={runUpdate}
       disabled={updating}
-      title={`A newer version of your site is ready (${parts.join(' · ')}). One click applies it in ~30s — no wp-admin needed.`}
+      title={`A newer version of your site is ready (${parts.join(' · ')}). One click applies it in ~30s: no wp-admin needed.`}
       className="px-3 py-2 rounded-lg text-[12px] font-semibold text-white inline-flex items-center gap-1.5 transition-transform hover:-translate-y-0.5 disabled:opacity-60"
       style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 2px 10px rgba(255,107,0,0.35)' }}
     >

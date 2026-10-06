@@ -108,7 +108,7 @@ export default function LinkInBioPage() {
   const createPage = async () => {
     if (!handleInput.trim()) { toast.error('Pick a handle first.'); return }
     const ok = await savePage({ handle: handleInput, published: false })
-    if (ok) toast.success('Page created — now add some products.')
+    if (ok) toast.success('Page created: now add some products.')
   }
 
   const importProducts = async () => {
@@ -124,7 +124,7 @@ export default function LinkInBioPage() {
         if (added) parts.push(`added ${added} product${added === 1 ? '' : 's'}`)
         if (relinked) parts.push(`re-linked ${relinked} to Geniuslink`)
         toast.success(parts.join(' · '))
-      } else toast.message(data.message || 'Nothing new — your products are already here (and already Geniuslinked).')
+      } else toast.message(data.message || 'Nothing new: your products are already here (and already Geniuslinked).')
     } catch { toast.error('Import failed.') } finally { setImporting(false) }
   }
 
@@ -267,7 +267,7 @@ export default function LinkInBioPage() {
       </div>
       {it.kind !== 'link' && (
         <button onClick={() => patchItem(it.id, { in_story: !it.in_story })}
-          title={it.in_story ? 'In your story right now — untick to move to “More sales”' : 'Tick if this deal is live in your IG/TikTok story'}
+          title={it.in_story ? 'In your story right now. Untick to move to “More sales”' : 'Tick if this deal is live in your IG/TikTok story'}
           className={`shrink-0 inline-flex h-5 w-5 items-center justify-center rounded border transition ${it.in_story ? 'bg-orange-500 border-orange-500 text-white' : 'hover:bg-accent'}`}>
           {it.in_story && <Check size={12} />}
         </button>
@@ -291,12 +291,12 @@ export default function LinkInBioPage() {
 
   const publicUrl = page ? `${origin}/shop/${page.handle}` : ''
   const copyUrl = async () => {
-    if (!navigator.clipboard) { toast.error('Couldn’t copy automatically — select and copy the link manually.'); return }
+    if (!navigator.clipboard) { toast.error('Couldn’t copy automatically. Select and copy the link manually.'); return }
     try {
       await navigator.clipboard.writeText(publicUrl)
-      toast.success('Link copied — paste it in your bio.')
+      toast.success('Link copied: paste it in your bio.')
     } catch {
-      toast.error('Couldn’t copy automatically — select and copy the link manually.')
+      toast.error('Couldn’t copy automatically. Select and copy the link manually.')
     }
   }
 
@@ -309,7 +309,7 @@ export default function LinkInBioPage() {
         <FeatureLockedCard
           icon={<Link2 size={28} />}
           feature="Link in Bio"
-          description="A shoppable link-in-bio page for Instagram, TikTok & more — a grid of your product picks, each carrying your affiliate link. Auto-fills from the products you've posted."
+          description="A shoppable link-in-bio page for Instagram, TikTok & more: a grid of your product picks, each carrying your affiliate link. Auto-fills from the products you've posted."
           bullets={[
             'One link for your bio; a clean grid of shoppable picks',
             'Auto-imports the products you post through Deal Radar',
@@ -331,7 +331,7 @@ export default function LinkInBioPage() {
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><Link2 size={20} /></div>
             <h1 className="text-2xl font-bold">Link in Bio</h1>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">A shoppable grid of your product picks — one link for your Instagram / TikTok bio.</p>
+          <p className="text-sm text-muted-foreground mt-1">A shoppable grid of your product picks: one link for your Instagram / TikTok bio.</p>
           <button onClick={() => setShowGuide(true)} className="mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 underline inline-flex items-center gap-1">
             <HelpCircle size={13} /> How the Shop page works
           </button>
@@ -340,7 +340,7 @@ export default function LinkInBioPage() {
           <div className="flex items-center gap-2">
             {page.published
               ? <a href={publicUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" size="sm"><ExternalLink className="h-4 w-4 mr-1.5" /> View</Button></a>
-              : <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">Draft — not public yet</span>}
+              : <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">Draft, not public yet</span>}
           </div>
         )}
       </div>
@@ -593,7 +593,7 @@ export default function LinkInBioPage() {
               <label className="text-[11px] font-medium text-muted-foreground">Title
                 <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Product name" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
-              <label className="text-[11px] font-medium text-muted-foreground">Link (paste any Amazon or product link — we&rsquo;ll make it your affiliate link)
+              <label className="text-[11px] font-medium text-muted-foreground">Link (paste any Amazon or product link, we&rsquo;ll make it your affiliate link)
                 <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://… (Amazon, geni.us, any product link)" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
               <Button size="sm" onClick={addManual} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add</Button>
@@ -646,12 +646,12 @@ function ShopPageGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <ShoppingBag size={18} />,
       title: 'What your Shop page is',
-      body: <>It’s one clean, branded page at <span className="font-mono">/shop/your-handle</span> — the single link you put in your Instagram, TikTok, and every other bio. Think Linktree, but every tile is <strong>shoppable</strong> and carries your affiliate link. It’s where your Stories, posts, and profile all send people to buy.</>,
+      body: <>It’s one clean, branded page at <span className="font-mono">/shop/your-handle</span>: the single link you put in your Instagram, TikTok, and every other bio. Think Linktree, but every tile is <strong>shoppable</strong> and carries your affiliate link. It’s where your Stories, posts, and profile all send people to buy.</>,
     },
     {
       icon: <Check size={18} />,
       title: 'Claim your handle & go live',
-      body: <>Pick a handle once (that’s your permanent URL), then flip <strong>Publish</strong> when you’re ready. Until then it stays a private draft. Hit <strong>Copy link</strong> and paste it into your bios — the same link works everywhere and never changes.</>,
+      body: <>Pick a handle once (that’s your permanent URL), then flip <strong>Publish</strong> when you’re ready. Until then it stays a private draft. Hit <strong>Copy link</strong> and paste it into your bios. The same link works everywhere and never changes.</>,
     },
     {
       icon: <Palette size={18} />,
@@ -661,22 +661,22 @@ function ShopPageGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Link2 size={18} />,
       title: 'Product tiles carry your link automatically',
-      body: <>Import the products you’ve already posted with one tap, or add tiles by hand. Every tile links out through <strong>Geniuslink</strong> when you use it (your Amazon tag otherwise) — so you never paste a raw link, and every click is properly attributed to you.</>,
+      body: <>Import the products you’ve already posted with one tap, or add tiles by hand. Every tile links out through <strong>Geniuslink</strong> when you use it (your Amazon tag otherwise), so you never paste a raw link, and every click is properly attributed to you.</>,
     },
     {
       icon: <Zap size={18} />,
       title: 'Two shelves: Current Deals vs. Other Sales',
-      body: <>Because Stories only last 24 hours, your page splits in two. Tick a product’s <strong>“in my story”</strong> box and it jumps into the <strong>Current Deals</strong> row at the top — matching what’s live in your Stories right now. Everything else sits under <strong>Other Sales I found</strong> as your evergreen picks.</>,
+      body: <>Because Stories only last 24 hours, your page splits in two. Tick a product’s <strong>“in my story”</strong> box and it jumps into the <strong>Current Deals</strong> row at the top, matching what’s live in your Stories right now. Everything else sits under <strong>Other Sales I found</strong> as your evergreen picks.</>,
     },
     {
       icon: <Instagram size={18} />,
       title: 'Build Instagram Stories from here',
-      body: <>Tick the deals that are live in your Stories, hit <strong>Create IG Stories</strong>, and we compose and post them for you — each with a “link in bio” call-to-action that points back to this page. When the 24 hours are up, <strong>Clear all</strong> resets the shelf in one tap.</>,
+      body: <>Tick the deals that are live in your Stories, hit <strong>Create IG Stories</strong>, and we compose and post them for you: each with a “link in bio” call-to-action that points back to this page. When the 24 hours are up, <strong>Clear all</strong> resets the shelf in one tap.</>,
     },
     {
       icon: <MousePointerClick size={18} />,
       title: 'Share it & watch the clicks',
-      body: <>One link in every bio, every Story, every caption. Your page tracks clicks per tile so you can see what your audience actually taps — and double down on the picks that convert.</>,
+      body: <>One link in every bio, every Story, every caption. Your page tracks clicks per tile so you can see what your audience actually taps, and double down on the picks that convert.</>,
     },
   ]
 
@@ -690,7 +690,7 @@ function ShopPageGuide({ onClose }: { onClose: () => void }) {
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><ShoppingBag size={20} /></div>
             <div>
               <div className="text-base font-bold leading-tight">Your shoppable Shop page</div>
-              <div className="text-xs text-muted-foreground">One link for every bio — a storefront that turns followers into buyers.</div>
+              <div className="text-xs text-muted-foreground">One link for every bio: a storefront that turns followers into buyers.</div>
             </div>
           </div>
           <button onClick={onClose} className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground" title="Close"><CloseIcon size={18} /></button>
@@ -708,14 +708,14 @@ function ShopPageGuide({ onClose }: { onClose: () => void }) {
             </div>
           ))}
           <div className="rounded-lg bg-muted/60 px-3.5 py-3 text-[12px] text-muted-foreground leading-relaxed">
-            <strong className="text-foreground">Pairs with Amazon Deal Radar.</strong> Post a deal from Deal Radar and it can flow straight onto this page and into your Stories — find the deal, post it, drive traffic here, convert. The whole loop in one place.
+            <strong className="text-foreground">Pairs with Amazon Deal Radar.</strong> Post a deal from Deal Radar and it can flow straight onto this page and into your Stories. Find the deal, post it, drive traffic here, convert. The whole loop in one place.
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t shrink-0">
           <span className="text-xs text-muted-foreground">Reopen this anytime from <span className="font-medium text-foreground">How the Shop page works</span> at the top.</span>
-          <Button size="sm" onClick={onClose}>Got it — let’s build it</Button>
+          <Button size="sm" onClick={onClose}>Got it: let’s build it</Button>
         </div>
       </div>
     </div>

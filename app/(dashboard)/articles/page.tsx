@@ -193,7 +193,7 @@ export default function ArticlesPage() {
       } else {
         setVoiceWhyOpen(false)
         setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null, voiceUsed: j.voiceUsed ?? false, voiceWhy: j.voiceWhy ?? null })
-        toast.success('Preview ready — review it below.')
+        toast.success('Preview ready: review it below.')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed')
@@ -239,7 +239,7 @@ export default function ArticlesPage() {
       const list = Array.isArray(j.suggestions) ? j.suggestions : []
       setSuggestions(list)
       if (j.empty) toast.message(j.reason || 'Publish a few reviews or set your niche first.')
-      else if (!list.length) toast.message('No suggestions right now — try again in a moment.')
+      else if (!list.length) toast.message('No suggestions right now. Try again in a moment.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not suggest topics')
     } finally {
@@ -465,7 +465,7 @@ export default function ArticlesPage() {
               <p className="text-xs mt-1 leading-snug" style={{ color: 'var(--text-2)' }}>
                 {useMyVoice
                   ? 'Uses your Voice Training (writing sample, taste and style) so the article sounds like you, not a generic AI blog.'
-                  : 'Off — the article uses the plain tone preset below instead of your trained voice.'}
+                  : 'Off: the article uses the plain tone preset below instead of your trained voice.'}
               </p>
               {voiceReady === false && (
                 <p className="text-xs mt-1.5 leading-snug" style={{ color: '#b45309' }}>
@@ -827,7 +827,7 @@ export default function ArticlesPage() {
                 </p>
               )}
               {preview.meta && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-2)' }}>{preview.meta}</p>}
-              <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Preview — nothing has been published yet.</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Preview: nothing has been published yet.</p>
             </div>
             <Button
               onClick={() => void publishPreview()}

@@ -105,10 +105,10 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
       if (!resp.ok) { setThumbMsg(data.error || 'Upload failed.'); return }
       setThumbUrl(data.url || dataUrl)
       setThumbMsg(data.tracked === false
-        ? 'Thumbnail updated on your site ✓ — this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.'
+        ? 'Thumbnail updated on your site ✓. This post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.'
         : 'Thumbnail updated ✓ (may take a minute to refresh on the live site)')
     } catch {
-      setThumbMsg('Upload failed — try again.')
+      setThumbMsg('Upload failed: try again.')
     } finally {
       setThumbBusy(false)
     }
@@ -141,7 +141,7 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Thumbnail (hero image)</p>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{thumbMsg || 'Upload a new featured image for this post — sets it live on WordPress.'}</p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{thumbMsg || 'Upload a new featured image for this post. Sets it live on WordPress.'}</p>
                 </div>
                 <input ref={thumbFileRef} type="file" accept="image/*" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) uploadThumb(f) }} />
@@ -171,7 +171,7 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
                 {msg && <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93]">{msg}</span>}
               </div>
               <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
-                Edit the wording directly. Headings and links (including affiliate links) are kept — saving updates the live WordPress post.
+                Edit the wording directly. Headings and links (including affiliate links) are kept. Saving updates the live WordPress post.
               </p>
             </>
           )}

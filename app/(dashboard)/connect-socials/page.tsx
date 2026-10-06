@@ -50,7 +50,7 @@ function ConnectSocialsInner() {
         </h1>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
           Hook up YouTube, your video channels, and every social platform you publish to.
-          Connect once — fan-out posting works from anywhere in the app afterward.
+          Connect once: fan-out posting works from anywhere in the app afterward.
         </p>
       </div>
       {/* Same panel that lives at /setup?tab=integrations. Reused so OAuth

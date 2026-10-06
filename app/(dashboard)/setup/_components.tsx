@@ -262,7 +262,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     const fbConnected = searchParams.get('fb_connected')
     const fbError = searchParams.get('fb_error')
     if (fbConnected) setFbNotice({ ok: true, msg: 'Facebook page connected!' })
-    if (fbError) setFbNotice({ ok: false, msg: fbError === 'no_pages' ? 'Facebook connected, but no Page came through — on Facebook’s permission screen you have to switch your Page ON (tap “Opt in to all” or toggle the Page), then reconnect. Without that, Facebook shows MVP as connected but hands over no Page to post to.' : `Facebook error: ${fbError}` })
+    if (fbError) setFbNotice({ ok: false, msg: fbError === 'no_pages' ? 'Facebook connected, but no Page came through. On Facebook’s permission screen you have to switch your Page ON (tap “Opt in to all” or toggle the Page), then reconnect. Without that, Facebook shows MVP as connected but hands over no Page to post to.' : `Facebook error: ${fbError}` })
     const ptConnected = searchParams.get('pinterest_connected')
     const ptError = searchParams.get('pinterest_error')
     if (ptConnected) setPtNotice({ ok: true, msg: 'Pinterest connected!' })
@@ -274,7 +274,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     const liConnected = searchParams.get('linkedin_connected')
     const liError = searchParams.get('linkedin_error')
     if (liConnected) { setLiNotice({ ok: true, msg: 'LinkedIn connected!' }); load() }
-    if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed — please try again.' : `LinkedIn error: ${liError}` })
+    if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed. Please try again.' : `LinkedIn error: ${liError}` })
     const twConnected = searchParams.get('twitter_connected')
     const twError = searchParams.get('twitter_error')
     if (twConnected) { setTwNotice({ ok: true, msg: 'X (Twitter) connected!' }); load() }
@@ -302,7 +302,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     } else if (wpOauth === 'connected_warn_host') {
       setReconnectResult({
         ok: true,
-        message: 'Saved — but your host may strip Authorization headers (Hostinger / mod_security). Test connection to verify.',
+        message: 'Saved, but your host may strip Authorization headers (Hostinger / mod_security). Test connection to verify.',
       })
       load()
     } else if (wpOauth === 'rejected') {
@@ -319,7 +319,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       setGscNotice({
         ok: true,
         msg: gscProp
-          ? `Search Console connected — tracking ${decodeURIComponent(gscProp)}`
+          ? `Search Console connected, tracking ${decodeURIComponent(gscProp)}`
           : gscNoProp
             ? 'Search Console connected, but no matching property was found. Make sure this site is a verified property in your Search Console account.'
             : 'Search Console connected!',
@@ -394,7 +394,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       setWpTestResult({ ok: data.ok, message: data.message || data.error })
       // Re-run the health check so the pill reflects the test result.
       refreshWpHealth()
-    } catch { setWpTestResult({ ok: false, message: 'Request failed — check your site URL' }) }
+    } catch { setWpTestResult({ ok: false, message: 'Request failed: check your site URL' }) }
     finally { setWpTesting(false) }
   }
 
@@ -428,7 +428,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       const res = await fetch('/api/wordpress/fix-css-corruption', { method: 'POST' })
       const data = await res.json()
       if (data.error) setFixCssResult(`Error: ${data.error}`)
-      else if (data.affected === 0) setFixCssResult('No corrupted posts found — all clean!')
+      else if (data.affected === 0) setFixCssResult('No corrupted posts found: all clean!')
       else setFixCssResult(`Fixed ${data.fixed} of ${data.affected} affected post${data.affected !== 1 ? 's' : ''}.`)
     } catch { setFixCssResult('Request failed.') }
     finally { setFixingCss(false) }
@@ -636,7 +636,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <div>
           <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Integrations</h2>
           <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-            Connect each platform once. Recommended order: <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</strong> (so we can see your videos) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</strong> (for affiliate URL routing) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">social platforms</strong> you want to fan out to. Each integration is optional — only connect what you&apos;ll use.
+            Connect each platform once. Recommended order: <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</strong> (so we can see your videos) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</strong> (for affiliate URL routing) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">social platforms</strong> you want to fan out to. Each integration is optional. Only connect what you&apos;ll use.
           </p>
         </div>
         {/* Top save — mirrors the Save button at the bottom so users can save
@@ -654,7 +654,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <div className="flex flex-col gap-1">
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your credentials are safe</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Every API key, password, and access token you enter here is encrypted and stored securely in our database — <strong>nothing is ever saved in your browser or locally on your device</strong>. Credentials are only used server-side to make authenticated API calls on your behalf (posting to your blog, pushing metadata to YouTube, creating affiliate links, etc.). We never share, log, or expose them. You can disconnect any integration or delete your account at any time.
+            Every API key, password, and access token you enter here is encrypted and stored securely in our database: <strong>nothing is ever saved in your browser or locally on your device</strong>. Credentials are only used server-side to make authenticated API calls on your behalf (posting to your blog, pushing metadata to YouTube, creating affiliate links, etc.). We never share, log, or expose them. You can disconnect any integration or delete your account at any time.
           </p>
         </div>
       </div>
@@ -674,7 +674,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </div>
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">youtube.com/account_advanced</a> — it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
+          Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">youtube.com/account_advanced</a>: it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
         </p>
         <div>
           <label htmlFor="setup-youtube-channel-id" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
@@ -773,7 +773,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </>
         ) : (
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-            No WordPress site connected yet. Enter your site URL below and we&apos;ll redirect you to WordPress to approve the connection — no plugin install, no copy/paste.
+            No WordPress site connected yet. Enter your site URL below and we&apos;ll redirect you to WordPress to approve the connection: no plugin install, no copy/paste.
           </p>
         )}
 
@@ -827,7 +827,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
                 onClick={() => setShowTokenFallback(v => !v)}
                 className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
               >
-                {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced — for sites that disable Application Passwords)'}
+                {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced, for sites that disable Application Passwords)'}
               </button>
               {showTokenFallback && (
                 <div className="mt-3">
@@ -915,7 +915,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           here, sees what's available, sees what's coming. */}
       <div id="social-platforms" className="pt-4 scroll-mt-20">
         <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wide mb-1">Connect socials</h3>
-        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Where your published posts and shorts go out. Each connect is a one-time grant — connect what you'll actually use.</p>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Where your published posts and shorts go out. Each connect is a one-time grant. Connect what you'll actually use.</p>
       </div>
 
       {/* Social connect cards. Source order below is stable; the visual order
@@ -937,7 +937,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {linkedin.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect LinkedIn</strong> and you'll be redirected to LinkedIn to authorise the connection. We only request permission to post on your profile — we never access your inbox, connections, or any other account data.
+          Click <strong>Connect LinkedIn</strong> and you'll be redirected to LinkedIn to authorise the connection. We only request permission to post on your profile. We never access your inbox, connections, or any other account data.
         </p>
         {liNotice && <p className={`text-xs mb-3 ${liNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{liNotice.msg}</p>}
         {linkedin.connected ? (
@@ -1038,7 +1038,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         </div>
 
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Bluesky doesn&apos;t use OAuth yet — instead, you generate an <strong>App Password</strong> in Bluesky settings and paste it here.
+          Bluesky doesn&apos;t use OAuth yet. Instead, you generate an <strong>App Password</strong> in Bluesky settings and paste it here.
         </p>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
           <li>Open <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">bsky.app/settings/app-passwords</a></li>
@@ -1115,7 +1115,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
           <li>Create a Telegram channel (or use an existing one). New channels: open Telegram → menu → <strong>New Channel</strong>.</li>
           <li>Open the channel → tap the channel name → <strong>Administrators</strong> → <strong>Add Administrator</strong> → search for <strong>@MVPAffiliateBot</strong> (or whatever your bot is named) and add it with <strong>Post Messages</strong> permission.</li>
-          <li>Set your channel to <strong>Public</strong> and give it a username (e.g. <code>@myreviews</code>) — easiest. Or grab the numeric ID from a tool like <a href="https://t.me/getidsbot" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">@getidsbot</a> if you want it private.</li>
+          <li>Set your channel to <strong>Public</strong> and give it a username (e.g. <code>@myreviews</code>): easiest. Or grab the numeric ID from a tool like <a href="https://t.me/getidsbot" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">@getidsbot</a> if you want it private.</li>
           <li>Paste your channel ID below (<code>@myreviews</code> or the numeric form like <code>-1001234567890</code>).</li>
         </ol>
 
@@ -1176,7 +1176,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           )}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf — we never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
+          Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf. We never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
         </p>
         {fbNotice && <p className={`text-xs mb-3 ${fbNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{fbNotice.msg}</p>}
         {facebook.connected ? (
@@ -1231,13 +1231,13 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
                 <Facebook size={14} /> Connect Facebook
               </a>
             ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Under approval — coming soon">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Under approval: coming soon">
                 <Facebook size={14} /> Connect Facebook
                 <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
               </div>
             )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
+              You&apos;ll be sent to Facebook to grant access. On that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
             </p>
             {isUnlocked('facebook') && (
               <FacebookFixHelper
@@ -1263,7 +1263,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). For posts with no specific category, pins go to the board you name below (created automatically if it doesn&apos;t exist).
+          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category. We create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). For posts with no specific category, pins go to the board you name below (created automatically if it doesn&apos;t exist).
         </p>
         {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
         {pinterest.connected ? (
@@ -1297,7 +1297,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               <Pin size={14} /> Connect Pinterest
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Under approval — coming soon">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Under approval: coming soon">
               <Pin size={14} /> Connect Pinterest
               <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
             </div>
@@ -1321,7 +1321,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {threads.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect Threads</strong> and you&apos;ll be redirected to Threads to authorize the connection. We only request permission to read your basic profile and publish posts on your behalf — we never access your inbox or any other account data.
+          Click <strong>Connect Threads</strong> and you&apos;ll be redirected to Threads to authorize the connection. We only request permission to read your basic profile and publish posts on your behalf. We never access your inbox or any other account data.
         </p>
         {thNotice && <p className={`text-xs mb-3 ${thNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{thNotice.msg}</p>}
         {threads.connected ? (
@@ -1343,7 +1343,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
                 <MessageCircle size={14} /> Connect Threads
               </a>
             ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Under approval — coming soon">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Under approval: coming soon">
                 <MessageCircle size={14} /> Connect Threads
                 <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
               </div>
@@ -1367,7 +1367,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram <span className="ml-1 text-[10px] font-medium text-[#7C3AED] uppercase tracking-wider">Pro</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish reviews as Reels, image Feed posts, or Stories — automatically</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish reviews as Reels, image Feed posts, or Stories, automatically</p>
           </div>
           {instagram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
@@ -1392,7 +1392,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               </button>
             </div>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              Manage several Instagram accounts? Connect each one — you&apos;ll pick which to post to per review. Tip: on the Instagram screen, use &ldquo;Switch account&rdquo; to add a different one. The most recently connected becomes your default.
+              Manage several Instagram accounts? Connect each one. You&apos;ll pick which to post to per review. Tip: on the Instagram screen, use &ldquo;Switch account&rdquo; to add a different one. The most recently connected becomes your default.
             </p>
             <a href="/docs/instagram-restricted" target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#7C3AED] hover:underline self-start">
               Instagram blocking your posts or saying &ldquo;restricted&rdquo;? Read this →
@@ -1411,7 +1411,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               Connect Instagram
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }} title="Under approval — coming soon">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }} title="Under approval: coming soon">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
               Connect Instagram
               <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
@@ -1461,7 +1461,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               {ttDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              On any post in <a href="/content" className="text-[#7C3AED] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen — pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
+              On any post in <a href="/content" className="text-[#7C3AED] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen. Pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
             </p>
           </div>
         ) : (
@@ -1476,7 +1476,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               Connect TikTok
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000]" style={lockedCta} title="Under approval — coming soon">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000]" style={lockedCta} title="Under approval: coming soon">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
               Connect TikTok
               <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
@@ -1503,11 +1503,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {youtubeOAuthConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Co-Pilot can show them here, and write access to push generated titles, descriptions, and tags back to YouTube — saving you from copy-pasting manually.
+          Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Co-Pilot can show them here, and write access to push generated titles, descriptions, and tags back to YouTube, saving you from copy-pasting manually.
         </p>
         <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2">
           <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
-            <strong>Naming convention — required:</strong> include the 10-character Amazon ASIN in the video file name or YouTube title before uploading. Example:{' '}
+            <strong>Naming convention (required):</strong> include the 10-character Amazon ASIN in the video file name or YouTube title before uploading. Example:{' '}
             <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. Without an ASIN we can&apos;t identify the product or generate the package.
           </p>
         </div>
@@ -1555,7 +1555,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {gscConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its impressions, clicks and ranking, and the real queries readers use to find it — the data behind your SEO score and one-click fixes. We never write to your Search Console.
+          Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its impressions, clicks and ranking, and the real queries readers use to find it: the data behind your SEO score and one-click fixes. We never write to your Search Console.
         </p>
         {gscNotice && (
           <p className={`text-xs ${gscNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{gscNotice.msg}</p>
@@ -1565,7 +1565,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
               {gscProperty
                 ? <>Tracking <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">{gscProperty}</span>.</>
-                : 'Connected, but no matching property was found — confirm this site is a verified property in your Search Console account.'}
+                : 'Connected, but no matching property was found. Confirm this site is a verified property in your Search Console account.'}
             </p>
             <button onClick={disconnectGsc} disabled={gscDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {gscDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect Search Console
@@ -1602,7 +1602,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Affiliate Link Routing moved to Brand Profile</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-            Geniuslink + your Amazon Associates tag now live under <strong>Brand Profile → Affiliate Link Routing</strong>. Same data, same database — just one less page to remember.
+            Geniuslink + your Amazon Associates tag now live under <strong>Brand Profile → Affiliate Link Routing</strong>. Same data, same database. Just one less page to remember.
           </p>
         </div>
         <a href="/brand" className="btn-secondary text-xs flex-shrink-0">

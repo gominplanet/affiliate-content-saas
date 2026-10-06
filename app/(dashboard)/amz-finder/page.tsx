@@ -65,7 +65,7 @@ export default function AmzFinderPage() {
       <PageHero
         guide={<AmzFinderGuide />}
         title="Amazon Product Research"
-        subtitle="Search the whole Amazon catalogue with MVP filters — keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag. Find products worth buying to review, then save the winners."
+        subtitle="Search the whole Amazon catalogue with MVP filters: keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag. Find products worth buying to review, then save the winners."
       />
 
       {tier !== undefined && (
@@ -80,7 +80,7 @@ export default function AmzFinderPage() {
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           <ShoppingBag size={16} style={{ color: '#7C3AED' }} />
           <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Amazon Product Research</p>
-          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>— the whole catalogue, filterable. Buy to review or write a review in one click.</span>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>: the whole catalogue, filterable. Buy to review or write a review in one click.</span>
         </div>
         <AmazonResearchPanel canAct={canUseFinder} onSavedChange={() => setSavedReloadKey(k => k + 1)} />
         <p className="text-[11px] leading-relaxed mt-1 mb-4 px-1" style={{ color: 'var(--text-faint)' }}>

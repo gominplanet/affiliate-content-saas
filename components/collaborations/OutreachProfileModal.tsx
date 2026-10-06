@@ -20,7 +20,7 @@ export default function OutreachProfileModal({ onClose }: { onClose: () => void 
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
         </div>
         <p className="text-[12px] text-white/80 mb-3 max-w-prose">
-          This is the wording every brand message is built from — your greeting, credibility, offer, links and sample address. Save it once and it applies to every single and bulk message.
+          This is the wording every brand message is built from: your greeting, credibility, offer, links and sample address. Save it once and it applies to every single and bulk message.
         </p>
         <OutreachProfileCard defaultOpen />
       </div>

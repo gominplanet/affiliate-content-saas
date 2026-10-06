@@ -45,7 +45,7 @@ export function FacebookFixHelper({
       const data = await res.json()
       if (data.needsPageChoice) {
         setChoices(data.pages || [])
-        setNotice({ ok: false, msg: 'That token reaches more than one Page — pick which to connect.' })
+        setNotice({ ok: false, msg: 'That token reaches more than one Page. Pick which to connect.' })
         return
       }
       if (!res.ok || !data.ok) {
@@ -111,9 +111,9 @@ export function FacebookFixHelper({
               <ol className="flex flex-col gap-1.5">
                 <Step n={1}>Look for the <strong>Active page</strong> dropdown just above this box.</Step>
                 <Step n={2}>Open it and choose the Page you actually want.</Step>
-                <Step n={3}>That’s it — your posts now go to that Page.</Step>
+                <Step n={3}>That’s it: your posts now go to that Page.</Step>
               </ol>
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">No dropdown, only one Page? Then your real Page didn’t come through — choose the option above instead.</p>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">No dropdown, only one Page? Then your real Page didn’t come through. Choose the option above instead.</p>
             </div>
           )}
 
@@ -121,20 +121,20 @@ export function FacebookFixHelper({
           {situation === 'missing' && (
             <div className="flex flex-col gap-3">
               <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed rounded-md bg-black/[.02] dark:bg-white/[.03] p-3">
-                <p className="font-medium mb-1.5">Step 1 — Reconnect and switch your Page ON (2 minutes):</p>
+                <p className="font-medium mb-1.5">Step 1: Reconnect and switch your Page ON (2 minutes):</p>
                 <ol className="flex flex-col gap-1.5">
                   <Step n={1}>Click <strong>Disconnect</strong> below, then <strong>Connect Facebook</strong> again.</Step>
                   <Step n={2}>Facebook shows a blue screen: <em>“What do you want to allow MVP to access?”</em> with your Pages listed, each with a switch.</Step>
-                  <Step n={3}>Switch <strong>ON</strong> the Page you want — or tap <strong>“Opt in to all”</strong> if you see it.</Step>
+                  <Step n={3}>Switch <strong>ON</strong> the Page you want, or tap <strong>“Opt in to all”</strong> if you see it.</Step>
                   <Step n={4}>Tap <strong>Continue</strong>. Back in MVP, your Page should now appear to pick.</Step>
                 </ol>
               </div>
 
               <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed rounded-md bg-black/[.02] dark:bg-white/[.03] p-3">
-                <p className="font-medium mb-1.5">Step 2 — Still missing? Your Page is inside a Business Manager.</p>
+                <p className="font-medium mb-1.5">Step 2: Still missing? Your Page is inside a Business Manager.</p>
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">Facebook hides those from apps. Pick the easier route for you:</p>
 
-                <p className="font-medium">Option A (no tech — recommended):</p>
+                <p className="font-medium">Option A (no tech, recommended):</p>
                 <ol className="flex flex-col gap-1.5 mb-3">
                   <Step n={1}>Open your Facebook <strong>Page → Settings → Page access</strong>.</Step>
                   <Step n={2}>Under <strong>People with Facebook access</strong>, click <strong>Add New</strong>, add <strong>your own profile</strong>, give it <strong>full control</strong>, confirm with your password.</Step>
@@ -163,7 +163,7 @@ export function FacebookFixHelper({
                       type="text"
                       value={pageId}
                       onChange={e => setPageId(e.target.value)}
-                      placeholder="Page ID (optional — only if it asks)"
+                      placeholder="Page ID (optional, only if it asks)"
                       className="input-field text-xs"
                     />
                     <textarea

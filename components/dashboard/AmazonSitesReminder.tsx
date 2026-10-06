@@ -48,7 +48,7 @@ export default function AmazonSitesReminder({ siteUrl }: { siteUrl?: string | nu
             <button onClick={close} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0" aria-label="Dismiss"><X size={15} /></button>
           </div>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1 leading-relaxed">
-            Amazon requires <strong>every</strong> website or app where you place affiliate links to be on your approved list. Your MVP Affiliate blog is new — add it so your links work and you get credited for sales. If you&apos;re in more than one region (US, UK, CA, DE, etc.), do this in <strong>each</strong> Associates account separately.
+            Amazon requires <strong>every</strong> website or app where you place affiliate links to be on your approved list. Your MVP Affiliate blog is new: add it so your links work and you get credited for sales. If you&apos;re in more than one region (US, UK, CA, DE, etc.), do this in <strong>each</strong> Associates account separately.
           </p>
 
           {siteUrl && (
@@ -68,9 +68,9 @@ export default function AmazonSitesReminder({ siteUrl }: { siteUrl?: string | nu
               <li>Top-right, open the menu under your email → <strong>Manage Your Account</strong>.</li>
               <li>Choose <strong>&ldquo;Edit Your Website, Mobile App, and Alexa Skill List&rdquo;</strong>.</li>
               <li>Paste your blog URL into the website list and <strong>Add</strong> / <strong>Save</strong>.</li>
-              <li><strong>Repeat in every regional Associates account</strong> you&apos;re enrolled in (each region — US, UK, CA, DE, etc. — is a separate login and list).</li>
+              <li><strong>Repeat in every regional Associates account</strong> you&apos;re enrolled in (each region, such as US, UK, CA or DE, is a separate login and list).</li>
             </ol>
-            <p className="text-[11px] text-[#86868b] mt-2">Skipping this can mean your links don&apos;t track — or, after the 180-day rule, account issues. Quick to do, easy to forget.</p>
+            <p className="text-[11px] text-[#86868b] mt-2">Skipping this can mean your links don&apos;t track, or, after the 180-day rule, account issues. Quick to do, easy to forget.</p>
           </div>
         </div>
       </div>

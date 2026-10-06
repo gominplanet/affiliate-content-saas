@@ -155,7 +155,7 @@ export default async function TemplatePerformancePage() {
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
         <b>Reading this:</b> A template at the top is the picker's favourite (or just well-suited to common
-        headlines). A template at the bottom — especially with 0 renders — is a candidate for removal from
+        headlines). A template at the bottom (especially with 0 renders) is a candidate for removal from
         the random pool. Once Studio analytics are wired, we'll layer a CTR column to surface which
         templates actually drive clicks, not just which ones get picked.
       </div>

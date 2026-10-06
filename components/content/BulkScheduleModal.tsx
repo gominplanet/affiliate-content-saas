@@ -306,7 +306,7 @@ export function BulkScheduleModal({
           {confirmBig && !running && (
             <p className="text-xs text-[#ff9500] mb-3 flex items-start gap-1.5">
               <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
-              <span>That&apos;s <strong>{totalJobs} pushes</strong> ({posts.length} post{posts.length !== 1 ? 's' : ''} × {selectedPlatforms.size} platform{selectedPlatforms.size !== 1 ? 's' : ''}). Large batch — every Pinterest pin builds an image. Click again to confirm.</span>
+              <span>That&apos;s <strong>{totalJobs} pushes</strong> ({posts.length} post{posts.length !== 1 ? 's' : ''} × {selectedPlatforms.size} platform{selectedPlatforms.size !== 1 ? 's' : ''}). Large batch: every Pinterest pin builds an image. Click again to confirm.</span>
             </p>
           )}
 

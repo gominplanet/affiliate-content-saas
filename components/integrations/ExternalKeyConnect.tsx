@@ -23,14 +23,14 @@ const META: Record<Provider, { name: string; icon: ReactNode; where: string; das
     icon: <ShoppingBag size={16} />,
     where: 'Levanta → Settings → API → Generate API Key',
     dash: 'https://app.levanta.io/',
-    blurb: 'Paste your Levanta Creator API key to connect your account. Stored encrypted server-side — we only ever show the last 4 digits.',
+    blurb: 'Paste your Levanta Creator API key to connect your account. Stored encrypted server-side. We only ever show the last 4 digits.',
   },
   partnerboost: {
     name: 'PartnerBoost',
     icon: <Store size={16} />,
     where: 'PartnerBoost → Token manage → your channel → API token (one token per channel)',
     dash: 'https://app.partnerboost.com/',
-    blurb: 'Paste your PartnerBoost API token to connect your account. Stored encrypted server-side — we only ever show the last 4 digits.',
+    blurb: 'Paste your PartnerBoost API token to connect your account. Stored encrypted server-side. We only ever show the last 4 digits.',
   },
 }
 

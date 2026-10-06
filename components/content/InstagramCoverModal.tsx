@@ -46,7 +46,7 @@ export default function InstagramCoverModal({
         if (!r.ok) throw new Error(d.error || 'Could not load this video')
         if (cancelled) return
         const url = (videoUrlProp || d.videoUrl) as string | null
-        if (!url) throw new Error('No vertical MP4 for this yet — add a 9:16 render first.')
+        if (!url) throw new Error('No vertical MP4 for this yet: add a 9:16 render first.')
         setVideoUrl(url)
         setSavedOffsetMs(typeof d.offsetMs === 'number' ? d.offsetMs : null)
         if (typeof d.offsetMs === 'number') setPosSec(d.offsetMs / 1000)
@@ -77,7 +77,7 @@ export default function InstagramCoverModal({
       if (!res.ok) throw new Error(d.error || 'Could not save the cover')
       setSavedOffsetMs(d.offsetMs ?? null)
       onSaved?.(d.offsetMs ?? null)
-      toast.success(offsetMs == null ? 'Cover reset to Instagram default' : 'Cover frame saved — your Reel will use it')
+      toast.success(offsetMs == null ? 'Cover reset to Instagram default' : 'Cover frame saved: your Reel will use it')
       onClose()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Couldn’t save the cover')
@@ -102,7 +102,7 @@ export default function InstagramCoverModal({
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
               <ImageIcon size={16} className="text-[#7C3AED]" /> Choose the Reel cover
             </h3>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Scrub to a frame — that still becomes your Reel cover. No need to fix it in Instagram.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Scrub to a frame. That still becomes your Reel cover. No need to fix it in Instagram.</p>
           </div>
           <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white p-1" title="Close"><X size={18} /></button>
         </div>

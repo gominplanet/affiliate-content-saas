@@ -58,7 +58,7 @@ export default function LoginForm() {
     if (pendingTimer.current) clearTimeout(pendingTimer.current)
     pendingTimer.current = setTimeout(() => {
       setPendingAction(null)
-      setError('Couldn’t verify you’re human — please try again.')
+      setError('Couldn’t verify you’re human. Please try again.')
       resetCaptcha()
     }, 15000)
   }
@@ -189,7 +189,7 @@ export default function LoginForm() {
   return (
     <div className="card p-8">
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome back</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Pick up where you left off — your drafts, brand profile and connected platforms are right where you parked them.</p>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Pick up where you left off: your drafts, brand profile and connected platforms are right where you parked them.</p>
 
       {callbackFailed && !error && (
         <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] bg-[#FF9500]/10 border border-[#FF9500]/30 rounded-lg px-3 py-2 mb-4">

@@ -251,7 +251,7 @@ export default function AgencyPage() {
           'Up to 3 VA seats included with Pro',
           'Social publishing controlled per VA; other scopes recorded for each person',
           'VAs work under your account (single subscription, multiple logins)',
-          'Revoke access instantly — no downtime',
+          'Revoke access instantly: no downtime',
           'Owner-only routes: billing, brand profile, integrations, WordPress, API keys',
         ]}
         requiredTier="pro"
@@ -351,8 +351,8 @@ export default function AgencyPage() {
               disabled={!canInvite}
               className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50"
             >
-              <option value="member">Member — can use granted permissions</option>
-              <option value="admin">Admin — can also manage other VAs</option>
+              <option value="member">Member: can use granted permissions</option>
+              <option value="admin">Admin: can also manage other VAs</option>
             </select>
           </div>
           <textarea
@@ -419,7 +419,7 @@ export default function AgencyPage() {
         </h2>
         {state.members.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            No active VAs yet. Invite someone above — they'll appear here once they accept.
+            No active VAs yet. Invite someone above. They'll appear here once they accept.
           </p>
         ) : (
           <ul className="divide-y">

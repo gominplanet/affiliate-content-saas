@@ -59,8 +59,8 @@ export default function LtkPage() {
       if (j.imageUrl && !imageUrl.trim()) { setImageUrl(j.imageUrl); filled.push('image') }
       setPrefillNote(
         filled.length
-          ? `Pre-filled the ${filled.join(' + ')} from your link — double-check and edit if needed.`
-          : "Couldn't read product details from that link — just fill them in below.",
+          ? `Pre-filled the ${filled.join(' + ')} from your link. Double-check and edit if needed.`
+          : "Couldn't read product details from that link. Just fill them in below.",
       )
     } catch { /* silent — manual fields remain the source of truth */ }
     finally { setPeeking(false) }
@@ -89,7 +89,7 @@ export default function LtkPage() {
       // Clear the product fields for the next one; keep nothing sensitive.
       setProductName(''); setDescription(''); setImageUrl(''); setWidgetCode('')
     } catch {
-      setResult({ error: 'Network error — try again.' })
+      setResult({ error: 'Network error: try again.' })
     } finally {
       setBusy(false)
     }
@@ -105,10 +105,10 @@ export default function LtkPage() {
       <FeatureLockedCard
         icon={<Sparkles size={28} strokeWidth={1.8} />}
         feature="MVP x LTK"
-        description="Paste one LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the “Shop it on LTK” button. Owned content that ranks on Google and funnels shoppers straight to your LTK shop."
+        description="Paste one LTK product link and MVP writes a Google-ready blog post in your voice, with your LTK link as the “Shop it on LTK” button. Owned content that ranks on Google and funnels shoppers straight to your LTK shop."
         bullets={[
           'Turns one LTK link into a full, SEO-friendly review post',
-          'Your LTK link stays the CTA — clicks and commission stay yours',
+          'Your LTK link stays the CTA. Clicks and commission stay yours',
           'Auto-fills the product name + image from your link when it can',
           'Builds a hero image and publishes to your WordPress (draft or live)',
         ]}
@@ -123,7 +123,7 @@ export default function LtkPage() {
       <PageHero
         guide={<LtkGuide />}
         title="MVP x LTK"
-        subtitle={'Paste an LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the "Shop" button. A new way for shoppers to find your picks and click straight through to your LTK shop.'}
+        subtitle={'Paste an LTK product link and MVP writes a Google-ready blog post in your voice, with your LTK link as the "Shop" button. A new way for shoppers to find your picks and click straight through to your LTK shop.'}
         accent={PINK}
       />
 
@@ -135,8 +135,8 @@ export default function LtkPage() {
           </p>
           <ul className="text-[13px] leading-relaxed space-y-1.5" style={{ color: 'var(--text-soft)' }}>
             <li>Turns one LTK link into a full, SEO-friendly blog post in your voice</li>
-            <li>Uses <strong style={{ color: 'var(--text)' }}>your</strong> LTK link as the &ldquo;Shop it on LTK&rdquo; button — clicks &amp; commission stay yours</li>
-            <li>Or embeds your real LTK <strong style={{ color: 'var(--text)' }}>&ldquo;Shop the Post&rdquo; widget</strong> — the live, shoppable gallery — if you paste its code</li>
+            <li>Uses <strong style={{ color: 'var(--text)' }}>your</strong> LTK link as the &ldquo;Shop it on LTK&rdquo; button. Clicks &amp; commission stay yours</li>
+            <li>Or embeds your real LTK <strong style={{ color: 'var(--text)' }}>&ldquo;Shop the Post&rdquo; widget</strong> (the live, shoppable gallery) if you paste its code</li>
             <li>Auto-fills the product name &amp; image from your link when it can</li>
             <li>Builds a hero image and publishes to <strong style={{ color: 'var(--text)' }}>your</strong> WordPress (draft or live)</li>
             <li>Gives you owned content that ranks on Google and feeds your LTK shop</li>
@@ -147,10 +147,10 @@ export default function LtkPage() {
             <XCircle size={13} /> What it doesn&apos;t do
           </p>
           <ul className="text-[13px] leading-relaxed space-y-1.5" style={{ color: 'var(--text-soft)' }}>
-            <li><strong style={{ color: 'var(--text)' }}>Doesn&apos;t connect to LTK</strong> — LTK has no API, so MVP never logs in, reads your shop, or posts on LTK</li>
-            <li>Doesn&apos;t scrape LTK or import your whole catalog — you bring one link at a time</li>
+            <li><strong style={{ color: 'var(--text)' }}>Doesn&apos;t connect to LTK</strong>: LTK has no API, so MVP never logs in, reads your shop, or posts on LTK</li>
+            <li>Doesn&apos;t scrape LTK or import your whole catalog. You bring one link at a time</li>
             <li>Doesn&apos;t track your LTK earnings, clicks, or analytics</li>
-            <li>Doesn&apos;t change or cloak your link — it&apos;s kept as-is to protect your commission</li>
+            <li>Doesn&apos;t change or cloak your link. It&apos;s kept as-is to protect your commission</li>
             <li>Doesn&apos;t invent facts, and doesn&apos;t post anywhere but your WordPress</li>
           </ul>
         </div>
@@ -162,13 +162,13 @@ export default function LtkPage() {
           <Sparkles size={15} className="text-[#EC4899]" /> How this works (and why it&apos;s LTK-safe)
         </summary>
         <div className="px-5 pb-5 text-[13.5px] leading-relaxed space-y-3" style={{ color: 'var(--text-soft)' }}>
-          <p><strong style={{ color: 'var(--text)' }}>LTK has no public API</strong> and its terms don&apos;t allow outside tools to read your shop or post for you — so MVP never touches LTK. Instead, <strong style={{ color: 'var(--text)' }}>you bring the link</strong>: copy your own commissionable LTK URL for a product (your <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>liketk.it</code> / <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>shopltk.com</code> link) and MVP builds the content around it.</p>
+          <p><strong style={{ color: 'var(--text)' }}>LTK has no public API</strong> and its terms don&apos;t allow outside tools to read your shop or post for you, so MVP never touches LTK. Instead, <strong style={{ color: 'var(--text)' }}>you bring the link</strong>: copy your own commissionable LTK URL for a product (your <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>liketk.it</code> / <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>shopltk.com</code> link) and MVP builds the content around it.</p>
           <ol className="list-decimal pl-5 space-y-1.5">
-            <li><strong style={{ color: 'var(--text)' }}>Paste your LTK link</strong> for the product (grab it from your LTK app — Copy link). Your link carries your commission + your audience&apos;s discount; MVP uses it exactly as-is.</li>
-            <li><strong style={{ color: 'var(--text)' }}>Name the product</strong> and add a couple of lines about it (what it is, who it&apos;s for). MVP tries to read the product name + image straight off your link to save you typing — confirm or tweak whatever it fills, and add your own notes (that&apos;s what makes the post genuinely yours).</li>
+            <li><strong style={{ color: 'var(--text)' }}>Paste your LTK link</strong> for the product (in your LTK app, tap Copy link). Your link carries your commission + your audience&apos;s discount; MVP uses it exactly as-is.</li>
+            <li><strong style={{ color: 'var(--text)' }}>Name the product</strong> and add a couple of lines about it (what it is, who it&apos;s for). MVP tries to read the product name + image straight off your link to save you typing. Confirm or tweak whatever it fills, and add your own notes (that&apos;s what makes the post genuinely yours).</li>
             <li><strong style={{ color: 'var(--text)' }}>Generate</strong> → MVP writes a fact-grounded review in your brand voice, builds a designed hero/CTA image, and publishes it to your WordPress (as a draft, or live) with a <em>&ldquo;Shop it on LTK&rdquo;</em> button pointing at your link.</li>
           </ol>
-          <p>The result is SEO-able, owned content that ranks on Google and funnels readers to your LTK shop — something LTK&apos;s in-app posts can&apos;t do for you. Requires a connected WordPress site + a saved Brand Profile.</p>
+          <p>The result is SEO-able, owned content that ranks on Google and funnels readers to your LTK shop, something LTK&apos;s in-app posts can&apos;t do for you. Requires a connected WordPress site + a saved Brand Profile.</p>
         </div>
       </details>
 
@@ -180,7 +180,7 @@ export default function LtkPage() {
             {peeking && <span className="inline-flex items-center gap-1 text-[11px] font-normal" style={{ color: 'var(--text-faint)' }}><Loader2 size={11} className="animate-spin" /> reading link…</span>}
           </label>
           <input id="ltk-url" className={input} style={inputStyle} value={ltkUrl} onChange={e => setLtkUrl(e.target.value)} onBlur={peek} placeholder="https://liketk.it/…  or  https://www.shopltk.com/explore/you/…" />
-          <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>{prefillNote || 'Add your LTK link, the widget code below, or both — you need at least one.'}</p>
+          <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>{prefillNote || 'Add your LTK link, the widget code below, or both. You need at least one.'}</p>
         </div>
         <div>
           <label htmlFor="ltk-name" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Product name <span style={{ color: '#EC4899' }}>*</span></label>
@@ -188,11 +188,11 @@ export default function LtkPage() {
         </div>
         <div>
           <label htmlFor="ltk-desc" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>A few details <span style={{ color: 'var(--text-faint)' }}>(optional, but better posts)</span></label>
-          <textarea id="ltk-desc" className={input} style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What it is, who it's for, why you picked it, fit/quality notes, price range — a couple of sentences in your own words." />
+          <textarea id="ltk-desc" className={input} style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What it is, who it's for, why you picked it, fit/quality notes, price range: a couple of sentences in your own words." />
         </div>
         <div>
           <label htmlFor="ltk-img" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Product image URL <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-          <input id="ltk-img" className={input} style={inputStyle} value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…/product.jpg — used for the hero + CTA image" />
+          <input id="ltk-img" className={input} style={inputStyle} value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…/product.jpg: used for the hero + CTA image" />
         </div>
         <div>
           <label htmlFor="ltk-widget" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>LTK &ldquo;Shop the Post&rdquo; widget code <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
@@ -211,7 +211,7 @@ export default function LtkPage() {
                 <li>Choose <strong style={{ color: 'var(--text)' }}>WordPress</strong> as the platform.</li>
                 <li>Copy the generated <strong style={{ color: 'var(--text)' }}>HTML code</strong> and paste it above.</li>
               </ol>
-              <p className="mt-2" style={{ color: 'var(--text-faint)' }}>Heads up: the widget is a script. It renders on most self-hosted sites, but some hosts/roles or security plugins strip scripts — if it doesn&apos;t show, add your LTK link too and the &ldquo;Shop it on LTK&rdquo; button is your fallback.</p>
+              <p className="mt-2" style={{ color: 'var(--text-faint)' }}>Heads up: the widget is a script. It renders on most self-hosted sites, but some hosts/roles or security plugins strip scripts. If it doesn&apos;t show, add your LTK link too and the &ldquo;Shop it on LTK&rdquo; button is your fallback.</p>
             </div>
           )}
         </div>
@@ -236,7 +236,7 @@ export default function LtkPage() {
       {result && (
         <div className="mt-4 rounded-xl border p-4 text-[14px]" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
           {result.forbidden ? (
-            <p className="flex items-center gap-2" style={{ color: 'var(--text-soft)' }}><Lock size={15} /> {result.error || 'MVP x LTK is available on any paid plan — upgrade to unlock it.'}</p>
+            <p className="flex items-center gap-2" style={{ color: 'var(--text-soft)' }}><Lock size={15} /> {result.error || 'MVP x LTK is available on any paid plan. Upgrade to unlock it.'}</p>
           ) : result.error ? (
             <p style={{ color: '#ff6b6b' }}>{result.error}</p>
           ) : (

@@ -89,7 +89,7 @@ export default function BroadcastPage() {
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Test send failed.'); return }
-      toast.success(`Test sent to ${data.to} — check your inbox.`)
+      toast.success(`Test sent to ${data.to}: check your inbox.`)
     } catch { toast.error('Network error.') }
     finally { setBusy(null) }
   }
@@ -121,7 +121,7 @@ export default function BroadcastPage() {
     <div className="max-w-3xl mx-auto px-4 py-6">
       <PageHero
         title="Broadcast email"
-        subtitle="Send an email to all your trial and paid users at once. Nothing sends until you click the final button — send a test to yourself first."
+        subtitle="Send an email to all your trial and paid users at once. Nothing sends until you click the final button. Send a test to yourself first."
       />
 
       {/* Audience */}
@@ -190,7 +190,7 @@ export default function BroadcastPage() {
           <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Send to everyone</p>
         </div>
         <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-          This emails <b>{count === null ? '…' : count.toLocaleString()}</b> {AUDIENCES.find(a => a.id === audience)?.label.toLowerCase()} — it cannot be undone. Type <b>SEND</b> to confirm.
+          This emails <b>{count === null ? '…' : count.toLocaleString()}</b> {AUDIENCES.find(a => a.id === audience)?.label.toLowerCase()}: it cannot be undone. Type <b>SEND</b> to confirm.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input value={confirmText} onChange={e => setConfirmText(e.target.value)} placeholder="Type SEND"

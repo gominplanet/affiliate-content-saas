@@ -42,7 +42,7 @@ export default function BlogEditModal({ postId, onClose, onSaved }: Props) {
         // doesn't jump on every keystroke).
         requestAnimationFrame(() => { if (bodyRef.current) bodyRef.current.innerHTML = inertHtml(d.content || '') })
       } catch {
-        if (!cancelled) setError('Network error — try again.')
+        if (!cancelled) setError('Network error: try again.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -88,7 +88,7 @@ export default function BlogEditModal({ postId, onClose, onSaved }: Props) {
       onSaved?.()
       onClose()
     } catch {
-      toast.error('Network error — try again.', { id: tId, duration: 6000 })
+      toast.error('Network error: try again.', { id: tId, duration: 6000 })
     } finally {
       setSaving(false)
     }
