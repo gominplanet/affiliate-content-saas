@@ -309,7 +309,7 @@ Return ONLY the caption text.` }],
         useShowcase: destination.kind === 'showcase',
         showcaseUrl: destination.kind === 'showcase' ? destination.url : null,
       })
-      results.push({ platform: 'instagram', ok: true, url: ig.url })
+      results.push({ platform: 'instagram', ok: true, url: ig.url ?? undefined })
       if (ig.note && !geniuslinkNote) geniuslinkNote = ig.note
     } catch (e) {
       results.push({ platform: 'instagram', ok: false, error: e instanceof Error ? e.message : 'Instagram post failed.' })

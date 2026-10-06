@@ -17,6 +17,12 @@ check('start, upload by URL, then finish as published, in that order',
   && /file_url: opts\.videoUrl/.test(LIB) && /video_state: 'PUBLISHED'/.test(LIB))
 check('the status is read back, and "still processing" is never called live',
   /fields=status/.test(LIB) && /state: 'processing'/.test(LIB) && /step: 'processing'/.test(LIB))
+// A 200 CAN STILL BE A REFUSAL: an `error` object in the body is a failure at
+// every step, with Meta's words, never a Reel reported as published.
+check('an error body at start, upload or finish is a failure, not a Reel',
+  /if \(!start\.ok \|\| sj\.error \|\| !videoId\) return \{ ok: false/.test(LIB)
+  && /if \(!up\.ok \|\| uj\.error \|\| uj\.success === false\) return \{ ok: false/.test(LIB)
+  && /if \(!fin\.ok \|\| fj\.error \|\| fj\.success === false\) return \{ ok: false, step: 'finish', error: metaError\(fj/.test(LIB))
 check('the route is Labs and Meta-gated', /canUsePreview\('facebook_reels', tier\)/.test(ROUTE) && /metaEnabledForUser/.test(ROUTE))
 check('a refused permission tells the creator to reconnect', /Reconnect Facebook under Social Accounts/.test(ROUTE))
 check('the button shows only to who may use it', /\{canUsePreview\('facebook_reels', tier\) && [^\n]*<PostPill label="Facebook Reel"/.test(PAGE) || /canUsePreview\('facebook_reels', tier\) && !\(clip\?\.durationSec/.test(PAGE))

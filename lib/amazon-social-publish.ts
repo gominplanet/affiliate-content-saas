@@ -7,7 +7,7 @@
 // it appends "link in bio" and (best-effort) drops a product tile in the shop
 // grid the bio points at.
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
-import { publishMedia } from '@/services/instagram'
+import { publishMedia, getMediaPermalink } from '@/services/instagram'
 import { createFacebookService } from '@/services/facebook'
 import { tileImageFor } from '@/lib/tile-image'
 import { resolveAffiliateLink, finalizeSocialCaption, type PinIntegration } from '@/lib/amazon-pin-publish'
@@ -226,7 +226,7 @@ export async function publishToInstagram(opts: {
   /** Send the clicks to the creator's TikTok Shop showcase instead of Amazon. */
   useShowcase?: boolean
   showcaseUrl?: string | null
-}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
+}): Promise<{ id: string; url: string | null; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
   const { intRow } = opts
   if (!intRow.instagram_user_id || !intRow.instagram_access_token) throw new Error('Instagram is not connected.')
   const isStory = opts.postType === 'story'
@@ -266,9 +266,13 @@ export async function publishToInstagram(opts: {
     userId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
     mediaType: isStory ? 'STORIES' : 'IMAGE', imageUrl: opts.imageUrl, caption: isStory ? undefined : caption,
   })
+  // THE ADDRESS META REPORTS, NOT ONE BUILT FROM THE ID. /p/<mediaId> was dead
+  // on every post. No permalink means no link (null), and the id is still kept.
   return {
     id: mediaId,
-    url: isStory ? `https://www.instagram.com/${intRow.instagram_username || ''}` : `https://www.instagram.com/p/${mediaId}/`,
+    url: isStory
+      ? `https://www.instagram.com/${intRow.instagram_username || ''}`
+      : await getMediaPermalink({ mediaId, accessToken: intRow.instagram_access_token }),
     caption, linkUrl,
     note: [note, tileNote].filter(Boolean).join(' ') || note,
   }

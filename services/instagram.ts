@@ -366,6 +366,26 @@ export async function publishMedia(opts: {
   })
 }
 
+/**
+ * The post's REAL public address, read from Meta after publishing.
+ *
+ * NEVER BUILD IT FROM THE MEDIA ID. instagram.com/p/ takes the post's
+ * shortcode, not the numeric Graph id, so instagram.com/p/<mediaId> was a dead
+ * link on every post. Meta hands back the right one (feed post or Reel) as
+ * `permalink`. Null when the read fails: the caller keeps the media id and
+ * shows "Posted" with no link, rather than a guessed address that 404s.
+ */
+export async function getMediaPermalink(opts: { mediaId: string; accessToken: string }): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${encodeURIComponent(opts.mediaId)}?fields=permalink&access_token=${encodeURIComponent(opts.accessToken)}`)
+    const data = await res.json().catch(() => ({})) as { permalink?: string }
+    if (!res.ok || typeof data.permalink !== 'string' || !/^https:\/\/(www\.)?instagram\.com\//i.test(data.permalink)) return null
+    return data.permalink
+  } catch {
+    return null
+  }
+}
+
 // ─── Messaging: comment → DM (Private Replies) ───────────────────────────────
 // The comment→DM mechanic. `recipient.comment_id` is the ONLY way to initiate a
 // DM to someone who hasn't messaged first, and you get exactly ONE per comment

@@ -2,6 +2,26 @@ import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
+/**
+ * HTTP 200 IS NOT A POST. Meta can answer 200 with an `error` object, or with
+ * no id at all, and reading that as success marked posts published that do not
+ * exist and built facebook.com/undefined links. So: an id (or post_id), or a
+ * thrown error carrying Meta's own message. `id` is always set on return.
+ */
+async function readPostResult(res: Response, what: string): Promise<{ id: string; post_id?: string }> {
+  const text = await res.text()
+  if (!res.ok) throw new Error(`${what} failed ${res.status}: ${text.slice(0, 300)}`)
+  let body: { id?: unknown; post_id?: unknown; error?: { message?: string; error_user_msg?: string } } = {}
+  try { body = JSON.parse(text) } catch { /* handled below as no id */ }
+  const id = typeof body.id === 'string' && body.id ? body.id : ''
+  const postId = typeof body.post_id === 'string' && body.post_id ? body.post_id : ''
+  if (body.error || !(id || postId)) {
+    const said = body.error?.error_user_msg || body.error?.message
+    throw new Error(`${what} failed ${res.status}: ${said ? `Facebook said: ${said}` : 'Facebook answered without a post id, so MVP cannot confirm the post exists.'}`.slice(0, 400))
+  }
+  return { id: id || postId, ...(postId ? { post_id: postId } : {}) }
+}
+
 export interface FacebookPage {
   id: string
   name: string
@@ -24,11 +44,7 @@ export class FacebookService {
         access_token: this.pageAccessToken,
       }),
     })
-    if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`Facebook post failed ${res.status}: ${body.slice(0, 300)}`)
-    }
-    return res.json()
+    return readPostResult(res, 'Facebook post')
   }
 
   /** A text post. A link written in the text is still a tappable link. */
@@ -38,11 +54,7 @@ export class FacebookService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: discloseSocialPost(opts.message, 'facebook'), access_token: this.pageAccessToken }),
     })
-    if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`Facebook post failed ${res.status}: ${body.slice(0, 300)}`)
-    }
-    return res.json()
+    return readPostResult(res, 'Facebook post')
   }
 
   // Posts a photo with caption — better reach than link posts
@@ -59,11 +71,7 @@ export class FacebookService {
         access_token: this.pageAccessToken,
       }),
     })
-    if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`Facebook photo post failed ${res.status}: ${body.slice(0, 300)}`)
-    }
-    return res.json()
+    return readPostResult(res, 'Facebook photo post')
   }
 }
 

@@ -40,7 +40,7 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
   })
   const sj = await json(start)
   const videoId = String(sj.video_id || '')
-  if (!start.ok || !videoId) return { ok: false, step: 'start', error: metaError(sj, `Facebook would not start the Reel upload (HTTP ${start.status}).`) }
+  if (!start.ok || sj.error || !videoId) return { ok: false, step: 'start', error: metaError(sj, `Facebook would not start the Reel upload (HTTP ${start.status}).`) }
 
   // 2. Upload by URL: Meta downloads the clip from where MVP stored it.
   const up = await fetch(`https://rupload.facebook.com/video-upload/v21.0/${encodeURIComponent(videoId)}`, {
@@ -48,7 +48,7 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
     signal: AbortSignal.timeout(120_000),
   })
   const uj = await json(up)
-  if (!up.ok || uj.success === false) return { ok: false, step: 'upload', error: metaError(uj, `Facebook could not fetch the clip (HTTP ${up.status}).`) }
+  if (!up.ok || uj.error || uj.success === false) return { ok: false, step: 'upload', error: metaError(uj, `Facebook could not fetch the clip (HTTP ${up.status}).`) }
 
   // 3. Finish and publish, with the caption.
   const fin = await fetch(`${GRAPH}/${encodeURIComponent(pageId)}/video_reels`, {
@@ -57,7 +57,9 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
     signal: AbortSignal.timeout(60_000),
   })
   const fj = await json(fin)
-  if (!fin.ok || fj.success === false) return { ok: false, step: 'finish', error: metaError(fj, `Facebook did not accept the Reel (HTTP ${fin.status}).`) }
+  // A 200 CAN STILL BE A REFUSAL. Meta sometimes answers 200 with an `error`
+  // object in the body; that is a failure with Meta's words, never "published".
+  if (!fin.ok || fj.error || fj.success === false) return { ok: false, step: 'finish', error: metaError(fj, `Facebook did not accept the Reel (HTTP ${fin.status}).`) }
 
   // 4. Read back what happened to it, ON A DEADLINE. Twelve looks after the
   // three steps above could take the whole request past its time limit, after

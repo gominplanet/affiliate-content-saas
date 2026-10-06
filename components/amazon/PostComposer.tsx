@@ -355,10 +355,16 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
               <div className={`flex flex-col gap-1.5 rounded-lg border p-3 ${result.note ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-[#34c759]/30 bg-[#34c759]/5'}`}>
                 {result.scheduledAt ? (
                   <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}><CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}</span>
-                ) : (
+                ) : result.postUrl ? (
                   <a href={result.postUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
                     {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Posted <ExternalLink size={13} />
                   </a>
+                ) : (
+                  // NO ADDRESS, NO LINK. Instagram did not report this post's
+                  // address, and a guessed one was dead, so it says Posted only.
+                  <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
+                    {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Posted
+                  </span>
                 )}
                 {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
               </div>

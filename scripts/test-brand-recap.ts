@@ -8,7 +8,7 @@
 // private video); a post about two products is sent once; "new" means not in a
 // recap that actually reached the brand; and the page never says sent unless
 // Amazon confirmed it or the creator said so.
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import {
   shareableUrl, contentPlatform, groupByBrand, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText,
   ccGroupCount, linkKey, CC_GROUP_MAX_CHARS, amazonVideoPage, asinsInDescription, type ContentLink,
@@ -150,6 +150,23 @@ check('an error page from the host reads as a sentence, not a JSON error',
 check('Deal Radar and Encore posts keep their links', inOrder(read('lib/deal-quick-post.ts'), "await recordProductPostLinks(userId, asin, results, 'deal_post')", 'destinationKind: destination.kind'))
 for (const [f, p] of [['fb', 'facebook'], ['ig', 'instagram'], ['pin', 'pinterest']] as const) {
   check(`the Amazon ${p} push keeps its link`, new RegExp(`recordProductPostLinks\\(user\\.id, body\\.asin, \\[\\{ platform: '${p}'`).test(read(`app/api/amazon/${f}/route.ts`)))
+}
+// INSTAGRAM LINKS ARE META'S PERMALINK, NEVER BUILT FROM THE MEDIA ID.
+// instagram.com/p/ takes a shortcode, so /p/<numeric media id> was a dead link
+// on every post, and Brand recap offered it to brands. No permalink, no link.
+{
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? (d.name === 'node_modules' ? [] : walk(`${dir}/${d.name}`)) : /\.tsx?$/.test(d.name) ? [`${dir}/${d.name}`] : [])
+  const built = ['app', 'lib', 'services', 'components'].flatMap(walk)
+    .filter((f) => /instagram\.com\/(p|reel|reels)\/\$\{/.test(read(f)))
+  check('no Instagram post address is built from an id', built.length === 0, built.join(', '))
+  const SOC = read('lib/amazon-social-publish.ts')
+  check('the Instagram feed post reports the permalink Meta returns',
+    /: await getMediaPermalink\(\{ mediaId, accessToken: intRow\.instagram_access_token \}\)/.test(SOC) && /url: string \| null; caption/.test(SOC))
+  check('the permalink is read with fields=permalink and is null when the read fails',
+    /\?fields=permalink&access_token=/.test(read('services/instagram.ts')) && /getMediaPermalink[\s\S]{0,900}catch \{\s*return null/.test(read('services/instagram.ts')))
+  check('a post with no address says Posted without a link',
+    /\) : result\.postUrl \? \(/.test(read('components/amazon/PostComposer.tsx')) && /let externalUrl: string \| null/.test(read('app/api/cron/process-amazon-schedules/route.ts')))
 }
 check('Brand recap is Pro (out of Labs, September)', canUsePreview('brand_recap', 'pro') && canUsePreview('brand_recap', 'admin') && !canUsePreview('brand_recap', 'trial'))
 check('the page and the routes use the same gate',
