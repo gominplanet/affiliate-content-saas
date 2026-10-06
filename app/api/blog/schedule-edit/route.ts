@@ -128,20 +128,33 @@ export async function PATCH(request: Request) {
       // same delta so the cascade keeps its spacing.
       const delta = newBaseMs - oldBaseMs
       if (delta !== 0 && pending.length) {
-        await Promise.all(pending.map(r =>
+        const shifted = await Promise.all(pending.map(r =>
           (supabase as any).from('scheduled_posts')
             .update({ scheduled_at: new Date(new Date(r.scheduled_at).getTime() + delta).toISOString() })
             .eq('id', r.id).eq('user_id', user.id),
         ))
+        // A SOCIAL LEFT ON THE OLD TIME IS A HALF-APPLIED RESCHEDULE TOO.
+        const stuck = (shifted as Array<{ error?: unknown }>).filter(r => r?.error).length
+        if (stuck && !wpWarning) wpWarning = `The post moved, but ${stuck} of its queued social post${stuck === 1 ? '' : 's'} did not, so ${stuck === 1 ? 'it goes' : 'they go'} out at the old time. Set the time again.`
       }
     }
 
     // ── 2. Remove platforms ────────────────────────────────────────────────
+    // A DELETE THAT REMOVED NOTHING IS NOT A REMOVAL. Without a delete policy
+    // (migration 412) RLS turns this into a no-op with no error, the push still
+    // fires, and the screen said "Schedule updated". Ask for the deleted rows
+    // back and name every platform that had a pending push and still has it.
+    const notRemoved: string[] = []
     if (removePlatforms.length) {
-      await (supabase as any).from('scheduled_posts')
+      const hadPending = new Set(pending.filter(r => r.kind === 'social' && r.platform && removePlatforms.includes(r.platform)).map(r => r.platform as string))
+      const { data: gone, error: delErr } = await (supabase as any).from('scheduled_posts')
         .delete()
         .eq('user_id', user.id).eq('blog_post_id', blogPostId).eq('status', 'pending').eq('kind', 'social')
         .in('platform', removePlatforms)
+        .select('platform')
+      const removed = new Set(((gone ?? []) as Array<{ platform: string | null }>).map(r => r.platform as string))
+      for (const p of hadPending) if (delErr || !removed.has(p)) notRemoved.push(p)
+      if (delErr) console.warn('[schedule-edit] remove platforms:', delErr.message)
     }
 
     // ── 2b. Edit captions on EXISTING queued platforms ─────────────────────
@@ -207,7 +220,7 @@ export async function PATCH(request: Request) {
     // ── 4. Sync the ticked-platforms list on the post ──────────────────────
     const current = new Set<string>(Array.isArray(post.scheduled_social_platforms) ? post.scheduled_social_platforms : [])
     for (const p of added) current.add(p)
-    for (const p of removePlatforms) current.delete(p)
+    for (const p of removePlatforms) if (!notRemoved.includes(p)) current.delete(p)
     await (supabase as any).from('blog_posts')
       .update({ scheduled_social_platforms: [...current] })
       .eq('id', blogPostId).eq('user_id', user.id)
@@ -217,11 +230,14 @@ export async function PATCH(request: Request) {
       // NOT ok when WordPress did not take the new date. The post's own page is
       // what readers see, so a half-applied reschedule is a failed reschedule
       // even though every MVP-side write succeeded.
-      ok: !wpWarning,
+      ok: !wpWarning && notRemoved.length === 0,
       scheduledFor: new Date(newBaseMs).toISOString(),
       platforms: [...current],
       added,
-      removed: removePlatforms,
+      removed: removePlatforms.filter(p => !notRemoved.includes(p)),
+      // Platforms whose pending push the database refused to delete: they
+      // still publish, and the modal says so instead of "Schedule updated".
+      notRemoved,
       skipped,
       wpWarning,
     })

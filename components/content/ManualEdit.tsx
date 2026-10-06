@@ -24,6 +24,10 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [html, setHtml] = useState('')
+  // THE ARTICLE NEVER LOADED, SO THERE IS NOTHING TO SAVE. The editor used to
+  // open empty under the error with Save live, and a few typed words saved
+  // over the whole published post.
+  const [loadFailed, setLoadFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const seeded = useRef(false)
   // Thumbnail (WP featured image) editing — works for any post.
@@ -44,8 +48,13 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
 
   async function toggle() {
     if (open) { setOpen(false); seeded.current = false; return }
+    await load()
+  }
+
+  async function load() {
     seeded.current = false
     setMsg(null)
+    setLoadFailed(false)
     if (!postId) { setHtml(''); setOpen(true); setMsg('No post to edit yet.'); return }
     setOpen(true); setLoading(true)
     try {
@@ -54,6 +63,8 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
       if (!res.ok) throw new Error(data.error || 'Could not load the article')
       setHtml(data.content || '')
     } catch (e) {
+      setHtml('')
+      setLoadFailed(true)
       setMsg(e instanceof Error ? e.message : 'Load failed')
     } finally {
       setLoading(false)
@@ -127,6 +138,11 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
           {loading ? (
             <div className="flex items-center gap-2 text-xs text-[#86868b] py-8 justify-center">
               <Loader2 size={14} className="animate-spin" /> Loading article…
+            </div>
+          ) : loadFailed ? (
+            <div className="flex items-center gap-3 text-xs py-6 justify-center">
+              <span className="text-[#ff3b30]">{msg || 'Could not load the article.'}</span>
+              <button onClick={() => { void load() }} className="text-[#7C3AED] hover:underline">Try again</button>
             </div>
           ) : (
             <>

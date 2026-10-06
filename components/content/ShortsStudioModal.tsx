@@ -127,10 +127,12 @@ export function ShortsStudioModal({
   const [ttPost, setTtPost] = useState<{ id: string; url: string; caption: string } | null>(null)
   const [igPost, setIgPost] = useState<{ id: string; url: string; caption: string } | null>(null)
 
+  // A TIMED-OUT RENDER ANSWERS WITH AN HTML 504, NOT JSON. Every read below
+  // falls back to a sentence instead of surfacing "Unexpected token '<'".
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/youtube/shorts?videoId=${encodeURIComponent(videoId)}`)
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) throw new Error(data.error || 'Failed to load')
       setClips(data.shorts || [])
       setHasSource(!!data.hasSource)
@@ -153,7 +155,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId, youtubeVideoId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.limitReached) {
           dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -180,7 +182,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.ingestDisabled) setIngestEnabled(false)
         if (data.limitReached) dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -212,7 +214,7 @@ export function ShortsStudioModal({
           trimSilence: trimById[clip.id] === true,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Upload the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering Shorts is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
@@ -248,7 +250,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shortId: clipId, ...editDraft }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) throw new Error(data.error || 'Save failed')
       if (data.short) setClips(prev => prev.map(c => (c.id === clipId ? data.short : c)))
       setEditingId(null); setEditDraft(null)
@@ -291,7 +293,7 @@ export function ShortsStudioModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip), tags: buildYouTubeTags(clip.hashtags, clip.hook) }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
         // Missing upload scope — grant it via incremental auth, then retry.
         if (data.reconnectRequired) {

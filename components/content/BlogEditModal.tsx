@@ -38,9 +38,6 @@ export default function BlogEditModal({ postId, onClose, onSaved }: Props) {
         if (!res.ok) { setError(d.error || 'Could not load this post.'); return }
         setMeta({ title: d.title || '', content: d.content || '', status: d.status ?? null, wordpressUrl: d.wordpressUrl ?? null, scheduledFor: d.scheduledFor ?? null })
         setTitle(d.title || '')
-        // Seed the contenteditable once (uncontrolled after mount so the caret
-        // doesn't jump on every keystroke).
-        requestAnimationFrame(() => { if (bodyRef.current) bodyRef.current.innerHTML = inertHtml(d.content || '') })
       } catch {
         if (!cancelled) setError('Network error: try again.')
       } finally {
@@ -49,6 +46,18 @@ export default function BlogEditModal({ postId, onClose, onSaved }: Props) {
     })()
     return () => { cancelled = true }
   }, [postId])
+
+  // SEED THE BODY ONCE IT EXISTS. The body div only mounts after loading
+  // flips, and a requestAnimationFrame fired from the fetch could run before
+  // that render: the editor then sat empty and Save wrote an empty article
+  // over the live post. Once per load, uncontrolled after that so the caret
+  // does not jump on every keystroke.
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (loading || !meta || seeded.current || !bodyRef.current) return
+    bodyRef.current.innerHTML = inertHtml(meta.content || '')
+    seeded.current = true
+  }, [loading, meta])
 
   // execCommand is deprecated but still the simplest cross-browser rich-text
   // path for editing WordPress HTML in place. Wrapped so the button focus

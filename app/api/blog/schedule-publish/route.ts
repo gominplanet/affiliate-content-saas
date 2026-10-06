@@ -227,7 +227,7 @@ export async function POST(request: Request) {
         generateUrl,
       })
       const surfaceMsg = genJson.error
-        || (genRes.status === 404 ? `Internal generate route returned 404 — check NEXT_PUBLIC_APP_URL / host config (tried ${generateUrl})` : null)
+        || (genRes.status === 404 ? `Internal generate route returned 404. Check NEXT_PUBLIC_APP_URL / host config (tried ${generateUrl})` : null)
         || `Blog generation failed (HTTP ${genRes.status}). ${bodySnippet ? `Response: ${bodySnippet.slice(0, 200)}` : 'Check server logs.'}`
       return NextResponse.json(
         { error: surfaceMsg },
@@ -487,7 +487,7 @@ export async function POST(request: Request) {
         console.error('[schedule-publish] child insert failed (hard):', childErr.message)
         return NextResponse.json(
           {
-            error: `Blog generated, but social pushes failed to queue. Cause: ${childErr.message}. The blog post is in WordPress — you can push to socials manually from the Library row once it goes live.`,
+            error: `Blog generated, but social pushes failed to queue. Cause: ${childErr.message}. The blog post is in WordPress, so you can push to socials manually from its card once it goes live.`,
             postId: blogPostId,
             wordpressPostId: wpPostId,
             wordpressUrl: wpUrl,

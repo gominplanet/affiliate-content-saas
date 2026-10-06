@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   const pinCap = evaluateSocialCap(pinSocialCount)
   if (pinCap.exceeded) {
     return NextResponse.json({
-      error: `You've published this post to Pinterest ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+      error: `You've published this post to Pinterest ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
       socialCapReached: true,
       platform: 'pinterest',
     }, { status: 429 })

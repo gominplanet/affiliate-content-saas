@@ -15,6 +15,7 @@ import { metaEnabledForUser } from '@/lib/feature-flags'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 const DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
@@ -82,14 +83,14 @@ export async function POST(request: NextRequest) {
     const thCap = evaluateSocialCap(thSocialCount)
     if (!dryRun && thCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Threads ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Threads ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'threads',
       }, { status: 429 })
     }
 
     if (!dryRun && !ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
-    if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
+    if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing. Try reconnecting Threads in Settings.' }, { status: 400 })
 
     let bodyText: string
     if (overrideText) {
@@ -130,7 +131,8 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: fullText })
+      // THE PREVIEW IS WHAT POSTS: services/threads discloses the text it sends.
+      return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: discloseSocialPost(fullText, 'threads') })
     }
 
     // Use YouTube thumbnail (hero image with person + product)

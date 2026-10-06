@@ -400,7 +400,9 @@ export function InstagramPublishModal({
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (!res.ok) throw new Error(data.error || 'Publish failed')
+      // Every part failed: the route answers 502 with the reasons in
+      // `warnings` and no `error`, which used to show a bare "Publish failed".
+      if (!res.ok) throw new Error(data.error || (Array.isArray(data.warnings) && data.warnings.length ? data.warnings.join(' · ') : '') || 'Publish failed')
 
       if (data.reelId || data.imagePostId) onReelPosted()
       if (data.storyId) onStoryPosted(data.affiliateUrl ?? '')

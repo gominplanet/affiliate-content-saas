@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) {
-      return NextResponse.json({ error: 'Already published or cancelled — nothing to do.' }, { status: 409 })
+      return NextResponse.json({ error: 'Already published or cancelled, so there is nothing to cancel.' }, { status: 409 })
     }
 
     // Cascade — cancelling a kind='blog_publish' parent row also cancels

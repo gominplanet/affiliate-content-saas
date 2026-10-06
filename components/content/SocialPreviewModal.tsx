@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useModalA11y } from '@/components/ui/useModalA11y'
-import { tzAbbrev } from '@/lib/format-schedule'
+import { tzAbbrev, formatScheduleTime } from '@/lib/format-schedule'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 import { isFacebookGroupLink, isFacebookGroupPostLink } from '@/lib/facebook-group-link'
 
 /** Platform key the SocialPreviewModal accepts for scheduling. The cron
@@ -169,6 +170,16 @@ export function SocialPreviewModal({
   const groupCopy = composed
     ? [composed, hashtagLine].filter(Boolean).join('\n\n')
     : [text.trim(), hashtagLine, (shareUrl || '').trim(), (shareDisclaimer || '').trim()].filter(Boolean).join('\n\n')
+  // WHAT THE PLATFORM RECEIVES, EDITS INCLUDED. The route's finalText is already
+  // disclosed the way services/* will (#ad #sponsored, link labels, length),
+  // but only for the generated words; with the creator's edits swapped in, run
+  // the same discloseSocialPost with the same platform name. Idempotent, so an
+  // unedited post shows the route's text unchanged. Telegram's tags are written
+  // \#ad for MarkdownV2; the reader sees #ad.
+  const disclosedEdit = composed && platformKey ? discloseSocialPost(composed, platformKey) : ''
+  const postedPreview = disclosedEdit
+    ? (platformKey === 'telegram' ? disclosedEdit.replace(/\\#/g, '#') : disclosedEdit)
+    : finalText
 
   // ── Fill with SCOUT: one click per Group ─────────────────────────────────
   // SCOUT opens the Group in the creator's own Facebook and fills this post
@@ -375,6 +386,13 @@ export function SocialPreviewModal({
       // Say so here: the modal closes on success, and a plain green tick is how
       // a creator keeps picking "video" for a month without ever getting one.
       if (typeof data.mediaNote === 'string' && data.mediaNote) toast.warning(data.mediaNote, { duration: 9000 })
+      // 1 OF 3 PAGES IS NOT "PUBLISHED". A Facebook fan-out answers 200 when any
+      // Page took it; name the Pages that did not, in red, so a partial post
+      // never reads the same as a full one.
+      const missed = Array.isArray(data.results) ? (data.results as Array<{ ok?: boolean; page?: string | null; error?: string }>).filter(r => r && r.ok === false) : []
+      if (missed.length) {
+        toast.error(`Posted to ${data.posted ?? 'some'} Page${data.posted === 1 ? '' : 's'}, but not to ${missed.map(r => `${r.page || 'a Page'} (${r.error || 'failed'})`).join(', ')}.`, { duration: 15000 })
+      }
       onPublished()
       onClose()
     } catch (err) {
@@ -411,6 +429,9 @@ export function SocialPreviewModal({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Schedule failed')
+      // Scheduled, said as scheduled: the modal closes, and from a video card
+      // nothing else on screen changes, so this is the only sign it worked.
+      toast.success(`${platform} post scheduled for ${formatScheduleTime(when)}`)
       onScheduled?.(when)
       onClose()
     } catch (err) {
@@ -489,12 +510,12 @@ export function SocialPreviewModal({
                 />
               </div>
 
-              {finalText && finalText !== text && (
-                <details className="mb-3 text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+              {postedPreview && postedPreview !== text && (
+                <details open className="mb-3 text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
                   <summary className="cursor-pointer hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                    Preview what gets posted (with URL + disclaimer appended)
+                    Exactly what gets posted (#ad #sponsored, link labels, URL and disclaimer included)
                   </summary>
-                  <pre className="mt-2 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 whitespace-pre-wrap font-mono leading-relaxed">{finalText}</pre>
+                  <pre className="mt-2 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 whitespace-pre-wrap font-mono leading-relaxed">{postedPreview}</pre>
                 </details>
               )}
 

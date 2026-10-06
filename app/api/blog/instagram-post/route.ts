@@ -12,7 +12,7 @@
  *
  * Tier: Pro-only.
  */
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     const igCap = evaluateSocialCap(igSocialCount)
     if (!dryRun && igCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Instagram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Instagram ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'instagram',
       }, { status: 429 })
@@ -288,7 +288,10 @@ Return ONLY the caption text + hashtags.`,
       return NextResponse.json({
         ok: true,
         dryRun: true,
-        reelCaption: feedCaption ?? null, // legacy field name — UI reads this
+        // THE PREVIEW IS WHAT POSTS: services/instagram discloses every caption
+        // (#ad #sponsored first, hashtags capped at 30). Idempotent, so the
+        // edited copy coming back as `caption` is not tagged twice.
+        reelCaption: feedCaption ? discloseSocialPost(feedCaption, 'instagram') : null, // legacy field name, UI reads this
         affiliateUrl: (mode === 'story' || mode === 'both') ? affiliateUrl : null,
       })
     }
@@ -301,7 +304,7 @@ Return ONLY the caption text + hashtags.`,
     const pace = await checkInstagramPace(supabase, user.id)
     if (!pace.allowed) {
       return NextResponse.json({
-        error: pace.reason || 'Posting too fast — try again shortly.',
+        error: pace.reason || 'Posting too fast. Try again shortly.',
         paced: true,
         retryAfterMinutes: pace.retryAfterMinutes ?? null,
       }, { status: 429 })
@@ -311,7 +314,7 @@ Return ONLY the caption text + hashtags.`,
     try {
       const mediaCount = await getMediaCount({ userId: igUserId, accessToken: igToken })
       if (mediaCount != null && mediaCount < 10) {
-        results.warnings.push('Heads up: this Instagram account is still new (few posts). New accounts are more likely to be flagged for automated posting — post a few times manually first and keep API posts spaced out for the first couple of weeks.')
+        results.warnings.push('Heads up: this Instagram account is still new (few posts). New accounts are more likely to be flagged for automated posting, so post a few times manually first and keep API posts spaced out for the first couple of weeks.')
       }
     } catch { /* non-fatal */ }
 
@@ -325,7 +328,7 @@ Return ONLY the caption text + hashtags.`,
       if (cloudinaryConfigured() && effectiveVideoUrl) {
         const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, 'LINK IN BIO')
         if (overlaid?.url) effectiveVideoUrl = overlaid.url
-        else results.warnings.push('Could not burn the on-screen caption — posted the original video.')
+        else results.warnings.push('Could not burn the on-screen caption, so the original video was posted.')
       }
       if (m === 'reel' || m === 'both') {
         try {

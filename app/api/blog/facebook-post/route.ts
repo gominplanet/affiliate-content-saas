@@ -28,6 +28,7 @@ import { chooseFacebookAttachment, parseFacebookMediaChoice } from '@/lib/facebo
 import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
     const fbCap = evaluateSocialCap(fbSocialCount)
     if (!body.dryRun && fbCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Facebook ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Facebook ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'facebook',
       }, { status: 429 })
@@ -267,7 +268,9 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
       // it, gets a thumbnail, and never learns why.
       // imageUrl + videoUrl let Fill with SCOUT give a Group post the same
       // hero the Page post gets (the thumbnail, or the playable YouTube card).
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl, imageUrl: imageUrl || null, videoUrl: videoUrl || null })
+      // THE PREVIEW IS WHAT POSTS. services/facebook runs every caption through
+      // discloseSocialPost (#ad #sponsored, link labels), so the preview does too.
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: discloseSocialPost(caption, 'facebook'), hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl, imageUrl: imageUrl || null, videoUrl: videoUrl || null })
     }
 
     // ── 8. Post to Facebook — fan out to each selected Page ───────────────────

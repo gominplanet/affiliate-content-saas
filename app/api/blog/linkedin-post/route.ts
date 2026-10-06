@@ -17,7 +17,7 @@ import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
-import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { getLinkStyle } from '@/lib/link-cloak'
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     const liCap = evaluateSocialCap(liSocialCount)
     if (!dryRun && liCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to LinkedIn ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to LinkedIn ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'linkedin',
       }, { status: 429 })
@@ -214,7 +214,12 @@ Return ONLY the post text, no extra commentary.`,
     const cardUrl = primaryCardUrl(pref, affiliateLink, shareUrl, videoUrl) ?? shareUrl
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
+      // THE EDITABLE TEXT IS THE WRITE-UP, NOT THE CAPTION. It comes back as
+      // `text` on publish (and as body_text from a schedule), and both paths
+      // run composeCaption on it again, so handing back the composed caption
+      // posted the product link, disclosure and blog line twice. finalText is
+      // what LinkedIn receives once services/linkedin has disclosed it.
+      return NextResponse.json({ ok: true, dryRun: true, text: cleaned, finalText: discloseSocialPost(postText, 'linkedin') })
     }
 
     // ── 5. Publish to LinkedIn ────────────────────────────────────────────────

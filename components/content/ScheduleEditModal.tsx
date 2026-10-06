@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, CalendarClock } from 'lucide-react'
+import { tzAbbrev } from '@/lib/format-schedule'
 
 const PLATFORMS: Array<{ key: string; label: string }> = [
   { key: 'facebook', label: 'Facebook' },
@@ -50,6 +51,8 @@ export default function ScheduleEditModal({
   // toggled-on channel seeds with the default (title + link) so it's editable.
   const [captions, setCaptions] = useState<Record<string, string>>(() => ({ ...(bodies || {}) }))
   const [saving, setSaving] = useState(false)
+  // The zone of the picked instant (DST-aware: EDT in summer, EST in winter).
+  const tz = tzAbbrev(when ? new Date(when) : new Date())
 
   function toggle(key: string) {
     setSelected(s => {
@@ -97,10 +100,22 @@ export default function ScheduleEditModal({
           bodies: outBodies,
         }),
       })
-      const d = await res.json()
+      // A 504 is an HTML page, not JSON: say what happened, not "Unexpected token".
+      const d = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Refresh the list to see what was saved.` }))
       if (!res.ok) throw new Error(d.error || 'Could not update the schedule')
       if (Array.isArray(d.skipped) && d.skipped.length) {
         toast.message(`Skipped: ${d.skipped.join(', ')}`)
+      }
+      // REMOVED IN THE MODAL IS NOT REMOVED IN THE QUEUE. The database can
+      // refuse the delete (no delete policy before migration 412), and then
+      // that platform still publishes. Red, and the list reloads so the row
+      // the creator is told to cancel is the one in front of them.
+      if (Array.isArray(d.notRemoved) && d.notRemoved.length) {
+        const names = d.notRemoved.map((p: string) => PLATFORMS.find(x => x.key === p)?.label ?? p).join(', ')
+        toast.error(`${names} could not be removed and will still post at the scheduled time. Cancel ${d.notRemoved.length === 1 ? 'it' : 'them'} from the Scheduled list instead.`, { duration: 12000 })
+        onSaved()
+        onClose()
+        return
       }
       // MVP moved its own schedule but WordPress did not take the new date.
       // WordPress is what actually publishes, so this is a FAILED reschedule
@@ -142,7 +157,9 @@ export default function ScheduleEditModal({
 
         <div className="flex flex-col gap-4 px-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
           <div>
-            <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Publish date &amp; time</label>
+            {/* Same zone the Scheduled list prints (lib/format-schedule): the
+                input is the viewer's local clock and is saved as UTC from it. */}
+            <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Publish date &amp; time{tz ? ` (${tz})` : ''}</label>
             <input
               type="datetime-local"
               value={when}

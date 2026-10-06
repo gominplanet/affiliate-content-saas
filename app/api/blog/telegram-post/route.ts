@@ -15,7 +15,7 @@
 import { capSocialText } from '@/lib/social-cap'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     const tgCap = evaluateSocialCap(tgSocialCount)
     if (!dryRun && tgCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Telegram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Telegram ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'telegram',
       }, { status: 429 })
@@ -189,9 +189,15 @@ Return ONLY the post text.`,
     const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
 
     if (dryRun) {
-      // Show the body the user can edit; finalText is the rendered Markdown
-      // version that ships to Telegram (with the CTA link appended).
-      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review on my blog: ${(post as any).geniuslink_blog_url || post.wordpress_url}` })
+      // Show the body the user can edit; finalText is the MarkdownV2 message
+      // services/telegram sends (disclosed there, with this route's per-channel
+      // link), rendered as a reader sees it: [label](url) as "label: url" and
+      // the MarkdownV2 escapes dropped. It used to be a hand-written plain copy
+      // with a different link and none of the tags.
+      const shown = discloseSocialPost(finalCaption, 'telegram')
+        .replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, '$1: $2')
+        .replace(/\\(.)/g, '$1')
+      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: shown })
     }
 
     // Video-less posts (campaigns, guides, comparisons) have no YouTube

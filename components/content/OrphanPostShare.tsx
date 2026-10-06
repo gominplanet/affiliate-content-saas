@@ -228,7 +228,10 @@ export function OrphanPostShare(props: {
           }}
           onClose={() => setOpen(null)}
           onPublished={() => { setPosted(prev => new Set(prev).add(open.key)); setOpen(null) }}
-          onScheduled={() => { setPosted(prev => new Set(prev).add(open.key)); setOpen(null) }}
+          // SCHEDULED IS NOT POSTED. This flipped the pill to "On X" for a push
+          // that had not happened yet (and might fail). The modal toasts the
+          // time; the Scheduled tab shows the pending row.
+          onScheduled={() => { setOpen(null) }}
           {...(open.key === 'facebook'
             ? {
                 shareUrl: postUrl || undefined,

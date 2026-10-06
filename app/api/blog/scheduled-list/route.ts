@@ -149,6 +149,10 @@ export async function GET() {
         ...(socialByBlog.get(b.id) ?? []),
         ...((b.scheduled_social_platforms ?? []).filter((p): p is string => typeof p === 'string' && !!p)),
       ])],
+      // The part of `cascade` that really has a pending row and will post. A
+      // ticked platform that was not connected has none, and the card and the
+      // Edit-schedule modal must not present it as queued.
+      queued: socialByBlog.get(b.id) ?? [],
       cascadeBodies: socialBodiesByBlog.get(b.id) ?? {},
       // Managed from the Video-to-Blog tab (there's no scheduled_posts row to
       // cancel here) — the UI hides the Cancel action for these.

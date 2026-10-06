@@ -20,6 +20,7 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     const twCap = evaluateSocialCap(twSocialCount)
     if (!dryRun && twCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to X ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to X ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'twitter',
       }, { status: 429 })
@@ -222,7 +223,8 @@ Return ONLY the tweet text.`,
     const finalText = `${tweetText} ${twShareUrl}`
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })
+      // THE PREVIEW IS WHAT POSTS: createTweet discloses (and refits to 280).
+      return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText: discloseSocialPost(finalText, 'twitter') })
     }
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────

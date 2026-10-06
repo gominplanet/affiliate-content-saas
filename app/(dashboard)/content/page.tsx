@@ -173,6 +173,9 @@ interface ScheduledItem {
   /** On a blog_publish row: the social platforms queued to cascade after the
    *  post publishes. Summarized as chips on the card. */
   cascade?: string[]
+  /** On a synthetic blog_publish row: the part of `cascade` with a pending
+   *  row. A ticked platform missing here was never queued (not connected). */
+  queued?: string[]
 }
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
@@ -385,8 +388,10 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
   async function remove() {
     setBusy(true); setErr(null)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      // Supabase reports a refused write in `error`, it does not throw: without
+      // this check the photo vanished here and stayed on the video.
+      const { error: updErr } = await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Remove failed')
       setUrl(null)
     } catch (e) {
       setErr(errText(e) || 'Remove failed')
@@ -494,8 +499,10 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
   async function remove() {
     setBusy(true); setErr(null)
     try {
+      // A refused write comes back in `error`, not as a throw (see above).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
+      const { error: updErr } = await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Remove failed')
       setUrl(null)
     } catch (e) {
       setErr(errText(e) || 'Remove failed')
@@ -1044,6 +1051,10 @@ const VideoCard = memo(function VideoCardImpl({
                 upgrade: data.upgrade,
               },
             )
+            // The button is a spinner while publishingAll is on: leaving it on
+            // here kept "Generating blog post…" spinning forever over a cap.
+            setPublishingAll(false)
+            setPublishAllStep('')
             return
           }
           throw new Error(errText(data.error) || 'Blog generation failed')
@@ -1115,7 +1126,16 @@ const VideoCard = memo(function VideoCardImpl({
       tasks.push(
         fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, ...(extra || {}) }) })
           .then(async (r) => {
-            if (r.ok) { onOk(); postedKeys.push(patchKey); return }
+            if (r.ok) {
+              onOk(); postedKeys.push(patchKey)
+              // A Facebook fan-out answers 200 when ANY Page took it. The Pages
+              // that did not are failures, and are listed with the rest.
+              const ok = await r.json().catch(() => ({})) as { results?: Array<{ ok?: boolean; page?: string | null; error?: string }> }
+              for (const m of (Array.isArray(ok.results) ? ok.results : []).filter(x => x && x.ok === false)) {
+                failures.push(`${label} (${m.page ? `${m.page}: ` : ''}${m.error || 'failed'})`)
+              }
+              return
+            }
             const d = await r.json().catch(() => ({} as { error?: string; rateLimited?: boolean }))
             // Rate limit (e.g. X's free-tier daily cap) → a clean, actionable
             // note rather than a raw HTTP error. The post published everywhere
@@ -1147,9 +1167,14 @@ const VideoCard = memo(function VideoCardImpl({
           const pv = await fetch('/api/blog/pinterest-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
           const d = await pv.json().catch(() => ({} as Record<string, unknown>))
           if (!pv.ok) throw new Error((d.error as string) || `preview failed (HTTP ${pv.status})`)
+          // The SAME description the preview modal posts: write-up, hashtags,
+          // disclaimer, compliance tags. Sending the bare write-up made a
+          // Publish-all pin differ from every pin the creator had previewed.
+          const tags = Array.isArray(d.hashtags) && d.hashtags.length ? (d.hashtags as string[]).map(t => `#${t}`).join(' ') : ''
+          const description = [d.description, tags, d.disclaimer, d.complianceTags].filter(Boolean).join('\n\n')
           const pp = await fetch('/api/blog/pinterest-post', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postId: currentPostId, title: d.title, description: d.description, imageBase64: d.imageBase64, mediaType: d.mediaType, fallbackImageUrl: d.fallbackImageUrl }),
+            body: JSON.stringify({ postId: currentPostId, title: d.title, description, imageBase64: d.imageBase64, mediaType: d.mediaType, fallbackImageUrl: d.fallbackImageUrl }),
           })
           const r = await pp.json().catch(() => ({} as { error?: string }))
           if (!pp.ok) throw new Error(r.error || `Pinterest rejected the pin (HTTP ${pp.status})`)
@@ -1243,16 +1268,27 @@ const VideoCard = memo(function VideoCardImpl({
 
   async function handleDelete() {
     if (!post?.postId) return
+    // NOT THE TRASH. /api/blog/delete calls WordPress with force=true, which
+    // skips the trash, so "restorable for ~30 days" promised an undo that
+    // does not exist.
     if (!(await confirm({
       title: 'Delete this post from WordPress and remove it here?',
-      description: 'The post is moved to WordPress\' trash (restorable for ~30 days) and unlinked from this video.',
+      description: 'The post is deleted from WordPress permanently (it skips the WordPress trash) and unlinked from this video.',
       confirmLabel: 'Delete post',
       destructive: true,
     }))) return
     setDeleting(true)
     try {
       const res = await fetch('/api/blog/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: post.postId }) })
+      // A refused delete used to do nothing at all: the spinner stopped and
+      // the card stayed, with no word on why.
       if (res.ok) onDelete(post.postId)
+      else {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        toast.error(d.error || `Could not delete the post (HTTP ${res.status}).`)
+      }
+    } catch (e) {
+      toast.error(errText(e) || 'Could not delete the post.')
     } finally { setDeleting(false) }
   }
 
@@ -2029,6 +2065,12 @@ const VideoCard = memo(function VideoCardImpl({
           // through a quick window-level patch below — kept inline so
           // we don't have to widen every onGenerated caller.
           setScheduleOpen(false)
+          // CASCADE-ONLY SCHEDULES THE SOCIALS, NOT THE POST. With a live post
+          // (existingPostId set), schedule-cascade-only never touches
+          // scheduled_for, so patching it here put a "Scheduled" pill on a
+          // published post and hid its Publish-to-all and Schedule-socials
+          // buttons until a reload.
+          if (post?.postId) return
           // Defer to the next tick so onClose's setState has flushed.
           // The patch event handler in the parent's posts state writer
           // merges scheduled_for + schedule_mode in alongside the
@@ -2234,7 +2276,9 @@ function ScheduledList({
         <ScheduleEditModal
           blogPostId={editSchedule.blog_post_id}
           scheduledAt={editSchedule.scheduled_at}
-          platforms={editSchedule.cascade ?? []}
+          // What is really queued. A ticked-but-unconnected platform used to
+          // show ON here, so it could never be added once it was connected.
+          platforms={editSchedule.queued ?? editSchedule.cascade ?? []}
           title={editSchedule.blog_posts?.title ?? null}
           link={editSchedule.blog_posts?.wordpress_url ?? null}
           bodies={editSchedule.cascadeBodies ?? {}}
@@ -2321,6 +2365,20 @@ function ScheduledList({
                   <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Then posts to:</span>
                   {item.cascade.map((p) => {
                     const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: '#7C3AED' }
+                    // TICKED IS NOT QUEUED. A platform chosen while it was not
+                    // connected has no pending push and will not post; a solid
+                    // chip said it would. Dashed, grey, and says so.
+                    if (item.queued && !item.queued.includes(p)) {
+                      return (
+                        <span
+                          key={p}
+                          title={`${m.label} was ticked but is not queued (it was not connected). Connect it, then Edit schedule to add it.`}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-dashed border-[#86868b]/60 text-[#86868b]"
+                        >
+                          {m.label}: not queued
+                        </span>
+                      )
+                    }
                     // Solid chips read clearly in BOTH themes because the brand
                     // color IS the background (theme-independent) with white text.
                     // The black-branded platforms (X, Threads, TikTok) can't use a
@@ -3252,18 +3310,26 @@ export default function ContentPage() {
   }
 
   /** Load the user's scheduled posts list. Called when they open the Scheduled tab. */
+  // THE LATEST LOAD WINS. A tab click and the tab effect both fire on the first
+  // open, and a save refreshes while another load is out; whichever answered
+  // last used to win, so an older list could land over a newer one (a removed
+  // platform reappearing). Each load takes a ticket and only the newest writes.
+  const scheduledLoadSeq = useRef(0)
   async function loadScheduled() {
+    const seq = ++scheduledLoadSeq.current
     setScheduledLoading(true)
     setScheduledError(null)
     try {
       const res = await fetch('/api/blog/scheduled-list')
       const data = await res.json().catch(() => ({}))
+      if (seq !== scheduledLoadSeq.current) return
       if (!res.ok) throw new Error(data.error || 'Failed to load scheduled posts')
       setScheduledItems((data.scheduled ?? []) as ScheduledItem[])
     } catch (err) {
+      if (seq !== scheduledLoadSeq.current) return
       setScheduledError(err instanceof Error ? err.message : 'Failed to load scheduled posts')
     } finally {
-      setScheduledLoading(false)
+      if (seq === scheduledLoadSeq.current) setScheduledLoading(false)
     }
   }
 
@@ -3311,15 +3377,25 @@ export default function ContentPage() {
         body: JSON.stringify({ id }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Cancel failed')
-      // Reflect locally — flip status to cancelled
-      setScheduledItems(items => items?.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i) ?? null)
+      if (!res.ok) {
+        // 409: it already ran or was cancelled elsewhere, so this list is out
+        // of date. Reload it rather than leave a "Pending" row that is not.
+        if (res.status === 409) void loadScheduled()
+        throw new Error(data.error || 'Cancel failed')
+      }
+      // Reflect locally — flip status to cancelled. The route cancels a
+      // parent's pending children too, so flip those as well: they used to
+      // stay "Pending" under a cancelled parent until the next reload.
+      setScheduledItems(items => items?.map(i => (i.id === id || (i.parent_id === id && i.status === 'pending')) ? { ...i, status: 'cancelled' as const } : i) ?? null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Cancel failed')
     }
   }
 
+  // Same ticket rule as loadScheduled: only the newest load writes.
+  const wpPostsLoadSeq = useRef(0)
   async function loadWpPosts() {
+    const seq = ++wpPostsLoadSeq.current
     setPostsLoading(true)
     try {
       // Fetch WP posts + Supabase video_id map in parallel
@@ -3327,7 +3403,9 @@ export default function ContentPage() {
         fetch('/api/wordpress/posts'),
         supabase.auth.getUser(),
       ])
-      const data = await res.json()
+      // An HTML 504 is not JSON; report the status rather than a parse error.
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (seq !== wpPostsLoadSeq.current) return
       if (!res.ok || data.error) {
         setFixCatResult(`Failed to load posts: ${data.error || res.status}`)
         setPostsLoaded(true)
@@ -3404,12 +3482,13 @@ export default function ContentPage() {
         }
       })
 
+      if (seq !== wpPostsLoadSeq.current) return
       setAllBlogPosts(merged)
       setPostsLoaded(true)
     } catch (e) {
-      setFixCatResult(`Failed to load posts: ${errText(e) || String(e)}`)
+      if (seq === wpPostsLoadSeq.current) setFixCatResult(`Failed to load posts: ${errText(e) || String(e)}`)
     } finally {
-      setPostsLoading(false)
+      if (seq === wpPostsLoadSeq.current) setPostsLoading(false)
     }
   }
 
@@ -3488,18 +3567,28 @@ export default function ContentPage() {
   async function deletePostFromList(wpPostId: number) {
     if (!(await confirm({
       title: 'Delete this post from WordPress?',
-      description: 'The post will be removed from your blog and unlinked here. WordPress moves it to its trash where you can restore for ~30 days.',
+      description: 'The post is deleted from your blog permanently (it skips the WordPress trash) and unlinked here.',
       confirmLabel: 'Delete post',
       destructive: true,
     }))) return
     setDeletingPostId(wpPostId)
     try {
-      await fetch('/api/blog/delete', {
+      // CHECK THE ANSWER. The row used to leave the list whatever the server
+      // said, so a post WordPress refused to delete looked deleted until the
+      // next reload brought it back.
+      const res = await fetch('/api/blog/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wpPostId }),
       })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        toast.error(d.error || `Could not delete the post (HTTP ${res.status}).`)
+        return
+      }
       setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
+    } catch (e) {
+      toast.error(errText(e) || 'Could not delete the post.')
     } finally {
       setDeletingPostId(null)
     }
@@ -3509,26 +3598,39 @@ export default function ContentPage() {
     if (selectedPostIds.size === 0) return
     if (!(await confirm({
       title: `Delete ${selectedPostIds.size} post${selectedPostIds.size !== 1 ? 's' : ''}?`,
-      description: 'These posts will be moved to WordPress\' trash (restorable for ~30 days) and unlinked here. This cannot be undone from MVP.',
+      description: 'These posts are deleted from WordPress permanently (they skip the WordPress trash) and unlinked here. This cannot be undone.',
       confirmLabel: 'Delete posts',
       destructive: true,
     }))) return
     setBulkDeleting(true)
     const ids = [...selectedPostIds]
     let deleted = 0
+    // Counted by the answer, not by the attempt: "Deleted 5" over two refusals
+    // was the plan, not the result. Failures stay selected for a retry.
+    const failed: number[] = []
+    let firstError = ''
     for (const wpPostId of ids) {
       try {
-        await fetch('/api/blog/delete', {
+        const res = await fetch('/api/blog/delete', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ wpPostId }),
         })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({} as { error?: string }))
+          failed.push(wpPostId)
+          if (!firstError) firstError = d.error || `HTTP ${res.status}`
+          continue
+        }
         setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
         deleted++
-      } catch { /* continue */ }
+      } catch (e) {
+        failed.push(wpPostId)
+        if (!firstError) firstError = errText(e) || 'network error'
+      }
     }
-    setSelectedPostIds(new Set())
-    setFixCatResult(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.`)
+    setSelectedPostIds(new Set(failed))
+    setFixCatResult(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.${failed.length ? ` ${failed.length} could not be deleted and are still selected (${firstError}).` : ''}`)
     setBulkDeleting(false)
   }
 

@@ -19,6 +19,7 @@ import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     const bsCap = evaluateSocialCap(bsSocialCount)
     if (!dryRun && bsCap.exceeded) {
       return NextResponse.json({
-        error: `You've published this post to Bluesky ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        error: `You've published this post to Bluesky ${SOCIAL_CAP} times. That's the per-post cap on re-publishing. Edit the post or use a different post.`,
         socialCapReached: true,
         platform: 'bluesky',
       }, { status: 429 })
@@ -201,7 +202,8 @@ Return ONLY the post text.`,
 
     // Dry-run: return the generated text without publishing
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText })
+      // THE PREVIEW IS WHAT POSTS: services/bluesky discloses the text it sends.
+      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: discloseSocialPost(finalText, 'bluesky') })
     }
 
     // ── 5. Resolve thumbnail, login, post with a native link card ──────────

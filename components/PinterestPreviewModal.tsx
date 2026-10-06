@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { Pin, X, Edit3, Loader2 } from 'lucide-react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 export interface PinPreviewData {
   postId: string
@@ -73,11 +74,16 @@ export function PinterestPreviewModal({
     ? `data:${data.mediaType};base64,${data.imageBase64}`
     : data.fallbackImageUrl || null
 
+  // Compliance tags always last, at the very end of the description.
+  const composed = [description, tagLine, data.disclaimer, data.complianceTags].filter(Boolean).join('\n\n')
+  // WHAT PINTEREST RECEIVES. services/pinterest runs the description through
+  // discloseSocialPost('pinterest'): #ad #sponsored move to the first line,
+  // links get labels, and the body is cut to the limit. Shown as it will read.
+  const postedDescription = discloseSocialPost(composed, 'pinterest')
+
   async function publish() {
     setPublishing(true)
     setPubError(null)
-    // Compliance tags always last, at the very end of the description.
-    const composed = [description, tagLine, data.disclaimer, data.complianceTags].filter(Boolean).join('\n\n')
 
     // VIDEO pin — publish the post's render directly (cover = featured image,
     // link = the blog post). Distinct route from the still-image onPublish path.
@@ -221,6 +227,10 @@ export function PinterestPreviewModal({
               <p className="text-xs leading-relaxed" style={{ color: '#3a3a3c' }}>{data.disclaimer}</p>
               <p className="text-xs font-semibold mt-1.5" style={{ color: '#c0001a' }}>{data.complianceTags}</p>
             </div>
+            <details className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+              <summary className="cursor-pointer hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">Exactly what the pin description says</summary>
+              <pre className="mt-1.5 p-2.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{postedDescription}</pre>
+            </details>
 
             {/* Pin destination — blog post (default) or the direct product link.
                 The product option only shows when a product link resolved. */}

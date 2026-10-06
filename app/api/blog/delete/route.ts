@@ -57,6 +57,12 @@ export async function DELETE(request: Request) {
     const site = await getWordPressCredentials(supabase, user.id, resolvedSiteId)
 
     // Delete from WordPress
+    //
+    // A REFUSED DELETE STOPS HERE. This was "non-fatal": WordPress said no (a
+    // timeout, a WAF, an expired password), MVP deleted its own row anyway and
+    // answered ok, and the card vanished while the article stayed live on the
+    // blog with nothing left in MVP to retry from. A post WordPress no longer
+    // has (404 / invalid id) is already gone, which is what was asked.
     if (site && resolvedWpPostId) {
       try {
         const wpService = createWordPressService(
@@ -66,7 +72,15 @@ export async function DELETE(request: Request) {
           site.wordpress_api_token || undefined,
         )
         await wpService.deletePost(resolvedWpPostId)
-      } catch { /* non-fatal */ }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!/\b404\b|\b410\b|rest_post_invalid_id|rest_already_trashed|invalid post id/i.test(msg)) {
+          return NextResponse.json(
+            { error: `WordPress did not delete the post, so it is still live and still here. ${msg.slice(0, 160)}` },
+            { status: 502 },
+          )
+        }
+      }
     }
 
     // Cancel any pending social pushes queued for this post BEFORE removing the
