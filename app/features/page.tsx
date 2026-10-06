@@ -17,7 +17,7 @@ import NextImage from 'next/image'
 import {
   Search, Rocket, Globe, Radar, Sparkles, Store, Play,
   FileText, Zap, ShieldCheck, TrendingUp, ArrowRight, Check,
-  Mail, LayoutGrid, MapPin, BarChart3, Users,
+  Mail, LayoutGrid, MapPin, BarChart3, Users, Pin, Radio,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -65,7 +65,7 @@ const LOOP = [
   { k: 'Find', d: 'Surface the live brand campaigns that actually pay, and the products worth reviewing.' },
   { k: 'Create', d: 'Write the review, comparisons and social posts in your real voice. Thumbnails and Shorts included.' },
   { k: 'Publish', d: 'Push it to YouTube, your Amazon storefront, your blog and your socials.' },
-  { k: 'Earn', d: "Route every click to the shopper's own store with your tag, and see what each channel makes." },
+  { k: 'Earn', d: "Route every click to the shopper's own store with your tag, and see which channel sends the clicks." },
 ]
 
 type Feat = { icon: React.ReactNode; title: string; desc: string; tag?: string; flagship?: boolean; wide?: boolean }
@@ -87,7 +87,7 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     items: [
       { icon: <Sparkles size={20} />, tag: 'Learns over time', title: 'Writes in your real voice', desc: 'A voice fingerprint learned from your own transcripts and edits feeds every post, per channel if you run more than one. Reviews read like you wrote them, not generic AI.' },
       { icon: <ImageThumb />, title: 'Thumbnails from real frames & your selfies', desc: "SCOUT grabs true frames from your video, and MVP composes a scroll-stopping thumbnail using your own product and, if you add a few selfies, your own face. Never a stranger's, and never guessed from someone else's clip." },
-      { icon: <FileText size={20} />, title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts, all from one product and your transcript, grounded in what you actually said on camera.' },
+      { icon: <FileText size={20} />, tag: 'Pro', title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts, all from one product and your transcript, grounded in what you actually said on camera.' },
     ],
   },
   {
@@ -95,16 +95,18 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     intro: 'The same review goes to YouTube, your Amazon storefront, your blog and your socials, each one formatted for where it lands.',
     items: [
       { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish, with paid-promotion disclosure and monetization set for you, not left as homework.' },
-      { icon: <Rocket size={20} />, tag: 'Amazon + Pro', title: 'Liftoff', desc: `Up to ${LIFTOFF_MAX_VIDEOS} videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed.` },
-      { icon: <Store size={20} />, title: 'Blog & WordPress', desc: 'Publish the review to your own blog network, formatted, illustrated, and linked, so you own an asset that keeps earning past the feed.' },
-      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, auto-post Shorts to TikTok and Instagram, and hand shoppers a Link-in-Bio storefront that fills itself from what you post.' },
+      { icon: <Rocket size={20} />, tag: 'Amazon + Pro', title: 'Bulk Amazon upload', desc: `Up to ${LIFTOFF_MAX_VIDEOS} videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed.` },
+      { icon: <Pin size={20} />, tag: 'Amazon + Pro', title: 'Pinned and On sale comments', desc: 'A pinned comment with your product link under each YouTube video. When a product you reviewed goes on sale, the comment says so, and the sale comes out again when it ends.' },
+      { icon: <Radio size={20} />, tag: 'Amazon + Pro', title: 'Amazon Live prep and follow-up', desc: 'The lineup and talking points ready before you go live, then clips and a roundup post drafted from the replay after the show.' },
+      { icon: <Store size={20} />, tag: 'Pro', title: 'Blog & WordPress', desc: 'Publish the review to your own blog network, formatted, illustrated, and linked, so you own an asset that keeps earning past the feed.' },
+      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, post Shorts to Instagram and Facebook Reels (TikTok and YouTube Shorts on Pro), and hand shoppers a Link in Bio storefront that fills itself from what you post. Every social post carries #ad #sponsored and labels where its links go.' },
     ],
   },
   {
     id: 'earn', n: '04', tag: 'Earn on every click', head: 'No wasted click, no wrong country.',
     intro: "A viewer in Berlin who lands on the US store rarely buys. MVP's links fix that, and show you exactly where the money comes from.",
     items: [
-      { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link, not just Amazon, cloaks the destination, and lands each click in a per-channel group so you see what YouTube, Pinterest and your blog each earn." },
+      { icon: <MapPin size={20} />, flagship: true, wide: true, title: 'Passport Links', desc: "One short link sends every shopper to their own country's Amazon store, with your tag for that country, at click time. It works for any affiliate link, not just Amazon, cloaks the destination, and lands each click in a per-channel group so you see how many clicks YouTube, Pinterest and your blog each send." },
       { icon: <ShieldCheck size={20} />, tag: 'Yours', title: 'Your voice, your data', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, and your face, from Photobooth, stays yours.' },
     ],
   },
@@ -160,7 +162,7 @@ export default function FeaturesPage() {
             <a href="/pricing" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold transition-transform hover:-translate-y-0.5" style={{ color: '#F6F2FF', border: '1px solid rgba(246,242,255,0.28)' }}>See pricing</a>
           </div>
           <div className="flex flex-wrap gap-9 mt-14">
-            {[[String(LIFTOFF_MAX_VIDEOS), 'videos in one Liftoff'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
+            {[[String(LIFTOFF_MAX_VIDEOS), 'videos in one bulk upload'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
               <div key={l}>
                 <div className="text-[30px] font-extrabold tabular-nums" style={{ color: '#F6F2FF' }}>{n}</div>
                 <div className="text-[13.5px] mt-0.5" style={{ color: '#B4A7CC' }}>{l}</div>

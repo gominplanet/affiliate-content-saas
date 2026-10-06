@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Play, X as XIcon, Plus, Minus, Sparkles, ArrowRight } from 'lucide-react'
 import { FREE_TRIAL } from '@/lib/free-trial'
+import { TIERS } from '@/lib/tier'
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
@@ -299,11 +300,11 @@ export function FAQSection() {
 const FAQS = [
   {
     q: 'How does the free trial work?',
-    a: `You get ${FREE_TRIAL.thumbnails} Art Director thumbnails and ${FREE_TRIAL.socialDesigns} designs with your own face on them for your first ${FREE_TRIAL.trialDays} days, plus 5 full posts on the house once you connect a WordPress site. No card required. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Amazon or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.`,
+    a: `You get ${FREE_TRIAL.thumbnails} Art Director thumbnails and ${FREE_TRIAL.socialDesigns} designs with your own face on them for your first ${FREE_TRIAL.trialDays} days, plus ${TIERS.trial.lifetimeMax} full posts on the house once you connect a WordPress site. No card required. Generate, download, and see how it fits your workflow. If you decide MVP is for you, pick a plan (Amazon or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.`,
   },
   {
     q: 'Do I need to host my own WordPress site?',
-    a: 'Yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
+    a: 'Not on the Amazon plan: it needs no website at all. On Pro, yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
   },
   {
     q: 'Will MVP-generated content actually sound like me?',

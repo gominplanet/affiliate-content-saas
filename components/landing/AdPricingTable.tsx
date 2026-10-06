@@ -29,6 +29,8 @@ import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -44,7 +46,8 @@ function capsFor(tier: PaidTier): string[] {
     ? [
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
         ['Pinterest pins a month', t.pinsPerMonth],
-        ['Reels covers a month', t.igPostsPerMonth],
+        // igPostsPerMonth counts Instagram posts and Stories, not Reels.
+        ['Instagram posts a month', t.igPostsPerMonth],
         ['brand pitch emails drafted a month', t.collabsPerMonth],
         ['face models', t.maxFaces],
         // Seb, 2026-10-05: the video additions, from lib/amazon-plan.
@@ -56,6 +59,10 @@ function capsFor(tier: PaidTier): string[] {
     : [
         ['published articles a month', t.postsPerMonth],
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
+        ['Pinterest pins a month', t.pinsPerMonth],
+        ['Instagram posts a month', t.igPostsPerMonth],
+        ['YouTube Co-Pilot runs a month', t.metadataGensPerMonth],
+        ['Clip Factory clips a month, TikTok and YouTube Shorts too', SHORTS_MONTHLY_CAP],
         ['video scripts a month', t.scriptsPerMonth],
         ['WordPress sites', t.sites],
         ['team seats', t.vaSeats],
@@ -68,7 +75,12 @@ const EXTRAS: Record<PaidTier, string[]> = {
     'Bulk Amazon upload: review videos to your storefront, and YouTube when connected',
     'Passport geo-links, unlimited and no cost per click',
   ],
-  pro: ['Passport geo-links, unlimited and no cost per click'],
+  pro: [
+    'Everything in the Amazon plan, plus the blog',
+    'X, Threads, TikTok, LinkedIn, Bluesky and Telegram posting',
+    'Partner programs: Levanta, PartnerBoost, Wayward and LTK',
+    'Passport geo-links, unlimited and no cost per click',
+  ],
 }
 
 function PlanCard({
@@ -262,7 +274,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       </div>
 
       <p className="mt-7 text-center text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-        30-day money-back guarantee on every paid plan. Cancel any time, and everything you have already made stays yours.
+        {GUARANTEE_LABEL} on every paid plan. Cancel any time, and everything you have already made stays yours.
       </p>
     </div>
   )

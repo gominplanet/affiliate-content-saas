@@ -140,7 +140,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Will this get my Amazon account in trouble?',
-    a: 'No. Sending traffic to Amazon from your own site is what the Associates programme is for, and off-site content is how most established affiliates earn. Your disclosure goes on every post automatically.',
+    a: 'No. Sending traffic to Amazon from your own site is what the Associates programme is for, and off-site content is how most established affiliates earn. Your disclosure goes on every post automatically, and every social post carries #ad and #sponsored with each link labelled.',
   },
   {
     q: 'What if it does not work for me?',
@@ -343,7 +343,7 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start free with no card. Connect a channel, pick a video, and read what it writes before you decide anything. You get {TIERS.trial.lifetimeMax} full published reviews on the free tier to make your mind up with.
+            Start free with no card. Connect a channel, pick a video, and read what it writes before you decide anything. You get {TIERS.trial.lifetimeMax} full published reviews on the free trial to make your mind up with.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
@@ -395,7 +395,7 @@ export default function OwnYourBlogPage() {
           the one lie this page cannot afford. */}
       {SALES_PAUSED && (
         <p className="px-6 pb-10 text-center text-[13px] text-black/50">
-          New subscriptions are paused right now. The free tier is still open.
+          New subscriptions are paused right now. The free trial is still open.
         </p>
       )}
 

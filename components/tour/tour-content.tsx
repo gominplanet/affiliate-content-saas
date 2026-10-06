@@ -27,9 +27,15 @@ import Link from 'next/link'
 // match none of them.
 import { TIERS } from '@/lib/tier'
 import {
+  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
+  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
+} from '@/lib/amazon-plan'
+import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import {
   FileText, Youtube, Search, Handshake,
-  Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
-  Radar, ShoppingBag, Scissors, FlaskConical,
+  Layers, Users, Plug, MessageSquare, Sparkles, Share2,
+  Radar, ShoppingBag, Scissors, Radio,
   ArrowRight, CheckCircle2, ArrowUpRight,
 } from 'lucide-react'
 
@@ -41,19 +47,19 @@ export type TourCtaMode = 'app' | 'public'
 const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'engine',       label: 'The blog content engine' },
   { id: 'copilot',      label: 'YouTube Co-Pilot' },
+  { id: 'video',        label: 'Uploads, comments and Amazon Live' },
   { id: 'social',       label: 'Social auto-posting' },
   { id: 'deal-radar',   label: 'Amazon Deal Radar ⚡ new' },
   { id: 'linkbio',      label: 'Link in Bio: Shop page ⚡ new' },
-  { id: 'clips',        label: 'Clip Factory: Shorts 🧪 Labs' },
+  { id: 'clips',        label: 'Clip Factory: Shorts and Reels' },
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'collabs',      label: 'Brand outreach' },
   { id: 'finders',      label: 'Source & Earn: product finders' },
-  { id: 'deals',        label: 'Deals Hub' },
+  { id: 'deals',        label: 'Deals Hub (Pro)' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
   { id: 'vas',          label: 'Team' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
   { id: 'helpdesk',     label: 'Ask MVP' },
-  { id: 'api',          label: 'API access' },
   { id: 'misc',         label: 'Tools we built for ourselves' },
 ]
 
@@ -112,7 +118,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
                 Every word you generate on MVP is fact-grounded. We never invent specs, prices, or experiences a creator
                 didn&apos;t actually have. If your transcript says you tested it in your kitchen for three weeks, that&apos;s what
                 the post says. If it doesn&apos;t say something, we don&apos;t make it up. That&apos;s the differentiator, and it&apos;s the
-                reason Google increasingly ranks MVP-built posts above the AI-generated noise.
+                kind of first-hand content search engines say they reward over generic AI text.
               </p>
             </div>
           </div>
@@ -223,10 +229,41 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
           </ul>
           <p>
+            <strong>On both plans.</strong> The {TIERS.amazon.label} plan connects {AMAZON_YOUTUBE_CHANNELS} channel with{' '}
+            {AMAZON_COPILOT_RUNS_PER_MONTH} Co-Pilot runs a month; {TIERS.pro.label} connects up to {TIERS.pro.youtubeChannels} channels
+            with {TIERS.pro.metadataGensPerMonth} runs a month.
+          </p>
+          <p>
             The MVP-YOUTUBE Geniuslink group catches every YouTube-description click separately from your blog clicks,
             so your analytics dashboard tells you whether to invest the next hour writing a blog post or recording a video.
           </p>
           {isApp && <SectionCta href="/co-pilot" label="Open YouTube Co-Pilot" />}
+        </Section>
+
+        {/* ── 2a. The video tools both plans share (Seb, 2026-10-05) ──── */}
+        <Section id="video" icon={<Radio size={18} />} title="Uploads, comments and Amazon Live">
+          <p>
+            The work around each video, on the {TIERS.amazon.label} plan and on {TIERS.pro.label}.
+          </p>
+          <ul>
+            <li>
+              <strong>Bulk Amazon upload.</strong> Up to {BULK_UPLOAD_MAX_VIDEOS} review videos in one press, to your Amazon
+              storefront through SCOUT, and to YouTube too when a channel is connected.
+            </li>
+            <li>
+              <strong>Pinned comments.</strong> A comment with your product link, pinned under each YouTube video.
+            </li>
+            <li>
+              <strong>On sale comments.</strong> When a product you reviewed goes on sale, the pinned comment says so, and
+              the sale comes out again when it ends.
+            </li>
+            <li>
+              <strong>Amazon Live prep and follow-up.</strong> The lineup and talking points before the show, then clips and
+              a roundup post drafted from the replay. {AMAZON_LIVE_SHOWS_PER_MONTH} shows a month on the {TIERS.amazon.label} plan,
+              no monthly limit on {TIERS.pro.label}.
+            </li>
+          </ul>
+          {isApp && <SectionCta href="/liftoff" label="Open Bulk Amazon upload" />}
         </Section>
 
         {/* ── 2b. Social auto-posting ──────────────────────────────── */}
@@ -243,11 +280,12 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </p>
           <ul>
             <li><strong>{TIERS.amazon.label}</strong> auto-posts to Facebook, Pinterest and Instagram, all three from one screen.</li>
+            <li>Every post on every plan carries <strong>#ad #sponsored</strong> and labels where each link goes, so the FTC disclosure is never left to memory.</li>
             <li><strong>{TIERS.pro.label}</strong> adds the rest: Threads, LinkedIn, Bluesky, Telegram, X (Twitter) and TikTok.</li>
           </ul>
           <p>
             TikTok posts your vertical Shorts straight to your feed from Clip Factory. Connect it once under
-            Connect Socials and grant posting access.
+            Connections, Socials and grant posting access.
           </p>
           {isApp && <SectionCta href="/connect-socials" label="Connect your channels" />}
         </Section>
@@ -341,20 +379,13 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           id="clips"
           icon={<Scissors size={18} />}
           title="Clip Factory: long video into ready-to-post Shorts"
-          badge={
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-              style={{ background: 'rgba(124, 58, 237, 0.14)', color: '#7C3AED' }}
-            >
-              <FlaskConical size={11} /> Labs
-            </span>
-          }
         >
           <p>
-            Clip Factory turns one long review video into vertical Shorts you can post to Instagram, TikTok, and YouTube,
-            in three stages: <strong>create</strong> the clip, <strong>enhance</strong> it with a shoppable CTA, then{' '}
-            <strong>publish</strong>. It&apos;s in <strong>Labs</strong>: live and usable today, still being refined, so the
-            experience may change as we polish it.
+            Clip Factory turns one long review video into vertical Shorts and Reels, in three stages:{' '}
+            <strong>create</strong> the clip, <strong>enhance</strong> it with a shoppable CTA, then <strong>publish</strong>.
+            The {TIERS.amazon.label} plan gets {AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and {AMAZON_CLIPS_PER_MONTH} clips a
+            month, posted to Instagram and Facebook Reels. {TIERS.pro.label} gets {SHORTS_MONTHLY_CAP} clips a month and posts to
+            TikTok and YouTube Shorts too.
           </p>
           <ul>
             <li>
@@ -367,12 +398,12 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               timed to the real words and never invented, with a style toggle per clip.
             </li>
             <li>
-              <strong>Enhance into a storefront clip.</strong> Burn a call-to-action overlay, attach a product link, and
-              wire up an auto-DM so a comment triggers the link in DMs: the same Shop Burner engine, built in.
+              <strong>Enhance into a storefront clip.</strong> Burn a call-to-action overlay and attach a product link:
+              the same Shop Burner engine, built in.
             </li>
             <li>
-              <strong>Publish or download.</strong> Push the finished Short straight to Instagram, YouTube or TikTok, or just
-              download it, with a caption and hashtags carried over from the clip. (TikTok posting is on {TIERS.pro.label}.)
+              <strong>Publish or download.</strong> Push the finished clip straight to Instagram or Facebook Reels, or to
+              YouTube and TikTok on {TIERS.pro.label}, or just download it, with a caption and hashtags carried over from the clip.
             </li>
           </ul>
           {isApp && <SectionCta href="/clip-factory" label="Open Clip Factory" />}
@@ -424,7 +455,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               listing your reach platforms, attaching your media kit URL.
             </li>
             <li>
-              <strong>{TIERS.pro.collabsPerMonth} pitches per month on {TIERS.pro.label}.</strong>
+              <strong>{TIERS.pro.collabsPerMonth} pitches per month on {TIERS.pro.label}, {TIERS.amazon.collabsPerMonth} on the {TIERS.amazon.label} plan.</strong>
             </li>
             <li>
               Auto-prefilled from your Brand Profile: every platform you&apos;ve connected or listed shows up as a &quot;your
@@ -483,7 +514,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}
-        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub: timely deal posts">
+        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub: timely deal posts (Pro)">
           <p>
             The manual companion to Deal Radar: when you already have a specific deal in hand, paste any Amazon link,
             Geniuslink, or short link and MVP writes a timely deal post with a baked deal-badge thumbnail and your promo
@@ -555,7 +586,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               profile, integrations, WordPress sites, face library, thumbnail styles, collaborations, performance
               dashboard, SEO data: everything they need to ship content on your behalf.
             </li>
-            <li>Usage caps and AI cost still bill against your single Pro plan, so VA seats don&apos;t multiply your spend.</li>
+            <li>Usage caps and AI cost still bill against your single Pro plan, so Team seats don&apos;t multiply your spend.</li>
             <li>
               <strong>Permission gating:</strong> VAs cannot access your billing, your integrations setup wizard, your
               Brand Profile editor, or invite other VAs. Read + content-generation access only.
@@ -626,22 +657,6 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           {isApp && <SectionCta href="/assistant" label="Open Ask MVP" />}
         </Section>
 
-        {/* ── 12. API ──────────────────────────────────────────────── */}
-        <Section id="api" icon={<Code size={18} />} title="API access (Pro-exclusive)">
-          <p>
-            For Pro creators with engineering resources or who want to wire MVP into their own internal tools:
-          </p>
-          <ul>
-            <li>Generate API keys from the dashboard.</li>
-            <li>
-              Endpoints: <code>/api/v1/me</code> (account info), <code>/api/v1/blog-posts</code> (list + create + read
-              by ID), <code>/api/v1/health</code> (uptime check).
-            </li>
-            <li>Authenticated via Bearer token. Standard REST. Documented under /docs/api.</li>
-          </ul>
-          {isApp && <SectionCta href="/developers" label="Manage API keys" />}
-        </Section>
-
         {/* ── 13. Misc tools ───────────────────────────────────────── */}
         <Section id="misc" icon={<Sparkles size={18} />} title="Tools that exist because we built them for ourselves">
           <p>A few features that didn&apos;t fit into the categories above but Pro creators rely on:</p>
@@ -677,8 +692,9 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             Why Pro, and why now
           </h2>
           <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-            The {TIERS.amazon.label} plan gets you the storefront: thumbnails, designs, brand deals. {TIERS.pro.label} gets
-            you the <em>business</em> on top of it. Multiple sites, a team, a
+            The {TIERS.amazon.label} plan gets you the storefront: thumbnails, designs, brand deals, bulk video uploads,
+            Clip Factory Reels and Co-Pilot on one channel. {TIERS.pro.label} gets you all of that and the <em>business</em> on
+            top of it. Multiple sites, a team, a
             brand-deal pipeline, performance analytics that drive your editorial calendar, the infrastructure
             to run all of it from one dashboard.
           </p>

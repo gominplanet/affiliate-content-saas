@@ -29,6 +29,7 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 
 const n = (v: number | null | undefined, fallback = 'unlimited') => (v == null ? fallback : String(v))
 
@@ -79,15 +80,17 @@ export function planCompareRows(): CompareRow[] {
     },
     {
       label: 'Ready-to-post designs',
-      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Reels · Facebook reuses them`,
-      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Reels · Facebook reuses them`,
+      // igPostsPerMonth counts Instagram posts and Stories (the 'ig' and 'story'
+      // formats in generate-thumbnail), not Reels: Reels are Clip Factory's.
+      amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Instagram posts · Facebook reuses them`,
+      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Instagram posts · Facebook reuses them`,
     },
     {
       label: 'Publishes to',
       // YouTube is in here since Seb, 2026-10-05, and is optional: the plan
       // still asks for no channel to start ("Nothing to connect" above).
       amazon: `Your Amazon storefront, ${AMAZON_YOUTUBE_CHANNELS} YouTube channel if you connect one, and ${A.socials.length} networks: Facebook, Instagram and Pinterest`,
-      ladder: `Your blog, plus ${P.socials.length} networks`,
+      ladder: `Your blog, your storefront, up to ${n(P.youtubeChannels)} YouTube channels, and ${P.socials.length} networks: those three plus X, Threads, TikTok, LinkedIn, Bluesky and Telegram`,
       decisive: true,
     },
     // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
@@ -115,17 +118,30 @@ export function planCompareRows(): CompareRow[] {
     {
       label: 'Amazon Live prep and follow-up',
       amazon: `Up to ${AMAZON_LIVE_SHOWS_PER_MONTH} shows a month`,
-      ladder: 'Included',
+      // lib/amazon-live-limit counts only the Amazon plan.
+      ladder: 'No monthly limit',
     },
     {
       label: 'Clip Factory',
       amazon: `${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month, posted to Instagram and Facebook Reels`,
-      ladder: 'Included, also to TikTok and YouTube Shorts',
+      ladder: `${SHORTS_MONTHLY_CAP} clips a month, also to TikTok and YouTube Shorts`,
     },
     {
       label: 'Deal posts from Deal Radar',
       amazon: `Up to ${n(A.dealsPerMonth)} a month to Pinterest, Facebook, an Instagram card and Story`,
       ladder: P.dealsPerMonth == null ? 'From your monthly generations' : `Up to ${P.dealsPerMonth} a month`,
+    },
+    // Pro only: the Amazon plan walls these off (AMAZON_LOCKED_PREFIXES in
+    // DashboardShellV2 includes /levanta) and has vaSeats: 0.
+    {
+      label: 'Partner programs: Levanta, PartnerBoost, Wayward, LTK',
+      amazon: 'Not included',
+      ladder: 'Turn their campaigns into posts with your links',
+    },
+    {
+      label: 'Team seats',
+      amazon: 'Not included',
+      ladder: `${n(P.vaSeats)}, each with its own permissions`,
     },
     {
       label: 'Messaging brands on Creator Connections',

@@ -53,7 +53,7 @@ import MetaTrack from '@/components/analytics/MetaTrack'
 export const metadata: Metadata = {
   title: 'Make the assets your storefront needs',
   description:
-    'Thumbnails, shoppable designs, pins, Reels covers, bulk video uploads, Reels clips and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
+    'Thumbnails, shoppable designs, pins, Instagram posts, bulk video uploads, Reels clips and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
   robots: { index: false, follow: false },
 }
 
@@ -91,8 +91,8 @@ const MAKES: { icon: React.ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <LayoutTemplate size={18} />,
-    title: `${TIERS.amazon.pinsPerMonth} pins and ${TIERS.amazon.igPostsPerMonth} Reels covers, posted to Facebook too`,
-    body: 'Shoppable designs for every surface your storefront traffic comes from, made and scheduled rather than briefed.',
+    title: `${TIERS.amazon.pinsPerMonth} pins and ${TIERS.amazon.igPostsPerMonth} Instagram posts, posted to Facebook too`,
+    body: 'Shoppable designs for every surface your storefront traffic comes from, made and scheduled rather than briefed, with #ad #sponsored and link labels added for you.',
   },
   {
     icon: <Handshake size={18} />,
@@ -209,7 +209,7 @@ export default function RunYourStorefrontPage() {
             </span>
           </h1>
           <p className="mt-6 text-[17px] sm:text-[19px] leading-relaxed text-black/70">
-            Scores, campaign feeds and inbox tools tell you what to go after. You still have to make the thumbnail, the pin, the Reel cover and the pitch. MVP makes all of them, from one product photo, in your look, at <span className="font-semibold text-black">${TIERS.amazon.price} a month</span>.
+            Scores, campaign feeds and inbox tools tell you what to go after. You still have to make the thumbnail, the pin, the Instagram post and the pitch. MVP makes all of them, from one product photo, in your look, at <span className="font-semibold text-black">${TIERS.amazon.price} a month</span>.
           </p>
           <div className="mt-9">
             <Cta />
@@ -227,7 +227,7 @@ export default function RunYourStorefrontPage() {
             Knowing which product to post is the easy half.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            You already know what sells. What eats the week is making the thing: a thumbnail that gets the click, a pin that does not look like every other pin, a Reel cover, a message to a brand you meant to send on Tuesday.
+            You already know what sells. What eats the week is making the thing: a thumbnail that gets the click, a pin that does not look like every other pin, an Instagram post, a message to a brand you meant to send on Tuesday.
           </p>
           <p className="mt-4 text-[16px] leading-relaxed text-white/90 font-semibold">
             That is the half nobody automated. It is the half this does.
@@ -402,7 +402,7 @@ export default function RunYourStorefrontPage() {
 
       {SALES_PAUSED && (
         <p className="px-6 pb-10 text-center text-[13px] text-black/50">
-          New subscriptions are paused right now. The free tier is still open.
+          New subscriptions are paused right now. The free trial is still open.
         </p>
       )}
 

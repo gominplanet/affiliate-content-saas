@@ -71,7 +71,7 @@ const PANELS: Panel[] = [
     secondary: { label: 'Compare all plans', href: '/pricing' },
     bullets: [
       { icon: <Wand2 size={16} />, text: 'Incredible Amazon video-review thumbnails, one click' },
-      { icon: <Share2 size={16} />, text: 'Pins, Reels & Facebook designs, posted to all three' },
+      { icon: <Share2 size={16} />, text: 'Pins, Instagram & Facebook designs, posted to all three' },
       { icon: <BadgePercent size={16} />, text: 'Creator Connections: a daily brand-deal digest matched to you' },
       { icon: <Radar size={16} />, text: 'Amazon product research + live, verified Deal Radar' },
       { icon: <UserSquare size={16} />, text: 'Your own face on every design' },
@@ -99,7 +99,7 @@ const PANELS: Panel[] = [
       { icon: <FileText size={16} />, text: 'Full product-review blog on your WordPress, in your voice' },
       { icon: <Youtube size={16} />, text: 'YouTube video → blog, thumbnails, scripts & social posts' },
       { icon: <Scale size={16} />, text: 'Comparison posts & buying guides that win search' },
-      { icon: <Store size={16} />, text: 'Auto-post to 9+ networks, plus the full Amazon storefront toolkit' },
+      { icon: <Store size={16} />, text: `Auto-post to ${TIERS.pro.socials.length} networks, plus everything in the Amazon plan` },
     ],
   },
 ]

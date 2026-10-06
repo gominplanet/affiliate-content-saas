@@ -25,6 +25,7 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
@@ -222,7 +223,7 @@ const LOOP_STEPS = [
   { n: 'Find', d: 'Research all of Amazon and live Deal Radar for products worth promoting, or just paste any product, brand or Amazon link.' },
   { n: 'Create', d: 'MVP writes the review, comparisons and social posts in your real voice, and makes the thumbnail and the Shorts for you.' },
   { n: 'Publish', d: 'It all lands on a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
-  { n: 'Earn', d: 'Free Passport geo-links and Creator Connections keep every shopper earning, with the commission going to you.' },
+  { n: 'Earn', d: 'Passport geo-links with no per-click fees and Creator Connections keep every shopper earning, with the commission going to you.' },
 ]
 function HowItWorks() {
   return (
@@ -258,7 +259,7 @@ function HowItWorks() {
 const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
   { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
   { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Free Passport geo-links', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
+  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
   { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
   { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
   { icon: <Search size={19} />, title: 'Free product research', desc: 'Filter all of Amazon by sales, rating, price and video competition. Scout Creator Connections, Levanta and PartnerBoost too.' },
@@ -383,7 +384,7 @@ function PricingSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every blog plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
+            Start on the free trial, then pick the plan that fits. Cancel anytime. Your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
@@ -534,11 +535,11 @@ const PRICING_TIERS: PricingTier[] = [
     },
     features: [
       '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
-      'Creator Connections finder + daily picked-for-you campaign digest',
-      'Shoppable Link-in-Bio page',
+      'Brand campaigns: the Creator Connections finder + a daily picked-for-you digest',
+      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
       `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
       `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
-      'Auto-post to Pinterest, Instagram & Facebook with AI captions + your affiliate link',
+      'Auto-post to Pinterest, Instagram & Facebook with AI captions, your affiliate link, and #ad #sponsored added for you',
       `${TIERS.amazon.dealsPerMonth} deal posts / month from Deal Radar to Pinterest, Facebook and an Instagram card and Story`,
       // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
       // members). Numbers from lib/amazon-plan, the constants the routes enforce.
@@ -548,8 +549,8 @@ const PRICING_TIERS: PricingTier[] = [
       `Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`,
       `Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips / month to Instagram and Facebook Reels`,
       `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots: your face on every design`,
-      `Brand Deals: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
-      `${TIERS.amazon.assistantMessagesPerMonth} AI assistant messages / month`,
+      `Brand pitches: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
+      `Ask MVP: ${TIERS.amazon.assistantMessagesPerMonth} messages / month`,
       'Priority generation queue + priority support',
       // SAY WHAT IT DOES NOT DO, ON THE CARD. At $79 as a side product this was
       // obvious from context. As one of two headline plans it is not, and
@@ -578,15 +579,17 @@ const PRICING_TIERS: PricingTier[] = [
       'Everything in Amazon, plus:',
       `📝 The blog: ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
-      '🎬 Clip Factory posting to TikTok and YouTube Shorts too',
+      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month, posting to TikTok and YouTube Shorts too`,
+      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, and Amazon Live with no monthly show limit`,
       `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
       'Multi-account social + one-click Publish All',
+      'Partner programs: Levanta, PartnerBoost, Wayward & LTK campaigns turned into posts',
       `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
       `Up to ${TIERS.pro.youtubeChannels} YouTube channels, one per site, or pull from any`,
-      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} Brand Deals outreach emails drafted / month`,
-      `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
+      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitch emails drafted / month`,
+      `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
     ],
     cta: 'Go Pro',
   },
@@ -791,7 +794,7 @@ function OldWayNewWay() {
     },
     {
       old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
-      mvp: 'Co-Pilot writes the title, description and tags in minutes, and Liftoff launches up to ten videos to YouTube and your Amazon storefronts in one press.',
+      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload sends up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
     },
     {
       old: 'Your thumbnail is a plain still that disappears on a crowded carousel.',
@@ -799,7 +802,7 @@ function OldWayNewWay() {
     },
     {
       old: 'A product you reviewed goes on sale and nobody watching your old video ever hears about it.',
-      mvp: 'Encore spots the sale, pins a comment with your link on that video, and takes the sale out when it ends.',
+      mvp: 'On sale comments spot the sale, pin a comment with your link on that video, and take the sale out when it ends.',
     },
     {
       old: 'Writing the review is the evening you did not want to spend.',

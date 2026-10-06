@@ -37,7 +37,7 @@ const ACCENT = '#C2410C'
 const STEPS = [
   { icon: <Wand2 size={18} />, title: 'Paste an Amazon product link', body: 'Any product from your storefront. That is the whole input.' },
   { icon: <UserSquare size={18} />, title: 'Pick yourself, or product only', body: 'Add a few selfies once and MVP puts you in every design. Or skip it and keep them product-only.' },
-  { icon: <Download size={18} />, title: 'Download the finished design', body: 'A scroll-stopping thumbnail or a ready-to-post pin, Reel cover or Facebook post. Yours to keep.' },
+  { icon: <Download size={18} />, title: 'Download the finished design', body: 'A scroll-stopping thumbnail or a ready-to-post pin, Instagram post or Facebook post. Yours to keep.' },
 ]
 
 export default function AmazonJoinPage() {
@@ -63,7 +63,7 @@ export default function AmazonJoinPage() {
             Turn any Amazon product into a post-ready design. With your face on it.
           </h1>
           <p className="mt-4 text-[16px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-            Paste a product link, get a finished thumbnail or a ready-to-post pin, Reel cover or Facebook
+            Paste a product link, get a finished thumbnail or a ready-to-post pin, Instagram post or Facebook
             post. No website. No YouTube channel. No card.
           </p>
 
@@ -72,7 +72,7 @@ export default function AmazonJoinPage() {
           {/* What free actually is, in one line, right under the field. The
               numbers are the ones the server enforces. */}
           <p className="mt-3 text-[13px] text-[#86868b] dark:text-[#8e8e93]">
-            Free: {FREE_TRIAL.thumbnails} thumbnails, {FREE_TRIAL.socialDesigns} designs, {FREE_TRIAL.photobooth} headshots
+            Free for {FREE_TRIAL.trialDays} days: {FREE_TRIAL.thumbnails} thumbnails, {FREE_TRIAL.socialDesigns} designs, {FREE_TRIAL.photobooth} headshots
             of you, all yours to download. Then ${TIERS.amazon.price} a month if you want to publish from here.
           </p>
         </div>
@@ -140,9 +140,9 @@ export default function AmazonJoinPage() {
             .
           </p>
           <p className="text-[13.5px] text-[#6e6e73] dark:text-[#ebebf0]">
-            Have a blog or YouTube channel?{' '}
+            Want a blog of your own?{' '}
             <Link href="/pricing" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>
-              That is a different product
+              That is the Pro plan
             </Link>
             .
           </p>

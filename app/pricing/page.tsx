@@ -28,12 +28,13 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 
 // The layout's title template appends "· MVP Affiliate"; spelling it here too
 // printed it twice in the tab and in search results.
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Two plans: Amazon for storefront creators and Pro for the full blog and social pipeline. Start with a free trial, no card required.',
+  description: 'Two plans: Amazon for storefront creators and Pro for the full blog and social pipeline. Start with a 30-day free trial, no card required.',
 }
 
 type Plan = {
@@ -82,6 +83,8 @@ const BUNDLE_STACKS: Partial<Record<Tier, [string, number][]>> = {
     ['thumbnailcreator.com (Creator)', 41],
     ['Jungle Scout (product research)', 49],
     ['Price history & deal tracking', 19],
+    // Clip Factory joined the Amazon plan on 2026-10-05 (lib/amazon-plan).
+    ['OpusClip Pro (vertical clips)', 29],
     ['Lasso Pro (affiliate analytics)', 29],
   ],
   pro: [
@@ -152,14 +155,17 @@ const plans: PlanExt[] = [
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
     limit: `${TIERS.pro.postsPerMonth} reviews / month`,
-    description: 'Become the creator brands want. Comparisons, Buying Guides, Rebuild-from-video, multi-account social, VA seats, and 10 WordPress sites.',
+    description: `Everything in the Amazon Influencer plan, plus the blog. Comparisons, Buying Guides, Rebuild-from-video, multi-account social, Team seats, and ${TIERS.pro.sites} WordPress sites.`,
     features: [
-      '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
+      `Everything in the Amazon Influencer plan, with bigger allowances: ${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Instagram designs / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month at high quality, Creator Connections brand deals`,
       `${TIERS.pro.postsPerMonth} full reviews per month (blog + thumbnail + metadata bundle)`,
-      `Everything in the Amazon Influencer plan too: ${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Reels covers / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month + Creator Connections brand deals`,
+      '⚡ Publish from Deal Radar to your blog too: deal posts, roundups & the weekly digest, plus the shoppable Link-in-Bio page and auto Instagram Stories',
       // TikTok is live (lib/feature-flags LIVE_SOCIAL), not waiting on a review.
-      'Adds X (Twitter) and TikTok auto-post on top of the Amazon plan',
-      'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
+      'Adds X (Twitter), TikTok, Threads, LinkedIn, Bluesky and Telegram auto-post on top of the Amazon plan',
+      // The Amazon plan's own video allowances are in lib/amazon-plan; these are Pro's.
+      `Video tools with Pro allowances: Bulk Amazon upload, YouTube Co-Pilot (${TIERS.pro.metadataGensPerMonth} runs / month), Clip Factory (${SHORTS_MONTHLY_CAP} clips / month, to TikTok and YouTube Shorts too), Pinned and On sale comments, and Amazon Live prep and follow-up with no monthly limit`,
+      // /levanta, /partnerboost and /wayward are walled off for the Amazon plan.
+      'Partner programs: turn any Levanta, PartnerBoost, Wayward or LTK campaign into a commissionable post',
       'Comparison posts: head-to-head ranked review with a named winner',
       'Buying Guides: "Best [topic]" round-ups (auto-curate or pick-your-own)',
       'Rebuild-from-video: re-write any legacy WordPress post from its source video',
@@ -169,8 +175,8 @@ const plans: PlanExt[] = [
       `Up to ${TIERS.pro.vaSeats} Team seats for your VAs, each with its own permissions`,
       'Deals Hub: deal posts draw from your monthly generations, with countdown banners + Amazon CSV bulk import',
       `${TIERS.pro.maxFaces} saved faces, Photobooth ${TIERS.pro.photoboothPerMonth} / month`,
-      `Video Script & Shot List (${TIERS.pro.scriptsPerMonth} / month)`,
-      `Brand Deals: ${TIERS.pro.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
+      `Scriptwriter: video script & shot list (${TIERS.pro.scriptsPerMonth} / month)`,
+      `Brand pitches: ${TIERS.pro.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
       'One-click Publish All: site + every connected social in one shot',
       `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
       'Priority generation queue + priority support',
@@ -227,7 +233,7 @@ export default async function PricingPage({
           paid plans do.
         </p>
         <p className="mt-3 text-sm font-semibold text-[#34c759]">
-          🔒 Early access pricing, locked in for life on the tier you subscribe to.
+          🔒 Early access pricing, locked in for as long as you stay subscribed.
         </p>
       </div>
 
@@ -272,7 +278,7 @@ export default async function PricingPage({
               <CheckoutButton tier="trial" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Start free, no card" />
             </div>
             <p className="text-[13px] text-[#86868b] dark:text-[#8e8e93] text-center sm:text-left">
-              The free tier also includes {TIERS.trial.lifetimeMax} full published reviews, once you connect a WordPress site, to try the content engine.
+              The free trial also includes {TIERS.trial.lifetimeMax} full published reviews, once you connect a WordPress site, to try the content engine.
             </p>
           </div>
         </div>
@@ -508,12 +514,14 @@ export default async function PricingPage({
                 Hardcoding them is what let that happen, so they are read now. */}
             {[
               { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: `${TIERS.amazon.thumbnailsPerMonth} / month`, desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
-              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${TIERS.amazon.pinsPerMonth} pins · ${TIERS.amazon.igPostsPerMonth} Reels · Facebook too`, desc: 'Finished Pinterest pins and Instagram Reels covers, laid out and captioned for you, and Facebook posts that reuse them at no extra cost. No Canva, no templates to fight. Post them as they are.' },
-              { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: 'Unlimited browse', desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP sends you a fresh digest of campaigns auto-matched to your content and research, done for you, so you never miss a fit.' },
+              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${TIERS.amazon.pinsPerMonth} pins · ${TIERS.amazon.igPostsPerMonth} Instagram · Facebook too`, desc: 'Finished Pinterest pins and Instagram posts and Stories, laid out and captioned for you, and Facebook posts that reuse them at no extra cost. Every post goes out tagged #ad #sponsored with each link labelled, so your disclosure is done.' },
+              { icon: <Handshake size={20} />, title: 'Brand campaigns', tag: 'Unlimited browse', desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP puts a fresh digest of campaigns matched to your content on your dashboard, so you never miss a fit.' },
               { icon: <MessageSquare size={20} />, title: 'Outreach written for you', tag: 'Unlimited', desc: 'MVP writes a personalised pitch from your brand profile and takes you straight to that brand\u2019s message box on Amazon. Draft as many as you like, message brands in bulk, and save the angles that work as reusable templates.' },
               { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products actually worth posting before you spend a design on them.' },
               { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
-              { icon: <ShoppingBag size={20} />, title: 'Idea List → Shopping Guide', tag: 'Up to Top 20', desc: 'Point MVP at one of your Amazon idea lists and it checks every product, ranks them by your own sales, demand, live deals and ratings, then writes a full shopping-guide post with your affiliate links and a call-to-action back to the whole list on Amazon.' },
+              // Idea List → Shopping Guide publishes to WordPress and /idea-lists
+              // is walled off for this plan (AMAZON_LOCKED_PREFIXES): it is Pro.
+              { icon: <ShoppingBag size={20} />, title: 'Link in Bio and Passport links', tag: 'Included', desc: 'A shoppable Link in Bio page that fills itself from what you post, and Passport links that send every shopper to their own country\u2019s Amazon with your tag. Unlimited links and clicks, no cost per click.' },
               { icon: <Send size={20} />, title: 'Deal posts for you', tag: `${TIERS.amazon.dealsPerMonth} posts / month`, desc: 'Turn a Deal Radar find into posts for Pinterest, Facebook and an Instagram card and Story, all at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
               // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new
               // Amazon members). Numbers from lib/amazon-plan, the constants the
@@ -524,7 +532,7 @@ export default async function PricingPage({
               { icon: <Radio size={20} />, title: 'Amazon Live prep and follow-up', tag: `${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`, desc: 'Plan the products and talking points before you go live, then get the follow-up done after the show.' },
               { icon: <Scissors size={20} />, title: 'Clip Factory', tag: `${AMAZON_CLIPS_PER_MONTH} clips / month`, desc: `Find the best moments in your videos (${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments a month) and turn them into up to ${AMAZON_CLIPS_PER_MONTH} vertical clips a month, posted to Instagram and Facebook Reels.` },
               { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: `${TIERS.amazon.maxFaces} models · ${TIERS.amazon.photoboothPerMonth} headshots`, desc: `Add your face models and MVP puts you in the designs. Run the photobooth for ${TIERS.amazon.photoboothPerMonth} studio-quality headshots so your posts look like you, not stock.` },
-              { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
+              { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind trial accounts.' },
             ].map((t) => (
               <div key={t.title} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5 flex flex-col">
                 <div className="w-10 h-10 rounded-xl grid place-items-center mb-3" style={{ background: 'rgba(234,88,12,0.12)', color: '#C2410C' }}>{t.icon}</div>
@@ -564,9 +572,9 @@ export default async function PricingPage({
           THE AMAZON STACK IS DELIBERATELY SHORT. That plan does not write
           blog posts (postsPerMonth is 0), so it does not replace an AI
           writer or an SEO tool, and padding it
-          with them would be the manipulative version of this section. Four
-          real tools and a $39 saving is a weaker pitch than Pro's, and it is
-          the true one. Every tool and price here already appeared in the Pro
+          with them would be the manipulative version of this section. Five
+          real tools (OpusClip since Clip Factory joined the plan) is a weaker
+          pitch than Pro's, and it is the true one. Every tool and price here already appeared in the Pro
           stack below; nothing was invented to fill the card out.
           ─────────────────────────────────────────────────────────────── */}
       <section className="mt-16 w-full max-w-5xl">
@@ -681,8 +689,8 @@ export default async function PricingPage({
         <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
         <p className="text-center text-sm text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
           When you subscribe at these Early Access rates, your price stays locked in for as long as you
-          keep your plan, even if we raise prices later. Your rate only changes if you choose to upgrade
-          or downgrade tiers.
+          stay subscribed, even if we raise prices later. Switch between Amazon and Pro and you keep the
+          locked rate of the plan you move to.
         </p>
       </div>
       <p className="mt-6 text-sm text-[#86868b] dark:text-[#8e8e93]">
