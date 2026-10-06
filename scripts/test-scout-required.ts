@@ -28,6 +28,7 @@ check('the background work is switched on from any page', /await setLiftoffAuto\
 check('a member who switched it off is asked, not overruled', /mvp_liftoff_bg'\) === 'off'/.test(BANNER) && BANNER.indexOf("=== 'off'") < BANNER.indexOf('await setLiftoffAuto(true)'))
 check('due first comments wake SCOUT', /setLiftoffAuto\(true, 1\)/.test(BANNER) && /first-comment\/scout/.test(BANNER))
 check('what was found is recorded', /\/api\/scout\/seen/.test(BANNER) && /scout_seen_at/.test(ROUTE) && /scout_background/.test(ROUTE))
+check('a report is marked sent only once the server saved it', /if \(r\.ok\) \{ sessionSet\(SEEN_KEY/.test(BANNER) && BANNER.indexOf('sessionSet(SEEN_KEY') > BANNER.indexOf("fetch('/api/scout/seen'"))
 check('the record is the server\'s to write', /createAdminClient\(\)/.test(ROUTE) && /\.eq\('user_id', user\.id\)/.test(ROUTE))
 check('migration 414 is safe to run twice', /add column if not exists scout_version/.test(MIG) && /add column if not exists scout_seen_at/.test(MIG))
 check('no dashes in what the member reads', !/[–—]| - /.test((BANNER.match(/<b>[^]*?<\/>/g) || []).join(' ')))

@@ -50,11 +50,15 @@ function reportSeen(install: 'store' | 'sideload' | 'none', version: string | nu
   const last = Number(sessionGet(SEEN_KEY) || 0)
   const sig = `${install}|${version}|${background}`
   if (Date.now() - last < 3_600_000 && sessionGet(`${SEEN_KEY}_sig`) === sig) return
-  sessionSet(SEEN_KEY, String(Date.now())); sessionSet(`${SEEN_KEY}_sig`, sig)
+  // MARKED SENT ONLY ONCE SAVED. Marked before, a save that failed (the
+  // columns not there yet, a dropped connection) kept this tab quiet for an
+  // hour, and every member read "not seen yet" while using MVP in Chrome.
   void fetch('/api/scout/seen', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ install, version, background }),
-  }).catch(() => { /* the banner does not depend on it */ })
+  }).then((r) => {
+    if (r.ok) { sessionSet(SEEN_KEY, String(Date.now())); sessionSet(`${SEEN_KEY}_sig`, sig) }
+  }).catch(() => { /* the banner does not depend on it; the next look tries again */ })
 }
 
 /** First comments due now, or soon: SCOUT is asked to come back for them, so
