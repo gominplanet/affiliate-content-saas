@@ -1208,7 +1208,7 @@ export default function DashboardShellV2({
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
-          <div className="min-w-0 flex-1 md:flex-initial md:basis-72"><TopbarSearch isAdmin={isAdmin} /></div>
+          <div className="min-w-0 flex-1 md:flex-initial md:basis-72 md:min-w-[11rem]"><TopbarSearch isAdmin={isAdmin} /></div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Week recap: flashes until this week's recap is opened. */}
@@ -1298,7 +1298,7 @@ export default function DashboardShellV2({
                 ? `${openTickets} open support ticket${openTickets === 1 ? '' : 's'} waiting`
                 : 'Open a support ticket'}
             >
-              <LifeBuoy size={12} /> <span className="hidden sm:inline">Support</span>{ticketAlert ? ` (${openTickets})` : ''}
+              <LifeBuoy size={12} /> <span className="hidden 2xl:inline">Support</span>{ticketAlert ? ` (${openTickets})` : ''}
             </Link>
 
             {/* Theme toggle */}

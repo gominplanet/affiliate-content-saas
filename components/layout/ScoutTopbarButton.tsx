@@ -45,7 +45,7 @@ export default function ScoutTopbarButton() {
         ? { color: '#fff', background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)', boxShadow: '0 2px 10px rgba(124,58,237,0.35)' }
         : { color: 'var(--text-soft)', background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
-      {sideloaded ? <ArrowUpCircle size={13} /> : <Download size={13} />} {label}
+      {sideloaded ? <ArrowUpCircle size={13} /> : <Download size={13} />}<span className="hidden 2xl:inline">{label}</span><span className="2xl:hidden">SCOUT</span>
     </a>
   )
 }

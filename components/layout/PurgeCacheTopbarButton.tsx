@@ -51,7 +51,7 @@ export default function PurgeCacheTopbarButton() {
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
       title="Clear your WordPress cache so brand/theme changes show up on the live site right away"
     >
-      <RefreshCw size={11} className={busy ? 'animate-spin' : ''} /> {busy ? 'Clearing…' : 'Clear Cache'}
+      <RefreshCw size={11} className={busy ? 'animate-spin' : ''} /><span className="hidden 2xl:inline">{busy ? 'Clearing…' : 'Clear Cache'}</span>
     </button>
   )
 }

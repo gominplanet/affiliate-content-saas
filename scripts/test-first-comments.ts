@@ -129,6 +129,12 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
     && /body\.action === 'dismiss'/.test(read('app/api/youtube/first-comment/[id]/route.ts')))
 }
 
+// 2026-10-07: forgetting a deleted video deleted its row, and the row's blog
+// posts, drafts, scheduled posts and clips went with it (on delete cascade).
+check('a deleted video keeps its row when anything was made from it',
+  /if \(vid\?\.id && !\(await holdsMadeContent\(sb, vid\.id\)\)\) await sb\.from\('youtube_videos'\)\.delete\(\)/.test(read('lib/first-comments.ts'))
+  && /for \(const table of \['blog_posts', 'social_drafts', 'scheduled_posts', 'youtube_shorts'\]\)/.test(read('lib/first-comments.ts')))
+
 if (failures.length) {
   console.error(`\n❌ first-comments: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

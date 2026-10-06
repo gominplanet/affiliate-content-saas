@@ -60,6 +60,21 @@ export type FirstCommentOutcome =
   | { state: 'gone' }
 
 /**
+ * Does anything the creator made hang off this video row? Deleting the row
+ * cascades to its blog posts, drafts, scheduled posts and clips (schema.sql,
+ * migrations 138 and 178), so a video YouTube deleted keeps its row when it
+ * has any. A check that fails counts as yes: keeping a row is harmless,
+ * wiping a blog post is not.
+ */
+async function holdsMadeContent(sb: Sb, videoRowId: string): Promise<boolean> {
+  for (const table of ['blog_posts', 'social_drafts', 'scheduled_posts', 'youtube_shorts']) {
+    const { count, error } = await sb.from(table).select('id', { count: 'exact', head: true }).eq('video_id', videoRowId)
+    if (error || (count ?? 0) > 0) return true
+  }
+  return false
+}
+
+/**
  * Ask YouTube whether the video is public; post the comment if it is.
  * Every outcome is written to the row before it is returned.
  */
@@ -127,7 +142,7 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
     }
     if (connected && ownerConfirmed) {
       await sb.from('video_first_comments').delete().eq('id', row.id)
-      if (vid?.id) await sb.from('youtube_videos').delete().eq('id', vid.id).eq('user_id', row.user_id)
+      if (vid?.id && !(await holdsMadeContent(sb, vid.id))) await sb.from('youtube_videos').delete().eq('id', vid.id).eq('user_id', row.user_id)
       return { state: 'gone' }
     }
     return fail('None of your connected YouTube channels can see this video. If it was deleted, MVP forgets it once the channel it was on is connected; if it is on a channel not connected to MVP, connect that channel. Nothing was posted.')
