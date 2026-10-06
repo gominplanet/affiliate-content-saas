@@ -70,7 +70,7 @@ const PILL_ON = 'text-white border-transparent'
 const PILL_SEL = 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]'
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS = [
-  { key: 'lower-left', label: 'Lower third', desc: 'Bottom — clears IG & TikTok UI' },
+  { key: 'lower-left', label: 'Lower third', desc: 'Bottom, clears the IG and TikTok buttons' },
   { key: 'upper-left', label: 'Upper third', desc: 'Top of the screen' },
 ] as const
 const STYLES = [
@@ -455,7 +455,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
         })
         const data = await res.json()
         if (!res.ok || !data.videoUrl) {
-          if (data.ingestDisabled) throw new Error("Automatic fetch isn’t available right now — please upload the clip instead.")
+          if (data.ingestDisabled) throw new Error("Automatic fetch isn’t available right now. Please upload the clip instead.")
           if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
           throw new Error(data.error || "We couldn't fetch this Short automatically.")
         }
@@ -524,7 +524,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
 
   const handleUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('video/')) { toast.error('Please select a video file (MP4 recommended).'); return }
-    if (file.size > 300 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 300MB.`); return }
+    if (file.size > 300 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB. Keep it under 300MB.`); return }
     setUploading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -1173,8 +1173,8 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Buy via</span>
                       <div className="flex gap-1.5">
-                        <button onClick={() => applyDestMode(destination, 'shop')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'shop' ? PILL_SEL : PILL_IDLE}`} title="In-app shop — badge points a downward arrow at the shop button"><ArrowDown size={12} /> In-app shop</button>
-                        <button onClick={() => applyDestMode(destination, 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'bio' ? PILL_SEL : PILL_IDLE}`} title="No in-app shop — badge says Link in bio"><Link2 size={12} /> Link in bio</button>
+                        <button onClick={() => applyDestMode(destination, 'shop')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'shop' ? PILL_SEL : PILL_IDLE}`} title="In-app shop badge: points a downward arrow at the shop button"><ArrowDown size={12} /> In-app shop</button>
+                        <button onClick={() => applyDestMode(destination, 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'bio' ? PILL_SEL : PILL_IDLE}`} title="No in-app shop badge: says Link in bio"><Link2 size={12} /> Link in bio</button>
                       </div>
                     </div>
                     )}
@@ -1352,7 +1352,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                 {burning ? <Loader2 size={14} className="animate-spin" /> : <Flame size={14} />}
                 {burning ? 'Burning…' : 'Burn overlay & continue'}
               </button>
-              <button onClick={skipEnhance} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Skip — publish as is</button>
+              <button onClick={skipEnhance} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Skip and publish as is</button>
             </div>
           </div>
 

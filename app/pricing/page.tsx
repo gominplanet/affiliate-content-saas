@@ -654,7 +654,7 @@ export default async function PricingPage({
             },
             {
               title: 'One video → nine outputs',
-              body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a script for the next video, and native posts to your connected social channels &mdash; LinkedIn, Facebook, Instagram, Threads, Bluesky, Telegram, Pinterest and X (channels vary by plan). End-to-end, in one run.',
+              body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a script for the next video, and native posts to your connected social channels: LinkedIn, Facebook, Instagram, Threads, Bluesky, Telegram, Pinterest and X (channels vary by plan). End-to-end, in one run.',
             },
             {
               title: 'Trained on YOUR voice, not a generic AI voice',

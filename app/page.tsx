@@ -1671,7 +1671,7 @@ function ComparisonSection() {
             </span>
           </h2>
           <p className="mt-5 text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Other Amazon affiliate tools make you stitch together three or four services — and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
+            Other Amazon affiliate tools make you stitch together three or four services, and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
           </p>
         </div>
 
@@ -1727,7 +1727,7 @@ function ComparisonSection() {
           <div>
             <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
             <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
+              We don&apos;t harvest, sell, or train on your personal data: not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
             </p>
           </div>
         </div>
@@ -1748,8 +1748,8 @@ function PlatformBar() {
         </p>
         <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
           Every post auto-publishes natively to{' '}
-          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>
-          {' '}— no copy-paste, no separate scheduler.
+          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>.
+          {' '}No copy-paste, no separate scheduler.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2.5">
           {PLATFORMS.map((p) => (
@@ -1822,7 +1822,7 @@ function Footer() {
               </span>
             </div>
             <p className="text-[13px] max-w-md leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Your central content hub. One review video, every output, your voice — grounded in what you actually said.
+              Your central content hub. One review video, every output, your voice, grounded in what you actually said.
             </p>
           </div>
           <a

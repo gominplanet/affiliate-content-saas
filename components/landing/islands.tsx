@@ -321,11 +321,11 @@ const FAQS = [
     a: 'Anytime. Upgrade and the difference is pro-rated and applied immediately. Downgrade and the new plan kicks in at the next billing cycle (you keep the higher plan\'s features until then). No "annual commitment" trap.',
   },
   {
-    q: 'Will my content actually rank — and how long does it take?',
+    q: 'Will my content actually rank, and how long does it take?',
     a: 'SEO is a slow game, and anyone promising overnight rankings is selling you something. What MVP gives you is the foundation ranking depends on: answer-first structure, Product / Review / FAQ schema, fast indexing, internal links, and content genuinely grounded in your real review (which Google\'s helpful-content system rewards). Low-competition terms can move in a few weeks; competitive terms take months and consistent volume — and MVP is what makes publishing that volume realistic.',
   },
   {
-    q: 'Will my reviews show up in AI search — ChatGPT, Perplexity, Google\'s AI answers?',
+    q: 'Will my reviews show up in AI search (ChatGPT, Perplexity, Google\'s AI answers)?',
     a: 'That\'s exactly what MVP is built for. AI engines quote sources they can parse and trust: the answer up top, schema they can read, and real specs and experience they can verify. MVP writes every review that way. No tool can guarantee a specific engine cites you, but content built to be citable is how you show up — and it\'s the opposite of the generic AI filler those engines are learning to skip.',
   },
 ]
@@ -429,7 +429,7 @@ export function StickyBottomBar() {
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
-            Try MVP free — 5 posts, no card.
+            Try MVP free: 5 posts, no card.
           </p>
           <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
             See if it fits your workflow before you pay a cent.

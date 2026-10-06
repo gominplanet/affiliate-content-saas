@@ -106,7 +106,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
       setCopied(key)
       toast.success(`${label} copied`)
       setTimeout(() => setCopied(c => (c === key ? null : c)), 1400)
-    } catch { toast.error('Copy failed — select and copy manually.') }
+    } catch { toast.error('Copy failed. Select and copy it by hand.') }
   }
 
   function download(src: string, filename: string) {
@@ -130,7 +130,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
       if (!res.ok) { if (res.status === 403 && !data.locked) setLocked(true); toast.error(data.error || 'Generation failed.'); return }
       setKits(prev => ({ ...prev, [data.slot || slot]: data.kit as SocialKit }))
       toast.success(`${niche ? `${niche} ` : ''}${LAUNCH_PLATFORM_LIST.find(p => p.id === platform)?.label} kit ready`)
-    } catch { toast.error('Network error — try again.') }
+    } catch { toast.error('Network error. Try again.') }
     finally { setBusyKit(null) }
   }
 
@@ -154,7 +154,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
       const data = await res.json()
       if (!res.ok) { if (res.status === 403 && !data.locked) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
       setImages(prev => ({ ...prev, [key]: data.image || data.imageUrl }))
-    } catch { toast.error('Network error — try again.') }
+    } catch { toast.error('Network error. Try again.') }
     finally { setBusyImg(null) }
   }
 
@@ -168,7 +168,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
         const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsDataURL(file)
       })
       setRefImages(prev => ({ ...prev, [key]: dataUrl }))
-      toast.success('Reference added — hit Generate to use it')
+      toast.success('Reference added. Hit Generate to use it.')
     } catch { toast.error('Could not read that image.') }
   }
   function clearRef(key: string) { setRefImages(prev => { const n = { ...prev }; delete n[key]; return n }) }
@@ -266,7 +266,7 @@ function PlatformCard({
         ) : (
           <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg flex-shrink-0"
             style={{ color: '#34c759', background: 'rgba(52,199,89,0.10)' }}
-            title="You get one generation per account — your kit is saved below, ready to use anytime.">
+            title="You get one generation per account. Your kit is saved below, ready to use anytime.">
             <Check className="h-3.5 w-3.5" /> Generated
           </span>
         )}
@@ -400,7 +400,7 @@ function PlatformCard({
               )}
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-              These are built from your logo + banner in <a href="/brand" target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> — add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.
+              These are built from your logo + banner in <a href="/brand" target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a>. Add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.
             </p>
           </Field>
 
@@ -621,7 +621,7 @@ function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleV
         ) : (
           <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold"
             style={{ color: '#34c759', background: 'rgba(52,199,89,0.10)' }}
-            title="You get one generation per account — download and use it.">
+            title="You get one generation per account. Download and use it.">
             <Check size={13} /> Saved
           </span>
         )}
@@ -649,7 +649,7 @@ function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleV
         )}
       </div>
       <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
-        {refDataUrl ? 'Your image will guide the look — hit Generate.' : 'Optional: upload an image (a look you love) to guide the design.'}
+        {refDataUrl ? 'Your image will guide the look. Hit Generate.' : 'Optional: upload an image (a look you love) to guide the design.'}
       </p>
     </div>
   )
