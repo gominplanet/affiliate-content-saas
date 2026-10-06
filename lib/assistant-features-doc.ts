@@ -199,8 +199,9 @@ Everything that makes content feel like the user's brand:
   descriptions and collab emails.
 - **Social Links** — YouTube, Instagram, TikTok, Twitter/X, Pinterest,
   Facebook, Threads, Amazon Storefront, Linktree
-- **Facebook Groups** — Groups the user admins (for manual sharing —
-  Meta's API doesn't post to Groups, only Pages)
+- **Facebook Groups** — Groups the user admins. Their Group posts carry the
+  affiliate link (SCOUT fills them in, the user presses Post); see "How MVP
+  posts to Facebook" under CONNECT SOCIALS
 - **Brand Tone** — Professional, Conversational, Bold, etc. (multi-select)
 - **Brand Colors** — primary + secondary (pushed to WordPress theme)
 - **Typography** — curated font themes (Editorial, Modern, Classic)
@@ -383,29 +384,40 @@ write access to push generated metadata back.
 Pro users can connect multiple Facebook Pages or Instagram accounts and
 pick which one each post fans out to.
 
+### How MVP posts to Facebook: your Group holds the link, your Page points to it (common question)
+Users often ask why the Amazon link goes in the Group and not on the Page.
+Answer plainly:
+1. **Meta limits links on Pages.** A Facebook Page gets only 2 posts a month
+   with a link that leaves Facebook (Amazon, geni.us, a blog). More needs a
+   paid Meta One plan (Advanced 8, Expert 20, Max unlimited). Past the limit,
+   creators report the link going up as text nobody can tap.
+2. **Links to Facebook do not count.** A link to the user's own Group post is
+   free, so the Page can post every day.
+3. **So MVP posts Group first.** SCOUT fills the post, affiliate link and
+   disclosure included, into the user's Group; the user presses Post (Meta
+   lets no app press it). As soon as SCOUT sees it go up, MVP posts on the
+   Page (or a Page Reel starting with "Get it here") linking to that exact
+   Group post. Meta publishes no link limit for Groups.
+4. **Staying safe in Groups:** post links only in Groups you run (Amazon does
+   not allow your links in Groups or comments you don't moderate), always
+   write real words with the link, don't paste the same link into many Groups
+   at once, keep a steady pace, never boost or run ads on a post with an
+   Amazon link, and add both the Page and the Group to the website list in
+   Associates Central (Account Settings → "Edit Your Website and Mobile App
+   List").
+Where: Meta Hub (/meta) sets up the Page, the Groups and SCOUT, and explains
+this under "Here is why". Source: Meta's help page on link limits; Meta may
+change it or apply it differently to some Pages. Never promise a user their
+Page is or is not limited.
+
 ### Amazon affiliate links on Facebook — is it allowed? (common question)
-Yes — it's a myth that you can't. Amazon Associates ALLOWS affiliate links
-in normal (organic) posts on a Facebook Page you own. When pushing to
-Facebook, MVP always adds the blog link + the "As an Amazon Associate I earn
-from qualifying purchases" disclaimer; there's also an optional "Also add my
-affiliate link" toggle that adds a second CTA linking straight to Amazon.
-That toggle is safe to use on your own Page. Three rules to stay compliant:
-1. **Register your Facebook Page in Amazon Associates** (Associates Central →
-   Account Settings → "Edit Your Website and Mobile App List"). Required before
-   posting links there.
-2. **Disclosure** — MVP adds it to every post automatically; also drop the
-   "As an Amazon Associate I earn from qualifying purchases" line into your
-   Page's About/Info section.
-3. **THE BIG ONE: never boost or run paid ads on a post that contains the
-   affiliate link.** Organic posts only. Paid ads with Amazon links are the
-   thing Amazon actually bans accounts for.
-Also prohibited (the source of the "no-no" belief): affiliate links in DMs /
-private messages, email, PDFs, and in groups/comments you don't moderate.
-Short/branded links (geni.us, amzn.to) that resolve to Amazon are fine.
-Keeping the blog link as the primary CTA (MVP's default) is the strongest,
-safest play; the direct affiliate link is a fine bonus on organic Page posts.
-(General guidance, not legal advice — binding source is the Amazon Associates
-Program Policies.)
+Yes, on accounts the user owns or moderates, organic only. MVP adds the
+"As an Amazon Associate I earn from qualifying purchases" disclosure and #ad
+#sponsored to every post. Prohibited (the source of the "no-no" belief):
+affiliate links in DMs, email, PDFs, paid ads or boosted posts, and in Groups
+or comments the user doesn't moderate. Short links (geni.us, amzn.to) that
+resolve to Amazon are fine. (General guidance, not legal advice; the binding
+source is the Amazon Associates Program Policies.)
 
 ---
 

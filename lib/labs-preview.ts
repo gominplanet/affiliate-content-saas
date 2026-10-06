@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -64,6 +64,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Facebook post in Social Push, one switch for both. Open to Pro first (Seb,
   // 2026-10-05: "pro first"); the Amazon plan keeps the direct Page post.
   facebook_setup: 'labs',
+  // Group Post Queue: Sponsored Products and Amazon videos in a batch, Group
+  // first (SCOUT fills the post with the link), then a Page post linking to
+  // it. Admin only while it is tested (Seb, 2026-10-06: "build 1 and 3 in labs").
+  group_queue: 'admin',
 }
 
 /** Pro features the AMAZON plan has too (Seb, 2026-10-05: "add all six",

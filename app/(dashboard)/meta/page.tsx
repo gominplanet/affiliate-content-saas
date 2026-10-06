@@ -31,6 +31,7 @@ import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 import ClipFactory from '@/components/clip-factory/ClipFactory'
 import LaunchKit from '@/components/launch-kit/LaunchKit'
 import UnfinishedGroupPosts, { type UnfinishedPost } from '@/components/meta/UnfinishedGroupPosts'
+import WhyGroupFirst from '@/components/meta/WhyGroupFirst'
 import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
@@ -285,6 +286,7 @@ function MetaHub() {
           Every Reel on your Page starts with &quot;Get it here&quot; and a link to the exact Group post with that product. One tap, and they see the product and the link.
         </p>
       </div>
+      <WhyGroupFirst />
 
       {/* STEP 1: THE PAGE */}
       <Step n={1} title="Your Page" done={pageDone} open={isOpen('page')} onToggle={() => toggle('page')}
