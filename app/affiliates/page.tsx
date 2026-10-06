@@ -16,7 +16,7 @@ import AffiliatesClient from './affiliates-client'
 export const metadata: Metadata = {
   title: 'Become an Affiliate',
   description:
-    'Earn 10% recurring — for life — promoting MVP Affiliate: turn one YouTube video into a blog, social posts, thumbnails, and brand pitches. 60-day cookie, monthly payouts, your audience saves 20%.',
+    'Earn 10% recurring, for life, promoting MVP Affiliate: turn one YouTube video into a blog, social posts, thumbnails, and brand pitches. 60-day cookie, monthly payouts, your audience saves 20%.',
 }
 
 export default function AffiliatesPage() {

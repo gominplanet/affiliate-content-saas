@@ -43,11 +43,11 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'copilot',      label: 'YouTube Co-Pilot' },
   { id: 'social',       label: 'Social auto-posting' },
   { id: 'deal-radar',   label: 'Amazon Deal Radar ⚡ new' },
-  { id: 'linkbio',      label: 'Link in Bio — Shop page ⚡ new' },
-  { id: 'clips',        label: 'Clip Factory — Shorts 🧪 Labs' },
+  { id: 'linkbio',      label: 'Link in Bio: Shop page ⚡ new' },
+  { id: 'clips',        label: 'Clip Factory: Shorts 🧪 Labs' },
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'collabs',      label: 'Brand outreach' },
-  { id: 'finders',      label: 'Source & Earn — product finders' },
+  { id: 'finders',      label: 'Source & Earn: product finders' },
   { id: 'deals',        label: 'Deals Hub' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
   { id: 'vas',          label: 'Team' },
@@ -111,7 +111,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
                 Every word you generate on MVP is fact-grounded. We never invent specs, prices, or experiences a creator
                 didn&apos;t actually have. If your transcript says you tested it in your kitchen for three weeks, that&apos;s what
-                the post says. If it doesn&apos;t say something, we don&apos;t make it up. That&apos;s the differentiator — and it&apos;s the
+                the post says. If it doesn&apos;t say something, we don&apos;t make it up. That&apos;s the differentiator, and it&apos;s the
                 reason Google increasingly ranks MVP-built posts above the AI-generated noise.
               </p>
             </div>
@@ -122,13 +122,13 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         <Section id="engine" icon={<FileText size={18} />} title="The blog content engine">
           <p>
             This is the core of the toolbox. You connect your YouTube channel, sync your videos, and from any
-            video MVP generates a full SEO blog post in about three minutes — complete with featured image, in-article
+            video MVP generates a full SEO blog post in about three minutes, complete with featured image, in-article
             images, internal links, schema markup, OG tags, alt text, and a quick verdict box. It auto-publishes to your
             WordPress site with one click.
           </p>
           <p>
             <strong>No video? Start from a link.</strong> MVP isn&apos;t only for YouTubers. Paste any product or service
-            link — an Amazon ASIN, a store page, a brand site, even a SaaS — and MVP researches it (the link, its name,
+            link (an Amazon ASIN, a store page, a brand site, even a SaaS) and MVP researches it (the link, its name,
             and the web), then writes the same fact-grounded review in your voice, recloaks the link through Geniuslink,
             and adds a hero image. The post lands in your library like any other, ready to schedule or push to socials.
             The whole engine works whether your starting point is a video or a link.
@@ -136,7 +136,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <h3>What {TIERS.pro.label} adds on top of the {TIERS.amazon.label} plan</h3>
           <ul>
             <li>
-              <strong>Comparison posts.</strong> Drop in 2–10 YouTube URLs of different products, MVP scrapes Amazon
+              <strong>Comparison posts.</strong> Drop in 2 to 10 YouTube URLs of different products, MVP scrapes Amazon
               for each, ranks them on real spec data, and writes a multi-product round-up with a verdict box, pros/cons
               table, and best-for categories. Same fact-grounded promise: no invented features.
             </li>
@@ -160,18 +160,18 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <h3>Built into every post, but worth knowing about</h3>
           <p>
             <strong>The LEARN voice profile.</strong> Every time you publish, MVP reads what you just shipped and quietly
-            updates a model of your voice — opening hook style, sentence length, what you love, what annoys you, the
+            updates a model of your voice: opening hook style, sentence length, what you love, what annoys you, the
             exact words you use for &quot;good enough&quot; vs &quot;skip it.&quot; The next post is more <em>you</em> than the last.
             After five published posts you start hearing yourself in the drafts.
           </p>
           <p>
             <strong>The rewrite feedback loop.</strong> When you click &quot;Rewrite&quot; with notes, those notes don&apos;t just apply
-            to that one regeneration — they accumulate on your profile and get applied to every future generation. The
+            to that one regeneration. They accumulate on your profile and get applied to every future generation. The
             AI gets smarter about your specific taste over time.
           </p>
           <p>
             <strong>In-article images.</strong> MVP uses scene-grounded generation to render shots of your actual product
-            in real-world settings — never the listing photo, never a generic stock image. We vision-pick the clean
+            in real-world settings, never the listing photo, never a generic stock image. We vision-pick the clean
             product reference image first (Amazon&apos;s main image is often a lifestyle collage with props), then render fresh.
           </p>
           <p>
@@ -181,7 +181,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </p>
           <p>
             <strong>Rebuild legacy posts.</strong> If you have old WP posts from before MVP, point a YouTube video at
-            them and we rewrite the body in your current voice without touching the slug or URL — preserving inbound
+            them and we rewrite the body in your current voice without touching the slug or URL, preserving inbound
             links and SEO authority.
           </p>
           {isApp && <SectionCta href="/content" label="Open your Library" />}
@@ -190,7 +190,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         {/* ── 2. YouTube Co-Pilot ──────────────────────────────────── */}
         <Section id="copilot" icon={<Youtube size={18} />} title="YouTube Co-Pilot">
           <p>
-            Your title, description, tags, pinned comment, and thumbnail generator for any YouTube video — all in one
+            Your title, description, tags, pinned comment, and thumbnail generator for any YouTube video, all in one
             surface.
           </p>
           <ul>
@@ -200,21 +200,21 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               Builds AI thumbnails featuring your face and the real product. With the Chrome extension installed, MVP
-              captures real frames from the video tab and uses them as a grounding reference — so the generated
+              captures real frames from the video tab and uses them as a grounding reference, so the generated
               thumbnail matches your face, the actual product, the actual lighting, instead of looking like generic AI art.
             </li>
             <li>
-              <strong>Variant generation:</strong> pick 1–10 variants per click. Most Pro creators generate three, test
+              <strong>Variant generation:</strong> pick 1 to 10 variants per click. Most Pro creators generate three, test
               two on YouTube, keep the winner.
             </li>
             <li>
-              <strong>Your Face models:</strong> upload 4–20 headshots, name the face (&quot;Me,&quot; &quot;Co-host,&quot; etc.), and MVP
-              uses them as identity references in every composed thumbnail. Pro gives you five face slots — enough for
-              the host, a co-host, and a few project-specific looks.
+              <strong>Your Face models:</strong> upload 4 to 20 headshots, name the face (&quot;Me,&quot; &quot;Co-host,&quot; etc.), and MVP
+              uses them as identity references in every composed thumbnail. Pro gives you {TIERS.pro.maxFaces} face slots, enough for
+              the host, a co-host, and a project-specific look.
             </li>
             <li>
-              <strong>Saved brand style:</strong> lock in your channel&apos;s thumbnail look — border, accent color, and
-              default face — once, and MVP applies it on every generation.
+              <strong>Saved brand style:</strong> lock in your channel&apos;s thumbnail look (border, accent color, and
+              default face) once, and MVP applies it on every generation.
             </li>
             <li>
               <strong>Per-video Amazon attribution:</strong> every YouTube description Geniuslink gets an{' '}
@@ -230,15 +230,15 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 2b. Social auto-posting ──────────────────────────────── */}
-        <Section id="social" icon={<Share2 size={18} />} title="Social auto-posting — one post, every channel">
+        <Section id="social" icon={<Share2 size={18} />} title="Social auto-posting: one post, every channel">
           <p>
             Every review you publish goes out <strong>natively</strong> to your social channels, not as a bare link
-            dump. MVP writes a caption tuned to each feed — short and punchy where that wins, a proper card with the
-            thumbnail where the platform supports it — so the same post reads like it was made for that audience.
+            dump. MVP writes a caption tuned to each feed (short and punchy where that wins, a proper card with the
+            thumbnail where the platform supports it), so the same post reads like it was made for that audience.
           </p>
           <p>
             <strong>Live today:</strong> your WordPress blog plus Facebook, Instagram, Threads, Pinterest, X, LinkedIn,
-            Bluesky and Telegram — eight channels, real first-party API posting (no &quot;link in bio&quot; workarounds).
+            Bluesky, Telegram and TikTok: nine channels, real first-party API posting (no &quot;link in bio&quot; workarounds).
             You can fire each post manually from the Social Push tab, or let it ride your publish schedule.
           </p>
           <ul>
@@ -253,10 +253,10 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 2c. Amazon Deal Radar ────────────────────────────────── */}
-        <Section id="deal-radar" icon={<Radar size={18} />} title="Amazon Deal Radar — live, price-verified deals on tap">
+        <Section id="deal-radar" icon={<Radar size={18} />} title="Amazon Deal Radar: live, price-verified deals on tap">
           <p>
             The hardest part of deal-posting used to be <em>finding</em> the deal. Deal Radar does it for you: it
-            continuously scans Amazon and surfaces the deals actually worth posting — sorted by opportunity, filtered to
+            continuously scans Amazon and surfaces the deals actually worth posting, sorted by opportunity, filtered to
             your niche, and <strong>verified against real price history</strong> so you never promote a fake markdown.
             It&apos;s included on <strong>every paid plan</strong>.
           </p>
@@ -283,39 +283,39 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               double-cover the same deal.
             </li>
             <li>
-              <strong>Curated roundups in one shot.</strong> Tick 2–12 deals and MVP writes a single SEO round-up post —
-              &quot;Best [niche] deals this week&quot; — with a featured thumbnail, filed under a real Deals category on your site,
+              <strong>Curated roundups in one shot.</strong> Tick 2 to 12 deals and MVP writes a single SEO round-up post,
+              &quot;Best [niche] deals this week&quot;, with a featured thumbnail, filed under a real Deals category on your site,
               and marks every product in it as covered.
             </li>
             <li>
               <strong>Hands-off weekly digest.</strong> Flip one toggle and MVP auto-publishes a &quot;Top deals in your
-              niche&quot; roundup to your blog about once a week — price-verified picks only, completely automatic.
+              niche&quot; roundup to your blog about once a week, price-verified picks only, completely automatic.
             </li>
             <li>
               <strong>Auto Instagram Stories.</strong> Turn any deal into a 9:16 Story with a baked-in &quot;link in bio&quot;
               call-to-action image that drives followers straight to your shoppable Shop page (next section). Stories
-              can&apos;t carry links for most accounts — so we bake the CTA into the image and route it through your bio.
+              can&apos;t carry links for most accounts, so we bake the CTA into the image and route it through your bio.
             </li>
           </ul>
           {isApp && <SectionCta href="/deal-radar" label="Open Deal Radar" />}
         </Section>
 
         {/* ── 2d. Link in Bio — Shop page ──────────────────────────── */}
-        <Section id="linkbio" icon={<ShoppingBag size={18} />} title="Link in Bio — your own shoppable Shop page">
+        <Section id="linkbio" icon={<ShoppingBag size={18} />} title="Link in Bio: your own shoppable Shop page">
           <p>
             One clean, branded page at <code>/shop/your-handle</code> that turns your bio link into a storefront. It&apos;s
-            the destination your Instagram Stories, TikTok, and every other &quot;link in bio&quot; points to — a Linktree that
+            the destination your Instagram Stories, TikTok, and every other &quot;link in bio&quot; points to: a Linktree that
             actually sells. Included on <strong>every paid plan</strong>.
           </p>
           <ul>
             <li>
-              <strong>Shoppable product tiles.</strong> Every product tile links out through Geniuslink automatically —
+              <strong>Shoppable product tiles.</strong> Every product tile links out through Geniuslink automatically,
               always your commissionable link, never a bare Amazon URL. Import products straight from the posts you&apos;ve
               already published.
             </li>
             <li>
               <strong>Two live sections, split by shelf life.</strong> A <em>Current Deals</em> row (the ones paired with
-              your 24-hour Stories) sits above an <em>Other Sales I found</em> shelf — so followers see what&apos;s hot right
+              your 24-hour Stories) sits above an <em>Other Sales I found</em> shelf, so followers see what&apos;s hot right
               now separately from your evergreen picks.
             </li>
             <li>
@@ -340,7 +340,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         <Section
           id="clips"
           icon={<Scissors size={18} />}
-          title="Clip Factory — long video into ready-to-post Shorts"
+          title="Clip Factory: long video into ready-to-post Shorts"
           badge={
             <span
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
@@ -351,29 +351,28 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           }
         >
           <p>
-            Clip Factory turns one long review video into vertical Shorts you can post to Instagram, TikTok, and YouTube —
+            Clip Factory turns one long review video into vertical Shorts you can post to Instagram, TikTok, and YouTube,
             in three stages: <strong>create</strong> the clip, <strong>enhance</strong> it with a shoppable CTA, then{' '}
-            <strong>publish</strong>. It&apos;s in <strong>Labs</strong> — live and usable today, still being refined, so the
+            <strong>publish</strong>. It&apos;s in <strong>Labs</strong>: live and usable today, still being refined, so the
             experience may change as we polish it.
           </p>
           <ul>
             <li>
               <strong>Finds the moments for you.</strong> Point it at a long video and MVP reads the transcript, picks the
-              punchy 15–30 second moments, and cuts them to a 9:16 vertical clip. Or upload / pick an existing Short to
+              punchy 15 to 30 second moments, and cuts them to a 9:16 vertical clip. Or upload / pick an existing Short to
               skip straight to enhancing.
             </li>
             <li>
-              <strong>Word-for-word captions.</strong> Running subtitles are burned in from what you actually said —
-              timed to the real words, never invented — with a style toggle per clip.
+              <strong>Word-for-word captions.</strong> Running subtitles are burned in from what you actually said,
+              timed to the real words and never invented, with a style toggle per clip.
             </li>
             <li>
               <strong>Enhance into a storefront clip.</strong> Burn a call-to-action overlay, attach a product link, and
-              wire up an auto-DM so a comment triggers the link in DMs — the same Shop Burner engine, built in.
+              wire up an auto-DM so a comment triggers the link in DMs: the same Shop Burner engine, built in.
             </li>
             <li>
-              <strong>Publish or download.</strong> Push the finished Short straight to Instagram or YouTube — or just
-              download it — with a caption and hashtags carried over from the clip. (TikTok publishing switches on the
-              moment our platform review is approved.)
+              <strong>Publish or download.</strong> Push the finished Short straight to Instagram, YouTube or TikTok, or just
+              download it, with a caption and hashtags carried over from the clip. (TikTok posting is on {TIERS.pro.label}.)
             </li>
           </ul>
           {isApp && <SectionCta href="/clip-factory" label="Open Clip Factory" />}
@@ -390,13 +389,13 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               last-crawl date, and 28-day clicks / impressions / position from Google Search Console.
             </li>
             <li>
-              The score is calculated against current SEO best practices — answer-first lead lines, schema completeness,
+              The score is calculated against current SEO best practices: answer-first lead lines, schema completeness,
               internal linking, keyword density, FAQ presence, image alt text. Click any post for the breakdown and a
               one-click &quot;fix all&quot; button.
             </li>
             <li>
               <strong>Revenue opportunities:</strong> MVP joins Search Console rank data with your Geniuslink click-out
-              and ranks every post by the single highest-leverage fix — submit to Google, rebuild a decaying post,
+              and ranks every post by the single highest-leverage fix: submit to Google, rebuild a decaying post,
               sharpen a low-CTR title, strengthen a CTA on a page that ranks but doesn&apos;t convert.
             </li>
             <li>
@@ -405,7 +404,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               <strong>Title audit:</strong> scan your whole archive for posts whose title&apos;s product doesn&apos;t match the
-              body&apos;s product. This catches the rare hallucination — sometimes one slipped through before our newer
+              body&apos;s product. This catches the rare hallucination, the kind that sometimes slipped through before our newer
               fact-check layer existed. One click rewrites the title in WP without touching the slug.
             </li>
           </ul>
@@ -421,11 +420,11 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             <li>
               <strong>AI-generated brand pitch emails.</strong> Enter the brand name, the products they sell, what
               you&apos;re offering (sponsored video, social posts, affiliate-only deal, free product in exchange for a
-              review), and MVP writes a tailored cold email — researching the brand, citing your actual track record,
+              review), and MVP writes a tailored cold email, researching the brand, citing your actual track record,
               listing your reach platforms, attaching your media kit URL.
             </li>
             <li>
-              <strong>100 pitches per month on Pro.</strong> Most creators send 20–40 a month to land 3–8 partnerships.
+              <strong>{TIERS.pro.collabsPerMonth} pitches per month on {TIERS.pro.label}.</strong>
             </li>
             <li>
               Auto-prefilled from your Brand Profile: every platform you&apos;ve connected or listed shows up as a &quot;your
@@ -433,7 +432,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               bracket, and shipping preferences flow in automatically.
             </li>
             <li>
-              <strong>Multi-channel reach offer:</strong> blog, YouTube, Instagram, Facebook, Pinterest, X — every
+              <strong>Multi-channel reach offer:</strong> blog, YouTube, Instagram, Facebook, Pinterest, X: every
               platform you&apos;ve listed shows up in the pitch, so brands see your full reach without you typing it twice.
             </li>
             <li>
@@ -445,23 +444,23 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── Source & Earn — the three product/campaign finders ────── */}
-        <Section id="finders" icon={<Search size={18} />} title="Source & Earn — find products worth promoting">
+        <Section id="finders" icon={<Search size={18} />} title="Source & Earn: find products worth promoting">
           <p>
-            Content is only half the game — you still have to pick WHAT to promote. Source &amp; Earn does the sourcing:
+            Content is only half the game. You still have to pick WHAT to promote. Source &amp; Earn does the sourcing:
             it sweeps the affiliate programs you&apos;re in and surfaces only the campaigns and products actually worth
             your time, then hands each one straight to the content engine. Available on every paid plan.
           </p>
           <ul>
             <li>
               <strong>Three finders, one place.</strong> Amazon Creator Connections (Affiliate+ campaigns + onsite
-              products), Levanta (the Amazon creator network), and PartnerBoost (Walmart, Amazon &amp; DTC brands) — each
+              products), Levanta (the Amazon creator network), and PartnerBoost (Walmart, Amazon &amp; DTC brands), each
               scanned against MVP&apos;s proprietary criteria: commission, runway, monthly demand, rating, product
               quality, and whether the listing even has the review-video real estate that converts. A Focus/Wide toggle
               tightens or loosens the bar.
             </li>
             <li>
               <strong>Sweeps EVERY brand you&apos;re partnered with.</strong> Connected to 800 Levanta brands or 1,300
-              PartnerBoost brands? MVP scans them all and ranks the best picks — no digging brand-by-brand — with a
+              PartnerBoost brands? MVP scans them all and ranks the best picks (no digging brand-by-brand) with a
               cached catalog so results come back fast.
             </li>
             <li>
@@ -472,7 +471,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               <strong>Buy-to-review math + a saved shortlist.</strong> Every pick shows the cost to buy vs. the
-              commission back and the break-even, so you invest only in winners — and Save the ones you like to a
+              commission back and the break-even, so you invest only in winners, and Save the ones you like to a
               buy-to-review shelf for later.
             </li>
             <li>
@@ -484,7 +483,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}
-        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub — timely deal posts">
+        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub: timely deal posts">
           <p>
             The manual companion to Deal Radar: when you already have a specific deal in hand, paste any Amazon link,
             Geniuslink, or short link and MVP writes a timely deal post with a baked deal-badge thumbnail and your promo
@@ -496,7 +495,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               &quot;was&quot; price, any deal badge (Lightning Deal, Prime Day), and the expiration date.
             </li>
             <li>
-              <strong>Occasion auto-detection:</strong> Prime Day, Black Friday, Lightning Deal, Lowest Price YTD — the
+              <strong>Occasion auto-detection:</strong> Prime Day, Black Friday, Lightning Deal, Lowest Price YTD. The
               badge and framing adapt to the moment.
             </li>
             <li>
@@ -505,7 +504,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               <strong>Refresh price:</strong> re-scrape Amazon any time and MVP updates just the price-bearing lines on
-              a live post — same URL, same SEO, same images.
+              a live post: same URL, same SEO, same images.
             </li>
           </ul>
           {isApp && <SectionCta href="/deals" label="Open Deals Hub" />}
@@ -515,8 +514,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         {/* ── 8. Multi-site ────────────────────────────────────────── */}
         <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress + multi-channel (Pro)">
           <p>
-            If you run more than one review site — a main brand plus a niche-specific spinoff, or a multi-language
-            network — Pro is built for you.
+            If you run more than one review site (a main brand plus a niche-specific spinoff, or a multi-language
+            network), Pro is built for you.
           </p>
           <ul>
             <li>
@@ -525,19 +524,19 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               <strong>Multiple YouTube channels.</strong> Connect more than one channel, set a default channel per blog,
-              and pull videos from any connected channel onto any site — so a portfolio of channels and sites stays
+              and pull videos from any connected channel onto any site, so a portfolio of channels and sites stays
               cleanly separated. (Manage it under Set Up → Connect YouTube.)
             </li>
             <li>
               The Add Site modal accepts either the standard wp-admin connection or a one-shot Connection Token from
-              the MVP Affiliate plugin — paste, it decodes, you&apos;re connected.
+              the MVP Affiliate plugin: paste, it decodes, you&apos;re connected.
             </li>
             <li>
               Set a default site and use the site picker on every content surface (Library, Co-Pilot, Comparison,
               SEO) to route work to a specific site.
             </li>
             <li>
-              Per-site SEO dashboard — your SEO hub shows posts from all sites with their site name as a column, so a
+              Per-site SEO dashboard: your SEO hub shows posts from all sites with their site name as a column, so a
               3-site Pro user sees their whole network in one view.
             </li>
           </ul>
@@ -549,12 +548,12 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <p>You&apos;re not running this business alone anymore. Pro includes Team seats for your VAs.</p>
           <ul>
             <li>
-              Invite a VA by email. They sign up under your account on your single Pro subscription — no separate billing.
+              Invite a VA by email. They sign up under your account on your single Pro subscription, with no separate billing.
             </li>
             <li>
               <strong>Full workspace sharing.</strong> Your invited VA logs in and sees your videos, posts, brand
               profile, integrations, WordPress sites, face library, thumbnail styles, collaborations, performance
-              dashboard, SEO data — everything they need to ship content on your behalf.
+              dashboard, SEO data: everything they need to ship content on your behalf.
             </li>
             <li>Usage caps and AI cost still bill against your single Pro plan, so VA seats don&apos;t multiply your spend.</li>
             <li>
@@ -573,7 +572,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </p>
           <ul>
             <li>
-              Theme self-updates from wp-admin — every new theme version shows a red &quot;Update now&quot; banner inside
+              Theme self-updates from wp-admin: every new theme version shows a red &quot;Update now&quot; banner inside
               WordPress, one click installs.
             </li>
             <li>
@@ -684,7 +683,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             to run all of it from one dashboard.
           </p>
           <p className="text-[14px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
-            If you&apos;re spending more than 8 hours a week on content operations across multiple tools — Pro is built to
+            If you&apos;re spending more than 8 hours a week on content operations across multiple tools, Pro is built to
             give you those hours back.
           </p>
           {isApp ? (

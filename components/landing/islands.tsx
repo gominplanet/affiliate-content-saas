@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react'
 import { Play, X as XIcon, Plus, Minus, Sparkles, ArrowRight } from 'lucide-react'
+import { FREE_TRIAL } from '@/lib/free-trial'
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
@@ -180,7 +181,7 @@ export function DemoVideoSection() {
           className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
           style={{ color: 'var(--text-subtle)' }}
         >
-          The story behind MVP — what it does, and what you get free when you start.
+          The story behind MVP: what it does, and what you get free when you start.
         </p>
       </div>
 
@@ -226,7 +227,7 @@ export function DemoVideoSection() {
             <div className="relative w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black">
               <iframe
                 src={`https://www.youtube.com/embed/${YT_DEMO_ID}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
-                title="MVP Affiliate — introduction"
+                title="MVP Affiliate: introduction"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
                 className="absolute inset-0 w-full h-full"
@@ -298,7 +299,7 @@ export function FAQSection() {
 const FAQS = [
   {
     q: 'How does the free trial work?',
-    a: 'You get 5 full posts on the house once you connect a WordPress site, plus 5 Art Director thumbnails and 5 designs for your first 30 days. No card required. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Amazon or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.',
+    a: `You get ${FREE_TRIAL.thumbnails} Art Director thumbnails and ${FREE_TRIAL.socialDesigns} designs with your own face on them for your first ${FREE_TRIAL.trialDays} days, plus 5 full posts on the house once you connect a WordPress site. No card required. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Amazon or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.`,
   },
   {
     q: 'Do I need to host my own WordPress site?',
@@ -322,11 +323,11 @@ const FAQS = [
   },
   {
     q: 'Will my content actually rank, and how long does it take?',
-    a: 'SEO is a slow game, and anyone promising overnight rankings is selling you something. What MVP gives you is the foundation ranking depends on: answer-first structure, Product / Review / FAQ schema, fast indexing, internal links, and content genuinely grounded in your real review (which Google\'s helpful-content system rewards). Low-competition terms can move in a few weeks; competitive terms take months and consistent volume — and MVP is what makes publishing that volume realistic.',
+    a: 'SEO is a slow game, and anyone promising overnight rankings is selling you something. What MVP gives you is the foundation ranking depends on: answer-first structure, Product / Review / FAQ schema, fast indexing, internal links, and content genuinely grounded in your real review (which Google\'s helpful-content system rewards). Low-competition terms can move in a few weeks; competitive terms take months and consistent volume, and MVP is what makes publishing that volume realistic.',
   },
   {
     q: 'Will my reviews show up in AI search (ChatGPT, Perplexity, Google\'s AI answers)?',
-    a: 'That\'s exactly what MVP is built for. AI engines quote sources they can parse and trust: the answer up top, schema they can read, and real specs and experience they can verify. MVP writes every review that way. No tool can guarantee a specific engine cites you, but content built to be citable is how you show up — and it\'s the opposite of the generic AI filler those engines are learning to skip.',
+    a: 'That\'s exactly what MVP is built for. AI engines quote sources they can parse and trust: the answer up top, schema they can read, and real specs and experience they can verify. MVP writes every review that way. No tool can guarantee a specific engine cites you, but content built to be citable is how you show up, and it\'s the opposite of the generic AI filler those engines are learning to skip.',
   },
 ]
 
@@ -387,7 +388,9 @@ export function StickyBottomBar() {
 
   useEffect(() => {
     // Hide on first paint if user dismissed in this session.
-    if (sessionStorage.getItem('mvp-landing-cta-dismissed') === '1') {
+    let wasDismissed = false
+    try { wasDismissed = sessionStorage.getItem('mvp-landing-cta-dismissed') === '1' } catch { /* storage blocked: show the bar */ }
+    if (wasDismissed) {
       setDismissed(true)
       return
     }
@@ -429,10 +432,10 @@ export function StickyBottomBar() {
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
-            Try MVP free: 5 posts, no card.
+            Try MVP free: {FREE_TRIAL.socialDesigns} designs with your face, no card.
           </p>
           <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            See if it fits your workflow before you pay a cent.
+            Free for your first {FREE_TRIAL.trialDays} days. See if it fits before you pay a cent.
           </p>
         </div>
         <a
@@ -445,7 +448,7 @@ export function StickyBottomBar() {
         </a>
         <button
           onClick={() => {
-            sessionStorage.setItem('mvp-landing-cta-dismissed', '1')
+            try { sessionStorage.setItem('mvp-landing-cta-dismissed', '1') } catch { /* storage blocked: dismiss for this view only */ }
             setDismissed(true)
           }}
           className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/10"

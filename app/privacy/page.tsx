@@ -4,7 +4,10 @@
 // device storage, revocation, contact) and states the retention MVP actually
 // enforces (lib/youtube-retention). Every sentence here has to stay true of
 // the product: scripts/test-privacy-policy holds the YouTube parts to the code.
-export const metadata = { title: 'Privacy Policy · MVP Affiliate' }
+export const metadata = {
+  title: 'Privacy Policy',
+  description: 'What MVP Affiliate collects, why, how long it keeps it, and how to have it deleted.',
+}
 
 const H2 = 'text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2'
 const A = 'text-[#7C3AED] hover:underline'

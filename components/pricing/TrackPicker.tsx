@@ -83,7 +83,7 @@ export function TrackCompare({ className = '' }: { className?: string }) {
     <section className={`w-full max-w-4xl ${className}`}>
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
-          Amazon Influencer vs the blog plans
+          Amazon Influencer vs Pro
         </h2>
         <p className="mt-2 text-[14px] text-[#6e6e73] dark:text-[#ebebf0]">
           The rows in bold are the ones that decide it.

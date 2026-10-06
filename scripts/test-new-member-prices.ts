@@ -109,7 +109,8 @@ async function main() {
   for (const p of ['app/page.tsx', 'app/pricing/page.tsx', 'app/amazon-influencer/page.tsx', 'app/run-your-storefront/page.tsx']) {
     check(`${p} shows the countdown`, /<PriceLockCountdown /.test(r(p)))
   }
-  for (const p of ['app/page.tsx', 'app/amazon-influencer/page.tsx', 'app/run-your-storefront/page.tsx']) {
+  // own-your-blog added: it prints both prices through AdPricingTable and was fully static.
+  for (const p of ['app/page.tsx', 'app/amazon-influencer/page.tsx', 'app/run-your-storefront/page.tsx', 'app/own-your-blog/page.tsx']) {
     check(`${p} re-renders on its own, so the new price shows without a deploy`, /export const revalidate = 600/.test(r(p)))
   }
 

@@ -1,6 +1,9 @@
 import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
 
-export const metadata = { title: 'Terms of Service — MVP Affiliate' }
+export const metadata = {
+  title: 'Terms of Service',
+  description: 'The terms for using MVP Affiliate: accounts, plans and billing, refunds, your content, and connected platforms.',
+}
 
 export default function TermsPage() {
   return (
@@ -85,7 +88,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. TikTok Integration</h2>
           <p>
             When you connect a TikTok account, you authorize MVP Affiliate to (a) read your basic profile
-            information (open_id, display name, avatar, and — if granted — profile link and bio) and (b)
+            information (open_id, display name, avatar, and, if granted, profile link and bio) and (b)
             upload or publish a video to that authorized TikTok account only when you explicitly click a
             publish action inside the App. The App never posts in the background, never schedules content
             outside of explicit user actions, and never interacts with TikTok accounts other than the one
@@ -184,7 +187,7 @@ export default function TermsPage() {
             confidential property of Gominplanet / MVP Affiliate and is protected by
             intellectual property and trade-secret law. We grant you a limited,
             non-exclusive, non-transferable right to use the App for your own affiliate
-            content while your subscription is active — and nothing more. No ownership or
+            content while your subscription is active, and nothing more. No ownership or
             license to the underlying software or methods is transferred to you.
           </p>
           <p className="mt-3">

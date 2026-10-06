@@ -12,8 +12,9 @@
  */
 
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
-import { freeTrialHighlights } from '@/lib/free-trial'
+import { freeTrialHighlights, FREE_TRIAL } from '@/lib/free-trial'
 import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send, Upload, Youtube, Pin, Radio, Scissors } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
@@ -28,7 +29,12 @@ import {
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 
-export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
+// The layout's title template appends "· MVP Affiliate"; spelling it here too
+// printed it twice in the tab and in search results.
+export const metadata: Metadata = {
+  title: 'Pricing',
+  description: 'Two plans: Amazon for storefront creators and Pro for the full blog and social pipeline. Start with a free trial, no card required.',
+}
 
 type Plan = {
   tier: 'trial' | 'creator' | 'studio' | 'pro' | 'amazon'
@@ -115,8 +121,10 @@ const plans: PlanExt[] = [
     label: 'Free Trial',
     price: 0,
     regularPrice: 0,
-    limit: 'Free forever · no card',
-    description: 'Take an Amazon product, put your own face on a finished design, and download it. No card, no site, no account to connect: one Amazon Associates tag and you are generating. Research and Deal Radar stay free forever.',
+    // The trial ends after FREE_TRIAL.trialDays (lib/free-trial). This card said
+    // "Free forever" for a month after that stopped being true.
+    limit: `Free for ${FREE_TRIAL.trialDays} days · no card`,
+    description: 'Take an Amazon product, put your own face on a finished design, and download it. No card, no site, no account to connect: one Amazon Associates tag and you are generating. Research and Deal Radar stay open after the trial ends.',
     features: [
       // The Amazon loop first, because it is the one a new account can complete
       // today. Pulled from lib/free-trial.ts so the plan advertised here and the
@@ -149,7 +157,8 @@ const plans: PlanExt[] = [
       '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
       `${TIERS.pro.postsPerMonth} full reviews per month (blog + thumbnail + metadata bundle)`,
       `Everything in the Amazon Influencer plan too: ${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Reels covers / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month + Creator Connections brand deals`,
-      'Adds X (Twitter) auto-post on top of the Amazon plan, plus TikTok the moment it clears platform review',
+      // TikTok is live (lib/feature-flags LIVE_SOCIAL), not waiting on a review.
+      'Adds X (Twitter) and TikTok auto-post on top of the Amazon plan',
       'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
       'Comparison posts: head-to-head ranked review with a named winner',
       'Buying Guides: "Best [topic]" round-ups (auto-curate or pick-your-own)',
@@ -326,7 +335,7 @@ export default async function PricingPage({
       })()}
 
       {/* Prices go up for new members on November 1; the lock and countdown. */}
-      <PriceLockCountdown className="mb-8" />
+      {!newPricesLive() && <PriceLockCountdown className="mb-8" />}
 
       <div id="plans" className={`grid gap-5 w-full mx-auto scroll-mt-8 items-start ${PLAN_GRID[plans.length] ?? PLAN_GRID[4]}`}>
         {plans.map((plan) => (
@@ -433,8 +442,7 @@ export default async function PricingPage({
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
         Auto-posting live today: your WordPress site, X, LinkedIn, Facebook, Instagram, Threads, Bluesky,
-        Telegram, and Pinterest. TikTok is built and switches on automatically, at no extra cost, once it
-        completes its platform review.
+        Telegram, Pinterest and TikTok. Which networks you post to depends on your plan.
       </p>
 
       {/* ───────────────────────────────────────────────────────────────────
@@ -678,7 +686,7 @@ export default async function PricingPage({
         </p>
       </div>
       <p className="mt-6 text-sm text-[#86868b] dark:text-[#8e8e93]">
-        Cancel anytime. No contracts. Billed monthly via Stripe.
+        Cancel anytime. No contracts. Billed through Stripe.
       </p>
     </div>
   )

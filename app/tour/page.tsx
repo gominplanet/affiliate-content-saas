@@ -17,7 +17,7 @@ import { Compass, ArrowUpRight, ArrowRight } from 'lucide-react'
 import { TourBody } from '@/components/tour/tour-content'
 
 export const metadata: Metadata = {
-  title: 'Product tour · MVP Affiliate',
+  title: 'Product tour',
   description:
     'Free Amazon product research, no card, no setup: search the whole catalogue by sales, rating, price, review ratio and video competition, watch live price-verified deals on Deal Radar, and scout your Levanta & PartnerBoost campaigns. Then, when you want it, MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. The full tour of what ships today.',
   alternates: { canonical: '/tour' },
@@ -134,7 +134,7 @@ export default function PublicTourPage() {
           <div className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[12px]">M</span>
             <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-              © 2026 MVP Affiliate
+              © {new Date().getFullYear()} MVP Affiliate
             </span>
           </div>
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]" style={{ color: 'var(--text-soft)' }}>

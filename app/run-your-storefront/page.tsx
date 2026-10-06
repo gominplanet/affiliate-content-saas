@@ -30,6 +30,7 @@
 // because of it.
 
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
 import NextImage from 'next/image'
 import {
@@ -50,7 +51,7 @@ import { SALES_PAUSED } from '@/lib/sales-paused'
 import MetaTrack from '@/components/analytics/MetaTrack'
 
 export const metadata: Metadata = {
-  title: 'Make the assets your storefront needs | MVP Affiliate',
+  title: 'Make the assets your storefront needs',
   description:
     'Thumbnails, shoppable designs, pins, Reels covers, bulk video uploads, Reels clips and brand-deal outreach for Amazon Influencers. The other tools help you decide. This one makes the work.',
   robots: { index: false, follow: false },
@@ -95,7 +96,9 @@ const MAKES: { icon: React.ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <Handshake size={18} />,
-    title: `${TIERS.amazon.collabsPerMonth} brand-deal outreach messages a month`,
+    // collabsPerMonth caps drafted pitch EMAILS, not Creator Connections
+    // messages, which have no cap (scripts/test-sales-page-facts).
+    title: `Unlimited brand messages, plus ${TIERS.amazon.collabsPerMonth} pitch emails a month`,
     body: 'Creator Connections campaigns found and the first message written, so the pitch goes out the day you see the product.',
   },
   {
@@ -189,7 +192,7 @@ export default function RunYourStorefrontPage() {
 
       <header className="px-6 lg:px-8 pt-7">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
-          <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Affiliate" width={120} height={32} className="h-7 w-auto" priority />
+          <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Affiliate" width={28} height={28} className="h-7 w-7" priority />
         </div>
       </header>
 
@@ -213,7 +216,7 @@ export default function RunYourStorefrontPage() {
             <CtaSubtext />
           </div>
           {/* Prices go up for new members on November 1; the lock and countdown. */}
-          <PriceLockCountdown tone="light" className="mt-10 text-left" />
+          {!newPricesLive() && <PriceLockCountdown tone="light" className="mt-10 text-left" />}
         </div>
       </section>
 

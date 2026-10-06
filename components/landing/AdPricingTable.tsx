@@ -27,6 +27,7 @@
 import { useState } from 'react'
 import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
+import { FREE_TRIAL } from '@/lib/free-trial'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
 
 type PaidTier = 'amazon' | 'pro'
@@ -44,7 +45,7 @@ function capsFor(tier: PaidTier): string[] {
         ['art-directed thumbnails a month', t.thumbnailsPerMonth],
         ['Pinterest pins a month', t.pinsPerMonth],
         ['Reels covers a month', t.igPostsPerMonth],
-        ['brand-deal messages a month', t.collabsPerMonth],
+        ['brand pitch emails drafted a month', t.collabsPerMonth],
         ['face models', t.maxFaces],
         // Seb, 2026-10-05: the video additions, from lib/amazon-plan.
         ['deal posts a month', t.dealsPerMonth],
@@ -215,17 +216,21 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       )}
 
       <div className="grid md:grid-cols-3 gap-5 items-stretch">
+        {/* A trial, not a free plan: the allowances stop after
+            FREE_TRIAL.trialDays (lib/free-trial). This card said "/forever"
+            on both ad landing pages. Designs first, because that is the loop
+            the trial is built around; the posts need a WordPress site. */}
         <PlanCard
-          name="Free"
+          name="Free trial"
           blurb="See it work before you decide"
           price={`$${TIERS.trial.price}`}
-          priceSuffix="/forever"
+          priceSuffix={`for ${FREE_TRIAL.trialDays} days`}
           note="No card required"
           features={[
-            `${TIERS.trial.lifetimeMax} full published reviews`,
-            `${TIERS.trial.thumbnailsPerMonth} art-directed thumbnails`,
-            `${TIERS.trial.maxFaces} face model, ${TIERS.trial.photoboothPerMonth} headshots`,
-            'Your own blog, connected to your domain',
+            `${FREE_TRIAL.thumbnails} art-directed thumbnails`,
+            `${FREE_TRIAL.socialDesigns} ready-to-post designs`,
+            `${FREE_TRIAL.faces} face model, ${FREE_TRIAL.photobooth} headshots`,
+            `${TIERS.trial.lifetimeMax} full published reviews once you connect a WordPress site`,
           ]}
           ctaLabel="Start free, no card"
           ctaHref={freeHref}

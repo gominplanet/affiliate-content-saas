@@ -18,6 +18,7 @@
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
 import {
   AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
@@ -349,7 +350,7 @@ function PricingSection() {
       />
       <div className="max-w-6xl mx-auto relative">
         {/* Prices go up for new members on November 1; the lock and countdown. */}
-        <PriceLockCountdown tone="dark" className="mb-10" />
+        {!newPricesLive() && <PriceLockCountdown tone="dark" className="mb-10" />}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
@@ -415,7 +416,7 @@ function PricingSection() {
               Free to start. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar are free forever. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
+              Product research and Deal Radar stay open after your trial ends. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
             </p>
           </div>
           <a
@@ -561,7 +562,7 @@ const PRICING_TIERS: PricingTier[] = [
   },
   {
     name: 'Pro',
-    tagline: 'Best for the serious affiliate marketer. Everything, uncapped.',
+    tagline: 'Best for the serious affiliate marketer. Everything MVP does, with the biggest allowances.',
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
     highlight: false,
@@ -1844,7 +1845,6 @@ function Footer() {
               { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },
-              { label: 'Product tour', href: '/tour' },
             ]}
           />
           {/* Public resources only — no member-only in-app tools here (WordPress

@@ -358,8 +358,9 @@ for (const { label, src } of AD_PAGES) {
   check('both paid plans are shown, not only the page\'s own',
     /\['amazon', 'pro'\] as PaidTier\[\]\)\.map/.test(CARD),
     'a reader who landed on the wrong page should find the right plan rather than bounce')
+  // Renamed "Free trial": it lasts FREE_TRIAL.trialDays, and "Free" sat above "/forever".
   check('the free column is there too',
-    /name="Free"/.test(CARD),
+    /name="Free trial"/.test(CARD),
     'it is what the ad promised, and it is the lowest-risk way in')
   check('the toggle hides itself when nothing is sold yearly',
     /bestPct > 0 && \(/.test(CARD),

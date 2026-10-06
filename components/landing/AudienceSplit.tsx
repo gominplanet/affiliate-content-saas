@@ -106,7 +106,7 @@ const PANELS: Panel[] = [
 
 export default function AudienceSplit() {
   return (
-    <section className="px-5 sm:px-8 pt-12 sm:pt-16 pb-4 relative">
+    <section id="roles" className="px-5 sm:px-8 pt-12 sm:pt-16 pb-4 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto mb-9">
           <span

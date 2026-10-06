@@ -9,6 +9,7 @@
 // in-dashboard tool group, and a public /amazon page would collide with it.
 
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
+import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import NextImage from 'next/image'
@@ -170,7 +171,7 @@ export default function AmazonInfluencerPage() {
           </p>
           {SALES_PAUSED && <p className="mt-4 text-sm text-[#ff9500]">{SALES_PAUSED_MESSAGE}</p>}
           {/* Prices go up for new members on November 1; the lock and countdown. */}
-          <PriceLockCountdown className="mt-8 text-left" />
+          {!newPricesLive() && <PriceLockCountdown className="mt-8 text-left" />}
         </div>
       </section>
 

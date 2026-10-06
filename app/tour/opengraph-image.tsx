@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const runtime = 'nodejs'
-export const alt = 'MVP Affiliate — Product Tour: everything the platform does today'
+export const alt = 'MVP Affiliate product tour: everything the platform does today'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 

@@ -11,17 +11,23 @@
 // moment by itself. The numbers come from lib/price-schedule, never typed here.
 //
 // The countdown is filled in after mount, so the server and the first client
-// render agree; until then the explanation shows on its own.
+// render agree; until then the explanation shows on its own. Pages render it
+// only while !newPricesLive(), decided on the server.
 
 import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
-import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange, newPricesLive } from '@/lib/price-schedule'
+import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange } from '@/lib/price-schedule'
 
 type Left = NonNullable<ReturnType<typeof timeUntilPriceChange>>
 
 export default function PriceLockCountdown({ tone = 'auto', className = '' }: { tone?: 'auto' | 'dark' | 'light'; className?: string }) {
   const [left, setLeft] = useState<Left | null>(null)
-  const [over, setOver] = useState(() => newPricesLive())
+  // Starts false on purpose. Reading the clock here ran on the server and again
+  // on the visitor's device, so a cached page from before the change, or a
+  // phone with its clock set ahead, hydrated into a mismatch. The page decides
+  // on the server whether to render this at all; the tick below hides it if the
+  // moment passes while it is open.
+  const [over, setOver] = useState(false)
 
   useEffect(() => {
     const tick = () => {
