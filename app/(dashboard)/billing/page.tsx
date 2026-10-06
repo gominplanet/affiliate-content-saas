@@ -31,7 +31,7 @@ export default function BillingPage() {
   const [promoCode, setPromoCode] = useState('')
   // Upgrade-cost preview (shown BEFORE we bill, so the charge is never a surprise).
   const [previewLoading, setPreviewLoading] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null } | null>(null)
+  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null; interval: 'month' | 'year'; fellBackToMonthly: boolean } | null>(null)
   // A queued end-of-period downgrade (Stripe schedule), if any — shown as a note.
   const [pendingDowngrade, setPendingDowngrade] = useState<{ tier: string; effectiveAt: number } | null>(null)
   // What this member is really charged, from their live Stripe subscription.
@@ -227,7 +227,7 @@ export default function BillingPage() {
       if (data.error) { toast.error(data.error); return }
       if (data.kind === 'new') { void upgrade(t); return }
       if (data.kind === 'same') { toast.success("You're already on this plan."); return }
-      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null, effectiveAt: data.effectiveAt ?? null })
+      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null, effectiveAt: data.effectiveAt ?? null, interval: data.interval === 'year' ? 'year' : 'month', fellBackToMonthly: data.fellBackToMonthly === true })
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPreviewLoading(null) }
   }
@@ -510,14 +510,21 @@ export default function BillingPage() {
                         <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
                           {preview.kind === 'upgrade' ? (
                             preview.chargeNow != null ? (
-                              <>You&apos;ll be charged <strong>about ${preview.chargeNow.toFixed(2)} today</strong> — the prorated difference for the rest of your current billing period plus your first month of <strong>{TIERS[plan.tier].label}</strong>. After that it&apos;s <strong>${preview.nextPrice}/month</strong>.</>
+                              <>You&apos;ll be charged <strong>about ${preview.chargeNow.toFixed(2)} today</strong>: the prorated difference for the rest of your current billing period plus your first {preview.interval} of <strong>{TIERS[plan.tier].label}</strong>. After that it&apos;s <strong>${preview.nextPrice}/{preview.interval}</strong>.</>
                             ) : (
-                              <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/month</strong>.</>
+                              <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/{preview.interval}</strong>.</>
                             )
                           ) : (
-                            <>You keep your current plan until <strong>{preview.effectiveAt ? new Date(preview.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'the end of this billing period'}</strong>, then move to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/month</strong>). <strong>No charge today</strong> — you keep everything you&apos;ve paid for until then.</>
+                            <>You keep your current plan until <strong>{preview.effectiveAt ? new Date(preview.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'the end of this billing period'}</strong>, then move to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/{preview.interval}</strong>). <strong>No charge today</strong>. You keep everything you&apos;ve paid for until then.</>
                           )}
                         </p>
+                        {/* SAY IT when a yearly member is moved to monthly, so a
+                            different number is never a silent surprise. */}
+                        {preview.fellBackToMonthly && (
+                          <p className="mt-2 text-xs text-[#B45309] dark:text-[#FBBF24] leading-relaxed">
+                            Yearly billing isn&apos;t available for {TIERS[plan.tier].label} right now, so this change moves you to <strong>monthly billing</strong>.
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-3">
                           <button
                             onClick={() => upgrade(plan.tier)}

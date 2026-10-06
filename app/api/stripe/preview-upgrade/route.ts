@@ -1,5 +1,5 @@
 /**
- * POST /api/stripe/preview-upgrade  { tier }
+ * POST /api/stripe/preview-upgrade  { tier, interval? }
  *
  * Tells an existing subscriber, BEFORE they confirm, what a plan change will
  * cost them today — the prorated amount Stripe would invoice immediately on an
@@ -13,10 +13,13 @@
  *   { kind: 'same' }                             already on this plan
  *   { kind: 'upgrade', chargeNow, nextPrice }    immediate prorated charge (dollars); null if preview unavailable
  *   { kind: 'downgrade', nextPrice }             credit applied to next invoice, no charge today
+ * Upgrade and downgrade also carry { interval, fellBackToMonthly }: the
+ * interval nextPrice is per, and whether a yearly member is being moved to
+ * monthly because the plan has no yearly price.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS, planChangePriceId } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, PRICE_ID_LIST, planChangeTarget } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { tier } = await request.json() as { tier: Tier }
+    const { tier, interval } = await request.json() as { tier: Tier; interval?: unknown }
     const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
     if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
 
@@ -41,10 +44,19 @@ export async function POST(request: NextRequest) {
     const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
     const item = live?.items.data[0]
     if (!live || !item) return NextResponse.json({ kind: 'new' })
-    // Same price checkout would use: a member from before the November 1
-    // change keeps that price level on the other plan (lib/stripe).
-    const changePriceId = planChangePriceId(tier, item.price?.recurring?.interval === 'year' ? 'year' : 'month', item.price?.id) ?? priceId
-    if (item.price?.id === changePriceId) return NextResponse.json({ kind: 'same' })
+    // SAME FUNCTION, SAME INPUTS AS CHECKOUT, so the price quoted here is the
+    // price charged: current interval unless one was picked, and a member from
+    // before the November 1 change keeps that price level (lib/stripe).
+    const change = planChangeTarget(tier, interval, item.price)
+    const changePriceId = change.priceId ?? priceId
+    // Checkout treats any price this tier has had at the same interval as
+    // "already on it", so the preview must too, not quote an upgrade.
+    const sameInterval = (item.price?.recurring?.interval ?? 'month') === change.interval
+    const tierIds = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST] ?? []
+    if (item.price?.id === changePriceId || (sameInterval && !!item.price?.id && tierIds.includes(item.price.id))) {
+      return NextResponse.json({ kind: 'same' })
+    }
+    const billing = { interval: change.interval, fellBackToMonthly: change.fellBackToMonthly }
 
     const newPrice = await stripe.prices.retrieve(changePriceId)
     const nextPrice = (newPrice.unit_amount ?? 0) / 100
@@ -56,7 +68,7 @@ export async function POST(request: NextRequest) {
     if (!isUpgrade) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const effectiveAt = (live as any).current_period_end ?? null
-      return NextResponse.json({ kind: 'downgrade', nextPrice, effectiveAt })
+      return NextResponse.json({ kind: 'downgrade', nextPrice, effectiveAt, ...billing })
     }
 
     // Upgrade → preview the invoice Stripe would raise immediately. amount_due
@@ -82,7 +94,7 @@ export async function POST(request: NextRequest) {
       console.error('[preview-upgrade] createPreview failed', e instanceof Error ? e.message : e)
     }
 
-    return NextResponse.json({ kind: 'upgrade', chargeNow, nextPrice })
+    return NextResponse.json({ kind: 'upgrade', chargeNow, nextPrice, ...billing })
   } catch (err) {
     console.error('[preview-upgrade]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't preview that change just now. Please try again in a moment.") }, { status: 500 })

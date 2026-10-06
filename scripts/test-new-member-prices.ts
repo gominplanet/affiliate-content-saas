@@ -76,11 +76,11 @@ async function main() {
 
   const CO = r('app/api/stripe/checkout/route.ts')
   check('checkout uses the locked price for every plan change',
-    /const changePriceId = planChangePriceId\(tier, annualId \? 'year' : 'month', item\.price\?\.id\) \?\? priceId/.test(CO)
+    /const change = planChangeTarget\(tier, interval, item\.price\)/.test(CO) && /const changePriceId = change\.priceId \?\? priceId/.test(CO)
     && /items: \[\{ id: item\.id, price: changePriceId \}\]/.test(CO) && /items: \[\{ price: changePriceId, quantity: 1 \}\]/.test(CO)
     && !/items: \[\{ id: item\.id, price: priceId \}\]/.test(CO))
   const PU = r('app/api/stripe/preview-upgrade/route.ts')
-  check('and the upgrade preview quotes that same price', /planChangePriceId\(/.test(PU) && /items: \[\{ id: item\.id, price: changePriceId \}\]/.test(PU))
+  check('and the upgrade preview quotes that same price', /planChangeTarget\(tier, interval, item\.price\)/.test(PU) && /items: \[\{ id: item\.id, price: changePriceId \}\]/.test(PU))
   const guardAt = CO.indexOf("await priceMismatch(stripe, priceId, tier as Tier, annualId ? 'year' : 'month', 'checkout')")
   check('checkout compares the Stripe price with the shown one before it changes anything',
     guardAt > 0 && guardAt < CO.indexOf('stripe.subscriptions.update(') && guardAt < CO.indexOf('stripe.checkout.sessions.create('))

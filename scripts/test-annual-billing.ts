@@ -219,6 +219,56 @@ const days = (n: number) => n * 24 * 60 * 60 * 1000
     '$199 x 12 less $1999 is $389, which is 1.95 months, and a customer can check that')
 }
 
-console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
-for (const f of failures) console.log(`  ✗ ${f}`)
-process.exit(failures.length ? 1 : 0)
+// ── a yearly member's plan change is previewed and charged at ONE price ─────
+//
+// The preview priced a plan change at the member's current interval while
+// checkout, given no interval by the billing page, charged every in-place
+// change MONTHLY. A yearly member was quoted the yearly price and billed the
+// monthly one. Both now ask planChangeTarget with the same inputs.
+async function previewMatchesCharge() {
+  Object.assign(process.env, {
+    STRIPE_PRICE_AMAZON: 'price_amz99', STRIPE_PRICE_AMAZON_ANNUAL: 'price_amz999',
+    STRIPE_PRICE_PRO: 'price_pro199', STRIPE_PRICE_PRO_ANNUAL: 'price_pro1999',
+    NEXT_PUBLIC_NEW_MEMBER_PRICES: 'off',
+  })
+  const ST = await import('../lib/stripe')
+  const yearly = { id: 'price_amz999', recurring: { interval: 'year' } }
+  const monthly = { id: 'price_amz99', recurring: { interval: 'month' } }
+
+  const kept = ST.planChangeTarget('pro', undefined, yearly)
+  check('a yearly member changing plan with no interval picked stays yearly',
+    kept.priceId === 'price_pro1999' && kept.interval === 'year' && !kept.fellBackToMonthly, JSON.stringify(kept))
+  check('a monthly member stays monthly',
+    ST.planChangeTarget('pro', undefined, monthly).priceId === 'price_pro199')
+  check('an interval the member explicitly picked wins',
+    ST.planChangeTarget('pro', 'month', yearly).priceId === 'price_pro199'
+      && ST.planChangeTarget('pro', 'year', monthly).priceId === 'price_pro1999')
+
+  const saved = [...ST.ANNUAL_PRICE_ID_LIST.pro]
+  ST.ANNUAL_PRICE_ID_LIST.pro.length = 0
+  const fell = ST.planChangeTarget('pro', undefined, yearly)
+  ST.ANNUAL_PRICE_ID_LIST.pro.push(...saved)
+  check('with no yearly price it falls back to monthly and says it did',
+    fell.priceId === 'price_pro199' && fell.interval === 'month' && fell.fellBackToMonthly, JSON.stringify(fell))
+
+  const PREVIEW = live(read('app/api/stripe/preview-upgrade/route.ts'))
+  for (const [name, src] of [['preview', PREVIEW], ['checkout', CHECKOUT]] as const) {
+    check(`${name} resolves the change price through planChangeTarget with the same inputs`,
+      /const change = planChangeTarget\(tier, interval, item\.price\)/.test(src)
+        && /const changePriceId = change\.priceId \?\? priceId/.test(src)
+        && /items: \[\{ id: item\.id, price: changePriceId \}\]/.test(src)
+        && !/planChangePriceId\(/.test(src),
+      'two routes each choosing the interval is how the quote and the charge came apart')
+  }
+  check('the preview reports the interval and the fallback',
+    /interval: change\.interval, fellBackToMonthly: change\.fellBackToMonthly/.test(PREVIEW))
+  const BILLING = live(read('app/(dashboard)/billing/page.tsx'))
+  check('and the billing page shows both rather than assuming monthly',
+    /\{preview\.fellBackToMonthly && \(/.test(BILLING) && !/preview\.nextPrice\}\/month/.test(BILLING))
+}
+
+void previewMatchesCharge().catch((e) => { failures.push(`preview/charge check threw: ${e instanceof Error ? e.message : e}`) }).then(() => {
+  console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
+  for (const f of failures) console.log(`  ✗ ${f}`)
+  process.exit(failures.length ? 1 : 0)
+})

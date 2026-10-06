@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
-import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, planChangePriceId, type BillingInterval } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, planChangeTarget, type BillingInterval } from '@/lib/stripe'
 import { priceMismatch } from '@/lib/price-guard'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -24,9 +24,10 @@ export async function POST(request: NextRequest) {
     tier: Tier
     referral?: string | null
     couponId?: string | null
-    /** 'year' buys the annual price for this tier. Anything else, including
-     *  absent, means monthly, so every existing caller keeps its behaviour
-     *  without being touched. */
+    /** 'year' buys the annual price for this tier. For a NEW subscription
+     *  anything else, including absent, means monthly. For an in-place plan
+     *  change, absent means the member's CURRENT interval (lib/stripe
+     *  planChangeTarget), which is what the upgrade preview quoted. */
     interval?: BillingInterval
     /** Customer-facing promotion code the user typed (e.g. "EARLY20"), NOT a
      *  Stripe promo_… object id. Only used by the in-place swap below — fresh
@@ -140,10 +141,22 @@ export async function POST(request: NextRequest) {
       const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
       const item = live?.items.data[0]
       if (live && item) {
-        // A member who joined before the November 1 price change keeps that
-        // price level on whichever plan they move to (lib/stripe
-        // planChangePriceId). Everyone else moves to the new-member price.
-        const changePriceId = planChangePriceId(tier, annualId ? 'year' : 'month', item.price?.id) ?? priceId
+        // SAME PRICE THE PREVIEW QUOTED: the member's current interval unless
+        // they picked one, and a member who joined before the November 1 price
+        // change keeps that price level on whichever plan they move to
+        // (lib/stripe planChangeTarget). Everyone else moves to the new-member
+        // price.
+        const change = planChangeTarget(tier, interval, item.price)
+        const changePriceId = change.priceId ?? priceId
+        // A yearly member kept on yearly with no yearly price for this tier is
+        // moved to monthly. The preview told them; ops should know too. (An
+        // explicit yearly request was already reported above.)
+        if (change.fellBackToMonthly && !wantsAnnual) {
+          void alertOps(
+            'Yearly plan change with no annual price configured',
+            `A yearly member moved to "${tier}" but no yearly price resolves for it, so they were moved to MONTHLY. Set STRIPE_PRICE_${String(tier).toUpperCase()}_ANNUAL in Vercel and redeploy.`,
+          )
+        }
         // Resolve a typed promotion code FIRST — before both the
         // already-on-plan short-circuit and any subscription write. Two
         // reasons: a bad code becomes a clean 400 with nothing changed, and
@@ -188,7 +201,7 @@ export async function POST(request: NextRequest) {
         // cancel a queued downgrade, say) keeps $199 rather than being moved to
         // the $299 new-member price as if it were an upgrade.
         const tierIds = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST] ?? []
-        const sameInterval = (item.price?.recurring?.interval ?? 'month') === (annualId ? 'year' : 'month')
+        const sameInterval = (item.price?.recurring?.interval ?? 'month') === change.interval
         if (item.price?.id === changePriceId || (sameInterval && !!item.price?.id && tierIds.includes(item.price.id))) {
           if (promotionCodeId) {
             await stripe.subscriptions.update(live.id, {

@@ -136,6 +136,31 @@ export function planChangePriceId(tier: string, interval: BillingInterval, curre
   return newBuyerPriceId(tier, interval)
 }
 
+/**
+ * ONE ANSWER TO "WHICH PRICE DOES THIS PLAN CHANGE GO TO", read by both the
+ * upgrade preview and checkout, so the number quoted is the number charged.
+ *
+ * The member KEEPS THEIR CURRENT INTERVAL unless they explicitly asked for the
+ * other one: a yearly member switching plans stays yearly. Checkout used to
+ * send every in-place change without an interval to monthly while the preview
+ * priced it yearly, so a yearly member was quoted one price and charged
+ * another. A yearly change with no yearly price configured falls back to
+ * monthly and RETURNS that it did, so the preview can say so instead of
+ * quoting a different number in silence.
+ */
+export function planChangeTarget(
+  tier: string,
+  requested: unknown,
+  current: { id?: string | null; recurring?: { interval?: string | null } | null } | null | undefined,
+): { priceId: string | null; interval: BillingInterval; fellBackToMonthly: boolean } {
+  const interval: BillingInterval = requested === 'year' || requested === 'month'
+    ? requested
+    : current?.recurring?.interval === 'year' ? 'year' : 'month'
+  const priceId = planChangePriceId(tier, interval, current?.id)
+  if (priceId || interval === 'month') return { priceId, interval, fellBackToMonthly: false }
+  return { priceId: planChangePriceId(tier, 'month', current?.id), interval: 'month', fellBackToMonthly: true }
+}
+
 /** The annual price a NEW buyer is charged, or null when annual is not
  *  configured for that tier. Null is the honest answer and every caller checks
  *  it: offering a yearly button that cannot check out is worse than not
