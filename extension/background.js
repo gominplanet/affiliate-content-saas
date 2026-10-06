@@ -14116,9 +14116,16 @@ async function trybeScan({ knownNames, max, keywords, categories }, callerTabId)
 // page uses, a short pause between pages. It hands MVP the entries as TRYBE
 // wrote them; MVP's server reads the fields. Nothing is pressed or sent.
 
-// In page: the sign-in TRYBE's own requests carry, from where its sign-in
-// library keeps it (local storage, or cookies, possibly split in parts).
-function trybeTokenInPage() {
+// In page. EVERYTHING IT USES IS INSIDE IT: Chrome copies only this one
+// function into TRYBE's page, so a helper defined elsewhere in SCOUT does not
+// exist there (1.41.2 called one and failed before asking for anything).
+async function trybeHarvestInPage(fromPage, count, withCategories) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const first = Math.max(1, Number(fromPage) || 1)
+  const last = first + Math.max(1, Math.min(20, Number(count) || 10)) - 1
+  // The sign-in TRYBE's own requests carry, from where its sign-in library
+  // keeps it (local storage, or cookies, possibly split in parts).
+  const readToken = () => {
   const fromValue = (v) => {
     try {
       let s = String(v || '')
@@ -14142,12 +14149,9 @@ function trybeTokenInPage() {
   }
   for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) return t }
   return null
-}
-
-async function trybeHarvestInPage(maxPages) {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const max = Math.max(1, Math.min(200, Number(maxPages) || 120))
-  let token = trybeTokenInPage()
+  }
+  try {
+  let token = readToken()
   // Not readable from the page (an httpOnly cookie): catch it on the page's
   // own next request instead, by scrolling the list so it asks for more.
   if (!token) {
@@ -14170,7 +14174,7 @@ async function trybeHarvestInPage(maxPages) {
   const get = async (path) => {
     const r = await fetch(path, { credentials: 'include', headers: token ? { authorization: 'Bearer ' + token, accept: 'application/json' } : { accept: 'application/json' } })
     if (r.status === 401 || r.status === 403) {
-      const again = trybeTokenInPage()
+      const again = readToken()
       if (again && again !== token) { token = again; return get(path) }
       return { status: r.status, json: null }
     }
@@ -14178,7 +14182,8 @@ async function trybeHarvestInPage(maxPages) {
   }
   const items = []
   let totalPages = null, total = null, pages = 0, error = null
-  for (let p = 1; p <= max; p++) {
+  let done = false
+  for (let p = first; p <= last; p++) {
     let res
     try { res = await get('/backend/api/discovery/brands?limit=75&page=' + p) } catch (e) { error = 'fetch-failed'; break }
     if (!res.json) { error = res.status === 401 || res.status === 403 ? 'not-signed-in' : 'status-' + res.status; break }
@@ -14188,15 +14193,21 @@ async function trybeHarvestInPage(maxPages) {
     for (const it of list) items.push(it)
     const pg = j && j.pagination
     if (pg) { totalPages = Number(pg.totalPages) || totalPages; total = Number(pg.total) || total }
-    if (!list.length || (totalPages && p >= totalPages)) break
+    if (!list.length || (totalPages && p >= totalPages)) { done = true; break }
     await sleep(450 + Math.round(Math.random() * 650))
   }
   // TRYBE's own category list, for MVP's category chips. Best-effort.
   let categories = null
-  for (const path of ['/backend/api/discovery/niche-categories', '/backend/api/niche-categories']) {
-    try { const c = await get(path); if (c.json) { categories = c.json; break } } catch (e) {}
+  if (withCategories) {
+    for (const path of ['/backend/api/discovery/niche-categories', '/backend/api/niche-categories']) {
+      try { const c = await get(path); if (c.json) { categories = c.json; break } } catch (e) {}
+    }
   }
-  return { ok: items.length > 0, error: items.length ? null : (error || 'no-brands'), pages, totalPages, total, items, categories, signedIn: !!token }
+  return { ok: items.length > 0, error: items.length ? null : (error || 'no-brands'), pages, totalPages, total, items, categories, done: done || !!error, signedIn: !!token }
+  } catch (e) {
+    // Said, with TRYBE's page's own words, never a silent "no answer".
+    return { ok: false, error: 'page-error: ' + (e && e.message ? e.message : String(e)) }
+  }
 }
 
 async function trybeHarvest({ maxPages }, callerTabId) {
@@ -14214,8 +14225,24 @@ async function trybeHarvest({ maxPages }, callerTabId) {
       state = await trybeRun(trybePageStateInPage, [], tabId)
     }
     if (state === 'signin') return { ok: false, error: 'not-signed-in' }
-    const res = await trybeRun(trybeHarvestInPage, [maxPages], tabId)
-    return res || { ok: false, error: 'no-answer-from-page' }
+    // Ten pages a time, so no one answer from the page carries thousands of
+    // brands. Each batch reads TRYBE's sign-in afresh.
+    const max = Math.max(1, Math.min(200, Number(maxPages) || 120))
+    const items = []
+    let categories = null, totalPages = null, total = null, pages = 0, error = null
+    for (let from = 1; from <= max; from += 10) {
+      let res = null
+      try { res = await trybeRun(trybeHarvestInPage, [from, Math.min(10, max - from + 1), from === 1], tabId) } catch (e) { error = 'page-error: ' + (e && e.message ? e.message : 'error'); break }
+      if (!res) { error = 'no-answer-from-page'; break }
+      for (const it of res.items || []) items.push(it)
+      if (res.categories) categories = res.categories
+      totalPages = res.totalPages || totalPages
+      total = res.total || total
+      if (res.pages) pages = res.pages
+      if (res.error && !(res.items && res.items.length)) { error = res.error; break }
+      if (res.done || (totalPages && pages >= totalPages)) break
+    }
+    return { ok: items.length > 0, error: items.length ? (error && pages < (totalPages || 0) ? error : null) : (error || 'no-brands'), pages, totalPages, total, items, categories }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {

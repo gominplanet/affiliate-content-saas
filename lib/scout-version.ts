@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.41.2'
+export const SCOUT_LATEST_VERSION = '1.41.3'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -75,8 +75,8 @@ export const SCOUT_TRYBE_MIN_VERSION = '1.41.0'
  *  categories, and reads the whole Discover list (Labs). */
 export const SCOUT_TRYBE_FIND_MIN_VERSION = '1.41.1'
 /** The oldest SCOUT that collects TRYBE's whole brand list for MVP's own
- *  directory (Labs). */
-export const SCOUT_TRYBE_HARVEST_MIN_VERSION = '1.41.2'
+ *  directory (Labs). 1.41.2 tried and failed in the page every time. */
+export const SCOUT_TRYBE_HARVEST_MIN_VERSION = '1.41.3'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */

@@ -103,5 +103,44 @@ check('the directory is shared, written by the server only', /action === 'direct
 check('the shortlist leaves out brands already on the list', /\.filter\(r => !have\.has\(r\.brand_id\)\)/.test(ROUTE))
 check('websites are read in the background', /researchBrandSite/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
 
-if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
-console.log('trybe-outreach: all checks passed')
+// THE COLLECTOR RUNS IN TRYBE'S PAGE, ALONE. Chrome copies only that one
+// function into the page; 1.41.2 called a helper defined elsewhere in SCOUT
+// and failed before asking TRYBE for anything ("no-answer-from-page"). So the
+// function is run here, by itself, against a fake TRYBE.
+const collectorRun = (async () => {
+  const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('async function trybeHarvest('))
+  const store: Record<string, string> = { 'sb-x-auth-token': JSON.stringify({ access_token: 'T1' }) }
+  const g = globalThis as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const saved = { localStorage: g.localStorage, document: g.document, window: g.window, fetch: g.fetch, getComputedStyle: g.getComputedStyle, setTimeout: g.setTimeout }
+  g.localStorage = { get length() { return Object.keys(store).length }, key: (i: number) => Object.keys(store)[i], getItem: (k: string) => store[k] }
+  g.document = { cookie: '', body: { scrollHeight: 0 }, querySelectorAll: () => [] }
+  g.window = { scrollTo() {}, fetch: null }
+  g.getComputedStyle = () => ({ overflowY: 'visible' })
+  const real = saved.setTimeout
+  g.setTimeout = (f: () => void) => real(f, 0)
+  g.fetch = async (path: string, init: { headers: Record<string, string> }) => {
+    if (init.headers.authorization !== 'Bearer T1') return { status: 401, ok: false, json: async () => null }
+    if (path.includes('niche-categories')) return { status: 200, ok: true, json: async () => ({ data: [{ category: 'Beauty & Personal Care' }] }) }
+    const page = Number(new URL('https://x' + path).searchParams.get('page'))
+    const n = page < 2 ? 75 : 10
+    return { status: 200, ok: true, json: async () => ({ success: true, data: Array.from({ length: n }, (_, i) => ({ brandId: `brand-${page}-${i}` })), pagination: { page, limit: 75, total: 85, totalPages: 2 } }) }
+  }
+  try {
+    const fn = (0, eval)('(' + fnSrc.trim() + ')')
+    const r = await fn(1, 10, true)
+    check('the collector runs alone in the page and reads every page', r.ok === true && r.items.length === 85 && r.pages === 2 && r.done === true && !!r.categories)
+    for (const k of Object.keys(store)) delete store[k]
+    const out = await fn(1, 10, false)
+    check('signed out, it says so instead of no answer', out.ok === false && out.error === 'not-signed-in')
+  } catch (e) {
+    check(`the collector runs alone in the page (it threw: ${e instanceof Error ? e.message : e})`, false)
+  } finally {
+    Object.assign(g, saved)
+  }
+})()
+check('the collector has no helper outside itself', !/trybeTokenInPage/.test(BG) && /const readToken = \(\) =>/.test(BG))
+
+void collectorRun.then(() => {
+  if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
+  console.log('trybe-outreach: all checks passed')
+})
