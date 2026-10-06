@@ -446,10 +446,14 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 function SaleCommentRow({ c, onChange }: { c: SaleComment; onChange: () => void }) {
   const [busy, setBusy] = useState<'out' | 'pin' | null>(null)
   const watch = `https://www.youtube.com/watch?v=${c.youtube_video_id}&lc=${encodeURIComponent(c.comment_id)}`
+  // A USED-UP ALLOWANCE IS A WAIT, NOT A FAILURE: amber, and the cron edits
+  // it after the reset by itself (lib/sale-comments, app/api/cron/sale-comments).
+  const quotaWait = c.state === 'failed' && /daily limit|quota|allowance/i.test(c.last_error || '')
   const state = c.state === 'on_sale' ? { text: 'Says it is on sale', color: ACCENT }
     : c.state === 'updated' ? { text: `Sale taken out ${when(c.updated_at)}`, color: '#10B981' }
       : c.state === 'gone' ? { text: 'No longer on YouTube', color: 'var(--text-soft)' }
-        : { text: 'Could not update', color: '#ef4444' }
+        : quotaWait ? { text: 'Waiting for YouTube', color: '#d97706' }
+          : { text: 'Could not update', color: '#ef4444' }
   async function takeOut() {
     setBusy('out')
     try {
@@ -481,7 +485,7 @@ function SaleCommentRow({ c, onChange }: { c: SaleComment; onChange: () => void 
         </span>
         <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>Posted {when(c.posted_at)}{c.sale_label ? ` · ${c.sale_label}` : ''}</span>
       </div>
-      {c.state === 'failed' && c.last_error && <p className="text-[11.5px] mt-1" style={{ color: '#ef4444' }}>{c.last_error} MVP tries again every few hours while the sale is over.</p>}
+      {c.state === 'failed' && c.last_error && <p className="text-[11.5px] mt-1" style={{ color: quotaWait ? '#d97706' : '#ef4444' }}>{c.last_error} MVP tries again every few hours while the sale is over.</p>}
       {c.pinned === false && c.pin_error && <p className="text-[11.5px] mt-1" style={{ color: '#d97706' }}>Not pinned: {c.pin_error}</p>}
       {c.state !== 'gone' && (
         <div className="mt-2 flex items-center gap-2 flex-wrap">

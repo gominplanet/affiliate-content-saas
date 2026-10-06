@@ -22,7 +22,7 @@
 // pass falls back to updated_at, which other features also touch, so it is
 // less strict but never deletes anything it should not.
 
-import { ytFetch } from '@/lib/youtube-quota'
+import { ytFetch, isQuotaRefusalBody } from '@/lib/youtube-quota'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,14 +49,15 @@ export async function clearYouTubeData(sb: Sb, userId: string, youtubeVideoIds?:
 
 type Fresh = { title: string; description: string; channelTitle: string; thumb: string | null; views: number | null }
 
-async function videosList(ids: string[], token: string | null): Promise<{ ok: true; found: Map<string, Fresh> } | { ok: false; revoked: boolean }> {
+async function videosList(ids: string[], token: string | null): Promise<{ ok: true; found: Map<string, Fresh> } | { ok: false; revoked: boolean; quota: boolean }> {
   const url = new URL(`${BASE}/videos`)
   url.searchParams.set('part', 'snippet,statistics')
   url.searchParams.set('id', ids.join(','))
   url.searchParams.set('maxResults', '50')
   if (!token) url.searchParams.set('key', process.env.YOUTUBE_API_KEY || '')
-  const res = await ytFetch(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeoutMs: 20_000 })
-  if (!res.ok) return { ok: false, revoked: res.status === 401 }
+  const res = await ytFetch(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {}, timeoutMs: 20_000 }).catch(() => null)
+  if (!res) return { ok: false, revoked: false, quota: false }
+  if (!res.ok) return { ok: false, revoked: res.status === 401, quota: isQuotaRefusalBody(await res.text().catch(() => '')) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await res.json().catch(() => ({})) as { items?: any[] }
   const found = new Map<string, Fresh>()
@@ -74,7 +75,7 @@ async function videosList(ids: string[], token: string | null): Promise<{ ok: tr
 }
 
 /** One daily pass over stale rows. Returns what it did, for the cron's log. */
-export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed: number; cleared: number; users: number; column: 'yt_refreshed_at' | 'updated_at' }> {
+export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed: number; cleared: number; users: number; column: 'yt_refreshed_at' | 'updated_at'; stoppedFor?: 'quota' }> {
   const cutoff = new Date(Date.now() - YT_REFRESH_DAYS * 86_400_000).toISOString()
   let column: 'yt_refreshed_at' | 'updated_at' = 'yt_refreshed_at'
   let { data: rows, error } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
@@ -92,7 +93,11 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
   }
   let refreshed = 0, cleared = 0
   const stamp = new Date().toISOString()
+  // ONE REFUSAL ENDS THE PASS. The allowance is shared, so every later call
+  // would be refused too; tomorrow's run is well inside the 30 days.
+  let quotaOut = false
   for (const [userId, vids] of byUser) {
+    if (quotaOut) break
     const { data: chans } = await sb.from('youtube_channels').select('channel_id').eq('user_id', userId)
     const { data: integ } = await sb.from('integrations').select('youtube_oauth_refresh_token').eq('user_id', userId).maybeSingle()
     const connected = (chans ?? []).length > 0 || !!integ?.youtube_oauth_refresh_token
@@ -107,7 +112,13 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
     const byChannel = new Map<string, string[]>()
     for (const v of vids) byChannel.set(v.channel, [...(byChannel.get(v.channel) ?? []), v.id])
     for (const [channel, ids] of byChannel) {
-    const token = await getChannelOAuthToken(sb, userId, channel).catch(() => null)
+    if (quotaOut) break
+    // A TOKEN THAT COULD NOT BE HAD IS NOT A CHANNEL WITHOUT ONE. A refresh
+    // that threw used to fall back to the API key, which cannot see private
+    // or scheduled videos, so they read as gone and their data was emptied.
+    // null (connected by URL only) is the API key's job; a throw waits.
+    let token: string | null
+    try { token = await getChannelOAuthToken(sb, userId, channel) } catch { continue }
     for (let i = 0; i < ids.length; i += 50) {
       const chunk = ids.slice(i, i + 50)
       const got = await videosList(chunk, token)
@@ -115,6 +126,7 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
         // Google refused the login: access was revoked there. Anything else
         // (quota, outage) is tried again tomorrow, well inside the 30 days.
         if (got.revoked) { await clearYouTubeData(sb, userId, chunk); cleared += chunk.length; continue }
+        if (got.quota) quotaOut = true
         break
       }
       const gone: string[] = []
@@ -130,5 +142,5 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
     }
     }
   }
-  return { refreshed, cleared, users: byUser.size, column }
+  return { refreshed, cleared, users: byUser.size, column, ...(quotaOut ? { stoppedFor: 'quota' as const } : {}) }
 }

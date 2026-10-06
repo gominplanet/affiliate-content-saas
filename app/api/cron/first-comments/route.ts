@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { postFirstCommentIfPublic, firstCommentDue, type FirstCommentRow } from '@/lib/first-comments'
 import { usesStudioUpload, leaveCommentToScout, apiCommentAllowed } from '@/lib/studio-upload'
-import { quotaToday } from '@/lib/youtube-quota'
+import { quotaToday, refusingNow } from '@/lib/youtube-quota'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -68,6 +68,10 @@ export async function GET(req: Request) {
   // comments per account per Pacific day through the API, and none once the
   // shared day passes the reserve line. Counted from what was posted today.
   const q = await quotaToday().catch(() => null)
+  // YOUTUBE IS REFUSING RIGHT NOW: every row would get a token refresh and a
+  // held call answered "no" without a request. The rows keep their place and
+  // the run after the probe window asks again (lib/youtube-quota).
+  if (refusingNow(q)) return NextResponse.json({ ok: true, waitingTotal: (data ?? []).length, checked: 0, skipped: 'youtube refusing (quota)' })
   const dayOverReserve = !!q && q.spent >= q.reserveAt
   const dayStart = new Date(Date.now() + (q?.msToReset ?? 0) - 86_400_000).toISOString()
   const postedToday = new Map<string, number>()

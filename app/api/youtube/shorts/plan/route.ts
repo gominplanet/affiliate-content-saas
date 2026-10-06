@@ -138,7 +138,11 @@ export async function POST(request: Request) {
         }, { status: 403 })
       }
       const apiKey = process.env.YOUTUBE_API_KEY
-      const snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null
+      // A USED-UP ALLOWANCE IS NOT A BAD LINK: it throws, and says so.
+      let snip: Awaited<ReturnType<typeof fetchYouTubeVideoSnippet>> = null
+      try { snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null } catch {
+        return NextResponse.json({ error: 'YouTube’s daily allowance is used up, so MVP could not look this video up. Nothing was added. Try again after midnight Pacific.', quotaExceeded: true }, { status: 503 })
+      }
       if (!snip) return NextResponse.json({ error: "We couldn't find that YouTube video — double-check the link." }, { status: 404 })
       // Cap source length at 10 minutes BEFORE creating a row — transcription
       // cost scales with duration and shorts only use a 15–30s window, so longer

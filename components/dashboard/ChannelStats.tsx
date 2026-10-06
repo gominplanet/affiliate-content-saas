@@ -17,6 +17,8 @@ export default function ChannelStats() {
   const [stats, setStats] = useState<ChannelStatsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  // Why stats could not load when the channel IS set (YouTube's allowance).
+  const [unavailable, setUnavailable] = useState<string | null>(null)
 
   // Cache the last result client-side so a repeat dashboard visit doesn't hit the
   // YouTube Data API again (channel stats barely move minute-to-minute). The
@@ -35,6 +37,9 @@ export default function ChannelStats() {
       const res = await fetch('/api/youtube/channel-stats')
       if (res.ok) {
         const v = await res.json()
+        // Not cached and not shown as stats: it says why there are none.
+        if (v && typeof v.unavailable === 'string') { setUnavailable(v.unavailable); return }
+        setUnavailable(null)
         setStats(v)
         try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), v })) } catch { /* ignore */ }
       }
@@ -59,7 +64,7 @@ export default function ChannelStats() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Channel Analytics</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Add your YouTube channel ID in Settings to see stats.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">{unavailable || 'Add your YouTube channel ID in Settings to see stats.'}</p>
           </div>
         </div>
       </div>

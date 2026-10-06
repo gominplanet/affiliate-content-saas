@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
 import { createYouTubeOAuthService } from '@/services/youtube'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { isQuotaError, QUOTA_WAIT_TEXT } from '@/lib/youtube-quota'
 
 // ── GET /api/youtube/calendar ───────────────────────────────────────────────
 //
@@ -200,7 +201,17 @@ export async function GET(request: Request) {
     let stopReason = 'page-cap'
     for (let page = 0; page < MAX_PAGES; page++) {
       pagesUsed = page + 1
-      const { videos, nextPageToken, uploadsPlaylistId } = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId)
+      let got: Awaited<ReturnType<typeof yt.getDraftVideos>>
+      try { got = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId) } catch (e) {
+        // A REFRESH THE ALLOWANCE STOPPED KEEPS THE LIBRARY IT HAD. Pressing
+        // "Refresh from YouTube" on a used-up day replaced a full calendar
+        // with an error; the cached scan is still the best answer there is.
+        if (haveCache && isQuotaError(e)) {
+          return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true, quotaHit: true, note: QUOTA_WAIT_TEXT })
+        }
+        throw e
+      }
+      const { videos, nextPageToken, uploadsPlaylistId } = got
       playlistId = uploadsPlaylistId
       const before = seen.size
       for (const v of videos) {

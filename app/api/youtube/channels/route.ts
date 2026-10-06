@@ -97,7 +97,11 @@ export async function POST(request: Request) {
     }
     const apiKey = process.env.YOUTUBE_API_KEY
     if (!apiKey) return NextResponse.json({ error: 'YouTube lookup not configured' }, { status: 500 })
-    const resolved = await resolveYouTubeChannel(apiKey, url)
+    // A USED-UP ALLOWANCE IS NOT A WRONG URL: the lookup throws, and says so.
+    let resolved: Awaited<ReturnType<typeof resolveYouTubeChannel>> = null
+    try { resolved = await resolveYouTubeChannel(apiKey, url) } catch {
+      return NextResponse.json({ error: 'YouTube’s daily allowance is used up, so MVP could not look this channel up. Nothing was added. Try again after midnight Pacific.', quotaExceeded: true }, { status: 503 })
+    }
     if (!resolved) {
       return NextResponse.json({ error: "Couldn't find a channel at that URL. Paste the channel's YouTube page link, e.g. youtube.com/@yourchannel." }, { status: 404 })
     }

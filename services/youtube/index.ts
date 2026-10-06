@@ -1,6 +1,7 @@
 // Every YouTube call is counted against the shared daily quota, and held
 // back once YouTube refuses (lib/youtube-quota).
 import { ytFetch as fetchWithTimeout, noteTokenOwner } from '@/lib/youtube-quota'
+import { isQuotaRefusalBody } from '@/lib/youtube-quota'
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 /**
@@ -211,7 +212,11 @@ export function createYouTubeService(apiKey: string) {
 /**
  * Fetch snippet + duration for ONE video via the public Data API key — used when
  * a creator pastes a YouTube link for a video that isn't in their synced library
- * yet, so we can create the youtube_videos row. Returns null on any failure.
+ * yet, so we can create the youtube_videos row. Returns null when YouTube has
+ * no such public video.
+ *
+ * THROWS ON A USED-UP ALLOWANCE. Null used to cover that too, and the creator
+ * was told to double-check a link that was fine.
  */
 export async function fetchYouTubeVideoSnippet(
   apiKey: string,
@@ -228,13 +233,18 @@ export async function fetchYouTubeVideoSnippet(
   durationSeconds: number
 } | null> {
   if (!apiKey || !videoId) return null
+  const url = new URL(`${BASE}/videos`)
+  url.searchParams.set('key', apiKey)
+  url.searchParams.set('part', 'snippet,contentDetails')
+  url.searchParams.set('id', videoId)
+  const res = await fetchWithTimeout(url.toString()).catch(() => null)
+  if (!res) return null
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    if (isQuotaRefusalBody(body)) throw new Error(youTubeErrorText(res.status, body))
+    return null
+  }
   try {
-    const url = new URL(`${BASE}/videos`)
-    url.searchParams.set('key', apiKey)
-    url.searchParams.set('part', 'snippet,contentDetails')
-    url.searchParams.set('id', videoId)
-    const res = await fetchWithTimeout(url.toString())
-    if (!res.ok) return null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json() as any
     const item = data.items?.[0]
@@ -270,6 +280,9 @@ export async function fetchYouTubeVideoSnippet(
  * This is how a creator whose channel is a Brand Account (which YouTube OAuth
  * often can't select) connects it: we read that channel's PUBLIC uploads by ID.
  * Returns null when nothing resolves.
+ *
+ * THROWS WHEN THE ALLOWANCE STOPPED IT. A refused lookup resolves nothing, and
+ * that read as "Couldn't find a channel at that URL" for a link that was fine.
  */
 export async function resolveYouTubeChannel(
   apiKey: string,
@@ -277,6 +290,7 @@ export async function resolveYouTubeChannel(
 ): Promise<{ channelId: string; title: string } | null> {
   const raw = (input || '').trim()
   if (!raw) return null
+  let refused: string | null = null
 
   const channelsGet = async (params: Record<string, string>) => {
     try {
@@ -285,7 +299,11 @@ export async function resolveYouTubeChannel(
       url.searchParams.set('part', 'snippet')
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
       const res = await fetchWithTimeout(url.toString())
-      if (!res.ok) return null
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        if (isQuotaRefusalBody(body)) refused = youTubeErrorText(res.status, body)
+        return null
+      }
       const data = await res.json() as any
       const item = data.items?.[0]
       return item ? { channelId: item.id as string, title: (item.snippet?.title as string) || (item.id as string) } : null
@@ -305,9 +323,10 @@ export async function resolveYouTubeChannel(
   if (user) { const r = await channelsGet({ forUsername: user[1] }); if (r) return r }
 
   // 4. /c/NAME custom URL, or a plain (non-URL) search term → search.list.
+  //    Not asked once a lookup above was refused: it would be refused too.
   const cName = raw.match(/\/c\/([0-9A-Za-z._-]+)/)
   const term = cName ? cName[1] : (/^https?:\/\//i.test(raw) ? '' : raw)
-  if (term) {
+  if (term && !refused) {
     try {
       const url = new URL(`${BASE}/search`)
       url.searchParams.set('key', apiKey)
@@ -321,10 +340,14 @@ export async function resolveYouTubeChannel(
         const item = data.items?.[0]
         const id = item?.id?.channelId
         if (id) return { channelId: id as string, title: (item.snippet?.title as string) || id }
+      } else {
+        const body = await res.text().catch(() => '')
+        if (isQuotaRefusalBody(body)) refused = youTubeErrorText(res.status, body)
       }
     } catch { /* fall through */ }
   }
 
+  if (refused) throw new Error(refused)
   return null
 }
 
@@ -719,7 +742,9 @@ export class YouTubeOAuthService {
    * Append a "Full written review" backlink to the video's description
    * (SEO #21 — video→blog cross-linking). Idempotent: no-op if the URL is
    * already present. Preserves the existing title / categoryId / tags so the
-   * part=snippet update doesn't blank them. Returns true if it pushed an edit.
+   * part=snippet update doesn't blank them. Returns true if it pushed an edit,
+   * false when there was nothing to do, and throws when YouTube refused the
+   * edit (a refusal used to read as "already linked" in the log).
    */
   async appendBlogLinkToDescription(videoId: string, blogUrl: string): Promise<boolean> {
     if (!blogUrl || !/^https?:\/\//.test(blogUrl)) return false
@@ -752,7 +777,8 @@ export class YouTubeOAuthService {
       headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: videoId, snippet }),
     })
-    return res.ok
+    if (!res.ok) throw new Error(`YouTube refused the backlink edit (${res.status}): ${ytBodySummary(await res.text())}`)
+    return true
   }
 
   /**

@@ -313,6 +313,9 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [events, setEvents] = useState<CalEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  // A refresh the daily allowance stopped: the saved calendar is shown, and
+  // this says it is the saved one rather than passing it off as fresh.
+  const [staleNote, setStaleNote] = useState<string | null>(null)
   // SCOUT's scheduled videos kept in their OWN state and merged at render time
   // (below). Critical: the API fetch does setEvents(replace), so if we merged
   // SCOUT into events directly, a late-resolving API call would clobber it
@@ -345,7 +348,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   useEffect(() => {
     if (!enabled) return       // not opted in → make NO YouTube calls at all
     let cancelled = false
-    setLoading(true); setErr(null)
+    setLoading(true); setErr(null); setStaleNote(null)
     const params = new URLSearchParams()
     if (channelId) params.set('channelId', channelId)
     // refreshNonce only advances when the user hits "Refresh from YouTube" —
@@ -361,7 +364,10 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       .then(d => {
         if (cancelled) return
         if (d?.error) setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar')
-        else setEvents(Array.isArray(d?.events) ? d.events : [])
+        else {
+          setEvents(Array.isArray(d?.events) ? d.events : [])
+          if (typeof d?.note === 'string' && d.note) setStaleNote(`Showing the calendar MVP saved earlier. ${d.note}`)
+        }
       })
       .catch(() => { if (!cancelled) setErr('Could not load calendar') })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -502,6 +508,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
         <div className="py-6 text-center text-xs text-[#86868b] dark:text-[#8e8e93]">{err}</div>
       ) : (
         <>
+          {staleNote && <p className="mb-2 text-[11px] text-[#b26a00]">{staleNote}</p>}
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
               <div key={i} className="text-center text-[10px] text-[#86868b] dark:text-[#8e8e93]">{d}</div>

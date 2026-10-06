@@ -72,6 +72,10 @@ export async function GET(req: Request) {
     if (res.state === 'updated') updated++
     else if (res.state === 'gone') gone++
     else failed++
+    // THE ALLOWANCE IS SHARED: once YouTube refuses one edit it refuses the
+    // rest, so the others keep their state for the next run instead of each
+    // being stamped failed with the same quota note.
+    if (res.state === 'failed' && /daily limit/i.test(res.error || '')) break
   }
   return NextResponse.json({ ok: true, rows: rows.length, updated, stillOn, unknown, failed, gone })
 }

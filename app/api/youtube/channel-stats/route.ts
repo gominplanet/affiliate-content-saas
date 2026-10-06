@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ytFetch } from '@/lib/youtube-quota'
+import { ytFetch, isQuotaRefusalBody, QUOTA_WAIT_TEXT } from '@/lib/youtube-quota'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -28,7 +28,12 @@ export async function GET() {
     url.searchParams.set('key', apiKey)
 
     const res = await ytFetch(url.toString())
-    if (!res.ok) return NextResponse.json(null)
+    // A USED-UP ALLOWANCE IS NOT A MISSING CHANNEL. null makes the card say
+    // "Add your YouTube channel ID in Settings" to a creator who has one.
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return NextResponse.json(isQuotaRefusalBody(body) ? { unavailable: `Channel stats cannot load right now. ${QUOTA_WAIT_TEXT}` } : null)
+    }
 
     const json = await res.json()
     const item = json.items?.[0]

@@ -198,7 +198,12 @@ export async function POST(request: NextRequest) {
         } catch (re) {
           disclosures.error = disclosures.error ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
         }
-        if (goesOut && disclosures.paidPromotion !== true) {
+        // NOT ASKED IS NOT "NOT CONFIRMED". A read refused for the shared
+        // allowance said "YouTube did not confirm paid promotion" about a
+        // video YouTube was never asked about.
+        if (goesOut && disclosures.paidPromotion !== true && /quotaExceeded|dailyLimitExceeded/.test(disclosures.error || '')) {
+          heldBack = `YouTube’s daily allowance is used up, so MVP could not ask YouTube whether paid promotion is ticked, and the video was not ${body.publishAt ? 'scheduled' : `set to ${body.privacyStatus}`}. Its visibility was left exactly as it was. Push again after midnight Pacific.`
+        } else if (goesOut && disclosures.paidPromotion !== true) {
           heldBack = `YouTube did not confirm paid promotion on this video${disclosures.error ? ` (${disclosures.error})` : ''}, so it was not ${body.publishAt ? 'scheduled' : `set to ${body.privacyStatus}`}. YouTube only takes paid promotion in Studio; once it is ticked there, push again. Its visibility was left exactly as it was.`
         }
       }

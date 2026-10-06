@@ -177,6 +177,24 @@ export function isQuotaRefusalBody(text: string): boolean {
   return /"reason"\s*:\s*"(?:quotaExceeded|dailyLimitExceeded)"/.test(text)
 }
 
+// A THROWN QUOTA REFUSAL IS NOT AN ANSWER. services/youtube throws the text
+// youTubeErrorText builds, which always carries "quotaExceeded" for the shared
+// allowance (YouTube's refusal or MVP's hold). Callers ask this before reading
+// a failure as "deleted", "private", "wrong channel" or "not found".
+export function isQuotaError(e: unknown): boolean {
+  return /quotaExceeded|dailyLimitExceeded/.test(e instanceof Error ? e.message : String(e ?? ''))
+}
+
+/** The sentence a creator reads when YouTube could not be asked for quota. */
+export const QUOTA_WAIT_TEXT = 'YouTube’s daily allowance is used up; MVP tries again after midnight Pacific.'
+
+/** For crons: YouTube refused less than PROBE_AFTER_MS ago, so every call
+ *  now would only be answered by the hold. Pure on quotaToday's answer. */
+export function refusingNow(q: { refusedAt: string | null } | null | undefined, now: number = Date.now()): boolean {
+  const at = q?.refusedAt ? Date.parse(q.refusedAt) : NaN
+  return Number.isFinite(at) && now - at < PROBE_AFTER_MS
+}
+
 /**
  * fetch for YouTube. Same signature as fetchWithTimeout; anything that is not
  * a quota call passes straight through.
