@@ -268,6 +268,11 @@ export default function GroupPostQueue() {
         <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
           Pick Sponsored Products or your Amazon videos, write every post at once, then work down the list. Each post goes into your Group with your affiliate link: SCOUT fills it in and you press Post. MVP then posts on your Page linking to that Group post, so your Page never uses up Meta's link limit.
         </p>
+        <ul className="mt-3 text-[12.5px] max-w-2xl rounded-xl border px-4 py-3 list-disc pl-8 flex flex-col gap-1" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          <li><b style={{ color: 'var(--text)' }}>Why the Group gets the link:</b> Meta limits a Page to 2 posts a month with an outside link (more only on a paid Meta One plan). It publishes no such limit for Groups.</li>
+          <li><b style={{ color: 'var(--text)' }}>Why the Page still posts:</b> a link to your own Group post is a Facebook link, which Meta does not count. Your Page keeps posting every day and sends people into the Group.</li>
+          <li><b style={{ color: 'var(--text)' }}>Only your own Group:</b> Amazon allows your links only on accounts you control. Never drop them in other people&apos;s Groups.</li>
+        </ul>
       </header>
 
       {groups.length === 0 && (
