@@ -128,8 +128,10 @@ function fieldNear(i: number): string | null {
   for (const t of ['creator', 'amazon', 'studio', 'pro'] as const) {
     const v = TIERS[t] as Record<string, unknown>
     check(`${t} has a price`, typeof v.price === 'number' && (v.price as number) > 0)
-    check(`${t}'s struck price is higher than its price`,
-      (v.regularPrice as number) > (v.price as number),
+    // 2026-10-07: Amazon and Pro strike the real November 1 price, which
+    // equals the price from that day on; the pages then show no strike.
+    check(`${t}'s struck price is never below its price`,
+      (v.regularPrice as number) >= (v.price as number),
       'the pricing page computes the saving by subtracting these two')
   }
   check('Amazon really has no blog', TIERS.amazon.sites === 0 && TIERS.amazon.postsPerMonth === 0,

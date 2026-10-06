@@ -171,7 +171,7 @@ export default function AmazonInfluencerPage() {
           <p className="mt-4 text-sm text-[#86868b] dark:text-[#8e8e93]">
             {FREE_TRIAL.trialDays}-day free trial: {FREE_THUMBS} thumbnails, {FREE_DESIGNS} designs and your own face on them, yours to download.
             Then <span className="text-lg font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">${AMZ.price}</span>/mo{' '}
-            <span className="line-through">${AMZ.regularPrice}</span> · save ${AMZ_SAVING} for life
+            {AMZ_SAVING > 0 && <><span className="line-through">${AMZ.regularPrice}</span> from November 1 · save ${AMZ_SAVING} a month for as long as you stay</>}
           </p>
           {SALES_PAUSED && <p className="mt-4 text-sm text-[#ff9500]">{SALES_PAUSED_MESSAGE}</p>}
           {/* Prices go up for new members on November 1; the lock and countdown. */}

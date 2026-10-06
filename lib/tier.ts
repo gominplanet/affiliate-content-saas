@@ -80,7 +80,7 @@ export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitte
 // one shown here (lib/price-guard).
 export { NEW_MEMBER_PRICES, PRICES_BEFORE, PRICE_CHANGE_AT, newPricesLive } from './price-schedule'
 
-import { livePrice } from './price-schedule'
+import { livePrice, NEW_MEMBER_PRICES } from './price-schedule'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS } from './amazon-plan'
 
 export const TIERS = {
@@ -297,7 +297,10 @@ export const TIERS = {
     label: 'Amazon',
     // New-member price; changes on November 1 (lib/price-schedule).
     get price(): number { return livePrice('amazon', 'month') },
-    regularPrice: 179,
+    // THE STRUCK PRICE IS A REAL ONE: what new members pay from November 1
+    // (lib/price-schedule). It was 179, a price never charged anywhere. On and
+    // after the change it equals price, and the pages show no strike at all.
+    get regularPrice(): number { return NEW_MEMBER_PRICES.amazon.month },
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
@@ -506,7 +509,8 @@ export const TIERS = {
     label: 'Pro',
     // New-member price; changes on November 1 (lib/price-schedule).
     get price(): number { return livePrice('pro', 'month') },
-    regularPrice: 399,
+    // The real November 1 price, not the 399 that was never charged.
+    get regularPrice(): number { return NEW_MEMBER_PRICES.pro.month },
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in
      *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to

@@ -966,7 +966,7 @@ function plansBlock(): string {
     const rows = [
       line('Generations per month (blog + thumbnail + metadata share one bucket)', t.postsPerMonth, 'per month'),
       t.thumbnailsPerMonth ? `- Art Director thumbnails: ${n(t.thumbnailsPerMonth, 'per month')}` : null,
-      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins and ${t.igPostsPerMonth} Reels covers per month. Facebook posts reuse the product's thumbnail or Instagram design, so they use none of these` : null,
+      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins and ${t.igPostsPerMonth} Instagram posts and Stories per month. Facebook posts reuse the product's thumbnail or Instagram design, so they use none of these` : null,
       line('Video scripts', t.scriptsPerMonth, 'per month'),
       line('Photobooth headshots', t.photoboothPerMonth, 'per month'),
       line('Creator Connections outreach', t.collabsPerMonth, 'per month'),

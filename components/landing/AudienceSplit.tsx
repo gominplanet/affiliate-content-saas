@@ -162,7 +162,7 @@ export default function AudienceSplit() {
                 <div className="pt-5 border-t flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
                   <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
                     From <span className="font-extrabold text-[19px]" style={{ color: 'var(--text)' }}>{p.price}</span>/mo{' '}
-                    <span className="line-through text-[12px]" style={{ color: 'var(--text-faint)' }}>{p.regular}</span>
+                    {p.regular !== p.price && <span className="line-through text-[12px]" style={{ color: 'var(--text-faint)' }}>{p.regular}</span>}
                   </span>
                   <a href={p.href} className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl text-[13.5px] font-semibold text-white shadow-sm transition-all group-hover:gap-2.5" style={{ backgroundColor: p.accent }}>
                     {p.cta} <ArrowRight size={15} />

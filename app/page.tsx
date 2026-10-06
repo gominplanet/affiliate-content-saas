@@ -685,9 +685,11 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           {/* Price block — now at the BOTTOM, right above the CTA, so the eye
               lands on the value first and the price after. */}
           <div className="mt-auto pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-            <p className="text-[12px] line-through mb-0.5" style={{ color: 'var(--text-faint)' }}>
-              ${tier.regularPrice}/month regular
-            </p>
+            {tier.regularPrice > tier.price && (
+              <p className="text-[12px] mb-0.5" style={{ color: 'var(--text-faint)' }}>
+                <span className="line-through">${tier.regularPrice}/month</span> from November 1
+              </p>
+            )}
             <div className="flex items-baseline gap-1.5">
               <span
                 className="text-[44px] font-extrabold tracking-[-0.02em] tabular-nums leading-none"

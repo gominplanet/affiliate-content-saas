@@ -413,7 +413,7 @@ export default async function PricingPage({
                     <p className={`text-xs mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
                       <span className="line-through">${plan.regularPrice}/month</span>{' '}
                       <span className={plan.highlight ? 'text-yellow-300 font-semibold' : 'text-[#34c759] font-semibold'}>
-                        Save ${plan.regularPrice - plan.price}
+                        Save ${plan.regularPrice - plan.price} a month, locked in
                       </span>
                     </p>
                   )}
@@ -489,12 +489,14 @@ export default async function PricingPage({
                 <span className="text-6xl font-extrabold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">${TIERS.amazon.price}</span>
                 <span className="text-base text-[#86868b] dark:text-[#8e8e93]">/month</span>
               </div>
-              <p className="text-sm mt-2 text-[#86868b] dark:text-[#8e8e93]">
-                <span className="line-through">${TIERS.amazon.regularPrice}/month</span>{' '}
-                <span className="font-semibold" style={{ color: '#C2410C' }}>
-                  Save ${TIERS.amazon.regularPrice - TIERS.amazon.price} for life
-                </span>
-              </p>
+              {TIERS.amazon.regularPrice > TIERS.amazon.price && (
+                <p className="text-sm mt-2 text-[#86868b] dark:text-[#8e8e93]">
+                  <span className="line-through">${TIERS.amazon.regularPrice}/month</span> from November 1{' '}
+                  <span className="font-semibold" style={{ color: '#C2410C' }}>
+                    Save ${TIERS.amazon.regularPrice - TIERS.amazon.price} a month for as long as you stay
+                  </span>
+                </p>
+              )}
               <div className="mt-5 w-full max-w-sm">
                 <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
               </div>

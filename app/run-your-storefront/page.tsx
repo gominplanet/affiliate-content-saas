@@ -364,7 +364,7 @@ export default function RunYourStorefrontPage() {
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
             {[
-              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: `Against a list price of $${TIERS.amazon.regularPrice}, locked for as long as you stay.` },
+              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: TIERS.amazon.regularPrice > TIERS.amazon.price ? `New members pay $${TIERS.amazon.regularPrice} from November 1. Join before and yours is locked for as long as you stay.` : 'Locked for as long as you stay.' },
               { icon: <LayoutTemplate size={15} />, t: 'No blog needed', b: 'Built for the storefront and the socials around it. No WordPress.' },
               { icon: <ShieldCheck size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
             ].map((f) => (
