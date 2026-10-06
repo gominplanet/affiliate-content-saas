@@ -2308,7 +2308,9 @@ export default function LaunchBoard() {
               // ONLY HELD VIDEOS LEFT, and nothing else is coming: said as a
               // thing to do, without a spinner over work that will not happen.
               <p className="text-[12.5px]" style={{ color: '#d97706' }}>
-                {yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private because YouTube has not confirmed paid promotion. Tick Paid promotion in YouTube Studio (or run Studio again from the row below); MVP schedules {yt.held === 1 ? 'it' : 'them'} within ten minutes, and Amazon opens then.
+                {yt.heldForQuota === yt.held
+                  ? <>{yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private for now: YouTube&apos;s daily API allowance is used up, so MVP could not check paid promotion. Each row below says whether SCOUT read it back in Studio. MVP asks again after midnight Pacific and schedules {yt.held === 1 ? 'it' : 'them'} then; Amazon opens after that.</>
+                  : <>{yt.held === 1 ? 'Your video is' : `All ${yt.held} videos are`} kept private because YouTube has not confirmed paid promotion. Tick Paid promotion in YouTube Studio (or run Studio again from the row below); MVP schedules {yt.held === 1 ? 'it' : 'them'} within ten minutes, and Amazon opens then.</>}
               </p>
             ) : (<>
               {!yt.done && (

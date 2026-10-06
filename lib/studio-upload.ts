@@ -102,11 +102,17 @@ export function studioDid(raw: unknown, saved: boolean): StudioDid {
  *  An API read that answers still decides. Pure. */
 export function scoutSawPaidPromotion(raw: unknown): boolean {
   const o = (raw && typeof raw === 'object' ? raw : {}) as { steps?: unknown }
-  const steps = Array.isArray(o.steps) ? o.steps as Array<{ readBack?: Record<string, unknown> }> : []
+  const steps = Array.isArray(o.steps) ? o.steps as Array<{ step?: unknown; ok?: unknown; detail?: unknown; readBack?: Record<string, unknown> }> : []
   let seen: boolean | null = null
   for (const st of steps) {
     const v = st?.readBack?.paidPromotion
-    if (v === true || v === false) seen = v
+    if (v === true || v === false) { seen = v; continue }
+    // THE DETAILS STEP'S OWN VERDICT. The upload report kept only each step's
+    // sentence until 2026-10-06, never its readBack, so this read nothing and
+    // every video SCOUT had disclosed stayed held. SCOUT's details step is ok
+    // only when Studio reads every answer back, and says "Paid promotion: Yes"
+    // first when it was asked; a details step that failed is a No.
+    if (st?.step === 'details') seen = st.ok === true && /Paid promotion: Yes/.test(String(st.detail ?? ''))
   }
   return seen === true
 }

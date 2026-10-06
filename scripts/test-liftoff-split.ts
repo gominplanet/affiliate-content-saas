@@ -42,7 +42,8 @@ check('a batch where nothing reached YouTube is not "done"', !youtubePartDone('l
 const held = item({ id: 'd', state: 'blocked', youtube_video_id: 'vid00000002', reason: 'Kept private. YouTube did not confirm paid promotion on it, so it is not scheduled yet.' } as Partial<ItemRow>)
 check('a video held private for paid promotion is not "done": it has no time yet',
   !youtubePartDone('launched', [onYT, held]).done && youtubePartDone('launched', [onYT, held]).waiting === 1)
-check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1, held: 0 }))
+check('the counts are the rows', JSON.stringify(youtubePartDone('launched', [onYT, going, failed])) === JSON.stringify({ done: false, onYouTube: 1, failed: 1, waiting: 1, held: 0, heldForQuota: 0 }))
+check('a video held only because YouTube could not be asked is counted apart', youtubePartDone('launched', [onYT, item({ id: 'e', state: 'blocked', youtube_video_id: 'vid00000003', reason: 'Kept private. YouTube did not confirm paid promotion on it (could not read the video back: YouTube API error 403: quotaExceeded), so it is not scheduled yet.' } as Partial<ItemRow>), held]).heldForQuota === 1)
 
 check('only held videos left: no spinner, said as a thing to do, and Amazon can start for the rest',
   /!yt\.done && !\(yt\.held > 0 && yt\.waiting === yt\.held\)/.test(read('components/launch/LaunchBoard.tsx'))

@@ -45,6 +45,13 @@ function seenBits(x: SentStep): { readBack?: Record<string, unknown>; debug?: Re
   return { readBack: obj(x.readBack), debug: obj(x.debug) }
 }
 
+/** Only the paid promotion answer a step read back from Studio, when it gave
+ *  one: small enough to keep on every step of studio_upload. */
+function paidSeen(x: SentStep): { readBack?: { paidPromotion: boolean } } {
+  const v = seenBits(x).readBack?.paidPromotion
+  return v === true || v === false ? { readBack: { paidPromotion: v } } : {}
+}
+
 /** The steps of an upload that belong to the upload itself, kept above a
  *  later draft save so the record still shows the file, tags and thumbnail. */
 const UPLOAD_ONLY_STEPS = new Set(['upload', 'text', 'tags', 'thumbnail', 'playlist', 'sending'])
@@ -224,8 +231,12 @@ export async function POST(req: Request) {
       // SAVED IN STUDIO: the drain carries on (it reads YouTube back first).
       const { data: prev } = await sb.from('launch_items').select('studio_upload').eq('id', row.id).maybeSingle()
       const kept = (prev?.studio_upload && typeof prev.studio_upload === 'object') ? prev.studio_upload : {}
+      // The save answered Details again: its reading is the latest one.
+      const keptSteps = Array.isArray(kept.steps) ? kept.steps : []
+      const saveSteps = (Array.isArray(dr.steps) ? dr.steps : []).filter((x) => x && x.step === 'details')
+        .map((x) => ({ step: 'details', ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '').slice(0, 200), ...paidSeen(x) }))
       await sb.from('launch_items').update({
-        studio_upload: { ...kept, visibility, publishAt: visibility === 'schedule' ? (dr.publishAt ?? null) : null, draftSavedAt: stamp },
+        studio_upload: { ...kept, steps: [...keptSteps, ...saveSteps].slice(-40), visibility, publishAt: visibility === 'schedule' ? (dr.publishAt ?? null) : null, draftSavedAt: stamp },
       }).eq('id', row.id)
       await sb.from('launch_items').update({ state: 'prepared', reason: STUDIO_UPLOAD_DONE, publish_tries: 0, updated_at: stamp })
         .eq('id', row.id).eq('state', 'blocked')
@@ -288,8 +299,11 @@ export async function POST(req: Request) {
     const did = studioDid(r.did, r.saved === true)
     // WHAT SCOUT SAW, STEP BY STEP, kept with it: a run that stops part way
     // must say where, not only that it stopped.
+    // With the paid promotion Studio read back (lib/studio-upload
+    // scoutSawPaidPromotion): the drain and the held check go on it when
+    // YouTube's API cannot be asked. It was dropped here, so they never could.
     const seen = (Array.isArray(r.steps) ? r.steps : []).filter((x) => x && typeof x.step === 'string')
-      .map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '').slice(0, 200) }))
+      .map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '').slice(0, 200), ...paidSeen(x) }))
       .slice(0, 40)
     await sb.from('launch_items').update({ studio_upload: { ...did, videoId, at: stamp, steps: seen } }).eq('id', row.id)
     const stoppedAt = studioStoppedAt(seen)

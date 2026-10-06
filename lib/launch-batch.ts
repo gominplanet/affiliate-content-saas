@@ -205,6 +205,9 @@ export function liftoffMarkets(markets: readonly string[] | null | undefined): s
 }
 
 export const HELD_FOR_PAID_PROMOTION = 'Kept private. YouTube did not confirm paid promotion'
+/** A held note written because YouTube's API could not be asked (its daily
+ *  allowance was used up), by the drain or by lib/launch-release. */
+export const HELD_FOR_QUOTA = /quotaExceeded|dailyLimitExceeded|allowance for API calls is used up/
 
 /**
  * Mark the batch for Liftoff in two parts when its owner has it (Labs).
@@ -227,17 +230,22 @@ export async function withAmazonLater<B extends BatchRow>(
  * result and never the plan. A video that could not go does not hold part 2
  * back; it is counted and named instead.
  */
-export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null; reason?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number; held: number } {
+export function youtubePartDone(batchState: string, items: Array<{ state: string; youtube_video_id?: string | null; reason?: string | null }>): { done: boolean; onYouTube: number; failed: number; waiting: number; held: number; heldForQuota: number } {
   const launched = batchState === 'launching' || batchState === 'launched'
   // SCHEDULED OR PUBLIC, not merely uploaded. A video held private for paid
   // promotion is uploaded and not scheduled, and calling that "on YouTube"
   // would say YouTube is done over a video with no time.
   const onYouTube = items.filter((i) => !!i.youtube_video_id && (i.state === 'scheduled' || i.state === 'published')).length
-  const held = items.filter((i) => i.state === 'blocked' && !!i.youtube_video_id && String(i.reason || '').startsWith(HELD_FOR_PAID_PROMOTION)).length
+  const heldRows = items.filter((i) => i.state === 'blocked' && !!i.youtube_video_id && String(i.reason || '').startsWith(HELD_FOR_PAID_PROMOTION))
+  const held = heldRows.length
+  // HELD BECAUSE YOUTUBE COULD NOT BE ASKED, not because it said No: the
+  // shared daily API allowance was used up. Told apart on the board, since
+  // "tick it in Studio" is the wrong advice for a video that is ticked.
+  const heldForQuota = heldRows.filter((i) => HELD_FOR_QUOTA.test(String(i.reason || ''))).length
   // Could not go, or needs the creator (a missed time): named, and not held for.
   const failed = items.filter((i) => i.state === 'blocked').length - held
   const waiting = items.length - onYouTube - failed
-  return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting, held }
+  return { done: launched && onYouTube > 0 && waiting === 0, onYouTube, failed, waiting, held, heldForQuota }
 }
 
 export async function withYouTubeChoice<B extends BatchRow>(

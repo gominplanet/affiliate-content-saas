@@ -177,6 +177,17 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
     scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }] })
     && !scoutSawPaidPromotion({ steps: [{ step: 'details', readBack: { paidPromotion: true } }, { step: 'visibility', readBack: { paidPromotion: false } }] })
     && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true }] }) && !scoutSawPaidPromotion(null))
+  // 2026-10-06: the report kept only each step's sentence, so the reading
+  // above was never there. The details step's own verdict counts as well.
+  check('a details step Studio read back as Paid promotion: Yes counts, a failed one is a No',
+    scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'Paid promotion: Yes, AI use: No. Read back from Studio.' }] })
+    && scoutSawPaidPromotion({ steps: [{ step: 'details', ok: false, detail: 'Studio did not keep: Paid promotion: Yes' }, { step: 'details', ok: true, detail: 'Second go: Paid promotion: Yes, AI use: No. Read back from Studio.' }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'Paid promotion: Yes. Read back from Studio.' }, { step: 'details', ok: false, detail: 'Second go: Studio did not keep: Paid promotion: Yes' }] })
+    && !scoutSawPaidPromotion({ steps: [{ step: 'details', ok: true, detail: 'AI use: No. Read back from Studio.' }] }))
+  const su = read('app/api/launch/studio-uploads/route.ts')
+  check('the upload report keeps the paid promotion Studio read back on each step',
+    /detail: String\(x\.detail \|\| ''\)\.slice\(0, 200\), \.\.\.paidSeen\(x\) \}\)\)\n\s*\.slice\(0, 40\)/.test(su)
+    && /studio_upload: \{ \.\.\.kept, steps: \[\.\.\.keptSteps, \.\.\.saveSteps\]/.test(su))
   const dr = read('app/api/cron/launch-drain/route.ts')
   check('it counts only when YouTube could not be asked; an API answer still decides',
     /const apiBlind = readBack == null/.test(dr)
@@ -184,8 +195,14 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   const rl = read('lib/launch-release.ts')
   check('a held video is released on SCOUT\'s Studio reading when the quota is used up, with no YouTube call',
     /if \(!\/quota\|dailyLimitExceeded\/i\.test\(said\)\) throw e/.test(rl)
-    && /if \(raw && scoutSawPaidPromotion\(raw\) && scoutScheduled\)/.test(rl)
+    && /if \(scoutPaid && scoutScheduled\)/.test(rl)
     && /return \{ state: 'waiting', why: 'youtube-quota' \}/.test(rl))
+  check('a video SCOUT disclosed and saved private, its time gone, is told to pick a new time without waiting for the allowance',
+    /if \(scoutPaid && did\?\.visibility && nowRow\?\.publish_now !== true/.test(rl) && /Paid promotion is on \(SCOUT read it back in Studio\)/.test(rl))
+  check('a quota wait says so on the row and keeps the note the held check finds it by',
+    /\$\{HELD_FOR_PAID_PROMOTION\} yet: YouTube's daily allowance for API calls is used up/.test(rl)
+    && /HELD_FOR_QUOTA = \/quotaExceeded\|dailyLimitExceeded\|allowance for API calls is used up\//.test(read('lib/launch-batch.ts'))
+    && /yt\.heldForQuota === yt\.held/.test(read('components/launch/LaunchBoard.tsx')))
   check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(apiBlind \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
 }
 

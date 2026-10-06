@@ -80,14 +80,34 @@ export async function releaseHeld(sb: Sb, it: {
     const scoutScheduled = !!did && did.visibility === 'schedule' && !!did.publishAt
       && Date.parse(did.publishAt) > Date.now()
       && (!planned || Math.abs(Date.parse(did.publishAt) - Date.parse(planned)) <= 120_000)
-    if (raw && scoutSawPaidPromotion(raw) && scoutScheduled) {
+    const scoutPaid = !!raw && scoutSawPaidPromotion(raw)
+    if (scoutPaid && scoutScheduled) {
       await sb.from('launch_items').update({ state: 'scheduled', publish_at: did!.publishAt, reason: null, updated_at: stamp() }).eq('id', it.id)
       await commentFollows(sb, it.user_id, videoId, did!.publishAt!)
       return { state: 'scheduled', at: did!.publishAt! }
     }
-    // Not something SCOUT confirmed: it waits for the allowance, and says so
-    // rather than "YouTube did not confirm", which it never got to ask.
-    await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
+    // SAVED PRIVATE IN STUDIO, ITS TIME GONE: the same "late" as a read that
+    // answers, with no call needed, so the creator can give it a new time now
+    // instead of waiting for the allowance to come back to be told that.
+    const at = Date.parse(planned)
+    const { data: nowRow } = await sb.from('launch_items').select('publish_now').eq('id', it.id).maybeSingle()
+    if (scoutPaid && did?.visibility && nowRow?.publish_now !== true && (!Number.isFinite(at) || at < Date.now() + 5 * 60_000)) {
+      await sb.from('launch_items').update({
+        reason: `Kept private. Paid promotion is on (SCOUT read it back in Studio), but its time${Number.isFinite(at) ? `, ${missedWhen(planned, opts.zone)},` : ''} has passed, so it was not scheduled. Give it a new time and press Launch these too.`,
+        updated_at: stamp(),
+      }).eq('id', it.id)
+      return { state: 'late' }
+    }
+    // Otherwise it waits for the allowance, and says so rather than "YouTube
+    // did not confirm", which it never got to ask. The start of the note is
+    // kept: it is how the held check finds the row.
+    await sb.from('launch_items').update({
+      reason: (scoutPaid
+        ? `${HELD_FOR_PAID_PROMOTION} yet: YouTube's daily allowance for API calls is used up, so MVP could not ask. SCOUT read Paid promotion: Yes in Studio, and MVP sets its time as soon as the allowance resets at midnight Pacific.`
+        : `${HELD_FOR_PAID_PROMOTION} yet: YouTube's daily allowance for API calls is used up, so MVP could not ask${raw ? ', and SCOUT did not read Paid promotion: Yes in Studio either' : ''}. MVP asks again after midnight Pacific. To finish sooner, tick Paid promotion in Studio and make it public or scheduled there.`
+      ).slice(0, 400),
+      updated_at: stamp(),
+    }).eq('id', it.id)
     return { state: 'waiting', why: 'youtube-quota' }
   }
   // WHAT YOUTUBE SAYS COMES FIRST. The held message tells the creator they
