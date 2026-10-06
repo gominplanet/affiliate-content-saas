@@ -52,7 +52,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
   if (over) return null
 
   // 'auto' follows the site theme; 'dark' and 'light' are for pages that paint
-  // one world whatever the theme (the home page is dark, the ad page light).
+  // one world whatever the theme (the home and storefront pages are always light).
   const dark = tone === 'dark'
   const light = tone === 'light'
   const box = dark
@@ -64,7 +64,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
   const cell = dark ? 'bg-white/[0.06] border-white/10' : light ? 'bg-[#7C3AED]/[0.06] border-[#7C3AED]/15' : 'bg-[#7C3AED]/[0.06] border-[#7C3AED]/15 dark:bg-white/[0.06] dark:border-white/10'
   const strong = dark ? 'text-white' : light ? 'text-[#1d1d1f]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'
   const units: Array<[string, number | undefined]> = [
-    ['days', left?.days], ['hours', left?.hours], ['minutes', left?.minutes], ['seconds', left?.seconds],
+    ['days', left?.days], ['hrs', left?.hours], ['min', left?.minutes], ['sec', left?.seconds],
   ]
 
   return (

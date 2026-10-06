@@ -351,7 +351,7 @@ function PricingSection() {
       />
       <div className="max-w-6xl mx-auto relative">
         {/* Prices go up for new members on November 1; the lock and countdown. */}
-        {!newPricesLive() && <PriceLockCountdown tone="dark" className="mb-10" />}
+        {!newPricesLive() && <PriceLockCountdown tone="light" className="mb-10" />}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
