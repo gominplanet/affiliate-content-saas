@@ -209,7 +209,20 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
     /\$\{HELD_FOR_PAID_PROMOTION\} yet: YouTube's daily allowance for API calls is used up/.test(rl)
     && /HELD_FOR_QUOTA = \/quotaExceeded\|dailyLimitExceeded\|allowance for API calls is used up\//.test(read('lib/launch-batch.ts'))
     && /yt\.heldForQuota === yt\.held/.test(read('components/launch/LaunchBoard.tsx')))
-  check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(apiBlind \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
+  // 1.40.8: only a schedule SCOUT read back after Apply stands unasked.
+  check('and SCOUT\'s own schedule stands when YouTube could not be asked', /&& \(\(apiBlind && viaStudio\.scheduleVerified\) \|\| scheduleHeld\(viaStudio, readBack/.test(dr))
+}
+
+// ── 2026-10-07 nightly audit, SCOUT 1.40.8 ─────────────────────────────────
+{
+  check('a failed progress read is not a quiet page: a closed tab ends the send as not sent',
+    /let readFailed = false/.test(bg) && /the Studio tab closed before the file finished sending/.test(bg) && /if \(\+\+unread >= 24\)/.test(bg))
+  check('SCOUT says whether it read the schedule back after Apply',
+    /out\.readBack\.timeVerified = /.test(bg) && /scheduleVerified: !!\(saved && visibility\.mode === 'schedule'/.test(bg))
+  check('the fallbacks for a day YouTube cannot be asked trust only a schedule read back',
+    /did\.publishAt && did\.scheduleVerified/.test(read('lib/launch-release.ts')) && /\(apiBlind && viaStudio\.scheduleVerified\)/.test(read('app/api/cron/launch-drain/route.ts')))
+  check('the upload timeout carries the video id YouTube already gave', /sendResponse\(\{ ok: false, steps: \[\], error: 'timeout', videoId/.test(bg))
+  check('storefront sync posts to the storefront route again', /async function pushStorefrontToMvp\(earnings, totals\)/.test(bg) && /pushStorefrontToMvp\(r\.rows, r\.totals\)/.test(bg))
 }
 
 if (failures.length) {

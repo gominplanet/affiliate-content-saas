@@ -80,6 +80,10 @@ export type StudioDid = {
   /** The visibility SCOUT saved: 'schedule', 'public', 'private', or null when it did not save. */
   visibility: 'schedule' | 'public' | 'private' | null
   publishAt: string | null
+  /** SCOUT 1.40.8+ read the date and time back after Apply. Without it the
+   *  schedule is only what was asked for, and the fallbacks for a day YouTube's
+   *  API cannot be asked do not trust it. */
+  scheduleVerified: boolean
 }
 
 /** SCOUT's report, cleaned: anything not plainly true is "not done". Pure. */
@@ -91,8 +95,8 @@ export function studioDid(raw: unknown, saved: boolean): StudioDid {
   // NOT SAVED, NOT KEPT. Studio throws away what was typed into an upload
   // window that was never saved (tags and thumbnail went with a window whose
   // Next stayed grey), so nothing SCOUT read back there counts: MVP sets it.
-  if (!saved) return { text: null, tags: null, thumbnail: null, thumbVerified: false, playlist: null, visibility: null, publishAt: null }
-  return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), thumbVerified: o.thumbVerified === true, playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at }
+  if (!saved) return { text: null, tags: null, thumbnail: null, thumbVerified: false, playlist: null, visibility: null, publishAt: null, scheduleVerified: false }
+  return { text: b('text'), tags: b('tags'), thumbnail: b('thumbnail'), thumbVerified: o.thumbVerified === true, playlist: b('playlist'), visibility: v === 'schedule' && !at ? null : v, publishAt: at, scheduleVerified: v === 'schedule' && !!at && o.scheduleVerified === true }
 }
 
 /** Did SCOUT see Paid promotion ticked in Studio, read back from Studio's own

@@ -41,10 +41,13 @@ async function pushCampaignsToMvp(token, campaigns) {
   }
 }
 
+// RENAMED IN 1.40.8: a second pushEarningsToMvp further down (Amazon
+// earnings) replaced this one, so storefront syncs posted to the earnings
+// route and nothing was stored after 2026-09-19.
 // POST scraped Amazon Influencer earnings into MVP (Storefront Stats v2), from
 // the worker (same CSP-avoidance reason as pushCampaignsToMvp). Returns
 // { reached, ok, upserted, error }.
-async function pushEarningsToMvp(earnings, totals) {
+async function pushStorefrontToMvp(earnings, totals) {
   const rows = Array.isArray(earnings) ? earnings : []
   const tot = Array.isArray(totals) ? totals : []
   if (rows.length === 0 && tot.length === 0) return { reached: true, ok: true, upserted: 0 }
@@ -3413,7 +3416,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_PUSH_EARNINGS') {
-    pushEarningsToMvp(msg.earnings).then(sendResponse)
+    pushStorefrontToMvp(msg.earnings).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_PUSH_IDEA_LISTS') {
@@ -6499,7 +6502,7 @@ async function scanStorefrontEarningsBackground() {
       })
       const r = (results && results[0] && results[0].result) || null
       if (r && r.ok && !r.signedOut && ((r.rows && r.rows.length) || (r.totals && r.totals.length))) {
-        const push = await pushEarningsToMvp(r.rows, r.totals)
+        const push = await pushStorefrontToMvp(r.rows, r.totals)
         return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
       }
       if (r && r.signedOut) return { ok: false, error: 'signed-out' }
@@ -6522,7 +6525,7 @@ async function scanStorefrontEarningsBackground() {
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
     if ((!r.rows || !r.rows.length) && (!r.totals || !r.totals.length)) return { ok: true, count: 0 }
-    const push = await pushEarningsToMvp(r.rows, r.totals)
+    const push = await pushStorefrontToMvp(r.rows, r.totals)
     return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
@@ -10394,9 +10397,16 @@ K.steps.monetization = async (out, o) => {
         }
       }
     }
+    // WAS THE TIME READ BACK AFTER APPLY, OR ONLY TYPED. When the panel folds
+    // shut after Apply neither box is there to read, and the time reported
+    // was the one asked for. MVP's fallback for a day YouTube's API cannot be
+    // asked trusts only a schedule read back here (1.40.8).
+    const tAfter = findTimeBox()
+    out.readBack.timeVerified = !out.readBack.applyShown
+      || (!!tAfter && readTime(tAfter.value) === H * 60 + Mi && (!trigger() || !!dateMatches()))
     const ok = await finish(/^schedule$/i, /video scheduled|scheduled for/)
     out.ok = ok
-    if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')'
+    if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')' + (out.readBack.timeVerified ? '' : '. Studio folded the panel after Apply, so the time was not read back')
     return out
   }
 
@@ -10939,12 +10949,27 @@ async function scanStudioUpload(o) {
     // Sending needs no screen. The tab stays until Studio has every byte,
     // because closing it mid-send loses the upload.
     const sendEnd = Date.now() + 60 * 60000
-    let prog = null, seenUploading = false, quiet = 0
+    let prog = null, seenUploading = false, quiet = 0, unread = 0
     while (Date.now() < sendEnd) {
+      // A READ THAT FAILED IS NOT A QUIET PAGE. A closed or crashed Studio tab
+      // made every read throw, those counted as "nothing uploading", and two
+      // minutes later the run said "Studio has the whole file" over an upload
+      // that was abandoned (1.40.8). A tab that is gone ends the send; reads
+      // that keep failing on a live tab end it after two minutes too.
+      let readFailed = false
       try {
         const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioUploadProgressInPage })
         prog = (pr && pr[0] && pr[0].result) || null
-      } catch (e) { prog = null }
+      } catch (e) { prog = null; readFailed = true }
+      if (readFailed) {
+        let alive = true
+        try { await chrome.tabs.get(tabId) } catch (e) { alive = false }
+        if (!alive) { prog = { state: 'error', text: 'the Studio tab closed before the file finished sending' }; break }
+        if (++unread >= 24) { prog = { state: 'error', text: 'SCOUT could not read the upload progress for two minutes, so it cannot say the file arrived' }; break }
+        await _sleep(5000)
+        continue
+      }
+      unread = 0
       if (prog && (prog.state === 'done' || prog.state === 'error')) break
       if (prog && prog.state === 'uploading') { seenUploading = true; quiet = 0 }
       else quiet++
@@ -10993,7 +11018,10 @@ async function scanStudioUpload(o) {
 
     const okStep = (n) => { const x = steps.find((s) => s && s.step === n); return x ? !!x.ok && !x.skipped : null }
     const thumbStep = steps.find((x) => x && x.step === 'thumbnail')
-    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), thumbVerified: !!(thumbStep && thumbStep.verified === true), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null }
+    // The LAST visibility step that saved is the one that set the schedule.
+    const savedVis = steps.filter((x) => x && x.step === 'visibility' && x.ok).pop()
+    const did = { text: okStep('text'), tags: okStep('tags'), thumbnail: okStep('thumbnail'), thumbVerified: !!(thumbStep && thumbStep.verified === true), playlist: okStep('playlist'), visibility: saved ? visibility.mode : null, publishAt: saved && visibility.mode === 'schedule' ? visibility.publishAt : null,
+      scheduleVerified: !!(saved && visibility.mode === 'schedule' && savedVis && savedVis.readBack && savedVis.readBack.timeVerified === true) }
     if (o.itemId) { map[o.itemId] = { videoId, sent: true, saved, did, at: Date.now() }; try { await chrome.storage.local.set({ [STUDIO_UPLOADS_KEY]: map }) } catch (e) {} }
     const tried = steps.filter((s) => s && !s.skipped)
     return { ok: tried.every((s) => s.ok), videoId, saved, did, steps }
@@ -12183,7 +12211,20 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     if (_studioBusy || _studioUploadBusy) { sendResponse({ ok: false, steps: [], error: 'busy' }); return false }
     _studioBusy = true
     _studioUploadBusy = true
-    const timeout = setTimeout(() => { _studioAbort = true; sendResponse({ ok: false, steps: [], error: 'timeout' }) }, 70 * 60000)
+    // THE TIMEOUT SAYS WHICH VIDEO, when YouTube had already given it an id
+    // (kept locally the moment it did). Without it MVP saw "no video" and the
+    // next try uploaded a second copy (1.40.8).
+    const timeout = setTimeout(async () => {
+      _studioAbort = true
+      let videoId = null
+      try {
+        const itemId = msg.opts && msg.opts.itemId
+        const got = itemId ? await chrome.storage.local.get(STUDIO_UPLOADS_KEY) : null
+        const rec = got && got[STUDIO_UPLOADS_KEY] && got[STUDIO_UPLOADS_KEY][itemId]
+        videoId = (rec && rec.videoId) || null
+      } catch (e) {}
+      sendResponse({ ok: false, steps: [], error: 'timeout', videoId, saved: false, detail: videoId ? 'SCOUT ran out of time after YouTube created the video, so it may still be a draft in Studio' : undefined })
+    }, 70 * 60000)
     scanStudioUpload(msg.opts || {})
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })

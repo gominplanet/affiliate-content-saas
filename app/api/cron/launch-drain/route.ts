@@ -1325,7 +1325,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       const viaStudio = studioByItem.get(it.id) ?? null
       const studioOnTime = !!viaStudio && viaStudio.visibility === 'schedule' && !!viaStudio.publishAt
         && Math.abs(Date.parse(viaStudio.publishAt) - Date.parse(String(it.planned_publish_at))) <= 120_000
-        && (apiBlind || scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
+        && ((apiBlind && viaStudio.scheduleVerified) || scheduleHeld(viaStudio, readBack, String(it.planned_publish_at)) || readBack?.privacyStatus === 'public')
       if (studioOnTime && paidConfirmed) missed = false
       let heldBack: string | null = null
       if (!missed && !paidConfirmed) {

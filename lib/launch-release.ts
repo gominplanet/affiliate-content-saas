@@ -77,7 +77,9 @@ export async function releaseHeld(sb: Sb, it: {
     const raw = row?.studio_upload ?? null
     const did = raw ? studioDid(raw, (raw as { visibility?: unknown }).visibility != null) : null
     const planned = String(it.planned_publish_at || '')
-    const scoutScheduled = !!did && did.visibility === 'schedule' && !!did.publishAt
+    // ONLY A SCHEDULE SCOUT READ BACK after Apply (1.40.8): the time asked for
+    // is not proof Studio kept it.
+    const scoutScheduled = !!did && did.visibility === 'schedule' && !!did.publishAt && did.scheduleVerified
       && Date.parse(did.publishAt) > Date.now()
       && (!planned || Math.abs(Date.parse(did.publishAt) - Date.parse(planned)) <= 120_000)
     const scoutPaid = !!raw && scoutSawPaidPromotion(raw)
