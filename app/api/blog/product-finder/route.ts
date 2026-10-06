@@ -74,7 +74,7 @@ function rateLimited(key: string, perMinute: number): boolean {
  *  stopped. A blog widget answering a hundred visitors a day is a busy blog;
  *  past that it is a script. Counted from ai_usage, so it holds across
  *  instances. */
-export const PRODUCT_FINDER_DAILY_CAP = 100
+const PRODUCT_FINDER_DAILY_CAP = 100
 
 function hostKey(u: string): string {
   try {
