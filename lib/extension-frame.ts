@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1024,6 +1024,43 @@ export async function requestFacebookAccess(ask: boolean): Promise<{ state: 'gra
   if (!scoutAtLeast(status.version, SCOUT_FB_ACCESS_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
   const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_FB_ACCESS', ask }, ask ? 185_000 : 10_000)
   return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
+}
+
+/** TRYBE outreach (Labs). Is SCOUT allowed on TRYBE; ask: show Chrome's
+ *  Allow window now when it is not. Resolves, never throws. */
+export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_TRYBE_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
+  const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_TRYBE_ACCESS', ask }, ask ? 185_000 : 10_000)
+  return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
+}
+
+export interface TrybeScannedBrand {
+  brandId: string; brandUrl: string; name: string; categories: string[]; payText: string | null
+  rating: number | null; reviews: number | null; creatorEarnings: string | null; totalCreators: string | null
+  trybeScore: string | null; website: string | null; about: string | null; alreadyRequested: boolean
+}
+export interface TrybeScanResult {
+  ok: boolean; error?: string; listed?: number
+  brands?: TrybeScannedBrand[]
+  failures?: Array<{ name: string; error: string; steps?: string[] }>
+}
+
+/** SCOUT opens TRYBE's Discover Brands in a tab and reads up to `max` brands
+ *  not in `knownNames`. Takes a few seconds per brand. */
+export async function requestTrybeScan(knownNames: string[], max: number): Promise<TrybeScanResult> {
+  const res = await sendToExtension<TrybeScanResult>({ type: 'MVP_TRYBE_SCAN', knownNames, max }, 600_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
+export interface TrybeSendResult { outcome: 'sent' | 'already' | 'failed' | 'unconfirmed'; error?: string | null; steps?: string[] }
+
+/** SCOUT presses Request to Join for one brand with this message. A missing
+ *  answer is 'unconfirmed', never 'failed': SCOUT may have pressed Send. */
+export async function requestTrybeSend(url: string, name: string, message: string): Promise<TrybeSendResult> {
+  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message }, 120_000)
+  return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 
 /** Where the Group post SCOUT filled stands, after the creator presses Post.
