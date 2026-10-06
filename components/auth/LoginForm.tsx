@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
+import { safeNextPath } from '@/lib/safe-next'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -35,10 +36,8 @@ export default function LoginForm() {
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search)
     if (sp.get('error') === 'auth_callback_failed') setCallbackFailed(true)
-    const n = sp.get('next') || ''
-    // Same-origin paths only, the rules /api/auth/callback safeNext applies.
-    // eslint-disable-next-line no-control-regex
-    if (/^\/(?![/\\])/.test(n) && !/%2f|%5c|[\x00-\x1f\x7f]/i.test(n) && !/^\/[^/]*:/.test(n)) setNextPath(n)
+    // Same-origin paths only, the rules /api/auth/callback applies too.
+    setNextPath(safeNextPath(sp.get('next')))
   }, [])
 
   function resetCaptcha() {
@@ -253,7 +252,7 @@ export default function LoginForm() {
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="text-[#7C3AED] hover:underline font-medium">
+        <Link href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : '/signup'} className="text-[#7C3AED] hover:underline font-medium">
           Sign up
         </Link>
       </p>

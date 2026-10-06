@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
+import { safeNextPath } from '@/lib/safe-next'
 
 const PAID_SIGNUP_TIERS = ['amazon', 'pro']
 
@@ -47,6 +48,10 @@ export default function SignupForm() {
   // logged-out buyer who picked yearly was checked out monthly.
   const [annual, setAnnual] = useState(false)
   const [path, setPath] = useState<OnboardingPath | null>(null)
+  // WHERE AN INVITE WAS GOING. /agency/accept/[token] sends a logged-out team
+  // member here as ?next=, and this form used to drop it, so they confirmed
+  // their email and landed in trial onboarding with the invite never accepted.
+  const [nextPath, setNextPath] = useState<string | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
   // Queue the submit until Turnstile mints a token instead of erroring when the
@@ -88,6 +93,8 @@ export default function SignupForm() {
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
     setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
+    // Same-origin paths only: it ends up in the post-confirmation redirect.
+    setNextPath(safeNextPath(sp.get('next')))
     // Carried from the ad landing, where they already typed it. Asking for the
     // same address twice on consecutive screens is a drop-off for no reason.
     // Only shape-checked, never trusted: Supabase validates it for real and the
@@ -171,7 +178,8 @@ export default function SignupForm() {
         // onboarding that matches what they signed up FOR. An Amazon influencer
         // sent to the default funnel meets "Connect YouTube", required, with
         // every later step locked, which is the end of the road for them.
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(confirmationLandingFor(path ?? 'creator'))}`,
+        // An explicit ?next= (an agency invite) outranks the onboarding landing.
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(nextPath ?? confirmationLandingFor(path ?? 'creator'))}`,
       },
     })
 
@@ -299,7 +307,7 @@ export default function SignupForm() {
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Already have an account?{' '}
-        <Link href="/login" className="text-[#7C3AED] hover:underline font-medium">
+        <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : '/login'} className="text-[#7C3AED] hover:underline font-medium">
           Sign in
         </Link>
       </p>

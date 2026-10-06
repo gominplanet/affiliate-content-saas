@@ -32,6 +32,7 @@ import {
   parseOnboardingPath, resolveOnboardingPath, onboardingDestination,
   signupHrefFor, confirmationLandingFor, amazonOnboardingSteps, amazonOnboardingReady,
 } from '../lib/onboarding-path'
+import { safeNextPath } from '../lib/safe-next'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -249,6 +250,39 @@ const check = (name: string, cond: boolean, detail?: string) => {
     /reportRegistration\(/.test(readFileSync('app/api/auth/callback/route.ts', 'utf8'))
     && /reportRegistration\(/.test(readFileSync('app/api/auth/signup-paid/route.ts', 'utf8')),
     'never from a page that merely tends to get rendered')
+}
+
+// ── an agency invite survives signup ────────────────────────────────────────
+//
+// /agency/accept/[token] sends a logged-out team member to /signup?next=, and
+// the form ignored it: they confirmed their email and landed in trial
+// onboarding with the invite never accepted. `next` lands in a redirect that
+// carries a fresh session cookie, so it must never leave the origin.
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  const FORM3 = readFileSync('components/auth/SignupForm.tsx', 'utf8')
+  const LOGIN = readFileSync('components/auth/LoginForm.tsx', 'utf8')
+  const CB = readFileSync('app/api/auth/callback/route.ts', 'utf8')
+  const INVITE = readFileSync('app/agency/accept/[token]/page.tsx', 'utf8')
+
+  check('the invite page still sends signups with next', /\/signup\?next=/.test(INVITE))
+  check('a safe invite path is honoured', safeNextPath('/agency/accept/abc123') === '/agency/accept/abc123')
+  for (const bad of ['//evil.com', '/\\evil.com', '/%2fevil.com', '/%5Cevil.com', 'https://evil.com',
+    'evil.com', '/javascript:alert(1)', '/a\\b', '/a\nb', '/%0d%0aSet-Cookie:x', '']) {
+    check(`an unsafe next is refused: ${JSON.stringify(bad)}`, safeNextPath(bad) === null)
+  }
+  check('the signup form reads next through the shared check', /safeNextPath\(sp\.get\('next'\)\)/.test(FORM3),
+    'reading it raw puts an attacker URL in the confirmation redirect')
+  check('and the confirmation link carries it ahead of the onboarding landing',
+    /callback\?next=\$\{encodeURIComponent\(nextPath \?\? confirmationLandingFor/.test(FORM3),
+    'this is where the invite was dropped')
+  check('the sign in link carries it to /login', /`\/login\?next=\$\{encodeURIComponent\(nextPath\)\}`/.test(FORM3))
+  check('login reads it through the same check', /safeNextPath\(sp\.get\('next'\)\)/.test(LOGIN))
+  check('and goes there after signing in', /router\.push\(nextPath \?\? '\/dashboard'\)/.test(LOGIN))
+  check('the callback uses the same check', /safeNextPath\(searchParams\.get\('next'\)\)/.test(CB),
+    'three hand-written copies of this rule had already drifted apart')
+  check('and hands next to login when the link opens in another browser',
+    /auth_callback_failed&next=\$\{encodeURIComponent\(next\)\}/.test(CB))
 }
 
 if (failures.length) {

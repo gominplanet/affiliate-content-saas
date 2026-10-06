@@ -10,19 +10,16 @@
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FlaskConical, Lock, ArrowRight } from 'lucide-react'
+import { safeNextPath } from '@/lib/safe-next'
 
 const CYAN = '#22D3EE'
 
-/** Only follow internal same-origin paths — never an attacker-supplied URL. */
-function safeNext(raw: string | null): string {
-  if (raw && raw.startsWith('/') && !raw.startsWith('//')) return raw
-  return '/amz-finder'
-}
 
 function LabsUnlockForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const next = safeNext(params.get('next'))
+  // Only follow internal same-origin paths, never an attacker-supplied URL.
+  const next = safeNextPath(params.get('next')) ?? '/amz-finder'
 
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
