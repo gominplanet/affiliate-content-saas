@@ -52,6 +52,9 @@ export default function SignupForm() {
   // member here as ?next=, and this form used to drop it, so they confirmed
   // their email and landed in trial onboarding with the invite never accepted.
   const [nextPath, setNextPath] = useState<string | null>(null)
+  // AN INVITED TEAM MEMBER is joining someone else's account, not starting a
+  // trial: the trial pitch told them about free designs they are not getting.
+  const invited = !!nextPath && nextPath.startsWith('/agency/accept/')
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
   // Queue the submit until Turnstile mints a token instead of erroring when the
@@ -212,8 +215,10 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock{' '}
-          {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'}. No card required, and your free trial runs 30 days.
+          We sent a confirmation link to <strong>{email}</strong>.{' '}
+          {invited
+            ? 'Click it and you go straight back to your team invite to accept it.'
+            : <>Click it to unlock {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'}. No card required, and your free trial runs 30 days.</>}
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
@@ -227,11 +232,15 @@ export default function SignupForm() {
           ad describes a product they did not come for and cannot use. */}
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier
         ? `Start your ${tierLabel} plan`
+        : invited
+          ? 'Create your account to join the team'
         : path === 'amazon'
           ? 'Start your 30-day free trial: designs with your face on them'
           : 'Start your 30-day free trial: 5 reviews on the house'}</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
         ? `Create your account, then continue to secure checkout. You go straight to ${tierLabel}, no free trial.`
+        : invited
+          ? 'Confirm your email and you come straight back to the invite to accept it.'
         : path === 'amazon'
           ? 'No credit card, no website, no YouTube channel. Confirm your email and you are one Amazon product link away from a finished design you can download.'
           : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site, unlocked the moment you confirm your email.'}</p>
@@ -296,12 +305,14 @@ export default function SignupForm() {
             ? 'Verifying…'
             : loading
             ? (paidTier ? 'Starting checkout…' : 'Creating account…')
-            : (paidTier ? 'Continue to payment →' : 'Create my free account')}
+            : (paidTier ? 'Continue to payment →' : invited ? 'Create my account' : 'Create my free account')}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
           {paidTier
             ? 'Secure checkout by Stripe · Cancel anytime'
-            : 'No credit card · 30 days free · 5 free reviews to try the full workflow'}
+            : invited
+              ? 'No credit card needed to join a team'
+              : 'No credit card · 30 days free · 5 free reviews to try the full workflow'}
         </p>
       </form>
 
