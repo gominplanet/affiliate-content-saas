@@ -130,6 +130,12 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   check('Schedule never fails silently: it says what Studio showed', /Studio did not confirm it' \+ \(shown/.test(bg))
   check('the date is typed only into the picker, never a box behind the window', /const inDatePicker = /.test(bg) && !/const scopes = \[newDialog\(before\), document\]/.test(bg))
   check('a date that did not take gets one slower go', /out\.readBack\.dateSecondGo = true/.test(bg))
+  // 2026-10-05: the box read 7:09 PM and Apply put back 1:00 PM on both videos.
+  check('the typed time is committed with an Enter Studio reads as 13, then the box is left',
+    /Object\.defineProperty\(ev, 'keyCode', \{ get: \(\) => 13 \}\)/.test(bg) && /await commitTime\(timeInput\)/.test(bg))
+  check('a time Apply put back gets one more go, from Studio\'s list when it is on it, never a nearby time',
+    /out\.readBack\.timeSecondGo = \(await pickListedTime\(tBox\)\) \? 'list' : 'typed'/.test(bg)
+    && /readTime\(deepText\(el\)\) === H \* 60 \+ Mi/.test(bg) && /out\.debug\.timeList = /.test(bg))
   check('an end screen already on the video counts as done, not as an editor that never opened', /const alreadyHas = async/.test(bg) && /const viaRow = await openedEditor\(25000\)/.test(bg) && /The video already has an end screen, so SCOUT left it as it is/.test(bg))
   check('a silent YouTube answer on AI use is unknown, never a red cross', /aiUseNo: readBack && readBack\.containsSyntheticMedia != null \? readBack\.containsSyntheticMedia === false : null/.test(read('app/api/cron/launch-drain/route.ts')) && /aiUse: rb\.containsSyntheticMedia \?\? null/.test(read('lib/launch-release.ts')))
   check('the report falls back to SCOUT\'s Studio read-back for AI use', /const value = yt \?\? \(studio \? true : null\)/.test(read('components/launch/LaunchReport.tsx')))

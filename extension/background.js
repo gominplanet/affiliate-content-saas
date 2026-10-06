@@ -10318,6 +10318,42 @@ K.steps.monetization = async (out, o) => {
     if (readTime(timeInput.value) !== H * 60 + Mi) { setVal(timeInput, timeStr); await sleep(700) }
     out.readBack.time = norm(timeInput.value)
     if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled'; return out }
+    // THE BOX SHOWING IT IS NOT STUDIO KEEPING IT. A KeyboardEvent built in a
+    // script ignores keyCode, so the Enter above reached Studio as key 0, and
+    // a picker that waits for 13 never took the time: the box read 7:09 PM,
+    // and Apply put back 1:00 PM on both videos of a batch (2026-10-05).
+    // Committed here as a person does: Enter that says 13, then leaving the box.
+    const pressEnter = (el) => {
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        const ev = new KeyboardEvent(type, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, composed: true })
+        try { Object.defineProperty(ev, 'keyCode', { get: () => 13 }); Object.defineProperty(ev, 'which', { get: () => 13 }) } catch (e) {}
+        el.dispatchEvent(ev)
+      }
+    }
+    const commitTime = async (input) => {
+      try {
+        pressEnter(input)
+        input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }))
+        input.blur()
+      } catch (e) {}
+      await sleep(600)
+    }
+    await commitTime(timeInput)
+    const findTimeBox = () => all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}/.test(norm(el.value)))
+    // Studio's own list of times under the box: the exact one is clicked, as
+    // a person picking from it would. Only an exact match; a time is never
+    // moved to the nearest entry.
+    const listedTimes = () => all(document).filter((el) => visible(el) && el.getAttribute && (el.getAttribute('role') === 'option' || /paper-item/i.test(el.tagName || '')) && readTime(deepText(el)) != null)
+    const pickListedTime = async (input) => {
+      click(input)
+      await sleep(700)
+      const hit = listedTimes().find((el) => readTime(deepText(el)) === H * 60 + Mi)
+      if (!hit) return false
+      click(hit)
+      await sleep(600)
+      return true
+    }
     // Premiere stays off.
     const prem = pickCheckbox('premiere', dlg)
     if (prem && isChecked(prem)) { click(prem); await sleep(500) }
@@ -10339,8 +10375,24 @@ K.steps.monetization = async (out, o) => {
       // Still showing the date asked for (when the panel is still open; a
       // panel that folded shut after Apply shows the time on its heading).
       if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
-      const tBox = all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}/.test(norm(el.value)))
-      if (tBox && readTime(tBox.value) !== H * 60 + Mi) { out.detail = 'Pressed Apply, but Studio then showed ' + norm(tBox.value) + ' instead of ' + timeStr + ', so nothing was scheduled'; return out }
+      let tBox = findTimeBox()
+      if (tBox && readTime(tBox.value) !== H * 60 + Mi) {
+        // ONE MORE GO before giving up on the schedule: from Studio's list
+        // when the time is on it, typed and committed again when it is not,
+        // then Apply again. What Studio showed is kept for the next fix.
+        out.readBack.timeAfterApply = norm(tBox.value)
+        out.readBack.timeSecondGo = (await pickListedTime(tBox)) ? 'list' : 'typed'
+        tBox = findTimeBox() || tBox
+        if (out.readBack.timeSecondGo === 'typed') { await typeInto(tBox, timeStr); await commitTime(tBox) }
+        if (applyBtn()) { click(applyBtn()); await waitFor(() => (!applyBtn() ? true : null), 5000, 300); await sleep(600) }
+        tBox = findTimeBox()
+        if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply again, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
+        if (tBox && readTime(tBox.value) !== H * 60 + Mi) {
+          out.debug.timeList = listedTimes().map((el) => deepText(el)).slice(0, 8)
+          out.detail = 'Pressed Apply, but Studio then showed ' + out.readBack.timeAfterApply + ' instead of ' + timeStr + ', and again (' + norm(tBox.value) + ') on a second go, so nothing was scheduled'
+          return out
+        }
+      }
     }
     const ok = await finish(/^schedule$/i, /video scheduled|scheduled for/)
     out.ok = ok
