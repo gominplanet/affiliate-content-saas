@@ -12,6 +12,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePassport } from '@/lib/feature-access'
 import { mintVerdict } from '@/lib/passport-abuse'
 import { normalizeTier } from '@/lib/tier'
+import { rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -583,6 +584,20 @@ export interface PassportTarget {
  * source). Returns the code, or null on invalid input / failure.
  */
 export async function getOrCreatePassportLink(
+  admin: Db, userId: string, siteId: string | null, target: PassportTarget,
+): Promise<string | null> {
+  const code = await findOrMintPassportCode(admin, userId, siteId, target)
+  // A Passport link cannot say where it lands; this is the code that knows. An
+  // ASIN geo-routes to an Amazon store, anything else forwards to its URL.
+  // Recorded for the label in front of it (lib/social-disclaimer).
+  if (code) {
+    const asinTarget = /^[A-Z0-9]{10}$/.test((target.asin || '').trim().toUpperCase())
+    rememberLinkDestination(passportLinkUrl(code), asinTarget ? 'amazon' : (target.destinationUrl || '').trim())
+  }
+  return code
+}
+
+async function findOrMintPassportCode(
   admin: Db, userId: string, siteId: string | null, target: PassportTarget,
 ): Promise<string | null> {
   const asin = (target.asin || '').trim().toUpperCase()

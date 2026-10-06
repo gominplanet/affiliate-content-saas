@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { rememberLinkDestination } from '@/lib/social-disclaimer'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Bitly v4 — a FREE alternative to Geniuslink for the social→blog link. A
@@ -24,7 +25,10 @@ export async function shortenBitly(token: string, longUrl: string): Promise<stri
     if (!res.ok) return null
     const j = (await res.json().catch(() => null)) as { link?: string } | null
     const link = j?.link
-    return link && /^https?:\/\//i.test(link) ? link : null
+    if (!link || !/^https?:\/\//i.test(link)) return null
+    // Where it lands, for the label in front of it (lib/social-disclaimer).
+    rememberLinkDestination(link, url)
+    return link
   } catch {
     return null
   }

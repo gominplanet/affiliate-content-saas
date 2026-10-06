@@ -1,4 +1,5 @@
 import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 const LINKEDIN_API = 'https://api.linkedin.com/v2'
 const LINKEDIN_AUTH = 'https://www.linkedin.com/oauth/v2'
 
@@ -29,7 +30,7 @@ export class LinkedInService {
         lifecycleState: 'PUBLISHED',
         specificContent: {
           'com.linkedin.ugc.ShareContent': {
-            shareCommentary: { text: opts.text },
+            shareCommentary: { text: discloseSocialPost(opts.text, 'linkedin') },
             shareMediaCategory: 'ARTICLE',
             media: [{
               status: 'READY',
@@ -116,7 +117,7 @@ export class LinkedInService {
         lifecycleState: 'PUBLISHED',
         specificContent: {
           'com.linkedin.ugc.ShareContent': {
-            shareCommentary: { text: opts.text },
+            shareCommentary: { text: discloseSocialPost(opts.text, 'linkedin') },
             shareMediaCategory: 'IMAGE',
             media: [{
               status: 'READY',

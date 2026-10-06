@@ -16,6 +16,7 @@
  * Bot API docs: https://core.telegram.org/bots/api
  */
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 const TG_BASE = 'https://api.telegram.org'
 
@@ -49,7 +50,7 @@ export async function sendPhoto(
     body: JSON.stringify({
       chat_id: chatId,
       photo: photoUrl,
-      caption: caption.slice(0, 1024),
+      caption: discloseSocialPost(caption, 'telegram').slice(0, 1024),
       parse_mode: 'MarkdownV2',
     }),
   })
@@ -84,7 +85,7 @@ export async function sendMessage(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      text: text.slice(0, 4096),
+      text: discloseSocialPost(text, 'telegram').slice(0, 4096),
       parse_mode: 'MarkdownV2',
       disable_web_page_preview: false,
     }),

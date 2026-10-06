@@ -59,7 +59,7 @@ import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveD
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -73,7 +73,7 @@ export const maxDuration = 240
 
 // Disclaimer used by Threads + Telegram + Facebook so the body the user
 // edited stays clean and we append ours at publish time.
-const THREADS_DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
+const THREADS_DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
 // Long-form disclaimer guarantee (LinkedIn, Telegram) — see lib/social-disclaimer.
 // Short-form (X, Bluesky) carry the blog link; the full disclosure lives on the
@@ -616,6 +616,10 @@ async function publishOne(
       source: row.platform,
     })
   }
+  // The share link may be a stored geni.us code minted on another day, which
+  // cannot say where it lands. This route knows (schedAmazonDestination), so it
+  // says so for the label in front of the link (lib/social-disclaimer).
+  if (schedAffiliateLink && schedAmazonDestination) rememberLinkDestination(schedAffiliateLink, 'amazon')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schedVideoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -926,7 +930,7 @@ async function publishOne(
       if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
       const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT))
       const escapedUrl = escapeMarkdownV2(url)
-      const linkLabel = escapeMarkdownV2('Read the full review →')
+      const linkLabel = escapeMarkdownV2('Read the full review on my blog')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
       const result = imageUrl
         ? await sendPhoto(tgToken, integration.telegram_channel_id, imageUrl, finalCaption)

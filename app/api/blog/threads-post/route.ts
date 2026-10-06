@@ -16,7 +16,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { spendGate } from '@/lib/ai-spend'
 
-const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
+const DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
 export async function POST(request: NextRequest) {
   try {

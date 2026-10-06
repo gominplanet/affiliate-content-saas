@@ -1,5 +1,6 @@
 import { describeMetaError } from '@/lib/meta-error'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 const BASE = 'https://graph.threads.net/v1.0'
 
 // A media container is not publishable the instant it's created — Meta has to
@@ -56,7 +57,9 @@ export class ThreadsService {
     }
 
     // Step 1: create media container
-    const containerBody: Record<string, string> = { text }
+    // DISCLOSED AT THE LAST STEP (lib/social-disclaimer): #ad #sponsored and a
+    // label naming where each link goes, on every path that reaches this call.
+    const containerBody: Record<string, string> = { text: discloseSocialPost(text, 'threads') }
     if (imageUrl) {
       containerBody.media_type = 'IMAGE'
       containerBody.image_url = imageUrl

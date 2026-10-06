@@ -188,13 +188,13 @@ Return ONLY the post text.`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tgShareUrl = (await channelShareUrl({ supabase, post: post as any, channel: 'telegram', userId: user.id, apiKey: maybeDecrypt(tierRow?.geniuslink_api_key) as string | undefined, apiSecret: maybeDecrypt(tierRow?.geniuslink_api_secret) as string | undefined })) || (((post as any).geniuslink_blog_url || post.wordpress_url) as string)
     const escapedUrl = escapeMarkdownV2(tgShareUrl)
-    const linkLabel = escapeMarkdownV2('Read the full review →')
+    const linkLabel = escapeMarkdownV2('Read the full review on my blog')
     const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
 
     if (dryRun) {
       // Show the body the user can edit; finalText is the rendered Markdown
       // version that ships to Telegram (with the CTA link appended).
-      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${(post as any).geniuslink_blog_url || post.wordpress_url}` })
+      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review on my blog: ${(post as any).geniuslink_blog_url || post.wordpress_url}` })
     }
 
     // Video-less posts (campaigns, guides, comparisons) have no YouTube

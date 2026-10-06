@@ -21,6 +21,7 @@ import { resolveGeniuslinkChannelGroupId, channelKey } from '@/lib/geniuslink-gr
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
 import { pickLinkStyle, geniuslinkCreds } from '@/lib/link-style'
+import { rememberBlogUrl, rememberLinkDestination } from '@/lib/social-disclaimer'
 
 /** The Geniuslink credentials to wrap this share with, or null when Geniuslink
  *  is not the creator's chosen style. The rule is lib/link-style pickLinkStyle,
@@ -89,6 +90,17 @@ interface ChannelShareOpts {
  * the best available plain URL when per-channel routing isn't possible.
  */
 export async function channelShareUrl(opts: ChannelShareOpts): Promise<string | null> {
+  const url = await channelShareUrlFor(opts)
+  // EVERY ANSWER HERE IS THE BLOG, however it is wrapped. Recorded so the label
+  // in front of it says so (lib/social-disclaimer): a geni.us or a cached link
+  // cannot say where it lands, and "Check it out here" is not "my blog".
+  rememberBlogUrl(opts.post.wordpress_url)
+  rememberLinkDestination(opts.post.geniuslink_blog_url, 'blog')
+  rememberLinkDestination(url, 'blog')
+  return url
+}
+
+async function channelShareUrlFor(opts: ChannelShareOpts): Promise<string | null> {
   const { supabase, post, userId, apiKey, apiSecret } = opts
   const base = post.wordpress_url || null
   const fallback = post.geniuslink_blog_url || base

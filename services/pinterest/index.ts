@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 // Pinterest API host. Trial-access apps may NOT create pins against
 // production (api.pinterest.com) — Pinterest requires the Sandbox host
 // for that until Standard access is granted. Flip this via env to
@@ -58,7 +59,7 @@ export class PinterestService {
       body: JSON.stringify({
         board_id: opts.boardId,
         title: opts.title,
-        description: opts.description,
+        description: discloseSocialPost(opts.description, 'pinterest'),
         link: opts.link,
         media_source: {
           source_type: 'image_url',
@@ -133,7 +134,7 @@ export class PinterestService {
       body: JSON.stringify({
         board_id: opts.boardId,
         title: opts.title,
-        description: opts.description,
+        description: discloseSocialPost(opts.description, 'pinterest'),
         link: opts.link,
         media_source: {
           source_type: 'image_base64',
@@ -216,7 +217,7 @@ export class PinterestService {
       body: JSON.stringify({
         board_id: opts.boardId,
         title: opts.title,
-        description: opts.description,
+        description: discloseSocialPost(opts.description, 'pinterest'),
         // Only send a link when we actually have one — Pinterest rejects an
         // empty string but is happy with the field omitted.
         ...(opts.link ? { link: opts.link } : {}),

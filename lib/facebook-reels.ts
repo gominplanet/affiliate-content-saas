@@ -13,6 +13,8 @@
 //
 // Meta's limits for a Page Reel: 9:16, 3 to 90 seconds, at least 540x960.
 
+import { discloseSocialPost } from '@/lib/social-disclaimer'
+
 const GRAPH = 'https://graph.facebook.com/v21.0'
 
 export type ReelResult =
@@ -51,7 +53,7 @@ export async function publishPageReel(opts: { pageId: string; token: string; vid
   // 3. Finish and publish, with the caption.
   const fin = await fetch(`${GRAPH}/${encodeURIComponent(pageId)}/video_reels`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ upload_phase: 'finish', video_id: videoId, video_state: 'PUBLISHED', description: opts.description.slice(0, 2000), access_token: token }),
+    body: JSON.stringify({ upload_phase: 'finish', video_id: videoId, video_state: 'PUBLISHED', description: discloseSocialPost(opts.description, 'facebook').slice(0, 2000), access_token: token }),
     signal: AbortSignal.timeout(60_000),
   })
   const fj = await json(fin)

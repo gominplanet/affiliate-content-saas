@@ -33,6 +33,7 @@
  */
 import { describeMetaError } from '@/lib/meta-error'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 const GRAPH_BASE = 'https://graph.instagram.com'
 const GRAPH_VERSION = 'v22.0'
@@ -262,14 +263,14 @@ export async function createMediaContainer(opts: {
     throw new Error('createMediaContainer: must provide imageUrl or videoUrl')
   }
   if (opts.mediaType === 'REELS') {
-    if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
+    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
     if (opts.shareToFeed !== false) body.set('share_to_feed', 'true')
     // Cover frame chosen in MVP → IG uses this frame as the Reel thumbnail.
     if (typeof opts.thumbOffsetMs === 'number' && opts.thumbOffsetMs >= 0) {
       body.set('thumb_offset', String(Math.round(opts.thumbOffsetMs)))
     }
   } else if (opts.mediaType === 'IMAGE') {
-    if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
+    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
   }
 
   const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {

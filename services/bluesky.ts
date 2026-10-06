@@ -15,6 +15,7 @@
  * (e.g. self-hosted) require resolving via DNS — out of scope for v1.
  */
 import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 
 const PDS_BASE = 'https://bsky.social'
 
@@ -50,7 +51,9 @@ export async function createPost(
   session: BlueskySession,
   args: { text: string; linkUrl?: string; linkText?: string; embed?: { url: string; title?: string; description?: string; imageUrl?: string } },
 ): Promise<{ uri: string; cid: string }> {
-  const text = args.text
+  // DISCLOSED AT THE LAST STEP (lib/social-disclaimer): #ad #sponsored and a
+  // label naming where each link goes, on every path that reaches this call.
+  const text = discloseSocialPost(args.text, 'bluesky')
   const facets: Array<Record<string, unknown>> = []
 
   // If we have a linkUrl and the link appears verbatim in the text, add a

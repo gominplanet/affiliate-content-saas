@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { discloseSocialPost } from '@/lib/social-disclaimer'
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
 export interface FacebookPage {
@@ -18,7 +19,7 @@ export class FacebookService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: opts.message,
+        message: discloseSocialPost(opts.message, 'facebook'),
         link: opts.link,
         access_token: this.pageAccessToken,
       }),
@@ -35,7 +36,7 @@ export class FacebookService {
     const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/feed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: opts.message, access_token: this.pageAccessToken }),
+      body: JSON.stringify({ message: discloseSocialPost(opts.message, 'facebook'), access_token: this.pageAccessToken }),
     })
     if (!res.ok) {
       const body = await res.text()
@@ -54,7 +55,7 @@ export class FacebookService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: opts.imageUrl,
-        caption: opts.caption,
+        caption: discloseSocialPost(opts.caption, 'facebook'),
         access_token: this.pageAccessToken,
       }),
     })
