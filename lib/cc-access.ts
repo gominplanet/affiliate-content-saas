@@ -11,7 +11,7 @@
  */
 
 // Keep in step with VERIFY_TTL_DAYS in /api/campaigns/cc-verify.
-const CC_VERIFY_TTL_MS = 180 * 86_400_000
+const CC_VERIFY_TTL_MS = 30 * 86_400_000
 
 /** True when a cc_verified_at stamp exists and is still within the TTL window. */
 export function ccVerifyFresh(ts: string | null | undefined): boolean {

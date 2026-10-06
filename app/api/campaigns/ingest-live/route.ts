@@ -92,35 +92,63 @@ export async function POST(req: Request) {
       .in('campaign_id', ids)
     for (const r of (data ?? []) as Row[]) existing.set(r.campaign_id, r)
   }
+  // A MEMBER'S SCAN ONLY REFRESHES NUMBERS (Seb, 2026-10-07). It used to write
+  // whole campaigns, so any verified account could add campaigns or rename,
+  // repicture and re-price them for everybody. Now: only campaigns already in
+  // the catalogue (new ones come from the admin import), only the live numbers
+  // (spots, budget, rating, reviews), a daily cap per account, and every change
+  // signed with who made it and when, so a bad actor can be undone.
+  const LIVE_FIELDS = ['available_slot', 'total_slot', 'budget', 'budget_remaining', 'rating', 'review_count'] as const
+  const DAILY_ROWS_PER_ACCOUNT = 3000
+  const stamp = new Date().toISOString()
+  let unknown = 0
+  let capped = false
   const merged: Row[] = []
   let skipped = 0
   let nowFull = 0
   for (const r of incoming) {
     const old = existing.get(r.campaign_id)
-    const m: Row = { ...r }
-    if (old) {
-      for (const [k, v] of Object.entries(r)) {
-        const empty = v == null || (Array.isArray(v) && v.length === 0)
-        if (empty && old[k] != null) m[k] = old[k]
-      }
+    if (!old) { unknown++; continue }
+    const m: Row = { campaign_id: r.campaign_id }
+    for (const k of LIVE_FIELDS) {
+      const v = r[k]
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) continue
+      // Bounds a real grid never crosses.
+      if ((k === 'available_slot' || k === 'total_slot') && v > 100_000) continue
+      if (k === 'rating' && v > 5) continue
+      m[k] = v
     }
-    if (!m.campaign_name || m.commission_pct == null || !m.ends_at) { skipped++; continue }
-    if (typeof m.available_slot === 'number' && m.available_slot <= 0 && !(typeof old?.available_slot === 'number' && (old.available_slot as number) <= 0)) nowFull++
+    if (Object.keys(m).length === 1) { skipped++; continue }
+    if (typeof m.available_slot === 'number' && m.available_slot <= 0 && !(typeof old.available_slot === 'number' && (old.available_slot as number) <= 0)) nowFull++
     merged.push(m)
+  }
+
+  // THE DAILY CAP, counted from the rows this account last wrote (migration
+  // 413). Without the columns the cap steps aside, and says so in the log.
+  let audited = true
+  try {
+    const since = new Date(Date.now() - 86_400_000).toISOString()
+    const { count, error } = await sb.from('cc_campaign_catalog').select('campaign_id', { count: 'exact', head: true })
+      .eq('last_live_by', user.id).gte('last_live_at', since)
+    if (error) throw error
+    const room = Math.max(0, DAILY_ROWS_PER_ACCOUNT - (count ?? 0))
+    if (merged.length > room) { capped = true; merged.length = room }
+  } catch (e) {
+    audited = false
+    console.warn('[ingest-live] no audit columns (run migration 413); daily cap is OFF:', e instanceof Error ? e.message : String(e))
   }
 
   let upserted = 0
   let failed = 0
   for (let i = 0; i < merged.length; i += 500) {
-    const chunk = merged.slice(i, i + 500)
+    const chunk = merged.slice(i, i + 500).map((m) => (audited ? { ...m, last_live_by: user.id, last_live_at: stamp } : m))
     try {
+      // Every row here already exists, so this only ever updates the fields sent.
       const { error } = await sb.from('cc_campaign_catalog').upsert(chunk, { onConflict: 'campaign_id', ignoreDuplicates: false })
       if (!error) upserted += chunk.length
       else failed += chunk.length
     } catch { failed += chunk.length }
   }
 
-  // What happened, counted: written, skipped for missing fields, failed, and how
-  // many just turned full (those drop out of "Has open spots" for everyone).
-  return NextResponse.json({ ok: true, upserted, skipped, failed, nowFull })
+  return NextResponse.json({ ok: true, upserted, skipped, failed, nowFull, unknown, capped })
 }

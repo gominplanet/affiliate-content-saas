@@ -259,7 +259,10 @@ export default function SmartScanPanel({
     // A live grid scan that returned campaigns proves this user has their own
     // Creator Connections access — stamp it so the shared "Browse all" catalog
     // unlocks for them (confidentiality gate). Fire-and-forget.
-    if (raw.length > 0) void fetch('/api/campaigns/cc-verify', { method: 'POST' }).catch(() => {})
+    if (raw.length > 0) void fetch('/api/campaigns/cc-verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaignIds: raw.map(m => m.campaignId).filter(Boolean) }),
+    }).catch(() => {})
     const fresh = raw.filter(m => { const a = m.asin?.toUpperCase(); return !(a && (covered.has(a) || savedAsins.has(a))) })
     setSkippedCovered(raw.length - fresh.length)
     const scored = fresh

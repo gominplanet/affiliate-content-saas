@@ -719,9 +719,14 @@ export default function CcCampaignsPage() {
         setVerifyMsg('Your grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
         return
       }
-      const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
+      const stamp = await fetch('/api/campaigns/cc-verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignIds: res.matches.map(m => m.campaignId).filter(Boolean) }),
+      }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) { setLocked(false); setVerifyMsg(null); toast.success('Creator Connections access confirmed.'); fetchPage(1, false) }
-      else setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
+      else setVerifyMsg(stamp?.reason === 'no-match'
+        ? 'SCOUT read your grid, but its campaigns did not match the shared catalogue yet. Try again after the next catalogue refresh.'
+        : 'Verified your grid, but couldn’t save it just now. Please try again.')
     } catch {
       setVerifyMsg('Verification failed unexpectedly. Reload and try again.')
     } finally { setVerifying(false) }

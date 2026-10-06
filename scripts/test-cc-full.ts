@@ -58,7 +58,10 @@ const SS = read('components/campaigns/SmartScanPanel.tsx')
 check('Smart-Scan refreshes live spots for what it scanned and shows the outcome', /refreshLiveSpots\(terms\)/.test(SS) && /Live open spots updated for/.test(SS) && /Could not check live open spots on Amazon this time/.test(SS))
 const IL = read('app/api/campaigns/ingest-live/route.ts')
 check('ingest-live no longer writes the generated rep_asin or a missing updated_at', !/rep_asin:/.test(IL) && !/updated_at:/.test(IL))
-check('a field Amazon left out keeps its value; rows that cannot be stored are skipped, counted', /if \(empty && old\[k\] != null\) m\[k\] = old\[k\]/.test(IL) && /skipped\+\+/.test(IL) && /return NextResponse\.json\(\{ ok: true, upserted, skipped, failed, nowFull \}\)/.test(IL))
+// 2026-10-07: a member scan writes only the live numbers it read (a field it
+// did not read is simply not sent, so the stored value stays), on campaigns
+// already in the catalogue; the rest are skipped and counted.
+check('a field Amazon left out keeps its value; rows that cannot be stored are skipped, counted', /if \(typeof v !== 'number' \|\| !Number\.isFinite\(v\) \|\| v < 0\) continue/.test(IL) && /skipped\+\+/.test(IL) && /return NextResponse\.json\(\{ ok: true, upserted, skipped, failed, nowFull, unknown, capped \}\)/.test(IL))
 
 // ── Campaigns missing from Amazon's export are marked full, never deleted ─────
 {

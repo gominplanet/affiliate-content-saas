@@ -171,12 +171,20 @@ export default function CampaignBrowsePanel({
       if (res.error === 'not-installed') { toast.error('Install SCOUT to pull live results from your Amazon grid.', { id: tId }); return }
       if (!res.ok) { toast.error('Could not reach Amazon through SCOUT. Open Creator Connections in this browser and retry.', { id: tId }); return }
       const found = res.campaigns || []
+      // WHAT THE CATALOGUE TOOK, NOT WHAT WAS FOUND. A scan refreshes live numbers
+      // on campaigns already in the catalogue only (new ones come from the next
+      // catalogue import), so a found campaign can be missing from the list.
+      let w: { upserted?: number; unknown?: number; capped?: boolean } | null = null
       if (found.length) {
-        await fetch('/api/campaigns/ingest-live', {
+        w = await fetch('/api/campaigns/ingest-live', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: found }),
-        }).catch(() => {})
+        }).then(r => r.json()).catch(() => null)
       }
-      toast.success(`Found ${found.length} live ${found.length === 1 ? 'campaign' : 'campaigns'} for “${kw}”.`, { id: tId, duration: 5000 })
+      const notYet = w?.unknown ?? 0
+      toast.success(`Found ${found.length} live ${found.length === 1 ? 'campaign' : 'campaigns'} for “${kw}”.`
+        + (w ? ` Updated ${w.upserted ?? 0} in the catalogue.` : '')
+        + (notYet ? ` ${notYet} ${notYet === 1 ? 'is' : 'are'} not in the catalogue yet and will show after the next import.` : '')
+        + (w?.capped ? ' Today’s refresh limit for your account was reached.' : ''), { id: tId, duration: 7000 })
       await load(0, false)
     } finally { setLiveBusy(false) }
   }, [q, load])
@@ -284,13 +292,18 @@ export default function CampaignBrowsePanel({
         setVerifyMsg('Your Creator Connections grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
         return
       }
-      const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
+      const stamp = await fetch('/api/campaigns/cc-verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignIds: res.matches.map(m => m.campaignId).filter(Boolean) }),
+      }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) {
         setLocked(false); setVerifyMsg(null)
         toast.success('Creator Connections access confirmed. Browse all is unlocked.')
         void load()
       } else {
-        setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
+        setVerifyMsg(stamp?.reason === 'no-match'
+          ? 'SCOUT read your grid, but its campaigns did not match the shared catalogue yet. Try again after the next catalogue refresh.'
+          : 'Verified your grid, but couldn’t save it just now. Please try again.')
       }
     } catch {
       setVerifyMsg('Verification failed unexpectedly. Reload the page and try again.')

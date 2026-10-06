@@ -140,6 +140,23 @@ for (const rel of ['lib/ig-dm.ts', 'lib/instagram-publish.ts']) {
   }
 }
 
+// ── Creator Connections access, 2026-10-07 (Seb) ─────────────────────────────
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  const V = rf('app/api/campaigns/cc-verify/route.ts', 'utf8')
+  check('CC access is proved by real campaign ids from SCOUT\'s scan, not a button',
+    /campaignIds/.test(V) && /from\('cc_campaign_catalog'\)\.select\('campaign_id', \{ count: 'exact', head: true \}\)\.in\('campaign_id', ids\)/.test(V)
+    && /if \(matched < Math\.min\(MIN_MATCHED, ids\.length\)\)/.test(V), 'see the Creator Connections access block in this guard')
+  check('and lasts 30 days', /const VERIFY_TTL_DAYS = 30/.test(V) && /CC_VERIFY_TTL_MS = 30 \* 86_400_000/.test(rf('lib/cc-access.ts', 'utf8')), 'see the Creator Connections access block in this guard')
+  for (const f of ['components/campaigns/CampaignBrowsePanel.tsx', 'app/(dashboard)/cc-campaigns/page.tsx', 'components/campaigns/SmartScanPanel.tsx']) {
+    check(`${f} sends the campaign ids it saw`, /campaignIds: [a-z.]+\.map\(m => m\.campaignId\)/.test(rf(f, 'utf8')), 'see the Creator Connections access block in this guard')
+  }
+  const L = rf('app/api/campaigns/ingest-live/route.ts', 'utf8')
+  check('a member scan only refreshes live numbers on campaigns already in the catalogue',
+    /if \(!old\) \{ unknown\+\+; continue \}/.test(L) && /const LIVE_FIELDS = \['available_slot', 'total_slot', 'budget', 'budget_remaining', 'rating', 'review_count'\] as const/.test(L), 'see the Creator Connections access block in this guard')
+  check('with a daily cap per account and every change signed', /DAILY_ROWS_PER_ACCOUNT = 3000/.test(L) && /last_live_by: user\.id, last_live_at: stamp/.test(L), 'see the Creator Connections access block in this guard')
+}
+
 if (failures.length) {
   console.error(`test-security-audit: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`  x ${f}\n`)
