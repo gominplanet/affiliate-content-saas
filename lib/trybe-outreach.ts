@@ -21,8 +21,102 @@ export const MAX_GAP_MS = 120_000
 export const BREAK_EVERY = 5
 export const BREAK_MS: [number, number] = [180_000, 300_000]
 
-export type TrybeStatus = 'new' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already'
-export const STATUSES: TrybeStatus[] = ['new', 'drafted', 'sending', 'sent', 'failed', 'skipped', 'already']
+export type TrybeStatus = 'new' | 'not_fit' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already'
+export const STATUSES: TrybeStatus[] = ['new', 'not_fit', 'drafted', 'sending', 'sent', 'failed', 'skipped', 'already']
+
+// ── WHAT THE CREATOR WANTS (Seb, 2026-10-06: "not just blindly message all
+// brands") ─────────────────────────────────────────────────────────────────
+// Categories and keywords. SCOUT uses them to search TRYBE; MVP then judges
+// each brand found against them from its TRYBE profile and its website, and
+// only brands that fit reach the list and the morning queue.
+
+/** How many brands a day MVP and SCOUT find and draft for the queue. */
+export const DAILY_FIND = 20
+/** How many unseen brands SCOUT reads in one search, so enough fit. */
+export const SCAN_READ = 40
+
+/** Categories offered as chips before any brand is read. TRYBE's own
+ *  categories from the brands found are added to these on the page. */
+export const CATEGORY_SUGGESTIONS = [
+  'Beauty', 'Skincare', 'Hair Care', 'Health & Wellness', 'Supplements', 'Fitness',
+  'Home', 'Kitchen', 'Food & Beverage', 'Pets', 'Baby & Kids', 'Fashion',
+  'Jewelry & Accessories', 'Tech & Gadgets', 'Outdoors', 'Travel', 'Books & Education',
+  'Faith', 'Crafts & Hobbies', 'Cleaning', 'Sleep', 'Personal Care',
+]
+
+/** A list of short terms from the page: trimmed, de-duplicated, capped. */
+export function cleanTerms(raw: unknown, max = 12): string[] {
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : []
+  const out: string[] = []
+  for (const v of list) {
+    const t = String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)
+    if (t && !out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** The preferences a fit was judged against, as one comparable string. A
+ *  brand judged under other preferences is judged again. */
+export function prefsKey(categories: string[], keywords: string[]): string {
+  const k = (a: string[]) => a.map(s => s.toLowerCase()).sort().join('|')
+  return `${k(categories)}#${k(keywords)}`
+}
+
+export interface FitInput {
+  id: string
+  name: string
+  categories: string[]
+  about: string | null
+  siteSummary: string
+  siteProducts: string[]
+}
+export interface FitVerdict { id: string; fit: boolean; score: number; reason: string }
+
+export const FIT_SYSTEM = `You decide which brands on TRYBE, a marketplace where brands pay creators for UGC videos, are worth a creator's outreach. The creator told you the categories and keywords they want to work in.
+
+For each brand, judge from its TRYBE categories, its TRYBE about text and what its own website sells:
+- fit: true only when what the brand actually sells sits inside one of the creator's categories or matches one of the keywords. A loose or one-word overlap is not a fit.
+- score: 0 to 100, how strong the fit is.
+- reason: one short sentence naming what the brand sells and why it does or does not fit. No dashes.
+
+Use only the facts given. When the website could not be read, judge from TRYBE alone and say so in the reason.
+Reply with ONLY a JSON array: [{"id":"...","fit":true,"score":80,"reason":"..."}], one entry per brand, same ids.`
+
+export function fitUserPrompt(categories: string[], keywords: string[], brands: FitInput[]): string {
+  const want = [
+    categories.length ? `Categories: ${categories.join(', ')}` : '',
+    keywords.length ? `Keywords: ${keywords.join(', ')}` : '',
+  ].filter(Boolean).join('\n')
+  const list = brands.map(b => [
+    `id: ${b.id}`,
+    `Name: ${b.name}`,
+    b.categories.length ? `TRYBE categories: ${b.categories.join(', ')}` : '',
+    b.about ? `TRYBE about: ${b.about.slice(0, 500)}` : '',
+    b.siteProducts.length ? `Products on their website: ${b.siteProducts.slice(0, 10).join(' | ')}` : '',
+    b.siteSummary ? `Website: ${b.siteSummary.slice(0, 900)}` : '(website not read)',
+  ].filter(Boolean).join('\n')).join('\n\n')
+  return `--- THE CREATOR WANTS ---\n${want}\n\n--- BRANDS ---\n${list}`
+}
+
+/** The model's verdicts, checked: one per brand asked about, nothing else.
+ *  A brand the answer left out gets no verdict (and is asked about again). */
+export function parseFit(text: string, ids: string[]): FitVerdict[] {
+  const m = String(text || '').match(/\[[\s\S]*\]/)
+  if (!m) return []
+  let arr: unknown
+  try { arr = JSON.parse(m[0]) } catch { return [] }
+  if (!Array.isArray(arr)) return []
+  const out: FitVerdict[] = []
+  for (const v of arr) {
+    const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+    const id = String(r.id ?? '')
+    if (!ids.includes(id) || out.some(o => o.id === id)) continue
+    const score = Math.max(0, Math.min(100, Math.round(Number(r.score) || 0)))
+    out.push({ id, fit: r.fit === true, score, reason: String(r.reason ?? '').replace(/\s*[\u2014\u2013]\s*/g, ', ').replace(/\s+/g, ' ').trim().slice(0, 240) })
+  }
+  return out
+}
 
 export function clampCap(n: unknown): number {
   const v = Math.round(Number(n))
@@ -116,11 +210,15 @@ export function sendUrl(brandId: string, brandUrl: string | null): string {
 }
 
 /** Last pass over a draft. The prompt asks for the same; this makes sure. */
-export function tidyDraft(text: string, max = 900): string {
+export function tidyDraft(text: string, max = 1000): string {
+  // LINE BREAKS ARE KEPT: paragraphs and the sign-off's own lines go out as
+  // written. Only runs of blank lines and stray spaces at line ends go.
   let t = String(text || '')
+    .replace(/\r\n?/g, '\n')
     .replace(/^["'\s]+|["'\s]+$/g, '')
-    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/[ \t]*[—–][ \t]*/g, ', ')
     .replace(/ +- +/g, ', ')
+    .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   if (t.length > max) {
@@ -151,7 +249,9 @@ You are given the creator's CORE MESSAGE. Keep its points, its offer and its voi
 - Open by naming something real and specific about this brand: a product by name from its website, or what it makes. Never a compliment that could fit any brand.
 - Connect the creator to that product in one sentence, using only the creator facts given.
 - Keep the core message's call to action.
-- 350 to 700 characters. Plain text, first person, no subject line, no greeting with a placeholder, no markdown, no hashtags, no links unless the core message or the creator facts contain them.
+- Lay it out the way a person writes a message: two to four short paragraphs with a blank line between them, never one block of text.
+- When the core message ends with a sign-off (thanks, names, an email address), end with that same sign-off, word for word, on its own lines exactly as it is written.
+- 400 to 900 characters. Plain text, first person, no subject line, no greeting with a placeholder, no markdown, no hashtags, no links unless the core message or the creator facts contain them.
 - NEVER invent facts: no follower counts, results, past work or claims not in the core message or creator facts.
 - Never write a year.
 ${bannedRule}

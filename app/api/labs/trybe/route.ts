@@ -3,7 +3,9 @@
 // /api/labs/trybe — TRYBE outreach (Labs, admin while it is tested).
 //
 //   GET                       the queue, settings and today's count
-//   POST {action:'settings'}  core message + daily cap
+//   POST {action:'settings'}  core message, daily cap, categories, keywords
+//   POST {action:'match'}     judge found brands against the niche (website read)
+//   POST {action:'found'}     a day's find ran (the daily find waits a day)
 //   POST {action:'import'}    brands SCOUT read from TRYBE's Discover Brands
 //   POST {action:'draft'}     research each brand's website, write its message
 //   POST {action:'edit'|'skip'|'unskip'|'reset'}
@@ -29,6 +31,7 @@ import { researchBrandSite } from '@/lib/trybe-research'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
+  cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
 } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -36,6 +39,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 const MODEL = 'claude-sonnet-4-6'
+// Judging fit is a short yes or no per brand: the small model, a few at a time.
+const FIT_MODEL = 'claude-haiku-4-5-20251001'
 const RESEARCH_TTL_MS = 14 * 24 * 3600_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,8 +60,25 @@ async function gate() {
 }
 
 async function readSettings(admin: Db, ownerId: string) {
-  const { data } = await admin.from('trybe_outreach_settings').select('core_message, daily_cap').eq('user_id', ownerId).maybeSingle()
-  return { coreMessage: (data?.core_message as string | null) || '', dailyCap: clampCap(data?.daily_cap ?? DEFAULT_DAILY_CAP) }
+  // Every column, so a database without migration 416 still reads the
+  // message and the cap (the niche reads as not set).
+  const { data } = await admin.from('trybe_outreach_settings').select('*').eq('user_id', ownerId).maybeSingle()
+  return {
+    coreMessage: (data?.core_message as string | null) || '',
+    dailyCap: clampCap(data?.daily_cap ?? DEFAULT_DAILY_CAP),
+    categories: cleanTerms(data?.categories),
+    keywords: cleanTerms(data?.keywords),
+    dailyFind: data?.daily_find !== false,
+    lastFindAt: (data?.last_find_at as string | null) ?? null,
+  }
+}
+
+/** A brand's website, read once and kept two weeks. */
+async function siteFacts(r: Record<string, any>): Promise<{ summary: string; products: string[]; siteError: string | null; fetchedAt: string | null; fresh: boolean }> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const fresh = !!r.site_fetched_at && Date.now() - Date.parse(r.site_fetched_at) < RESEARCH_TTL_MS
+  if (fresh) return { summary: r.site_summary || '', products: Array.isArray(r.site_products) ? r.site_products : [], siteError: r.site_error || null, fetchedAt: r.site_fetched_at, fresh }
+  const res = await researchBrandSite(r.website)
+  return { summary: res.summary, products: res.products, siteError: res.error, fetchedAt: new Date().toISOString(), fresh }
 }
 
 async function usedToday(admin: Db, ownerId: string): Promise<number> {
@@ -112,9 +134,80 @@ export async function POST(request: Request) {
   if (action === 'settings') {
     const coreMessage = typeof body.coreMessage === 'string' ? body.coreMessage.trim().slice(0, 2000) : ''
     const dailyCap = clampCap(body.dailyCap)
-    const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, core_message: coreMessage, daily_cap: dailyCap, updated_at: now })
+    const row: Record<string, unknown> = { user_id: ownerId, core_message: coreMessage, daily_cap: dailyCap, updated_at: now }
+    // Sent only when the page sends them, so an older page cannot wipe them.
+    if (body.categories !== undefined) row.categories = cleanTerms(body.categories)
+    if (body.keywords !== undefined) row.keywords = cleanTerms(body.keywords)
+    if (typeof body.dailyFind === 'boolean') row.daily_find = body.dailyFind
+    const { error } = await admin.from('trybe_outreach_settings').upsert(row)
+    if (error) {
+      const missing = /column .* does not exist|schema cache/i.test(error.message)
+      return NextResponse.json({ error: missing ? 'The niche settings need migration 416 in Supabase first.' : error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId) })
+  }
+
+  if (action === 'found') {
+    const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, last_find_at: now, updated_at: now })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true, settings: { coreMessage, dailyCap } })
+    return NextResponse.json({ ok: true, lastFindAt: now })
+  }
+
+  if (action === 'match') {
+    // NOT EVERY BRAND (Seb, 2026-10-06). Each brand found is read from its
+    // TRYBE profile and its own website and judged against the creator's
+    // categories and keywords. One that does not fit is 'not_fit': never
+    // drafted or sent unless the creator picks it.
+    const ids = (Array.isArray(body.brandIds) ? body.brandIds : []).map(String).slice(0, 6)
+    if (!ids.length) return NextResponse.json({ ok: true, results: [] })
+    const settings = await readSettings(admin, ownerId)
+    const key = prefsKey(settings.categories, settings.keywords)
+    const { data: rows } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).in('brand_id', ids)
+    const todo = ((rows || []) as Array<Record<string, any>>).filter(r => r.status === 'new' || r.status === 'not_fit') // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!todo.length) return NextResponse.json({ ok: true, results: [] })
+    if (!settings.categories.length && !settings.keywords.length) {
+      for (const r of todo) {
+        await admin.from('trybe_brands').update({ status: 'new', fit_score: r.trybe_score ?? null, fit_reason: 'No niche set yet, so it is listed without a fit check.', fit_prefs: key, fit_checked_at: now, updated_at: now })
+          .eq('user_id', ownerId).eq('brand_id', r.brand_id)
+      }
+      return NextResponse.json({ ok: true, results: todo.map(r => ({ brandId: r.brand_id, ok: true, fit: true, score: r.trybe_score ?? null, reason: 'No niche set yet.' })) })
+    }
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    const facts = await Promise.all(todo.map(r => siteFacts(r)))
+    const verdicts = await (async () => {
+      try {
+        const msg = await createAnthropicClient().messages.create({
+          model: FIT_MODEL,
+          max_tokens: 900,
+          system: FIT_SYSTEM,
+          messages: [{ role: 'user', content: fitUserPrompt(settings.categories, settings.keywords, todo.map((r, i) => ({
+            id: String(r.brand_id), name: String(r.name), categories: r.categories || [], about: r.about || null,
+            siteSummary: facts[i].summary, siteProducts: facts[i].products,
+          }))) }],
+        })
+        try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_fit', model: FIT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+        return parseFit((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''), todo.map(r => String(r.brand_id)))
+      } catch { return [] }
+    })()
+    const results = []
+    for (let i = 0; i < todo.length; i++) {
+      const r = todo[i]
+      const f = facts[i]
+      const v = verdicts.find(x => x.id === r.brand_id)
+      // The website is kept either way, for the draft that may follow.
+      const site = f.fresh ? {} : { site_summary: f.summary || null, site_products: f.products, site_error: f.siteError, site_fetched_at: f.fetchedAt }
+      if (!v) {
+        await admin.from('trybe_brands').update({ ...site, updated_at: now }).eq('user_id', ownerId).eq('brand_id', r.brand_id)
+        results.push({ brandId: r.brand_id, ok: false, error: 'MVP could not judge this brand. It is asked again next time.' })
+        continue
+      }
+      await admin.from('trybe_brands').update({
+        ...site, status: v.fit ? 'new' : 'not_fit', fit_score: v.score, fit_reason: v.reason || null, fit_prefs: key, fit_checked_at: now, updated_at: now,
+      }).eq('user_id', ownerId).eq('brand_id', r.brand_id).in('status', ['new', 'not_fit'])
+      results.push({ brandId: r.brand_id, ok: true, fit: v.fit, score: v.score, reason: v.reason })
+    }
+    return NextResponse.json({ ok: true, results })
   }
 
   if (action === 'import') {
@@ -155,15 +248,10 @@ export async function POST(request: Request) {
     const client = createAnthropicClient()
     const results = await Promise.all(((rows || []) as Array<Record<string, any>>).map(async (r) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       if (r.status === 'sent' || r.status === 'sending' || r.status === 'already') return { brandId: r.brand_id, ok: false, error: 'Already requested.' }
-      // Research once, then reuse for two weeks.
-      let summary: string = r.site_summary || ''
-      let products: string[] = Array.isArray(r.site_products) ? r.site_products : []
-      let siteError: string | null = r.site_error || null
-      const fresh = r.site_fetched_at && Date.now() - Date.parse(r.site_fetched_at) < RESEARCH_TTL_MS
-      if (!fresh) {
-        const res = await researchBrandSite(r.website)
-        summary = res.summary; products = res.products; siteError = res.error
-      }
+      if (r.status === 'not_fit') return { brandId: r.brand_id, ok: false, error: 'Not a fit for your niche. Pick it with Use anyway first.' }
+      // Research once, then reuse for two weeks (the fit check usually read it).
+      const sf = await siteFacts(r)
+      const summary = sf.summary, products = sf.products, siteError = sf.siteError, fresh = sf.fresh
       try {
         const msg = await client.messages.create({
           model: MODEL,
@@ -179,7 +267,7 @@ export async function POST(request: Request) {
         if (!text) throw new Error('The draft came back empty.')
         await admin.from('trybe_brands').update({
           draft: text, drafted_at: new Date().toISOString(), status: 'drafted', error: null,
-          site_summary: summary || null, site_products: products, site_error: siteError, site_fetched_at: fresh ? r.site_fetched_at : new Date().toISOString(),
+          site_summary: summary || null, site_products: products, site_error: siteError, site_fetched_at: fresh ? r.site_fetched_at : sf.fetchedAt,
           updated_at: new Date().toISOString(),
         }).eq('user_id', ownerId).eq('brand_id', r.brand_id)
         return { brandId: r.brand_id, ok: true, researched: !!(summary || products.length), siteError }

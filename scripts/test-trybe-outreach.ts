@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 
 const failures: string[] = []
@@ -61,6 +61,25 @@ check('it is Labs only', ROUTE.includes("canUsePreview('trybe_outreach'"))
 const BG = readFileSync('extension/background.js', 'utf8')
 check('SCOUT only reports sent when the box closed', /if \(gone\) \{ steps\.push\('closed'\); return \{ outcome: 'sent'/.test(BG))
 check('a late SCOUT answer is unconfirmed, never failed', /MVP_TRYBE_SEND[\s\S]{0,200}outcome: 'unconfirmed'/.test(BG))
+
+// THE NICHE (Seb, 2026-10-06: "not just blindly message all brands").
+check('terms are trimmed, de-duplicated and capped', JSON.stringify(cleanTerms([' Bible ', 'bible', '', 'Kids  crafts'])) === JSON.stringify(['Bible', 'Kids crafts']) && cleanTerms('a,b').length === 2 && cleanTerms(Array(30).fill(0).map((_, i) => 'k' + i)).length === 12)
+check('the niche key ignores order and case', prefsKey(['Faith', 'beauty'], ['x']) === prefsKey(['Beauty', 'faith'], ['X']) && prefsKey([], []) !== prefsKey(['a'], []))
+const pf = parseFit('Here: [{"id":"a1","fit":true,"score":140,"reason":"Sells journals \u2014 fits"},{"id":"zz","fit":true,"score":90,"reason":"x"},{"id":"b2","fit":"yes","score":50,"reason":"y"}]', ['a1', 'b2'])
+check('fit verdicts: only the brands asked about, score held to 100, no dashes', pf.length === 2 && pf[0].score === 100 && !/[\u2013\u2014]/.test(pf[0].reason))
+check('fit is true only when the model said true', pf[1].fit === false)
+check('a fit answer that is not JSON gives no verdicts', parseFit('no idea', ['a1']).length === 0)
+check('twenty a day', DAILY_FIND === 20)
+check('line breaks in a draft are kept', tidyDraft('Hi team,\n\nWe love it.\n\n\n\nThanks!\nSeb and Michelle') === 'Hi team,\n\nWe love it.\n\nThanks!\nSeb and Michelle')
+check('the prompt asks for paragraphs and the sign-off as written', /blank line between them/.test(LIB) && /sign-off, word for word/.test(LIB))
+check('the route judges fit and never drafts a brand that does not fit', /action === 'match'/.test(ROUTE) && /r\.status === 'not_fit'\) return \{ brandId: r\.brand_id, ok: false/.test(ROUTE))
+check('a brand that does not fit is never sent', !/'not_fit'/.test(ROUTE.slice(ROUTE.indexOf("action === 'claim'"), ROUTE.indexOf("action === 'result'"))) && /\['drafted', 'failed'\]\.includes\(row\.status\)/.test(ROUTE))
+check('the morning queue is its own tab', /<TabBtn id="queue"/.test(UI) && /tab === 'queue' &&/.test(UI))
+check('a send that cannot start says why in the run log', /Not started: \$\{c\.error/.test(UI) && /Run log/.test(UI))
+check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /savedKey === prefsKey\(\[\], \[\]\)\) return/.test(UI))
+check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
+check('SCOUT searches the keywords and presses the categories, and reports each pass', /async function trybeSearchInPage\(/.test(BG) && /async function trybeChipInPage\(/.test(BG) && /passes: report/.test(BG))
+check('a category filter is never a brand row', /el\.querySelector\('img'\)\) return false/.test(BG.slice(BG.indexOf('async function trybeChipInPage('))))
 
 if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
 console.log('trybe-outreach: all checks passed')

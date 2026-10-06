@@ -12333,8 +12333,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return true // async
   }
   if (msg.type === 'MVP_TRYBE_SCAN') {
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 590000)
-    trybeScan({ knownNames: Array.isArray(msg.knownNames) ? msg.knownNames.slice(0, 2000) : [], max: msg.max }, sender && sender.tab ? sender.tab.id : null)
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 890000)
+    trybeScan({ knownNames: Array.isArray(msg.knownNames) ? msg.knownNames.slice(0, 2000) : [], max: msg.max, keywords: msg.keywords, categories: msg.categories }, sender && sender.tab ? sender.tab.id : null)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -13836,6 +13836,40 @@ async function trybeListRowsInPage(knownNames, want) {
       const cats = (lines[1] || '').split(/\s*[•·|]\s*/).map((s) => s.trim()).filter(Boolean)
       out.push({ name, categories: cats })
     }
+    // REPEATED CARDS (1.41.1). The first reading saw one brand on a page of
+    // many: a row with more than three lines, or one wide block, threw it.
+    // Brand cards are siblings that repeat under one parent, each with a logo
+    // and text, so the parent holding the most of them is the list.
+    if (out.length < 3) {
+      const groups = new Map()
+      for (const img of Array.from(document.querySelectorAll('img'))) {
+        let el = img.parentElement
+        for (let d = 0; d < 7 && el && el.parentElement && el !== document.body; d++) {
+          const r = el.getBoundingClientRect()
+          if (r.height >= 36 && r.height <= 320 && r.width >= 120 && String(el.innerText || '').trim()) {
+            const p = el.parentElement
+            if (!groups.has(p)) groups.set(p, new Set())
+            groups.get(p).add(el)
+          }
+          el = el.parentElement
+        }
+      }
+      let best = []
+      for (const set of groups.values()) if (set.size > best.length) best = Array.from(set)
+      const alt = []
+      const altSeen = new Set()
+      for (const el of best) {
+        const lines = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+          .filter((l) => !/^(new|featured|top|hot|\$[\d,.]+.*|[\d.]+)$/i.test(l))
+        const name = lines[0]
+        if (!name || name.length > 80 || altSeen.has(norm(name))) continue
+        if (/pending requests|discover brands|search brand/i.test(lines.join(' '))) continue
+        altSeen.add(norm(name))
+        const catLine = lines.find((l) => /[•·|]/.test(l)) || ''
+        alt.push({ name, categories: catLine.split(/\s*[•·|]\s*/).map((s) => s.trim()).filter(Boolean) })
+      }
+      if (alt.length > out.length) return alt
+    }
     return out
   }
   let rows = read()
@@ -13855,7 +13889,41 @@ async function trybeListRowsInPage(knownNames, want) {
       if (rows.length === before) break
     }
   }
-  return { rows, total: rows.length }
+  return { rows, total: rows.length, sample: rows.slice(0, 5).map((r) => r.name) }
+}
+
+// In page (1.41.1): type a keyword into TRYBE's own Search Brand box.
+async function trybeSearchInPage(term) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
+  const box = Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test((i.placeholder || '') + ' ' + (i.getAttribute('aria-label') || '')))
+  if (!box) return false
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  box.focus()
+  set.call(box, String(term || ''))
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  box.dispatchEvent(new Event('change', { bubbles: true }))
+  box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+  await sleep(2600)
+  return true
+}
+
+// In page (1.41.1): press TRYBE's own category filter whose words are exactly
+// this category. Only a small button with no logo in it, never a brand row.
+async function trybeChipInPage(cat) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const want = String(cat || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  if (!want) return false
+  const chip = Array.from(document.querySelectorAll('button, [role=button], [role=tab], label')).find((el) => {
+    const r = el.getBoundingClientRect()
+    if (!r.width || !r.height || r.width > 320 || r.height > 70 || el.querySelector('img')) return false
+    return String(el.innerText || el.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === want
+  })
+  if (!chip) return false
+  chip.scrollIntoView({ block: 'center' })
+  chip.click()
+  await sleep(2400)
+  return true
 }
 
 // In page: open one brand by name and read its popup, then close it.
@@ -13956,9 +14024,16 @@ async function trybeReadBrandInPage(name) {
   return { ok: !!brandId, error: brandId ? null : 'no-brand-id', brand: out, steps }
 }
 
-async function trybeScan({ knownNames, max }, callerTabId) {
+async function trybeScan({ knownNames, max, keywords, categories }, callerTabId) {
   if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
   const want = Math.max(1, Math.min(60, Number(max) || 30))
+  // 1.41.1: the creator's keywords go into TRYBE's search, then their
+  // categories are pressed as TRYBE's own filters, then the plain list fills
+  // what is left. Each pass is reported, found or not.
+  const terms = (Array.isArray(keywords) ? keywords : []).map((k) => String(k || '').trim().slice(0, 40)).filter(Boolean).slice(0, 8)
+  const cats = (Array.isArray(categories) ? categories : []).map((k) => String(k || '').trim().slice(0, 40)).filter(Boolean).slice(0, 8)
+  const passes = [...terms.map((t) => ({ kind: 'search', term: t })), ...cats.map((t) => ({ kind: 'category', term: t })), { kind: 'list', term: '' }]
+  const report = []
   const ka = startKeepAlive()
   let tabId = null
   const brands = []
@@ -13975,29 +14050,49 @@ async function trybeScan({ knownNames, max }, callerTabId) {
     if (state === 'signin') return { ok: false, error: 'not-signed-in' }
     if (state !== 'discover') return { ok: false, error: 'discover-not-found' }
     await _sleep(1500)
-    const list = await trybeRun(trybeListRowsInPage, [knownNames || [], want], tabId)
-    const rows = (list && list.rows) || []
-    if (!rows.length) return { ok: false, error: 'no-rows', listed: 0 }
-    const known = new Set((knownNames || []).map((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()))
-    const todo = rows.filter((r) => !known.has(String(r.name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())).slice(0, want)
-    for (const r of todo) {
-      let res = null
-      try { res = await trybeRun(trybeReadBrandInPage, [r.name], tabId) } catch (e) { res = { ok: false, error: e && e.message ? e.message : 'error' } }
-      if (res && res.ok && res.brand) brands.push(res.brand)
-      else failures.push({ name: r.name, error: (res && res.error) || 'error', steps: res && res.steps })
-      // An unhurried pace between brands, like a person reading.
-      await _sleep(1200 + Math.round(Math.random() * 1800))
-      // A popup that would not close: reload the list before the next one.
-      if (res && res.steps && res.steps.includes('not-closed')) {
+    const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    const known = new Set((knownNames || []).map(normName))
+    let listed = 0
+    // Back to Discover Brands with this pass's search or filter applied.
+    const apply = async (pass, reload) => {
+      if (reload) {
         await chrome.tabs.update(tabId, { url: TRYBE_DISCOVER })
         await waitForTabLoad(tabId, 30000)
-        await _sleep(2500)
-        await trybeRun(trybeListRowsInPage, [[], todo.length], tabId)
+        await _sleep(2200)
       }
+      if (pass.kind === 'search') return !!(await trybeRun(trybeSearchInPage, [pass.term], tabId))
+      if (pass.kind === 'category') return !!(await trybeRun(trybeChipInPage, [pass.term], tabId))
+      return true
     }
-    return { ok: true, listed: rows.length, brands, failures }
+    for (let p = 0; p < passes.length && brands.length < want; p++) {
+      const pass = passes[p]
+      const applied = await apply(pass, p > 0)
+      if (!applied) { report.push({ kind: pass.kind, term: pass.term, applied: false, listed: 0, read: 0 }); continue }
+      const list = await trybeRun(trybeListRowsInPage, [Array.from(known), want - brands.length], tabId)
+      const rows = (list && list.rows) || []
+      listed += rows.length
+      const todo = rows.filter((r) => !known.has(normName(r.name))).slice(0, want - brands.length)
+      let read = 0
+      for (const r of todo) {
+        known.add(normName(r.name))
+        let res = null
+        try { res = await trybeRun(trybeReadBrandInPage, [r.name], tabId) } catch (e) { res = { ok: false, error: e && e.message ? e.message : 'error' } }
+        if (res && res.ok && res.brand) { brands.push(Object.assign({}, res.brand, { foundBy: pass.kind === 'list' ? null : pass.term })); read++ }
+        else failures.push({ name: r.name, error: (res && res.error) || 'error', steps: res && res.steps })
+        // An unhurried pace between brands, like a person reading.
+        await _sleep(1200 + Math.round(Math.random() * 1800))
+        // A popup that would not close: reload, with this pass applied again.
+        if (res && res.steps && res.steps.includes('not-closed')) {
+          await apply(pass, true)
+          await trybeRun(trybeListRowsInPage, [[], todo.length], tabId)
+        }
+      }
+      report.push({ kind: pass.kind, term: pass.term, applied: true, listed: rows.length, read, sample: (list && list.sample) || [] })
+    }
+    if (!listed && !brands.length) return { ok: false, error: 'no-rows', listed: 0, passes: report }
+    return { ok: true, listed, brands, failures, passes: report }
   } catch (e) {
-    return { ok: false, error: e && e.message ? e.message : 'exception', brands, failures }
+    return { ok: false, error: e && e.message ? e.message : 'exception', brands, failures, passes: report }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     await trybeBackTo(callerTabId)

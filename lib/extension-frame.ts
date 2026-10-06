@@ -1041,16 +1041,22 @@ export interface TrybeScannedBrand {
   rating: number | null; reviews: number | null; creatorEarnings: string | null; totalCreators: string | null
   trybeScore: string | null; website: string | null; about: string | null; alreadyRequested: boolean
 }
+export interface TrybeScanPass { kind: 'search' | 'category' | 'list'; term: string; applied: boolean; listed: number; read: number; sample?: string[] }
 export interface TrybeScanResult {
   ok: boolean; error?: string; listed?: number
   brands?: TrybeScannedBrand[]
   failures?: Array<{ name: string; error: string; steps?: string[] }>
+  /** SCOUT 1.41.1+: each search, category filter and plain list pass, and
+   *  what it found. Older SCOUT reads the plain list only and omits this. */
+  passes?: TrybeScanPass[]
 }
 
 /** SCOUT opens TRYBE's Discover Brands in a tab and reads up to `max` brands
- *  not in `knownNames`. Takes a few seconds per brand. */
-export async function requestTrybeScan(knownNames: string[], max: number): Promise<TrybeScanResult> {
-  const res = await sendToExtension<TrybeScanResult>({ type: 'MVP_TRYBE_SCAN', knownNames, max }, 600_000)
+ *  not in `knownNames`: first by searching the keywords, then by pressing the
+ *  categories as TRYBE's filters (1.41.1+), then from the plain list. Takes a
+ *  few seconds per brand. */
+export async function requestTrybeScan(knownNames: string[], max: number, keywords: string[] = [], categories: string[] = []): Promise<TrybeScanResult> {
+  const res = await sendToExtension<TrybeScanResult>({ type: 'MVP_TRYBE_SCAN', knownNames, max, keywords, categories }, 900_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
