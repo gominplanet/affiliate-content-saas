@@ -20,8 +20,17 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
 const read = (p: string) => readFileSync(p, 'utf8')
 
 const BG = read('extension/background.js')
+// THE FACEBOOK GROUP CODE ONLY. These checks read from the Group functions to
+// the end of the file; TRYBE outreach (SCOUT 1.41.0) was added after them and
+// clicks its own buttons on jointrybe.com, which is not Facebook. Each slice
+// stops where the next unrelated section starts, so a click added to the
+// Facebook code still fails here and TRYBE's do not.
+const sectionEnd = (from: number) => {
+  const next = BG.indexOf('// ── TRYBE outreach', from)
+  return next > from ? next : BG.length
+}
 const fillStart = BG.indexOf('async function fillGroupComposerInPage(')
-const FILL = fillStart >= 0 ? BG.slice(fillStart) : ''
+const FILL = fillStart >= 0 ? BG.slice(fillStart, sectionEnd(fillStart)) : ''
 check('the page script exists', fillStart >= 0)
 check('it never clicks a Post button',
   !/aria-label=?\\?["']?Post|innerText\s*===?\s*['"]Post|\btext\(\)\s*===?\s*['"]Post/i.test(FILL)
@@ -67,7 +76,8 @@ check('an older SCOUT that cannot attach the hero says so', /SCOUT_FB_GROUP_MEDI
 // link ration, and a route that posted any link would be a loophole.
 const WATCH = BG.slice(BG.indexOf('function watchGroupPost('))
 check('the watcher exists and MVP can ask it', /function watchGroupPost\(/.test(BG) && /msg\.type === 'MVP_FB_GROUP_POST_STATUS'/.test(BG))
-check('the watcher never clicks anything', !/\.click\(\)/.test(BG.slice(BG.indexOf('function installGroupPostHook('))))
+const hookStart = BG.indexOf('function installGroupPostHook(')
+check('the watcher never clicks anything', hookStart >= 0 && !/\.click\(\)/.test(BG.slice(hookStart, sectionEnd(hookStart))))
 check('the listener goes in before the fill', BG.indexOf("func: installGroupPostHook, args: [true]") > 0 && BG.indexOf("func: installGroupPostHook, args: [true]") < BG.indexOf('func: fillGroupComposerInPage'))
 check('a restarted SCOUT says lost, not watching forever', /if \(st\.state === 'watching'\) return \{ state: 'lost' \}/.test(BG))
 check('every way of not finding the post is its own state', ['closed', 'posted_no_link', 'not_seen', 'timeout'].every((k) => WATCH.includes(`state: '${k}'`)))
