@@ -98,9 +98,15 @@ export async function GET(req: Request) {
   // Cache-first: only ASINs no creator has fetched recently hit Keepa; the rest
   // come from the shared cache (migration 288), and new fetches are cached for
   // the next creator. This is where cross-user Keepa savings happen.
-  const basics = await fetchKeepaBasicsCached(admin, distinct)
+  // ONLY AN ANSWERED ASIN LEAVES THE BACKLOG. Rows are stamped even when Keepa
+  // knows nothing, which is right, but a batch Keepa never answered (out of
+  // tokens, a timeout) read the same way, so those rows were stamped done
+  // with no image, rank or price and never asked about again.
+  const answered = new Set<string>()
+  const basics = await fetchKeepaBasicsCached(admin, distinct, { answered })
   const at = new Date().toISOString()
   let enriched = 0
+  const unanswered = distinct.filter((a) => !answered.has(a)).length
   // Batch the writes (was one awaited UPDATE per row — up to ~1200 serial round
   // trips per run, which ate the wall-clock deadline). Chunked Promise.all keeps
   // round trips to a small constant; the deadline still bounds the whole pass.
@@ -110,6 +116,7 @@ export async function GET(req: Request) {
     const slice = toWrite.slice(i, i + CHUNK)
     await Promise.all(slice.map(async (r) => {
       const asin = (r.asin || '').toUpperCase()
+      if (!answered.has(asin)) return
       const patch = buildEpcPatch(basics.get(asin), r.image_url, at)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (admin as any)
@@ -118,5 +125,5 @@ export async function GET(req: Request) {
     }))
   }
 
-  return NextResponse.json({ ok: true, enriched, distinctAsins: distinct.length, rows: toWrite.length, tokensLeft: tok.tokensLeft })
+  return NextResponse.json({ ok: true, enriched, distinctAsins: distinct.length, unanswered, rows: toWrite.length, tokensLeft: tok.tokensLeft })
 }

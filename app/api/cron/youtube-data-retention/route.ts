@@ -14,6 +14,8 @@ export async function GET(req: Request) {
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const out = await retentionPass(createAdminClient())
+  // Two thousand rows of serial writes and YouTube calls can outrun 300
+  // seconds; the pass stops between chunks with a minute to spare.
+  const out = await retentionPass(createAdminClient(), 2000, Date.now() + (maxDuration - 60) * 1000)
   return NextResponse.json({ ok: true, ...out })
 }

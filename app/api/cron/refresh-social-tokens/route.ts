@@ -79,8 +79,15 @@ export async function GET(request: Request) {
   // "why did my scheduled post fail?". Process in slices so the whole set drains
   // within budget. Each row's work is independent and only ++s its own tally.
   const REFRESH_CONCURRENCY = 12
+  // NO SLICE STARTS WITHOUT TIME TO FINISH. A Pinterest refresh killed between
+  // Pinterest answering and our write loses the rotated refresh token, which
+  // is a forced reconnect. What is not reached is counted and done tomorrow.
+  const started = Date.now()
+  const left = () => maxDuration * 1000 - 20_000 - (Date.now() - started)
+  let deferred = 0
   const mapPool = async <T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> => {
     for (let i = 0; i < items.length; i += size) {
+      if (left() < 30_000) { deferred += items.length - i; return }
       await Promise.all(items.slice(i, i + size).map(fn))
     }
   }
@@ -280,5 +287,5 @@ export async function GET(request: Request) {
     console.error('[cron/refresh-social-tokens] connection health probe failed', e instanceof Error ? e.message : String(e))
   }
 
-  return NextResponse.json({ ok: true, scanned: rows.length, tally, health })
+  return NextResponse.json({ ok: true, scanned: rows.length, deferred, tally, health })
 }

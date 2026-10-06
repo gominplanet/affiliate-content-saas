@@ -23,6 +23,10 @@ import { alertOps } from '@/lib/ops-alert'
 
 export const maxDuration = 300
 
+/** Three times the function's limit: a claim older than this cannot still be running. */
+const STUCK_BURN_MINUTES = 15
+const STUCK_BURN_MESSAGE = 'This job stopped before it reported back, so it was not run again. Check your Instagram before queueing it again: the Reel may already be posted.'
+
 interface BurnJob {
   id: string
   user_id: string
@@ -46,6 +50,19 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient()
   const nowIso = new Date().toISOString()
+
+  // A JOB THE FUNCTION DIED ON IS FAILED, NOT RETRIED. A claim that never
+  // reported back sat in 'processing' forever: the member saw a spinner, and
+  // purge-shorts-sources kept its upload for good. It is not put back in the
+  // queue, because the Reel may already be on Instagram and a second run would
+  // post it twice; the member is told to look before queueing it again.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: staleErr } = await (admin as any)
+    .from('ig_burn_jobs')
+    .update({ status: 'failed', error_message: STUCK_BURN_MESSAGE })
+    .eq('status', 'processing')
+    .lt('claimed_at', new Date(Date.now() - STUCK_BURN_MINUTES * 60_000).toISOString())
+  if (staleErr) console.error('[cron/process-burn-jobs] stuck-job sweep failed', staleErr.message)
 
   // Atomic claim of the OLDEST due job, in two steps: read the id, then claim
   // that id.
@@ -147,7 +164,7 @@ export async function GET(request: Request) {
     const spend = await checkSpendCeiling(job.user_id, tier)
     if (!spend.allowed) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await admin.from('ig_burn_jobs').update({ status: 'failed', error_message: 'Monthly usage limit reached — resets on the 1st. Re-queue after that.' }).eq('id', job.id)
+      await admin.from('ig_burn_jobs').update({ status: 'failed', error_message: 'Monthly usage limit reached. It resets on the 1st; queue this again after that.' }).eq('id', job.id)
       return NextResponse.json({ ok: true, processed: 0, skipped: 'over_spend_ceiling', jobId: job.id })
     }
 

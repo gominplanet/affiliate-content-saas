@@ -44,7 +44,11 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient()
-  const deadline = Date.now() + 270_000
+  // LAST START WITH ROOM FOR ONE WHOLE DIGEST. The check sat at 270s, so a
+  // digest begun at 269s (AI writing, a cover image, an upload, a publish, the
+  // SEO pass) was killed partway: the post could be live on the creator's site
+  // with no blog_posts row, invisible in MVP.
+  const deadline = Date.now() + 170_000
   const cutoff = new Date(Date.now() - COOLDOWN_DAYS * 86_400_000).toISOString()
 
   // Opted-in Pro users, least-recently-digested first, respecting the cooldown.
@@ -53,6 +57,10 @@ export async function GET(req: Request) {
     .from('integrations')
     .select('user_id,tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,notification_preferences,last_weekly_digest_at')
     .in('tier', ['pro', 'admin'])
+    // OPTED IN, IN THE QUERY. Filtering after the limit let the first 200 Pro
+    // accounts that never opted in (never stamped, so always first) fill every
+    // page, and an opted-in creator past them never got a digest at all.
+    .eq('notification_preferences->>weekly_digest', 'true')
     .or(`last_weekly_digest_at.is.null,last_weekly_digest_at.lt.${cutoff}`)
     .order('last_weekly_digest_at', { ascending: true, nullsFirst: true })
     .limit(200)

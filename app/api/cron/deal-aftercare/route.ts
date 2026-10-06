@@ -40,7 +40,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const started = Date.now()
-  const deadline = started + 250_000
+  // LAST START WITH ROOM FOR ONE REWRITE. A convert is an 8,000 token rewrite
+  // plus WordPress edits; started at 249s it ran past 300 and was killed
+  // between the post edit and the row that records it.
+  const deadline = started + 200_000
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
   const tiers = TIERS.filter((t) => canUsePreview('deal_aftercare', t))

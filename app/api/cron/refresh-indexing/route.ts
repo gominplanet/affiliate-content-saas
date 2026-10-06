@@ -41,6 +41,13 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient()
+  // TIME KEPT BACK FOR THE SAVE. 200 users in waves of six, each up to fifty
+  // serial inspections, runs well past 300 seconds, and a user's results were
+  // only written after their last inspection: a run killed mid-wave spent the
+  // GSC quota on every in-flight user and saved none of it.
+  const started = Date.now()
+  const left = () => maxDuration * 1000 - 20_000 - (Date.now() - started)
+  let deferredUsers = 0
 
   // Users with GSC connected AND WordPress wired (we need wp_url to build the
   // canonical post URL).
@@ -139,6 +146,7 @@ export async function GET(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toUpsert: any[] = []
       for (const c of candidates) {
+        if (left() < 15_000) break // save what this user has so far
         totalInspected++
         const ins = await inspectUrl(token, u.gsc_property, c.url)
         if (!ins) continue
@@ -183,6 +191,7 @@ export async function GET(request: Request) {
 
   // Bounded-concurrency fan-out across users (per-post work stays serial inside).
   for (let i = 0; i < users.length; i += USER_CONCURRENCY) {
+    if (left() < 60_000) { deferredUsers = users.length - i; break }
     await Promise.all(users.slice(i, i + USER_CONCURRENCY).map(processUser))
   }
 
@@ -192,6 +201,7 @@ export async function GET(request: Request) {
     totalEligible: allUsers.length,
     inspected: totalInspected,
     refreshed: totalRefreshed,
+    deferredUsers,
     ...(errors.length ? { errors } : {}),
   })
 }

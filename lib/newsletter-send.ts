@@ -245,6 +245,20 @@ export async function finalizeAbBroadcast(opts: {
   })
   if (!from) return { ok: false, reason: 'no-from-address' }
 
+  // CLAIM BEFORE SENDING. The cron fires every minute and a holdback send to a
+  // large list outlasts that, so the next tick read the same row (still
+  // ab_testing, not yet finalized) and mailed the winner to everyone again.
+  // Only the run that moves it out of ab_testing sends.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: won } = await (admin as any)
+    .from('newsletter_broadcasts')
+    .update({ status: 'sending' })
+    .eq('id', broadcastId)
+    .eq('status', 'ab_testing')
+    .is('ab_finalized_at', null)
+    .select('id')
+  if (!won || won.length === 0) return { ok: false, reason: 'claimed-elsewhere' }
+
   // Resolve holdback recipients fresh — subscribers may have churned since
   // the initial send. Filter against the live newsletter_subscribers state
   // and exclude anyone already in ab_recipients_a/b.

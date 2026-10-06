@@ -64,7 +64,13 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient() as any
   const nowIso = new Date().toISOString()
-  const results: Array<{ user: string; status: string; videoId?: string }> = []
+  const results: Array<{ user: string; status: string; videoId?: string; error?: string }> = []
+  // STOP WITH TIME TO FINISH THE SITE IN HAND. A run killed between the
+  // enqueue and the save never records lastRunAt, and the sites after it are
+  // reported nowhere. Each site is a few reads and one YouTube check, so 30
+  // seconds is ample; sites not reached are listed as deferred.
+  const started = Date.now()
+  const left = () => maxDuration * 1000 - 30_000 - (Date.now() - started)
 
   // Every site with the toggle on. The JSON filter matches only rows that set it.
   const { data: sites } = await admin
@@ -81,6 +87,7 @@ export async function GET(request: Request) {
     const userId = site.user_id
     const siteId = site.id
     if (handledUsers.has(userId)) { results.push({ user: userId, status: 'user_already_handled' }); continue }
+    if (left() < 0) { results.push({ user: userId, status: 'deferred_out_of_time' }); continue }
 
     const customizations = (site.blog_customizations && typeof site.blog_customizations === 'object' ? site.blog_customizations : {}) as Record<string, any>
     const state: AutoBlogState = (customizations.autoBlog && typeof customizations.autoBlog === 'object' ? customizations.autoBlog : {})
@@ -174,7 +181,7 @@ export async function GET(request: Request) {
       results.push({ user: userId, status: 'enqueued', videoId: nextVideo.id })
     } catch (e) {
       console.error('[auto-blog] user', userId, e instanceof Error ? e.message : e)
-      results.push({ user: userId, status: 'error' })
+      results.push({ user: userId, status: 'error', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
     }
   }
 

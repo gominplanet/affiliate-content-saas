@@ -29,6 +29,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const STUCK_MINUTES = 10
 
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
     .from('campaigns')
     .update({
       status: 'failed',
-      error_message: `Generation timed out (no progress for ${STUCK_MINUTES}+ minutes). Click Generate again to retry — Amazon scraping and AI research sometimes hang. If it fails twice in a row, try a different ASIN to rule out a product-specific issue.`,
+      error_message: `Generation timed out (no progress for ${STUCK_MINUTES}+ minutes). Click Generate again to retry. Amazon scraping and AI research sometimes hang. If it fails twice in a row, try a different ASIN to rule out a product-specific issue.`,
       updated_at: new Date().toISOString(),
     }, { count: 'exact' })
     .in('status', ['researching', 'generating'])

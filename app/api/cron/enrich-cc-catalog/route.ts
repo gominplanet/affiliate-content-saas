@@ -116,6 +116,7 @@ export async function GET(req: Request) {
   let enriched = 0
   let tokensLeft: number | null = null
   let stoppedForTokens = false
+  let unanswered = 0, unansweredInARow = 0
   const nowIso = new Date().toISOString()
 
   for (const asin of todo) {
@@ -123,7 +124,18 @@ export async function GET(req: Request) {
     if (tokensLeft != null && tokensLeft < MIN_TOKENS_TO_CONTINUE) { stoppedForTokens = true; break }
 
     const card = await fetchKeepaProductCard(asin)
-    if (card.tokensLeft != null) tokensLeft = card.tokensLeft
+    // NO ANSWER IS NOT A CHECK. Every Keepa reply carries tokensLeft; a card
+    // without it is a refusal, a timeout or a network error. Those used to be
+    // stamped verified like a real "nothing known", so one token-starved run
+    // left up to 300 products blank for 45 days. Leave it for the next run,
+    // and stop after three in a row: Keepa is refusing, not this product.
+    if (card.tokensLeft == null) {
+      unanswered++
+      if (++unansweredInARow >= 3) break
+      continue
+    }
+    unansweredInARow = 0
+    tokensLeft = card.tokensLeft
 
     // Even a card with no image is a verified check — stamp it so we don't keep
     // re-hitting a product Keepa has nothing for. Write whatever signals exist.
@@ -149,5 +161,5 @@ export async function GET(req: Request) {
     if (!upErr) enriched++
   }
 
-  return NextResponse.json({ ok: true, enriched, candidates: todo.length, tokensLeft, stoppedForTokens })
+  return NextResponse.json({ ok: true, enriched, candidates: todo.length, tokensLeft, stoppedForTokens, unanswered })
 }

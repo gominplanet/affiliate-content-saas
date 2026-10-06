@@ -161,10 +161,14 @@ export async function GET(request: Request) {
   // ── Purge phase ──────────────────────────────────────────────────────────
   if (phase === 'purge' && Date.now() < deadline) {
     let done = false
+    // A PURGE THAT NEVER RAN DOES NOT FINISH AS DONE. The missing-function note
+    // was saved and then overwritten by the 'done' write below, so the admin
+    // saw a clean finish with nothing purged and no reason.
+    let purgeError: string | null = null
     while (Date.now() < deadline) {
       const { data, error } = await admin.rpc('merge_cc_catalog_purge_cursor', { p_limit: PURGE_SCAN, p_after: cursor })
       if (error) {
-        if (missing(error.message)) { await save({ error: 'purge function missing — run migration 220' }); done = true; break }
+        if (missing(error.message)) { purgeError = 'The purge function is missing. Run migration 220.'; done = true; break }
         console.error('[drain-cc-import purge]', error.message)
         break
       }
@@ -175,14 +179,14 @@ export async function GET(request: Request) {
       if (row?.last_id != null) cursor = String(row.last_id)
       if (scanned < PURGE_SCAN) { done = true; break } // reached the end of the catalog
     }
-    await save()
+    await save(purgeError ? { error: purgeError } : {})
     if (done) {
-      // Finished — disarm the drain and release the enrichment pause.
+      // Finished. Disarm the drain and release the enrichment pause.
       await admin.from('system_flags')
-        .update({ active: false, value: { phase: 'done', mode, upserted, purged, finishedAt: new Date().toISOString() } })
+        .update({ active: false, value: { phase: 'done', mode, upserted, purged, finishedAt: new Date().toISOString(), ...(purgeError ? { error: purgeError, purgeSkipped: true } : {}) } })
         .eq('key', DRAIN_KEY)
       try { await admin.from('system_flags').update({ active: false, updated_at: new Date().toISOString() }).eq('key', ACTIVE_KEY) } catch { /* best-effort */ }
-      return NextResponse.json({ ok: true, done: true, upserted, purged })
+      return NextResponse.json({ ok: !purgeError, done: true, upserted, purged, ...(purgeError ? { error: purgeError } : {}) })
     }
   }
 

@@ -54,7 +54,27 @@ export async function GET(req: Request) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
-  const summary = { scheduledFired: 0, abFinalized: 0, errors: [] as string[] }
+  const summary = { scheduledFired: 0, abFinalized: 0, stuckFailed: 0, errors: [] as string[] }
+
+  // ── 0. Sends the function died in ────────────────────────────────────────
+  // 'sending' had no way out: a run killed mid-list left the row there for
+  // good, reading as still going out. A row this cron started (it has a
+  // scheduled or finalize time) that is still sending an hour later cannot be
+  // running, so it is failed with what we know. It is not sent again, because
+  // part of the list already has it.
+  {
+    const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: stuck, error: stuckErr } = await (admin as any)
+      .from('newsletter_broadcasts')
+      .update({ status: 'failed', error_message: 'Sending stopped partway and was not retried, so some subscribers may not have received this issue.' })
+      .eq('status', 'sending')
+      .is('sent_at', null)
+      .or(`scheduled_at.lt.${hourAgo},ab_finalize_at.lt.${hourAgo}`)
+      .select('id')
+    if (stuckErr) summary.errors.push(`stuck:${stuckErr.message}`)
+    else summary.stuckFailed = (stuck ?? []).length
+  }
 
   // ── 1. Scheduled sends ───────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -280,6 +300,10 @@ async function fireScheduled(opts: { broadcastId: string }): Promise<void> {
     status: failed === recipients.length ? 'failed' : 'sent',
     recipients_delivered: sent,
     sent_at: new Date().toISOString(),
-    error_message: failed > 0 ? `${failed}/${recipients.length} recipients errored at send` : null,
+    // NOBODY TO SEND TO IS A FAILURE THAT SAYS SO. Zero recipients matched
+    // failed === length, so the row turned red with no reason at all.
+    error_message: recipients.length === 0
+      ? 'No active subscribers matched this issue at send time, so nothing was sent.'
+      : failed > 0 ? `${failed}/${recipients.length} recipients errored at send` : null,
   }).eq('id', opts.broadcastId)
 }

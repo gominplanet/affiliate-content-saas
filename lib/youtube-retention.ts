@@ -75,7 +75,7 @@ async function videosList(ids: string[], token: string | null): Promise<{ ok: tr
 }
 
 /** One daily pass over stale rows. Returns what it did, for the cron's log. */
-export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed: number; cleared: number; users: number; column: 'yt_refreshed_at' | 'updated_at'; stoppedFor?: 'quota' }> {
+export async function retentionPass(sb: Sb, maxRows = 2000, deadlineAt = Infinity): Promise<{ refreshed: number; cleared: number; users: number; column: 'yt_refreshed_at' | 'updated_at'; stoppedFor?: 'quota' | 'time' }> {
   const cutoff = new Date(Date.now() - YT_REFRESH_DAYS * 86_400_000).toISOString()
   let column: 'yt_refreshed_at' | 'updated_at' = 'yt_refreshed_at'
   let { data: rows, error } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
@@ -96,8 +96,12 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
   // ONE REFUSAL ENDS THE PASS. The allowance is shared, so every later call
   // would be refused too; tomorrow's run is well inside the 30 days.
   let quotaOut = false
+  // OUT OF TIME ENDS IT TOO, between users or chunks, never mid-write. Rows not
+  // reached are still stale, so a later daily run takes them, inside 30 days.
+  let timeOut = false
   for (const [userId, vids] of byUser) {
-    if (quotaOut) break
+    if (quotaOut || timeOut) break
+    if (Date.now() > deadlineAt) { timeOut = true; break }
     const { data: chans } = await sb.from('youtube_channels').select('channel_id').eq('user_id', userId)
     const { data: integ } = await sb.from('integrations').select('youtube_oauth_refresh_token').eq('user_id', userId).maybeSingle()
     const connected = (chans ?? []).length > 0 || !!integ?.youtube_oauth_refresh_token
@@ -112,7 +116,7 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
     const byChannel = new Map<string, string[]>()
     for (const v of vids) byChannel.set(v.channel, [...(byChannel.get(v.channel) ?? []), v.id])
     for (const [channel, ids] of byChannel) {
-    if (quotaOut) break
+    if (quotaOut || timeOut) break
     // A TOKEN THAT COULD NOT BE HAD IS NOT A CHANNEL WITHOUT ONE. A refresh
     // that threw used to fall back to the API key, which cannot see private
     // or scheduled videos, so they read as gone and their data was emptied.
@@ -120,6 +124,7 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
     let token: string | null
     try { token = await getChannelOAuthToken(sb, userId, channel) } catch { continue }
     for (let i = 0; i < ids.length; i += 50) {
+      if (Date.now() > deadlineAt) { timeOut = true; break }
       const chunk = ids.slice(i, i + 50)
       const got = await videosList(chunk, token)
       if (!got.ok) {
@@ -142,5 +147,5 @@ export async function retentionPass(sb: Sb, maxRows = 2000): Promise<{ refreshed
     }
     }
   }
-  return { refreshed, cleared, users: byUser.size, column, ...(quotaOut ? { stoppedFor: 'quota' as const } : {}) }
+  return { refreshed, cleared, users: byUser.size, column, ...(quotaOut ? { stoppedFor: 'quota' as const } : timeOut ? { stoppedFor: 'time' as const } : {}) }
 }
