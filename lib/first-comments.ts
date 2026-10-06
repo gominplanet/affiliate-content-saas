@@ -35,13 +35,22 @@ export function firstCommentDue(r: { publish_at: string | null; last_checked_at:
   if (r.publish_at && Date.parse(r.publish_at) > now) return false
   if (!r.last_checked_at) return true
   const last = Date.parse(r.last_checked_at)
+  // SIX-HOURLY ON THE CLOCK, NOT PER VIDEO. Each video counting six hours from
+  // its own last check came due on its own, so the cron's 50-to-a-call batch
+  // asked about one video at a time (about 4 units a day each). On shared
+  // slots (00, 06, 12, 18 UTC) every such video of a login is due in the same
+  // run and is asked about together.
+  const slotStart = Math.floor(now / FIRST_COMMENT_SLOT_MS) * FIRST_COMMENT_SLOT_MS
   if (r.publish_at) {
     const pub = Date.parse(r.publish_at)
     // Public within minutes of its time, usually: check each run for a day, then every six hours.
-    return now - pub < 86_400_000 ? true : now - last > 6 * 3_600_000
+    return now - pub < 86_400_000 ? true : last < slotStart
   }
-  return now - last > 6 * 3_600_000
+  return last < slotStart
 }
+
+/** The shared six-hour slot the slow checks run on. */
+export const FIRST_COMMENT_SLOT_MS = 6 * 3_600_000
 
 export interface FirstCommentRow {
   id: string

@@ -68,6 +68,14 @@ const CAPI = read('lib/meta-capi.ts')
     'Purchase is awaited and has never gone missing; copy that, not a scheduler')
 }
 
+// ── a team invite is not an ad signup (2026-10-07) ──────────────────────────
+{
+  check('an invited team member confirming their email is not reported as a registration',
+    /const joiningTeam = next\.startsWith\('\/agency\/accept\/'\)/.test(CALLBACK) && /if \(user && isNewAccount && !joiningTeam\)/.test(CALLBACK))
+  check('nor as a lead from the signup form',
+    /if \(!invited\) trackMeta\('Lead'/.test(read('components/auth/SignupForm.tsx')))
+}
+
 // ── /onboarding must NOT be the source of truth again ───────────────────────
 {
   check('/onboarding no longer reports the registration',

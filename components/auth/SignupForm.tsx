@@ -200,7 +200,8 @@ export default function SignupForm() {
       // address and never confirmed was invisible, so a broken confirmation
       // email and a bad audience looked identical. This is the step that tells
       // those two apart, tagged with the door they came through.
-      trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
+      // An invited team member is not a lead from the ads.
+      if (!invited) trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
       setSuccess(true)
     }
   }

@@ -29,7 +29,11 @@ export async function GET(request: Request) {
       const user = data?.user
       const createdAt = user?.created_at ? Date.parse(user.created_at) : NaN
       const isNewAccount = Number.isFinite(createdAt) && Date.now() - createdAt < 24 * 60 * 60 * 1000
-      if (user && isNewAccount) {
+      // A TEAM INVITE IS NOT AN AD SIGNUP. Someone confirming their email on
+      // the way to /agency/accept/ is joining another member's account; counted
+      // as a creator registration, they inflated the number the ads optimise on.
+      const joiningTeam = next.startsWith('/agency/accept/')
+      if (user && isNewAccount && !joiningTeam) {
         // AWAITED, never after(). A serverless function can be frozen the
         // moment the response is returned, so an after() callback is dropped
         // mid-flight and the conversion is lost. app/api/stripe/webhook says

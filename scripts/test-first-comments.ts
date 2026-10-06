@@ -23,9 +23,14 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
     !firstCommentDue({ publish_at: iso(now + 5 * H), last_checked_at: iso(now - 10 * H) }, now))
   check('its time has come: asked every run for a day',
     firstCommentDue({ publish_at: iso(now - 0.2 * H), last_checked_at: iso(now - 0.1 * H) }, now))
+  // On shared six-hour slots (2026-10-07), so a login's videos come due in the
+  // same run and share one batched call. Pinned to 03:00 UTC, mid-slot.
+  const mid = Date.UTC(2026, 9, 7, 3, 0, 0)
   check('no schedule: at most every six hours',
-    !firstCommentDue({ publish_at: null, last_checked_at: iso(now - 2 * H) }, now)
-    && firstCommentDue({ publish_at: null, last_checked_at: iso(now - 7 * H) }, now))
+    !firstCommentDue({ publish_at: null, last_checked_at: iso(mid - 2 * H) }, mid)
+    && firstCommentDue({ publish_at: null, last_checked_at: iso(mid - 7 * H) }, mid))
+  check('videos last checked at different times come due in the same run',
+    [0.5, 2, 5].every((h) => firstCommentDue({ publish_at: null, last_checked_at: iso(Date.UTC(2026, 9, 7, 6, 0, 0) - h * H) }, Date.UTC(2026, 9, 7, 6, 5, 0))))
   const CRON = read('app/api/cron/first-comments/route.ts')
   check('the job only checks the due ones, and is scheduled',
     /\.filter\(\(r\) => firstCommentDue\(r, now\)\)/.test(CRON) && /"\/api\/cron\/first-comments"/.test(read('vercel.json')))
