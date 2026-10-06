@@ -8,6 +8,12 @@ const GRAPH = 'https://graph.facebook.com/v19.0'
  * exist and built facebook.com/undefined links. So: an id (or post_id), or a
  * thrown error carrying Meta's own message. `id` is always set on return.
  */
+/** Facebook answered OK but named no post: it may be live. A fallback that
+ *  posts again (photo, then link) must not run on this, or it can post twice. */
+export function isUnconfirmedFacebookPost(e: unknown): boolean {
+  return /answered without a post id/.test(e instanceof Error ? e.message : String(e))
+}
+
 async function readPostResult(res: Response, what: string): Promise<{ id: string; post_id?: string }> {
   const text = await res.text()
   if (!res.ok) throw new Error(`${what} failed ${res.status}: ${text.slice(0, 300)}`)

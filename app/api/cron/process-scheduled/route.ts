@@ -30,7 +30,7 @@ import { postToXWithOneRetry, xPostKey, XPostError, xFailedAttempts, xDroppedMes
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
-import { createFacebookService } from '@/services/facebook'
+import { createFacebookService, isUnconfirmedFacebookPost } from '@/services/facebook'
 import { chooseFacebookAttachment, parseFacebookMediaChoice, type FacebookMediaChoice } from '@/lib/facebook-attachment'
 import { createLinkedInService } from '@/services/linkedin'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
@@ -896,6 +896,9 @@ async function publishOne(
           // vague 'failing' — otherwise a link post can quietly mask a dying token.
           const pm = photoErr instanceof Error ? photoErr.message : String(photoErr)
           if (/\b401\b|\b403\b|token|expired|revoked|unauthorized|oauth/i.test(pm)) throw photoErr
+          // NO SECOND POST ON AN UNCONFIRMED FIRST. Facebook said OK without a
+          // post id: the photo may be up, and a link post would double it.
+          if (isUnconfirmedFacebookPost(photoErr)) throw photoErr
           const r = await fb.postLink({ message: caption, link: fbFallbackLink })
           fbPostId = r.id
           fbPostedLink = true

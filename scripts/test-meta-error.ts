@@ -239,6 +239,15 @@ async function metaAnswers(): Promise<void> {
   }
 }
 
+// 2026-10-07: Facebook saying OK with no post id may mean the photo is up, so
+// the photo-to-link fallback must not post a second time on it.
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  for (const p of ['app/api/cron/process-scheduled/route.ts', 'app/api/blog/facebook-post/route.ts']) {
+    check(`${p}: no link fallback after an unconfirmed photo post`, /if \(isUnconfirmedFacebookPost\(photoErr\)\) throw photoErr/.test(rf(p, 'utf8')))
+  }
+}
+
 function report(): void {
   if (failures.length) {
     console.error(`\n❌ meta-error: ${failures.length} failure(s)\n`)

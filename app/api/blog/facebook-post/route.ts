@@ -4,7 +4,7 @@ import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
-import { createFacebookService } from '@/services/facebook'
+import { createFacebookService, isUnconfirmedFacebookPost } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -310,6 +310,8 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
             // a link post — Facebook scrapes the WP post's og:image for the card
             // preview, so the post still goes out with an image + is fully
             // comment→DM capable.
+            // NO SECOND POST ON AN UNCONFIRMED FIRST: the photo may be up.
+            if (isUnconfirmedFacebookPost(photoErr)) throw photoErr
             console.warn('[facebook-post] photo post failed, falling back to link post:', photoErr)
             const r = await fbService.postLink({ message: caption, link: fallbackLink })
             pagePostId = r.id
