@@ -44,12 +44,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(dest(`gsc_error=${encodeURIComponent(error || 'no_code')}`))
   }
 
-  if (!userId) {
+  // THE STATE MUST NAME THE SIGNED-IN USER (2026-10-06 security audit). Same
+  // hole as the YouTube callback: a link carrying someone else's Google code
+  // and no state put THEIR Search Console on the clicker's account.
+  {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+    if (!user) return NextResponse.redirect(`${appUrl}/login`)
+    if (!userId || userId !== user.id) {
+      console.warn('[gsc/callback] state mismatch, possible CSRF', { hasState: !!userId, sessionUid: user.id })
+      return NextResponse.redirect(dest(`gsc_error=${encodeURIComponent('That sign-in did not match your MVP session, so nothing was connected. Try connecting again.')}`))
+    }
   }
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
   let step = 'token_exchange'
   try {

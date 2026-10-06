@@ -19,6 +19,7 @@ import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical, 
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier } from '@/lib/tier'
+import { inertHtml } from '@/lib/inert-html'
 
 // The section toggles, in display order. Keys match the API's SECTION_ORDER.
 const SECTIONS: { key: string; label: string; hint: string }[] = [
@@ -851,7 +852,8 @@ export default function ArticlesPage() {
           <div
             className="mvp-article-preview rounded-lg border p-5 overflow-x-auto"
             style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)', lineHeight: 1.7 }}
-            dangerouslySetInnerHTML={{ __html: preview.html }}
+            // INERT: the writer reads the web, so its HTML is not trusted here (lib/inert-html).
+            dangerouslySetInnerHTML={{ __html: inertHtml(preview.html) }}
           />
         </div>
       )}

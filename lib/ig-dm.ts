@@ -11,6 +11,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { resolveCloakedLink } from '@/lib/link-cloak'
 import { postProductDestination, postProductAsin, type PostLinkStyle } from '@/lib/post-product-link'
 
@@ -93,7 +94,9 @@ async function getValidIgToken(
     .select('instagram_user_id,instagram_access_token,instagram_token_expiry')
     .eq('user_id', userId)
     .maybeSingle()
-  let accessToken = integ?.instagram_access_token as string | undefined
+  // DECRYPT ON READ, ENCRYPT ON WRITE (2026-10-06 security audit): the token is
+  // stored encrypted, and a refreshed one was written back in plain text.
+  let accessToken = (maybeDecrypt(integ?.instagram_access_token as string | null | undefined) || undefined) as string | undefined
   const igUserId = integ?.instagram_user_id as string | undefined
   if (!accessToken || !igUserId) return null
   const expiry = Number(integ?.instagram_token_expiry || 0)
@@ -102,7 +105,7 @@ async function getValidIgToken(
       const refreshed = await refreshLongLivedToken(accessToken)
       accessToken = refreshed.accessToken
       await admin.from('integrations')
-        .update({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt })
+        .update({ instagram_access_token: maybeEncrypt(accessToken), instagram_token_expiry: refreshed.expiresAt })
         .eq('user_id', userId)
     } catch { /* keep the current token — it may still be valid */ }
   }

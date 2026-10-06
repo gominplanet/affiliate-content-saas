@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
     // Fetch pages the user manages
     const pages = await getPages(longToken)
     if (pages.length === 0) {
-      return NextResponse.redirect(`${setupUrl}?fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
+      // NO TOKEN IN THE URL (2026-10-06 security audit). This carried the
+      // long-lived Facebook user token as a debug_token query param, so it sat in browser
+      // history, server logs and any Referer the setup page sent. Nothing read it.
+      return NextResponse.redirect(`${setupUrl}?fb_error=no_pages`)
     }
 
     // Pick the active page. On a RECONNECT, keep whatever page the user had

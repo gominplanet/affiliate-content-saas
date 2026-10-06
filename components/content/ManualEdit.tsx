@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Edit3, Loader2, Save, Image as ImageIcon, Upload } from 'lucide-react'
+import { inertHtml } from '@/lib/inert-html'
 
 // `postUrl` (the live permalink) is optional but worth passing from any list
 // keyed by WordPress post id: it is what lets the thumbnail route place a post
@@ -35,7 +36,8 @@ export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: str
   // loading is false). Only once per open so user edits aren't clobbered.
   useEffect(() => {
     if (open && !loading && ref.current && !seeded.current) {
-      ref.current.innerHTML = html
+      // INERT: post HTML can come from WordPress or a VA (lib/inert-html).
+      ref.current.innerHTML = inertHtml(html)
       seeded.current = true
     }
   }, [open, loading, html])

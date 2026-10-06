@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Bold, Italic, Heading2, List, Link2, Save, ExternalLink } from 'lucide-react'
+import { inertHtml } from '@/lib/inert-html'
 
 interface Props {
   postId: string
@@ -39,7 +40,7 @@ export default function BlogEditModal({ postId, onClose, onSaved }: Props) {
         setTitle(d.title || '')
         // Seed the contenteditable once (uncontrolled after mount so the caret
         // doesn't jump on every keystroke).
-        requestAnimationFrame(() => { if (bodyRef.current) bodyRef.current.innerHTML = d.content || '' })
+        requestAnimationFrame(() => { if (bodyRef.current) bodyRef.current.innerHTML = inertHtml(d.content || '') })
       } catch {
         if (!cancelled) setError('Network error — try again.')
       } finally {

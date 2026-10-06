@@ -49,12 +49,21 @@ export async function GET(request: NextRequest) {
   if (error || !code) {
     return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent(error || 'no_code')}`))
   }
-  if (!userId) {
+  // THE STATE MUST NAME THE SIGNED-IN USER (2026-10-06 security audit). This
+  // used to trust the uid in `state` and fall back to the session only when it
+  // was missing, so a callback link carrying the attacker's own Google code and
+  // no state connected the ATTACKER's channel to whoever clicked it, and every
+  // upload of theirs went to a channel they do not own. Every other OAuth
+  // callback here already refuses a state that is not the session user.
+  {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+    if (!user) return NextResponse.redirect(`${appUrl}/login`)
+    if (!userId || userId !== user.id) {
+      console.warn('[youtube/callback] state mismatch, possible CSRF', { hasState: !!userId, sessionUid: user.id })
+      return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent('That sign-in did not match your MVP session, so nothing was connected. Try connecting again.')}`))
+    }
   }
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
   let step = 'token_exchange'
   try {

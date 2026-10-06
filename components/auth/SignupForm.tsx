@@ -148,6 +148,9 @@ export default function SignupForm() {
             interval: annual ? 'year' : 'month',
             referral: rw?.referral ?? null,
             couponId: rw?.coupon?.id ?? null,
+            // Verified server side: this route creates a confirmed account, so
+            // it cannot lean on Supabase's own captcha check.
+            captchaToken: token,
           }),
         })
         const data = await res.json().catch(() => ({}))

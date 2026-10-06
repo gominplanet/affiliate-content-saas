@@ -9,6 +9,7 @@ import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { reportRegistration } from '@/lib/meta-registration'
+import { captchaEnforced, turnstileOk, requestIp, signupIpHash, paidSignupThrottled } from '@/lib/signup-guard'
 
 /**
  * Paid signup in ONE flow: create the account + send the user straight to
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: SALES_PAUSED_MESSAGE }, { status: 503 })
   }
 
-  const { email, password, fullName, tier, referral, couponId, interval } = (await request.json()) as {
+  const { email, password, fullName, tier, referral, couponId, interval, captchaToken } = (await request.json()) as {
     email?: string
     password?: string
     fullName?: string
@@ -47,6 +48,8 @@ export async function POST(request: NextRequest) {
      *  This route used to ignore it, so a logged-out buyer who chose $999 a year
      *  was put on $99 a month. Same fallback as /api/stripe/checkout. */
     interval?: BillingInterval
+    /** The Turnstile token the signup form collects (lib/signup-guard). */
+    captchaToken?: string | null
   }
 
   const cleanEmail = (email || '').trim().toLowerCase()
@@ -90,6 +93,19 @@ export async function POST(request: NextRequest) {
   if (mismatch) return NextResponse.json({ error: mismatch.error }, { status: mismatch.status })
 
   const admin = createAdminClient()
+
+  // CAPTCHA AND A PER-NETWORK CEILING BEFORE THE ACCOUNT EXISTS (2026-10-06
+  // security audit). This route creates a CONFIRMED account with the service
+  // key, so it skipped the captcha, the confirmation email and Supabase's own
+  // signup limits: a script could mint Free accounts, each with an AI
+  // allowance, from made-up addresses. See lib/signup-guard.ts.
+  const ip = requestIp(request.headers)
+  if (captchaEnforced() && !(await turnstileOk(captchaToken, ip))) {
+    return NextResponse.json({ error: 'Please complete the captcha and try again.', code: 'captcha' }, { status: 400 })
+  }
+  if (await paidSignupThrottled(admin, signupIpHash(ip))) {
+    return NextResponse.json({ error: 'Too many signups from this network just now. Try again in a little while.', code: 'rate_limited' }, { status: 429 })
+  }
 
   // Create the account already email-confirmed. These users are about to pay,
   // so they're real; pre-confirming is what lets us skip the confirmation email
