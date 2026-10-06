@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 import type { Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -35,6 +36,10 @@ export async function POST(request: Request) {
   const sb = supabase as any
   const { data: intRow } = await sb.from('integrations').select('tier').eq('user_id', user.id).single()
   const tier = (intRow?.tier as Tier) ?? 'trial'
+  // PAID MODEL CALL BELOW: the spend ceiling (and a closed free trial) applies
+  // here exactly as on the generators, or this route is the one that keeps going.
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   const existing = await getAssistantMemory(sb, user.id)
   const updated = await mergeAssistantMemory({

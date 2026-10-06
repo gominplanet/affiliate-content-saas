@@ -15,6 +15,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { TranscriptCue, ClipSuggestion } from '@/lib/shorts-types'
 import { cuesToTimestampedText } from '@/lib/shorts-transcript'
 import { sliceCuesToWindow } from '@/lib/shorts-captions'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 
 const MODEL = 'claude-sonnet-4-6'
 // Cheap first pass that scores where the good moments ARE, so the expensive
@@ -312,8 +313,11 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     out.push({
       startSec: win.start,
       endSec: win.end,
-      hook: (rc.hook || '').toString().slice(0, 90).trim(),
-      caption: (rc.caption || '').toString().slice(0, 400).replace(/\bhonest(ly)?\b/gi, '').trim(),
+      // THE HOOK IS A TITLE AND THE CAPTION IS PUBLISHED COPY: the house scrubs
+      // (no year stamp, no dashes, no health claims, no "honest"), not just the
+      // one word this used to strip.
+      hook: scrubTitle((rc.hook || '').toString().slice(0, 90).trim()),
+      caption: scrubBanned((rc.caption || '').toString().slice(0, 400).replace(/\bhonest(ly)?\b/gi, '').trim()),
       reason: (rc.reason || '').toString().slice(0, 300).trim(),
       score: Math.max(0, Math.min(100, Math.round(Number(rc.score) || 0))),
       hashtags: Array.isArray(rc.hashtags)

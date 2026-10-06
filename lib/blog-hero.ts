@@ -26,6 +26,7 @@ import { getBrandPresetId } from '@/lib/brand-preset'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { TIERS } from '@/lib/tier'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -35,7 +36,7 @@ type Wp = any
 export type HeroOutcome =
   | { ok: true; imageUrl: string | null; mediaId: number }
   /** Every one of these was a console warning and nothing else before. */
-  | { ok: false; reason: 'over_cap' | 'no_product_image' | 'generator_failed' | 'upload_failed' | 'store_logo' | 'error'; message: string }
+  | { ok: false; reason: 'over_cap' | 'paused' | 'no_product_image' | 'generator_failed' | 'upload_failed' | 'store_logo' | 'error'; message: string }
 
 /** What a creator should read, per outcome. Kept beside the outcomes so a new
  *  one cannot be added without a sentence for it. */
@@ -44,6 +45,8 @@ export function heroOutcomeMessage(o: HeroOutcome): string {
   switch (o.reason) {
     case 'over_cap':
       return 'You have used all your thumbnails for this billing period, so the current one is being kept.'
+    case 'paused':
+      return 'Generation is paused on this account, so the current thumbnail is being kept. Upgrade your plan to keep designing.'
     case 'no_product_image':
       return 'No product photo could be found for this post, and the designed thumbnail is built from one. Set the product on the video and try again.'
     case 'generator_failed':
@@ -104,6 +107,15 @@ export async function rebuildPostHero(opts: {
         console.warn(`${tag} thumbnail cap reached for tier ${opts.tier} — keeping the current thumb`)
         return { ok: false, reason: 'over_cap', message: 'thumbnail cap reached' }
       }
+    }
+
+    // THE THUMBNAIL CAP ALONE IS A CALENDAR-MONTH COUNT, so for a free account
+    // it renewed on the 1st and never noticed the trial had ended. The spend
+    // ceiling closes an expired trial and every over-budget account here too.
+    const spend = await checkSpendCeiling(opts.userId, opts.tier)
+    if (!spend.allowed) {
+      console.warn(`${tag} spend ceiling or closed trial for tier ${opts.tier}, keeping the current thumb`)
+      return { ok: false, reason: 'paused', message: 'spend ceiling reached or trial over' }
     }
 
     const ref = await resolveProductReference({

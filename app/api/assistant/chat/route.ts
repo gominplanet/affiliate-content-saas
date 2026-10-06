@@ -22,6 +22,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, normalizeTier, billingWindow, effectiveCap, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { spendGate } from '@/lib/ai-spend'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 import { MVP_FEATURES_DOC } from '@/lib/assistant-features-doc'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -84,6 +85,10 @@ HOW TO BEHAVE:
   return { stable, personal: personal.trim() }
 }
 
+/** Longest single message the assistant accepts. Generous for a question,
+ *  far short of a pasted document. */
+const ASSISTANT_MAX_MESSAGE_CHARS = 4000
+
 export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -92,6 +97,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { conversationId?: string; message?: string }
   const message = (body.message || '').trim()
   if (!message) return new Response(JSON.stringify({ error: 'message required' }), { status: 400 })
+  // A MESSAGE IS PRICED BY ITS LENGTH, NOT BY THE CAP. The cap counts turns, so
+  // without this one pasted 100k-character "message" (re-sent as history on
+  // the next twelve turns) cost what a month of normal chat does.
+  if (message.length > ASSISTANT_MAX_MESSAGE_CHARS) {
+    return new Response(JSON.stringify({ error: `That message is too long. Keep it under ${ASSISTANT_MAX_MESSAGE_CHARS.toLocaleString('en-US')} characters.` }), { status: 400 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -117,6 +128,12 @@ export async function POST(request: Request) {
       limitReached: true, cap: 'assistant', currentTier: tier,
     }), { status: 429, headers: { 'Content-Type': 'application/json' } })
   }
+
+  // THE ASSISTANT IS PAID AI LIKE ANY OTHER. It had its own message cap but no
+  // spend ceiling, so it was the one route an expired free trial could still
+  // use every month after its window closed.
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // ── Resolve / create conversation ──────────────────────────────────────────
   let conversationId = body.conversationId || null

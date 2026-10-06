@@ -55,6 +55,7 @@ const PAGE = read('app/(dashboard)/content/page.tsx')
   const reasons: HeroOutcome[] = [
     { ok: true, imageUrl: 'https://x/y.jpg', mediaId: 1 },
     { ok: false, reason: 'over_cap', message: '' },
+    { ok: false, reason: 'paused', message: '' },
     { ok: false, reason: 'no_product_image', message: '' },
     { ok: false, reason: 'generator_failed', message: '' },
     { ok: false, reason: 'upload_failed', message: '' },
@@ -79,7 +80,7 @@ const PAGE = read('app/(dashboard)/content/page.tsx')
 // ── the route only reports success when something changed ───────────────────
 {
   check('a failed rebuild is not a 200',
-    /if \(!outcome\.ok\) \{/.test(ROUTE) && /status: outcome\.reason === 'over_cap' \? 429 : 502/.test(ROUTE),
+    /if \(!outcome\.ok\) \{/.test(ROUTE) && /status: outcome\.reason === 'over_cap' \? 429 : outcome\.reason === 'paused' \? 403 : 502/.test(ROUTE),
     'a success shape over an unreplaced thumbnail is the plan reported as the result')
   check('an unpublished post is refused with a reason',
     /not on WordPress yet/.test(ROUTE),

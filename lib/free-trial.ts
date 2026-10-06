@@ -148,8 +148,12 @@ export function freeTrialExpiredBlock(opts: {
   if (opts.tier !== 'trial') return null
   const w = freeTrialWindow(opts.signupISO, opts.now)
   if (!w.expired) return null
-  return `Your free month is over, so there is no free AI left on this account. Everything you already made is still yours to download, and Amazon product research and Deal Radar stay open. Upgrade to keep making designs.`
+  return FREE_TRIAL_OVER_MESSAGE
 }
+
+/** The one sentence an expired trial reads, from whichever route stopped it
+ *  (the image routes here, every other gated route through lib/ai-spend). */
+export const FREE_TRIAL_OVER_MESSAGE = `Your free month is over, so there is no free AI left on this account. Everything you already made is still yours to download, and Amazon product research and Deal Radar stay open. Upgrade to keep making designs.`
 
 /** The Amazon Associates tag format: 2-20 chars, letters/digits/hyphens, ending
  *  in a store id like `-20`. Loose on purpose. This is a qualifier, not an

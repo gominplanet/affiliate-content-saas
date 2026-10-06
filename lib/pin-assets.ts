@@ -25,7 +25,8 @@ import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import type { PinDesign, PinDowngrade, PinDesignOutcome } from '@/lib/pin-design-outcome'
 
-export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
+// NO EM DASH: this line is published verbatim under every pin description.
+export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links, and I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
 
 const genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? '' })

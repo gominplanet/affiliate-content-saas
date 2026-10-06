@@ -169,6 +169,9 @@ export async function POST(request: NextRequest) {
         : ''
       const learnBlock = creatorVoiceBlock(brand)
 
+      // A PROVIDER ERROR IS NOT A SENTENCE. Uncaught, an overload or refusal
+      // fell to the catch at the bottom and reached the modal as the raw
+      // provider JSON. Nothing has been posted yet, so say so plainly.
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 300,
@@ -191,7 +194,13 @@ Content preview: ${plainContent}
 
 Return ONLY the tweet text.`,
         }],
+      }).catch((e: unknown) => {
+        console.error('[twitter-post] caption writer failed', e instanceof Error ? e.message : e)
+        return null
       })
+      if (!msg) {
+        return NextResponse.json({ error: 'The tweet could not be written just now, so nothing was posted to X. Please try again in a moment.' }, { status: 502 })
+      }
 
       tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
       recordAnthropicUsage(msg, {
