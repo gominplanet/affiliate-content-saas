@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { POST as storefrontIngest } from '@/app/api/storefront/ingest/route'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,6 +54,32 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+
+  const body = await request.json().catch(() => null) as { periods?: PeriodRow[]; products?: ProductRow[] } | null
+  if (!body) return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 })
+
+  // THE STOREFRONT REPORT LANDS HERE BY MISTAKE, SO IT IS PASSED ON.
+  // background.js declares pushEarningsToMvp twice (SCOUT 1.40.7 and earlier
+  // since 2026-09-19); the later one, for this route, wins, so the storefront
+  // "Sync from Amazon" posts its report rows as `periods` and its summary
+  // tiles as `products`. Those rows have no stream, so every one was skipped
+  // and SCOUT said "Synced N products" over nothing saved (or a Labs 403 for
+  // members). They are told apart by their period type (weekly, monthly or
+  // ytd; this route's rows say month or day) and handed to
+  // /api/storefront/ingest, where they belong, before the Labs gate below.
+  {
+    const SF = new Set(['weekly', 'monthly', 'ytd'])
+    const all = [...(Array.isArray(body.periods) ? body.periods : []), ...(Array.isArray(body.products) ? body.products : [])]
+    const storefront = all.length > 0 && all.every((r) => r && typeof r === 'object' && r.stream === undefined && SF.has(String(r.periodType ?? '').toLowerCase()))
+    if (storefront) {
+      return storefrontIngest(new Request(request.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ earnings: body.periods ?? [], totals: body.products ?? [] }),
+      }))
+    }
+  }
+
   // Earnings is in Labs (admin only): the page checked, the API did not.
   {
     const { data: tierRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
@@ -60,9 +87,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Earnings is not open on your plan yet.' }, { status: 403 })
     }
   }
-
-  const body = await request.json().catch(() => null) as { periods?: PeriodRow[]; products?: ProductRow[] } | null
-  if (!body) return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 })
 
   const admin = createAdminClient()
   let savedPeriods = 0

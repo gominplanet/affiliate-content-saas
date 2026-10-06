@@ -205,6 +205,13 @@ export async function POST(req: Request) {
   if (body.claim && row.state === 'blocked' && row.youtube_video_id) {
     const was = String(row.reason || '')
     if (!was.startsWith(DRAFT_REASON_PREFIX) && !was.startsWith(STUDIO_DRAFT_SAVING)) return NextResponse.json({ ok: false, error: 'It is not a draft waiting to be saved.' }, { status: 409 })
+    // A SAVE STILL GOING IS NOT TAKEN AGAIN, the list's own 15 minutes. A tab
+    // that read the list before this claim used to take it too: its SCOUT
+    // answered busy, that "could not save" overwrote the claim, and the real
+    // save's answer then found no claim to land on and was thrown away.
+    if (was.startsWith(STUDIO_DRAFT_SAVING) && row.updated_at && Date.now() - new Date(row.updated_at).getTime() < 15 * 60_000) {
+      return NextResponse.json({ ok: false, error: 'SCOUT is already saving it.' }, { status: 409 })
+    }
     const { data: took } = await sb.from('launch_items').update({
       reason: `${STUDIO_DRAFT_SAVING} ${was.startsWith(DRAFT_REASON_PREFIX) ? was : ''}`.trim().slice(0, 600),
       updated_at: stamp,
@@ -252,6 +259,14 @@ export async function POST(req: Request) {
 
   if (body.claim) {
     if (row.state !== 'prepared' || row.youtube_video_id) return NextResponse.json({ ok: false, error: 'It is not waiting for an upload any more.' }, { status: 409 })
+    // AN UPLOAD STILL RUNNING IS NOT TAKEN AGAIN. The try count only stops two
+    // claims landing in the same instant: the server reads the count fresh, so
+    // a second tab (or a second computer) that listed the video before the
+    // first claim took it on the next count, and uploaded a second copy while
+    // the first was still sending. Same window as the list (GET) uses.
+    if (isStudioRunning(row.reason) && row.updated_at && Date.now() - new Date(row.updated_at).getTime() < STUDIO_UPLOAD_CLAIM_MS) {
+      return NextResponse.json({ ok: false, error: 'SCOUT is already uploading it.' }, { status: 409 })
+    }
     if (tries >= STUDIO_UPLOAD_TRIES) {
       // THE LAST REAL ERROR SURVIVES THE GIVING UP, as in the drain.
       const said = String(row.reason || '').trim()
