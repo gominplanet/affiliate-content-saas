@@ -285,6 +285,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ events, truncated, scanned: seen.size, pagesUsed, stopReason, searchAdded, cached: false })
   } catch (err) {
+    // A USED-UP ALLOWANCE IS SAID AS ONE. With no saved calendar to fall back
+    // on, YouTube's raw 403 text was printed on the calendar as the error.
+    if (isQuotaError(err)) {
+      return NextResponse.json({ error: `The calendar cannot load yet. ${QUOTA_WAIT_TEXT}`, quotaHit: true }, { status: 429 })
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },
       { status: 500 },

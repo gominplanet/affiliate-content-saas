@@ -382,7 +382,9 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     const SCOUT_TTL = 30 * 60 * 1000
     let cachedScout: { events?: CalEvent[]; cachedAt?: number } | null = null
     try { const raw = localStorage.getItem(SCOUT_KEY); if (raw) cachedScout = JSON.parse(raw) } catch { /* ignore */ }
-    if (cachedScout && Array.isArray(cachedScout.events)) setScoutVideos(cachedScout.events)
+    // THIS CHANNEL'S LIST OR NONE. Kept as it was when the new channel had no
+    // saved list, so the last channel's scheduled videos sat on this calendar.
+    setScoutVideos(cachedScout && Array.isArray(cachedScout.events) ? cachedScout.events : [])
     const scoutFresh = !!cachedScout && Array.isArray(cachedScout.events) && (Date.now() - (cachedScout.cachedAt || 0)) < SCOUT_TTL
     if (!scoutFresh || forced) {
       requestStudioSchedule().then(s => {
@@ -600,8 +602,10 @@ function FirstCommentsToPin() {
   async function dismiss(id: string) {
     setBusyRow(id)
     try {
-      await fetch(`/api/youtube/first-comment/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dismiss' }) })
-    } catch { /* the reload below shows whether it went */ }
+      const res = await fetch(`/api/youtube/first-comment/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dismiss' }) })
+      // A REFUSED DISMISS SAYS SO: the row only stayed put, with no reason.
+      if (!res.ok) { const j = await res.json().catch(() => ({})); setRetried((m) => ({ ...m, [id]: String(j.error || 'Could not dismiss it.') })) }
+    } catch { setRetried((m) => ({ ...m, [id]: 'Could not reach MVP.' })) }
     setBusyRow(null)
     void load()
   }
@@ -672,7 +676,7 @@ function FirstCommentsToPin() {
   )
 }
 
-function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null }: {
+function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null }: {
   video: DraftVideo
   userTier: Tier
   /** Why the playlist list is empty, when it is: still loading, could not be
@@ -690,6 +694,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   const { confirm, ConfirmHost } = useConfirm()
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
+  // Set the moment a run starts, before React re-renders, so a second quick
+  // press cannot start a second generate or a second push.
+  const generatingRef = useRef(false)
+  const applyingRef = useRef(false)
   const [finishCheckDone, setFinishCheckDone] = useState(false)
   // Run state for SCOUT's Studio steps, which now run by themselves after
   // every push when SCOUT is installed (see finishOptIn below).
@@ -918,7 +926,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   const [firstCommentOn, setFirstCommentOn] = useState(true)
   const [firstComment, setFirstComment] = useState<
     | { state: 'sending' }
-    | { state: 'waiting'; publishAt: string | null }
+    | { state: 'waiting'; publishAt: string | null; posting?: boolean }
     | { state: 'posted'; pinned: boolean | null; pinError?: string; already?: boolean }
     | { state: 'failed'; error: string }
     | null
@@ -943,7 +951,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       } else if (j.state === 'gone') {
         setFirstComment({ state: 'failed', error: 'YouTube no longer has this video, so MVP forgot it.' })
       } else if (j.state === 'waiting') {
-        setFirstComment({ state: 'waiting', publishAt: (j.publishAt ?? null) as string | null })
+        setFirstComment({ state: 'waiting', publishAt: (j.publishAt ?? null) as string | null, posting: j.posting === true })
       } else {
         setFirstComment({ state: 'failed', error: String(j.error || 'The first comment could not be queued.') })
       }
@@ -1115,12 +1123,16 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     if (!face || next === (face.outfit_pref || '')) return
     setSavingOutfit(faceId)
     try {
-      await fetch(`/api/face-models/${faceId}`, {
+      const res = await fetch(`/api/face-models/${faceId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ outfitPref: next }),
       })
+      // SAVED ONLY WHEN IT SAVED. A refused PATCH was written into the face
+      // here as if it had stuck, and the outfit was gone on the next visit.
+      if (!res.ok) { toast.error(`The outfit was not saved to ${face.name}. Try again.`); return }
       setFaceModels(prev => prev.map(f => f.id === faceId ? { ...f, outfit_pref: next || null } : f))
-    } catch { /* best-effort */ }
+      _coPilotGetCache.delete('/api/face-models') // other cards read the new outfit
+    } catch { toast.error(`The outfit was not saved to ${face.name}. Try again.`) }
     finally { setSavingOutfit(null) }
   }, [faceModels])
 
@@ -1180,8 +1192,17 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   // Load once on mount.
   useEffect(() => { loadFaceModels() }, [loadFaceModels])
   useEffect(() => { loadSavedStyles() }, [loadSavedStyles])
-  // Check once on mount — drives the "install SCOUT" vs "generate" Card 4 UI.
-  useEffect(() => { isExtensionAvailable().then(ok => setExtensionInstalled(ok)) }, [])
+  // Check once, when the card is first opened or generated: drives the
+  // "install SCOUT" vs "generate" Card 4 UI and whether a push hands over to
+  // SCOUT. ONCE OPENED, NOT ON MOUNT: on mount, Load all sent SCOUT one ping
+  // per listed video, hundreds at once, for panels nobody had opened.
+  const wantsScoutCheck = expanded || generating
+  useEffect(() => {
+    if (!wantsScoutCheck || extensionInstalled !== null) return
+    let alive = true
+    isExtensionAvailable().then(ok => { if (alive) setExtensionInstalled(ok) })
+    return () => { alive = false }
+  }, [wantsScoutCheck, extensionInstalled])
 
   // Pre-capture SCOUT frames the moment the card expands so they're ready
   // by the time the user clicks Generate (the user spends ~15-20s reading
@@ -1202,8 +1223,13 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
 
   // Pull aggregated 👍/👎 history for the YouTube surface so the random
   // style picker biases toward styles this user has rewarded.
+  // ONCE THE CARD IS OPEN: thumbnails are only made in an open card, and on
+  // mount this read the database once per listed video (hundreds on Load all).
+  const weightsLoaded = useRef(false)
   useEffect(() => {
-    (async () => {
+    if (!expanded || weightsLoaded.current) return
+    weightsLoaded.current = true
+    ;(async () => {
       try {
         // Niche-aware: bias the picker toward styles that worked on THIS
         // kind of video. Look up the video's category (RLS-scoped) and
@@ -1221,7 +1247,8 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         setYtStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
       } catch { /* silent — picker just goes uniform */ }
     })()
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded])
 
   /**
    * The ASIN this video's art actually belongs to.
@@ -1258,7 +1285,9 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   // an earlier Co-Pilot run, files its latest one against the ASIN). Offered
   // before the generate button, so a second image is not paid for when the
   // creator already has one they like.
-  const recalledThumb = useSavedProductImage(effectiveAsin)
+  // Asked only for an open card, the one place it is shown: asked on mount it
+  // was one request per listed video with a product.
+  const recalledThumb = useSavedProductImage(expanded ? effectiveAsin : null)
   useEffect(() => {
     if (!thumbnailUrl || !effectiveAsin) { setSavedProductImage(null); return }
     // A RECALLED IMAGE IS ALREADY FILED: saving it again would only restamp
@@ -1285,7 +1314,7 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     if (!thumbnailUrl) return
     setThumbnailFeedbackSent(reaction)
     try {
-      await fetch('/api/thumbnail-feedback', {
+      const res = await fetch('/api/thumbnail-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1298,6 +1327,9 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
           modelUsed: thumbnailModel ?? null,
         }),
       })
+      // "THANKS, SAVED" ONLY WHEN IT WAS: a refused reaction put the buttons
+      // back, rather than thanking the creator for a vote that was dropped.
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       if (thumbnailStyleId) {
         const sid = thumbnailStyleId
         setYtStyleWeights(prev => {
@@ -1309,6 +1341,8 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       }
     } catch (e) {
       console.warn('[yt-thumb-feedback]', e)
+      setThumbnailFeedbackSent(null)
+      toast.error('Your reaction was not saved. Try again.')
     }
   }
 
@@ -1325,18 +1359,31 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     try {
       return JSON.parse(text) as Record<string, unknown>
     } catch {
-      // Surface the raw server message so the user sees something meaningful
+      // AN HTML PAGE IS NOT A MESSAGE. A gateway timeout answers with one, and
+      // its first 300 characters of markup were printed as the error. Plain
+      // text from the server is still shown as it came.
+      if (/^\s*</.test(text)) {
+        throw new Error(res.status === 504 || res.status === 502
+          ? `MVP's server took too long to answer (HTTP ${res.status}), so MVP cannot tell whether this finished. Check, then try again.`
+          : `MVP's server answered with an error page (HTTP ${res.status}). Try again.`)
+      }
       throw new Error(text.slice(0, 300) || `HTTP ${res.status}`)
     }
   }
 
   async function generate(skipAsinCheck = false) {
+    // ONE AT A TIME, AND NEVER UNDER A PUSH. A second press started a second
+    // paid run, and a Regenerate during a push cleared the metadata the push
+    // was still sending, then the push's late answer marked the NEW metadata
+    // applied. A ref, because two quick presses land in the same render.
+    if (generatingRef.current || applyingRef.current || applying || finishRunning) return
     // A comparison that is not complete is said before anything is spent.
     const comparing = canCompare && compareOn
     if (comparing) {
       const { error: cmpErr } = readComparisonSlots(compareSlots)
       if (cmpErr) { toast.error(cmpErr); return }
     }
+    generatingRef.current = true
     setCompareResult(null)
     setCompareSaved(null)
     setGenerating(true)
@@ -1346,6 +1393,17 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
     setNeedsProduct(false)
     setGenerated(null)
     setApplied(false)
+    // THE LAST PUSH'S RESULT GOES WITH IT. Its error, its "held" outcome and
+    // SCOUT's run stayed on screen over the new metadata, and a dismissed
+    // result kept the next push's result hidden.
+    setApplyError(null)
+    setStatusOutcome(null)
+    setFinishResult(null)
+    setFinishError(null)
+    setFinishCheckDone(false)
+    apiDisclosuresRef.current = null
+    setApiDisclosures(null)
+    pushedRef.current = null
     setThumbnailUrl(null)
     setThumbnailError(null)
     try {
@@ -1452,6 +1510,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
       setCapError(null)
 
       const generatedMeta = data.generated as GeneratedMetadata
+      // A 200 WITH NOTHING IN IT is a failure, said as one. It used to clear the
+      // card and show nothing at all, and the render read .tags off undefined.
+      if (!generatedMeta || typeof generatedMeta.title !== 'string') throw new Error('MVP answered without any metadata, so nothing was written. Try again.')
+      if (!Array.isArray(generatedMeta.tags)) generatedMeta.tags = []
       const productData = data.product as ProductInfo
       const productBullets = data.productBullets as string[]
       const productDescription = data.productDescription as string
@@ -1490,13 +1552,20 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         ? 'Request timed out. Please try again'
         : msg)
     } finally {
+      generatingRef.current = false
       setGenerating(false)
       setProgress(null)
     }
   }
 
   async function applyToYouTube() {
-    if (!generated) return
+    // ONE PUSH AT A TIME: a second press sent the video to YouTube twice.
+    if (!generated || applyingRef.current) return
+    applyingRef.current = true
+    try { await applyToYouTubeOnce(generated) } finally { applyingRef.current = false }
+  }
+
+  async function applyToYouTubeOnce(generated: GeneratedMetadata) {
     setApplying(true)
     setApplyError(null)
     try {
@@ -1513,7 +1582,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
 
         // Will SCOUT finish the Studio-only fields after this push?
-        const wantsFinish = extensionInstalled === true && finishOptIn && anyFinishStep
+        // Asked now if the card's own check has not answered yet: an unknown
+        // SCOUT read as "not installed" and the push set the time by itself.
+        const scoutOn = extensionInstalled ?? await isExtensionAvailable()
+        const wantsFinish = scoutOn === true && finishOptIn && anyFinishStep
 
         // SCOUT FIRST, THEN THE TIME.
         //
@@ -1565,11 +1637,18 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
         // "Scheduled on YouTube" state in that case; surface a clear, retryable
         // error (and a friendly message when YouTube's daily quota is the cause,
         // instead of dumping the raw 403 JSON the API returns).
-        if (data.statusOk === false && !holdStatus) {
+        // THE WORDS ARE THE PUSH. With SCOUT finishing there is no status call,
+        // so statusOk alone let a refused title and description through: the
+        // button went green, SCOUT ran on the old title, and the quota line
+        // called the lost metadata "some extras".
+        const metadataLost = data.metadataOk === false
+        if (metadataLost || (data.statusOk === false && !holdStatus)) {
           setApplyError(
             quotaHit
-              ? `YouTube's daily API quota is used up right now, so nothing reached YouTube${publishAt ? ': the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
-              : `Couldn't apply to YouTube: ${warns.join(' · ') || 'unknown error'}`,
+              ? `YouTube's daily API quota is used up right now, so ${metadataLost ? 'the title and description did not reach YouTube' : 'nothing reached YouTube'}${publishAt ? ': the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
+              : metadataLost
+                ? `YouTube did not take the title and description: ${warns.join(' · ') || 'no reason given'}`
+                : `Couldn't apply to YouTube: ${warns.join(' · ') || 'unknown error'}`,
           )
           return
         }
@@ -2731,7 +2810,9 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
             ) : (
               <button
                 onClick={() => generate()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                disabled={applying || finishRunning}
+                title={applying || finishRunning ? 'Wait for the push to YouTube to finish' : undefined}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 style={{ background: cardAsin
                   ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
                   : 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
@@ -3649,6 +3730,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       </label>
                     ) : firstComment.state === 'sending' ? (
                       <span className="flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Queuing the first comment…</span>
+                    ) : firstComment.state === 'waiting' && firstComment.posting ? (
+                      // BEING POSTED NOW, not "not public yet": the server said
+                      // its ten-minute run is posting this very comment.
+                      <span>MVP is posting this comment right now. Open Co-Pilot again in a moment and SCOUT pins it.</span>
                     ) : firstComment.state === 'waiting' ? (
                       <span>Queued. The video is not public yet, so MVP posts the comment {firstComment.publishAt ? `when it goes live (${new Date(firstComment.publishAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : 'the moment it goes public'}. Open Co-Pilot afterwards and SCOUT pins it.</span>
                     ) : firstComment.state === 'posted' ? (
@@ -3867,8 +3952,9 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
                       </button>
                     )
                   })()}
-                  <button onClick={() => generate()} disabled={generating}
-                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors flex-shrink-0">
+                  <button onClick={() => generate()} disabled={generating || applying || finishRunning}
+                    title={applying || finishRunning ? 'Wait for the push to YouTube to finish' : undefined}
+                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors flex-shrink-0 disabled:opacity-50">
                     <RefreshCw size={11} /> Regenerate
                   </button>
                 </div>
@@ -4178,6 +4264,10 @@ function VideoStudioCard({ video, userTier, playlists, playlistsNote = null, onA
   )
 }
 
+// MEMOISED: every keystroke in the search box re-rendered all ~900 cards, each
+// one this whole component. A card now only re-renders when its own props do.
+const VideoStudioCard = React.memo(VideoStudioCardImpl)
+
 export default function StudioPage() {
   const supabase = createBrowserClient()
   const [drafts, setDrafts] = useState<DraftVideo[]>([])
@@ -4189,6 +4279,11 @@ export default function StudioPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A later page that failed (Load all, the to-do dig): shown under the list,
+  // which stays. `error` is for a list that could not load at all.
+  const [moreError, setMoreError] = useState<string | null>(null)
+  // Bumped by every fresh load, so only the newest one's answer is used.
+  const loadSeq = useRef(0)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
   // Passport (MVP's own geo-routing) makes the Geniuslink nag irrelevant.
   const [passportEnabled, setPassportEnabled] = useState(false)
@@ -4338,9 +4433,15 @@ export default function StudioPage() {
   const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean; silent?: boolean; forceRefresh?: boolean }) => {
     const append = opts?.append === true
     const silent = opts?.silent === true
+    // THE NEWEST LIST WINS. A slow load (SCOUT's Studio read, a cold scan)
+    // used to land after a later one and replace it: the previous channel's
+    // videos under the new channel's name, or old search results over new.
+    const seq = append ? loadSeq.current : ++loadSeq.current
+    const stale = () => seq !== loadSeq.current
     if (append) setLoadingMore(true)
     else if (!silent) setLoading(true)
     setError(null)
+    if (!append) setMoreError(null)
     // A fresh (non-append) load replaces the list, so let the to-do auto-fill
     // re-evaluate against the new results.
     if (!append && !opts?.pageToken) autoFilledTodo.current = false
@@ -4415,11 +4516,13 @@ export default function StudioPage() {
       res = await fetch(url)
       data = await res.json().catch(() => ({}))
     } catch {
-      setError('Could not reach MVP to load your videos. Check your connection, then press Refresh.')
       if (append) setLoadingMore(false)
-      else if (!silent) setLoading(false)
+      if (stale()) return
+      setError('Could not reach MVP to load your videos. Check your connection, then press Refresh.')
+      if (!append && !silent) setLoading(false)
       return
     }
+    if (stale()) { if (append) setLoadingMore(false); return }
     if (res.status === 401 && data.needsAuth) {
       setNeedsAuth(true)
     } else if (!res.ok) {
@@ -4471,7 +4574,10 @@ export default function StudioPage() {
   const loadAll = useCallback(async () => {
     if (!nextPageToken || loadingMore) return
     setLoadingMore(true)
-    setError(null)
+    setMoreError(null)
+    // A refresh, search or channel switch started meanwhile owns the list now:
+    // this walk stops rather than appending the old list's pages to it.
+    const seq = loadSeq.current
     let cursor: string | undefined = nextPageToken
     let rounds = 0
     const HARD_CAP = 100
@@ -4488,8 +4594,12 @@ export default function StudioPage() {
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
         // A timeout is an HTML page; the parse used to throw with nothing said.
         const data = await res.json().catch(() => ({}))
+        if (seq !== loadSeq.current) break
         if (!res.ok) {
-          setError(data.error || 'Failed to load more drafts. Try Refresh.')
+          // SAID UNDER THE LIST, NOT INSTEAD OF IT. The page-wide error hid
+          // every video already loaded (and any card mid-edit) the moment one
+          // later page failed, which on a used-up quota day is the usual end.
+          setMoreError(data.error || 'Failed to load more drafts. Try Refresh.')
           break
         }
         const incoming = (data.drafts as DraftVideo[] | undefined) || []
@@ -4505,7 +4615,7 @@ export default function StudioPage() {
         if (!cursor) break  // exhausted — no more pages on the channel
       }
     } catch {
-      setError('Could not reach MVP to load more videos. Press Refresh.')
+      if (seq === loadSeq.current) setMoreError('Could not reach MVP to load more videos. Press Refresh.')
     } finally {
       setLoadingMore(false)
     }
@@ -4523,7 +4633,8 @@ export default function StudioPage() {
     let cursor: string | undefined = nextPageToken
     if (!cursor) return
     setLoadingMore(true)
-    setError(null)
+    setMoreError(null)
+    const seq = loadSeq.current
     let rounds = 0
     const ROUND_BUDGET = 8
     try {
@@ -4535,7 +4646,8 @@ export default function StudioPage() {
         if (selectedChannelId) params.set('channelId', selectedChannelId)
         const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data.error || 'Failed to load more drafts. Try Refresh.'); break }
+        if (seq !== loadSeq.current) break
+        if (!res.ok) { setMoreError(data.error || 'Failed to load more drafts. Try Refresh.'); break }
         const incoming = (data.drafts as DraftVideo[] | undefined) || []
         setDrafts(prev => {
           const seen = new Set(prev.map(v => v.youtubeVideoId))
@@ -4548,7 +4660,7 @@ export default function StudioPage() {
         if (!cursor) break
       }
     } catch {
-      setError('Could not reach MVP to load more videos. Press Refresh.')
+      if (seq === loadSeq.current) setMoreError('Could not reach MVP to load more videos. Press Refresh.')
     } finally {
       setLoadingMore(false)
     }
@@ -4579,7 +4691,33 @@ export default function StudioPage() {
     void load({ query: activeQuery, includePublished: next })
   }, [load, activeQuery])
 
-  useEffect(() => { load() }, [load])
+  // On mount and on a channel switch (load changes with the channel). WITH THE
+  // SEARCH AND FILTER ON SCREEN: a bare load() here listed the new channel's
+  // drafts under the old search label, with Include published still ticked.
+  useEffect(() => { void load({ query: activeQuery, includePublished }) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stable, so the memoised cards do not all re-render when this page does.
+  const markApplied = useCallback((videoId: string) => {
+    // Optimistic in-place reclassify: mark just this video shipped so it
+    // leaves the to-do tab WITHOUT a re-fetch. A silent re-load here would
+    // re-scan from scratch (Apply busts the server cache) and the scan's
+    // early-stop truncates the list back to a partial batch, wiping out
+    // everything "Load all drafts" had pulled in. The cache bust still
+    // reconciles on the next manual Refresh.
+    setDrafts(prev => prev.map(v =>
+      v.youtubeVideoId === videoId
+        ? { ...v, metadataAppliedAt: new Date().toISOString() }
+        : v,
+    ))
+  }, [])
+
+  // A NEW CHANNEL STARTS FROM AN EMPTY LIST. The last channel's cards stayed
+  // up, ready to generate and push, while the new channel loaded.
+  const switchChannel = useCallback((id: string) => {
+    setDrafts([])
+    setNextPageToken(undefined)
+    setSelectedChannelId(id)
+  }, [])
 
   // Discover the user's connected YouTube channels so we can offer a picker
   // when they run more than one (migration 127). Selecting one re-loads the
@@ -4598,7 +4736,11 @@ export default function StudioPage() {
     return () => { cancelled = true }
   }, [])
 
-  if (loading) {
+  // THE WHOLE-PAGE SPINNER IS FOR A PAGE WITH NOTHING ON IT YET. On every
+  // refresh and every search it replaced the page, so the search box vanished
+  // mid-typing and every card (one mid-push included) was thrown away. With a
+  // list on screen, Refresh says "Refreshing…" over it instead.
+  if (loading && drafts.length === 0) {
     return (
       <div>
         <PageHero
@@ -4714,7 +4856,7 @@ export default function StudioPage() {
                   {channels.length > 1 ? (
                     <select
                       value={activeId}
-                      onChange={(e) => setSelectedChannelId(e.target.value)}
+                      onChange={(e) => switchChannel(e.target.value)}
                       className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-full"
                     >
                       {channels.map(c => (
@@ -4805,12 +4947,14 @@ export default function StudioPage() {
         </div>
       )}
 
-      {!needsAuth && !error && (
-        <>
-          {/* Search across the whole channel (any privacy status). Empty
-              query falls back to the default ASIN-only listing of the
-              uploads playlist. Debounced 350ms — search.list costs ~100x
-              more YouTube quota than playlistItems, so we don't spam it. */}
+      {/* Search across the whole channel (any privacy status). Empty
+          query falls back to the default ASIN-only listing of the
+          uploads playlist. Debounced 350ms — search.list costs ~100x
+          more YouTube quota than playlistItems, so we don't spam it.
+          KEPT THROUGH AN ERROR: a search that failed hid the box with the
+          list, so the failing search could not be cleared, and Refresh ran
+          the same search again. */}
+      {!needsAuth && (
           <div className="relative mb-4">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
             <input
@@ -4821,6 +4965,10 @@ export default function StudioPage() {
               className="w-full text-sm pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
             />
           </div>
+      )}
+
+      {!needsAuth && !error && (
+        <>
 
           {/* Workflow tabs — hidden during search since search results
               span all categories. Tab counts update live as drafts load
@@ -4864,7 +5012,9 @@ export default function StudioPage() {
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {activeQuery
-                ? `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`
+                // NOT A RESULT COUNT WHILE IT IS STILL ASKING: the list under
+                // it is the previous one until the search answers.
+                ? (loading ? `Searching for "${activeQuery}"…` : `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`)
                 : `${visibleDrafts.length} of ${drafts.length} ${includePublished ? 'video' : 'draft'}${drafts.length !== 1 ? 's' : ''} in this tab${nextPageToken ? ' · more available' : ' · all loaded'}`}
             </p>
             <div className="flex items-center gap-3">
@@ -4935,20 +5085,7 @@ export default function StudioPage() {
                     isShort={shortsMap[video.youtubeVideoId] ?? null}
                     playlists={playlists}
                     playlistsNote={playlistsNote}
-                    onApplied={(videoId) => {
-                      // Optimistic in-place reclassify: mark just this video
-                      // shipped so it leaves the to-do tab WITHOUT a re-fetch.
-                      // A silent re-load here would re-scan from scratch (Apply
-                      // busts the server cache) and the scan's early-stop
-                      // truncates the list back to a partial batch — wiping out
-                      // everything "Load all drafts" had pulled in. The cache
-                      // bust still reconciles on the next manual Refresh.
-                      setDrafts(prev => prev.map(v =>
-                        v.youtubeVideoId === videoId
-                          ? { ...v, metadataAppliedAt: new Date().toISOString() }
-                          : v,
-                      ))
-                    }}
+                    onApplied={markApplied}
                   />
                 ))}
               </div>
@@ -4984,6 +5121,12 @@ export default function StudioPage() {
                 </p>
               )}
             </>
+          )}
+          {moreError && (
+            <div className="card p-4 mt-4 flex items-center gap-3">
+              <AlertCircle size={16} className="text-[#ff3b30] flex-shrink-0" />
+              <p className="text-sm text-[#ff3b30]">Not every video loaded: {moreError}</p>
+            </div>
           )}
         </>
       )}

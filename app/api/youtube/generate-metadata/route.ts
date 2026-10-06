@@ -168,7 +168,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
       delay = Math.min(delay * 1.5, 7000)
     }
   }
-  throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
+  throw new Error('Claude AI is temporarily unavailable. Please try again in a moment.')
 }
 
 // ── Agent runner helper ───────────────────────────────────────────────────────
@@ -600,7 +600,7 @@ export async function POST(request: Request) {
     let productDiscoverySource: 'title' | 'caller' | 'search' | 'none' = isProduct ? 'caller' : 'none'
     if (asin && asin.trim() && !isProduct) {
       return NextResponse.json({
-        error: 'That looks like an ASIN but the format is wrong — Amazon ASINs are 10 chars, uppercase letters + digits.',
+        error: 'That looks like an ASIN but the format is wrong. Amazon ASINs are 10 characters, uppercase letters and digits.',
       }, { status: 400 })
     }
     if (!videoTitle?.trim()) {
@@ -876,7 +876,7 @@ export async function POST(request: Request) {
                 `That ASIN (${trimmedAsin}) points to "${product.title.slice(0, 80)}", which doesn't seem to match your video. ` +
                 `Distinctive words in the product: ${verdict.productWords.join(', ')}. ` +
                 `Distinctive words in your video: ${verdict.videoWords.join(', ')}. ` +
-                `Double-check the ASIN in your title — one wrong character can land you on a totally different product.`,
+                `Double-check the ASIN in your title: one wrong character can land you on a totally different product.`,
               asinMismatch: true,
               productTitle: product.title,
               productWords: verdict.productWords,
@@ -906,7 +906,7 @@ export async function POST(request: Request) {
           error:
             `We couldn't pull the product details for ASIN ${trimmedAsin} from Amazon just now ` +
             `(Amazon sometimes rate-limits us). Rather than guess at the product and write the wrong ` +
-            `thing, we stopped. Hit Regenerate in a moment — it usually goes through on a retry. ` +
+            `thing, we stopped. Hit Regenerate in a moment: it usually goes through on a retry. ` +
             `If it keeps failing, double-check the ASIN in your title.`,
           scrapeFailed: true,
           // Which product failed, so the page's SCOUT retry fetches THAT one:
@@ -1028,7 +1028,7 @@ export async function POST(request: Request) {
             || 'Your Passport link was created, but you have no Amazon Associates tag saved, so it sends people to Amazon untagged and earns you nothing. Add your tag in Brand Profile → Affiliate Link Routing.'
         }
       } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
-        geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Brand Profile → Affiliate Link Routing'
+        geniuslinkError = geniuslinkError || 'No affiliate link configured. Add Geniuslink or an Amazon Associates tag in Brand Profile → Affiliate Link Routing'
       }
     } else if (storeUrl) {
       // Non-Amazon direct store / brand link the creator put in the

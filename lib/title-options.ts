@@ -17,7 +17,7 @@
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from './anthropic'
 import { recordAnthropicUsage } from './ai-usage'
-import { scrubBanned } from './scrub'
+import { scrubTitle } from './scrub'
 
 export interface TitleOptionsCtx {
   userId: string | null
@@ -134,7 +134,9 @@ Return ONLY a JSON array of exactly ${count} strings. No prose around it.`
     }
     const titles = arr
       .map(t => String(t || '').trim().replace(/^["']|["']$/g, ''))
-      .map(t => scrubBanned(t).toUpperCase().trim())
+      // scrubTitle, not only scrubBanned: these headlines are baked onto a
+      // thumbnail, and a "BEST OF 2026" stamp is the year rule broken in pixels.
+      .map(t => scrubTitle(t).toUpperCase().trim())
       .map(trimToThreeWords)
       .filter(t => t.length >= 3 && t.length <= 40)
       .filter(t => t.split(/\s+/).filter(Boolean).length <= 3)

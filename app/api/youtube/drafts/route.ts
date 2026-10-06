@@ -413,7 +413,7 @@ export async function GET(request: Request) {
     const msg = err instanceof Error ? err.message : String(err)
     if (/quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded|\bquota\b/i.test(msg)) {
       return NextResponse.json({
-        error: 'YouTube\'s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific — your videos will load again then.',
+        error: 'YouTube\'s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific, and your videos will load again then.',
         quotaExceeded: true,
       }, { status: 429 })
     }
@@ -638,7 +638,12 @@ async function enrichWithPushState(
   // product_title with product_url). It wins over the ASIN in the title, which
   // is all the card knew before: a correction lasted until the next reload.
   const setAsinMap: Record<string, string> = {}
-  if (videoIds.length > 0) {
+  // IN CHUNKS OF 200, like the SCOUT sync's read. One .in() with every id of
+  // a synced library (hundreds of ids) makes a request URL long enough for
+  // the database gateway to refuse, and a refusal comes back as empty data:
+  // every pushed or generated video then fell back into "Needs metadata".
+  for (let i = 0; i < videoIds.length; i += 200) {
+    const ids = videoIds.slice(i, i + 200)
     try {
       // Two Co-Pilot signals decide the "Metadata sent" bucket:
       //   pushes     = metadata APPLIED to YouTube via MVP (mig 109)
@@ -649,12 +654,12 @@ async function enrichWithPushState(
           .from('youtube_copilot_pushes')
           .select('youtube_video_id,pushed_at')
           .eq('user_id', userId)
-          .in('youtube_video_id', videoIds),
+          .in('youtube_video_id', ids),
         (supabase as any)
           .from('youtube_copilot_generated')
           .select('youtube_video_id,generated_at')
           .eq('user_id', userId)
-          .in('youtube_video_id', videoIds),
+          .in('youtube_video_id', ids),
       ])
       for (const row of (Array.isArray(pushesRes.data) ? pushesRes.data : [])) {
         if (row.youtube_video_id && row.pushed_at) appliedMap[row.youtube_video_id as string] = row.pushed_at as string
@@ -667,7 +672,7 @@ async function enrichWithPushState(
         .from('youtube_videos')
         .select('youtube_video_id,product_url')
         .eq('user_id', userId)
-        .in('youtube_video_id', videoIds)
+        .in('youtube_video_id', ids)
         .not('product_title', 'is', null)
       for (const row of (Array.isArray(setRows) ? setRows : [])) {
         const m = String(row.product_url || '').match(/\/dp\/([A-Z0-9]{10})\b/i)

@@ -139,8 +139,11 @@ export async function POST(request: Request) {
 
     // full_scan=true (SCOUT returns the whole library). cached_at=now so the
     // drafts GET treats it as fresh and serves it outright — 0 Data API units.
+    // A REFUSED WRITE IS NOT A SYNC. The error was never read, so a failed
+    // write answered ok, and the page then skipped YouTube's own refresh
+    // believing the saved list had just been brought up to date.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    const { error: writeErr } = await (supabase as any)
       .from('youtube_video_cache')
       .upsert(
         {
@@ -153,6 +156,7 @@ export async function POST(request: Request) {
         },
         { onConflict: 'user_id' },
       )
+    if (writeErr) return NextResponse.json({ error: `The video list from Studio could not be saved: ${writeErr.message}` }, { status: 500 })
     // Clear any stale continuation cursor (SCOUT gave us everything, so "Load
     // more" should be hidden). Separate update so a pre-migration DB without the
     // column can't break the primary write above.

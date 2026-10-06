@@ -94,7 +94,7 @@ async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Pro
       delay = Math.min(delay * 1.5, 15000)
     }
   }
-  throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
+  throw new Error('Claude AI is temporarily unavailable. Please try again in a moment.')
 }
 
 // ── Thumbnail copy framework (2026-06-08) ──────────────────────────────────
@@ -1736,7 +1736,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         ok: false,
         needsFaceModel: true,
         error: 'Set up your Face Model first',
-        message: 'MVP only puts YOUR face on a thumbnail once you’ve added a Face Model — it will never use anyone else’s face or guess from the video. Add your face under Set up → Face Models, pick a saved face, or choose “Product only” for a thumbnail with no person.',
+        message: 'MVP only puts YOUR face on a thumbnail once you’ve added a Face Model. It will never use anyone else’s face or guess from the video. Add your face under Set up → Face Models, pick a saved face, or choose “Product only” for a thumbnail with no person.',
       }, { status: 409 })
     }
 
@@ -2135,7 +2135,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         ok: false,
         needsExtension: true,
         error: 'No identity source available',
-        message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
+        message: "This video is private, so MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
     if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
