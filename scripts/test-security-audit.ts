@@ -157,6 +157,15 @@ for (const rel of ['lib/ig-dm.ts', 'lib/instagram-publish.ts']) {
   check('with a daily cap per account and every change signed', /DAILY_ROWS_PER_ACCOUNT = 3000/.test(L) && /last_live_by: user\.id, last_live_at: stamp/.test(L), 'see the Creator Connections access block in this guard')
 }
 
+// ── YouTube upload permission only on demand, 2026-10-07 (Seb) ──────────────
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  check('a plain YouTube connect asks only for the verified scope; upload is asked for on demand',
+    /const addUploadScope = !verifiedOnly && uploadEligible && wantUpload\n/.test(rf('app/api/auth/youtube/route.ts', 'utf8'))
+    && /intent=upload&returnTo=\$\{encodeURIComponent\('\/launchpad'\)\}/.test(rf('app/(dashboard)/launchpad/page.tsx', 'utf8')),
+    'asking every member for the unverified upload scope shows Google\'s unverified-app warning and spends the 100-user cap')
+}
+
 if (failures.length) {
   console.error(`test-security-audit: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`  x ${f}\n`)

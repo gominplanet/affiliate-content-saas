@@ -599,8 +599,11 @@ export default function LaunchpadPage() {
         setPublishError(m); toast.error(m, { duration: 10000 }); return
       }
       if (j.reconnectRequired) {
-        const m = 'Reconnect YouTube under Set Up to grant upload permission, then try again. Your video is safe and Amazon does not need this step.'
-        setPublishError(m); toast.error(m, { duration: 10000 }); return
+        // A plain reconnect no longer asks for upload, so this asks for exactly
+        // that, then brings the creator back here.
+        toast('One-time step: allow YouTube uploads, then press Publish again.')
+        window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent('/launchpad')}`
+        return
       }
       if (!r.ok || !j.videoId || !j.url) {
         const detail = j.error || (raw ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) : '') || `HTTP ${r.status}`
