@@ -43,7 +43,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -725,6 +725,10 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
+        // Group Post Queue: Sponsored Products and Amazon videos to the Facebook
+        // Page in a batch, then each Page post filled into the Groups by SCOUT.
+        // Admin only while it is tested (lib/labs-preview group_queue).
+        { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: isAdmin, badge: 'New' },
         // Amazon Live prep, Brand recap, Ended deals and Pinned Comments
         // graduated out of Labs 2026-09 (Amazon Influencer, Collaborate, Create).
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network

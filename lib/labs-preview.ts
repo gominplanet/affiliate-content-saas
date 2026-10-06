@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'group_queue'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -53,6 +53,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Plan this video: a joined Creator Connections campaign turned into a video
   // plan. Admin only while it is tested (Seb, 2026-10-01: "behind labs first").
   video_plan: 'admin',
+  // Group Post Queue: Sponsored Products and Amazon videos posted to the
+  // Facebook Page, then the Page post filled into each Group by SCOUT. Admin
+  // only while it is tested (Seb, 2026-10-06: "build 1 and 3 in labs").
+  group_queue: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {
