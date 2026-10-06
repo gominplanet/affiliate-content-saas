@@ -544,6 +544,28 @@ export class YouTubeOAuthService {
     }
   }
 
+  /** getVideoStatus for many videos: ONE QUOTA UNIT PER 50, not one each.
+   *  A video this login cannot see is absent from the map. Throws, like
+   *  getVideoStatus, when YouTube did not answer (quota, timeout). */
+  async getVideoStatuses(videoIds: string[]): Promise<Map<string, { channelId: string | null; privacy: string; publishAt: string | null }>> {
+    const out = new Map<string, { channelId: string | null; privacy: string; publishAt: string | null }>()
+    const uniq = [...new Set((videoIds || []).filter(Boolean))]
+    for (let i = 0; i < uniq.length; i += 50) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'snippet,status', id: uniq.slice(i, i + 50).join(',') })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const v of (data?.items ?? []) as any[]) {
+        if (!v?.id) continue
+        out.set(String(v.id), {
+          channelId: (v.snippet?.channelId as string | undefined) ?? null,
+          privacy: String(v.status?.privacyStatus || ''),
+          publishAt: (v.status?.publishAt as string | undefined) ?? null,
+        })
+      }
+    }
+    return out
+  }
+
   /** The channel this login actually uploads to, as YouTube itself says.
    *  One quota unit. Null when the login has no channel. */
   async getMyChannel(): Promise<{ id: string; title: string; thumbnail: string | null } | null> {

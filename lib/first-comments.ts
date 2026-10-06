@@ -14,6 +14,7 @@
 
 import { getChannelOAuthToken, listYouTubeChannels } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
+import { isQuotaError } from '@/lib/youtube-quota'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -29,11 +30,13 @@ export const FIRST_COMMENT_MAX_WAIT_DAYS = 60
  * every six hours. Pure, so the rule is tested.
  */
 export function firstCommentDue(r: { publish_at: string | null; last_checked_at: string | null }, now = Date.now()): boolean {
+  // A KNOWN TIME STILL AHEAD IS NEVER ASKED ABOUT, not even a first time:
+  // YouTube cannot answer "public" before it, so the unit would buy nothing.
+  if (r.publish_at && Date.parse(r.publish_at) > now) return false
   if (!r.last_checked_at) return true
   const last = Date.parse(r.last_checked_at)
   if (r.publish_at) {
     const pub = Date.parse(r.publish_at)
-    if (pub > now) return false
     // Public within minutes of its time, usually: check each run for a day, then every six hours.
     return now - pub < 86_400_000 ? true : now - last > 6 * 3_600_000
   }
@@ -49,6 +52,33 @@ export interface FirstCommentRow {
   state: string
   comment_id: string | null
   created_at: string
+}
+
+/** A video's status as one login sees it; null when that login cannot see it. */
+export type VideoStatus = Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>>
+
+/** What the cron's batched check already said about a row's video: its
+ *  status (null when absent from YouTube's answer), or the error the whole
+ *  batch got, which is no answer at all. */
+export type PrefetchedStatus = { status: VideoStatus } | { error: unknown }
+
+/**
+ * The due rows asked about together: ONE videos.list CALL PER LOGIN PER 50
+ * VIDEOS (1 unit), where asking one by one cost a unit per video per run.
+ * A login is the account and the channel its token is for. Batches come in
+ * the order their first row came, so the longest waiting still go first.
+ * Pure, so the rule is tested.
+ */
+export function statusBatches<T extends { user_id: string; channel_id: string | null }>(rows: T[], max = 50): T[][] {
+  const open = new Map<string, T[]>()
+  const out: T[][] = []
+  for (const r of rows) {
+    const k = `${r.user_id}|${r.channel_id ?? ''}`
+    let b = open.get(k)
+    if (!b || b.length >= max) { b = []; open.set(k, b); out.push(b) }
+    b.push(r)
+  }
+  return out
 }
 
 export type FirstCommentOutcome =
@@ -76,25 +106,40 @@ async function holdsMadeContent(sb: Sb, videoRowId: string): Promise<boolean> {
 
 /**
  * Ask YouTube whether the video is public; post the comment if it is.
- * Every outcome is written to the row before it is returned.
+ * Every outcome is written to the row before it is returned. `pre` is the
+ * cron's batched answer for this video; without it the status is asked here.
  */
-export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): Promise<FirstCommentOutcome> {
+export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow, pre?: PrefetchedStatus): Promise<FirstCommentOutcome> {
   let row = rowIn
   const at = new Date().toISOString()
   const fail = async (error: string): Promise<FirstCommentOutcome> => {
     await sb.from('video_first_comments').update({ state: 'failed', last_error: error, last_checked_at: at, updated_at: at }).eq('id', row.id)
     return { state: 'failed', error }
   }
+  // COULD NOT ASK IS NOT A VERDICT: wait for the next run, and say when it
+  // was the shared daily limit (lib/youtube-quota isQuotaError).
+  const noAnswer = async (e?: unknown): Promise<FirstCommentOutcome> => {
+    const quota = isQuotaError(e)
+    await sb.from('video_first_comments').update({
+      last_checked_at: at,
+      ...(quota ? { last_error: "YouTube's daily limit for MVP was used up. It will try again." } : {}),
+    }).eq('id', row.id)
+    return { state: 'waiting', publishAt: null, reason: quota ? 'quota' : 'no_answer' }
+  }
   if (row.state === 'posted' && row.comment_id) return { state: 'posted', commentId: row.comment_id }
   const token = await getChannelOAuthToken(sb, row.user_id, row.channel_id)
   if (!token) return fail('The channel this video is on is not connected for publishing. Connect it under Settings.')
   let yt = new YouTubeOAuthService(token)
-  let status: Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>> = null
+  let status: VideoStatus = null
   let unsure = false
-  try { status = await yt.getVideoStatus(row.youtube_video_id) } catch {
-    // YouTube did not answer: not a verdict. Try again on the next run.
-    await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
-    return { state: 'waiting', publishAt: null, reason: 'no_answer' }
+  // A BATCH THAT THREW answered for none of its videos: each one waits.
+  if (pre && 'error' in pre) return noAnswer(pre.error)
+  if (pre) status = pre.status
+  else {
+    try { status = await yt.getVideoStatus(row.youtube_video_id) } catch (e) {
+      // YouTube did not answer: not a verdict. Try again on the next run.
+      return noAnswer(e)
+    }
   }
   // NOT SEEN BY ONE LOGIN IS NOT GONE. A private or scheduled video is only
   // visible to the channel it is on, and when MVP did not know that channel it
@@ -112,10 +157,7 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
       if (seen) { yt = other; status = seen; row = { ...row, channel_id: c.channelId }; break }
     }
   }
-  if (!status && unsure) {
-    await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
-    return { state: 'waiting', publishAt: null, reason: 'no_answer' }
-  }
+  if (!status && unsure) return noAnswer()
   if (!status) {
     // DELETED FROM YOUTUBE IS FORGOTTEN BY MVP. Only when it is certain: the
     // channel the video belongs to is connected, and even its own login cannot
@@ -134,10 +176,9 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
         const tok = await getChannelOAuthToken(sb, row.user_id, owner)
         const mine = tok ? await new YouTubeOAuthService(tok).getMyChannel() : null
         ownerConfirmed = !!mine && mine.id === owner
-      } catch {
+      } catch (e) {
         // Could not ask (quota, timeout): wait, rather than fail or forget.
-        await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
-        return { state: 'waiting', publishAt: null, reason: 'no_answer' }
+        return noAnswer(e)
       }
     }
     if (connected && ownerConfirmed) {
@@ -154,6 +195,8 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
     }
     await sb.from('video_first_comments').update({
       last_checked_at: at, publish_at: status.publishAt, channel_id: status.channelId ?? row.channel_id,
+      // ANSWERED, so an earlier "could not ask" note no longer says what happened.
+      last_error: null,
     }).eq('id', row.id)
     return { state: 'waiting', publishAt: status.publishAt, reason: 'not_public' }
   }
@@ -162,12 +205,7 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
   try { me = await yt.getMyChannel() } catch (e) {
     // Could not ask is not "the wrong channel": that sentence failed comments
     // for good on a used-up quota. Try again on the next run.
-    const why = e instanceof Error ? e.message : String(e)
-    await sb.from('video_first_comments').update({
-      last_checked_at: at,
-      ...(/quota/i.test(why) ? { last_error: "YouTube's daily limit for MVP was used up. It will try again." } : {}),
-    }).eq('id', row.id)
-    return { state: 'waiting', publishAt: null, reason: /quota/i.test(why) ? 'quota' : 'no_answer' }
+    return noAnswer(e)
   }
   if (!me || (status.channelId && me.id !== status.channelId)) {
     return fail('The saved login is not the channel this video is on, so the comment would come from the wrong channel. Nothing was posted. Reconnect that channel under Settings.')
@@ -194,7 +232,7 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow): 
     return { state: 'posted', commentId: id }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (/quota/i.test(msg)) {
+    if (isQuotaError(e)) {
       // A used-up daily limit is not the comment's fault: wait for tomorrow.
       await sb.from('video_first_comments').update({ state: 'waiting', last_checked_at: at, last_error: "YouTube's daily limit for MVP was used up. It will try again." }).eq('id', row.id)
       return { state: 'waiting', publishAt: null, reason: 'quota' }

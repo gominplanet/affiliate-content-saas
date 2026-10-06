@@ -169,7 +169,7 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
   const cron = read('app/api/cron/first-comments/route.ts')
   check('the cron applies it before posting',
     /if \(!apiCommentAllowed\(row\.publish_at, byAccount, dayOverReserve\)\) \{ heldBack\+\+; continue \}/.test(cron)
-    && cron.indexOf('apiCommentAllowed(row.publish_at') < cron.indexOf('await postFirstCommentIfPublic(sb, row)')
+    && cron.indexOf('apiCommentAllowed(row.publish_at') < cron.indexOf('await postFirstCommentIfPublic(sb, row')
     && /const dayOverReserve = !!q && q\.spent >= q\.reserveAt/.test(cron))
   check('and gives SCOUT its day on older videos', /leaveCommentToScout\(scoutUsers\.has\(r\.user_id\), r\.publish_at, now, r\.created_at\)/.test(cron))
   check('SCOUT is handed older videos as well as new uploads',
