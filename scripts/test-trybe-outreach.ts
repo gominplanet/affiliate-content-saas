@@ -243,12 +243,16 @@ check('SCOUT lets MVP mark a TRYBE conversation read', /\(messages\|read\)\$\//.
 
 {
   // Your own messages are yours by any of your TRYBE ids, not just the first.
-  const src = INBOX.slice(INBOX.indexOf('function myIds('), INBOX.indexOf('/** What TRYBE sent, when nothing'))
+  const src = INBOX.slice(INBOX.indexOf('function myIds('), INBOX.indexOf('/** First and last name, lower case'))
   const js = src.replace(/\(json: unknown\): string\[\]/, '(json)').replace(/\(v: unknown, depth: number\)/, '(v, depth)').replace(/new Set<string>\(\)/, 'new Set()').replace(/\(x =>/g, '(x =>')
   const isObjJs = 'const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);'
   const ids = new Function(`${isObjJs} ${js}; return myIds(arguments[0])`)({ data: { id: 'prof-1234', userId: 'user-5678', creator: { user_id: 'user-5678' }, plan: 'pro' } }) as string[]
   check('every id in your TRYBE profile counts as you', ids.includes('prof-1234') && ids.includes('user-5678') && !ids.includes('pro') && /whoIds\.some\(w => me\.includes\(w\)\)/.test(INBOX))
 }
+
+check('a message is yours by your whole name when no id matches, never by first name alone', /const byName = !!myName && !!senderFull && senderFull === myName/.test(INBOX) && /first && last \? `\$\{first\} \$\{last\}`/.test(INBOX))
+
+check('a reply sent from MVP teaches who you are, and the list shows it after', /const learned = after\.filter\(m => flat\(m\.text\) === flat\(text\)\)\.flatMap\(m => m\.whoIds\)/.test(INBOX) && /\/\/ The list shows the new latest message\.\s*void loadList\(\)/.test(INBOX))
 
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }

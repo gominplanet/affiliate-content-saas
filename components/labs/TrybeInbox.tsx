@@ -52,7 +52,7 @@ function listOf(json: unknown): unknown[] {
 }
 
 interface Conversation { id: string; name: string; last: string; at: number; unread: number; raw: Obj }
-interface Message { id: string; text: string; who: string; whoId: string; at: number; mine: boolean | null }
+interface Message { id: string; text: string; who: string; whoId: string; whoIds: string[]; at: number; mine: boolean | null }
 
 function readConversation(raw: unknown): Conversation | null {
   if (!isObj(raw)) return null
@@ -66,7 +66,7 @@ function readConversation(raw: unknown): Conversation | null {
   return { id, name, last, at: Date.parse(str(atRaw)) || 0, unread, raw }
 }
 
-function readMessage(raw: unknown, me: string[]): Message | null {
+function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
   if (!isObj(raw)) return null
   const id = str(raw.id ?? raw.messageId ?? raw._id)
   const text = str(pick(raw, ['content', 'text', 'body', 'message']))
@@ -81,9 +81,16 @@ function readMessage(raw: unknown, me: string[]): Message | null {
     raw.senderId, raw.sender_id, raw.userId, raw.user_id, raw.authorId, raw.author_id, raw.fromId, raw.from_id, raw.createdById, raw.created_by,
     typeof raw.createdBy === 'string' ? raw.createdBy : '', typeof raw.from === 'string' ? raw.from : '', typeof raw.user === 'string' ? raw.user : '', typeof raw.sender === 'string' ? raw.sender : ''].map(str).filter(Boolean)
   const mineFlag = raw.isMine ?? raw.is_mine ?? raw.isOwn ?? raw.is_own ?? raw.fromMe ?? raw.from_me
-  const mine = typeof mineFlag === 'boolean' ? mineFlag : (me.length && whoIds.length ? whoIds.some(w => me.includes(w)) : null)
+  // YOUR FULL NAME, when no id matches (Seb, 2026-10-07: his own message
+  // still showed on the brand's side, though TRYBE's profile id was read).
+  // TRYBE shows the sender's first and last name; only the whole name counts,
+  // so another Sebastien in a group chat is not taken for you.
+  const senderFull = sender ? fullName(sender) : ''
+  const byId = me.length && whoIds.length ? whoIds.some(w => me.includes(w)) : false
+  const byName = !!myName && !!senderFull && senderFull === myName
+  const mine = typeof mineFlag === 'boolean' ? mineFlag : (byId || byName) ? true : (me.length || myName ? false : null)
   const at = Date.parse(str(pick(raw, ['createdAt', 'created_at', 'sentAt', 'sent_at', 'timestamp']))) || 0
-  return { id: id || `${at}-${text.slice(0, 12)}`, text, who: who || (mine ? 'You' : 'Brand'), whoId, at, mine }
+  return { id: id || `${at}-${text.slice(0, 12)}`, text, who: who || (mine ? 'You' : 'Brand'), whoId, whoIds, at, mine }
 }
 
 /** EVERY ID THAT COULD BE YOU (Seb, 2026-10-07: his own message showed on
@@ -105,11 +112,26 @@ function myIds(json: unknown): string[] {
   return Array.from(out)
 }
 
+/** First and last name, lower case, or a whole-name field: '' when only part
+ *  of a name is there. */
+function fullName(o: Obj): string {
+  const first = str(o.firstName ?? o.first_name).trim(), last = str(o.lastName ?? o.last_name).trim()
+  const whole = first && last ? `${first} ${last}` : str(o.fullName ?? o.full_name).trim()
+  return whole.replace(/\s+/g, ' ').toLowerCase()
+}
+
 /** What TRYBE sent, when nothing could be read from it, for the screen. */
 function shapeOf(json: unknown): string {
   const top = isObj(json) ? Object.keys(json).slice(0, 12).join(', ') : Array.isArray(json) ? 'a list' : typeof json
   const first = listOf(json)[0]
   return `${top}${isObj(first) ? `; first item: ${Object.keys(first).slice(0, 16).join(', ')}` : ''}`
+}
+
+/** Sender ids learned from replies sent here, kept in this browser so your
+ *  messages line up from the first look next time. Best-effort storage. */
+const ME_KEY = 'mvp-trybe-me-ids'
+function savedMe(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(ME_KEY) || '[]'); return Array.isArray(v) ? v.map(String).slice(0, 20) : [] } catch { return [] }
 }
 
 const SAY: Record<string, string> = {
@@ -133,7 +155,8 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [sendNote, setSendNote] = useState<{ tone: 'ok' | 'bad' | 'warn'; text: string } | null>(null)
-  const [me, setMe] = useState<string[]>([])
+  const [me, setMe] = useState<string[]>(() => (typeof window === 'undefined' ? [] : savedMe()))
+  const [myName, setMyName] = useState('')
   const threadRef = useRef<HTMLDivElement | null>(null)
   const [readNote, setReadNote] = useState<string | null>(null)
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
@@ -142,10 +165,12 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
     setLoadingList(true); setListNote(null)
     try {
       // Who "you" are on TRYBE, to tell your messages from the brand's.
-      if (!me.length) {
+      if (!myName) {
         const p = await requestTrybeApi('GET', '/backend/api/profile')
         const ids = p.ok ? myIds(p.json) : []
-        if (ids.length) setMe(ids)
+        if (ids.length) setMe(prev => Array.from(new Set([...prev, ...ids])))
+        const po = isObj(p.json) && isObj(p.json.data) ? p.json.data : isObj(p.json) ? p.json : null
+        if (po) setMyName(fullName(po as Obj))
       }
       const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
       if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }
@@ -161,12 +186,12 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
     try {
       const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(id)}/messages?page=1&limit=50`)
       if (!r.ok) { setMsgNote(errWords(r)); if (!quiet) setMsgs([]); return [] as Message[] }
-      const list = listOf(r.json).map(m => readMessage(m, me)).filter((m): m is Message => !!m).sort((a, b) => a.at - b.at)
+      const list = listOf(r.json).map(m => readMessage(m, me, myName)).filter((m): m is Message => !!m).sort((a, b) => a.at - b.at)
       setMsgs(list)
       if (!list.length && listOf(r.json).length) setMsgNote(`MVP could not read these messages. TRYBE sent: ${shapeOf(r.json)}.`)
       return list
     } finally { if (!quiet) setLoadingMsgs(false) }
-  }, [me])
+  }, [me, myName])
 
   useEffect(() => { if (ready && convos === null) void loadList() }, [ready, convos, loadList])
   // THE THREAD SCROLLS, NOT THE PAGE (Seb, 2026-10-07: "the window always
@@ -212,7 +237,20 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
       // of spaces differently, and that is still the same reply.
       const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
       const seen = after.some(m => flat(m.text) === flat(text))
-      if (seen) { setReply(''); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' }) }
+      if (seen) {
+        setReply(''); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' })
+        // A REPLY SENT HERE IS YOURS FOR CERTAIN: whatever id TRYBE gave its
+        // sender is you, so every message from that id lines up as yours.
+        const learned = after.filter(m => flat(m.text) === flat(text)).flatMap(m => m.whoIds)
+        if (learned.length) {
+          const next = Array.from(new Set([...me, ...learned]))
+          setMe(next)
+          try { localStorage.setItem(ME_KEY, JSON.stringify(next.slice(0, 20))) } catch { /* this browser only */ }
+          setMsgs(ms => (ms || []).map(m => m.whoIds.some(w => next.includes(w)) ? { ...m, mine: true } : m))
+        }
+        // The list shows the new latest message.
+        void loadList()
+      }
       else setSendNote({ tone: 'warn', text: 'TRYBE accepted the reply but it does not show in the conversation yet. Check it on TRYBE before sending it again.' })
     } finally { setSending(false) }
   }
