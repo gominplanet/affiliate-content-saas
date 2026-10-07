@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, ArrowRight, RefreshCw, X } from 'lucide-react'
-import { getScoutInstallKind, setLiftoffAuto } from '@/lib/extension-frame'
+import { AlertTriangle, ArrowRight, Handshake, RefreshCw, X } from 'lucide-react'
+import { getScoutInstallKind, setLiftoffAuto, requestTrybeAccess } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL, SCOUT_COMMENT_POST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { usesStudioUpload } from '@/lib/studio-upload'
 
@@ -37,6 +37,8 @@ type Phase =
   | { kind: 'old'; version: string | null; sideload: boolean }
   | { kind: 'bg-off' }
   | { kind: 'bg-failed'; why: string }
+  /** Working, but not yet allowed on TRYBE (an optional permission). */
+  | { kind: 'trybe' }
 
 const HIDE_KEY = 'mvp_scout_required_hidden'
 const ARMED_KEY = 'mvp_scout_armed_at'
@@ -118,8 +120,14 @@ export default function ScoutRequired({ tier }: { tier: string }) {
         return
       }
       reportSeen(found.kind, found.version, true)
-      setPhase({ kind: 'ok' })
       void armForDueComments()
+      // TRYBE, ASKED ONCE OF EVERY SCOUT USER (Seb, 2026-10-07: "every scout
+      // user to approve TRYBE"). Kept an optional permission: made required,
+      // Chrome would switch SCOUT off for every current user until they
+      // accepted it. So it is one click here instead. A SCOUT too old to know
+      // TRYBE ('old') is not asked; Chrome updates it and it is asked then.
+      const t = await requestTrybeAccess(false).catch(() => null)
+      setPhase({ kind: t?.state === 'not-granted' ? 'trybe' : 'ok' })
     } finally {
       running.current = false
     }
@@ -139,13 +147,21 @@ export default function ScoutRequired({ tier }: { tier: string }) {
   if (phase.kind === 'checking' || phase.kind === 'ok' || phase.kind === 'phone') return null
 
   const urgent = phase.kind === 'missing' || phase.kind === 'bg-failed'
-  const accent = urgent ? '#ff3b30' : '#ff9500'
+  // Asking for TRYBE is an invitation, not a fault: purple, not orange or red.
+  const accent = urgent ? '#ff3b30' : phase.kind === 'trybe' ? '#7C3AED' : '#ff9500'
 
   function hide() { sessionSet(HIDE_KEY, '1'); setHidden(true) }
 
   async function turnOn() {
     setBusy(true)
     try { window.localStorage.setItem('mvp_liftoff_bg', 'on') } catch { /* this visit */ }
+    await check()
+    setBusy(false)
+  }
+
+  async function allowTrybe() {
+    setBusy(true)
+    try { await requestTrybeAccess(true) } catch { /* the check below says how it stands */ }
     await check()
     setBusy(false)
   }
@@ -181,6 +197,9 @@ export default function ScoutRequired({ tier }: { tier: string }) {
   } else if (phase.kind === 'bg-off') {
     text = <><b>SCOUT&rsquo;s background work is off in this Chrome.</b> Your bulk uploads and first comments only go out while Liftoff is open, and comments post up to three hours late.</>
     action = <button onClick={turnOn} disabled={busy} className={btn} style={{ background: accent }}>Turn it on <ArrowRight size={12} /></button>
+  } else if (phase.kind === 'trybe') {
+    text = <><b>One more step: allow SCOUT on TRYBE.</b> TRYBE is a free marketplace where brands pay creators for videos. With this allowed, MVP can find TRYBE brands that fit your niche and SCOUT can send your requests. One click, once; Chrome asks you to confirm.</>
+    action = <button onClick={allowTrybe} disabled={busy} className={btn} style={{ background: accent }}>Allow SCOUT on TRYBE <ArrowRight size={12} /></button>
   } else {
     text = <><b>SCOUT is installed but is not working in the background</b> ({phase.why}). Reload this page. If this keeps showing, remove SCOUT and add it again from the Chrome Web Store.</>
     action = <><button onClick={again} disabled={busy} className={quiet} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><RefreshCw size={12} className={busy ? 'animate-spin' : ''} /> Try again</button>{store('Chrome Web Store')}</>
@@ -192,7 +211,9 @@ export default function ScoutRequired({ tier }: { tier: string }) {
       className="flex flex-wrap items-center gap-2.5 border-b px-6 py-2 text-[12px]"
       style={{ borderColor: 'var(--border)', backgroundColor: `${accent}14` }}
     >
-      <AlertTriangle size={14} style={{ color: accent }} className="flex-shrink-0" />
+      {phase.kind === 'trybe'
+        ? <Handshake size={14} style={{ color: accent }} className="flex-shrink-0" />
+        : <AlertTriangle size={14} style={{ color: accent }} className="flex-shrink-0" />}
       <span className="flex-1 min-w-[16rem]" style={{ color: 'var(--text)' }}>{text}</span>
       <span className="ml-auto flex items-center gap-2">{action}</span>
       <button onClick={hide} aria-label="Hide until your next visit" title="Hide until your next visit" className="flex-shrink-0" style={{ color: 'var(--text-faint)' }}>

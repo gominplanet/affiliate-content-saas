@@ -31,6 +31,9 @@ check('what was found is recorded', /\/api\/scout\/seen/.test(BANNER) && /scout_
 check('a report is marked sent only once the server saved it', /if \(r\.ok\) \{ sessionSet\(SEEN_KEY/.test(BANNER) && BANNER.indexOf('sessionSet(SEEN_KEY') > BANNER.indexOf("fetch('/api/scout/seen'"))
 check('the record is the server\'s to write', /createAdminClient\(\)/.test(ROUTE) && /\.eq\('user_id', user\.id\)/.test(ROUTE))
 check('migration 414 is safe to run twice', /add column if not exists scout_version/.test(MIG) && /add column if not exists scout_seen_at/.test(MIG))
+check('every SCOUT user is asked once to allow TRYBE, and nobody\'s SCOUT is switched off for it',
+  /setPhase\(\{ kind: t\?\.state === 'not-granted' \? 'trybe' : 'ok' \}\)/.test(BANNER) && /requestTrybeAccess\(true\)/.test(BANNER)
+  && !/jointrybe/.test(JSON.stringify(JSON.parse(readFileSync('extension/manifest.json', 'utf8')).host_permissions || [])))
 check('no dashes in what the member reads', !/[–—]| - /.test((BANNER.match(/<b>[^]*?<\/>/g) || []).join(' ')))
 
 if (failures.length) {
