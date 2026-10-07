@@ -66,7 +66,7 @@ function readConversation(raw: unknown): Conversation | null {
   return { id, name, last, at: Date.parse(str(atRaw)) || 0, unread, raw }
 }
 
-function readMessage(raw: unknown, me: string | null): Message | null {
+function readMessage(raw: unknown, me: string[]): Message | null {
   if (!isObj(raw)) return null
   const id = str(raw.id ?? raw.messageId ?? raw._id)
   const text = str(pick(raw, ['content', 'text', 'body', 'message']))
@@ -74,10 +74,31 @@ function readMessage(raw: unknown, me: string | null): Message | null {
   const sender = (isObj(raw.sender) ? raw.sender : isObj(raw.user) ? raw.user : isObj(raw.author) ? raw.author : null) as Obj | null
   const who = str(sender ? pick(sender, ['name', 'fullName', 'full_name', 'displayName', 'firstName']) : pick(raw, ['senderName', 'sender_name', 'userName']))
   const whoId = str(sender ? pick(sender, ['id', 'userId', 'user_id']) : pick(raw, ['senderId', 'sender_id', 'userId', 'user_id']))
+  // The sender may be named by more than one id: any of them that is yours counts.
+  const whoIds = [whoId, ...(sender ? [sender.userId, sender.user_id, sender.creatorId, sender.profileId] : []), raw.senderId, raw.sender_id, raw.userId, raw.user_id].map(str).filter(Boolean)
   const mineFlag = raw.isMine ?? raw.is_mine ?? raw.isOwn ?? raw.is_own ?? raw.fromMe ?? raw.from_me
-  const mine = typeof mineFlag === 'boolean' ? mineFlag : (me && whoId ? whoId === me : null)
+  const mine = typeof mineFlag === 'boolean' ? mineFlag : (me.length && whoIds.length ? whoIds.some(w => me.includes(w)) : null)
   const at = Date.parse(str(pick(raw, ['createdAt', 'created_at', 'sentAt', 'sent_at', 'timestamp']))) || 0
   return { id: id || `${at}-${text.slice(0, 12)}`, text, who: who || (mine ? 'You' : 'Brand'), whoId, at, mine }
+}
+
+/** EVERY ID THAT COULD BE YOU (Seb, 2026-10-07: his own message showed on
+ *  the brand's side). TRYBE's profile can carry a profile id and a user id;
+ *  taking the first one found missed when messages name the other. Every id
+ *  under an id-like key, three levels deep, counts. */
+function myIds(json: unknown): string[] {
+  const out = new Set<string>()
+  const walk = (v: unknown, depth: number) => {
+    if (depth > 3) return
+    if (Array.isArray(v)) { v.slice(0, 5).forEach(x => walk(x, depth + 1)); return }
+    if (!isObj(v)) return
+    for (const [k, w] of Object.entries(v)) {
+      if (/^(id|_id|userId|user_id|creatorId|creator_id|profileId|profile_id|authId|auth_id|uid|sub)$/.test(k) && (typeof w === 'string' || typeof w === 'number') && String(w).length >= 4) out.add(String(w))
+      else if (isObj(w) || Array.isArray(w)) walk(w, depth + 1)
+    }
+  }
+  walk(json, 0)
+  return Array.from(out)
 }
 
 /** What TRYBE sent, when nothing could be read from it, for the screen. */
@@ -108,7 +129,7 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [sendNote, setSendNote] = useState<{ tone: 'ok' | 'bad' | 'warn'; text: string } | null>(null)
-  const [me, setMe] = useState<string | null>(null)
+  const [me, setMe] = useState<string[]>([])
   const threadRef = useRef<HTMLDivElement | null>(null)
   const [readNote, setReadNote] = useState<string | null>(null)
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
@@ -117,11 +138,10 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
     setLoadingList(true); setListNote(null)
     try {
       // Who "you" are on TRYBE, to tell your messages from the brand's.
-      if (!me) {
+      if (!me.length) {
         const p = await requestTrybeApi('GET', '/backend/api/profile')
-        const po = isObj(p.json) ? (isObj(p.json.data) ? p.json.data : p.json) : null
-        const id = po ? str(pick(po as Obj, ['id', 'userId', 'user_id'])) : ''
-        if (id) setMe(id)
+        const ids = p.ok ? myIds(p.json) : []
+        if (ids.length) setMe(ids)
       }
       const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
       if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }

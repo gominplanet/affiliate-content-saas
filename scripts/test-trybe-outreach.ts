@@ -241,6 +241,15 @@ check('opening an unread conversation tells TRYBE it was read, then reads the co
 check('the conversation scrolls inside itself, not the page', !/scrollIntoView/.test(INBOX.replace(/\/\/.*$/gm, '')) && /el\.scrollTop = el\.scrollHeight/.test(INBOX))
 check('SCOUT lets MVP mark a TRYBE conversation read', /\(messages\|read\)\$\//.test(BG))
 
+{
+  // Your own messages are yours by any of your TRYBE ids, not just the first.
+  const src = INBOX.slice(INBOX.indexOf('function myIds('), INBOX.indexOf('/** What TRYBE sent, when nothing'))
+  const js = src.replace(/\(json: unknown\): string\[\]/, '(json)').replace(/\(v: unknown, depth: number\)/, '(v, depth)').replace(/new Set<string>\(\)/, 'new Set()').replace(/\(x =>/g, '(x =>')
+  const isObjJs = 'const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);'
+  const ids = new Function(`${isObjJs} ${js}; return myIds(arguments[0])`)({ data: { id: 'prof-1234', userId: 'user-5678', creator: { user_id: 'user-5678' }, plan: 'pro' } }) as string[]
+  check('every id in your TRYBE profile counts as you', ids.includes('prof-1234') && ids.includes('user-5678') && !ids.includes('pro') && /whoIds\.some\(w => me\.includes\(w\)\)/.test(INBOX))
+}
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')
