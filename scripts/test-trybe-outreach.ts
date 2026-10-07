@@ -117,7 +117,7 @@ check('"Pending Requests" is not a requested button; already means TRYBE said so
 check('a collection that stopped partway is said, and only a whole one waits a day', /complete = !error && !!totalPages && pages >= totalPages/.test(BG) && /lastCollectedAt: c\.complete && c\.at \? c\.at : null/.test(ROUTE) && /collected: \{ complete: h\.complete === true/.test(UI))
 check('a fit or draft that was not saved is not reported as done', (ROUTE.match(/if \(upErr\)/g) || []).length >= 3)
 check('directory search runs in the database, with a capped fallback', /rpc\('trybe_directory_search'/.test(ROUTE) && /allRows<Record<string, any>>\(make, 2000\)/.test(ROUTE))
-check('what a brand already had is not blanked by an emptier entry', /website: b\.website \?\? p\.website \?\? null/.test(ROUTE))
+check('what a brand already had is not blanked by an emptier entry', /website: keep\(b\.website, p\.website\)/.test(ROUTE) && /\(fresh \?\? had \?\? null\) : \(had \?\? fresh \?\? null\)/.test(ROUTE))
 check('the shortlist reports what was really added', /added = \(ins \|\| \[\]\)\.length/.test(ROUTE))
 check('TRYBE category list in its {data} shape is kept', /if \(body\.categories != null\)/.test(ROUTE))
 check('the cap is counted again after a claim', /const after = await usedToday\(admin, ownerId\)/.test(ROUTE))
@@ -132,6 +132,10 @@ check('browse leaves nothing out, so a brand on the list shows where it stands',
 check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
 check('queued or sent brands cannot be picked again', /const TAKEN: Array<Brand\['status'\]> = \['drafted', 'sending', 'sent', 'already', 'failed'\]/.test(UI) && /disabled=\{taken\}/.test(UI))
 check('a picked brand is put on the list, then drafted', /action: 'adopt', brandIds: ids/.test(UI) && /const r = ready\.length \? await draftIds\(ready\)/.test(UI))
+
+// THE SHARED COPY IS GUARDED: a collection by anyone but an admin adds and
+// fills, never overwrites what is kept.
+check('a member\'s collection cannot overwrite a kept website, name or description', /const trusted = tier === 'admin'/.test(ROUTE) && /trusted \? \(fresh \?\? had \?\? null\) : \(had \?\? fresh \?\? null\)/.test(ROUTE))
 
 const collectorRun = (async () => {
   const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))

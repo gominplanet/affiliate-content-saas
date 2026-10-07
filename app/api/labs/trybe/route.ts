@@ -223,15 +223,22 @@ export async function POST(request: Request) {
     // saved before (another offer by the same brand, tomorrow's collection)
     // never blanks a website, description or categories already kept.
     const { data: had } = await admin.from('trybe_directory')
-      .select('brand_id, website, about, categories, pay_text, trybe_score, total_creators, rating')
+      .select('brand_id, name, website, about, categories, pay_text, trybe_score, total_creators, rating')
       .in('brand_id', list.map(b => b.brandId))
     const prev = new Map(((had || []) as Array<Record<string, any>>).map(r => [r.brand_id, r])) // eslint-disable-line @typescript-eslint/no-explicit-any
+    // SHARED, SO GUARDED: every member's SCOUT writes here, and what is kept
+    // is what every member's search and drafts read. A member's collection
+    // adds brands and fills what is missing; only an admin's collection may
+    // change a name, website or description already kept.
+    const trusted = tier === 'admin'
     const rows = list.map(b => {
       const p = prev.get(b.brandId) || {}
+      const keep = (fresh: string | null, had: string | null | undefined) => (trusted ? (fresh ?? had ?? null) : (had ?? fresh ?? null))
       const merged = {
-        name: b.name, website: b.website ?? p.website ?? null,
+        name: trusted || !p.name ? b.name : p.name,
+        website: keep(b.website, p.website),
         categories: b.categories.length ? b.categories : (p.categories || []),
-        about: b.about ?? p.about ?? null,
+        about: keep(b.about, p.about),
       }
       return {
         brand_id: b.brandId, ...merged,
