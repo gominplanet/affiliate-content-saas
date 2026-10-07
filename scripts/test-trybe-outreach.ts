@@ -274,6 +274,10 @@ check('Send now and Send all share one runner and the daily cap', /async functio
 
 check('brands already messaged leave the live list, and how many is said', /const DONE = \['drafted', 'sending', 'sent', 'already', 'failed', 'removed'\]/.test(ROUTE) && /hiddenMine/.test(ROUTE) && /includeMine: showMine/.test(UI) && /already messaged, wrote to or removed/.test(UI))
 
+check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandId=\{b\.brand_id\} \/>/g) || []).length === 3 && /href=\{sendUrl\(brandId, null\)\}/.test(UI) && sendUrl('abc123', null) === 'https://jointrybe.com/creator/discover?brand=abc123')
+
+check('a brand conversation links to the brand on TRYBE', /brandLink=\{name => \{ const b = brands\.find\(x => convoFor\(x\.name/.test(UI) && /Brand page on TRYBE/.test(INBOX))
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')

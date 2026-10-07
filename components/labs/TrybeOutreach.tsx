@@ -24,7 +24,7 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
-import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, sendUrl, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
@@ -147,6 +147,18 @@ function nicheIcon(name: string): LucideIcon {
     [/faith|bible|christian|church/, Church], [/craft|hobby|art/, Palette], [/clean/, SprayCan], [/sleep/, Moon], [/eco|garden|plant|natural/, Leaf],
   ]
   return rules.find(([re]) => re.test(n))?.[1] || Tag
+}
+
+/** The brand's own page on TRYBE (Seb, 2026-10-07: "a hyperlink near a
+ *  brand's name to send us to their page on trybe so we could request
+ *  samples"). The same link SCOUT opens to send: it opens the brand's popup. */
+function TrybeLink({ brandId }: { brandId: string }) {
+  return (
+    <a href={sendUrl(brandId, null)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+      className="text-[12px] font-semibold inline-flex items-center gap-0.5" style={{ color: PURPLE }} title="Open this brand on TRYBE">
+      <Handshake size={11} /> On TRYBE <ExternalLink size={10} />
+    </a>
+  )
 }
 
 /** A brand's own website icon, else its first letter. */
@@ -932,6 +944,7 @@ export default function TrybeOutreach() {
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[15px] font-semibold">{b.name}</span>
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
+                        <TrybeLink brandId={b.brand_id} />
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1099,7 +1112,8 @@ export default function TrybeOutreach() {
         </div>
       )}
 
-      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onConvos={onInboxConvos} />}
+      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onConvos={onInboxConvos}
+        brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? sendUrl(b.brand_id, null) : null }} />}
 
       {tab === 'sent' && (
         <div className={card} style={cardStyle}>
@@ -1133,6 +1147,7 @@ export default function TrybeOutreach() {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
                     <span className="text-[14px] font-semibold">{b.name}</span>
+                    <TrybeLink brandId={b.brand_id} />
                     {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied</span>}
                     {reply === 'waiting' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
                     {reply === 'open' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Conversation open</span>}
@@ -1197,6 +1212,7 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
             <span className="text-[14px] font-semibold">{b.name}</span>
             {b.worked_with && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+            <TrybeLink brandId={b.brand_id} />
             {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
             {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
           </div>
