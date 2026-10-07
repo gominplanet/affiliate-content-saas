@@ -14125,11 +14125,22 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
   const last = first + Math.max(1, Math.min(20, Number(count) || 10)) - 1
   // The sign-in TRYBE's own requests carry, from where its sign-in library
   // keeps it (local storage, or cookies, possibly split in parts).
+  let tokenFrom = null
+  // TRYBE keeps it as "base64-" plus URL-safe base64 (- and _, no padding),
+  // which atob alone refuses: 1.41.3 failed there and went in signed out.
+  const unb64 = (x) => {
+    let t = String(x).replace(/-/g, '+').replace(/_/g, '/')
+    while (t.length % 4) t += '='
+    const bin = atob(t)
+    try { return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))) } catch (e) { return bin }
+  }
   const readToken = () => {
+  // 1. What TRYBE's own page sent (trybe-hook.js, loaded before TRYBE's code).
+  try { const h = window.__mvpTrybeAuth; if (h && h.token) { tokenFrom = 'page'; return h.token } } catch (e) {}
   const fromValue = (v) => {
     try {
       let s = String(v || '')
-      if (s.startsWith('base64-')) s = atob(s.slice(7))
+      if (s.startsWith('base64-')) s = unb64(s.slice(7))
       const o = JSON.parse(s)
       return (o && (o.access_token || (o.currentSession && o.currentSession.access_token))) || (Array.isArray(o) && typeof o[0] === 'string' ? o[0] : null)
     } catch (e) { return null }
@@ -14137,7 +14148,7 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
-      if (/^sb-.+-auth-token$/.test(k || '')) { const t = fromValue(localStorage.getItem(k)); if (t) return t }
+      if (/^sb-.+-auth-token$/.test(k || '')) { const t = fromValue(localStorage.getItem(k)); if (t) { tokenFrom = 'storage'; return t } }
     }
   } catch (e) {}
   const parts = {}
@@ -14147,29 +14158,36 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
     const m = k.match(/^(sb-.+-auth-token)(?:\.(\d+))?$/)
     if (m) { (parts[m[1]] = parts[m[1]] || [])[Number(m[2] || 0)] = decodeURIComponent(v) }
   }
-  for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) return t }
+  for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) { tokenFrom = 'cookie'; return t } }
   return null
   }
   try {
-  let token = readToken()
-  // Not readable from the page (an httpOnly cookie): catch it on the page's
-  // own next request instead, by scrolling the list so it asks for more.
-  if (!token) {
+  // The watcher was not loaded early (Chrome refused to register it): put the
+  // same one in now, so the page's NEXT request still shows its sign-in.
+  if (!window.__mvpTrybeHooked) {
+    window.__mvpTrybeHooked = true
+    const note = (v) => { try { const s = String(v || ''); if (/^Bearer\s+\S+/i.test(s)) window.__mvpTrybeAuth = { token: s.replace(/^Bearer\s+/i, ''), at: Date.now() } } catch (e) {} }
+    const fromHeaders = (h) => {
+      if (!h) return
+      if (typeof h.get === 'function') { note(h.get('authorization')); return }
+      if (Array.isArray(h)) { for (const pair of h) if (pair && /^authorization$/i.test(pair[0])) note(pair[1]); return }
+      for (const k of Object.keys(h)) if (/^authorization$/i.test(k)) note(h[k])
+    }
     const realFetch = window.fetch
-    window.fetch = function (input, init) {
-      try {
-        const h = init && init.headers
-        const a = h && (typeof h.get === 'function' ? h.get('authorization') : (h.authorization || h.Authorization))
-        if (a && /^Bearer /i.test(a)) token = a.replace(/^Bearer /i, '')
-      } catch (e) {}
-      return realFetch.apply(this, arguments)
+    if (typeof realFetch === 'function') window.fetch = function (input, init) { try { fromHeaders(init && init.headers); if (input && typeof input === 'object') fromHeaders(input.headers) } catch (e) {} return realFetch.apply(this, arguments) }
+    if (typeof XMLHttpRequest !== 'undefined') {
+      const realSet = XMLHttpRequest.prototype.setRequestHeader
+      XMLHttpRequest.prototype.setRequestHeader = function (k, v) { try { if (/^authorization$/i.test(String(k))) note(v) } catch (e) {} return realSet.apply(this, arguments) }
     }
-    for (let i = 0; i < 12 && !token; i++) {
-      window.scrollTo(0, document.body.scrollHeight)
-      for (const el of Array.from(document.querySelectorAll('*'))) if (el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) el.scrollTop = el.scrollHeight
-      await sleep(800)
-    }
-    window.fetch = realFetch
+  }
+  let token = readToken()
+  // Not found yet: wait for TRYBE's page to send its own request (the hook
+  // catches it), nudging the list so it asks for more.
+  for (let i = 0; i < 14 && !token; i++) {
+    try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+    try { for (const el of Array.from(document.querySelectorAll('*'))) if (el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) el.scrollTop = el.scrollHeight } catch (e) {}
+    await sleep(800)
+    token = readToken()
   }
   const get = async (path) => {
     const r = await fetch(path, { credentials: 'include', headers: token ? { authorization: 'Bearer ' + token, accept: 'application/json' } : { accept: 'application/json' } })
@@ -14186,7 +14204,7 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
   for (let p = first; p <= last; p++) {
     let res
     try { res = await get('/backend/api/discovery/brands?limit=75&page=' + p) } catch (e) { error = 'fetch-failed'; break }
-    if (!res.json) { error = res.status === 401 || res.status === 403 ? 'not-signed-in' : 'status-' + res.status; break }
+    if (!res.json) { error = res.status === 401 || res.status === 403 ? (token ? 'refused-' + res.status : 'no-sign-in-found') : 'status-' + res.status; break }
     const j = res.json
     const list = Array.isArray(j) ? j : (Array.isArray(j.data) ? j.data : Array.isArray(j.brands) ? j.brands : Array.isArray(j.items) ? j.items : [])
     pages = p
@@ -14203,17 +14221,34 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
       try { const c = await get(path); if (c.json) { categories = c.json; break } } catch (e) {}
     }
   }
-  return { ok: items.length > 0, error: items.length ? null : (error || 'no-brands'), pages, totalPages, total, items, categories, done: done || !!error, signedIn: !!token }
+  // An error is said even when some brands came back, so a collection that
+  // stopped partway is never taken for a whole one.
+  return { ok: items.length > 0, error: items.length ? error : (error || 'no-brands'), pages, totalPages, total, items, categories, done: done || !!error, signedIn: !!token, tokenFrom }
   } catch (e) {
     // Said, with TRYBE's page's own words, never a silent "no answer".
     return { ok: false, error: 'page-error: ' + (e && e.message ? e.message : String(e)) }
   }
 }
 
+const TRYBE_HOOK_ID = 'mvp-trybe-hook'
+async function trybeHookOn() {
+  try { await chrome.scripting.unregisterContentScripts({ ids: [TRYBE_HOOK_ID] }) } catch (e) {}
+  try {
+    await chrome.scripting.registerContentScripts([{ id: TRYBE_HOOK_ID, matches: TRYBE_ORIGINS, js: ['trybe-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: false }])
+    return true
+  } catch (e) { return false }
+}
+async function trybeHookOff() {
+  try { await chrome.scripting.unregisterContentScripts({ ids: [TRYBE_HOOK_ID] }) } catch (e) {}
+}
+
 async function trybeHarvest({ maxPages }, callerTabId) {
   if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
   const ka = startKeepAlive()
   let tabId = null
+  // The sign-in watcher goes in before the tab opens, so it is there before
+  // TRYBE's own code makes its first request. Removed again in finally.
+  const hooked = await trybeHookOn()
   try {
     // Behind, not in front: this only reads TRYBE's data, nothing on screen.
     const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
@@ -14224,29 +14259,32 @@ async function trybeHarvest({ maxPages }, callerTabId) {
       await _sleep(750)
       state = await trybeRun(trybePageStateInPage, [], tabId)
     }
-    if (state === 'signin') return { ok: false, error: 'not-signed-in' }
+    if (state === 'signin') return { ok: false, error: 'not-signed-in', hooked }
     // Ten pages a time, so no one answer from the page carries thousands of
     // brands. Each batch reads TRYBE's sign-in afresh.
     const max = Math.max(1, Math.min(200, Number(maxPages) || 120))
     const items = []
-    let categories = null, totalPages = null, total = null, pages = 0, error = null
+    let categories = null, totalPages = null, total = null, pages = 0, error = null, tokenFrom = null
     for (let from = 1; from <= max; from += 10) {
       let res = null
       try { res = await trybeRun(trybeHarvestInPage, [from, Math.min(10, max - from + 1), from === 1], tabId) } catch (e) { error = 'page-error: ' + (e && e.message ? e.message : 'error'); break }
       if (!res) { error = 'no-answer-from-page'; break }
       for (const it of res.items || []) items.push(it)
       if (res.categories) categories = res.categories
+      if (res.tokenFrom) tokenFrom = res.tokenFrom
       totalPages = res.totalPages || totalPages
       total = res.total || total
       if (res.pages) pages = res.pages
-      if (res.error && !(res.items && res.items.length)) { error = res.error; break }
+      if (res.error) { error = res.error; break }
       if (res.done || (totalPages && pages >= totalPages)) break
     }
-    return { ok: items.length > 0, error: items.length ? (error && pages < (totalPages || 0) ? error : null) : (error || 'no-brands'), pages, totalPages, total, items, categories }
+    const complete = !error && !!totalPages && pages >= totalPages
+    return { ok: items.length > 0, error: items.length ? error : (error || 'no-brands'), complete, pages, totalPages, total, items, categories, tokenFrom, hooked }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    await trybeHookOff()
     stopKeepAlive(ka)
   }
 }
@@ -14262,12 +14300,18 @@ async function trybeSendInPage(name, message) {
   const fail = (error) => ({ outcome: 'failed', error, steps })
 
   const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  // THE BRAND'S OWN POPUP, NEVER THE WHOLE PAGE (1.41.4). "Pending Requests"
+  // on the page itself matched the requested words, the page body passed for
+  // the popup, and a brand was recorded as already requested with nothing
+  // sent. Only the exact requested words count, and only inside a real
+  // dialog that names this brand.
+  const REQUESTED = /^(requested|request sent|cancel request|withdraw( request)?)$/i
   const popupFor = () => {
-    const anchor = byText(/^request to join/i) || byText(/^(requested|pending|request sent|cancel request|withdraw)/i)
+    const anchor = byText(/^request to join/i) || byText(REQUESTED)
     if (!anchor) return null
     let d = anchor.closest('[role=dialog], [aria-modal=true]')
     if (!d) { let el = anchor; while (el && el !== document.body) { if (getComputedStyle(el).position === 'fixed') { d = el; break } el = el.parentElement } }
-    d = d || document.body
+    if (!d || d === document.body) return null
     const lines = String(d.innerText || '').split('\n').map(norm)
     return lines.includes(want) ? d : null
   }
@@ -14305,7 +14349,11 @@ async function trybeSendInPage(name, message) {
   steps.push('popup')
 
   const join = byText(/^request to join/i, dialog)
-  if (!join) { steps.push('already'); return { outcome: 'already', steps } }
+  if (!join) {
+    // Already requested only when TRYBE says so in this brand's popup.
+    if (byText(REQUESTED, dialog)) { steps.push('already'); return { outcome: 'already', steps } }
+    return fail('request-button-not-found')
+  }
   join.click()
   steps.push('join')
 

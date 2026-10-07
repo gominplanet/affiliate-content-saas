@@ -60,7 +60,7 @@ interface Brand {
 
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 /** MVP's copy of every TRYBE brand (shared), and how complete it is. */
-interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; categories: string[] }
+interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[] }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
 type Tab = 'find' | 'queue' | 'sent'
@@ -84,6 +84,7 @@ const SEND_WORDS: Record<string, string> = {
   'bad-url': 'The brand link is not a TRYBE link',
   'no-message': 'The draft is empty',
   'no-answer-from-page': 'The TRYBE page did not answer',
+  'request-button-not-found': 'TRYBE showed the brand but no Request to Join button',
 }
 const sendWords = (e: string | null | undefined) => {
   const raw = String(e || '')
@@ -135,6 +136,9 @@ export default function TrybeOutreach() {
   const [now, setNow] = useState(Date.now())
   const [log, setLog] = useState<LogLine[]>([])
   const [directory, setDirectory] = useState<Directory | null>(null)
+  // What the server has saved, which is what the daily find goes by: never
+  // the half-typed message or a box ticked a second ago.
+  const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
   const stopRef = useRef(false)
   const autoRan = useRef(false)
 
@@ -152,6 +156,7 @@ export default function TrybeOutreach() {
       setDailyFind(d.settings?.dailyFind !== false)
       setLastFindAt(d.settings?.lastFindAt ?? null)
       setDirectory(d.directory ?? null)
+      setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
       return d
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load'); return null }
     finally { setLoading(false) }
@@ -316,7 +321,10 @@ export default function TrybeOutreach() {
       if (!items.length) {
         const why: Record<string, string> = {
           'no-access': 'SCOUT is not allowed on TRYBE yet. Press Allow SCOUT on TRYBE.',
-          'not-signed-in': 'TRYBE is signed out in this Chrome. Sign in to TRYBE, then press Find brands again.',
+          'not-signed-in': 'TRYBE showed its sign-in page. Sign in to TRYBE in this Chrome, then press Find brands again.',
+          'no-sign-in-found': 'SCOUT opened TRYBE but could not find your TRYBE sign-in in this Chrome. Open jointrybe.com, make sure you are signed in, then press Find brands again.',
+          'refused-401': 'TRYBE refused the brand list with your sign-in (401). Sign out of TRYBE and back in, then press Find brands again.',
+          'refused-403': 'TRYBE refused the brand list with your sign-in (403). Sign out of TRYBE and back in, then press Find brands again.',
           'no-brands': 'SCOUT reached TRYBE but its brand list came back empty.',
           timeout: 'SCOUT ran out of time collecting the TRYBE list.',
         }
@@ -325,14 +333,21 @@ export default function TrybeOutreach() {
       } else {
         let saved = 0, withSite = 0
         let keys: string[] = []
-        for (let i = 0; i < items.length; i += 400) {
+        const STEP = 250
+        for (let i = 0; i < items.length; i += STEP) {
           setFinding({ stage: 'Saving the TRYBE brands to MVP', done: i, total: items.length })
-          const d = await api({ action: 'directory', items: items.slice(i, i + 400), ...(i === 0 && h.categories ? { categories: h.categories } : {}) })
+          const lastChunk = i + STEP >= items.length
+          const d = await api({
+            action: 'directory', items: items.slice(i, i + STEP),
+            ...(i === 0 && h.categories ? { categories: h.categories } : {}),
+            // Only a whole collection lets MVP wait a day before the next.
+            ...(lastChunk ? { collected: { complete: h.complete === true, pages: h.pages, totalPages: h.totalPages } } : {}),
+          })
           saved += d.saved || 0; withSite += d.withWebsite || 0
           if (!keys.length && Array.isArray(d.keys)) keys = d.keys
         }
         notes.push(`SCOUT collected ${items.length.toLocaleString()} entries from ${h.pages ?? '?'} of ${h.totalPages ?? '?'} pages (TRYBE lists ${h.total != null ? h.total.toLocaleString() : '?'}). MVP saved ${saved.toLocaleString()} brands, ${withSite.toLocaleString()} with a website.`)
-        if (h.error) notes.push(`SCOUT stopped early: ${h.error}. What it collected is kept.`)
+        if (h.complete !== true) notes.push(`SCOUT stopped at page ${h.pages ?? '?'} of ${h.totalPages ?? '?'}${h.error ? ` (${h.error})` : ''}. What it collected is kept, and the next Find brands collects again.`)
         if (!saved) notes.push(`MVP could not read the TRYBE entries. Fields TRYBE sent: ${keys.join(', ') || 'none'}.`)
         else if (!withSite) notes.push(`The TRYBE list carried no websites, so MVP matches on the TRYBE description for now. Fields TRYBE sent: ${keys.join(', ')}.`)
       }
@@ -342,7 +357,7 @@ export default function TrybeOutreach() {
     setFinding({ stage: 'Searching MVP’s copy of TRYBE for your niche' })
     const sl = await api({ action: 'shortlist', limit: SCAN_READ })
     notes.push(hasNiche
-      ? `${(sl.matched ?? 0).toLocaleString()} brands match your niche in MVP's copy. The best ${sl.added} not seen before go to the fit check.`
+      ? (sl.added ? `MVP searched its copy of TRYBE for your niche and took the best ${sl.added} brands you have not seen to the fit check.` : 'MVP searched its copy of TRYBE and found no new brands matching your niche. Try more keywords or categories.')
       : `${sl.added} brands taken, highest TRYBE score first. Pick a niche to search by it.`)
   }
 
@@ -374,14 +389,14 @@ export default function TrybeOutreach() {
   // THE DAILY FIND. Once a day, when this page is opened with SCOUT allowed
   // and a niche saved, MVP and SCOUT find and draft up to 20 brands that fit.
   useEffect(() => {
-    if (loading || autoRan.current || access !== 'granted' || !dailyFind || running || finding) return
-    if (!core.trim() || savedKey === prefsKey([], [])) return
+    if (loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding) return
+    if (!saved.core.trim() || savedKey === prefsKey([], [])) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
     if (Date.now() - last < 20 * 3600_000) return
     autoRan.current = true
-    toast('Finding today’s brands that fit your niche. SCOUT opens TRYBE for a few minutes, then brings you back.', { duration: 9000 })
+    toast('Finding today\u2019s brands that fit your niche. SCOUT works in a tab behind this one for a few minutes.', { duration: 9000 })
     void findBrands(true)
-  }, [loading, access, dailyFind, lastFindAt, savedKey, core]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, access, saved, lastFindAt, savedKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function draftSelected() {
     const ids = found.filter(b => selected.has(b.brand_id)).map(b => b.brand_id)
@@ -442,7 +457,7 @@ export default function TrybeOutreach() {
         say(b.name, 'SCOUT is opening TRYBE to send it.', 'info')
         const res = await requestTrybeSend(c.url, c.name, c.message)
         const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps[res.steps.length - 1]})` : ''}` : null
-        const saved = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err }).then(() => true).catch(() => false)
+        const recorded = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err }).then(() => true).catch(() => false)
         patch(b.brand_id, {
           status: res.outcome === 'sent' ? 'sent' : res.outcome === 'already' ? 'already' : res.outcome === 'failed' ? 'failed' : 'sending',
           error: res.outcome === 'sent' || res.outcome === 'already' ? null : (err || 'Not confirmed'),
@@ -451,7 +466,7 @@ export default function TrybeOutreach() {
         else if (res.outcome === 'already') say(b.name, 'TRYBE already shows a request to this brand.', 'warn')
         else if (res.outcome === 'failed') say(b.name, `Not sent: ${sendWords(err) || 'SCOUT could not send it'}.`, 'bad')
         else say(b.name, `Not confirmed: ${sendWords(err) || 'TRYBE did not show the box closing'}. Check TRYBE's Pending Requests.`, 'warn')
-        if (!saved) say(b.name, 'MVP could not save this result. Reload before sending again.', 'bad')
+        if (!recorded) say(b.name, 'MVP could not save this result. Reload before sending again.', 'bad')
         if (res.outcome === 'failed' || res.outcome === 'already') setUsed(u => Math.max(0, u - 1))
         setCurrent(null)
         // Two failures in a row usually mean TRYBE changed or signed out: stop.
@@ -609,7 +624,7 @@ export default function TrybeOutreach() {
             <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
           )}
           {unjudged.length > 0 && !finding && (
-            <p className="text-[12px] mb-3" style={{ color: AMBER }}>{unjudged.length} brand{unjudged.length === 1 ? '' : 's'} not yet checked against this niche. <button onClick={() => void judge(unjudged).then(() => load())} className="underline">Check them now</button></p>
+            <p className="text-[12px] mb-3" style={{ color: AMBER }}>{unjudged.length} brand{unjudged.length === 1 ? '' : 's'} not yet checked against this niche. <button onClick={() => void judge(unjudged).finally(() => setFinding(null)).then(() => load())} className="underline">Check them now</button></p>
           )}
           {!found.length && <p className="text-[13px]" style={soft}>{hasNiche ? 'No brands that fit yet. Press Find brands.' : 'Pick your niche, then press Find brands.'}</p>}
           <div className="space-y-2">

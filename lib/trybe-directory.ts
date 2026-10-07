@@ -35,17 +35,20 @@ export interface DirectoryBrand {
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
 
-/** The first value under any of these keys, looked for on the entry and on
- *  the objects one level inside it (`brand`, `brandProfile`, and so on). */
+/** The value under the first of these keys that has one, in the list's own
+ *  order: on the entry itself first, then inside the brand's own nested object
+ *  (`brand`, `brandProfile`, `company`...). Never inside other nested objects,
+ *  where a logo's `url` would pass for the brand's website. */
+const BRANDISH = /brand|profile|company|business|store|shop/i
 function pick(o: Obj, keys: string[]): unknown {
-  const want = keys.map(k => k.toLowerCase())
-  const level = (x: Obj) => {
-    for (const [k, v] of Object.entries(x)) if (want.includes(k.toLowerCase()) && v != null && v !== '') return v
-    return undefined
+  const find = (x: Obj, key: string) => {
+    const k = Object.keys(x).find(n => n.toLowerCase() === key.toLowerCase())
+    const v = k ? x[k] : undefined
+    return v == null || v === '' ? undefined : v
   }
-  const top = level(o)
-  if (top !== undefined) return top
-  for (const v of Object.values(o)) if (isObj(v)) { const inner = level(v); if (inner !== undefined) return inner }
+  for (const key of keys) { const v = find(o, key); if (v !== undefined) return v }
+  const nested = Object.entries(o).filter(([k, v]) => BRANDISH.test(k) && isObj(v)).map(([, v]) => v as Obj)
+  for (const key of keys) for (const n of nested) { const v = find(n, key); if (v !== undefined) return v }
   return undefined
 }
 
@@ -91,7 +94,7 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
   return {
     brandId,
     name,
-    website: site(pick(raw, ['website', 'websiteUrl', 'website_url', 'websiteURL', 'site', 'siteUrl', 'domain', 'storeUrl', 'store_url', 'url'])),
+    website: site(pick(raw, ['website', 'websiteUrl', 'website_url', 'websiteURL', 'websiteLink', 'site', 'siteUrl', 'storeUrl', 'store_url', 'shopUrl', 'domain'])),
     categories: names(pick(raw, ['categories', 'nicheCategories', 'niche_categories', 'niches', 'niche', 'category', 'industries', 'industry', 'tags'])),
     about: text(pick(raw, ['description', 'about', 'bio', 'summary', 'brandDescription', 'brand_description', 'tagline']), 2000),
     payText: typeof payRaw === 'string' ? text(payRaw, 120) : payNum != null ? `$${payNum}` : null,

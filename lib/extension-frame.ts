@@ -1066,6 +1066,10 @@ export interface TrybeHarvestResult {
   /** TRYBE's entries as it wrote them; MVP's server reads the fields. */
   items?: unknown[]
   categories?: unknown
+  /** True only when every page came back. */
+  complete?: boolean
+  /** Where SCOUT found the TRYBE sign-in: 'page', 'cookie' or 'storage'. */
+  tokenFrom?: string | null
 }
 
 /** SCOUT 1.41.2+: every brand on TRYBE, page by page from TRYBE's own list,

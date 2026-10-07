@@ -89,6 +89,9 @@ const rd = readDirectoryItem(entry)
 check('a TRYBE entry is read by its brandId, not the entry id', !!rd && rd.brandId === 'c147d498-df8d-47e0-98c9-156bfbfdaea5')
 check('name, website, about and categories are found inside the entry', !!rd && rd.name === 'Spiral Bible' && rd.website === 'https://spiralbible.com/' && rd.about === 'Bible journaling kits' && rd.categories[0] === 'Books & Education' && rd.trybeScore === 92)
 check('a website on TRYBE itself is not a brand website', readDirectoryItem({ brandId: 'abcdef12', name: 'X', website: 'https://jointrybe.com/x' })?.website === null)
+check('the key list order wins: a brand name over a promo title', readDirectoryItem({ brandId: 'abcdef12', title: 'Summer promo', brandName: 'Real Brand' })?.name === 'Real Brand')
+check('a logo address is never the brand website', readDirectoryItem({ brandId: 'abcdef12', name: 'X', logo: { url: 'https://cdn.example.com/x.png' } })?.website === null)
+check('the website inside the brand object is found', readDirectoryItem({ brandId: 'abcdef12', name: 'X', brand: { website: 'shop.example.com' } })?.website === 'https://shop.example.com/')
 check('an entry with no brand id is dropped', readDirectoryItem({ name: 'X' }) === null)
 const merged = mergeDirectory([{ brandId: 'abcdef12', name: 'X' }, { brandId: 'abcdef12', name: 'X', website: 'x.com' }])
 check('one brand listed twice is one brand, gaps filled', merged.length === 1 && merged[0].website === 'https://x.com/')
@@ -107,11 +110,26 @@ check('websites are read in the background', /researchBrandSite/.test(readFileSy
 // function into the page; 1.41.2 called a helper defined elsewhere in SCOUT
 // and failed before asking TRYBE for anything ("no-answer-from-page"). So the
 // function is run here, by itself, against a fake TRYBE.
+// THE SECOND REVIEW (2026-10-07), each fix held.
+const SEND = BG.slice(BG.indexOf('async function trybeSendInPage('), BG.indexOf('async function trybeSend('))
+check('the page itself never passes for a brand popup', /if \(!d \|\| d === document\.body\) return null/.test(SEND) && !/d = d \|\| document\.body/.test(SEND))
+check('"Pending Requests" is not a requested button; already means TRYBE said so in the popup', /\^\(requested\|request sent\|cancel request\|withdraw\( request\)\?\)\$/.test(SEND) && /fail\('request-button-not-found'\)/.test(SEND))
+check('a collection that stopped partway is said, and only a whole one waits a day', /complete = !error && !!totalPages && pages >= totalPages/.test(BG) && /lastCollectedAt: c\.complete && c\.at \? c\.at : null/.test(ROUTE) && /collected: \{ complete: h\.complete === true/.test(UI))
+check('a fit or draft that was not saved is not reported as done', (ROUTE.match(/if \(upErr\)/g) || []).length >= 3)
+check('directory search runs in the database, with a capped fallback', /rpc\('trybe_directory_search'/.test(ROUTE) && /allRows<Record<string, any>>\(make, 2000\)/.test(ROUTE))
+check('what a brand already had is not blanked by an emptier entry', /website: b\.website \?\? p\.website \?\? null/.test(ROUTE))
+check('the shortlist reports what was really added', /added = \(ins \|\| \[\]\)\.length/.test(ROUTE))
+check('TRYBE category list in its {data} shape is kept', /if \(body\.categories != null\)/.test(ROUTE))
+check('the cap is counted again after a claim', /const after = await usedToday\(admin, ownerId\)/.test(ROUTE))
+check('the daily find goes by the saved settings, not the half-typed page', /!saved \|\| !saved\.dailyFind/.test(UI) && /!saved\.core\.trim\(\)/.test(UI))
+check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\(\(\) => setFinding\(null\)\)/.test(UI))
+
 const collectorRun = (async () => {
-  const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('async function trybeHarvest('))
+  const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))
   const store: Record<string, string> = { 'sb-x-auth-token': JSON.stringify({ access_token: 'T1' }) }
   const g = globalThis as any // eslint-disable-line @typescript-eslint/no-explicit-any
-  const saved = { localStorage: g.localStorage, document: g.document, window: g.window, fetch: g.fetch, getComputedStyle: g.getComputedStyle, setTimeout: g.setTimeout }
+  const saved = { localStorage: g.localStorage, document: g.document, window: g.window, fetch: g.fetch, getComputedStyle: g.getComputedStyle, setTimeout: g.setTimeout, XMLHttpRequest: g.XMLHttpRequest }
+  g.XMLHttpRequest = class { setRequestHeader() {} }
   g.localStorage = { get length() { return Object.keys(store).length }, key: (i: number) => Object.keys(store)[i], getItem: (k: string) => store[k] }
   g.document = { cookie: '', body: { scrollHeight: 0 }, querySelectorAll: () => [] }
   g.window = { scrollTo() {}, fetch: null }
@@ -129,15 +147,36 @@ const collectorRun = (async () => {
     const fn = (0, eval)('(' + fnSrc.trim() + ')')
     const r = await fn(1, 10, true)
     check('the collector runs alone in the page and reads every page', r.ok === true && r.items.length === 85 && r.pages === 2 && r.done === true && !!r.categories)
+    // TRYBE's real shape (2026-10-07): a cookie, "base64-" + URL-safe base64,
+    // split in parts. 1.41.3 could not decode it and went in signed out.
     for (const k of Object.keys(store)) delete store[k]
+    const json = JSON.stringify({ access_token: 'T1', refresh_token: 'r?>>' })
+    const b64url = Buffer.from(json).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const half = Math.floor(b64url.length / 2)
+    g.document.cookie = `other=1; sb-abc-auth-token.0=base64-${b64url.slice(0, half)}; sb-abc-auth-token.1=${b64url.slice(half)}`
+    const c = await fn(1, 10, false)
+    check('a split, URL-safe base64 sign-in cookie is read', c.ok === true && c.items.length === 85 && c.tokenFrom === 'cookie')
+    // What TRYBE's own page sent wins (trybe-hook.js).
+    g.document.cookie = ''
+    g.window.__mvpTrybeAuth = { token: 'T1', at: Date.now() }
+    const h = await fn(1, 10, false)
+    check('the sign-in TRYBE\'s own page sent is used first', h.ok === true && h.tokenFrom === 'page')
+    // Nothing anywhere: said as such, not as "signed out".
+    delete g.window.__mvpTrybeAuth
     const out = await fn(1, 10, false)
-    check('signed out, it says so instead of no answer', out.ok === false && out.error === 'not-signed-in')
+    check('no sign-in found is said as that', out.ok === false && out.error === 'no-sign-in-found')
+    // A sign-in TRYBE refuses: said as a refusal.
+    store['sb-x-auth-token'] = JSON.stringify({ access_token: 'WRONG' })
+    const ref = await fn(1, 10, false)
+    check('a sign-in TRYBE refuses is said as a refusal', ref.ok === false && ref.error === 'refused-401')
   } catch (e) {
     check(`the collector runs alone in the page (it threw: ${e instanceof Error ? e.message : e})`, false)
   } finally {
     Object.assign(g, saved)
   }
 })()
+const HOOK = readFileSync('extension/trybe-hook.js', 'utf8')
+check('the sign-in watcher loads before TRYBE, only during a collection, and changes nothing', /runAt: 'document_start', world: 'MAIN'/.test(BG) && /await trybeHookOff\(\)/.test(BG) && /return realFetch\.apply\(this, arguments\)/.test(HOOK) && /return realSet\.apply\(this, arguments\)/.test(HOOK))
 check('the collector has no helper outside itself', !/trybeTokenInPage/.test(BG) && /const readToken = \(\) =>/.test(BG))
 
 void collectorRun.then(() => {

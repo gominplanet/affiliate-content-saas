@@ -107,23 +107,47 @@ export async function GET() {
   return NextResponse.json({ ok: true, settings, usedToday: used, brands, directory: await directoryStats(admin) })
 }
 
+/** A database refusal in words, naming the migration when a column is missing. */
+function dbWords(message: string): string {
+  return /column .* does not exist|schema cache/i.test(message) ? 'The TRYBE niche settings need migration 416 in Supabase first.' : message
+}
+
+/** Every row a query returns, a thousand at a time: Supabase hands back at
+ *  most 1,000 rows per request whatever .limit() says, which quietly cut the
+ *  list of brands a creator already has and the directory search short. */
+async function allRows<T>(make: () => any, max: number): Promise<{ rows: T[]; error: { message: string } | null }> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const rows: T[] = []
+  for (let from = 0; from < max; from += 1000) {
+    const { data, error } = await make().range(from, Math.min(max, from + 1000) - 1)
+    if (error) return { rows, error }
+    rows.push(...((data || []) as T[]))
+    if (!data || data.length < 1000) break
+  }
+  return { rows, error: null }
+}
+
 /** How complete MVP's copy of TRYBE is. Null before migration 417. */
 async function directoryStats(admin: Db) {
   try {
     const head = { count: 'exact' as const, head: true }
-    const [all, withSite, read, last, meta] = await Promise.all([
+    const [all, withSite, read, collected, meta] = await Promise.all([
       admin.from('trybe_directory').select('brand_id', head),
       admin.from('trybe_directory').select('brand_id', head).not('website', 'is', null),
       admin.from('trybe_directory').select('brand_id', head).not('site_text', 'is', null),
-      admin.from('trybe_directory').select('last_seen_at').order('last_seen_at', { ascending: false }).limit(1),
+      admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle(),
       admin.from('trybe_directory_meta').select('value').eq('key', 'categories').maybeSingle(),
     ])
     if (all.error) return null
+    // ONLY A WHOLE COLLECTION COUNTS as collected: one that stopped partway
+    // leaves this empty, so the next Find brands collects again instead of
+    // waiting a day on half a list.
+    const c = (collected.data?.value || {}) as { at?: string; complete?: boolean; pages?: number; totalPages?: number }
     return {
       brands: all.count ?? 0,
       withWebsite: withSite.count ?? 0,
       websitesRead: read.count ?? 0,
-      lastCollectedAt: (last.data?.[0]?.last_seen_at as string | undefined) ?? null,
+      lastCollectedAt: c.complete && c.at ? c.at : null,
+      lastPartial: !c.complete && c.at ? { at: c.at, pages: c.pages ?? null, totalPages: c.totalPages ?? null } : null,
       categories: Array.isArray(meta.data?.value) ? (meta.data.value as string[]) : [],
     }
   } catch { return null }
@@ -184,7 +208,8 @@ export async function POST(request: Request) {
     // says about the brand is written; what MVP read from its website stays.
     const items = Array.isArray(body.items) ? (body.items as unknown[]).slice(0, 800) : []
     const list = mergeDirectory(items)
-    if (Array.isArray(body.categories)) {
+    // TRYBE answers {success, data: [...]}: readCategories reads either shape.
+    if (body.categories != null) {
       const cats = readCategories(body.categories)
       if (cats.length) await admin.from('trybe_directory_meta').upsert({ key: 'categories', value: cats, updated_at: now })
     }
@@ -192,19 +217,41 @@ export async function POST(request: Request) {
       const keys = items.length && items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : []
       return NextResponse.json({ ok: true, saved: 0, withWebsite: 0, received: items.length, keys })
     }
-    const rows = list.map(b => ({
-      brand_id: b.brandId, name: b.name, website: b.website, categories: b.categories, about: b.about,
-      pay_text: b.payText, trybe_score: b.trybeScore == null ? null : Math.round(b.trybeScore),
-      total_creators: b.totalCreators == null ? null : Math.round(b.totalCreators), rating: b.rating,
-      raw: b.raw, search_text: directorySearchText(b), last_seen_at: now,
-    }))
+    // WHAT WAS KNOWN STAYS KNOWN: an entry that arrives emptier than the one
+    // saved before (another offer by the same brand, tomorrow's collection)
+    // never blanks a website, description or categories already kept.
+    const { data: had } = await admin.from('trybe_directory')
+      .select('brand_id, website, about, categories, pay_text, trybe_score, total_creators, rating')
+      .in('brand_id', list.map(b => b.brandId))
+    const prev = new Map(((had || []) as Array<Record<string, any>>).map(r => [r.brand_id, r])) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const rows = list.map(b => {
+      const p = prev.get(b.brandId) || {}
+      const merged = {
+        name: b.name, website: b.website ?? p.website ?? null,
+        categories: b.categories.length ? b.categories : (p.categories || []),
+        about: b.about ?? p.about ?? null,
+      }
+      return {
+        brand_id: b.brandId, ...merged,
+        pay_text: b.payText ?? p.pay_text ?? null,
+        trybe_score: b.trybeScore == null ? (p.trybe_score ?? null) : Math.round(b.trybeScore),
+        total_creators: b.totalCreators == null ? (p.total_creators ?? null) : Math.round(b.totalCreators),
+        rating: b.rating ?? p.rating ?? null,
+        raw: b.raw, search_text: directorySearchText(merged), last_seen_at: now,
+      }
+    })
     const { error } = await admin.from('trybe_directory').upsert(rows, { onConflict: 'brand_id' })
     if (error) {
       const missing = /does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
     }
+    // The last chunk of a collection says how far SCOUT got.
+    if (body.collected && typeof body.collected === 'object') {
+      const c = body.collected as { complete?: unknown; pages?: unknown; totalPages?: unknown }
+      await admin.from('trybe_directory_meta').upsert({ key: 'collected', value: { at: now, complete: c.complete === true, pages: Number(c.pages) || null, totalPages: Number(c.totalPages) || null }, updated_at: now })
+    }
     return NextResponse.json({
-      ok: true, saved: rows.length, withWebsite: list.filter(b => b.website).length, received: items.length,
+      ok: true, saved: rows.length, withWebsite: rows.filter(r => r.website).length, received: items.length,
       keys: items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : [],
     })
   }
@@ -218,40 +265,61 @@ export async function POST(request: Request) {
     const settings = await readSettings(admin, ownerId)
     const want = Math.max(1, Math.min(60, Number(body.limit) || 40))
     const terms = [...settings.keywords, ...settings.categories].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
-    const { data: mine } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).limit(10000)
-    const have = new Set(((mine || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
-    let q = admin.from('trybe_directory')
-      .select('brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_summary, site_products, site_text, site_error, site_fetched_at')
-      .limit(3000)
     // Each term's words, anywhere in what TRYBE or the website says. Letters,
     // digits and spaces only, so nothing in a term can break the filter.
-    const words = Array.from(new Set(terms.flatMap(t => [/^[a-z0-9 ]+$/.test(t) ? t : '', ...t.split(/[^a-z0-9]+/).filter(w => w.length > 3)]).filter(Boolean)))
-    if (words.length) {
-      q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+    const words = Array.from(new Set(terms.flatMap(t => [/^[a-z0-9 ]+$/.test(t) ? t : '', ...t.split(/[^a-z0-9]+/).filter(w => w.length > 3)]).filter(Boolean))).slice(0, 40)
+    const COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_summary, site_products, site_text, site_error, site_fetched_at'
+    let cands: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
+    let error: { message: string } | null = null
+    // THE DATABASE NARROWS IT (migration 418): only the best few hundred
+    // brands not already on this creator's list come back, then they are
+    // ranked finely here.
+    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: ownerId, p_limit: 300 })
+    if (!rpc.error) {
+      const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
+      for (let i = 0; i < ids.length && !error; i += 150) {
+        const { data, error: e } = await admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 150))
+        if (e) error = e
+        else cands.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
     } else {
-      q = q.order('trybe_score', { ascending: false, nullsFirst: false })
+      // Before migration 418: the same search done here, capped so a broad
+      // niche cannot pull the whole directory into one request.
+      const mine = await allRows<{ brand_id: string }>(() => admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).order('brand_id'), 20000)
+      if (mine.error) return NextResponse.json({ error: mine.error.message }, { status: 500 })
+      const have = new Set(mine.rows.map(r => r.brand_id))
+      const make = () => {
+        let q = admin.from('trybe_directory').select(COLS)
+        if (words.length) q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+        // A stable order, so paging never skips or repeats a brand.
+        return q.order('trybe_score', { ascending: false, nullsFirst: false }).order('brand_id')
+      }
+      const got = await allRows<Record<string, any>>(make, 2000) // eslint-disable-line @typescript-eslint/no-explicit-any
+      cands = got.rows.filter(r => !have.has(r.brand_id))
+      error = got.error
     }
-    const { data: cands, error } = await q
     if (error) {
       const missing = /does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
     }
-    const scored = ((cands || []) as Array<Record<string, any>>) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .filter(r => !have.has(r.brand_id))
+    const scored = cands
       .map(r => ({ r, score: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, settings.categories, settings.keywords) : (r.trybe_score ?? 0) }))
       .filter(x => !terms.length || x.score > 0)
       .sort((a, b) => b.score - a.score || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
     const pick = scored.slice(0, want)
+    let added = 0
     if (pick.length) {
-      const { error: insErr } = await admin.from('trybe_brands').upsert(pick.map(({ r }) => ({
+      const { data: ins, error: insErr } = await admin.from('trybe_brands').upsert(pick.map(({ r }) => ({
         user_id: ownerId, brand_id: r.brand_id, name: r.name, categories: r.categories || [], website: r.website,
         about: r.about, pay_text: r.pay_text, rating: r.rating, trybe_score: r.trybe_score, total_creators: r.total_creators,
         site_summary: r.site_summary, site_products: r.site_products || [], site_error: r.site_error, site_fetched_at: r.site_fetched_at,
         status: 'new', updated_at: now,
-      })), { onConflict: 'user_id,brand_id', ignoreDuplicates: true })
+      })), { onConflict: 'user_id,brand_id', ignoreDuplicates: true }).select('brand_id')
       if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+      // What was actually added, not what was asked for.
+      added = (ins || []).length
     }
-    return NextResponse.json({ ok: true, matched: scored.length, added: pick.length, searched: terms.length ? (cands || []).length : null })
+    return NextResponse.json({ ok: true, matched: scored.length, added, searched: terms.length ? cands.length : null })
   }
 
   if (action === 'match') {
@@ -268,8 +336,9 @@ export async function POST(request: Request) {
     if (!todo.length) return NextResponse.json({ ok: true, results: [] })
     if (!settings.categories.length && !settings.keywords.length) {
       for (const r of todo) {
-        await admin.from('trybe_brands').update({ status: 'new', fit_score: r.trybe_score ?? null, fit_reason: 'No niche set yet, so it is listed without a fit check.', fit_prefs: key, fit_checked_at: now, updated_at: now })
+        const { error: upErr } = await admin.from('trybe_brands').update({ status: 'new', fit_score: r.trybe_score ?? null, fit_reason: 'No niche set yet, so it is listed without a fit check.', fit_prefs: key, fit_checked_at: now, updated_at: now })
           .eq('user_id', ownerId).eq('brand_id', r.brand_id)
+        if (upErr) return NextResponse.json({ error: dbWords(upErr.message) }, { status: 500 })
       }
       return NextResponse.json({ ok: true, results: todo.map(r => ({ brandId: r.brand_id, ok: true, fit: true, score: r.trybe_score ?? null, reason: 'No niche set yet.' })) })
     }
@@ -303,9 +372,14 @@ export async function POST(request: Request) {
         results.push({ brandId: r.brand_id, ok: false, error: 'MVP could not judge this brand. It is asked again next time.' })
         continue
       }
-      await admin.from('trybe_brands').update({
+      // SAVED, OR SAID: a verdict that was not saved is not reported as one
+      // (without migration 416 every save failed, the page counted fits, and
+      // the list stayed empty while the same brands were judged and paid for
+      // again on every run).
+      const { error: upErr } = await admin.from('trybe_brands').update({
         ...site, status: v.fit ? 'new' : 'not_fit', fit_score: v.score, fit_reason: v.reason || null, fit_prefs: key, fit_checked_at: now, updated_at: now,
       }).eq('user_id', ownerId).eq('brand_id', r.brand_id).in('status', ['new', 'not_fit'])
+      if (upErr) return NextResponse.json({ error: dbWords(upErr.message) }, { status: 500 })
       results.push({ brandId: r.brand_id, ok: true, fit: v.fit, score: v.score, reason: v.reason })
     }
     return NextResponse.json({ ok: true, results })
@@ -366,11 +440,12 @@ export async function POST(request: Request) {
         try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
         const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
         if (!text) throw new Error('The draft came back empty.')
-        await admin.from('trybe_brands').update({
+        const { error: upErr } = await admin.from('trybe_brands').update({
           draft: text, drafted_at: new Date().toISOString(), status: 'drafted', error: null,
           site_summary: summary || null, site_products: products, site_error: siteError, site_fetched_at: fresh ? r.site_fetched_at : sf.fetchedAt,
           updated_at: new Date().toISOString(),
         }).eq('user_id', ownerId).eq('brand_id', r.brand_id)
+        if (upErr) throw new Error(`The draft was written but not saved: ${dbWords(upErr.message)}`)
         return { brandId: r.brand_id, ok: true, researched: !!(summary || products.length), siteError }
       } catch (e) {
         return { brandId: r.brand_id, ok: false, error: e instanceof Error ? e.message : 'Draft failed.' }
@@ -422,6 +497,14 @@ export async function POST(request: Request) {
       .update({ status: 'sending', send_started_at: now, sent_message: row.draft, error: null, updated_at: now })
       .eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['drafted', 'failed']).select('brand_id')
     if (!claimed || !claimed.length) return NextResponse.json({ ok: false, error: 'Already being sent.' }, { status: 409 })
+    // Counted again after claiming: two tabs that both saw the last slot free
+    // cannot both send. The one over the cap puts its claim back.
+    const after = await usedToday(admin, ownerId)
+    if (after > settings.dailyCap) {
+      await admin.from('trybe_brands').update({ status: row.status, send_started_at: null, updated_at: now })
+        .eq('user_id', ownerId).eq('brand_id', brandId).eq('status', 'sending')
+      return NextResponse.json({ ok: false, capped: true, usedToday: after - 1, dailyCap: settings.dailyCap })
+    }
     return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url) })
   }
 
