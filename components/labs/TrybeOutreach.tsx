@@ -26,7 +26,7 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
 import TrybeInbox from '@/components/labs/TrybeInbox'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -963,7 +963,9 @@ export default function TrybeOutreach() {
               : <>The daily messages are off. Turn them on in Find brands, or pick brands there yourself.</>}
           </p>
           {sendBlocked && !running && queue.length > 0 && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
-          {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>Keep this tab open. SCOUT opens TRYBE for each request and brings you back, 45 seconds to 2 minutes apart, with a longer pause every five.</p>}
+          {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
+            ? 'Keep this tab open. SCOUT sends each request in a TRYBE tab behind this one, 45 seconds to 2 minutes apart, with a longer pause every five. It comes to the front only if TRYBE needs it.'
+            : 'Keep this tab open. SCOUT opens TRYBE for each request and brings you back, 45 seconds to 2 minutes apart, with a longer pause every five.'}</p>}
           {log.length > 0 && (
             <div className="rounded-xl border p-3 mb-3 max-h-56 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
               <p className="text-[12px] font-semibold mb-1">Run log</p>

@@ -218,6 +218,23 @@ check('a removed brand stays out of the daily find but can be picked by hand', /
 check('a message never singles out one product', /never single out one product/.test(LIB) && !/a product by name from its website/.test(LIB))
 check('products naming a keyword are shown first', /productsFirst\(r\.site_products \|\| \[\], kws\)/.test(ROUTE))
 
+// 1.41.7: sends run in a tab behind, and a fallback never sends twice.
+const SENDER = BG.slice(BG.indexOf('async function trybeSend('), BG.indexOf('\n}\n', BG.indexOf('async function trybeSend(')))
+check('a send opens TRYBE in a tab behind, never in front first', /chrome\.tabs\.create\(\{ url: safe, active: false \}\)/.test(SENDER) && !/active: true \}\)/.test(SENDER.slice(0, SENDER.indexOf('const forward'))))
+check('a send is retried in front only when Send Request was never pressed', /res\.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT\.includes\(res\.error\)/.test(SENDER) && !/'not-signed-in'/.test(BG.slice(BG.indexOf('const TRYBE_RETRY_IN_FRONT'), BG.indexOf('const TRYBE_RETRY_IN_FRONT') + 300)))
+check('after a press, the tab in front is only looked at, never pressed again', (SENDER.match(/trybeRun\(trybeSendInPage/g) || []).length === 2 && /res\.outcome === 'unconfirmed' && pressed\) \{\s*await forward\(\)\s*await _sleep\(3000\)\s*const open = await trybeRun\(trybeBoxStillOpenInPage/.test(SENDER))
+check('MVP\'s tab is brought back only when SCOUT took the screen', /if \(cameForward\) await trybeBackTo\(callerTabId\)/.test(SENDER))
+{
+  const fn = BG.slice(BG.indexOf('function trybeBoxStillOpenInPage('), BG.indexOf('\n}\n', BG.indexOf('function trybeBoxStillOpenInPage(')) + 2)
+  const g = globalThis as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  const saved = { document: g.document }
+  try {
+    const box = (value: string, w: number) => ({ value, getBoundingClientRect: () => ({ width: w, height: w }) })
+    const run = (boxes: unknown[]) => { g.document = { querySelectorAll: () => boxes }; return new Function(`${fn}; return trybeBoxStillOpenInPage(arguments[0])`)('Hi there') }
+    check('the box check runs alone and tells an open box from a closed one', run([box('Hi there', 10)]) === true && run([]) === false && run([box('Hi there', 0)]) === false && run([box('other', 10)]) === false)
+  } finally { Object.assign(g, saved) }
+}
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')

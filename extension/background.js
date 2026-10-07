@@ -14541,6 +14541,28 @@ async function trybeSendInPage(name, message) {
   return { outcome: 'unconfirmed', error: err || 'TRYBE did not close the request box.', steps }
 }
 
+// In page, alone: is a box still holding this message? Used only to settle a
+// send whose box did not close while the tab was hidden. It presses nothing.
+function trybeBoxStillOpenInPage(message) {
+  const want = String(message || '').trim()
+  return Array.from(document.querySelectorAll('textarea')).some((t) => {
+    const r = t.getBoundingClientRect()
+    return r.width > 0 && r.height > 0 && String(t.value || '').trim() === want
+  })
+}
+
+/** Codes from before Send Request was pressed: nothing went to the brand, so
+ *  the send can be tried again safely. */
+const TRYBE_RETRY_IN_FRONT = ['brand-not-found', 'request-button-not-found', 'message-box-not-found', 'send-button-not-found', 'message-did-not-take', 'send-disabled', 'no-answer-from-page']
+
+// IN A TAB BEHIND (1.41.7, Seb: "i would prefer if it could do all of this
+// in a background tab"). Each request runs in a tab that never takes the
+// screen. Chrome holds back animation in a hidden tab, so a popup that
+// animates can stall there. Two fallbacks, and neither can send twice:
+//  - a stop BEFORE Send Request was pressed is tried once more in front,
+//    from a fresh page;
+//  - a box that did not close AFTER the press is only looked at in front
+//    (its closing animation finishes there). Send is never pressed again.
 async function trybeSend({ url, name, message }, callerTabId) {
   if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
   const safe = trybeSafeUrl(url)
@@ -14548,20 +14570,37 @@ async function trybeSend({ url, name, message }, callerTabId) {
   if (!name || !message || !String(message).trim()) return { outcome: 'failed', error: 'no-message' }
   const ka = startKeepAlive()
   let tabId = null
+  let cameForward = false
+  const forward = async () => { cameForward = true; try { await chrome.tabs.update(tabId, { active: true }) } catch (e) {} }
   try {
-    const tab = await chrome.tabs.create({ url: safe, active: true })
+    const tab = await chrome.tabs.create({ url: safe, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(1500)
-    const res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
-    if (!res) return { outcome: 'failed', error: 'no-answer-from-page' }
+    let res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
+    if (!res) res = { outcome: 'failed', error: 'no-answer-from-page', steps: [] }
+    const pressed = Array.isArray(res.steps) && res.steps.includes('pressed')
+    if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error)) {
+      await forward()
+      await chrome.tabs.reload(tabId)
+      await waitForTabLoad(tabId, 30000)
+      await _sleep(1500)
+      const again = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
+      res = again ? { ...again, steps: ['behind: ' + res.error, 'in front'].concat(again.steps || []) } : { outcome: 'failed', error: 'no-answer-from-page', steps: ['behind: ' + res.error, 'in front'] }
+    } else if (res.outcome === 'unconfirmed' && pressed) {
+      await forward()
+      await _sleep(3000)
+      const open = await trybeRun(trybeBoxStillOpenInPage, [String(message)], tabId)
+      if (open === false) res = { outcome: 'sent', steps: (res.steps || []).concat('closed in front') }
+    }
     if (res.outcome === 'sent') await _sleep(1200)
     return res
   } catch (e) {
     return { outcome: 'failed', error: e && e.message ? e.message : 'exception' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    await trybeBackTo(callerTabId)
+    // Back to MVP only when SCOUT had to take the screen.
+    if (cameForward) await trybeBackTo(callerTabId)
     stopKeepAlive(ka)
   }
 }
