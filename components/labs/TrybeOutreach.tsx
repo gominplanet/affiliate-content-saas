@@ -22,11 +22,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
-import TrybeInbox from '@/components/labs/TrybeInbox'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -149,6 +149,32 @@ function nicheIcon(name: string): LucideIcon {
   return rules.find(([re]) => re.test(n))?.[1] || Tag
 }
 
+/** A brand's own website icon, else its first letter. */
+function BrandMark({ name, website, size = 40 }: { name: string; website: string | null; size?: number }) {
+  const [bad, setBad] = useState(false)
+  let host = ''
+  try { host = website ? new URL(/^https?:/i.test(website) ? website : `https://${website}`).hostname : '' } catch { host = '' }
+  const box = { width: size, height: size }
+  if (!host || bad) {
+    return <span className="shrink-0 rounded-lg inline-flex items-center justify-center font-bold" style={{ ...box, background: 'rgba(124,58,237,0.12)', color: PURPLE, fontSize: size * 0.42 }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`} alt="" loading="lazy" onError={() => setBad(true)}
+    className="shrink-0 rounded-lg border object-contain p-1.5" style={{ ...box, borderColor: 'var(--border)', background: '#fff' }} />
+}
+
+/** A brand's TRYBE conversation, matched by its whole name: TRYBE names a
+ *  brand's chat after the brand ("NOBL", "HiStrips Team (DM)"). Only the whole
+ *  name counts, and never a group: "Audien Creator Vault" is a community of
+ *  400 creators, not Audien replying. The latest one wins. */
+function convoFor(brand: string, convos: Conversation[]): Conversation | null {
+  const n = (t: string) => t.toLowerCase().replace(/\(dm\)/g, ' ').replace(/[^a-z0-9()]+/g, ' ').replace(/\b(team|official)\b/g, ' ').replace(/\s+/g, ' ').trim()
+  const b = n(brand)
+  if (b.length < 2) return null
+  const hits = convos.filter(c => !/\(group\)/i.test(c.name) && n(c.name) === b)
+  return hits.sort((x, y) => y.at - x.at)[0] || null
+}
+
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
@@ -180,6 +206,12 @@ export default function TrybeOutreach() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [showAllNiches, setShowAllNiches] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  // The TRYBE inbox, for the unread count and which sent brands answered.
+  const [inbox, setInbox] = useState<{ convos: Conversation[]; me: string[]; myName: string } | null>(null)
+  const [inboxError, setInboxError] = useState<string | null>(null)
+  const [openChat, setOpenChat] = useState<{ id: string; n: number } | null>(null)
+  const [editingCore, setEditingCore] = useState(false)
+  const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting'>('all')
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean } | null>(null)
@@ -210,6 +242,7 @@ export default function TrybeOutreach() {
       setDirectory(d.directory ?? null)
       setIsAdmin(d.isAdmin === true)
       setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
+      if (!(d.settings?.coreMessage || '').trim()) setEditingCore(true)
       return d
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load'); return null }
     finally { setLoading(false) }
@@ -224,6 +257,13 @@ export default function TrybeOutreach() {
     })
   }, [load])
   useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
+  const canInbox = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
+  const loadInbox = useCallback(async () => {
+    const r = await fetchTrybeInbox().catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
+    if (r.ok) { setInbox({ convos: r.convos, me: r.me, myName: r.myName }); setInboxError(null) } else setInboxError(r.error)
+  }, [])
+  useEffect(() => { if (canInbox) void loadInbox() }, [canInbox, loadInbox])
+  const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   useEffect(() => {
     if (!waitUntil) return
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -482,8 +522,8 @@ export default function TrybeOutreach() {
   }, [hasDirectory, catsKey, kwsKey, liveNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Draft the brands ticked in the live list into Ready to send. */
-  async function draftPicked() {
-    const ids = Array.from(livePick)
+  async function draftPicked(only?: string[]) {
+    const ids = only || Array.from(livePick)
     if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
     if (!core.trim()) { toast.error('Write your core message first'); return }
     if (!(await saveSettings(true))) return
@@ -493,9 +533,9 @@ export default function TrybeOutreach() {
       const ready: string[] = a.ready || []
       const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0 }
       if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
-      if (r.ok) { toast.success(`${r.ok} added to Ready to send`); setTab('queue') }
-      if (!ready.length) toast.message('None of those could be drafted: they are already in your queue or sent.')
-      setLivePick(new Set())
+      if (r.ok) { toast.success(`${r.ok} added to Ready to send`); if (!only) setTab('queue') }
+      if (!ready.length) toast.message(only ? 'That brand is already in Ready to send or sent.' : 'None of those could be drafted: they are already in your queue or sent.')
+      if (!only) setLivePick(new Set())
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Drafting failed')
     } finally {
@@ -568,24 +608,30 @@ export default function TrybeOutreach() {
     await load()
   }
 
-  async function sendAll() {
+  async function sendAll() { await runSends(queue.slice(0, remaining), 'Send all') }
+  /** One message now, without waiting for the rest. */
+  async function sendOne(b: Brand) {
+    if (!remaining) { toast.error('Today’s cap is used.'); return }
+    await runSends([b], 'Send now')
+  }
+
+  async function runSends(list: Brand[], label: string) {
     // EVERY STOP SAYS WHY (2026-10-06: "it didn't do anything when i clicked
     // send all"). A send that could not start used to note it on a row the
     // reload then wiped, so a run could end with nothing on screen.
-    if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); say('Send all', 'Not started: SCOUT is not allowed on TRYBE yet.', 'bad'); return }
-    const list = queue.slice(0, remaining)
-    if (!list.length) { say('Send all', remaining ? 'Nothing in the queue to send.' : 'Today’s cap is used. The queue waits for tomorrow.', 'warn'); return }
+    if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); say(label, 'Not started: SCOUT is not allowed on TRYBE yet.', 'bad'); return }
+    if (!list.length) { say(label, remaining ? 'Nothing in the queue to send.' : 'Today’s cap is used. The queue waits for tomorrow.', 'warn'); return }
     stopRef.current = false
     setRunning(true)
-    say('Send all', `Starting: ${list.length} request${list.length === 1 ? '' : 's'}, one at a time. Keep this tab open.`, 'info')
+    say(label, `Starting: ${list.length} request${list.length === 1 ? '' : 's'}, one at a time. Keep this tab open.`, 'info')
     let sentThisRun = 0
     let lastFailed = false
     try {
       for (let i = 0; i < list.length; i++) {
-        if (stopRef.current) { say('Send all', 'Stopped.', 'warn'); break }
+        if (stopRef.current) { say(label, 'Stopped.', 'warn'); break }
         const b = list[i]
         const c = await api({ action: 'claim', brandId: b.brand_id }).catch(e => ({ ok: false, error: e.message }))
-        if (c.capped) { say('Send all', `Daily cap reached (${c.usedToday} of ${c.dailyCap} in the last 24 hours).`, 'warn'); toast.message('Daily cap reached'); break }
+        if (c.capped) { say(label, `Daily cap reached (${c.usedToday} of ${c.dailyCap} in the last 24 hours).`, 'warn'); toast.message('Daily cap reached'); break }
         if (!c.ok) { say(b.name, `Not started: ${c.error || 'MVP could not reserve it'}.`, 'bad'); toast.error(`${b.name}: ${c.error || 'could not start'}`); continue }
         setUsed(c.usedToday)
         setCurrent(b.brand_id)
@@ -607,7 +653,7 @@ export default function TrybeOutreach() {
         setCurrent(null)
         // Two failures in a row usually mean TRYBE changed or signed out: stop.
         if (res.outcome === 'failed' && lastFailed) {
-          say('Send all', 'Two sends in a row failed, so SCOUT stopped.', 'bad')
+          say(label, 'Two sends in a row failed, so SCOUT stopped.', 'bad')
           toast.error('Two sends in a row failed, so SCOUT stopped. See the run log.')
           break
         }
@@ -621,7 +667,7 @@ export default function TrybeOutreach() {
           setWaitUntil(null)
         }
       }
-      say('Send all', `Done: ${sentThisRun} sent.`, sentThisRun ? 'ok' : 'warn')
+      say(label, `Done: ${sentThisRun} sent.`, sentThisRun ? 'ok' : 'warn')
     } finally {
       setRunning(false); setCurrent(null); setWaitUntil(null)
       await load()
@@ -636,62 +682,97 @@ export default function TrybeOutreach() {
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50'
   const busy = !!finding || running
   const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.' : !remaining ? 'Today’s cap is used.' : !queue.length ? 'Nothing drafted yet.' : null
-  const TabBtn = ({ id, label }: { id: Tab; label: string }) => (
-    <button onClick={() => setTab(id)} className="px-3.5 py-2 text-[13px] font-semibold rounded-lg"
-      style={tab === id ? { background: PURPLE, color: '#fff' } : { color: 'var(--text)', border: '1px solid var(--border)' }}>{label}</button>
+
+  const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
+  const sentRows = history.map(b => {
+    const c = inbox ? convoFor(b.name, inbox.convos) : null
+    const lastMine = c && inbox ? lastIsMine(c, inbox.me, inbox.myName) : null
+    // Replied: TRYBE has a conversation with this brand and they wrote last.
+    const reply: 'replied' | 'waiting' | 'open' | 'none' | 'unknown' = !inbox ? 'unknown' : !c ? 'none' : lastMine === false ? 'replied' : lastMine === true ? 'waiting' : 'open'
+    return { b, c, reply }
+  })
+  const repliedCount = sentRows.filter(r => r.reply === 'replied').length
+  const Stat = ({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) => (
+    <div className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <p className="text-[10px] font-bold uppercase tracking-wider" style={soft}>{label}</p>
+      <p className="text-[24px] font-bold leading-tight mt-0.5 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
+      {hint && <p className="text-[11px] mt-0.5" style={soft}>{hint}</p>}
+    </div>
   )
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5" style={{ color: 'var(--text)' }}>
-      <div>
-        <h1 className="text-[22px] font-bold flex items-center gap-2"><Handshake size={20} style={{ color: PURPLE }} /> TRYBE Outreach <span className="text-[11px] font-semibold rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>Labs</span></h1>
-        <p className="text-[13px] mt-1" style={soft}>Tell MVP your niche. SCOUT finds brands on TRYBE, MVP checks each one against your niche from its website, writes a first message, and SCOUT sends the ones you approve, slowly.</p>
-        {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
-            MVP's referral link, and it says so. */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.06)' }}>
-          <span className="text-[13px]"><b>Not on TRYBE yet?</b> Joining is free. Sign up, then come back here signed in.</span>
-          <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" className={`${btn} ml-auto`} style={{ background: PURPLE, color: '#fff' }}>
-            Join TRYBE free <ExternalLink size={12} />
+      {/* Header: what this is, whether SCOUT can work, where to join. */}
+      <div className="flex flex-wrap items-start gap-3">
+        <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
+        <div className="flex-1 min-w-[14rem]">
+          <h1 className="text-[22px] font-bold leading-tight flex items-center gap-2">TRYBE Outreach <span className="text-[10px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>Labs</span></h1>
+          <p className="text-[13px] mt-0.5" style={soft}>Find brands that fit your channel, send each a first message in your words, and answer them here.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {access === 'granted' && <span className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full px-2.5 py-1" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}><Check size={13} /> SCOUT is ready</span>}
+          {access === 'checking' && <span className="text-[12px]" style={soft}>Checking SCOUT...</span>}
+          {access === 'no-scout' && <span className="text-[12px] font-semibold" style={{ color: RED }}>SCOUT is not installed in this browser</span>}
+          {access === 'old' && <span className="text-[12px] font-semibold" style={{ color: RED }}>SCOUT needs an update for TRYBE</span>}
+          {access === 'not-granted' && <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button>}
+          {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
+              MVP's referral link, and it says so. */}
+          <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
+            className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full border px-2.5 py-1" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
+            New to TRYBE? Join free <ExternalLink size={11} />
           </a>
-          <span className="w-full text-[11px]" style={soft}>This is MVP&rsquo;s referral link.</span>
         </div>
       </div>
 
-      {/* Status */}
-      <div className={card} style={cardStyle}>
-        <div className="flex flex-wrap items-center gap-4 text-[13px]">
-          <span><b>{used}</b> of <b>{cap}</b> sent in the last 24 hours</span>
-          <span style={soft}>{queue.length} ready to send, {found.length} found that fit</span>
-          <span className="ml-auto">
-            {access === 'granted' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={14} /> SCOUT can work in TRYBE</span>}
-            {access === 'checking' && <span style={soft}>Checking SCOUT...</span>}
-            {access === 'no-scout' && <span style={{ color: RED }}>SCOUT is not installed in this browser</span>}
-            {access === 'old' && <span style={{ color: RED }}>SCOUT needs an update for TRYBE</span>}
-            {access === 'not-granted' && <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button>}
-          </span>
-        </div>
-        {finding && (
-          <p className="text-[12px] mt-2 inline-flex items-center gap-1.5" style={{ color: PURPLE }}>
-            <Loader2 size={12} className="animate-spin" /> {finding.stage}{finding.total ? ` (${finding.done ?? 0} of ${finding.total})` : '...'}
-          </p>
-        )}
+      {/* The numbers that matter today. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <Stat label="Sent today" value={`${used} of ${cap}`} hint={remaining ? `${remaining} left today` : 'Daily cap reached'} />
+        <Stat label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} />
+        <Stat label="Replied" value={inbox ? `${repliedCount} of ${history.length}` : '...'} hint={inbox ? 'Brands that wrote back' : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedCount ? GREEN : undefined} />
+        <Stat label="Unread" value={inbox ? String(unread) : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : ' '} tone={unread ? PURPLE : undefined} />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <TabBtn id="find" label="Find brands" />
-        <TabBtn id="queue" label={`Ready to send (${queue.length})`} />
-        <TabBtn id="sent" label={`Sent (${history.length})`} />
-        <TabBtn id="inbox" label="Inbox" />
+      {finding && (
+        <p className="text-[12px] inline-flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>
+          <Loader2 size={12} className="animate-spin" /> {finding.stage}{finding.total ? ` (${finding.done ?? 0} of ${finding.total})` : '...'}
+        </p>
+      )}
+
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border p-1 w-fit max-w-full" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} role="tablist">
+        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold"
+            style={tab === id ? { background: PURPLE, color: '#fff' } : { color: 'var(--text)' }}>
+            {label}
+            {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[1.25rem] text-center tabular-nums" style={tab === id ? { background: 'rgba(255,255,255,0.25)' } : id === 'inbox' ? { background: PURPLE, color: '#fff' } : { background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{n}</span>}
+          </button>
+        ))}
       </div>
 
       {tab === 'find' && (<>
-        {/* 1. Core message */}
+        {/* 1. Core message: a short preview once written, the box while editing. */}
         <div className={card} style={cardStyle}>
-          <p className="text-[14px] font-semibold">1. Your core message</p>
-          <p className="text-[12px] mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
-          <textarea value={core} onChange={e => setCore(e.target.value)} rows={7} placeholder={STARTER}
-            className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
-          {!core.trim() && <button onClick={() => setCore(STARTER)} className={`${btn} mt-2`} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[14px] font-semibold">1. Your core message</p>
+            {!editingCore && core.trim() && (
+              <button onClick={() => setEditingCore(true)} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><Pencil size={12} /> Edit</button>
+            )}
+          </div>
+          {!editingCore && core.trim() ? (
+            <p className="text-[13px] mt-2 whitespace-pre-wrap line-clamp-3" style={soft}>{core}</p>
+          ) : (<>
+            <p className="text-[12px] mt-1 mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
+            <textarea value={core} onChange={e => setCore(e.target.value)} rows={8} placeholder={STARTER}
+              className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              {!core.trim() && <button onClick={() => setCore(STARTER)} className={btn} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
+              <button onClick={() => void saveSettings().then(ok => { if (ok && core.trim()) { setEditingCore(false); setSaved(sv => (sv ? { ...sv, core } : sv)) } })} disabled={savingSettings || !core.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+                {savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save message
+              </button>
+              {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
+            </div>
+          </>)}
         </div>
 
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
@@ -843,19 +924,23 @@ export default function TrybeOutreach() {
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
                   <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.04)' : undefined }}>
-                    <input type="checkbox" className="mt-1 accent-[#7C3AED]" checked={on} disabled={taken}
+                    <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
+                    <BrandMark name={b.name} website={b.website} />
                     <span className="flex-1 min-w-0">
-                      <span className="flex flex-wrap items-center gap-2 text-[13px]">
-                        <span className="text-[14px] font-semibold">{b.name}</span>
-                        {where && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
-                        {b.fit_score != null && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Fit {b.fit_score}</span>}
-                        {b.pay_text && <span className="text-[12px] font-medium" style={{ color: PURPLE }}>{b.pay_text}</span>}
-                        {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Star size={11} /> Score {b.trybe_score}</span>}
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-[15px] font-semibold">{b.name}</span>
+                        {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
-                      {b.fit_reason && <span className="block text-[12px] mt-1">{b.fit_reason}</span>}
-                      {!b.fit_reason && b.about && <span className="block text-[12px] mt-1" style={soft}>{b.about.length > 220 ? `${b.about.slice(0, 220)}...` : b.about}</span>}
+                      <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+                        {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}><Star size={10} /> TRYBE score {b.trybe_score}</span>}
+                        {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Fit {b.fit_score}</span>}
+                        {b.total_creators != null && b.total_creators > 0 && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creators</span>}
+                      </span>
+                      {b.fit_reason && <span className="block text-[12px] mt-1.5">{b.fit_reason}</span>}
+                      {!b.fit_reason && b.about && <span className="block text-[12px] mt-1.5 line-clamp-2" style={soft}>{b.about}</span>}
                       {b.products.length > 0 && (
                         <span className="flex flex-wrap gap-1.5 mt-2">
                           {b.products.map(pr => (
@@ -866,6 +951,14 @@ export default function TrybeOutreach() {
                       )}
                       {b.categories.length > 0 && <span className="block text-[11px] mt-1.5" style={soft}>{b.categories.join(' • ')}</span>}
                     </span>
+                    {/* One brand, one click: written straight into Ready to send. */}
+                    {!taken && (
+                      <button onClick={e => { e.preventDefault(); e.stopPropagation(); void draftPicked([b.brand_id]) }} disabled={busy}
+                        className="self-start shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50"
+                        style={{ border: `1px solid ${PURPLE}`, color: PURPLE }} title="Write this brand a message now">
+                        <MessageCircle size={12} /> Message
+                      </button>
+                    )}
                   </label>
                 )
               })}
@@ -978,7 +1071,7 @@ export default function TrybeOutreach() {
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. Pick brands in Find brands and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} onSendNow={t => void saveDraft(b, t).then(() => sendOne({ ...b, draft: t }))} canSend={access === 'granted' && remaining > 0 && !finding} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -998,33 +1091,74 @@ export default function TrybeOutreach() {
         </div>
       )}
 
-      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} />}
+      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onConvos={onInboxConvos} />}
 
       {tab === 'sent' && (
         <div className={card} style={cardStyle}>
-          <p className="text-[14px] font-semibold mb-2">Sent and tried</p>
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <p className="text-[14px] font-semibold">Sent and tried</p>
+            {canInbox && (
+              <button onClick={() => void loadInbox()} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><RotateCcw size={12} /> Check replies</button>
+            )}
+          </div>
+          {/* WHO ANSWERED (Seb, 2026-10-07). Read from the TRYBE inbox: a brand
+              whose conversation's last message is theirs has replied. A brand
+              with no conversation has not answered on TRYBE yet. */}
+          <p className="text-[12px] mb-3" style={soft}>
+            {inbox ? `${repliedCount} of ${history.length} replied. Replies are read from your TRYBE inbox.`
+              : inboxError ? `Replies could not be read from TRYBE: ${inboxError}`
+              : canInbox ? 'Reading replies from your TRYBE inbox...' : 'Allow SCOUT on TRYBE to see which brands replied.'}
+          </p>
+          {inbox && history.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {([['all', `All (${history.length})`], ['replied', `Replied (${repliedCount})`], ['waiting', `No reply yet (${sentRows.filter(r => r.reply !== 'replied').length})`]] as Array<[typeof sentFilter, string]>).map(([id, label]) => (
+                <button key={id} onClick={() => setSentFilter(id)} className="rounded-full border px-3 py-1 text-[12px] font-semibold"
+                  style={sentFilter === id ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>{label}</button>
+              ))}
+            </div>
+          )}
           {!history.length && <p className="text-[13px]" style={soft}>Nothing sent yet.</p>}
-          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {history.map(b => (
-              <div key={b.brand_id} className="py-2 flex flex-wrap items-center gap-2 text-[13px]">
-                <span className="font-medium">{b.name}</span>
-                {b.status === 'sent' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={13} /> Sent {b.sent_at ? new Date(b.sent_at).toLocaleString() : ''}</span>}
-                {b.status === 'already' && <span style={soft}>Already requested on TRYBE</span>}
-                {b.status === 'failed' && (
-                  <span className="inline-flex flex-wrap items-center gap-2" style={{ color: RED }}>
-                    <AlertTriangle size={13} /> Not sent: {sendWords(b.error)}
-                    {!running && b.draft && <button onClick={() => void requeue(b)} className="underline">Queue it again</button>}
-                    {!running && <button onClick={() => void remove(b)} className="underline">Remove</button>}
-                  </span>
+          <div className="space-y-2">
+            {sentRows.filter(r => sentFilter === 'all' || (sentFilter === 'replied' ? r.reply === 'replied' : r.reply !== 'replied')).map(({ b, c, reply }) => (
+              <div key={b.brand_id} className="flex items-start gap-3 rounded-xl border p-3" style={{ borderColor: reply === 'replied' ? 'rgba(22,163,74,0.45)' : 'var(--border)' }}>
+                <BrandMark name={b.name} website={b.website} size={36} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+                    <span className="text-[14px] font-semibold">{b.name}</span>
+                    {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied</span>}
+                    {reply === 'waiting' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
+                    {reply === 'open' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Conversation open</span>}
+                    {reply === 'none' && (b.status === 'sent' || b.status === 'already') && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>No reply yet</span>}
+                    {c && c.unread > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 text-white" style={{ background: PURPLE }}>{c.unread} new</span>}
+                  </div>
+                  <div className="text-[12px] mt-1">
+                    {b.status === 'sent' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={12} /> Request sent {b.sent_at ? new Date(b.sent_at).toLocaleString() : ''}</span>}
+                    {b.status === 'already' && <span style={soft}>Already requested on TRYBE</span>}
+                    {b.status === 'failed' && (
+                      <span className="inline-flex flex-wrap items-center gap-2" style={{ color: RED }}>
+                        <AlertTriangle size={12} /> Not sent: {sendWords(b.error)}
+                        {!running && b.draft && <button onClick={() => void requeue(b)} className="underline">Queue it again</button>}
+                        {!running && <button onClick={() => void remove(b)} className="underline">Remove</button>}
+                      </span>
+                    )}
+                    {b.status === 'sending' && current !== b.brand_id && (
+                      <span className="inline-flex flex-wrap items-center gap-2" style={{ color: AMBER }}>
+                        <AlertTriangle size={12} /> Not confirmed{b.error ? `: ${sendWords(b.error)}` : ''}. Is it in TRYBE&rsquo;s Pending Requests?
+                        <button onClick={() => void settle(b, true)} className="underline">Yes, it went</button>
+                        <button onClick={() => void settle(b, false)} className="underline">No, queue it again</button>
+                      </span>
+                    )}
+                    {b.status === 'sending' && current === b.brand_id && <span className="inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> Sending now</span>}
+                  </div>
+                  {c?.last && <p className="text-[12px] mt-1.5 rounded-lg px-2.5 py-1.5 line-clamp-2" style={{ background: 'var(--surface-2, rgba(0,0,0,0.04))' }}>{c.last}</p>}
+                </div>
+                {c && (
+                  <button onClick={() => { setOpenChat(o => ({ id: c.id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }}
+                    className="self-start shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold"
+                    style={reply === 'replied' ? { background: PURPLE, color: '#fff' } : { border: `1px solid ${PURPLE}`, color: PURPLE }}>
+                    <MessageCircle size={12} /> Open chat
+                  </button>
                 )}
-                {b.status === 'sending' && current !== b.brand_id && (
-                  <span className="inline-flex flex-wrap items-center gap-2" style={{ color: AMBER }}>
-                    <AlertTriangle size={13} /> Not confirmed{b.error ? `: ${sendWords(b.error)}` : ''}. Is it in TRYBE&rsquo;s Pending Requests?
-                    <button onClick={() => void settle(b, true)} className="underline">Yes, it went</button>
-                    <button onClick={() => void settle(b, false)} className="underline">No, queue it again</button>
-                  </span>
-                )}
-                {b.status === 'sending' && current === b.brand_id && <span className="inline-flex items-center gap-1" style={soft}><Loader2 size={13} className="animate-spin" /> Sending now</span>}
               </div>
             ))}
           </div>
@@ -1034,33 +1168,55 @@ export default function TrybeOutreach() {
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting }: { b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean }) {
+function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend }: {
+  b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean
+  /** Saves the text shown, then sends it: never an older copy. */
+  onSendNow: (text: string) => void; canSend: boolean
+}) {
   const [text, setText] = useState(b.draft || '')
+  // COMPACT UNTIL OPENED (Seb, 2026-10-07): a short preview per brand, the
+  // full box only for the one being edited.
+  const [open, setOpen] = useState(false)
   useEffect(() => { setText(b.draft || '') }, [b.draft])
   const researched = !!(b.site_summary || (b.site_products && b.site_products.length))
+  const soft = { color: 'var(--text-soft)' }
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: busy ? PURPLE : 'var(--border)' }}>
-      <div className="flex flex-wrap items-center gap-2 text-[13px] mb-1.5">
-        <span className="font-semibold">{b.name}</span>
-        {b.fit_score != null && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Fit {b.fit_score}</span>}
-        {b.worked_with && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
-        {b.pay_text && <span className="text-[12px]" style={{ color: PURPLE }}>{b.pay_text}</span>}
-        {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={{ color: 'var(--text-soft)' }}><Star size={11} /> Score {b.trybe_score}</span>}
-        {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={{ color: 'var(--text-soft)' }}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
-        <span className="ml-auto text-[11px]" style={{ color: researched ? GREEN : AMBER }}>
-          {researched ? `Written from their website${b.site_products?.length ? `, ${b.site_products.length} products seen` : ''}` : `Website not read${b.site_error ? `: ${b.site_error}` : ''}`}
-        </span>
-      </div>
-      {b.fit_reason && <p className="text-[12px] mb-1">{b.fit_reason}</p>}
-      {b.categories && b.categories.length > 0 && <p className="text-[11px] mb-1.5" style={{ color: 'var(--text-soft)' }}>{b.categories.join(' • ')}</p>}
-      <textarea value={text} onChange={e => setText(e.target.value)} onBlur={() => onSave(text)} rows={8} disabled={disabled}
-        className="w-full rounded-lg border p-2.5 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-      <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: 'var(--text-soft)' }}>
-        <span>{text.length} characters, sent as shown, line breaks included</span>
-        {b.error && <span style={{ color: RED }}>Last try: {sendWords(b.error)}</span>}
-        {busy && <span className="inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
-        <button onClick={onRewrite} disabled={disabled || rewriting} className="ml-auto inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: PURPLE }} title="Write it again from your core message as it is now"><RotateCcw size={11} /> Rewrite</button>
-        <button onClick={onRemove} disabled={disabled} className="inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: RED }}><Trash2 size={11} /> Remove</button>
+    <div className="rounded-xl border p-3.5" style={{ borderColor: busy ? PURPLE : 'var(--border)', background: 'var(--surface)' }}>
+      <div className="flex items-start gap-3">
+        <BrandMark name={b.name} website={b.website} size={36} />
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[14px] font-semibold">{b.name}</span>
+            {b.worked_with && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
+            {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+            {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+            {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
+          </div>
+          <p className="text-[11px] mt-0.5" style={{ color: researched ? GREEN : AMBER }}>
+            {researched ? 'Written knowing their website' : `Website not read${b.site_error ? `: ${b.site_error}` : ''}`}
+          </p>
+          {!open && (
+            <button onClick={() => setOpen(true)} className="block w-full text-left mt-2 rounded-lg px-3 py-2 text-[13px] whitespace-pre-wrap line-clamp-3" style={{ background: 'var(--surface-2, rgba(0,0,0,0.04))' }} title="Open to read or edit">
+              {text || 'No message yet.'}
+            </button>
+          )}
+          {open && (<>
+            <textarea value={text} onChange={e => setText(e.target.value)} onBlur={() => onSave(text)} rows={10} disabled={disabled} autoFocus
+              className="w-full mt-2 rounded-lg border p-2.5 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
+            <p className="text-[11px] mt-1" style={soft}>{text.length} characters, sent as shown, line breaks included. Changes save when you click away.</p>
+          </>)}
+          {b.error && <p className="text-[11px] mt-1" style={{ color: RED }}>Last try: {sendWords(b.error)}</p>}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2 text-[12px]">
+            <button onClick={() => { if (open) onSave(text); setOpen(o => !o) }} className="inline-flex items-center gap-1 font-semibold" style={{ color: 'var(--text)' }}>
+              {open ? <><ChevronUp size={12} /> Done</> : <><Pencil size={11} /> Edit</>}
+            </button>
+            <button onClick={onRewrite} disabled={disabled || rewriting} className="inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: PURPLE }} title="Write it again from your core message as it is now"><RotateCcw size={11} /> Rewrite</button>
+            <button onClick={onRemove} disabled={disabled} className="inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: RED }}><Trash2 size={11} /> Remove</button>
+            <button onClick={() => onSendNow(text)} disabled={disabled || !canSend || !text.trim()} className="ml-auto inline-flex items-center gap-1 rounded-lg px-3 py-1.5 font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }} title="Send just this one now">
+              <Send size={11} /> Send now
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

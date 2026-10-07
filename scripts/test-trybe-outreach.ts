@@ -78,7 +78,7 @@ check('a markdown link goes out as its address', tidyDraft('See [www.gominreview
 check('a draft can be written again from the core message', /onRewrite=\{\(\) => void rewrite\(\[b\]\)\}/.test(UI) && /Rewrite all/.test(UI))
 check('the route judges fit and never drafts a brand that does not fit', /action === 'match'/.test(ROUTE) && /r\.status === 'not_fit'\) return \{ brandId: r\.brand_id, ok: false/.test(ROUTE))
 check('a brand that does not fit is never sent', !/'not_fit'/.test(ROUTE.slice(ROUTE.indexOf("action === 'claim'"), ROUTE.indexOf("action === 'result'"))) && /\['drafted', 'failed'\]\.includes\(row\.status\)/.test(ROUTE))
-check('Ready to send is its own tab', /<TabBtn id="queue"/.test(UI) && /tab === 'queue' &&/.test(UI))
+check('Ready to send is its own tab', /\['queue', 'Ready to send', queue\.length\]/.test(UI) && /tab === 'queue' &&/.test(UI))
 check('a send that cannot start says why in the run log', /Not started: \$\{c\.error/.test(UI) && /Run log/.test(UI))
 check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /savedKey === prefsKey\(\[\], \[\]\)\) return/.test(UI))
 check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
@@ -149,7 +149,7 @@ check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /asyn
 check('a reply counts as sent only when it shows in the conversation', /const seen = after\.some\(m => flat\(m\.text\) === flat\(text\)\)/.test(INBOX) && /const flat = \(t: string\) => t\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)/.test(INBOX))
 check('nothing TRYBE says is stored on MVP', !/fetch\('\/api\//.test(INBOX))
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
-check('the inbox is a tab of TRYBE Outreach, still Labs', /<TabBtn id="inbox" label="Inbox" \/>/.test(UI) && /trybe_outreach: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
+check('the inbox is a tab of TRYBE Outreach, still Labs', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI) && /trybe_outreach: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
 
 const collectorRun = (async () => {
   const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))
@@ -212,7 +212,7 @@ check('searching a keyword is shown as the better way, niches as one click', /Be
 check('a niche alone nudges toward a keyword', /cats\.length > 0 && !kws\.length/.test(UI) && /Add a keyword/.test(UI))
 check('MVP\'s copy of TRYBE is described to the admin only', /isAdmin: g\.tier === 'admin'/.test(ROUTE) && UI.split('MVP&rsquo;s copy of TRYBE: <b>').slice(0, -1).every(before => /isAdmin && /.test(before.slice(-700))) && UI.includes('MVP&rsquo;s copy of TRYBE: <b>'))
 check('a problem from a find is shown to everyone, not only the admin', /findNotes\.filter\(n => !ADMIN_NOTE\.test\(n\)\)/.test(UI) && /const ADMIN_NOTE = \/\^\(SCOUT collected /.test(UI))
-check('the queue is called Ready to send', /label=\{`Ready to send \(\$\{queue\.length\}\)`\}/.test(UI) && !/[Mm]orning queue/.test(UI))
+check('the queue is called Ready to send', /\['queue', 'Ready to send', queue\.length\]/.test(UI) && !/[Mm]orning queue/.test(UI))
 check('Remove never touches a brand that went, or may have gone, to TRYBE', /action === 'remove'/.test(ROUTE) && /\.in\('status', \['new', 'not_fit', 'drafted', 'skipped', 'failed'\]\)\.select\('brand_id'\)/.test(ROUTE) && /onRemove=\{\(\) => void remove\(b\)\}/.test(UI))
 check('a removed brand stays out of the daily find but can be picked by hand', /\['not_fit', 'skipped', 'removed'\]/.test(ROUTE) && /'removed'/.test(LIB))
 check('a message never singles out one product', /never single out one product/.test(LIB) && !/a product by name from its website/.test(LIB))
@@ -253,6 +253,24 @@ check('SCOUT lets MVP mark a TRYBE conversation read', /\(messages\|read\)\$\//.
 check('a message is yours by your whole name when no id matches, never by first name alone', /const byName = !!myName && !!senderFull && senderFull === myName/.test(INBOX) && /first && last \? `\$\{first\} \$\{last\}`/.test(INBOX))
 
 check('a reply sent from MVP teaches who you are, and the list shows it after', /const learned = after\.filter\(m => flat\(m\.text\) === flat\(text\)\)\.flatMap\(m => m\.whoIds\)/.test(INBOX) && /\/\/ The list shows the new latest message\.\s*void loadList\(\)/.test(INBOX))
+
+// The redesign (Seb, 2026-10-07): numbers up top, who replied, one-click
+// Message, compact cards with Send now.
+check('the page shows sent today, ready, replied and unread', /<Stat label="Sent today"/.test(UI) && /<Stat label="Ready to send"/.test(UI) && /<Stat label="Replied"/.test(UI) && /<Stat label="Unread"/.test(UI))
+check('a sent brand is marked replied only when its TRYBE chat ends with them', /lastMine === false \? 'replied'/.test(UI) && /!c \? 'none'/.test(UI) && /export function lastIsMine/.test(INBOX))
+check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ id: c\.id, n: \(o\?\.n \?\? 0\) \+ 1 \}\)\); setTab\('inbox'\)/.test(UI) && /openRequest=\{openChat\}/.test(UI) && /handled\.current === openRequest\.n/.test(INBOX))
+check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
+check('Send now saves the text shown before sending it', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(\(\) => sendOne\(\{ \.\.\.b, draft: t \}\)\)\}/.test(UI))
+check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{ await runSends\(queue\.slice\(0, remaining\), 'Send all'\) \}/.test(UI) && /if \(!remaining\) \{ toast\.error\('Today’s cap is used\.'\); return \}/.test(UI))
+{
+  const n = (s: string) => s
+  void n
+  const src = UI.slice(UI.indexOf('function convoFor('), UI.indexOf('\n}\n', UI.indexOf('function convoFor(')) + 2)
+  const js = src.replace('(brand: string, convos: Conversation[]): Conversation | null', '(brand, convos)').replace(/\(t: string\)/g, '(t)')
+  const find = new Function(`${js}; return convoFor`)() as (b: string, c: Array<{ name: string; at: number }>) => { name: string } | null
+  const cs = [{ name: 'NOBL', at: 2 }, { name: 'HiStrips Team (DM)', at: 3 }, { name: 'Gains In Bulk Team (DM)', at: 1 }, { name: 'Audien Creator Vault', at: 5 }, { name: 'NOBL Q&A', at: 9 }, { name: 'Bread Lace (Group)', at: 4 }]
+  check('a sent brand finds its TRYBE chat by name, and not a lookalike', find('NOBL', cs)?.name === 'NOBL' && find('HiStrips', cs)?.name === 'HiStrips Team (DM)' && find('Gains In Bulk', cs)?.name === 'Gains In Bulk Team (DM)' && find('Audien', cs) === null && find('Obvi', cs) === null && find('Bread Lace', cs) === null)
+}
 
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }

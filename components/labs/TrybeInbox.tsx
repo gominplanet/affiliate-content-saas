@@ -40,7 +40,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'n
 
 /** The list inside a TRYBE answer: `data`, `data.items`, `items`, `channels`,
  *  `messages`, or the answer itself. */
-function listOf(json: unknown): unknown[] {
+export function listOf(json: unknown): unknown[] {
   if (Array.isArray(json)) return json
   if (!isObj(json)) return []
   for (const k of ['data', 'items', 'channels', 'messages', 'results']) {
@@ -51,10 +51,10 @@ function listOf(json: unknown): unknown[] {
   return []
 }
 
-interface Conversation { id: string; name: string; last: string; at: number; unread: number; raw: Obj }
+export interface Conversation { id: string; name: string; last: string; at: number; unread: number; raw: Obj }
 interface Message { id: string; text: string; who: string; whoId: string; whoIds: string[]; at: number; mine: boolean | null }
 
-function readConversation(raw: unknown): Conversation | null {
+export function readConversation(raw: unknown): Conversation | null {
   if (!isObj(raw)) return null
   const id = str(raw.id ?? raw.channelId ?? raw.channel_id ?? raw._id)
   if (!id) return null
@@ -66,7 +66,7 @@ function readConversation(raw: unknown): Conversation | null {
   return { id, name, last, at: Date.parse(str(atRaw)) || 0, unread, raw }
 }
 
-function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
+export function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
   if (!isObj(raw)) return null
   const id = str(raw.id ?? raw.messageId ?? raw._id)
   const text = str(pick(raw, ['content', 'text', 'body', 'message']))
@@ -97,7 +97,7 @@ function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
  *  the brand's side). TRYBE's profile can carry a profile id and a user id;
  *  taking the first one found missed when messages name the other. Every id
  *  under an id-like key, three levels deep, counts. */
-function myIds(json: unknown): string[] {
+export function myIds(json: unknown): string[] {
   const out = new Set<string>()
   const walk = (v: unknown, depth: number) => {
     if (depth > 3) return
@@ -114,7 +114,7 @@ function myIds(json: unknown): string[] {
 
 /** First and last name, lower case, or a whole-name field: '' when only part
  *  of a name is there. */
-function fullName(o: Obj): string {
+export function fullName(o: Obj): string {
   const first = str(o.firstName ?? o.first_name).trim(), last = str(o.lastName ?? o.last_name).trim()
   const whole = first && last ? `${first} ${last}` : str(o.fullName ?? o.full_name).trim()
   return whole.replace(/\s+/g, ' ').toLowerCase()
@@ -134,6 +134,26 @@ function savedMe(): string[] {
   try { const v = JSON.parse(localStorage.getItem(ME_KEY) || '[]'); return Array.isArray(v) ? v.map(String).slice(0, 20) : [] } catch { return [] }
 }
 
+/** Who wrote a conversation's last message: you (true), them (false), or
+ *  unknown (null). */
+export function lastIsMine(c: Conversation, me: string[], myName: string): boolean | null {
+  const lastObj = isObj(c.raw.lastMessage) ? c.raw.lastMessage : isObj(c.raw.last_message) ? c.raw.last_message : null
+  if (!lastObj) return null
+  return readMessage(lastObj, me, myName)?.mine ?? null
+}
+
+/** The conversation list and who you are, for the page around the inbox:
+ *  unread counts and which sent brands answered. */
+export async function fetchTrybeInbox(): Promise<{ ok: true; convos: Conversation[]; me: string[]; myName: string } | { ok: false; error: string }> {
+  const p = await requestTrybeApi('GET', '/backend/api/profile')
+  const po = isObj(p.json) && isObj(p.json.data) ? p.json.data : isObj(p.json) ? p.json : null
+  const me = Array.from(new Set([...(p.ok ? myIds(p.json) : []), ...(typeof window === 'undefined' ? [] : savedMe())]))
+  const myName = po ? fullName(po as Obj) : ''
+  const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
+  if (!r.ok) return { ok: false, error: errWords(r) }
+  return { ok: true, convos: listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c), me, myName }
+}
+
 const SAY: Record<string, string> = {
   'no-access': 'SCOUT is not allowed on TRYBE yet. Allow it at the top of this page.',
   'not-allowed': 'SCOUT refused that request: it only reads and answers TRYBE conversations.',
@@ -144,7 +164,13 @@ const SAY: Record<string, string> = {
 const errWords = (r: { error?: string; status?: number }) =>
   r.error ? (SAY[r.error] || r.error) : r.status === 401 || r.status === 403 ? `TRYBE refused it (${r.status}): open jointrybe.com, sign in, and try again.` : `TRYBE answered ${r.status ?? 'nothing'}.`
 
-export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: string | null; allowed: boolean }) {
+export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvos }: {
+  scoutVersion: string | null; allowed: boolean
+  /** A conversation the page asked to open (Sent's "Open chat"). */
+  openRequest?: { id: string; n: number } | null
+  /** Every fresh conversation list, so the page's unread count follows. */
+  onConvos?: (convos: Conversation[]) => void
+}) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
   const [listNote, setListNote] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(false)
@@ -176,10 +202,11 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
       if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }
       const list = listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c).sort((a, b) => b.at - a.at)
       setConvos(list)
+      onConvos?.(list)
       if (!list.length) setListNote(listOf(r.json).length ? `MVP could not read TRYBE's conversations. TRYBE sent: ${shapeOf(r.json)}.` : 'No conversations on TRYBE yet.')
       return list
     } finally { setLoadingList(false) }
-  }, [me])
+  }, [me, myName, onConvos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMessages = useCallback(async (id: string, quiet = false) => {
     if (!quiet) { setLoadingMsgs(true); setMsgNote(null) }
@@ -194,6 +221,13 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
   }, [me, myName])
 
   useEffect(() => { if (ready && convos === null) void loadList() }, [ready, convos, loadList])
+  // Sent's "Open chat": open that conversation once the list is here.
+  const handled = useRef(0)
+  useEffect(() => {
+    if (!openRequest || !convos || handled.current === openRequest.n) return
+    const c = convos.find(x => x.id === openRequest.id)
+    if (c) { handled.current = openRequest.n; void open(c) }
+  }, [openRequest, convos]) // eslint-disable-line react-hooks/exhaustive-deps
   // THE THREAD SCROLLS, NOT THE PAGE (Seb, 2026-10-07: "the window always
   // kind of jumps up. And then comes back down"). scrollIntoView moved every
   // scrolling box up to the page itself to bring the last message into view.
