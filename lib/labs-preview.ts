@@ -69,7 +69,7 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // it. Admin only while it is tested (Seb, 2026-10-06: "build 1 and 3 in labs").
   group_queue: 'admin',
   // TRYBE outreach: SCOUT reads TRYBE's Discover Brands, MVP drafts a first
-  // message per brand, the creator approves a morning queue, SCOUT sends it slowly.
+  // message per brand, the creator approves the Ready to send list, SCOUT sends it slowly.
   trybe_outreach: 'admin',
 }
 

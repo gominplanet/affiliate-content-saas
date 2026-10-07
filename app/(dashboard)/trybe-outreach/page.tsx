@@ -2,7 +2,7 @@
  * /trybe-outreach — TRYBE Outreach (LABS, admin while it is tested). SCOUT
  * reads TRYBE's Discover Brands, MVP studies each brand's website and drafts a
  * first message from the creator's core message, the creator skims the
- * morning queue and presses Send all, and SCOUT requests to join each brand
+ * Ready to send list and presses Send all, and SCOUT requests to join each brand
  * slowly, under a daily cap.
  */
 'use client'

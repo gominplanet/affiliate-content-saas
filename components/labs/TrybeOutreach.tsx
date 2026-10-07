@@ -8,7 +8,7 @@
 //      TRYBE profile and website and judges whether it fits. "Not just blindly
 //      message all brands."
 //   3. The brands that fit are listed, best first, with why. Tick and draft.
-//   Morning queue, its own tab: every day, when this page is opened, MVP and
+//   Ready to send, its own tab: every day, when this page is opened, MVP and
 //   SCOUT find up to 20 new brands that fit and draft them. You skim and press
 //   Send all; SCOUT presses Request to Join for each, 45 to 120 seconds apart.
 //
@@ -20,7 +20,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus } from 'lucide-react'
+import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus, Trash2, Tag,
+  Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
+  Scissors, Droplet, Coffee, Leaf, Wand2, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
 import TrybeInbox from '@/components/labs/TrybeInbox'
@@ -48,7 +50,7 @@ interface Brand {
   site_summary: string | null
   site_products: string[] | null
   site_error: string | null
-  status: 'new' | 'not_fit' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already'
+  status: 'new' | 'not_fit' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already' | 'removed'
   draft: string | null
   sent_at: string | null
   send_started_at: string | null
@@ -121,6 +123,29 @@ function passWords(p: TrybeScanPass): string {
   return `${what}: ${p.listed} listed, ${p.read} new read`
 }
 
+/** Keywords offered to try, one click each. */
+const KEYWORD_EXAMPLES = ['golf', 'bible journaling', 'dog toys', 'camping gear', 'coffee', 'kids crafts']
+/** Find notes that only describe MVP's copy of TRYBE (counts, where it came
+ *  from) and go to the admin only. Every other note, a problem above all, is
+ *  shown to everyone: a find that failed must never look like a quiet one. */
+const ADMIN_NOTE = /^(SCOUT collected |Using MVP's copy|The TRYBE list carried no websites)/
+/** Niches shown before "Show all". */
+const NICHES_SHOWN = 12
+
+/** A picture for a TRYBE niche, from its name. Anything unknown gets a tag. */
+function nicheIcon(name: string): LucideIcon {
+  const n = name.toLowerCase()
+  const rules: Array<[RegExp, LucideIcon]> = [
+    [/skin/, Droplet], [/hair/, Scissors], [/makeup|cosmetic|beauty device/, Wand2], [/beauty|groom|personal care|hygiene/, Sparkles],
+    [/supplement|nutrition|vitamin/, Pill], [/fitness|gym|weight|sport/, Dumbbell], [/health|wellness/, HeartPulse],
+    [/food|beverage|drink|coffee|snack/, Coffee], [/kitchen|dining|cook/, UtensilsCrossed], [/home|decor|living|furniture/, House],
+    [/fashion|apparel|cloth/, Shirt], [/jewel|accessor/, Gem], [/tech|gadget|electronic|app/, Cpu], [/baby|kid|child|parent/, Baby],
+    [/pet|dog|cat/, PawPrint], [/outdoor|camp|hik/, Tent], [/travel/, Plane], [/book|education|learn/, BookOpen],
+    [/faith|bible|christian|church/, Church], [/craft|hobby|art/, Palette], [/clean/, SprayCan], [/sleep/, Moon], [/eco|garden|plant|natural/, Leaf],
+  ]
+  return rules.find(([re]) => re.test(n))?.[1] || Tag
+}
+
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
@@ -147,6 +172,11 @@ export default function TrybeOutreach() {
   const [now, setNow] = useState(Date.now())
   const [log, setLog] = useState<LogLine[]>([])
   const [directory, setDirectory] = useState<Directory | null>(null)
+  // How MVP's copy of TRYBE is doing (counts, collection notes) is for the
+  // admin only (Seb, 2026-10-07): it makes no difference to a creator.
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [showAllNiches, setShowAllNiches] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean } | null>(null)
@@ -175,6 +205,7 @@ export default function TrybeOutreach() {
       setDailyFind(d.settings?.dailyFind !== false)
       setLastFindAt(d.settings?.lastFindAt ?? null)
       setDirectory(d.directory ?? null)
+      setIsAdmin(d.isAdmin === true)
       setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
       return d
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load'); return null }
@@ -253,7 +284,7 @@ export default function TrybeOutreach() {
     setKwInput('')
   }
 
-  /** Draft these brands into the morning queue, four at a time. */
+  /** Draft these brands into Ready to send, four at a time. */
   async function draftIds(ids: string[]): Promise<{ ok: number; failed: number }> {
     let ok = 0, failed = 0
     setFinding({ stage: 'Writing drafts', done: 0, total: ids.length })
@@ -285,7 +316,7 @@ export default function TrybeOutreach() {
   }
 
   /** Find brands: SCOUT searches TRYBE, MVP judges the fit. `auto` is the
-   *  daily run: it also drafts the best ones into the morning queue. */
+   *  daily run: it also drafts the best ones into Ready to send. */
   async function findBrands(auto = false) {
     if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); return }
     if (!core.trim()) { toast.error('Write your core message first'); setTab('find'); return }
@@ -313,8 +344,8 @@ export default function TrybeOutreach() {
         const pick = list.slice(0, room).map(b => b.brand_id)
         if (pick.length) {
           const r = await draftIds(pick)
-          notes.push(`Today's drafts: ${r.ok} added to the morning queue${r.failed ? `, ${r.failed} could not be written` : ''}.`)
-        } else notes.push(room ? 'No new brands that fit today, so nothing was added to the queue.' : 'The morning queue already holds today’s 20.')
+          notes.push(`Today's drafts: ${r.ok} added to Ready to send${r.failed ? `, ${r.failed} could not be written` : ''}.`)
+        } else notes.push(room ? 'No new brands that fit today, so nothing was added to the queue.' : 'Ready to send already holds today’s 20.')
         await api({ action: 'found' }).catch(() => null)
         setLastFindAt(new Date().toISOString())
         await load()
@@ -447,7 +478,7 @@ export default function TrybeOutreach() {
     return () => clearTimeout(t)
   }, [hasDirectory, catsKey, kwsKey, liveNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Draft the brands ticked in the live list into the morning queue. */
+  /** Draft the brands ticked in the live list into Ready to send. */
   async function draftPicked() {
     const ids = Array.from(livePick)
     if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
@@ -459,7 +490,7 @@ export default function TrybeOutreach() {
       const ready: string[] = a.ready || []
       const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0 }
       if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
-      if (r.ok) { toast.success(`${r.ok} added to the morning queue`); setTab('queue') }
+      if (r.ok) { toast.success(`${r.ok} added to Ready to send`); setTab('queue') }
       if (!ready.length) toast.message('None of those could be drafted: they are already in your queue or sent.')
       setLivePick(new Set())
     } catch (e) {
@@ -490,7 +521,7 @@ export default function TrybeOutreach() {
     const r = await draftIds(ids)
     setFinding(null)
     if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
-    if (r.ok) { toast.success(`${r.ok} added to the morning queue`); setTab('queue') }
+    if (r.ok) { toast.success(`${r.ok} added to Ready to send`); setTab('queue') }
     setSelected(new Set())
     await load()
   }
@@ -504,6 +535,12 @@ export default function TrybeOutreach() {
   async function skip(b: Brand, undo = false) {
     const d = await api({ action: undo ? 'unskip' : 'skip', brandId: b.brand_id }).catch(e => { toast.error(e.message); return null })
     if (d?.status) patch(b.brand_id, { status: d.status })
+  }
+
+  /** Off the page for good: never sent, never offered again by the daily find. */
+  async function remove(b: Brand) {
+    const d = await api({ action: 'remove', brandId: b.brand_id }).catch(e => { toast.error(e.message); return null })
+    if (d?.status) { patch(b.brand_id, { status: 'removed' }); toast.success(`${b.name} removed`) }
   }
 
   async function requeue(b: Brand) {
@@ -609,7 +646,7 @@ export default function TrybeOutreach() {
       <div className={card} style={cardStyle}>
         <div className="flex flex-wrap items-center gap-4 text-[13px]">
           <span><b>{used}</b> of <b>{cap}</b> sent in the last 24 hours</span>
-          <span style={soft}>{queue.length} in the morning queue, {found.length} found that fit</span>
+          <span style={soft}>{queue.length} ready to send, {found.length} found that fit</span>
           <span className="ml-auto">
             {access === 'granted' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={14} /> SCOUT can work in TRYBE</span>}
             {access === 'checking' && <span style={soft}>Checking SCOUT...</span>}
@@ -627,7 +664,7 @@ export default function TrybeOutreach() {
 
       <div className="flex flex-wrap gap-2">
         <TabBtn id="find" label="Find brands" />
-        <TabBtn id="queue" label={`Morning queue (${queue.length})`} />
+        <TabBtn id="queue" label={`Ready to send (${queue.length})`} />
         <TabBtn id="sent" label={`Sent (${history.length})`} />
         <TabBtn id="inbox" label="Inbox" />
       </div>
@@ -642,47 +679,84 @@ export default function TrybeOutreach() {
           {!core.trim() && <button onClick={() => setCore(STARTER)} className={`${btn} mt-2`} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
         </div>
 
-        {/* 2. Niche */}
+        {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
+            brands, but make it very visible that searching a keyword is the
+            better way, because a keyword matches what each brand sells. */}
         <div className={card} style={cardStyle}>
-          <p className="text-[14px] font-semibold">2. Your niche</p>
-          <p className="text-[12px] mb-3" style={soft}>Pick categories and add keywords. MVP searches its own copy of every TRYBE brand by them, including what each brand&rsquo;s website sells, then checks each match fits before it is listed.</p>
-          <p className="text-[12px] font-semibold mb-1.5">Categories</p>
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {catOptions.map(c => {
-              const on = cats.some(o => o.toLowerCase() === c.toLowerCase())
-              return (
-                <button key={c} onClick={() => setCats(cs => on ? cs.filter(o => o.toLowerCase() !== c.toLowerCase()) : cs.length < 12 ? [...cs, c] : cs)}
-                  className="rounded-full border px-2.5 py-1 text-[12px] inline-flex items-center gap-1"
-                  style={on ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>
-                  {on && <Check size={11} />} {c}
-                </button>
-              )
-            })}
+          <p className="text-[14px] font-semibold">2. Find brands for your channel</p>
+
+          <div className="mt-3 rounded-2xl border-2 p-4" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.05)' }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5" style={{ background: PURPLE, color: '#fff' }}>Best results</span>
+              <p className="text-[15px] font-semibold">Search what you review</p>
+            </div>
+            <p className="text-[12px] mt-1 mb-3" style={soft}>A keyword finds brands by what they actually sell. &ldquo;golf&rdquo; brings up the golf brands a broad niche like Fitness would bury.</p>
+            <div className="flex gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PURPLE }} />
+                <input ref={searchRef} value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addKeyword() } }}
+                  placeholder="A product or topic you make videos about" aria-label="Search brands by keyword"
+                  className="w-full h-12 rounded-xl border pl-10 pr-3 text-[15px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} />
+              </div>
+              <button onClick={addKeyword} disabled={!kwInput.trim()} className="h-12 rounded-xl px-5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Search</button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              {kws.map(k => (
+                <span key={k} className="rounded-full pl-3 pr-2 py-1 text-[13px] font-medium inline-flex items-center gap-1.5" style={{ background: PURPLE, color: '#fff' }}>
+                  {k} <button onClick={() => setKws(ks => ks.filter(o => o !== k))} aria-label={`Remove ${k}`} className="opacity-80 hover:opacity-100"><X size={12} /></button>
+                </span>
+              ))}
+              {!kws.length && (<>
+                <span className="text-[12px] mr-0.5" style={soft}>Try</span>
+                {KEYWORD_EXAMPLES.map(k => (
+                  <button key={k} onClick={() => setKws(ks => ks.some(o => o.toLowerCase() === k) ? ks : [...ks, k].slice(0, 12))}
+                    className="rounded-full border px-2.5 py-1 text-[12px] hover:border-current" style={{ borderColor: 'var(--border)', color: PURPLE }}>{k}</button>
+                ))}
+              </>)}
+            </div>
           </div>
-          <p className="text-[12px] font-semibold mb-1.5">Keywords</p>
-          <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            {kws.map(k => (
-              <span key={k} className="rounded-full px-2.5 py-1 text-[12px] inline-flex items-center gap-1" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>
-                {k} <button onClick={() => setKws(ks => ks.filter(o => o !== k))} aria-label={`Remove ${k}`}><X size={11} /></button>
-              </span>
-            ))}
-            <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addKeyword() } }}
-              placeholder="e.g. bible journaling, kids crafts" className="rounded-lg border px-2.5 py-1 text-[12px] min-w-[14rem]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-            <button onClick={addKeyword} className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><Plus size={12} /> Add</button>
+
+          <div className="mt-5">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <p className="text-[13px] font-semibold">Or browse a niche</p>
+              <p className="text-[12px]" style={soft}>One click shows the brands in it.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-2">
+              {catOptions.filter((c, i) => showAllNiches || i < NICHES_SHOWN || cats.some(o => o.toLowerCase() === c.toLowerCase())).map(c => {
+                const on = cats.some(o => o.toLowerCase() === c.toLowerCase())
+                const Icon = nicheIcon(c)
+                return (
+                  <button key={c} onClick={() => setCats(cs => on ? cs.filter(o => o.toLowerCase() !== c.toLowerCase()) : cs.length < 12 ? [...cs, c] : cs)}
+                    aria-pressed={on}
+                    className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px] font-medium transition-colors"
+                    style={on ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                    <Icon size={16} className="shrink-0" style={on ? undefined : { color: PURPLE }} />
+                    <span className="min-w-0 leading-tight">{c}</span>
+                    {on && <Check size={13} className="ml-auto shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+            {catOptions.length > NICHES_SHOWN && (
+              <button onClick={() => setShowAllNiches(v => !v)} className="mt-2 text-[12px] font-semibold" style={{ color: PURPLE }}>
+                {showAllNiches ? 'Show fewer niches' : `Show all ${catOptions.length} niches`}
+              </button>
+            )}
           </div>
+
           {!canHarvest && access === 'granted' && (
-            <p className="text-[12px] mb-2" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
+            <p className="text-[12px] mt-3" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
           )}
-          <div className="flex flex-wrap items-center gap-3 mt-3">
+          <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <label className="text-[13px] flex items-center gap-2">Daily cap
               <input type="number" min={1} max={50} value={cap} onChange={e => setCap(Number(e.target.value))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
             </label>
             <label className="text-[13px] flex items-center gap-2">
               <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />
-              Find {DAILY_FIND} new brands every day when I open this page
+              Write messages to {DAILY_FIND} new brands every day when I open this page
             </label>
             <button onClick={() => void saveSettings()} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
-            {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily find.</span>}
+            {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
           </div>
         </div>
 
@@ -702,54 +776,74 @@ export default function TrybeOutreach() {
                   <Check size={13} /> Tick the top {DAILY_FIND}
                 </button>
                 <button onClick={() => void draftPicked()} disabled={busy || !livePick.size} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-                  <Sparkles size={13} /> Draft {livePick.size} into the morning queue
+                  <Sparkles size={13} /> Write {livePick.size} message{livePick.size === 1 ? '' : 's'}
                 </button>
               </div>
             </div>
-            <p className="text-[12px] mb-3" style={soft}>
-              Updates as you change categories and keywords, from MVP&rsquo;s copy of every TRYBE brand: nothing is fetched from TRYBE or the websites. Best matches first.
-            </p>
-            {directory && (
-              <p className="text-[12px] mb-3" style={soft}>
-                MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
-              </p>
+            <p className="text-[12px] mb-3" style={soft}>Best matches first. Tick the brands you want and MVP writes each one a message from your core message.</p>
+            {isAdmin && (
+              <div className="rounded-lg border border-dashed px-3 py-2 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider">Admin only</p>
+                <p>Updates as you change niches and keywords, from MVP&rsquo;s copy of every TRYBE brand: nothing is fetched from TRYBE or the websites.</p>
+                {directory && (
+                  <p>MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}</p>
+                )}
+                {findNotes.filter(n => ADMIN_NOTE.test(n)).map((n, i) => <p key={i}>{n}</p>)}
+              </div>
             )}
-            {findNotes.length > 0 && (
-              <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            {findNotes.some(n => !ADMIN_NOTE.test(n)) && (
+              <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.filter(n => !ADMIN_NOTE.test(n)).map((n, i) => <li key={i}>{n}</li>)}</ul>
+            )}
+            {/* A niche alone is the quick way; a keyword is the better one. */}
+            {cats.length > 0 && !kws.length && (live?.brands.length ?? 0) > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-2.5 mb-3" style={{ background: 'rgba(124,58,237,0.08)' }}>
+                <Search size={14} style={{ color: PURPLE }} />
+                <span className="text-[12px] flex-1 min-w-[12rem]">Showing every brand in {cats.length === 1 ? cats[0] : `${cats.length} niches`}. Add a keyword for brands that sell what you review.</span>
+                <button onClick={() => { searchRef.current?.focus(); searchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }}
+                  className="text-[12px] font-semibold rounded-lg px-2.5 py-1" style={{ background: PURPLE, color: '#fff' }}>Add a keyword</button>
+              </div>
             )}
             {liveError && <p className="text-[12px] mb-3" style={{ color: RED }}>{liveError}</p>}
             {live && !live.brands.length && !liveLoading && (
-              <p className="text-[13px]" style={soft}>{hasNiche ? 'No brands in MVP\u2019s copy of TRYBE match these categories and keywords. Try other words.' : 'Pick categories or keywords to see the brands that match.'}</p>
+              <p className="text-[13px]" style={soft}>{hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'Search a keyword or pick a niche to see the brands that match.'}</p>
             )}
             <div className="space-y-2">
               {(live?.brands || []).map(b => {
                 const taken = TAKEN.includes(b.status as Brand['status'])
                 const on = livePick.has(b.brand_id)
-                const where = b.status === 'drafted' ? 'In your morning queue' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'not_fit' ? 'AI said not a fit' : null
+                const where = b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? 'AI said not a fit' : null
+                const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
-                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)' }}>
+                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.04)' : undefined }}>
                     <input type="checkbox" className="mt-1 accent-[#7C3AED]" checked={on} disabled={taken}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-2 text-[13px]">
-                        <span className="font-semibold">{b.name}</span>
+                        <span className="text-[14px] font-semibold">{b.name}</span>
                         {where && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
                         {b.fit_score != null && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Fit {b.fit_score}</span>}
-                        {b.pay_text && <span className="text-[12px]" style={{ color: PURPLE }}>{b.pay_text}</span>}
+                        {b.pay_text && <span className="text-[12px] font-medium" style={{ color: PURPLE }}>{b.pay_text}</span>}
                         {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Star size={11} /> Score {b.trybe_score}</span>}
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
-                      {b.fit_reason && <span className="block text-[12px] mt-0.5">{b.fit_reason}</span>}
-                      {!b.fit_reason && b.about && <span className="block text-[12px] mt-0.5" style={soft}>{b.about.length > 220 ? `${b.about.slice(0, 220)}...` : b.about}</span>}
-                      {b.products.length > 0 && <span className="block text-[11px] mt-0.5" style={soft}>Sells: {b.products.join(' | ')}</span>}
-                      {b.categories.length > 0 && <span className="block text-[11px] mt-0.5" style={soft}>{b.categories.join(' • ')}</span>}
+                      {b.fit_reason && <span className="block text-[12px] mt-1">{b.fit_reason}</span>}
+                      {!b.fit_reason && b.about && <span className="block text-[12px] mt-1" style={soft}>{b.about.length > 220 ? `${b.about.slice(0, 220)}...` : b.about}</span>}
+                      {b.products.length > 0 && (
+                        <span className="flex flex-wrap gap-1.5 mt-2">
+                          {b.products.map(pr => (
+                            <span key={pr} className="text-[11px] rounded-md border px-2 py-0.5 max-w-[16rem] truncate"
+                              style={hits(pr) ? { borderColor: PURPLE, color: PURPLE, background: 'rgba(124,58,237,0.08)' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>{pr}</span>
+                          ))}
+                        </span>
+                      )}
+                      {b.categories.length > 0 && <span className="block text-[11px] mt-1.5" style={soft}>{b.categories.join(' • ')}</span>}
                     </span>
                   </label>
                 )
               })}
             </div>
             {live && live.matched > live.brands.length && (
-              <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it.</p>
+              <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}
           </div>
         ) : (
@@ -761,18 +855,18 @@ export default function TrybeOutreach() {
                 {finding ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Find brands
               </button>
               <button onClick={() => void draftSelected()} disabled={busy || !found.some(b => selected.has(b.brand_id))} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-                <Sparkles size={13} /> Draft {found.filter(b => selected.has(b.brand_id)).length} into the morning queue
+                <Sparkles size={13} /> Write {found.filter(b => selected.has(b.brand_id)).length} messages
               </button>
             </div>
           </div>
           <p className="text-[12px] mb-3" style={soft}>Be signed in to TRYBE in this browser. Best fits first; the top {DAILY_FIND} are ticked.</p>
-          {directory && directory.brands > 0 && (
+          {isAdmin && directory && directory.brands > 0 && (
             <p className="text-[12px] mb-3" style={soft}>
               MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
             </p>
           )}
-          {findNotes.length > 0 && (
-            <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+          {findNotes.some(n => isAdmin || !ADMIN_NOTE.test(n)) && (
+            <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.filter(n => isAdmin || !ADMIN_NOTE.test(n)).map((n, i) => <li key={i}>{n}</li>)}</ul>
           )}
           {unjudged.length > 0 && !finding && (
             <p className="text-[12px] mb-3" style={{ color: AMBER }}>{unjudged.length} brand{unjudged.length === 1 ? '' : 's'} not yet checked against this niche. <button onClick={() => void judge(unjudged).finally(() => setFinding(null)).then(() => load())} className="underline">Check them now</button></p>
@@ -822,7 +916,7 @@ export default function TrybeOutreach() {
       {tab === 'queue' && (
         <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            <p className="text-[14px] font-semibold">Morning queue ({queue.length})</p>
+            <p className="text-[14px] font-semibold">Ready to send ({queue.length})</p>
             <div className="ml-auto flex items-center gap-2">
               {running && waitUntil && <span className="text-[12px]" style={soft}>Next request in {Math.max(0, Math.ceil((waitUntil - now) / 1000))}s</span>}
               {running
@@ -832,8 +926,8 @@ export default function TrybeOutreach() {
           </div>
           <p className="text-[12px] mb-3" style={soft}>
             {dailyFind
-              ? <>Every day, when you open this page, MVP and SCOUT find up to {DAILY_FIND} new brands that fit your niche and draft them here.{lastFindAt ? ` Last found ${new Date(lastFindAt).toLocaleString()}.` : ''} Skim, edit or skip, then press Send all.</>
-              : <>The daily find is off. Turn it on in Find brands, or find and draft brands there yourself.</>}
+              ? <>Every day, when you open this page, MVP and SCOUT find up to {DAILY_FIND} new brands that fit your niche and write their messages here.{lastFindAt ? ` Last found ${new Date(lastFindAt).toLocaleString()}.` : ''} Skim, edit or remove, then press Send all.</>
+              : <>The daily messages are off. Turn them on in Find brands, or pick brands there yourself.</>}
           </p>
           {sendBlocked && !running && queue.length > 0 && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
           {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>Keep this tab open. SCOUT opens TRYBE for each request and brings you back, 45 seconds to 2 minutes apart, with a longer pause every five.</p>}
@@ -847,18 +941,21 @@ export default function TrybeOutreach() {
               ))}
             </div>
           )}
-          {!queue.length && <p className="text-[13px]" style={soft}>Nothing drafted yet.</p>}
+          {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. Pick brands in Find brands and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onSkip={() => void skip(b)} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} />)}
           </div>
+          {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
             <div className="mt-4">
               <p className="text-[12px] font-semibold mb-1.5">Skipped</p>
               <div className="flex flex-wrap gap-2">
                 {brands.filter(b => b.status === 'skipped').map(b => (
-                  <button key={b.brand_id} onClick={() => void skip(b, true)} className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px]" style={{ borderColor: 'var(--border)' }}>
-                    <RotateCcw size={11} /> {b.name}
-                  </button>
+                  <span key={b.brand_id} className="inline-flex items-center gap-2 rounded-full border pl-3 pr-1.5 py-1 text-[12px]" style={{ borderColor: 'var(--border)' }}>
+                    {b.name}
+                    <button onClick={() => void skip(b, true)} title="Put it back" aria-label={`Put ${b.name} back`} className="inline-flex items-center gap-0.5 font-semibold" style={{ color: PURPLE }}><RotateCcw size={11} /> Restore</button>
+                    <button onClick={() => void remove(b)} title="Remove it from this page" aria-label={`Remove ${b.name}`} className="rounded-full p-1" style={{ color: RED }}><Trash2 size={12} /></button>
+                  </span>
                 ))}
               </div>
             </div>
@@ -882,6 +979,7 @@ export default function TrybeOutreach() {
                   <span className="inline-flex flex-wrap items-center gap-2" style={{ color: RED }}>
                     <AlertTriangle size={13} /> Not sent: {sendWords(b.error)}
                     {!running && b.draft && <button onClick={() => void requeue(b)} className="underline">Queue it again</button>}
+                    {!running && <button onClick={() => void remove(b)} className="underline">Remove</button>}
                   </span>
                 )}
                 {b.status === 'sending' && current !== b.brand_id && (
@@ -901,7 +999,7 @@ export default function TrybeOutreach() {
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onSkip }: { b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onSkip: () => void }) {
+function QueueRow({ b, busy, disabled, onSave, onRemove }: { b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void }) {
   const [text, setText] = useState(b.draft || '')
   useEffect(() => { setText(b.draft || '') }, [b.draft])
   const researched = !!(b.site_summary || (b.site_products && b.site_products.length))
@@ -926,7 +1024,7 @@ function QueueRow({ b, busy, disabled, onSave, onSkip }: { b: Brand; busy: boole
         <span>{text.length} characters, sent as shown, line breaks included</span>
         {b.error && <span style={{ color: RED }}>Last try: {sendWords(b.error)}</span>}
         {busy && <span className="inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
-        <button onClick={onSkip} disabled={disabled} className="ml-auto underline disabled:opacity-50">Skip</button>
+        <button onClick={onRemove} disabled={disabled} className="ml-auto inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: RED }}><Trash2 size={11} /> Remove</button>
       </div>
     </div>
   )

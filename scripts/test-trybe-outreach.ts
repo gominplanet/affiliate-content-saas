@@ -75,7 +75,7 @@ check('line breaks in a draft are kept', tidyDraft('Hi team,\n\nWe love it.\n\n\
 check('the prompt asks for paragraphs and the sign-off as written', /blank line between them/.test(LIB) && /sign-off, word for word/.test(LIB))
 check('the route judges fit and never drafts a brand that does not fit', /action === 'match'/.test(ROUTE) && /r\.status === 'not_fit'\) return \{ brandId: r\.brand_id, ok: false/.test(ROUTE))
 check('a brand that does not fit is never sent', !/'not_fit'/.test(ROUTE.slice(ROUTE.indexOf("action === 'claim'"), ROUTE.indexOf("action === 'result'"))) && /\['drafted', 'failed'\]\.includes\(row\.status\)/.test(ROUTE))
-check('the morning queue is its own tab', /<TabBtn id="queue"/.test(UI) && /tab === 'queue' &&/.test(UI))
+check('Ready to send is its own tab', /<TabBtn id="queue"/.test(UI) && /tab === 'queue' &&/.test(UI))
 check('a send that cannot start says why in the run log', /Not started: \$\{c\.error/.test(UI) && /Run log/.test(UI))
 check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /savedKey === prefsKey\(\[\], \[\]\)\) return/.test(UI))
 check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
@@ -202,6 +202,18 @@ const collectorRun = (async () => {
 const HOOK = readFileSync('extension/trybe-hook.js', 'utf8')
 check('the sign-in watcher loads before TRYBE, only during a collection, and changes nothing', /runAt: 'document_start', world: 'MAIN'/.test(BG) && /await trybeHookOff\(\)/.test(BG) && /return realFetch\.apply\(this, arguments\)/.test(HOOK) && /return realSet\.apply\(this, arguments\)/.test(HOOK))
 check('the collector has no helper outside itself', !/trybeTokenInPage/.test(BG) && /const readToken = \(\) =>/.test(BG))
+
+// Seb, 2026-10-07: search first, niches second; stats for the admin only;
+// Ready to send; Remove; messages about the whole range.
+check('searching a keyword is shown as the better way, niches as one click', /Best results/.test(UI) && /Search what you review/.test(UI) && /Or browse a niche/.test(UI) && /nicheIcon\(c\)/.test(UI))
+check('a niche alone nudges toward a keyword', /cats\.length > 0 && !kws\.length/.test(UI) && /Add a keyword/.test(UI))
+check('MVP\'s copy of TRYBE is described to the admin only', /isAdmin: g\.tier === 'admin'/.test(ROUTE) && UI.split('MVP&rsquo;s copy of TRYBE: <b>').slice(0, -1).every(before => /isAdmin && /.test(before.slice(-700))) && UI.includes('MVP&rsquo;s copy of TRYBE: <b>'))
+check('a problem from a find is shown to everyone, not only the admin', /findNotes\.filter\(n => !ADMIN_NOTE\.test\(n\)\)/.test(UI) && /const ADMIN_NOTE = \/\^\(SCOUT collected /.test(UI))
+check('the queue is called Ready to send', /label=\{`Ready to send \(\$\{queue\.length\}\)`\}/.test(UI) && !/[Mm]orning queue/.test(UI))
+check('Remove never touches a brand that went, or may have gone, to TRYBE', /action === 'remove'/.test(ROUTE) && /\.in\('status', \['new', 'not_fit', 'drafted', 'skipped', 'failed'\]\)\.select\('brand_id'\)/.test(ROUTE) && /onRemove=\{\(\) => void remove\(b\)\}/.test(UI))
+check('a removed brand stays out of the daily find but can be picked by hand', /\['not_fit', 'skipped', 'removed'\]/.test(ROUTE) && /'removed'/.test(LIB))
+check('a message speaks to the brand\'s whole range, not one product', /Do not build the message around a single product/.test(LIB) && !/a product by name from its website/.test(LIB))
+check('products naming a keyword are shown first', /productsFirst\(r\.site_products \|\| \[\], kws\)/.test(ROUTE))
 
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }

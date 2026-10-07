@@ -12,7 +12,7 @@
 //   POST {action:'adopt'}     put brands picked from the live list on the creator's list
 //   POST {action:'import'}    brands SCOUT read from TRYBE's Discover Brands
 //   POST {action:'draft'}     research each brand's website, write its message
-//   POST {action:'edit'|'skip'|'unskip'|'reset'}
+//   POST {action:'edit'|'skip'|'unskip'|'remove'|'reset'}
 //   POST {action:'claim'}     reserve one send under the daily cap
 //   POST {action:'result'}    what SCOUT saw happen to that send
 //
@@ -106,7 +106,16 @@ export async function GET() {
   let worked = new Map<string, unknown>()
   try { worked = await getWorkedWithBrands(supabase as Db, ownerId) } catch { /* best-effort */ }
   const brands = ((rows.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))) }))
-  return NextResponse.json({ ok: true, settings, usedToday: used, brands, directory: await directoryStats(admin) })
+  return NextResponse.json({ ok: true, settings, usedToday: used, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin' })
+}
+
+/** A brand's products with the ones naming a keyword first, so a search for
+ *  "golf" shows the golf products a store sells before the rest. */
+function productsFirst(products: string[], keywords: string[]): string[] {
+  const kw = keywords.map(k => k.toLowerCase()).filter(Boolean)
+  if (!kw.length) return products
+  const hit = (p: string) => kw.some(k => p.toLowerCase().includes(k))
+  return [...products.filter(hit), ...products.filter(p => !hit(p))]
 }
 
 /** A database refusal in words, naming the migration when a column is missing. */
@@ -313,7 +322,7 @@ export async function POST(request: Request) {
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
           pay_text: r.pay_text, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
-          products: (r.site_products || []).slice(0, 6), website_read: !!r.site_text,
+          products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null, fit_score: m?.fit_score ?? null, fit_reason: m?.fit_reason ?? null,
         }
       }),
@@ -339,10 +348,10 @@ export async function POST(request: Request) {
       status: 'new', fit_reason: 'Picked by you from the live list.', fit_prefs: key, fit_checked_at: now, updated_at: now,
     })), { onConflict: 'user_id,brand_id', ignoreDuplicates: true }).select('brand_id')
     if (insErr) return NextResponse.json({ error: dbWords(insErr.message) }, { status: 500 })
-    // A brand already there that the AI said no to, or that was skipped, is
-    // ready too: picked by hand now overrides both.
+    // A brand already there that the AI said no to, or that was skipped or
+    // removed, is ready too: picked by hand now overrides all three.
     await admin.from('trybe_brands').update({ status: 'new', updated_at: now })
-      .eq('user_id', ownerId).in('brand_id', ids).in('status', ['not_fit', 'skipped'])
+      .eq('user_id', ownerId).in('brand_id', ids).in('status', ['not_fit', 'skipped', 'removed'])
     const { data: ready } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).in('brand_id', ids).eq('status', 'new')
     return NextResponse.json({ ok: true, added: (ins || []).length, ready: ((ready || []) as Array<{ brand_id: string }>).map(r => r.brand_id) })
   }
@@ -573,6 +582,19 @@ export async function POST(request: Request) {
     const status = action === 'skip' ? 'skipped' : (row.draft ? 'drafted' : 'new')
     await admin.from('trybe_brands').update({ status, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
     return NextResponse.json({ ok: true, status })
+  }
+
+  if (action === 'remove') {
+    // OFF THE PAGE FOR GOOD (Seb, 2026-10-07: "let's just be able to delete
+    // it so it doesn't stay on that page forever"). The row stays, marked
+    // 'removed', so the daily find never brings the brand back; the creator
+    // can still pick it again by hand from the brand list. Never a brand that
+    // went, or may have gone, to TRYBE.
+    const { data: gone, error } = await admin.from('trybe_brands').update({ status: 'removed', updated_at: now })
+      .eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['new', 'not_fit', 'drafted', 'skipped', 'failed']).select('brand_id')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!(gone || []).length) return NextResponse.json({ error: 'Only a brand that was not sent can be removed.' }, { status: 409 })
+    return NextResponse.json({ ok: true, status: 'removed' })
   }
 
   if (action === 'reset') {

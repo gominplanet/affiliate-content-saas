@@ -21,14 +21,14 @@ export const MAX_GAP_MS = 120_000
 export const BREAK_EVERY = 5
 export const BREAK_MS: [number, number] = [180_000, 300_000]
 
-export type TrybeStatus = 'new' | 'not_fit' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already'
-export const STATUSES: TrybeStatus[] = ['new', 'not_fit', 'drafted', 'sending', 'sent', 'failed', 'skipped', 'already']
+export type TrybeStatus = 'new' | 'not_fit' | 'drafted' | 'sending' | 'sent' | 'failed' | 'skipped' | 'already' | 'removed'
+export const STATUSES: TrybeStatus[] = ['new', 'not_fit', 'drafted', 'sending', 'sent', 'failed', 'skipped', 'already', 'removed']
 
 // ── WHAT THE CREATOR WANTS (Seb, 2026-10-06: "not just blindly message all
 // brands") ─────────────────────────────────────────────────────────────────
 // Categories and keywords. SCOUT uses them to search TRYBE; MVP then judges
 // each brand found against them from its TRYBE profile and its website, and
-// only brands that fit reach the list and the morning queue.
+// only brands that fit reach the list and Ready to send.
 
 /** How many brands a day MVP and SCOUT find and draft for the queue. */
 export const DAILY_FIND = 20
@@ -246,8 +246,9 @@ export interface DraftFacts {
 export const DRAFT_SYSTEM = (bannedRule: string) => `You write the first message a content creator sends to a brand on TRYBE, a marketplace where brands pay creators for UGC videos. The brand reads this one message and decides whether to accept the creator.
 
 You are given the creator's CORE MESSAGE. Keep its points, its offer and its voice. Rewrite it for this one brand:
-- Open by naming something real and specific about this brand: a product by name from its website, or what it makes. Never a compliment that could fit any brand.
-- Connect the creator to that product in one sentence, using only the creator facts given.
+- Open by showing you know this brand as a whole: what it makes, its range, who it is for, in words that could only fit this brand. Never a compliment that could fit any brand.
+- The creator wants to work with the brand on its whole range, not one item. Do not build the message around a single product. Naming one or two products as examples of the range is fine; making one product the reason for writing is not.
+- Connect the creator to the brand and its range in one sentence, using only the creator facts given.
 - Keep the core message's call to action.
 - Lay it out the way a person writes a message: two to four short paragraphs with a blank line between them, never one block of text.
 - When the core message ends with a sign-off (thanks, names, an email address), end with that same sign-off, word for word, on its own lines exactly as it is written.
@@ -265,7 +266,7 @@ export function draftUserPrompt(f: DraftFacts): string {
     b.payText ? `TRYBE pay: ${b.payText}` : '',
     b.about ? `TRYBE about: ${b.about.slice(0, 800)}` : '',
     b.website ? `Website: ${b.website}` : '',
-    b.siteProducts.length ? `Products on their website: ${b.siteProducts.slice(0, 12).join(' | ')}` : '',
+    b.siteProducts.length ? `Products on their website (their range, to understand the brand, not to pick one): ${b.siteProducts.slice(0, 12).join(' | ')}` : '',
     b.siteSummary ? `From their website:\n${b.siteSummary}` : '(Their website could not be read. Work from the TRYBE details only, and do not pretend to know their products.)',
   ].filter(Boolean)
   return `--- CORE MESSAGE ---\n${f.coreMessage.trim()}\n\n--- CREATOR FACTS ---\n${f.creator.length ? f.creator.join('\n') : '(none beyond the core message)'}\n\n--- BRAND ---\n${brandLines.join('\n')}`
