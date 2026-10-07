@@ -47,6 +47,15 @@ const RENDER = readFileSync('app/api/youtube/shorts/render/route.ts', 'utf8')
 check('a refused download shows the upload box, even for a video from YouTube',
   /setNeedsUpload\(true\)/.test(PANEL) && /!hasSource && \(!youtubeVideoId \|\| youtubeRefused\)/.test(PANEL))
 check('no message names a button that is not on the page', !/Upload or pick a short/.test(PANEL + RENDER))
+// A SOURCE IS LIMITED BY ITS LENGTH, NOT ITS SIZE (2026-10-06: a 2 minute 4K
+// video was 334 MB and refused at 300 MB on both ways in).
+const UPLOAD = readFileSync('components/ShortVideoUpload.tsx', 'utf8')
+const STUDIO_FILE = readFileSync('app/api/youtube/shorts/studio-file/route.ts', 'utf8')
+check('a clip source may be up to 2 GB, dropped or fetched from Studio',
+  /targetColumn === 'source_video_url' \? SOURCE_VIDEO_MAX_BYTES : MAX_BYTES/.test(UPLOAD) && /const MAX_BYTES = SOURCE_VIDEO_MAX_BYTES/.test(STUDIO_FILE))
+check('a file SCOUT sent is looked for in storage itself before it is called missing',
+  STUDIO_FILE.indexOf('.list(folder') > 0 && STUDIO_FILE.indexOf('.list(folder') < STUDIO_FILE.indexOf("method: 'HEAD'"))
+check('no Clip Factory source copy still says 300 MB', !/under 300 MB/.test(PANEL))
 check('the whole video is labelled, not scored 0/100', /'Whole video'/.test(PANEL) && /clip\.score > 0 \?/.test(PANEL))
 // CAPTIONS ON A WHOLE VIDEO (2026-10-06): it was saved with no words, so it
 // rendered with Captions ticked and came out with none, looking like success.

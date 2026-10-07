@@ -180,7 +180,7 @@ export function ShortsCreatePanel({
           : e === 'signed-out' ? 'YouTube Studio is signed out in this browser. Sign in at studio.youtube.com, then try again.'
           : e === 'not-your-video' ? 'YouTube Studio does not list this video for the account signed in here. Sign in to the channel that owns it.'
           : e === 'no-download-url' ? 'YouTube Studio did not offer a download for this video. Download it in Studio (the ⋮ menu, then Download) and drop it in the box.'
-          : e === 'too-large' ? 'The video is over 300 MB, too big for Clip Factory. Upload a smaller copy.'
+          : e === 'too-large' ? 'The video is over 2 GB, too big for Clip Factory. Upload a smaller export of it.'
           : e === 'timeout' ? 'It took too long. A long video can; try again, or drop the file in the box.'
           : `SCOUT could not bring the file in (${e || 'unknown'}). Drop the file in the box instead.`)
       }
@@ -379,7 +379,7 @@ export function ShortsCreatePanel({
             targetColumn="source_video_url"
             extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
             label="Drop the full video (the long one) here"
-            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it. It never touches YouTube."
+            helpText="MP4, up to 10 minutes. We transcribe it and cut every clip from it. It never touches YouTube."
             onUploaded={async () => { setHasSource(true); setNeedsUpload(false); toast.success(youtubeRefused ? 'Video uploaded. Press Render again.' : 'Video uploaded. Press Find Shorts.') }}
           />
         </div>

@@ -18,8 +18,9 @@
 import { useState, useRef, useCallback } from 'react'
 import { Loader2, Upload, AlertCircle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { SOURCE_VIDEO_MAX_BYTES, sizeWords, storageSizeRefusal } from '@/lib/clip-source-limits'
 
-const MAX_BYTES = 300 * 1024 * 1024 // 300 MB — matches the IG-burner cap
+const MAX_BYTES = 300 * 1024 * 1024 // 300 MB: the IG-burner cap, for finished clips
 
 /** Read a video file's duration (seconds) in the browser, without uploading.
  *  Resolves 0 if the metadata can't be read. */
@@ -79,8 +80,11 @@ export function ShortVideoUpload({
       setError('That doesn\'t look like a video file. MP4 works best.')
       return
     }
-    if (file.size > MAX_BYTES) {
-      setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB: keep it under 300 MB.`)
+    // A clip SOURCE is limited by its length (10 minutes, below), not its
+    // size: a short 4K video is big. Finished clips keep the platform cap.
+    const cap = targetColumn === 'source_video_url' ? SOURCE_VIDEO_MAX_BYTES : MAX_BYTES
+    if (file.size > cap) {
+      setError(`That file is ${sizeWords(file.size)}: keep it under ${sizeWords(cap)}.`)
       return
     }
     // Clip Factory caps SOURCE videos at 10 minutes (transcription cost scales
@@ -118,7 +122,7 @@ export function ShortVideoUpload({
           upsert: false,
           contentType: file.type || 'video/mp4',
         })
-      if (upErr) throw new Error(upErr.message || 'Storage upload failed.')
+      if (upErr) throw new Error(storageSizeRefusal(upErr.message, file.size) || upErr.message || 'Storage upload failed.')
 
       const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
       const publicUrl = urlData.publicUrl

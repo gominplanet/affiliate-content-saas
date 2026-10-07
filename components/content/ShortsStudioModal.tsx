@@ -394,7 +394,7 @@ export function ShortsStudioModal({
                   targetColumn="source_video_url"
                   extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
                   label="Drop the full video (the long one) here"
-                  helpText="MP4, under 300 MB. We transcribe it and cut every clip from it. It never touches YouTube."
+                  helpText="MP4, up to 10 minutes. We transcribe it and cut every clip from it. It never touches YouTube."
                   onUploaded={async () => { setHasSource(true); toast.success('Video uploaded: hit Find Shorts'); }}
                 />
               </div>

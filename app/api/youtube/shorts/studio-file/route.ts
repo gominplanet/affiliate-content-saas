@@ -13,13 +13,14 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { SOURCE_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'instagram-videos'
-/** The same ceiling as a hand upload. */
-const MAX_BYTES = 300 * 1024 * 1024
+/** The same ceiling as a hand upload of a clip source (lib/clip-source-limits). */
+const MAX_BYTES = SOURCE_VIDEO_MAX_BYTES
 
 async function owned(videoId: string) {
   const supabase = await createServerClient()
@@ -52,15 +53,29 @@ export async function PUT(req: Request) {
   const path = String(body.path || '')
   // Only a file in this creator's own folder, of the name this route issued.
   if (!new RegExp(`^${o.user.id}/source-[0-9a-f-]{36}\\.mp4$`).test(path)) return NextResponse.json({ error: 'That is not the upload MVP issued.' }, { status: 400 })
-  const { data: pub } = createAdminClient().storage.from(BUCKET).getPublicUrl(path)
-  // What arrived, not what was meant to.
-  const head = await fetch(pub.publicUrl, { method: 'HEAD', signal: AbortSignal.timeout(15_000) }).catch(() => null)
-  const size = Number(head?.headers.get('content-length') || 0)
-  if (!head?.ok || !size) return NextResponse.json({ error: 'The file did not arrive in MVP storage, so nothing was attached.' }, { status: 422 })
+  const admin = createAdminClient()
+  const { data: pub } = admin.storage.from(BUCKET).getPublicUrl(path)
+  // WHAT ARRIVED, NOT WHAT WAS MEANT TO, asked of storage itself. A HEAD on the
+  // public address alone said "did not arrive" for a file that had (a large
+  // one the address was still catching up on, 2026-10-06), so storage's own
+  // record is read first and the address is asked a few times after it.
+  const folder = path.split('/')[0], name = path.split('/')[1]
+  let size = 0
+  try {
+    const { data: listed } = await admin.storage.from(BUCKET).list(folder, { search: name, limit: 1 })
+    const hit = (listed || []).find((f) => f.name === name) as { metadata?: { size?: number } } | undefined
+    size = Number(hit?.metadata?.size || 0)
+  } catch { /* the address is asked below */ }
+  for (let i = 0; !size && i < 3; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 2000))
+    const head = await fetch(pub.publicUrl, { method: 'HEAD', signal: AbortSignal.timeout(15_000) }).catch(() => null)
+    if (head?.ok) size = Number(head.headers.get('content-length') || 0) || -1
+  }
+  if (!size) return NextResponse.json({ error: 'SCOUT sent the file, but MVP storage does not have it, so nothing was attached. Drop the file in the box instead.' }, { status: 422 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (o.supabase as any).from('youtube_videos')
     .update({ source_video_url: pub.publicUrl, source_video_uploaded_at: new Date().toISOString() })
     .eq('id', o.video.id).eq('user_id', o.user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, bytes: size })
+  return NextResponse.json({ ok: true, bytes: size > 0 ? size : null })
 }
