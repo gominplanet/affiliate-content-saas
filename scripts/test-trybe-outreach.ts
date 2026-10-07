@@ -143,7 +143,7 @@ const API = BG.slice(BG.indexOf('const TRYBE_API_ALLOW = ['), BG.indexOf('let tr
 check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing else',
   (API.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (API.match(/method: 'POST'/g) || []).length === 1 && API.includes('(messages|read)$/'))
 check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /async function trybeApiInPage\(method, path, body\)/.test(BG))
-check('a reply counts as sent only when it shows in the conversation', /const seen = after\.some\(m => m\.text\.trim\(\) === text\)/.test(INBOX))
+check('a reply counts as sent only when it shows in the conversation', /const seen = after\.some\(m => flat\(m\.text\) === flat\(text\)\)/.test(INBOX) && /const flat = \(t: string\) => t\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)/.test(INBOX))
 check('nothing TRYBE says is stored on MVP', !/fetch\('\/api\//.test(INBOX))
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
 check('the inbox is a tab of TRYBE Outreach, still Labs', /<TabBtn id="inbox" label="Inbox" \/>/.test(UI) && /trybe_outreach: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))

@@ -154,13 +154,16 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
     if (!openId || !text) return
     setSending(true); setSendNote(null)
     try {
-      // The reply's shape (TRYBE's send request, seen 2026-10-07 only by its
-      // name). Changed here, on MVP's side, if TRYBE wants it otherwise.
+      // The reply's shape. Confirmed 2026-10-07: a reply sent from MVP this way
+      // showed in the conversation on TRYBE (Seb checked it on TRYBE's side).
       const r = await requestTrybeApi('POST', `/backend/api/channels/${encodeURIComponent(openId)}/messages`, { content: text })
       if (!r.ok) { setSendNote({ tone: 'bad', text: `Not sent: ${errWords(r)}${r.text ? ` (${r.text.slice(0, 160)})` : ''}` }); return }
       // SENT MEANS SEEN: read the conversation again and look for it.
       const after = await loadMessages(openId, true)
-      const seen = after.some(m => m.text.trim() === text)
+      // Compared with spacing flattened: TRYBE may store line breaks or runs
+      // of spaces differently, and that is still the same reply.
+      const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
+      const seen = after.some(m => flat(m.text) === flat(text))
       if (seen) { setReply(''); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' }) }
       else setSendNote({ tone: 'warn', text: 'TRYBE accepted the reply but it does not show in the conversation yet. Check it on TRYBE before sending it again.' })
     } finally { setSending(false) }
