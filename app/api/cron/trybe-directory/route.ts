@@ -19,9 +19,10 @@ import { siteSearchText } from '@/lib/trybe-directory'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-/** Brands read per run, and at once. */
-const PER_RUN = 36
-const AT_ONCE = 6
+/** Brands read per run, and at once: about 360 an hour, so the ~5,900
+ *  websites on TRYBE are all read within a day of the first collection. */
+const PER_RUN = 60
+const AT_ONCE = 10
 /** A read that failed is tried again after this long. */
 const RETRY_FAILED_MS = 30 * 86_400_000
 /** Stop starting new reads this close to the time limit. */

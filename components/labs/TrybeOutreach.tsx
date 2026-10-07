@@ -833,7 +833,7 @@ export default function TrybeOutreach() {
               ? <>Every day, when you open this page, MVP and SCOUT find up to {DAILY_FIND} new brands that fit your niche and draft them here.{lastFindAt ? ` Last found ${new Date(lastFindAt).toLocaleString()}.` : ''} Skim, edit or skip, then press Send all.</>
               : <>The daily find is off. Turn it on in Find brands, or find and draft brands there yourself.</>}
           </p>
-          {sendBlocked && !running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
+          {sendBlocked && !running && queue.length > 0 && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
           {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>Keep this tab open. SCOUT opens TRYBE for each request and brings you back, 45 seconds to 2 minutes apart, with a longer pause every five.</p>}
           {log.length > 0 && (
             <div className="rounded-xl border p-3 mb-3 max-h-56 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
