@@ -287,14 +287,14 @@ export default function TrybeOutreach() {
   /** Draft these brands into Ready to send, four at a time. */
   async function draftIds(ids: string[]): Promise<{ ok: number; failed: number }> {
     let ok = 0, failed = 0
-    setFinding({ stage: 'Writing drafts', done: 0, total: ids.length })
+    setFinding({ stage: 'Writing messages', done: 0, total: ids.length })
     for (let i = 0; i < ids.length; i += 4) {
       const chunk = ids.slice(i, i + 4)
       try {
         const d = await api({ action: 'draft', brandIds: chunk })
         for (const r of (d.results || []) as Array<{ ok: boolean }>) r.ok ? ok++ : failed++
       } catch (e) { failed += chunk.length; toast.error(e instanceof Error ? e.message : 'Draft failed'); break }
-      setFinding({ stage: 'Writing drafts', done: Math.min(ids.length, i + 4), total: ids.length })
+      setFinding({ stage: 'Writing messages', done: Math.min(ids.length, i + 4), total: ids.length })
     }
     return { ok, failed }
   }
@@ -775,12 +775,25 @@ export default function TrybeOutreach() {
                   disabled={!live?.brands.length} className={btn} style={{ border: '1px solid var(--border)' }}>
                   <Check size={13} /> Tick the top {DAILY_FIND}
                 </button>
-                <button onClick={() => void draftPicked()} disabled={busy || !livePick.size} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+                <button onClick={() => void draftPicked()} disabled={busy || !livePick.size} className={btn} style={{ background: PURPLE, color: '#fff' }}
+                  title={running ? 'Send all is running. This unlocks when it finishes.' : finding ? `Busy: ${finding.stage}. This unlocks when it finishes.` : !livePick.size ? 'Tick the brands to write to first.' : undefined}>
                   <Sparkles size={13} /> Write {livePick.size} message{livePick.size === 1 ? '' : 's'}
                 </button>
               </div>
             </div>
             <p className="text-[12px] mb-3" style={soft}>Best matches first. Tick the brands you want and MVP writes each one a message from your core message.</p>
+            {/* WHY THE BUTTON IS OFF, said where the button is (Seb, 2026-10-07:
+                "what is the reason the write message is not clickable?"). The
+                daily run or a collection works on the list meanwhile, and its
+                progress used to show only in the status card at the top. */}
+            {busy && (
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>
+                <Loader2 size={12} className="animate-spin" />
+                {running
+                  ? 'Send all is running. Write messages unlocks when it finishes.'
+                  : <>Busy: {finding?.stage}{finding?.total ? ` (${finding.done ?? 0} of ${finding.total})` : '...'}. Write messages unlocks when this finishes.</>}
+              </p>
+            )}
             {isAdmin && (
               <div className="rounded-lg border border-dashed px-3 py-2 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
                 <p className="text-[10px] font-bold uppercase tracking-wider">Admin only</p>
