@@ -10,6 +10,7 @@
 //   GET  /backend/api/channels?page=1&limit=50              the conversations
 //   GET  /backend/api/channels/<id>/messages?page=1&limit=50 one conversation
 //   POST /backend/api/channels/<id>/messages                 a reply
+//   POST /backend/api/channels/<id>/read                     marks it read
 //
 // TRYBE's field names were seen only in part, so each field is found by the
 // names it is likely to have, and when nothing could be read the screen says
@@ -108,10 +109,11 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
   const [sending, setSending] = useState(false)
   const [sendNote, setSendNote] = useState<{ tone: 'ok' | 'bad' | 'warn'; text: string } | null>(null)
   const [me, setMe] = useState<string | null>(null)
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const threadRef = useRef<HTMLDivElement | null>(null)
+  const [readNote, setReadNote] = useState<string | null>(null)
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
 
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(async (): Promise<Conversation[] | null> => {
     setLoadingList(true); setListNote(null)
     try {
       // Who "you" are on TRYBE, to tell your messages from the brand's.
@@ -122,10 +124,11 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
         if (id) setMe(id)
       }
       const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
-      if (!r.ok) { setListNote(errWords(r)); setConvos([]); return }
+      if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }
       const list = listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c).sort((a, b) => b.at - a.at)
       setConvos(list)
       if (!list.length) setListNote(listOf(r.json).length ? `MVP could not read TRYBE's conversations. TRYBE sent: ${shapeOf(r.json)}.` : 'No conversations on TRYBE yet.')
+      return list
     } finally { setLoadingList(false) }
   }, [me])
 
@@ -142,11 +145,30 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
   }, [me])
 
   useEffect(() => { if (ready && convos === null) void loadList() }, [ready, convos, loadList])
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [msgs])
+  // THE THREAD SCROLLS, NOT THE PAGE (Seb, 2026-10-07: "the window always
+  // kind of jumps up. And then comes back down"). scrollIntoView moved every
+  // scrolling box up to the page itself to bring the last message into view.
+  useEffect(() => { const el = threadRef.current; if (el) el.scrollTop = el.scrollHeight }, [msgs])
 
   async function open(c: Conversation) {
-    setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null)
-    await loadMessages(c.id)
+    setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null); setReadNote(null)
+    const list = await loadMessages(c.id)
+    if (c.unread > 0) await markRead(c, list)
+  }
+
+  /** READ ON TRYBE, NOT JUST HERE (Seb, 2026-10-07: "if I've read the message
+   *  it should not be there"). Opening a conversation tells TRYBE it was read,
+   *  then the list is read again from TRYBE, so the purple count shows what
+   *  TRYBE now says rather than what MVP hopes. A count TRYBE keeps is said. */
+  async function markRead(c: Conversation, list: Message[]) {
+    const path = `/backend/api/channels/${encodeURIComponent(c.id)}/read`
+    let r = await requestTrybeApi('POST', path, {})
+    const lastId = list.length ? list[list.length - 1].id : ''
+    if (!r.ok && r.status && r.status >= 400 && r.status < 500 && lastId) r = await requestTrybeApi('POST', path, { messageId: lastId })
+    if (!r.ok) { setReadNote(`TRYBE did not mark this read: ${errWords(r)}`); return }
+    const fresh = await loadList()
+    const now = fresh?.find(x => x.id === c.id)
+    if (now && now.unread > 0) setReadNote(`TRYBE still counts ${now.unread} unread here. It may clear when you open it on TRYBE.`)
   }
 
   async function sendReply() {
@@ -209,9 +231,10 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
           {!openConvo && <p className="m-auto text-[13px]" style={soft}>Pick a conversation.</p>}
           {openConvo && (<>
             <div className="px-4 py-3 border-b text-[13px] font-semibold" style={{ borderColor: 'var(--border)' }}>{openConvo.name}</div>
-            <div className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
+            <div ref={threadRef} className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}
               {msgNote && <p className="text-[12px]" style={{ color: AMBER }}>{msgNote}</p>}
+              {readNote && <p className="text-[12px]" style={{ color: AMBER }}>{readNote}</p>}
               {(msgs || []).map(m => (
                 <div key={m.id} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="max-w-[80%] rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap"
@@ -222,7 +245,6 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
                   </div>
                 </div>
               ))}
-              <div ref={endRef} />
             </div>
             <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
               <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3} placeholder="Write a reply. Line breaks are kept."
