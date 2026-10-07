@@ -274,9 +274,16 @@ check('Send now and Send all share one runner and the daily cap', /async functio
 
 check('brands already messaged leave the live list, and how many is said', /const DONE = \['drafted', 'sending', 'sent', 'already', 'failed', 'removed'\]/.test(ROUTE) && /hiddenMine/.test(ROUTE) && /includeMine: showMine/.test(UI) && /already messaged, wrote to or removed/.test(UI))
 
-check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandId=\{b\.brand_id\} \/>/g) || []).length === 3 && /href=\{sendUrl\(brandId, null\)\}/.test(UI) && sendUrl('abc123', null) === 'https://jointrybe.com/creator/discover?brand=abc123')
+check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandId=\{b\.brand_id\} name=\{b\.name\} scout=\{scoutOpens\} \/>/g) || []).length === 3 && /href=\{href\}/.test(readFileSync('components/labs/TrybeLink.tsx', 'utf8')) && sendUrl('abc123', null) === 'https://jointrybe.com/creator/discover?brand=abc123')
+{
+  const LINK = readFileSync('components/labs/TrybeLink.tsx', 'utf8')
+  const OPEN = BG.slice(BG.indexOf('async function trybeOpenBrandInPage('), BG.indexOf('/** Opens TRYBE in front on the brand'))
+  check('On TRYBE asks SCOUT for the brand popup, and the plain link without it', /if \(!scout\) return/.test(LINK) && /requestTrybeOpenBrand\(brandId, name\)/.test(LINK) && /type: 'MVP_TRYBE_OPEN'/.test(readFileSync('lib/extension-frame.ts', 'utf8')) && /msg\.type === 'MVP_TRYBE_OPEN'/.test(BG))
+  check('opening a brand never presses Request to Join or Send', OPEN.length > 200 && !/request to join|send request|join\.click|sendBtn/i.test(OPEN))
+  check('the brand opener runs alone in the page', !/trybeRun|chrome\.|_sleep/.test(OPEN))
+}
 
-check('a brand conversation links to the brand on TRYBE', /brandLink=\{name => \{ const b = brands\.find\(x => convoFor\(x\.name/.test(UI) && /Brand page on TRYBE/.test(INBOX))
+check('a brand conversation links to the brand on TRYBE', /brandLink=\{name => \{ const b = brands\.find\(x => convoFor\(x\.name/.test(UI) && /label="Brand page on TRYBE"/.test(INBOX))
 
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }

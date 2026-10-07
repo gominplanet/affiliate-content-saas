@@ -12356,6 +12356,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_OPEN') {
+    // 1.41.8: open one brand's own popup on TRYBE for the creator, in front.
+    // Nothing is pressed: Request to Join stays theirs.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 40000)
+    trybeOpenBrand({ brandId: msg.brandId, name: msg.name })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_SEND') {
     // Past the press, a late answer is 'unconfirmed', never 'failed'.
     const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 110000)
@@ -14539,6 +14548,59 @@ async function trybeSendInPage(name, message) {
   if (gone) { steps.push('closed'); return { outcome: 'sent', steps } }
   const err = Array.from(document.querySelectorAll('[role=alert], [class*=toast], [class*=error]')).map((e) => String(e.innerText || '').trim()).filter(Boolean)[0] || null
   return { outcome: 'unconfirmed', error: err || 'TRYBE did not close the request box.', steps }
+}
+
+// In page, alone (1.41.8): bring up one brand's popup on TRYBE's Discover
+// screen and stop. TRYBE's popup has no address of its own (the ?brand= link
+// lands on the plain list), so it is reached the way a person would: the
+// brand's row if it is on screen, else TRYBE's own Search Brand box, then a
+// click on the row. Nothing else is pressed.
+async function trybeOpenBrandInPage(name) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
+  const want = norm(name)
+  const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  if (/log ?in|sign ?in|auth/i.test(location.pathname) || document.querySelector('input[type=password]')) return { ok: false, error: 'not-signed-in' }
+  const popupOpen = () => {
+    const d = Array.from(document.querySelectorAll('[role=dialog], [aria-modal=true]')).find(visible)
+    if (!d) return null
+    return String(d.innerText || '').split('\n').map(norm).includes(want) ? d : null
+  }
+  const rowFor = () => Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
+    if (!el.querySelector('img') || !visible(el)) return false
+    const first = String(el.innerText || '').split('\n').map((t) => t.trim()).filter(Boolean)[0]
+    return norm(first) === want
+  }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0]
+  if (await waitFor(popupOpen, 2500)) return { ok: true, via: 'link' }
+  let row = rowFor()
+  if (!row) {
+    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(i.placeholder || '')), 8000)
+    if (!search) return { ok: false, error: 'search-not-found' }
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    search.focus(); set.call(search, name)
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    row = await waitFor(rowFor, 8000)
+    if (!row) return { ok: false, error: 'brand-not-found', via: 'searched' }
+  }
+  row.scrollIntoView({ block: 'center' }); await sleep(300); row.click()
+  return (await waitFor(popupOpen, 6000)) ? { ok: true, via: 'row' } : { ok: false, error: 'popup-did-not-open' }
+}
+
+/** Opens TRYBE in front on the brand's popup and leaves it there. */
+async function trybeOpenBrand({ brandId, name }) {
+  if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+  if (!name || !String(name).trim()) return { ok: false, error: 'no-name' }
+  const id = String(brandId || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 80)
+  const tab = await chrome.tabs.create({ url: `https://jointrybe.com/creator/discover${id ? `?brand=${id}` : ''}`, active: true })
+  try {
+    await waitForTabLoad(tab.id, 30000)
+    await _sleep(1200)
+    const res = await trybeRun(trybeOpenBrandInPage, [String(name)], tab.id)
+    return res || { ok: false, error: 'no-answer-from-page' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  }
 }
 
 // In page, alone: is a box still holding this message? Used only to settle a

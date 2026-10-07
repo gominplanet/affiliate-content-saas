@@ -18,8 +18,9 @@
 // A reply counts as sent only when it shows up in the conversation after.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, ExternalLink } from 'lucide-react'
+import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
+import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
@@ -164,7 +165,7 @@ const SAY: Record<string, string> = {
 const errWords = (r: { error?: string; status?: number }) =>
   r.error ? (SAY[r.error] || r.error) : r.status === 401 || r.status === 403 ? `TRYBE refused it (${r.status}): open jointrybe.com, sign in, and try again.` : `TRYBE answered ${r.status ?? 'nothing'}.`
 
-export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvos, brandLink }: {
+export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvos, brandLink, scoutOpens = false }: {
   scoutVersion: string | null; allowed: boolean
   /** A conversation the page asked to open (Sent's "Open chat"). */
   openRequest?: { id: string; n: number } | null
@@ -172,7 +173,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
   onConvos?: (convos: Conversation[]) => void
   /** The brand's own TRYBE page for a conversation, when it is a brand on
    *  the creator's list. */
-  brandLink?: (conversationName: string) => string | null
+  brandLink?: (conversationName: string) => { id: string; name: string } | null
+  /** SCOUT can open the brand's own popup (1.41.8). */
+  scoutOpens?: boolean
 }) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
   const [listNote, setListNote] = useState<string | null>(null)
@@ -333,10 +336,8 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
           {openConvo && (<>
             <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
               <span className="text-[13px] font-semibold">{openConvo.name}</span>
-              {(() => { const href = brandLink?.(openConvo.name); return href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer" className="ml-auto text-[12px] font-semibold inline-flex items-center gap-0.5" style={{ color: PURPLE }} title="Open this brand on TRYBE">
-                  Brand page on TRYBE <ExternalLink size={10} />
-                </a>) : null })()}
+              {(() => { const b = brandLink?.(openConvo.name); return b ? (
+                <span className="ml-auto"><TrybeLink brandId={b.id} name={b.name} scout={scoutOpens} label="Brand page on TRYBE" /></span>) : null })()}
             </div>
             <div ref={threadRef} className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}

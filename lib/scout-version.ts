@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.41.7'
+export const SCOUT_LATEST_VERSION = '1.41.8'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -83,6 +83,9 @@ export const SCOUT_TRYBE_INBOX_MIN_VERSION = '1.41.5'
 /** The oldest SCOUT that sends TRYBE requests in a tab behind MVP's, taking
  *  the screen only when a send needs it (Labs). */
 export const SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION = '1.41.7'
+/** The oldest SCOUT that opens one brand's own popup on TRYBE for the
+ *  creator (On TRYBE links, Labs). */
+export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */

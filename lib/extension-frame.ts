@@ -1099,6 +1099,15 @@ export async function requestTrybeSend(url: string, name: string, message: strin
   return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 
+export interface TrybeOpenResult { ok: boolean; error?: string; via?: string }
+
+/** SCOUT 1.41.8+: opens TRYBE in front on one brand's own popup, so the
+ *  creator can request samples. Nothing is pressed. */
+export async function requestTrybeOpenBrand(brandId: string, name: string): Promise<TrybeOpenResult> {
+  const res = await sendToExtension<TrybeOpenResult>({ type: 'MVP_TRYBE_OPEN', brandId, name }, 45_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
 /** Where the Group post SCOUT filled stands, after the creator presses Post.
  *  posted: `url` is the post's own address. posted_no_link: SCOUT saw it go
  *  up but could not read its address. not_seen / closed / timeout / lost /

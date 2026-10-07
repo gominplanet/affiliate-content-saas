@@ -24,9 +24,10 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
-import { nextGapMs, prefsKey, sendUrl, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import TrybeLink from '@/components/labs/TrybeLink'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -149,18 +150,6 @@ function nicheIcon(name: string): LucideIcon {
   return rules.find(([re]) => re.test(n))?.[1] || Tag
 }
 
-/** The brand's own page on TRYBE (Seb, 2026-10-07: "a hyperlink near a
- *  brand's name to send us to their page on trybe so we could request
- *  samples"). The same link SCOUT opens to send: it opens the brand's popup. */
-function TrybeLink({ brandId }: { brandId: string }) {
-  return (
-    <a href={sendUrl(brandId, null)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-      className="text-[12px] font-semibold inline-flex items-center gap-0.5" style={{ color: PURPLE }} title="Open this brand on TRYBE">
-      <Handshake size={11} /> On TRYBE <ExternalLink size={10} />
-    </a>
-  )
-}
-
 /** A brand's own website icon, else its first letter. */
 function BrandMark({ name, website, size = 40 }: { name: string; website: string | null; size?: number }) {
   const [bad, setBad] = useState(false)
@@ -271,6 +260,7 @@ export default function TrybeOutreach() {
   }, [load])
   useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
   const canInbox = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
+  const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   const loadInbox = useCallback(async () => {
     const r = await fetchTrybeInbox().catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
     if (r.ok) { setInbox({ convos: r.convos, me: r.me, myName: r.myName }); setInboxError(null) } else setInboxError(r.error)
@@ -944,7 +934,7 @@ export default function TrybeOutreach() {
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[15px] font-semibold">{b.name}</span>
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
-                        <TrybeLink brandId={b.brand_id} />
+                        <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1092,7 +1082,7 @@ export default function TrybeOutreach() {
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. Pick brands in Find brands and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} onSendNow={t => void saveDraft(b, t).then(() => sendOne({ ...b, draft: t }))} canSend={access === 'granted' && remaining > 0 && !finding} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(() => sendOne({ ...b, draft: t }))} canSend={access === 'granted' && remaining > 0 && !finding} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -1113,7 +1103,7 @@ export default function TrybeOutreach() {
       )}
 
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onConvos={onInboxConvos}
-        brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? sendUrl(b.brand_id, null) : null }} />}
+        brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? { id: b.brand_id, name: b.name } : null }} scoutOpens={scoutOpens} />}
 
       {tab === 'sent' && (
         <div className={card} style={cardStyle}>
@@ -1147,7 +1137,7 @@ export default function TrybeOutreach() {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
                     <span className="text-[14px] font-semibold">{b.name}</span>
-                    <TrybeLink brandId={b.brand_id} />
+                    <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                     {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied</span>}
                     {reply === 'waiting' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
                     {reply === 'open' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Conversation open</span>}
@@ -1191,8 +1181,8 @@ export default function TrybeOutreach() {
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend }: {
-  b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean
+function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend, scoutOpens }: {
+  b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean; scoutOpens: boolean
   /** Saves the text shown, then sends it: never an older copy. */
   onSendNow: (text: string) => void; canSend: boolean
 }) {
@@ -1212,7 +1202,7 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
             <span className="text-[14px] font-semibold">{b.name}</span>
             {b.worked_with && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
-            <TrybeLink brandId={b.brand_id} />
+            <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
             {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
             {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
           </div>
