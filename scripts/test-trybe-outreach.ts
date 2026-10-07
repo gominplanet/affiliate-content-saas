@@ -237,7 +237,7 @@ check('MVP\'s tab is brought back only when SCOUT took the screen', /if \(cameFo
 
 // Seb, 2026-10-07: opening a conversation clears its count on TRYBE, and the
 // page does not jump.
-check('opening an unread conversation tells TRYBE it was read, then reads the count back', /if \(c\.unread > 0\) await markRead\(c, list\)/.test(INBOX) && /requestTrybeApi\('POST', path, \{\}\)/.test(INBOX) && /const fresh = await loadList\(\)/.test(INBOX) && /TRYBE still counts/.test(INBOX))
+check('opening an unread conversation tells TRYBE it was read, then reads the count back', /if \(c\.unread > 0\) await markRead\(c, list\)/.test(INBOX) && /requestTrybeApi\('POST', path, \{ messageId: lastId \}\)/.test(INBOX) && /const fresh = await loadList\(\)/.test(INBOX) && /TRYBE still counts/.test(INBOX))
 check('the conversation scrolls inside itself, not the page', !/scrollIntoView/.test(INBOX.replace(/\/\/.*$/gm, '')) && /el\.scrollTop = el\.scrollHeight/.test(INBOX))
 check('SCOUT lets MVP mark a TRYBE conversation read', /\(messages\|read\)\$\//.test(BG))
 

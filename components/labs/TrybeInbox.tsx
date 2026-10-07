@@ -162,9 +162,11 @@ export default function TrybeInbox({ scoutVersion, allowed }: { scoutVersion: st
    *  TRYBE now says rather than what MVP hopes. A count TRYBE keeps is said. */
   async function markRead(c: Conversation, list: Message[]) {
     const path = `/backend/api/channels/${encodeURIComponent(c.id)}/read`
-    let r = await requestTrybeApi('POST', path, {})
+    // TRYBE's own read request, seen 2026-10-07: { messageId } of the latest
+    // message, the one read up to.
     const lastId = list.length ? list[list.length - 1].id : ''
-    if (!r.ok && r.status && r.status >= 400 && r.status < 500 && lastId) r = await requestTrybeApi('POST', path, { messageId: lastId })
+    if (!lastId) { setReadNote('MVP could not mark this read: no message was read from TRYBE.'); return }
+    const r = await requestTrybeApi('POST', path, { messageId: lastId })
     if (!r.ok) { setReadNote(`TRYBE did not mark this read: ${errWords(r)}`); return }
     const fresh = await loadList()
     const now = fresh?.find(x => x.id === c.id)
