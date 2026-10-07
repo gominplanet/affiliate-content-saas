@@ -71,11 +71,15 @@ function readMessage(raw: unknown, me: string[]): Message | null {
   const id = str(raw.id ?? raw.messageId ?? raw._id)
   const text = str(pick(raw, ['content', 'text', 'body', 'message']))
   if (!id && !text) return null
-  const sender = (isObj(raw.sender) ? raw.sender : isObj(raw.user) ? raw.user : isObj(raw.author) ? raw.author : null) as Obj | null
+  const sender = (isObj(raw.sender) ? raw.sender : isObj(raw.user) ? raw.user : isObj(raw.author) ? raw.author : isObj(raw.from) ? raw.from : isObj(raw.createdBy) ? raw.createdBy : null) as Obj | null
   const who = str(sender ? pick(sender, ['name', 'fullName', 'full_name', 'displayName', 'firstName']) : pick(raw, ['senderName', 'sender_name', 'userName']))
   const whoId = str(sender ? pick(sender, ['id', 'userId', 'user_id']) : pick(raw, ['senderId', 'sender_id', 'userId', 'user_id']))
   // The sender may be named by more than one id: any of them that is yours counts.
-  const whoIds = [whoId, ...(sender ? [sender.userId, sender.user_id, sender.creatorId, sender.profileId] : []), raw.senderId, raw.sender_id, raw.userId, raw.user_id].map(str).filter(Boolean)
+  // Only who SENT it: never a quoted message's sender, so a reply to your
+  // message is not taken for yours.
+  const whoIds = [whoId, ...(sender ? [sender.id, sender._id, sender.userId, sender.user_id, sender.creatorId, sender.profileId] : []),
+    raw.senderId, raw.sender_id, raw.userId, raw.user_id, raw.authorId, raw.author_id, raw.fromId, raw.from_id, raw.createdById, raw.created_by,
+    typeof raw.createdBy === 'string' ? raw.createdBy : '', typeof raw.from === 'string' ? raw.from : '', typeof raw.user === 'string' ? raw.user : '', typeof raw.sender === 'string' ? raw.sender : ''].map(str).filter(Boolean)
   const mineFlag = raw.isMine ?? raw.is_mine ?? raw.isOwn ?? raw.is_own ?? raw.fromMe ?? raw.from_me
   const mine = typeof mineFlag === 'boolean' ? mineFlag : (me.length && whoIds.length ? whoIds.some(w => me.includes(w)) : null)
   const at = Date.parse(str(pick(raw, ['createdAt', 'created_at', 'sentAt', 'sent_at', 'timestamp']))) || 0
