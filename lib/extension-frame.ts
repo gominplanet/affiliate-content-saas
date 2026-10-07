@@ -1663,6 +1663,9 @@ export async function requestCcMatch(keyword: string, asins: string[]): Promise<
 export interface CcSmartScanResult {
   ok: boolean
   matches?: import('./cc-smart-rules').SmartScanMatch[]
+  /** SCOUT 1.41.6+: every campaign id seen on the grid (up to 200), passing
+   *  the rulebook or not. What proves Creator Connections access. */
+  seenIds?: string[]
   stats?: import('./cc-smart-rules').SmartScanStats & { truncated?: boolean }
   foreground?: boolean
   error?: string

@@ -34,6 +34,8 @@ check('migration 414 is safe to run twice', /add column if not exists scout_vers
 check('every SCOUT user is asked once to allow TRYBE, and nobody\'s SCOUT is switched off for it',
   /setPhase\(\{ kind: t\?\.state === 'not-granted' \? 'trybe' : 'ok' \}\)/.test(BANNER) && /requestTrybeAccess\(true\)/.test(BANNER)
   && !/jointrybe/.test(JSON.stringify(JSON.parse(readFileSync('extension/manifest.json', 'utf8')).host_permissions || [])))
+check('Creator Connections access is proved from every campaign SCOUT saw, on all three ways in',
+  /seenIds/.test(readFileSync('extension/content.js', 'utf8')) && ['components/campaigns/CampaignBrowsePanel.tsx', 'app/(dashboard)/cc-campaigns/page.tsx', 'components/campaigns/SmartScanPanel.tsx'].every((f) => /campaignIds: proofIds/.test(readFileSync(f, 'utf8'))))
 check('no dashes in what the member reads', !/[–—]| - /.test((BANNER.match(/<b>[^]*?<\/>/g) || []).join(' ')))
 
 if (failures.length) {

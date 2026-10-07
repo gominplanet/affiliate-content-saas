@@ -24,6 +24,7 @@ import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
 import { requestCcSmartScan, requestCcBrandSearch } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
+import { ccProofIds } from '@/lib/cc-access'
 
 interface Campaign {
   campaignId: string
@@ -288,13 +289,16 @@ export default function CampaignBrowsePanel({
         )
         return
       }
-      if (!(res.matches && res.matches.length > 0)) {
+      // Every campaign SCOUT saw on the grid proves access (SCOUT 1.41.6+),
+      // not only the few that passed every quality gate.
+      const proofIds = ccProofIds(res)
+      if (!proofIds.length) {
         setVerifyMsg('Your Creator Connections grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
         return
       }
       const stamp = await fetch('/api/campaigns/cc-verify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignIds: res.matches.map(m => m.campaignId).filter(Boolean) }),
+        body: JSON.stringify({ campaignIds: proofIds }),
       }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) {
         setLocked(false); setVerifyMsg(null)
@@ -302,7 +306,7 @@ export default function CampaignBrowsePanel({
         void load()
       } else {
         setVerifyMsg(stamp?.reason === 'no-match'
-          ? 'SCOUT read your grid, but its campaigns did not match the shared catalogue yet. Try again after the next catalogue refresh.'
+          ? `SCOUT read ${stamp.sent ?? proofIds.length} campaigns on your grid, but only ${stamp.matched ?? 0} are in MVP's catalogue so far. Try again after the next catalogue refresh, or tell support.`
           : 'Verified your grid, but couldn’t save it just now. Please try again.')
       }
     } catch {

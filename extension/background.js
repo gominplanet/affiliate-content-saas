@@ -14286,8 +14286,16 @@ async function trybeApiInPage(method, path, body) {
       return (o && (o.access_token || (o.currentSession && o.currentSession.access_token))) || (Array.isArray(o) && typeof o[0] === 'string' ? o[0] : null)
     } catch (e) { return null }
   }
+  // THE PAGE'S OWN SIGN-IN FIRST (1.41.6). The copy kept in TRYBE's cookie
+  // can be an hour old (TRYBE renews it in memory), and 1.41.5 sent that one
+  // and was refused (401). The watcher (trybe-hook.js) holds the one TRYBE's
+  // page itself sends; the stored copies are only a last resort.
+  const pageToken = () => { try { const h = window.__mvpTrybeAuth; return h && h.token ? h.token : null } catch (e) { return null } }
+  let tokenFrom = null
   const readToken = () => {
-    try { const h = window.__mvpTrybeAuth; if (h && h.token) return h.token } catch (e) {}
+    const pt = pageToken()
+    if (pt) { tokenFrom = 'page'; return pt }
+    tokenFrom = 'stored'
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i)
@@ -14304,9 +14312,18 @@ async function trybeApiInPage(method, path, body) {
     for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) return t }
     return null
   }
+  const nudge = () => {
+    try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+    try { for (const el of Array.from(document.querySelectorAll('*'))) if (el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) el.scrollTop = el.scrollHeight } catch (e) {}
+  }
+  // Up to eight seconds for TRYBE's page to make a request the watcher sees.
+  const waitForPage = async (other) => {
+    for (let i = 0; i < 16; i++) { const t = pageToken(); if (t && t !== other) return t; if (i % 4 === 3) nudge(); await new Promise((r) => setTimeout(r, 500)) }
+    return null
+  }
   try {
-    let token = readToken()
-    for (let i = 0; i < 10 && !token; i++) { await new Promise((r) => setTimeout(r, 600)); token = readToken() }
+    let token = pageToken() || (await waitForPage(null)) || readToken()
+    if (pageToken()) tokenFrom = 'page'
     const send = async () => {
       const headers = { accept: 'application/json' }
       if (token) headers.authorization = 'Bearer ' + token
@@ -14315,34 +14332,47 @@ async function trybeApiInPage(method, path, body) {
     }
     let r = await send()
     if ((r.status === 401 || r.status === 403)) {
-      const again = readToken()
-      if (again && again !== token) { token = again; r = await send() }
+      // Refused: wait for a fresh sign-in from the page itself, and ask once more.
+      const fresh = (await waitForPage(token)) || pageToken()
+      if (fresh && fresh !== token) { token = fresh; tokenFrom = 'page'; r = await send() }
     }
     const text = await r.text()
     let json = null
     try { json = text ? JSON.parse(text) : null } catch (e) {}
-    return { ok: r.ok, status: r.status, json, text: json ? null : text.slice(0, 500), signedIn: !!token }
+    return { ok: r.ok, status: r.status, json, text: json ? null : text.slice(0, 500), signedIn: !!token, tokenFrom }
   } catch (e) {
     return { ok: false, status: 0, error: 'page-error: ' + (e && e.message ? e.message : String(e)) }
   }
 }
 
-// A TRYBE tab to make requests from: one the creator has open, else one SCOUT
-// opens behind and closes after five quiet minutes.
+// SCOUT'S OWN TRYBE TAB to make requests from, opened behind with the sign-in
+// watcher loaded before TRYBE's code, closed after five quiet minutes. Never
+// the creator's own TRYBE tab (1.41.5 borrowed it: no watcher there, so only
+// the stale stored sign-in, and TRYBE refused it).
 async function trybeApiTabId() {
   if (trybeApiTab) {
-    try { const t = await chrome.tabs.get(trybeApiTab.id); if (t && /^https:\/\/([a-z0-9-]+\.)?jointrybe\.com\//.test(t.url || '')) { trybeApiTab.at = Date.now(); return trybeApiTab.id } } catch (e) {}
+    try {
+      const t = await chrome.tabs.get(trybeApiTab.id)
+      if (t && /^https:\/\/([a-z0-9-]+\.)?jointrybe\.com\//.test(t.url || '')) {
+        // Open over 45 minutes: reloaded, so TRYBE's page signs in afresh.
+        if (Date.now() - (trybeApiTab.opened || 0) > 45 * 60000) {
+          await trybeHookOn()
+          await chrome.tabs.reload(trybeApiTab.id)
+          await waitForTabLoad(trybeApiTab.id, 30000)
+          await _sleep(1500)
+          trybeApiTab.opened = Date.now()
+        }
+        trybeApiTab.at = Date.now()
+        return trybeApiTab.id
+      }
+    } catch (e) {}
     trybeApiTab = null
   }
-  let open = []
-  try { open = await chrome.tabs.query({ url: TRYBE_ORIGINS }) } catch (e) {}
-  const theirs = open.find((t) => t.status === 'complete')
-  if (theirs) { trybeApiTab = { id: theirs.id, ours: false, at: Date.now() }; return theirs.id }
   await trybeHookOn()
   const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
   await waitForTabLoad(tab.id, 30000)
   await _sleep(1500)
-  trybeApiTab = { id: tab.id, ours: true, at: Date.now() }
+  trybeApiTab = { id: tab.id, ours: true, at: Date.now(), opened: Date.now() }
   try { chrome.alarms.create(TRYBE_API_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {}
   return tab.id
 }

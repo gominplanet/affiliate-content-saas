@@ -30,6 +30,7 @@ import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns
 import FavoriteBrandsPanel from '@/components/campaigns/FavoriteBrandsPanel'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
+import { ccProofIds } from '@/lib/cc-access'
 
 // Max campaigns selectable for one bulk-message run.
 const BULK_MAX = 100
@@ -715,17 +716,20 @@ export default function CcCampaignsPage() {
             : 'We couldn’t confirm a Creator Connections grid for your account. Open your Creator Connections tab once, then try again.')
         return
       }
-      if (!(res.matches && res.matches.length > 0)) {
+      // Every campaign SCOUT saw on the grid proves access (SCOUT 1.41.6+),
+      // not only the few that passed every quality gate.
+      const proofIds = ccProofIds(res)
+      if (!proofIds.length) {
         setVerifyMsg('Your grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
         return
       }
       const stamp = await fetch('/api/campaigns/cc-verify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignIds: res.matches.map(m => m.campaignId).filter(Boolean) }),
+        body: JSON.stringify({ campaignIds: proofIds }),
       }).then(r => r.json()).catch(() => null)
       if (stamp?.verified) { setLocked(false); setVerifyMsg(null); toast.success('Creator Connections access confirmed.'); fetchPage(1, false) }
       else setVerifyMsg(stamp?.reason === 'no-match'
-        ? 'SCOUT read your grid, but its campaigns did not match the shared catalogue yet. Try again after the next catalogue refresh.'
+        ? `SCOUT read ${stamp.sent ?? proofIds.length} campaigns on your grid, but only ${stamp.matched ?? 0} are in MVP's catalogue so far. Try again after the next catalogue refresh, or tell support.`
         : 'Verified your grid, but couldn’t save it just now. Please try again.')
     } catch {
       setVerifyMsg('Verification failed unexpectedly. Reload and try again.')

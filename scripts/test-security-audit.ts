@@ -149,7 +149,10 @@ for (const rel of ['lib/ig-dm.ts', 'lib/instagram-publish.ts']) {
     && /if \(matched < Math\.min\(MIN_MATCHED, ids\.length\)\)/.test(V), 'see the Creator Connections access block in this guard')
   check('and lasts 30 days', /const VERIFY_TTL_DAYS = 30/.test(V) && /CC_VERIFY_TTL_MS = 30 \* 86_400_000/.test(rf('lib/cc-access.ts', 'utf8')), 'see the Creator Connections access block in this guard')
   for (const f of ['components/campaigns/CampaignBrowsePanel.tsx', 'app/(dashboard)/cc-campaigns/page.tsx', 'components/campaigns/SmartScanPanel.tsx']) {
-    check(`${f} sends the campaign ids it saw`, /campaignIds: [a-z.]+\.map\(m => m\.campaignId\)/.test(rf(f, 'utf8')), 'see the Creator Connections access block in this guard')
+    // Every campaign SCOUT saw on the grid (SCOUT 1.41.6 seenIds), else the
+    // matches an older SCOUT returns: lib/cc-access ccProofIds. Proving from
+    // the matches alone failed members with few campaigns passing every gate.
+    check(`${f} sends the campaign ids it saw`, /const proofIds = ccProofIds\(res\)/.test(rf(f, 'utf8')) && /campaignIds: proofIds/.test(rf(f, 'utf8')), 'see the Creator Connections access block in this guard')
   }
   const L = rf('app/api/campaigns/ingest-live/route.ts', 'utf8')
   check('a member scan only refreshes live numbers on campaigns already in the catalogue',

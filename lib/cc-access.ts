@@ -39,3 +39,12 @@ export async function ccAccessOk(
   if (columnMissing) return true
   return ccVerifyFresh(data?.cc_verified_at)
 }
+
+/** The campaign ids a SCOUT grid scan proves access with: every one it saw
+ *  (SCOUT 1.41.6+), else the matches an older SCOUT returns. Pure, and safe in
+ *  the browser. */
+export function ccProofIds(res: { seenIds?: string[] | null; matches?: Array<{ campaignId?: string | null }> | null }): string[] {
+  const seen = (res.seenIds || []).filter(Boolean)
+  const fromMatches = (res.matches || []).map(m => m.campaignId).filter((v): v is string => !!v)
+  return Array.from(new Set([...seen, ...fromMatches])).slice(0, 200)
+}

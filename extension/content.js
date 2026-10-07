@@ -845,7 +845,12 @@ if (!window.__ccScoutListener) {
           // commission-less product cards, NOT Affiliate+ campaigns. Refuse
           // rather than scan the wrong program; the app tells the user how to fix.
           if (gridTab === 'sponsored') { sendResponse({ ok: false, error: 'sponsored-tab' }); return }
-          if (!rows.length) { sendResponse({ ok: true, matches: [], stats: { scannedOnCard: rawCount, passedOnCard: 0, deepChecked: 0 } }); return }
+          // EVERY CAMPAIGN SEEN, not only the few that pass the rulebook
+          // (1.41.6): MVP proves the member's Creator Connections access from
+          // these. Proving it from the matches alone failed members whose grid
+          // had campaigns but few that passed every gate.
+          const seenIds = Array.from(new Set(rows.map((r) => r && r.campaignId).filter(Boolean))).slice(0, 200)
+          if (!rows.length) { sendResponse({ ok: true, matches: [], seenIds, stats: { scannedOnCard: rawCount, passedOnCard: 0, deepChecked: 0 } }); return }
           // Name/brand avoid-list (breadcrumbs re-check after the deep-check —
           // campaign names lie, categories don't).
           const avoid = (rules.avoidPatterns || []).map((s) => String(s).toLowerCase())
@@ -914,6 +919,7 @@ if (!window.__ccScoutListener) {
           sendResponse({
             ok: true,
             matches,
+            seenIds,
             stats: { scannedOnCard: rawCount, passedOnCard, deepChecked, blocked, truncated: deepChecked < Math.min(passedOnCard, cap), drops },
           })
         } catch (e) {

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.41.5'
+export const SCOUT_LATEST_VERSION = '1.41.6'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE (Labs): read and answer your TRYBE conversations from MVP.'
+  'Creator Connections access is proved from every campaign SCOUT sees, and the TRYBE inbox signs in reliably.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
