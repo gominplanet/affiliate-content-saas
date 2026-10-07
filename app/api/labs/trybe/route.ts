@@ -30,7 +30,7 @@ import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { getWorkedWithBrands } from '@/lib/creator-brands'
 import { brandKey } from '@/lib/brand-normalize'
 import { researchBrandSite } from '@/lib/trybe-research'
-import { mergeDirectory, directorySearchText, nicheScore, readCategories } from '@/lib/trybe-directory'
+import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText } from '@/lib/trybe-directory'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -345,6 +345,19 @@ export async function POST(request: Request) {
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const facts = await Promise.all(todo.map(r => siteFacts(r)))
+    // A website read here is read for every member: kept in the shared
+    // directory too, so the background reader does not fetch it again.
+    await Promise.all(todo.map(async (r, i) => {
+      const f = facts[i]
+      if (f.fresh) return
+      const ok = !!(f.summary || f.products.length)
+      try {
+        await admin.from('trybe_directory').update({
+          site_summary: f.summary || null, site_products: f.products, site_text: ok ? siteSearchText(f.summary, f.products) : null,
+          site_error: ok ? null : (f.siteError || 'Nothing readable on the website.'), site_fetched_at: f.fetchedAt,
+        }).eq('brand_id', r.brand_id).is('site_fetched_at', null)
+      } catch { /* the member's own copy is kept either way */ }
+    }))
     const verdicts = await (async () => {
       try {
         const msg = await createAnthropicClient().messages.create({
