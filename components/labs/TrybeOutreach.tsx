@@ -214,7 +214,8 @@ export default function TrybeOutreach() {
   const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting'>('all')
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
-  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean } | null>(null)
+  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number } | null>(null)
+  const [showMine, setShowMine] = useState(false)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [livePick, setLivePick] = useState<Set<string>>(new Set())
@@ -506,9 +507,9 @@ export default function TrybeOutreach() {
     setLiveLoading(true)
     const t = setTimeout(async () => {
       try {
-        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60 })
+        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine })
         if (id !== liveReq.current) return // a newer search has started
-        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped })
+        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0 })
         setLiveError(null)
         // Ticks stay only on brands still listed and still free to draft.
         setLivePick(p => new Set(Array.from(p).filter(x => (d.brands || []).some((b: LiveBrand) => b.brand_id === x && !TAKEN.includes(b.status as Brand['status'])))))
@@ -519,7 +520,7 @@ export default function TrybeOutreach() {
       }
     }, 350)
     return () => clearTimeout(t)
-  }, [hasDirectory, catsKey, kwsKey, liveNonce]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Draft the brands ticked in the live list into Ready to send. */
   async function draftPicked(only?: string[]) {
@@ -963,6 +964,13 @@ export default function TrybeOutreach() {
                 )
               })}
             </div>
+            {live && (live.hiddenMine || showMine) ? (
+              <p className="text-[12px] mt-3" style={soft}>
+                {showMine
+                  ? <>Showing brands you already messaged too. <button onClick={() => setShowMine(false)} className="font-semibold underline" style={{ color: PURPLE }}>Hide them</button></>
+                  : <>{live.hiddenMine} brand{live.hiddenMine === 1 ? '' : 's'} you already messaged, wrote to or removed {live.hiddenMine === 1 ? 'is' : 'are'} hidden. <button onClick={() => setShowMine(true)} className="font-semibold underline" style={{ color: PURPLE }}>Show them</button></>}
+              </p>
+            ) : null}
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}

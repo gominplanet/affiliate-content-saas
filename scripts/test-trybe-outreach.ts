@@ -129,7 +129,7 @@ check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\
 
 // THE LIVE LIST (Seb, 2026-10-07: "as users change filters, the results ...
 // should change"). MVP's copy is searched on every change, nothing fetched.
-check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
+check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
 check('an older search never overwrites a newer one', /if \(id !== liveReq\.current\) return/.test(UI))
 check('browse leaves nothing out, so a brand on the list shows where it stands', /rpc\('trybe_directory_search', \{ p_words: words, p_user: null/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
 check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
@@ -271,6 +271,8 @@ check('Send now and Send all share one runner and the daily cap', /async functio
   const cs = [{ name: 'NOBL', at: 2 }, { name: 'HiStrips Team (DM)', at: 3 }, { name: 'Gains In Bulk Team (DM)', at: 1 }, { name: 'Audien Creator Vault', at: 5 }, { name: 'NOBL Q&A', at: 9 }, { name: 'Bread Lace (Group)', at: 4 }]
   check('a sent brand finds its TRYBE chat by name, and not a lookalike', find('NOBL', cs)?.name === 'NOBL' && find('HiStrips', cs)?.name === 'HiStrips Team (DM)' && find('Gains In Bulk', cs)?.name === 'Gains In Bulk Team (DM)' && find('Audien', cs) === null && find('Obvi', cs) === null && find('Bread Lace', cs) === null)
 }
+
+check('brands already messaged leave the live list, and how many is said', /const DONE = \['drafted', 'sending', 'sent', 'already', 'failed', 'removed'\]/.test(ROUTE) && /hiddenMine/.test(ROUTE) && /includeMine: showMine/.test(UI) && /already messaged, wrote to or removed/.test(UI))
 
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }

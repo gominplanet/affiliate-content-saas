@@ -308,14 +308,25 @@ export async function POST(request: Request) {
       .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0 }))
       .filter(x => !terms.length || x.match > 0)
       .sort((a, b) => b.match - a.match || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
-    const top = ranked.slice(0, want)
-    const { data: mineRows } = top.length
-      ? await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason').eq('user_id', ownerId).in('brand_id', top.map(x => x.r.brand_id))
-      : { data: [] }
-    const mineBy = new Map(((mineRows || []) as Array<Record<string, any>>).map(m => [m.brand_id, m])) // eslint-disable-line @typescript-eslint/no-explicit-any
+    // DONE BRANDS LEAVE THE LIST (Seb, 2026-10-07: "these should be gone, no?
+    // I changed keywords ... and i'm still seeing these"). A brand already
+    // messaged, written, or removed is left out unless asked for, and the
+    // count of those left out is said so the list is never quietly short.
+    const mineBy = new Map<string, Record<string, any>>() // eslint-disable-line @typescript-eslint/no-explicit-any
+    const rankedIds = ranked.map(x => x.r.brand_id)
+    for (let i = 0; i < rankedIds.length; i += 200) {
+      const { data: mineRows } = await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason').eq('user_id', ownerId).in('brand_id', rankedIds.slice(i, i + 200))
+      for (const m of (mineRows || []) as Array<Record<string, any>>) mineBy.set(m.brand_id, m) // eslint-disable-line @typescript-eslint/no-explicit-any
+    }
+    const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed']
+    const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
+    const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
+    const shown = body.includeMine === true ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
+    const top = shown.slice(0, want)
     return NextResponse.json({
       ok: true,
-      matched: ranked.length,
+      matched: shown.length,
+      hiddenMine,
       capped: rows.length >= 400,
       brands: top.map(({ r, match }) => {
         const m = mineBy.get(r.brand_id)
