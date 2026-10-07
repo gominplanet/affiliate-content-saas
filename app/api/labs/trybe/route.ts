@@ -8,6 +8,8 @@
 //   POST {action:'found'}     a day's find ran (the daily find waits a day)
 //   POST {action:'directory'} TRYBE's whole brand list, as SCOUT read it (shared)
 //   POST {action:'shortlist'} brands in MVP's directory that match the niche
+//   POST {action:'browse'}    live search of MVP's copy of TRYBE, as filters change
+//   POST {action:'adopt'}     put brands picked from the live list on the creator's list
 //   POST {action:'import'}    brands SCOUT read from TRYBE's Discover Brands
 //   POST {action:'draft'}     research each brand's website, write its message
 //   POST {action:'edit'|'skip'|'unskip'|'reset'}
@@ -254,6 +256,88 @@ export async function POST(request: Request) {
       ok: true, saved: rows.length, withWebsite: rows.filter(r => r.website).length, received: items.length,
       keys: items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : [],
     })
+  }
+
+  if (action === 'browse') {
+    // LIVE FILTERING (Seb, 2026-10-07: "as users change filters, the results
+    // ... should change"). MVP's copy of TRYBE is searched as the creator
+    // ticks categories or types keywords: no SCOUT, no TRYBE, no website
+    // fetched. Brands already on their list come back with where they stand.
+    const cats = cleanTerms(body.categories), kws = cleanTerms(body.keywords)
+    const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
+    const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
+    const words = Array.from(new Set(terms.flatMap(t => [/^[a-z0-9 ]+$/.test(t) ? t : '', ...t.split(/[^a-z0-9]+/).filter(w => w.length > 3)]).filter(Boolean))).slice(0, 40)
+    const COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text'
+    let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
+    // No user given: nothing is left out, so a brand on the list still shows.
+    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: 400 })
+    if (!rpc.error) {
+      const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data, error: e } = await admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 200))
+        if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+        rows.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+    } else {
+      let q = admin.from('trybe_directory').select(COLS)
+      if (words.length) q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+      const { data, error: e } = await q.order('trybe_score', { ascending: false, nullsFirst: false }).limit(800)
+      if (e) {
+        const missing = /does not exist|schema cache/i.test(e.message)
+        return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : e.message }, { status: 500 })
+      }
+      rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+    }
+    const ranked = rows
+      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0 }))
+      .filter(x => !terms.length || x.match > 0)
+      .sort((a, b) => b.match - a.match || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
+    const top = ranked.slice(0, want)
+    const { data: mineRows } = top.length
+      ? await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason').eq('user_id', ownerId).in('brand_id', top.map(x => x.r.brand_id))
+      : { data: [] }
+    const mineBy = new Map(((mineRows || []) as Array<Record<string, any>>).map(m => [m.brand_id, m])) // eslint-disable-line @typescript-eslint/no-explicit-any
+    return NextResponse.json({
+      ok: true,
+      matched: ranked.length,
+      capped: rows.length >= 400,
+      brands: top.map(({ r, match }) => {
+        const m = mineBy.get(r.brand_id)
+        return {
+          brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
+          pay_text: r.pay_text, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          products: (r.site_products || []).slice(0, 6), website_read: !!r.site_text,
+          status: m?.status ?? null, fit_score: m?.fit_score ?? null, fit_reason: m?.fit_reason ?? null,
+        }
+      }),
+    })
+  }
+
+  if (action === 'adopt') {
+    // Brands the creator picked from the live list go on their own list,
+    // ready to draft. Picked by hand, so they skip the AI fit check; a brand
+    // already on the list (queued, sent, skipped) is left as it is.
+    const ids = (Array.isArray(body.brandIds) ? body.brandIds : []).map(String).filter(id => /^[A-Za-z0-9-]{6,80}$/.test(id)).slice(0, 60)
+    if (!ids.length) return NextResponse.json({ ok: true, added: 0, ready: [] })
+    const settings = await readSettings(admin, ownerId)
+    const key = prefsKey(settings.categories, settings.keywords)
+    const { data: dir, error: dErr } = await admin.from('trybe_directory')
+      .select('brand_id, name, website, categories, about, pay_text, rating, trybe_score, total_creators, site_summary, site_products, site_error, site_fetched_at')
+      .in('brand_id', ids)
+    if (dErr) return NextResponse.json({ error: dErr.message }, { status: 500 })
+    const { data: ins, error: insErr } = await admin.from('trybe_brands').upsert(((dir || []) as Array<Record<string, any>>).map(r => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      user_id: ownerId, brand_id: r.brand_id, name: r.name, categories: r.categories || [], website: r.website, about: r.about,
+      pay_text: r.pay_text, rating: r.rating, trybe_score: r.trybe_score, total_creators: r.total_creators,
+      site_summary: r.site_summary, site_products: r.site_products || [], site_error: r.site_error, site_fetched_at: r.site_fetched_at,
+      status: 'new', fit_reason: 'Picked by you from the live list.', fit_prefs: key, fit_checked_at: now, updated_at: now,
+    })), { onConflict: 'user_id,brand_id', ignoreDuplicates: true }).select('brand_id')
+    if (insErr) return NextResponse.json({ error: dbWords(insErr.message) }, { status: 500 })
+    // A brand already there that the AI said no to, or that was skipped, is
+    // ready too: picked by hand now overrides both.
+    await admin.from('trybe_brands').update({ status: 'new', updated_at: now })
+      .eq('user_id', ownerId).in('brand_id', ids).in('status', ['not_fit', 'skipped'])
+    const { data: ready } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).in('brand_id', ids).eq('status', 'new')
+    return NextResponse.json({ ok: true, added: (ins || []).length, ready: ((ready || []) as Array<{ brand_id: string }>).map(r => r.brand_id) })
   }
 
   if (action === 'shortlist') {

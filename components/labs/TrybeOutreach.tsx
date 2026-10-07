@@ -64,6 +64,16 @@ interface Directory { brands: number; withWebsite: number; websitesRead: number;
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
 type Tab = 'find' | 'queue' | 'sent'
+/** One brand from MVP's copy of TRYBE, as the live list shows it. */
+interface LiveBrand {
+  brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
+  pay_text: string | null; trybe_score: number | null; total_creators: number | null; match: number
+  products: string[]; website_read: boolean
+  /** Where it stands on this creator's own list, if it is on it. */
+  status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
+}
+/** On the list in a way that means it is not picked again from the live list. */
+const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
 
 const STARTER = `Hi! I'm an Amazon Influencer who makes short, real-life product videos that show the item in real use. I'd love to create UGC for you.
@@ -136,6 +146,14 @@ export default function TrybeOutreach() {
   const [now, setNow] = useState(Date.now())
   const [log, setLog] = useState<LogLine[]>([])
   const [directory, setDirectory] = useState<Directory | null>(null)
+  // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
+  // filters change, no SCOUT and no website fetched.
+  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean } | null>(null)
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveError, setLiveError] = useState<string | null>(null)
+  const [livePick, setLivePick] = useState<Set<string>>(new Set())
+  const [liveNonce, setLiveNonce] = useState(0)
+  const liveReq = useRef(0)
   // What the server has saved, which is what the daily find goes by: never
   // the half-typed message or a box ticked a second ago.
   const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
@@ -313,8 +331,19 @@ export default function TrybeOutreach() {
    *  then search MVP's copy for the niche. TRYBE's own search is not used: it
    *  does not find brands by what they sell. */
   async function collectAndShortlist(notes: string[]) {
+    await collectFromTrybe(notes, false)
+    setFinding({ stage: 'Searching MVP\u2019s copy of TRYBE for your niche' })
+    const sl = await api({ action: 'shortlist', limit: SCAN_READ })
+    notes.push(hasNiche
+      ? (sl.added ? `MVP searched its copy of TRYBE for your niche and took the best ${sl.added} brands you have not seen to the fit check.` : 'MVP searched its copy of TRYBE and found no new brands matching your niche. Try more keywords or categories.')
+      : `${sl.added} brands taken, highest TRYBE score first. Pick a niche to search by it.`)
+  }
+
+  /** SCOUT collects TRYBE's whole list when MVP's copy is a day old, or now
+   *  when `force`. */
+  async function collectFromTrybe(notes: string[], force: boolean) {
     const last = directory?.lastCollectedAt ? Date.parse(directory.lastCollectedAt) : 0
-    if (!directory?.brands || Date.now() - last > RECOLLECT_MS) {
+    if (force || !directory?.brands || Date.now() - last > RECOLLECT_MS) {
       setFinding({ stage: 'SCOUT is collecting every brand on TRYBE, in a tab behind this one' })
       const h = await requestTrybeHarvest()
       const items = h.items || []
@@ -354,11 +383,6 @@ export default function TrybeOutreach() {
     } else {
       notes.push(`Using MVP's copy of TRYBE (${directory.brands.toLocaleString()} brands, collected ${new Date(directory.lastCollectedAt!).toLocaleString()}).`)
     }
-    setFinding({ stage: 'Searching MVP’s copy of TRYBE for your niche' })
-    const sl = await api({ action: 'shortlist', limit: SCAN_READ })
-    notes.push(hasNiche
-      ? (sl.added ? `MVP searched its copy of TRYBE for your niche and took the best ${sl.added} brands you have not seen to the fit check.` : 'MVP searched its copy of TRYBE and found no new brands matching your niche. Try more keywords or categories.')
-      : `${sl.added} brands taken, highest TRYBE score first. Pick a niche to search by it.`)
   }
 
   /** Older SCOUT: read TRYBE's Discover screen brand by brand. */
@@ -397,6 +421,65 @@ export default function TrybeOutreach() {
     toast('Finding today\u2019s brands that fit your niche. SCOUT works in a tab behind this one for a few minutes.', { duration: 9000 })
     void findBrands(true)
   }, [loading, access, saved, lastFindAt, savedKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Searched again a moment after each change to the categories or keywords.
+  const hasDirectory = !!directory && directory.brands > 0
+  const catsKey = cats.join('|'), kwsKey = kws.join('|')
+  useEffect(() => {
+    if (!hasDirectory) return
+    const id = ++liveReq.current
+    setLiveLoading(true)
+    const t = setTimeout(async () => {
+      try {
+        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60 })
+        if (id !== liveReq.current) return // a newer search has started
+        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped })
+        setLiveError(null)
+        // Ticks stay only on brands still listed and still free to draft.
+        setLivePick(p => new Set(Array.from(p).filter(x => (d.brands || []).some((b: LiveBrand) => b.brand_id === x && !TAKEN.includes(b.status as Brand['status'])))))
+      } catch (e) {
+        if (id === liveReq.current) setLiveError(e instanceof Error ? e.message : 'The live search failed.')
+      } finally {
+        if (id === liveReq.current) setLiveLoading(false)
+      }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [hasDirectory, catsKey, kwsKey, liveNonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Draft the brands ticked in the live list into the morning queue. */
+  async function draftPicked() {
+    const ids = Array.from(livePick)
+    if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
+    if (!core.trim()) { toast.error('Write your core message first'); return }
+    if (!(await saveSettings(true))) return
+    try {
+      setFinding({ stage: 'Putting the brands you picked on your list' })
+      const a = await api({ action: 'adopt', brandIds: ids })
+      const ready: string[] = a.ready || []
+      const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0 }
+      if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
+      if (r.ok) { toast.success(`${r.ok} added to the morning queue`); setTab('queue') }
+      if (!ready.length) toast.message('None of those could be drafted: they are already in your queue or sent.')
+      setLivePick(new Set())
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Drafting failed')
+    } finally {
+      setFinding(null)
+      await load()
+      setLiveNonce(n => n + 1)
+    }
+  }
+
+  /** Collect TRYBE's list now, whatever its age, then show the live list. */
+  async function refreshFromTrybe() {
+    if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); return }
+    const notes: string[] = []
+    setFindNotes([])
+    try { await collectFromTrybe(notes, true) } finally {
+      setFinding(null); setFindNotes(notes)
+      await load(); setLiveNonce(n => n + 1)
+    }
+  }
 
   async function draftSelected() {
     const ids = found.filter(b => selected.has(b.brand_id)).map(b => b.brand_id)
@@ -597,11 +680,77 @@ export default function TrybeOutreach() {
               Find {DAILY_FIND} new brands every day when I open this page
             </label>
             <button onClick={() => void saveSettings()} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
-            {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>Niche not saved yet. Find brands saves it.</span>}
+            {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily find.</span>}
           </div>
         </div>
 
-        {/* 3. Found */}
+        {/* 3. The live list, from MVP's copy of TRYBE */}
+        {hasDirectory ? (
+          <div className={card} style={cardStyle}>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <p className="text-[14px] font-semibold">3. Brands that match ({live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''})</p>
+              {liveLoading && <Loader2 size={13} className="animate-spin" style={{ color: PURPLE }} />}
+              <div className="ml-auto flex flex-wrap gap-2">
+                <button onClick={() => void refreshFromTrybe()} disabled={busy || access !== 'granted' || !canHarvest} className={btn} style={{ border: '1px solid var(--border)' }}
+                  title="SCOUT collects TRYBE's list again now. It does this by itself once a day.">
+                  {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Refresh from TRYBE
+                </button>
+                <button onClick={() => setLivePick(new Set((live?.brands || []).filter(b => !TAKEN.includes(b.status as Brand['status'])).slice(0, DAILY_FIND).map(b => b.brand_id)))}
+                  disabled={!live?.brands.length} className={btn} style={{ border: '1px solid var(--border)' }}>
+                  <Check size={13} /> Tick the top {DAILY_FIND}
+                </button>
+                <button onClick={() => void draftPicked()} disabled={busy || !livePick.size} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+                  <Sparkles size={13} /> Draft {livePick.size} into the morning queue
+                </button>
+              </div>
+            </div>
+            <p className="text-[12px] mb-3" style={soft}>
+              Updates as you change categories and keywords, from MVP&rsquo;s copy of every TRYBE brand: nothing is fetched from TRYBE or the websites. Best matches first.
+            </p>
+            {directory && (
+              <p className="text-[12px] mb-3" style={soft}>
+                MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
+              </p>
+            )}
+            {findNotes.length > 0 && (
+              <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            )}
+            {liveError && <p className="text-[12px] mb-3" style={{ color: RED }}>{liveError}</p>}
+            {live && !live.brands.length && !liveLoading && (
+              <p className="text-[13px]" style={soft}>{hasNiche ? 'No brands in MVP\u2019s copy of TRYBE match these categories and keywords. Try other words.' : 'Pick categories or keywords to see the brands that match.'}</p>
+            )}
+            <div className="space-y-2">
+              {(live?.brands || []).map(b => {
+                const taken = TAKEN.includes(b.status as Brand['status'])
+                const on = livePick.has(b.brand_id)
+                const where = b.status === 'drafted' ? 'In your morning queue' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'not_fit' ? 'AI said not a fit' : null
+                return (
+                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)' }}>
+                    <input type="checkbox" className="mt-1 accent-[#7C3AED]" checked={on} disabled={taken}
+                      onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
+                    <span className="flex-1 min-w-0">
+                      <span className="flex flex-wrap items-center gap-2 text-[13px]">
+                        <span className="font-semibold">{b.name}</span>
+                        {where && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
+                        {b.fit_score != null && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Fit {b.fit_score}</span>}
+                        {b.pay_text && <span className="text-[12px]" style={{ color: PURPLE }}>{b.pay_text}</span>}
+                        {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Star size={11} /> Score {b.trybe_score}</span>}
+                        {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+                      </span>
+                      {b.fit_reason && <span className="block text-[12px] mt-0.5">{b.fit_reason}</span>}
+                      {!b.fit_reason && b.about && <span className="block text-[12px] mt-0.5" style={soft}>{b.about.length > 220 ? `${b.about.slice(0, 220)}...` : b.about}</span>}
+                      {b.products.length > 0 && <span className="block text-[11px] mt-0.5" style={soft}>Sells: {b.products.join(' | ')}</span>}
+                      {b.categories.length > 0 && <span className="block text-[11px] mt-0.5" style={soft}>{b.categories.join(' • ')}</span>}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            {live && live.matched > live.brands.length && (
+              <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it.</p>
+            )}
+          </div>
+        ) : (
         <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <p className="text-[14px] font-semibold">3. Brands that fit ({found.length})</p>
@@ -665,6 +814,7 @@ export default function TrybeOutreach() {
             </div>
           )}
         </div>
+        )}
       </>)}
 
       {tab === 'queue' && (

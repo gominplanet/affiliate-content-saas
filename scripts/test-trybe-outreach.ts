@@ -124,6 +124,15 @@ check('the cap is counted again after a claim', /const after = await usedToday\(
 check('the daily find goes by the saved settings, not the half-typed page', /!saved \|\| !saved\.dailyFind/.test(UI) && /!saved\.core\.trim\(\)/.test(UI))
 check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\(\(\) => setFinding\(null\)\)/.test(UI))
 
+// THE LIVE LIST (Seb, 2026-10-07: "as users change filters, the results ...
+// should change"). MVP's copy is searched on every change, nothing fetched.
+check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
+check('an older search never overwrites a newer one', /if \(id !== liveReq\.current\) return/.test(UI))
+check('browse leaves nothing out, so a brand on the list shows where it stands', /rpc\('trybe_directory_search', \{ p_words: words, p_user: null/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
+check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
+check('queued or sent brands cannot be picked again', /const TAKEN: Array<Brand\['status'\]> = \['drafted', 'sending', 'sent', 'already', 'failed'\]/.test(UI) && /disabled=\{taken\}/.test(UI))
+check('a picked brand is put on the list, then drafted', /action: 'adopt', brandIds: ids/.test(UI) && /const r = ready\.length \? await draftIds\(ready\)/.test(UI))
+
 const collectorRun = (async () => {
   const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))
   const store: Record<string, string> = { 'sb-x-auth-token': JSON.stringify({ access_token: 'T1' }) }
