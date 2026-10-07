@@ -54,7 +54,9 @@ export async function preflightWpPublish(
     if (now - (lastWpBlockAlertAt.get(ownerId) || 0) > WP_BLOCK_ALERT_THROTTLE_MS) {
       lastWpBlockAlertAt.set(ownerId, now)
       alertOps(
-        'WordPress publish blocked — a creator can\'t publish',
+        /sgcaptcha|SiteGround's Anti-Bot/i.test(probe.detail || '')
+          ? 'WordPress publish blocked by SiteGround\'s Anti-Bot captcha'
+          : 'WordPress publish blocked: a creator cannot publish',
         `Owner: ${ownerId}\nSite: ${site.wordpress_url}\nPre-flight write-test failed:\n${probe.detail || 'unknown'}`,
       ).catch(() => { /* alerting is best-effort */ })
     }

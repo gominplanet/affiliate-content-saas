@@ -235,6 +235,24 @@ const SUCURI_EDGE_FIX: PluginFix = {
   ],
 }
 
+/** SiteGround's Anti-Bot AI captcha (/.well-known/sgcaptcha/). It runs on
+ *  SiteGround's servers in front of WordPress, so no plugin setting and no
+ *  Site Tools list turns it off: the Blocked Traffic list there is only for
+ *  manual IP blocks. Only SiteGround support can exempt the site. MVP's
+ *  servers have no fixed IP, so the ask is by path, not by address. */
+const SITEGROUND_CAPTCHA_FIX: PluginFix = {
+  id: 'siteground-captcha',
+  label: 'SiteGround Anti-Bot captcha',
+  summary: 'SiteGround is answering MVP with a "prove you are human" captcha page instead of your WordPress site. This is SiteGround\'s Anti-Bot AI, which runs on their servers before WordPress loads. It also stops Facebook and Instagram from reading your links and images.',
+  severity: 'block',
+  steps: [
+    'Open a chat or ticket with SiteGround support (Help Center in your SiteGround client area). Changing plugins or the Blocked Traffic list in Site Tools will not fix this.',
+    'Send them this: "My site is showing your Anti-Bot captcha (sgcaptcha) to my publishing service and to Facebook. Please exempt /wp-json/ and /wp-content/uploads/ on my domain from the Anti-Bot AI permanently, so automated REST API requests and social media crawlers are not challenged. The service runs on Vercel, so it has no fixed IP address to whitelist."',
+    'When SiteGround confirms, purge the cache: wp-admin, SG Optimizer, Purge Cache.',
+    'Click "Re-test connection" above.',
+  ],
+}
+
 /** SiteGround edge (SG Security plugin / SG Optimizer / host WAF) block. */
 const SITEGROUND_EDGE_FIX: PluginFix = {
   id: 'siteground-edge',
@@ -271,7 +289,8 @@ export function fingerprintEdgeBlock(headers: Headers, body: string): PluginFix 
   if (h('x-sucuri-id') || h('x-sucuri-block') || b.includes('sucuri')) {
     return SUCURI_EDGE_FIX
   }
-  if (b.includes('sgcaptcha') || b.includes('siteground') || b.includes('sg-security')) {
+  if (b.includes('sgcaptcha')) return SITEGROUND_CAPTCHA_FIX
+  if (b.includes('siteground') || b.includes('sg-security')) {
     return SITEGROUND_EDGE_FIX
   }
   return EDGE_BLOCK_FIX

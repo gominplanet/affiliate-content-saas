@@ -71,7 +71,16 @@ const LOGIN_COOLDOWN_MS = 15 * 60 * 1000
 function wpBodyLooksHtml(s: string): boolean {
   return s.trim().startsWith('<') || s.toLowerCase().includes('<html')
 }
-function wpFirewallError(): Error {
+function wpFirewallError(body = ''): Error {
+  // SiteGround's Anti-Bot AI answers with a "prove you are human" page
+  // (/.well-known/sgcaptcha/). No plugin setting or Site Tools toggle turns it
+  // off: only SiteGround support can, so say that instead of a plugin hunt.
+  if (body.toLowerCase().includes('sgcaptcha')) {
+    return new Error(
+      'Your WordPress firewall is SiteGround\'s Anti-Bot captcha: SiteGround is showing MVP a "prove you are human" page, so MVP cannot publish. ' +
+      'Only SiteGround support can switch it off for your site. Run the Connection Doctor at /setup/wp-doctor for the message to send them.',
+    )
+  }
   return new Error(
     'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
     'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
@@ -82,7 +91,7 @@ async function parseWpJson<T>(res: Response): Promise<T> {
   try {
     return JSON.parse(text) as T
   } catch {
-    if (wpBodyLooksHtml(text)) throw wpFirewallError()
+    if (wpBodyLooksHtml(text)) throw wpFirewallError(text)
     throw new Error(`WordPress returned a non-JSON response (${res.status}): ${text.slice(0, 200)}`)
   }
 }
@@ -457,15 +466,12 @@ export class WordPressService {
     // "I'm Under Attack", Hostinger/LiteSpeed interstitial) is standing in
     // front of WordPress. Pasting raw HTML into the user's error is unhelpful;
     // point them at the doctor, which names the exact plugin and gives fix steps.
-    const firewallError = () => new Error(
-      'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
-      'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
-    )
+    const firewallError = (body: string) => wpFirewallError(body)
     const looksHtml = (s: string) => s.trim().startsWith('<') || s.toLowerCase().includes('<html')
 
     if (!res.ok) {
       const body = await res.text()
-      if (res.status === 403 && looksHtml(body)) throw firewallError()
+      if (res.status === 403 && looksHtml(body)) throw firewallError(body)
       throw new Error(`WordPress ${res.status}: ${body.slice(0, 300)}`)
     }
 
@@ -479,7 +485,7 @@ export class WordPressService {
     try {
       return JSON.parse(text) as T
     } catch {
-      if (looksHtml(text)) throw firewallError()
+      if (looksHtml(text)) throw firewallError(text)
       throw new Error(`WordPress returned a non-JSON ${res.status} response: ${text.slice(0, 200)}`)
     }
   }
