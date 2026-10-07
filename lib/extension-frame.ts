@@ -1060,6 +1060,17 @@ export async function requestTrybeScan(knownNames: string[], max: number, keywor
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
+export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; text?: string | null; error?: string; signedIn?: boolean }
+
+/** SCOUT 1.41.5+: one request to TRYBE's own backend, made from the creator's
+ *  signed-in TRYBE tab. SCOUT allows only the conversation and brand-list
+ *  addresses, reading, posting a message or marking read. Resolves, never
+ *  throws. */
+export async function requestTrybeApi(method: 'GET' | 'POST', path: string, body?: unknown): Promise<TrybeApiResult> {
+  const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 50_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
 export interface TrybeHarvestResult {
   ok: boolean; error?: string | null
   pages?: number; totalPages?: number | null; total?: number | null

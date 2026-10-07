@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
+import TrybeInbox from '@/components/labs/TrybeInbox'
 import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
@@ -63,7 +64,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[] }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'find' | 'queue' | 'sent'
+type Tab = 'find' | 'queue' | 'sent' | 'inbox'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -628,6 +629,7 @@ export default function TrybeOutreach() {
         <TabBtn id="find" label="Find brands" />
         <TabBtn id="queue" label={`Morning queue (${queue.length})`} />
         <TabBtn id="sent" label={`Sent (${history.length})`} />
+        <TabBtn id="inbox" label="Inbox" />
       </div>
 
       {tab === 'find' && (<>
@@ -863,6 +865,8 @@ export default function TrybeOutreach() {
           )}
         </div>
       )}
+
+      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} />}
 
       {tab === 'sent' && (
         <div className={card} style={cardStyle}>

@@ -12339,6 +12339,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_API') {
+    // 1.41.5: one TRYBE request from the creator's own signed-in TRYBE, for
+    // MVP's TRYBE inbox. Locked to TRYBE's chat and brand-list addresses.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 45000)
+    trybeApi({ method: msg.method, path: msg.path, body: msg.body })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_HARVEST') {
     // 1.41.2: every brand on TRYBE from its own list, for MVP's directory.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 590000)
@@ -14240,6 +14249,125 @@ async function trybeHookOn() {
 }
 async function trybeHookOff() {
   try { await chrome.scripting.unregisterContentScripts({ ids: [TRYBE_HOOK_ID] }) } catch (e) {}
+}
+
+// ── TRYBE INBOX (1.41.5) ─────────────────────────────────────────────────────
+// MVP reads and answers the creator's TRYBE conversations. SCOUT makes each
+// request from inside a TRYBE tab, signed in as the creator, exactly as
+// TRYBE's own page does; MVP decides which request and reads the answer, so a
+// change on TRYBE's side is fixed in MVP, not in a new SCOUT.
+//
+// LOCKED DOWN: only TRYBE's own backend, only the conversation and brand list
+// addresses below, only reading (GET) or posting a message / marking read
+// (POST). Nothing can be deleted or changed in the account.
+const TRYBE_API_ALLOW = [
+  { method: 'GET', re: /^\/backend\/api\/channels(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/channels\/[A-Za-z0-9-]{6,80}(\/messages)?(\?[\w=&%.-]*)?$/ },
+  { method: 'POST', re: /^\/backend\/api\/channels\/[A-Za-z0-9-]{6,80}\/(messages|read)$/ },
+  { method: 'GET', re: /^\/backend\/api\/(contexts|inbox|profile)(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/discovery\/[\w-]+(\?[\w=&%.-]*)?$/ },
+]
+let trybeApiTab = null // { id, ours, at }
+const TRYBE_API_IDLE_ALARM = 'mvp-trybe-api-idle'
+
+// In page, alone (Chrome copies only this function): one request, signed in.
+async function trybeApiInPage(method, path, body) {
+  const unb64 = (x) => {
+    let t = String(x).replace(/-/g, '+').replace(/_/g, '/')
+    while (t.length % 4) t += '='
+    const bin = atob(t)
+    try { return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))) } catch (e) { return bin }
+  }
+  const fromValue = (v) => {
+    try {
+      let s = String(v || '')
+      if (s.startsWith('base64-')) s = unb64(s.slice(7))
+      const o = JSON.parse(s)
+      return (o && (o.access_token || (o.currentSession && o.currentSession.access_token))) || (Array.isArray(o) && typeof o[0] === 'string' ? o[0] : null)
+    } catch (e) { return null }
+  }
+  const readToken = () => {
+    try { const h = window.__mvpTrybeAuth; if (h && h.token) return h.token } catch (e) {}
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (/^sb-.+-auth-token$/.test(k || '')) { const t = fromValue(localStorage.getItem(k)); if (t) return t }
+      }
+    } catch (e) {}
+    const parts = {}
+    for (const c of String(document.cookie || '').split('; ')) {
+      const eq = c.indexOf('=')
+      const k = c.slice(0, eq), v = c.slice(eq + 1)
+      const m = k.match(/^(sb-.+-auth-token)(?:\.(\d+))?$/)
+      if (m) { (parts[m[1]] = parts[m[1]] || [])[Number(m[2] || 0)] = decodeURIComponent(v) }
+    }
+    for (const list of Object.values(parts)) { const t = fromValue(list.join('')); if (t) return t }
+    return null
+  }
+  try {
+    let token = readToken()
+    for (let i = 0; i < 10 && !token; i++) { await new Promise((r) => setTimeout(r, 600)); token = readToken() }
+    const send = async () => {
+      const headers = { accept: 'application/json' }
+      if (token) headers.authorization = 'Bearer ' + token
+      if (body != null) headers['content-type'] = 'application/json'
+      return fetch(path, { method, credentials: 'include', headers, body: body != null ? JSON.stringify(body) : undefined })
+    }
+    let r = await send()
+    if ((r.status === 401 || r.status === 403)) {
+      const again = readToken()
+      if (again && again !== token) { token = again; r = await send() }
+    }
+    const text = await r.text()
+    let json = null
+    try { json = text ? JSON.parse(text) : null } catch (e) {}
+    return { ok: r.ok, status: r.status, json, text: json ? null : text.slice(0, 500), signedIn: !!token }
+  } catch (e) {
+    return { ok: false, status: 0, error: 'page-error: ' + (e && e.message ? e.message : String(e)) }
+  }
+}
+
+// A TRYBE tab to make requests from: one the creator has open, else one SCOUT
+// opens behind and closes after five quiet minutes.
+async function trybeApiTabId() {
+  if (trybeApiTab) {
+    try { const t = await chrome.tabs.get(trybeApiTab.id); if (t && /^https:\/\/([a-z0-9-]+\.)?jointrybe\.com\//.test(t.url || '')) { trybeApiTab.at = Date.now(); return trybeApiTab.id } } catch (e) {}
+    trybeApiTab = null
+  }
+  let open = []
+  try { open = await chrome.tabs.query({ url: TRYBE_ORIGINS }) } catch (e) {}
+  const theirs = open.find((t) => t.status === 'complete')
+  if (theirs) { trybeApiTab = { id: theirs.id, ours: false, at: Date.now() }; return theirs.id }
+  await trybeHookOn()
+  const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
+  await waitForTabLoad(tab.id, 30000)
+  await _sleep(1500)
+  trybeApiTab = { id: tab.id, ours: true, at: Date.now() }
+  try { chrome.alarms.create(TRYBE_API_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {}
+  return tab.id
+}
+
+async function trybeApiIdleCheck() {
+  if (!trybeApiTab || !trybeApiTab.ours) return
+  if (Date.now() - trybeApiTab.at < 4.5 * 60000) { try { chrome.alarms.create(TRYBE_API_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {} return }
+  try { await chrome.tabs.remove(trybeApiTab.id) } catch (e) {}
+  trybeApiTab = null
+  await trybeHookOff()
+}
+try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_API_IDLE_ALARM) void trybeApiIdleCheck() }) } catch (e) {}
+
+async function trybeApi({ method, path, body }) {
+  if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+  const m = String(method || 'GET').toUpperCase()
+  const p = String(path || '')
+  if (!TRYBE_API_ALLOW.some((a) => a.method === m && a.re.test(p))) return { ok: false, error: 'not-allowed' }
+  if (m === 'GET' && body != null) return { ok: false, error: 'not-allowed' }
+  if (body != null && JSON.stringify(body).length > 20000) return { ok: false, error: 'too-long' }
+  let tabId
+  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'could-not-open-trybe' } }
+  const res = await trybeRun(trybeApiInPage, [m, p, body == null ? null : body], tabId)
+  if (trybeApiTab) trybeApiTab.at = Date.now()
+  return res || { ok: false, error: 'no-answer-from-page' }
 }
 
 async function trybeHarvest({ maxPages }, callerTabId) {

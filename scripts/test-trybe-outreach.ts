@@ -137,6 +137,17 @@ check('a picked brand is put on the list, then drafted', /action: 'adopt', brand
 // fills, never overwrites what is kept.
 check('a member\'s collection cannot overwrite a kept website, name or description', /const trusted = tier === 'admin'/.test(ROUTE) && /trusted \? \(fresh \?\? had \?\? null\) : \(had \?\? fresh \?\? null\)/.test(ROUTE))
 
+// THE INBOX (Seb, 2026-10-07: "reading and replying to messages right on MVP").
+const INBOX = readFileSync('components/labs/TrybeInbox.tsx', 'utf8')
+const API = BG.slice(BG.indexOf('const TRYBE_API_ALLOW = ['), BG.indexOf('let trybeApiTab = null'))
+check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing else',
+  (API.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (API.match(/method: 'POST'/g) || []).length === 1 && API.includes('(messages|read)$/'))
+check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /async function trybeApiInPage\(method, path, body\)/.test(BG))
+check('a reply counts as sent only when it shows in the conversation', /const seen = after\.some\(m => m\.text\.trim\(\) === text\)/.test(INBOX))
+check('nothing TRYBE says is stored on MVP', !/fetch\('\/api\//.test(INBOX))
+check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
+check('the inbox is a tab of TRYBE Outreach, still Labs', /<TabBtn id="inbox" label="Inbox" \/>/.test(UI) && /trybe_outreach: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
+
 const collectorRun = (async () => {
   const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))
   const store: Record<string, string> = { 'sb-x-auth-token': JSON.stringify({ access_token: 'T1' }) }
