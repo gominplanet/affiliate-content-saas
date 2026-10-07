@@ -79,11 +79,14 @@ interface LiveBrand {
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
 
-const STARTER = `Hi! I'm an Amazon Influencer who makes short, real-life product videos that show the item in real use. I'd love to create UGC for you.
+// The kind of core message MVP recommends (Seb, 2026-10-07): who you are and
+// your numbers, what you make and why it helps the brand sell, where to see
+// your work. MVP adds the hello to each brand and the sign-off.
+const STARTER = `I'm an Amazon Influencer making real-life video reviews that help customers make buying decisions, and your products are right in my wheelhouse.
 
-I can turn around a first video within a week, and I'm happy to start with one so you can see the fit.
+I'd love to bring your brand into my current catalogue of content, and I'm happy to start with one video so you can see the fit.
 
-Looking forward to working together!`
+You can see my work on my Amazon storefront.`
 
 /** SCOUT's send codes, in words. */
 const SEND_WORDS: Record<string, string> = {
@@ -537,6 +540,18 @@ export default function TrybeOutreach() {
     if (d?.status) patch(b.brand_id, { status: d.status })
   }
 
+  /** Write these drafts again from the core message as it is now. */
+  async function rewrite(list: Brand[]) {
+    if (!list.length) return
+    if (!core.trim()) { toast.error('Write your core message first'); return }
+    if (!(await saveSettings(true))) return
+    const r = await draftIds(list.map(b => b.brand_id))
+    setFinding(null)
+    if (r.failed) toast.error(`${r.failed} could not be rewritten`)
+    if (r.ok) toast.success(`${r.ok} message${r.ok === 1 ? '' : 's'} rewritten`)
+    await load()
+  }
+
   /** Off the page for good: never sent, never offered again by the daily find. */
   async function remove(b: Brand) {
     const d = await api({ action: 'remove', brandId: b.brand_id }).catch(e => { toast.error(e.message); return null })
@@ -673,7 +688,7 @@ export default function TrybeOutreach() {
         {/* 1. Core message */}
         <div className={card} style={cardStyle}>
           <p className="text-[14px] font-semibold">1. Your core message</p>
-          <p className="text-[12px] mb-2" style={soft}>The idea of what goes out. MVP keeps its points and voice, rewrites it for each brand and its products, and keeps your line breaks and sign-off as you write them.</p>
+          <p className="text-[12px] mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
           <textarea value={core} onChange={e => setCore(e.target.value)} rows={7} placeholder={STARTER}
             className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
           {!core.trim() && <button onClick={() => setCore(STARTER)} className={`${btn} mt-2`} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
@@ -934,7 +949,12 @@ export default function TrybeOutreach() {
               {running && waitUntil && <span className="text-[12px]" style={soft}>Next request in {Math.max(0, Math.ceil((waitUntil - now) / 1000))}s</span>}
               {running
                 ? <button onClick={() => { stopRef.current = true }} className={btn} style={{ border: '1px solid var(--border)' }}><Square size={13} /> Stop</button>
-                : <button onClick={() => void sendAll()} disabled={!!finding} className={btn} style={{ background: PURPLE, color: '#fff' }}><Send size={13} /> Send all ({Math.min(queue.length, remaining)})</button>}
+                : <>
+                  {queue.length > 0 && <button onClick={() => void rewrite(queue)} disabled={!!finding} className={btn} style={{ border: '1px solid var(--border)' }} title="Write every message here again from your core message as it is now">
+                    {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Rewrite all
+                  </button>}
+                  <button onClick={() => void sendAll()} disabled={!!finding} className={btn} style={{ background: PURPLE, color: '#fff' }}><Send size={13} /> Send all ({Math.min(queue.length, remaining)})</button>
+                </>}
             </div>
           </div>
           <p className="text-[12px] mb-3" style={soft}>
@@ -956,7 +976,7 @@ export default function TrybeOutreach() {
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. Pick brands in Find brands and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -1012,7 +1032,7 @@ export default function TrybeOutreach() {
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onRemove }: { b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void }) {
+function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting }: { b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean }) {
   const [text, setText] = useState(b.draft || '')
   useEffect(() => { setText(b.draft || '') }, [b.draft])
   const researched = !!(b.site_summary || (b.site_products && b.site_products.length))
@@ -1037,7 +1057,8 @@ function QueueRow({ b, busy, disabled, onSave, onRemove }: { b: Brand; busy: boo
         <span>{text.length} characters, sent as shown, line breaks included</span>
         {b.error && <span style={{ color: RED }}>Last try: {sendWords(b.error)}</span>}
         {busy && <span className="inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
-        <button onClick={onRemove} disabled={disabled} className="ml-auto inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: RED }}><Trash2 size={11} /> Remove</button>
+        <button onClick={onRewrite} disabled={disabled || rewriting} className="ml-auto inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: PURPLE }} title="Write it again from your core message as it is now"><RotateCcw size={11} /> Rewrite</button>
+        <button onClick={onRemove} disabled={disabled} className="inline-flex items-center gap-1 font-semibold disabled:opacity-50" style={{ color: RED }}><Trash2 size={11} /> Remove</button>
       </div>
     </div>
   )

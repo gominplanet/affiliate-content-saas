@@ -215,6 +215,8 @@ export function tidyDraft(text: string, max = 1000): string {
   // written. Only runs of blank lines and stray spaces at line ends go.
   let t = String(text || '')
     .replace(/\r\n?/g, '\n')
+    // TRYBE shows plain text: a markdown link goes out as its address.
+    .replace(/\[([^\]\n]*)\]\((https?:\/\/[^)\s]+)\)/g, '$2')
     .replace(/^["'\s]+|["'\s]+$/g, '')
     .replace(/[ \t]*[—–][ \t]*/g, ', ')
     .replace(/ +- +/g, ', ')
@@ -243,18 +245,33 @@ export interface DraftFacts {
   }
 }
 
+// THE CREATOR'S OWN WORDS (Seb, 2026-10-07: "those are not good messages
+// out to brands"). Drafts that rebuilt the message around the brand's catalog
+// read like a scraper: "FloofyPups covers everything a dog parent reaches for
+// daily, from the ZoomieBall and Quack Snack puzzle feeder to...". A cold
+// first message is the creator's core message nearly word for word, with a
+// short warm greeting to the brand by name on top and a sign-off. Seb's model:
+//
+//   Hi (BRAND NAME), we're excited to be focusing on Trybe and so glad to
+//   have found you here.
+//
+//   <core message, paragraph by paragraph, brand name swapped in>
+//
+//   Speak soon,
+//   Seb and Michelle
 export const DRAFT_SYSTEM = (bannedRule: string) => `You write the first message a content creator sends to a brand on TRYBE, a marketplace where brands pay creators for UGC videos. The brand reads this one message and decides whether to accept the creator.
 
-You are given the creator's CORE MESSAGE. Keep its points, its offer and its voice. Rewrite it for this one brand:
-- Open by showing you know this brand as a whole: what it makes, its range, who it is for, in words that could only fit this brand. Never a compliment that could fit any brand.
-- The creator wants to work with the brand on its whole range, not one item. Do not build the message around a single product. Naming one or two products as examples of the range is fine; making one product the reason for writing is not.
-- Connect the creator to the brand and its range in one sentence, using only the creator facts given.
-- Keep the core message's call to action.
-- Lay it out the way a person writes a message: two to four short paragraphs with a blank line between them, never one block of text.
-- When the core message ends with a sign-off (thanks, names, an email address), end with that same sign-off, word for word, on its own lines exactly as it is written.
-- 400 to 900 characters. Plain text, first person, no subject line, no greeting with a placeholder, no markdown, no hashtags, no links unless the core message or the creator facts contain them.
-- NEVER invent facts: no follower counts, results, past work or claims not in the core message or creator facts.
-- Never write a year.
+The creator wrote a CORE MESSAGE. It is their message in their own voice, and the brand gets it nearly word for word. Your part is small:
+1. Open with one short, warm greeting line to the brand by name, the way a person writes on TRYBE. For example: "Hi Gnawnu, we're excited to be focusing on TRYBE and so glad to have found you here." Word it a little differently from brand to brand. It may name in a few plain words what the brand makes ("your dog toys"), but never list products, never describe their catalog or website back to them, and never single out one product.
+2. Then the core message as written: the same sentences, in the same order, with the same claims and links. Change only these:
+   - a brand name in it that is not this brand (it was written for another brand): use this brand's name;
+   - a product category in it that does not fit this brand (for example "pet products" for a kitchen brand): name this brand's kind of product instead;
+   - a phrase like "your brand" may become this brand's name.
+   Do not reword, shorten, reorder or add to anything else.
+3. If the core message ends with a sign-off, keep it word for word on its own lines. If it has none and the creator facts give the creator's name, end with "Speak soon," and the name on the next line. Never invent a name.
+Use the core message's voice: "we" if it says we, "I" if it says I.
+Layout: a blank line between the greeting, each paragraph of the core message, and the sign-off. Keep the core message's own line breaks. Write links as plain URLs, never [text](url).
+Plain text: no subject line, no hashtags, no markdown, no emoji unless the core message has them. NEVER invent facts: no numbers, results or claims beyond the core message and creator facts. Never write a year.
 ${bannedRule}
 Output ONLY the message.`
 
@@ -266,8 +283,8 @@ export function draftUserPrompt(f: DraftFacts): string {
     b.payText ? `TRYBE pay: ${b.payText}` : '',
     b.about ? `TRYBE about: ${b.about.slice(0, 800)}` : '',
     b.website ? `Website: ${b.website}` : '',
-    b.siteProducts.length ? `Products on their website (their range, to understand the brand, not to pick one): ${b.siteProducts.slice(0, 12).join(' | ')}` : '',
-    b.siteSummary ? `From their website:\n${b.siteSummary}` : '(Their website could not be read. Work from the TRYBE details only, and do not pretend to know their products.)',
+    b.siteProducts.length ? `Some products on their website (only to know what kind of brand this is, never to list): ${b.siteProducts.slice(0, 8).join(' | ')}` : '',
+    b.siteSummary ? `From their website (background only):\n${b.siteSummary.slice(0, 600)}` : '(Their website could not be read. Work from the TRYBE details only, and do not pretend to know their products.)',
   ].filter(Boolean)
   return `--- CORE MESSAGE ---\n${f.coreMessage.trim()}\n\n--- CREATOR FACTS ---\n${f.creator.length ? f.creator.join('\n') : '(none beyond the core message)'}\n\n--- BRAND ---\n${brandLines.join('\n')}`
 }
