@@ -23,9 +23,10 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { normalizeSlots, cadenceLabel, hasOwnSchedule } from '@/lib/launch-schedule'
 import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 
-/** The most videos in one batch. Ten is the number Seb asked for, and it is
- *  also about the point where a single Launch press stops being reviewable. */
-export const MAX_ITEMS = 10
+/** The most videos in one batch. Ten at first; twenty since Seb, 2026-10-08:
+ *  "bulk upload up to 20 videos ... and then literally walk away". Amazon
+ *  takes 20 a day on the US store, so a full batch fits in one day. */
+export const MAX_ITEMS = 20
 
 /** Where a whole batch is up to. */
 export type BatchState = 'draft' | 'preparing' | 'ready' | 'launching' | 'launched'
@@ -641,7 +642,7 @@ export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
   else if (own > 0) out.push(`${own} on YouTube at their own date and time, the rest ${cadenceLabel(slots).toLowerCase()}${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
   else out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
 
-  if (batch.amazon_later && batch.markets.length === 0) out.push('Amazon comes after, in part 2: once YouTube is done you press Start Amazon and each video goes to your US storefront.')
+  if (batch.amazon_later && batch.markets.length === 0) out.push('Amazon comes after, by itself: once YouTube is done, each video goes to your US storefront. Nothing to press.')
   else if (batch.markets.length === 0) out.push('No Amazon storefront, so this is YouTube only.')
   else out.push('Your US Amazon storefront, each video as soon as it is ready, not on the YouTube schedule. Global Storefront shows it in the other countries.')
   return out

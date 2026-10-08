@@ -125,7 +125,7 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
       }
       if (blocked) items.push(item('liftoff_blocked', 'urgent', blocked, `${plural(blocked, 'Liftoff video', 'Liftoff videos')} could not go`, 'Each one says why on the Liftoff page.', '/liftoff', 'Open Liftoff'))
       if (held) items.push(item('liftoff_held', 'urgent', held, `${plural(held, 'video', 'videos')} kept private on YouTube`, 'YouTube did not confirm paid promotion. Tick it in YouTube Studio and MVP releases the video.', '/liftoff', 'See which'))
-      if (amazonReady.length) items.push(item('liftoff_amazon', 'money', amazonReady.length, `YouTube is done for ${amazonReady.length === 1 ? amazonReady[0] : plural(amazonReady.length, 'batch', 'batches')}`, 'Start the Amazon uploads to the US store.', '/liftoff', 'Start Amazon'))
+      if (amazonReady.length) items.push(item('liftoff_amazon', 'money', amazonReady.length, `YouTube is done for ${amazonReady.length === 1 ? amazonReady[0] : plural(amazonReady.length, 'batch', 'batches')}`, 'Amazon should have started by itself within a few minutes. If this stays, open the batch and press Start Amazon now.', '/liftoff', 'Open Liftoff'))
       if (waitingLaunch) items.push(item('liftoff_launch', 'money', waitingLaunch, `${plural(waitingLaunch, 'video is', 'videos are')} ready to launch`, 'Everything is prepared. They go when you press Launch.', '/liftoff', 'Launch'))
     }),
 

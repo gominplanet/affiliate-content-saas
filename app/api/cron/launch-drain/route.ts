@@ -45,6 +45,7 @@ import { cachedLocalAsins } from '@/lib/regional-listing'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { startAmazonPart, amazonCanStart } from '@/lib/liftoff-amazon-start'
 import { missedWhen, releaseHeld, heldCheckDue, HELD_FOR_PAID_PROMOTION } from '@/lib/launch-release'
 
 export const runtime = 'nodejs'
@@ -1707,6 +1708,43 @@ async function noteHandOver(sb: Sb, id: string, r: HandOver, amazonOnly = false)
 }
 
 /**
+ * LIFTOFF PART 2 STARTS BY ITSELF (Seb, 2026-10-08: "bulk upload up to 20
+ * videos, select everything ... and then literally walk away"). A batch in
+ * two parts used to stop when YouTube was done and wait for Start Amazon,
+ * which had no choices left to make. Now the uploader presses it: the same
+ * function as the button (lib/liftoff-amazon-start), for batches whose owner
+ * has Liftoff in two parts, that go to YouTube, and have no store yet. Recent
+ * batches only, so one launched weeks ago is not sent to Amazon out of the
+ * blue. A start that fails is tried again on the next run.
+ */
+async function amazonPartTwo(sb: Sb): Promise<{ started: number; failed: number }> {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString()
+  const { data: batches, error } = await sb.from('launch_batches')
+    .select('id,user_id,state,markets,send_to_youtube')
+    .in('state', ['launching', 'launched']).eq('markets', '{}').gte('created_at', since)
+    .order('updated_at', { ascending: true }).limit(20)
+  if (error || !batches?.length) return { started: 0, failed: 0 }
+  let started = 0, failed = 0
+  const tierOf = new Map<string, unknown>()
+  for (const b of batches as Array<{ id: string; user_id: string; state: string; send_to_youtube?: boolean | null }>) {
+    if (b.send_to_youtube === false) continue
+    if (!tierOf.has(b.user_id)) {
+      const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', b.user_id).maybeSingle()
+      tierOf.set(b.user_id, integ?.tier ?? null)
+    }
+    // Only a batch in two parts waits for Amazon: any other batch with no
+    // store chose YouTube only.
+    if (!canUsePreview('liftoff_split', tierOf.get(b.user_id))) continue
+    const { data: items } = await sb.from('launch_items').select('state,youtube_video_id,reason').eq('batch_id', b.id)
+    if (!amazonCanStart(b.state, (items ?? []) as Array<{ state: string; youtube_video_id: string | null; reason: string | null }>)) continue
+    const r = await startAmazonPart(sb, sb, b.user_id, b.id)
+    if (r.ok) started++
+    else { failed++; console.error('[launch-drain] Amazon part 2 did not start', { batch: b.id, said: r.error }) }
+  }
+  return { started, failed }
+}
+
+/**
  * The later pass the hand-over always promised and never had.
  *
  * Videos that are on YouTube (scheduled or published, with a YouTube id) and
@@ -2131,10 +2169,13 @@ export async function GET(request: Request) {
   const disclosed = left() > 30_000 ? await heldForDisclosure(sb, left) : null
   // Videos on YouTube that never reached the Amazon side. Cheap when empty.
   const repaired = left() > 20_000 ? await repairs(sb) : null
+  // Part 2 starts by itself once YouTube is done (after the repairs, which
+  // record the videos it hands to Amazon).
+  const amazonStarted = left() > 20_000 ? await amazonPartTwo(sb) : null
   const playlisted = left() > 20_000 ? await playlistCatchUp(sb) : null
   const firstComments = left() > 30_000 ? await firstCommentCatchUp(sb, left) : null
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, firstComments, settled })
+  return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, amazonStarted, playlisted, firstComments, settled })
 }
 
 

@@ -1,12 +1,13 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Liftoff in two parts (Labs liftoff_split): part 1 is YouTube only and asks
-// for no countries; part 2 is Amazon, locked until YouTube is done and started
-// with its own button. The CTA copy never reaches Amazon, and one thumbnail
+// for no countries; part 2 is Amazon, which starts by itself once YouTube is
+// done (Seb, 2026-10-08: "literally walk away"), or on its own button sooner. The CTA copy never reaches Amazon, and one thumbnail
 // serves every country.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, batchRecap, youtubePartDone, type BatchRow, type ItemRow } from '../lib/launch-batch'
 import { canUsePreview } from '../lib/labs-preview'
+import { amazonCanStart } from '../lib/liftoff-amazon-start'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -29,8 +30,8 @@ check('part 1 has no countries step', !batchSteps(split, [item()]).some((s) => s
 check('the classic Liftoff still asks for countries', batchSteps(classic, [item()]).some((s) => s.id === 'countries'))
 check('part 1 launches with no countries', launchBlocker(split, [item()]) === null)
 check('the classic Liftoff still waits for countries', /countries/i.test(launchBlocker(classic, [item()]) || ''))
-check('the recap says Amazon is part 2, not "YouTube only"',
-  batchRecap(split, [item()]).some((l) => /part 2/.test(l)) && !batchRecap(split, [item()]).some((l) => /YouTube only/.test(l)))
+check('the recap says Amazon comes after by itself, not "YouTube only"',
+  batchRecap(split, [item()]).some((l) => /Amazon comes after, by itself/.test(l)) && !batchRecap(split, [item()]).some((l) => /YouTube only/.test(l)))
 
 const onYT = item({ id: 'a', state: 'scheduled', youtube_video_id: 'vid00000001' } as Partial<ItemRow>)
 const going = item({ id: 'b', state: 'prepared', youtube_video_id: null } as Partial<ItemRow>)
@@ -68,19 +69,20 @@ const LAUNCH = read('app/api/launch/batches/[id]/launch/route.ts')
 check('part 1 clears countries picked before the split, at the first launch only',
   /batch\.amazon_later && !late && batch\.markets\.length > 0/.test(LAUNCH) && /update\(\{ markets: \[\] \}\)/.test(LAUNCH))
 
-const START = read('app/api/launch/batches/[id]/amazon/route.ts')
+const START = read('lib/liftoff-amazon-start.ts')
+check('the button and the uploader start Amazon with one function', /startAmazonPart\(sb, cache, user\.id, id\)/.test(read('app/api/launch/batches/[id]/amazon/route.ts')) && /startAmazonPart\(sb, sb, b\.user_id, b\.id\)/.test(DRAIN))
 check('Start Amazon needs a launched batch', /batch\.state !== 'launched' && batch\.state !== 'launching'/.test(START))
-check('Start Amazon saves the US store on the batch, so latecomers and the background tab use it', /update\(\{ markets: allMarkets/.test(START))
+check('Start Amazon saves the US store on the batch, so latecomers and the background tab use it', /update\(\{ markets, updated_at/.test(START))
 check('Start Amazon makes a row per video per country, with each country\'s own ASIN', /storefront_coverage'\)\.upsert\(/.test(START) && /cachedLocalAsins\(/.test(START))
 check('Amazon never gets the CTA copy: no rendered_url anywhere in Start Amazon', !/rendered_url/.test(START))
 check('a video with no original left is named, not queued to fail later', /noOriginal\.push\(name\)/.test(START))
 
 const BOARD = read('components/launch/LaunchBoard.tsx')
 check('the countries step is not drawn in part 1', /\{!batch\.amazon_later && <StepCard/.test(BOARD))
-check('part 2 is its own section, locked until YouTube is done', /LIFTOFF PART 2: AMAZON/.test(BOARD) && /youtubePartDone\(batch\.state, items\)/.test(BOARD) && /Opens when YouTube is done/.test(BOARD))
+check('part 2 is its own section, locked until YouTube is done', /LIFTOFF PART 2: AMAZON/.test(BOARD) && /youtubePartDone\(batch\.state, items\)/.test(BOARD) && /Starts by itself when YouTube is done/.test(BOARD))
 check('it says "YouTube is done" from the rows, with each video\'s link', /YouTube is done\./.test(BOARD) && /youtube\.com\/watch\?v=\$\{i\.youtube_video_id\}/.test(BOARD))
 check('part 2 starts Amazon on its own button, for the US store',
-  /startAmazon\(\[LIFTOFF_AMAZON_MARKET\]\)/.test(BOARD) && /Start Amazon \(US store\)/.test(BOARD) && /\/api\/launch\/batches\/\$\{batchId\}\/amazon/.test(BOARD))
+  /startAmazon\(\[LIFTOFF_AMAZON_MARKET\]\)/.test(BOARD) && /Start Amazon now \(US store\)/.test(BOARD) && /\/api\/launch\/batches\/\$\{batchId\}\/amazon/.test(BOARD))
 
 // ── THE US STORE ONLY (Global Storefront) ───────────────────────────────────
 {
@@ -95,8 +97,20 @@ check('part 2 starts Amazon on its own button, for the US store',
   check('the hand-over sends the US store only, even for an older batch', /const markets: string\[\] = liftoffMarkets\(/.test(DRAIN))
   check('the page shows the US store only', /MARKETS\.filter\(\(m\) => m\.domain === LIFTOFF_AMAZON_MARKET\)/.test(BOARD))
 }
-check('part 1 shows no Amazon panel, button or row box', /const amazonOn = !batch\.amazon_later \|\| batch\.markets\.length > 0/.test(BOARD)
-  && /\{amazonOn && <div className="mt-3 flex items-center gap-3 flex-wrap">/.test(BOARD) && /hideAmazon=\{!!batch\.amazon_later && batch\.markets\.length === 0\}/.test(BOARD))
+check('part 1 shows no Amazon panel or button, but asks for the Amazon title before launch with everything else', /const amazonOn = !batch\.amazon_later \|\| batch\.markets\.length > 0/.test(BOARD)
+  && /\{amazonOn && <div className="mt-3 flex items-center gap-3 flex-wrap">/.test(BOARD) && !/hideAmazon/.test(BOARD) && /Title for Amazon/.test(BOARD))
+
+// ── PART 2 STARTS BY ITSELF ─────────────────────────────────────────────────
+check('Amazon starts once YouTube is done, or when only videos held for paid promotion are left',
+  amazonCanStart('launched', [onYT, failed]) && !amazonCanStart('launched', [onYT, going]) && !amazonCanStart('draft', [onYT])
+  && amazonCanStart('launched', [onYT, held]) && !amazonCanStart('launched', [held]) && !amazonCanStart('launched', [failed]))
+{
+  const auto = DRAIN.slice(DRAIN.indexOf('async function amazonPartTwo'), DRAIN.indexOf('async function repairs'))
+  check('the uploader starts it only for recent two-part batches that go to YouTube and have no store yet',
+    /\.eq\('markets', '\{\}'\)/.test(auto) && /gte\('created_at', since\)/.test(auto) && /14 \* 86_400_000/.test(auto)
+    && /canUsePreview\('liftoff_split'/.test(auto) && /send_to_youtube === false\) continue/.test(auto) && /amazonCanStart\(/.test(auto))
+  check('it runs after the repairs that record the videos', DRAIN.indexOf('await repairs(sb)') < DRAIN.indexOf('await amazonPartTwo(sb)') && DRAIN.indexOf('await amazonPartTwo(sb)') > 0)
+}
 check('one store card for both parts', (BOARD.match(/countryGrid\(\{/g) ?? []).length === 2)
 
 // ── GLOBAL SYNC WAITS FOR PART 2 ────────────────────────────────────────────
@@ -116,7 +130,7 @@ check('Global Sync never enrols a Liftoff video on its own',
   const hits = execSync(`grep -rln "from('storefront_coverage')" app lib || true`, { encoding: 'utf8' }).split('\n').filter(Boolean)
   const writers = hits.filter((f) => /from\('storefront_coverage'\)\s*\.(upsert|insert)\(|storefront_coverage'\)\s*\n\s*\.(upsert|insert)\(/.test(read(f)))
   check(`only the three known places create Amazon rows (found: ${writers.sort().join(', ')})`,
-    JSON.stringify(writers.sort()) === JSON.stringify(['app/api/cron/coverage-drain/route.ts', 'app/api/cron/launch-drain/route.ts', 'app/api/launch/batches/[id]/amazon/route.ts']))
+    JSON.stringify(writers.sort()) === JSON.stringify(['app/api/cron/coverage-drain/route.ts', 'app/api/cron/launch-drain/route.ts', 'lib/liftoff-amazon-start.ts']))
 }
 
 if (failures.length) {
@@ -124,4 +138,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ liftoff-split: YouTube first with no countries asked, then Amazon on its own button once YouTube is done, never with the CTA copy')
+console.log('✅ liftoff-split: YouTube first with no countries asked, then Amazon by itself once YouTube is done, never with the CTA copy')

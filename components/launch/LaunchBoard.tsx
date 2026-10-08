@@ -1808,7 +1808,6 @@ export default function LaunchBoard() {
           {items.map((it, i) => (
             <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
               onReload={async () => { if (batchId) await load(batchId) }}
-              hideAmazon={!!batch.amazon_later && batch.markets.length === 0}
               onMove={moveItem} first={i === 0} last={i === items.length - 1}
               faces={faces} faceAvailable={faceAvailable} />
           ))}
@@ -1831,7 +1830,7 @@ export default function LaunchBoard() {
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
               {([
                 [true, batch.amazon_later ? 'YouTube, then Amazon' : 'YouTube and Amazon', batch.amazon_later
-                  ? 'Scheduled on YouTube at your times. Amazon is part 2: once YouTube is done you press Start Amazon and each video goes to your US storefront.'
+                  ? 'Scheduled on YouTube at your times. Then Amazon starts by itself: once YouTube is done, each video goes to your US storefront. Nothing to press.'
                   : 'Scheduled on YouTube at your times, then to your US Amazon storefront.'],
                 [false, 'Amazon only', 'Skip YouTube. Each video goes to your Amazon storefronts as soon as it is ready.'],
               ] as Array<[boolean, string, string]>).map(([v, label, hint]) => {
@@ -2310,12 +2309,12 @@ export default function LaunchBoard() {
             </div>
             {!scheduleLocked ? (
               <p className="text-[12.5px]" style={muted}>
-                Opens once part 1 is done. Launch your videos to YouTube first: nothing about Amazon is asked or done until then.
+                Starts by itself once YouTube is done. Launch your videos first; there is nothing to press here afterwards.
               </p>
             ) : !yt.done && !(yt.held > 0 && yt.waiting === yt.held) ? (
               <p className="text-[12.5px] inline-flex items-center gap-1.5" style={muted}>
                 <Loader2 size={12} className="animate-spin" />
-                Opens when YouTube is done. {yt.onYouTube} of {items.length} scheduled or public on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up or waiting for paid promotion to be confirmed` : ''}.
+                Starts by itself when YouTube is done. {yt.onYouTube} of {items.length} scheduled or public on YouTube so far{yt.waiting > 0 ? `, ${yt.waiting} still going up or waiting for paid promotion to be confirmed` : ''}.
               </p>
             ) : !yt.done && yt.onYouTube === 0 ? (
               // ONLY HELD VIDEOS LEFT, and nothing else is coming: said as a
@@ -2355,7 +2354,7 @@ export default function LaunchBoard() {
               <p className="text-[12.5px]" style={muted}>
                 {startedDomains.length > 0
                   ? 'Amazon started for your US storefront. Each video goes up once its product is checked; the board below shows each one.'
-                  : 'Press Start Amazon and each video goes to your US storefront: your original video without the CTA, and the same thumbnail as YouTube. Amazon\u2019s Global Storefront shows it in the other countries.'}
+                  : 'MVP starts Amazon by itself within a few minutes, or press Start Amazon now. Each video goes to your US storefront: your original video without the CTA, and the same thumbnail as YouTube. Amazon\u2019s Global Storefront shows it in the other countries.'}
               </p>
               {countryGrid({
                 selected: [LIFTOFF_AMAZON_MARKET],
@@ -2370,7 +2369,7 @@ export default function LaunchBoard() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
                   style={{ background: 'linear-gradient(135deg,#FF9900,#F97316)' }}>
                   {amazonStarting ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-                  {amazonStarting ? 'Starting…' : startedDomains.length > 0 ? 'Amazon started' : 'Start Amazon (US store)'}
+                  {amazonStarting ? 'Starting…' : startedDomains.length > 0 ? 'Amazon started' : 'Start Amazon now (US store)'}
                 </button>
                 {scoutReady === false && (
                   <span className="text-[11.5px]" style={{ color: '#d97706' }}>SCOUT is not installed in this browser. MVP prepares everything, but the uploads need SCOUT.</span>
@@ -2852,12 +2851,10 @@ function ItemThumbnail({ item, onReload, bare = false }: { item: Item; onReload:
 }
 
 function ItemRowEditor({
-  item, busy, onSave, onMove, first, last, faces, faceAvailable, hideAmazon = false, onReload,
+  item, busy, onSave, onMove, first, last, faces, faceAvailable, onReload,
 }: {
   /** Read the batch again (after this row's own thumbnail changed). */
   onReload: () => Promise<void>
-  /** Liftoff part 1: nothing about Amazon on the row. */
-  hideAmazon?: boolean
   item: Item
   busy: boolean
   onSave: (id: string, body: Record<string, unknown>) => Promise<void>
@@ -3070,7 +3067,7 @@ function ItemRowEditor({
       </div>
 
       {/* ── the Amazon title, short and in the storefront's voice ────────── */}
-      {!hideAmazon && <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2">
         <span className="w-5" />
         <label className="flex-1 min-w-0">
           <span className="block mb-1" style={lab}>Title for Amazon</span>
@@ -3109,7 +3106,7 @@ function ItemRowEditor({
             </span>
           )}
         </label>
-      </div>}
+      </div>
 
       {/* ── this video's thumbnail: MVP's, or the creator's own ──────────── */}
       <ItemThumbnail item={item} onReload={onReload} />

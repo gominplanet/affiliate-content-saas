@@ -383,7 +383,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and so is a batch finishing',
     (DRAIN.match(/count: 'exact', head: true/g) ?? []).length >= 3)
   check(`the cap itself is one number, and it is ${MAX_ITEMS}`,
-    /const MAX_ITEMS = 10/.test(LIB) && /MAX_ITEMS/.test(ITEMS) && /maxItems/.test(BOARD),
+    /const MAX_ITEMS = 20/.test(LIB) && /MAX_ITEMS/.test(ITEMS) && /maxItems/.test(BOARD),
     'a cap typed twice disagrees with itself the first time it changes')
 }
 
