@@ -61,17 +61,25 @@ export function checkedAgo(iso: string, now = Date.now()): string {
 let lastSent: { key: string; at: number } | null = null
 
 /** Tell MVP what the inbox holds now. The same answer is sent again only
- *  after ten minutes, so the page's two minute polling stays one write. */
-export async function reportTrybeInbox(convos: Array<{ name: string; unread: number; at: number }>): Promise<void> {
-  if (typeof window === 'undefined') return
+ *  after ten minutes, so the page's two minute polling stays one write.
+ *  Says what happened: saved, skipped as unchanged, or why it failed, so a
+ *  failed save never looks like a working alert. */
+export async function reportTrybeInbox(convos: Array<{ name: string; unread: number; at: number }>): Promise<{ ok: true; skipped?: boolean } | { ok: false; error: string }> {
+  if (typeof window === 'undefined') return { ok: true, skipped: true }
   const snap = inboxSnapshot(convos)
   try { localStorage.setItem(TRYBE_INBOX_ON_KEY, '1'); localStorage.setItem(TRYBE_LAST_CHECK_KEY, String(Date.now())) } catch { /* this browser only */ }
   try { window.dispatchEvent(new CustomEvent(TRYBE_ALERT_EVENT, { detail: snap })) } catch { /* old browser */ }
   const key = `${snap.unread}|${snap.names.join('|')}`
-  if (lastSent && lastSent.key === key && Date.now() - lastSent.at < 10 * 60_000) return
+  if (lastSent && lastSent.key === key && Date.now() - lastSent.at < 10 * 60_000) return { ok: true, skipped: true }
   lastSent = { key, at: Date.now() }
   try {
     const r = await fetch('/api/labs/trybe/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap), signal: AbortSignal.timeout(20_000) })
-    if (!r.ok) lastSent = null // tried again on the next read
-  } catch { lastSent = null }
+    if (r.ok) return { ok: true }
+    lastSent = null // tried again on the next read
+    const d = await r.json().catch(() => ({}))
+    return { ok: false, error: d.error || `MVP answered ${r.status}` }
+  } catch {
+    lastSent = null
+    return { ok: false, error: 'MVP did not answer' }
+  }
 }

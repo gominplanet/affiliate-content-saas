@@ -391,7 +391,11 @@ export default function TrybeOutreach() {
   useEffect(() => { if (canRequests && tab === 'sent' && !requests) void loadRequests() }, [canRequests, tab, requests, loadRequests])
   // REPLY ALERTS (upgrade 4): every fresh read of the inbox is noted on MVP,
   // so the menu count and the Today list show it on other pages.
-  useEffect(() => { if (inbox) void reportTrybeInbox(inbox.convos) }, [inbox])
+  const [alertsError, setAlertsError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!inbox) return
+    void reportTrybeInbox(inbox.convos).then(r => { if (!r.ok) setAlertsError(r.error); else if (!r.skipped) setAlertsError(null) })
+  }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
     try { if (new URLSearchParams(window.location.search).get('tab') === 'inbox') setTab('inbox') } catch { /* no URL */ }
@@ -901,6 +905,8 @@ export default function TrybeOutreach() {
         <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
         <Stat label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'n/a' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} />
       </div>
+      {/* The menu count and Today depend on this save: a failure is said here. */}
+      {alertsError && <p className="text-[12px] -mt-2 mb-3 inline-flex items-center gap-1" style={{ color: AMBER }}><AlertTriangle size={12} /> The inbox was read, but the reply alert for the menu and Today could not be saved: {alertsError}</p>}
 
       {finding && (
         <p className="text-[12px] inline-flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>

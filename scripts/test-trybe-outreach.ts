@@ -366,7 +366,7 @@ check('a late answer for another conversation is dropped', /const current = open
   check('the menu item shows the unread count', /badge: trybeUnread > 0 \? trybeUnread : 'New'/.test(SHELL) && /useTrybeAlerts\(canUsePreview\('trybe_outreach', effectiveTier\), pathname\)/.test(SHELL))
   check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe-outreach'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
   check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe-outreach\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
-  check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /if \(inbox\) void reportTrybeInbox\(inbox\.convos\)/.test(UI4) && /get\('tab'\) === 'inbox'/.test(UI4))
+  check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /void reportTrybeInbox\(inbox\.convos\)\.then\(r => \{ if \(!r\.ok\) setAlertsError\(r\.error\)/.test(UI4) && /reply alert for the menu and Today could not be saved/.test(UI4) && /get\('tab'\) === 'inbox'/.test(UI4))
 }
 
 // Accepted, pending, declined (Seb, 2026-10-08 upgrade 1)
