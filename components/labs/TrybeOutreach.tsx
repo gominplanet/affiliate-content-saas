@@ -133,6 +133,8 @@ const KEYWORD_EXAMPLES = ['golf', 'bible journaling', 'dog toys', 'camping gear'
  *  from) and go to the admin only. Every other note, a problem above all, is
  *  shown to everyone: a find that failed must never look like a quiet one. */
 const ADMIN_NOTE = /^(SCOUT collected |Using MVP's copy|The TRYBE list carried no websites)/
+/** A fit score this high or more is a strong fit (Tick Fit 80+). */
+const FIT_STRONG = 80
 /** Niches shown before "Show all". */
 const NICHES_SHOWN = 12
 
@@ -874,6 +876,18 @@ export default function TrybeOutreach() {
                   disabled={!live?.brands.length} className={btn} style={{ border: '1px solid var(--border)' }}>
                   <Check size={13} /> Tick the top {DAILY_FIND}
                 </button>
+                {/* THE STRONG FITS ONLY (Seb, 2026-10-07: "a button that selects
+                    ... only the top ratings over 80"). Brands the AI check
+                    scored 80 or more, still free to message. */}
+                {(() => {
+                  const strong = (live?.brands || []).filter(b => !TAKEN.includes(b.status as Brand['status']) && b.status !== 'not_fit' && (b.fit_score ?? 0) >= FIT_STRONG)
+                  return (
+                    <button onClick={() => setLivePick(new Set(strong.map(b => b.brand_id)))} disabled={!strong.length} className={btn} style={{ border: `1px solid ${strong.length ? GREEN : 'var(--border)'}`, color: strong.length ? GREEN : undefined }}
+                      title={strong.length ? `Tick the ${strong.length} brands MVP's AI check scored ${FIT_STRONG} or more for your niche` : `No brand in this list has a fit score of ${FIT_STRONG} or more yet. Scores come from the daily messages and Find brands.`}>
+                      <Star size={13} /> Tick Fit {FIT_STRONG}+ ({strong.length})
+                    </button>
+                  )
+                })()}
                 <button onClick={() => void draftPicked()} disabled={busy || !livePick.size} className={btn} style={{ background: PURPLE, color: '#fff' }}
                   title={running ? 'Send all is running. This unlocks when it finishes.' : finding ? `Busy: ${finding.stage}. This unlocks when it finishes.` : !livePick.size ? 'Tick the brands to write to first.' : undefined}>
                   <Sparkles size={13} /> Write {livePick.size} message{livePick.size === 1 ? '' : 's'}
@@ -940,7 +954,8 @@ export default function TrybeOutreach() {
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
                         {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}><Star size={10} /> TRYBE score {b.trybe_score}</span>}
-                        {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Fit {b.fit_score}</span>}
+                        {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={b.fit_score >= FIT_STRONG ? { background: 'rgba(22,163,74,0.14)', color: GREEN } : { background: 'rgba(180,83,9,0.10)', color: AMBER }}
+                          title={`Fit ${b.fit_score} of 100: MVP's AI check of how well what this brand sells matches your niches and keywords, from its TRYBE profile and website. ${FIT_STRONG}+ is a strong fit.`}>Fit {b.fit_score}</span>}
                         {b.total_creators != null && b.total_creators > 0 && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creators</span>}
                       </span>
                       {b.fit_reason && <span className="block text-[12px] mt-1.5">{b.fit_reason}</span>}

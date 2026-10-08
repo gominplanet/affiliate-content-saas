@@ -285,6 +285,8 @@ check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandI
 
 check('a brand conversation links to the brand on TRYBE', /brandLink=\{name => \{ const b = brands\.find\(x => convoFor\(x\.name/.test(UI) && /label="Brand page on TRYBE"/.test(INBOX))
 
+check('Tick Fit 80+ ticks only strong fits still free to message, and the score explains itself', /const FIT_STRONG = 80/.test(UI) && /!TAKEN\.includes\(b\.status as Brand\['status'\]\) && b\.status !== 'not_fit' && \(b\.fit_score \?\? 0\) >= FIT_STRONG/.test(UI) && /Fit \$\{b\.fit_score\} of 100: MVP's AI check/.test(UI))
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')
