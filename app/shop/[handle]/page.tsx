@@ -2,6 +2,7 @@
 // server-side with the service-role client (only PUBLISHED pages are shown).
 // Phone-first: this is what someone taps from an Instagram/TikTok bio.
 
+import { shopTileImage } from '@/lib/tile-image'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { Youtube, Instagram, Facebook, Twitter, Music2, AtSign, Globe, Link2 } from 'lucide-react'
@@ -31,8 +32,8 @@ function ProductGrid({ items, accent }: { items: LinkPageItem[]; accent: string 
           style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', borderRadius: 18, overflow: 'hidden', textDecoration: 'none', color: '#111114', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}
         >
           <div style={{ aspectRatio: '1 / 1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-            {it.image_url
-              ? <img src={it.image_url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            {shopTileImage(it.image_url, it.asin)
+              ? <img src={shopTileImage(it.image_url, it.asin) as string} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
               : <span style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>Shop</span>}
           </div>
           <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>

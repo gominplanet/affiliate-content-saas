@@ -12,7 +12,7 @@
 // through to the next source, and the last source is built from the ASIN with
 // no network call, so there is no path where a caller ends up with null and
 // writes a grey card.
-import { tileImageFor, amazonAsinImage } from '../lib/tile-image'
+import { tileImageFor, amazonAsinImage, shopTileImage } from '../lib/tile-image'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -20,6 +20,18 @@ const check = (name: string, cond: boolean, detail?: string) => {
 }
 
 async function main() {
+  // A YOUTUBE THUMBNAIL IS NOT A SHOP TILE (Seb, 2026-10-08: a pin made from a
+  // video showed a broken picture on the shop page; YouTube's signed link for
+  // a scheduled video had stopped working).
+  {
+    const signed = 'https://i9.ytimg.com/vi/abcdefghijk/maxresdefault.jpg?sqp=COTKntYG&rs=AOn4CL'
+    const noDb = { from: () => ({ select: () => ({ eq: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) }) }
+    check('a new tile does not take a YouTube thumbnail when there is a product photo', (await tileImageFor(noDb, 'B0GL85L61L', signed)) === amazonAsinImage('B0GL85L61L'))
+    check('a tile already saved with one shows the product photo instead', shopTileImage(signed, 'B0GL85L61L') === amazonAsinImage('B0GL85L61L'))
+    check('a real product photo is kept as it is', shopTileImage('https://m.media-amazon.com/images/I/x.jpg', 'B0GL85L61L') === 'https://m.media-amazon.com/images/I/x.jpg')
+    check('with no ASIN the saved picture is still shown rather than nothing', shopTileImage(signed, null) === signed)
+  }
+
   const ASIN = 'B0H298X69Z'
 
   /** A stand-in for the supabase client: `rows` says what each table returns. */

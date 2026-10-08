@@ -13,6 +13,7 @@
 // page it opens match. A product no longer on the page sends the visitor to
 // the whole shop rather than to an error.
 
+import { shopTileImage } from '@/lib/tile-image'
 import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -53,7 +54,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
     description,
     robots: { index: true, follow: true },
     alternates: { canonical: `/shop/${encodeURIComponent(data.page.handle)}/${encodeURIComponent(asin.toUpperCase())}` },
-    openGraph: { title: data.item.title, description, images: data.item.image_url ? [data.item.image_url] : undefined },
+    openGraph: { title: data.item.title, description, images: shopTileImage(data.item.image_url, data.item.asin) ? [shopTileImage(data.item.image_url, data.item.asin) as string] : undefined },
   }
 }
 
@@ -83,8 +84,8 @@ export default async function ProductOnBioPage({ params }: { params: Promise<{ h
 
         <div style={{ background: '#ffffff', borderRadius: 22, overflow: 'hidden', boxShadow: '0 14px 40px rgba(0,0,0,0.22)' }}>
           <div style={{ aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: '#fff' }}>
-            {item.image_url
-              ? <img src={item.image_url} alt={item.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            {shopTileImage(item.image_url, item.asin)
+              ? <img src={shopTileImage(item.image_url, item.asin) as string} alt={item.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
               : <span style={{ color: '#9ca3af', fontSize: 14, fontWeight: 600 }}>{item.title}</span>}
           </div>
           <div style={{ padding: '18px 20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>

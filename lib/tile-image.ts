@@ -17,6 +17,8 @@
 // had their own version of "use whatever image I happen to have". This is the
 // one answer they now share, so a fix in it reaches both.
 
+import { isYouTubeImage } from '@/lib/own-thumbnail'
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
@@ -47,7 +49,11 @@ export async function tileImageFor(
   db: Db, asin: string | null | undefined, preferred?: string | null,
 ): Promise<string | null> {
   const given = String(preferred ?? '').trim()
-  if (/^https?:\/\//i.test(given)) return given
+  // NOT A YOUTUBE THUMBNAIL (Seb, 2026-10-08: a pin made from a video put a
+  // broken picture on the shop page). For a video still private or scheduled,
+  // YouTube hands out a signed thumbnail link that stops working, and a
+  // product tile is better served by the product's own photo anyway.
+  if (/^https?:\/\//i.test(given) && !isYouTubeImage(given)) return given
 
   const a = String(asin ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(a)) return null
@@ -64,4 +70,17 @@ export async function tileImageFor(
   }
 
   return amazonAsinImage(a)
+}
+
+/**
+ * The picture a shop page shows for a tile, at render time. A tile saved with
+ * a YouTube thumbnail before the rule above shows the product's own photo
+ * instead, so the cards already on a page are fixed without rewriting them.
+ */
+export function shopTileImage(imageUrl: string | null | undefined, asin: string | null | undefined): string | null {
+  const u = String(imageUrl ?? '').trim()
+  const a = String(asin ?? '').trim().toUpperCase()
+  if (/^https?:\/\//i.test(u) && !isYouTubeImage(u)) return u
+  if (/^[A-Z0-9]{10}$/.test(a)) return amazonAsinImage(a)
+  return /^https?:\/\//i.test(u) ? u : null
 }
