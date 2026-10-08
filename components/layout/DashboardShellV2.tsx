@@ -522,6 +522,11 @@ export default function DashboardShellV2({
           ],
         },
         { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea lists', gate: canUseFinders },
+        // TRYBE Outreach: find TRYBE brands that fit, write each a first message
+        // in the creator's words, SCOUT sends them. Open to Pro (Seb,
+        // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
+        // PRODUCTS").
+        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE Outreach', gate: canUsePreview('trybe_outreach', effectiveTier), badge: 'New' },
       ],
     },
     {
@@ -677,10 +682,6 @@ export default function DashboardShellV2({
         // first with the link (SCOUT fills it), then a Page post linking to it.
         // Admin only while it is tested (lib/labs-preview group_queue).
         { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: isAdmin, badge: 'New' },
-        // TRYBE Outreach: SCOUT reads TRYBE's Discover Brands, MVP drafts a first
-        // message per brand, Seb approves the queue, SCOUT sends it under a daily
-        // cap. Admin only while it is tested (lib/labs-preview trybe_outreach).
-        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE Outreach', gate: isAdmin, badge: 'New' },
       ],
     },
     {

@@ -150,7 +150,14 @@ check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /asyn
 check('a reply counts as sent only when it shows in the conversation', /const seen = after\.some\(m => flat\(m\.text\) === flat\(text\)\)/.test(INBOX) && /const flat = \(t: string\) => t\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)/.test(INBOX))
 check('nothing TRYBE says is stored on MVP', !/fetch\('\/api\//.test(INBOX))
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
-check('the inbox is a tab of TRYBE Outreach, still Labs', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI) && /trybe_outreach: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
+check('the inbox is a tab of TRYBE Outreach', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
+{
+  // Seb, 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND PRODUCTS".
+  const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
+  const find = SHELL.slice(SHELL.indexOf("label: 'Find products'"), SHELL.indexOf("label: 'Make videos'"))
+  const labs = SHELL.slice(SHELL.indexOf("label: 'Labs',"))
+  check('TRYBE is open to Pro, not the Amazon plan, and sits in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test(readFileSync('lib/labs-preview.ts', 'utf8').slice(readFileSync('lib/labs-preview.ts', 'utf8').indexOf('const ALSO_AMAZON'))) && /href: '\/trybe-outreach'.*gate: canUsePreview\('trybe_outreach', effectiveTier\)/.test(find) && !/trybe-outreach/.test(labs))
+}
 
 const collectorRun = (async () => {
   const fnSrc = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))

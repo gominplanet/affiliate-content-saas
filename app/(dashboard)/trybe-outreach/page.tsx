@@ -1,5 +1,5 @@
 /**
- * /trybe-outreach — TRYBE Outreach (LABS, admin while it is tested). SCOUT
+ * /trybe-outreach — TRYBE Outreach (Pro, in Find products). SCOUT
  * reads TRYBE's Discover Brands, MVP studies each brand's website and drafts a
  * first message from the creator's core message, the creator skims the
  * Ready to send list and presses Send all, and SCOUT requests to join each brand
@@ -18,7 +18,7 @@ export default function TrybeOutreachPage() {
 
   if (tier !== null && canUsePreview('trybe_outreach', tier)) return <TrybeOutreach />
   // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="TRYBE Outreach" body="TRYBE Outreach finds brands on TRYBE, writes a first message for each one from its website, and sends your requests to join at a careful pace. It is still being tested." />
+  if (tier !== null) return <ProUpgradePanel feature="TRYBE Outreach" body="TRYBE Outreach finds brands on TRYBE that fit your channel, writes each one a first message in your words, and SCOUT sends your requests to join. It is part of the Pro plan." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

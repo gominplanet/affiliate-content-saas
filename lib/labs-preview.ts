@@ -70,7 +70,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   group_queue: 'admin',
   // TRYBE outreach: SCOUT reads TRYBE's Discover Brands, MVP drafts a first
   // message per brand, the creator approves the Ready to send list, SCOUT sends it slowly.
-  trybe_outreach: 'admin',
+  // Opened to Pro 2026-10-08, in Find products (Seb: "unlock TRYBE for pro users").
+  trybe_outreach: 'labs',
 }
 
 /** Pro features the AMAZON plan has too (Seb, 2026-10-05: "add all six",

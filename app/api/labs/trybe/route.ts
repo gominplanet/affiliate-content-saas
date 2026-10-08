@@ -59,7 +59,7 @@ async function gate() {
   const admin = createAdminClient() as Db
   const { data: intg } = await admin.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('trybe_outreach', intg?.tier)) {
-    return { error: NextResponse.json({ error: 'TRYBE outreach is still being tested.' }, { status: 403 }) }
+    return { error: NextResponse.json({ error: 'TRYBE Outreach is part of the Pro plan.' }, { status: 403 }) }
   }
   return { userId: user.id, ownerId, tier: normalizeTier(intg?.tier), admin, supabase }
 }
