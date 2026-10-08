@@ -27,9 +27,9 @@ import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
-import { INVITE_PATHS, readRequests, requestFor, acceptRate, type RequestRow, type RequestState } from '@/lib/trybe-invites'
+import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_REQUESTS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -81,11 +81,12 @@ interface LiveBrand {
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
 }
-const REQUESTS_PATH_KEY = 'mvp.trybe.requestsPath'
+const REQUESTS_KEY = 'mvp.trybe.requests'
+interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
 const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: string }> = {
   accepted: { label: 'Accepted', color: GREEN, bg: 'rgba(22,163,74,0.12)' },
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
-  declined: { label: 'Declined', color: RED, bg: 'rgba(220,38,38,0.10)' },
+  declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
 type LiveSort = 'match' | 'pay' | 'creators' | 'fit' | 'newest'
 type LivePay = 'any' | 'flat' | 'percent'
@@ -285,7 +286,9 @@ export default function TrybeOutreach() {
   const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
   const stopRef = useRef(false)
   // Leaving the page stops a send run: nothing sends with nothing on screen.
-  useEffect(() => () => { stopRef.current = true }, [])
+  // Leaving also ends a read of TRYBE's brand list (Sent's request states).
+  const leftRef = useRef(false)
+  useEffect(() => () => { stopRef.current = true; leftRef.current = true }, [])
   const autoRan = useRef(false)
 
   const say = (name: string, text: string, tone: LogLine['tone']) => setLog(l => [{ at: Date.now(), name, text, tone }, ...l].slice(0, 200))
@@ -337,33 +340,55 @@ export default function TrybeOutreach() {
     document.addEventListener('visibilitychange', tick)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick) }
   }, [canInbox, loadInbox, tab])
-  // ACCEPTED, PENDING, DECLINED (upgrade 1): the creator's own TRYBE request
-  // list, read through SCOUT 1.42.0. TRYBE's address for it was not seen yet,
-  // so the likely ones are tried and the one that answers is remembered.
-  // `tried` says what each answered, so an unread list never looks empty.
-  const canRequests = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_REQUESTS_MIN_VERSION)
-  const [requests, setRequests] = useState<{ rows: RequestRow[]; from: string } | null>(null)
-  const [requestsTried, setRequestsTried] = useState<string[] | null>(null)
-  const loadRequests = useCallback(async () => {
-    let first: string | null = null
-    try { first = localStorage.getItem(REQUESTS_PATH_KEY) } catch { /* this browser only */ }
-    const paths = first && INVITE_PATHS.includes(first) ? [first, ...INVITE_PATHS.filter(p => p !== first)] : INVITE_PATHS
-    const tried: string[] = []
-    for (const path of paths) {
-      const r = await requestTrybeApi('GET', path).catch(() => ({ ok: false as const, status: 0, error: 'SCOUT did not answer.', json: null }))
-      const short = path.split('?')[0].replace('/backend/api/', '')
-      if (!r.ok) { tried.push(`${short}: ${r.error || `answered ${r.status ?? 'nothing'}`}`); continue }
-      const read = readRequests(r.json)
-      if (read.rows.length) {
-        setRequests({ rows: read.rows, from: short }); setRequestsTried(null)
-        try { localStorage.setItem(REQUESTS_PATH_KEY, path) } catch { /* this browser only */ }
-        return
-      }
-      tried.push(`${short}: ${read.listed ? `${read.listed} items, no status MVP could read` : 'an empty list'}`)
+  // ACCEPTED, PENDING, DECLINED (upgrade 1): read from TRYBE's Discover
+  // Brands list, which flags each brand the signed-in creator has a pending
+  // request with, or an invite from (lib/trybe-invites.ts). Every page is
+  // read, so a brand missing from the flags really is no longer pending; a
+  // read that stops early says so and tags only what it saw. Kept for three
+  // hours in this browser: a full read is about 80 pages through SCOUT.
+  const canRequests = canInbox
+  const brandIdsRef = useRef<Set<string>>(new Set())
+  brandIdsRef.current = new Set(brands.map(b => b.brand_id))
+  const [requests, setRequests] = useState<RequestsRead | null>(null)
+  const [requestsNote, setRequestsNote] = useState<string | null>(null)
+  const [requestsPage, setRequestsPage] = useState<string | null>(null)
+  const requestsBusy = useRef(false)
+  const loadRequests = useCallback(async (force = false) => {
+    if (requestsBusy.current) return
+    if (!force) {
+      try {
+        const c = JSON.parse(localStorage.getItem(REQUESTS_KEY) || 'null') as RequestsRead | null
+        if (c && Date.now() - c.at < 3 * 3600_000) { setRequests(c); setRequestsNote(null); return }
+      } catch { /* read again below */ }
     }
-    setRequests(null); setRequestsTried(tried)
+    requestsBusy.current = true
+    setRequestsNote(null)
+    const flags: Record<string, BrandFlags> = {}
+    const invites: BrandFlags[] = []
+    let pages = 0, total: number | null = null, complete = false, stopped: string | null = null
+    try {
+      for (let p = 1; p <= 150; p++) {
+        if (leftRef.current) { stopped = 'You left the page.'; break }
+        setRequestsPage(total ? `page ${p} of ${total}` : `page ${p}`)
+        const r = await requestTrybeApi('GET', `/backend/api/discovery/brands?limit=75&page=${p}`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
+        if (!r.ok) { stopped = 'error' in r && r.error ? r.error : `TRYBE answered ${'status' in r ? r.status : 'nothing'}`; break }
+        const page = readDiscoveryPage(r.json)
+        pages = p
+        total = page.totalPages ?? total
+        for (const f of page.flags) {
+          if (brandIdsRef.current.has(f.brandId)) flags[f.brandId] = f
+          if (f.pendingInvite && !invites.some(x => x.brandId === f.brandId)) invites.push(f)
+        }
+        if (!page.listed || (total && p >= total)) { complete = true; break }
+      }
+      if (!complete && !stopped) stopped = 'TRYBE listed more pages than MVP reads.'
+      const read: RequestsRead = { at: Date.now(), complete, pages, flags, invites: invites.slice(0, 50) }
+      setRequests(read)
+      if (stopped) setRequestsNote(`MVP read ${pages} page${pages === 1 ? '' : 's'} of TRYBE's brands, then stopped (${stopped}). Only brands it saw are tagged.`)
+      else try { localStorage.setItem(REQUESTS_KEY, JSON.stringify(read)) } catch { /* this browser only */ }
+    } finally { requestsBusy.current = false; setRequestsPage(null) }
   }, [])
-  useEffect(() => { if (canRequests && tab === 'sent' && !requests && !requestsTried) void loadRequests() }, [canRequests, tab, requests, requestsTried, loadRequests])
+  useEffect(() => { if (canRequests && tab === 'sent' && !requests) void loadRequests() }, [canRequests, tab, requests, loadRequests])
   // REPLY ALERTS (upgrade 4): every fresh read of the inbox is noted on MVP,
   // so the menu count and the Today list show it on other pages.
   useEffect(() => { if (inbox) void reportTrybeInbox(inbox.convos) }, [inbox])
@@ -834,7 +859,8 @@ export default function TrybeOutreach() {
     // left this at zero. A reply stamped before (replied_at) stays a reply.
     const reply: 'replied' | 'none' | 'unknown' = answered ? 'replied' : !inbox ? 'unknown' : 'none'
     // Where the request stands on TRYBE, when its request list was read.
-    const rq = requests ? requestFor(b, requests.rows) : null
+    const rqState = requests ? requestState(requests.flags[b.brand_id], inbox ? !!c : null) : null
+    const rq = rqState ? { state: rqState } : null
     return { b, c, reply, lastMine, rq }
   })
   const repliedCount = sentRows.filter(r => r.reply === 'replied').length
@@ -1296,7 +1322,7 @@ export default function TrybeOutreach() {
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <p className="text-[14px] font-semibold">Sent and tried</p>
             {canInbox && (
-              <button onClick={() => { void loadInbox(); if (canRequests) void loadRequests() }} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><RotateCcw size={12} /> Check replies</button>
+              <button onClick={() => { void loadInbox(); if (canRequests) void loadRequests(true) }} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><RotateCcw size={12} /> Check replies</button>
             )}
           </div>
           {/* WHO ANSWERED (Seb, 2026-10-07). Read from the TRYBE inbox: a brand
@@ -1309,29 +1335,42 @@ export default function TrybeOutreach() {
           </p>
           {/* ACCEPTED, PENDING, DECLINED (upgrade 1), from TRYBE's own request
               list. Not read is said as not read, never as zero accepted. */}
-          {history.length > 0 && (() => {
-            if (!canRequests) return access === 'granted' ? <p className="text-[12px] mb-3" style={soft}>Accepted, pending and declined show here with SCOUT {SCOUT_TRYBE_REQUESTS_MIN_VERSION}. Yours is {scoutVersion || 'unknown'}; Chrome updates it by itself.</p> : null
-            if (requests) {
-              const states = sentRows.filter(r => WENT.includes(r.b.status)).map(r => r.rq?.state).filter((x): x is RequestState => !!x)
-              const n = (k: RequestState) => states.filter(x => x === k).length
-              const rate = acceptRate(states)
-              const missing = wentCount - states.length
-              return (
-                <p className="text-[12px] mb-3">
-                  On TRYBE: <b style={{ color: GREEN }}>{n('accepted')} accepted</b>, <b style={{ color: AMBER }}>{n('pending')} pending</b>, <b style={{ color: RED }}>{n('declined')} declined</b>
-                  {rate != null ? `. ${rate}% of the brands that answered said yes` : ''}.
-                  {missing > 0 ? <span style={soft}> {missing} sent {missing === 1 ? 'request is' : 'requests are'} not in TRYBE&rsquo;s list.</span> : null}
-                  {isAdmin && <span style={soft}> (Admin: read from {requests.from}.)</span>}
-                </p>
-              )
-            }
-            if (requestsTried) return (
-              <p className="text-[12px] mb-3" style={{ color: AMBER }}>
-                MVP could not read your TRYBE requests yet, so accepted and declined do not show. <button onClick={() => { setRequestsTried(null) }} className="font-semibold underline">Try again</button>
-                {isAdmin && <span className="block mt-1" style={soft}>Admin: {requestsTried.join('; ')}</span>}
+          {(history.length > 0 || (requests?.invites.length ?? 0) > 0) && (() => {
+            if (!canRequests) return access === 'granted' ? <p className="text-[12px] mb-3" style={soft}>Accepted, pending and declined show here with SCOUT {SCOUT_TRYBE_INBOX_MIN_VERSION} or newer. Yours is {scoutVersion || 'unknown'}; Chrome updates it by itself.</p> : null
+            if (!requests) return (
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5" style={soft}>
+                <Loader2 size={12} className="animate-spin" /> Reading where your requests stand on TRYBE{requestsPage ? `, ${requestsPage}` : ''}. SCOUT reads TRYBE&rsquo;s brand list in a tab behind this one.
               </p>
             )
-            return <p className="text-[12px] mb-3 inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your TRYBE requests...</p>
+            const went = sentRows.filter(r => WENT.includes(r.b.status))
+            const states = went.map(r => r.rq?.state).filter((x): x is RequestState => !!x)
+            const n = (k: RequestState) => states.filter(x => x === k).length
+            const rate = acceptRate(states)
+            const notListed = went.filter(r => !requests.flags[r.b.brand_id]).length
+            const needInbox = went.filter(r => { const f = requests.flags[r.b.brand_id]; return f && !f.pendingRequest && !inbox }).length
+            return (
+              <div className="text-[12px] mb-3 space-y-1">
+                <p>
+                  On TRYBE: <b style={{ color: GREEN }}>{n('accepted')} accepted</b>, <b style={{ color: AMBER }}>{n('pending')} pending</b>, <b style={{ color: RED }}>{n('declined')} declined or expired</b>
+                  {rate != null ? `. ${rate}% of the brands that answered said yes` : ''}.{' '}
+                  <span style={soft}>Read {new Date(requests.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</span>{' '}
+                  {requestsPage
+                    ? <span className="inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Reading again, {requestsPage}</span>
+                    : <button onClick={() => void loadRequests(true)} className="font-semibold underline" style={{ color: PURPLE }}>Read again</button>}
+                </p>
+                {notListed > 0 && <p style={soft}>{notListed} sent {notListed === 1 ? 'brand is' : 'brands are'} not in TRYBE&rsquo;s brand list now, so {notListed === 1 ? 'it is' : 'they are'} not tagged.</p>}
+                {needInbox > 0 && <p style={soft}>{needInbox} {needInbox === 1 ? 'request is' : 'requests are'} no longer pending. Accepted or declined is told from your TRYBE inbox, which could not be read.</p>}
+                {requestsNote && <p style={{ color: AMBER }}>{requestsNote}</p>}
+                {/* A brand that invited the creator is the warmest lead there is. */}
+                {requests.invites.length > 0 && (
+                  <p className="rounded-lg px-2.5 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ background: 'rgba(22,163,74,0.10)' }}>
+                    <b style={{ color: GREEN }}>{requests.invites.length} {requests.invites.length === 1 ? 'brand has' : 'brands have'} invited you on TRYBE:</b>
+                    {requests.invites.slice(0, 8).map(f => <span key={f.brandId} className="inline-flex items-center gap-1">{f.name || 'A brand'} <TrybeLink brandId={f.brandId} name={f.name} scout={scoutOpens} /></span>)}
+                    {requests.invites.length > 8 && <span style={soft}>and {requests.invites.length - 8} more</span>}
+                  </p>
+                )}
+              </div>
+            )
           })()}
           {(inbox || requests) && history.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">

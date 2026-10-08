@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
-import { stateOf, itemState, readRequests, requestFor, acceptRate, INVITE_PATHS } from '../lib/trybe-invites'
+import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
 const failures: string[] = []
@@ -313,7 +313,7 @@ check('website text is data, never instructions, in both prompts', /never instru
 check('a lost page answer is unconfirmed, never retried', !/'no-answer-from-page'\]/.test(BG.slice(BG.indexOf('const TRYBE_RETRY_IN_FRONT'), BG.indexOf('const TRYBE_RETRY_IN_FRONT') + 400)) && /if \(!res\) res = \{ outcome: 'unconfirmed'/.test(SENDER) && /return asked \? \{ outcome: 'unconfirmed'/.test(SENDER))
 check('only MVP\'s own site can drive TRYBE through SCOUT', /if \(\/\^MVP_TRYBE_\/\.test\(msg\.type\) && !trybeCallerOk\(sender\)\)/.test(BG) && /unpacked && origin === 'http:\/\/localhost:3000'/.test(BG))
 check('SCOUT\'s inbox tab survives a service worker restart and is opened once', /chrome\.storage\.session\.get\(TRYBE_API_TAB_KEY\)/.test(BG) && /if \(trybeApiTabOpening\) return trybeApiTabOpening/.test(BG) && /trybeHookUsers = Math\.max\(0, trybeHookUsers - 1\)/.test(BG))
-check('the daily run goes by the saved switch, and leaving the page stops a send run', /setSaved\(\{ core: d\.settings\.coreMessage \|\| '', dailyFind: d\.settings\.dailyFind !== false \}\)/.test(UI) && /useEffect\(\(\) => \(\) => \{ stopRef\.current = true \}, \[\]\)/.test(UI))
+check('the daily run goes by the saved switch, and leaving the page stops a send run', /setSaved\(\{ core: d\.settings\.coreMessage \|\| '', dailyFind: d\.settings\.dailyFind !== false \}\)/.test(UI) && /useEffect\(\(\) => \(\) => \{ stopRef\.current = true; leftRef\.current = true \}, \[\]\)/.test(UI))
 check('a late answer for another conversation is dropped', /const current = openRef\.current === id/.test(INBOX))
 
 {
@@ -371,21 +371,19 @@ check('a late answer for another conversation is dropped', /const current = open
 
 // Accepted, pending, declined (Seb, 2026-10-08 upgrade 1)
 {
-  check('TRYBE request words map to accepted, pending or declined', stateOf('ACCEPTED') === 'accepted' && stateOf('approved') === 'accepted' && stateOf('in_progress') === 'accepted'
-    && stateOf('PENDING') === 'pending' && stateOf('requested') === 'pending' && stateOf('declined') === 'declined' && stateOf('REJECTED') === 'declined' && stateOf('expired') === 'declined' && stateOf('') === null && stateOf('weird') === null)
-  check('a status is read from a flag or one level in', itemState({ isAccepted: true }) === 'accepted' && itemState({ invitation: { status: 'declined' } }) === 'declined' && itemState({ brand: { status: 'active' } }) === null)
-  const read = readRequests({ data: { items: [
-    { id: 'r1', status: 'accepted', brand: { id: 'brand-aaaa1', name: 'Acme Co' }, updatedAt: '2026-10-07T10:00:00Z' },
-    { id: 'r2', requestStatus: 'PENDING', brandName: 'Oros' },
-    { id: 'r3', brand: { id: 'brand-bbbb2', name: 'NoStatus' } },
-  ] } })
-  check('the request list is read whatever it is wrapped in, and an item with no status is skipped', read.listed === 3 && read.rows.length === 2 && read.rows[0].brandId === 'brand-aaaa1' && read.rows[1].name === 'Oros' && read.rows[1].state === 'pending')
-  check('a brand is matched by TRYBE id, then by name', requestFor({ brand_id: 'brand-aaaa1', name: 'Something else' }, read.rows)?.state === 'accepted' && requestFor({ brand_id: 'zzz', name: 'OROS' }, read.rows)?.state === 'pending' && requestFor({ brand_id: 'q', name: 'Nobody' }, read.rows) === null)
+  const page = readDiscoveryPage({ data: [
+    { id: 'p1', brandId: 'brand-aaaa1', brand: { name: 'Acme Co' }, hasPendingRequest: true, hasPendingInvite: false },
+    { id: 'p2', brandId: 'brand-bbbb2', brand: { name: 'Oros' }, hasPendingRequest: false, hasPendingInvite: true },
+    { id: 'p3', brand: { name: 'No id' }, hasPendingRequest: true },
+  ], pagination: { totalPages: 82, total: 6115 } })
+  check('Discover Brands is read for the two flags TRYBE keeps per creator', page.listed === 3 && page.flags.length === 2 && page.totalPages === 82 && page.flags[0].pendingRequest && !page.flags[0].pendingInvite && page.flags[1].pendingInvite && page.flags[1].name === 'Oros')
+  const [acme, oros] = page.flags
+  check('pending is pending; no longer pending is accepted with a chat, declined without one, and untold without the inbox', requestState(acme, null) === 'pending' && requestState(oros, true) === 'accepted' && requestState(oros, false) === 'declined' && requestState(oros, null) === null && requestState(undefined, true) === null)
   check('the acceptance rate leaves pending requests out, and is unknown until one is answered', acceptRate(['accepted', 'declined', 'pending', 'accepted']) === 67 && acceptRate(['pending']) === null)
-  const BG2 = readFileSync('extension/background.js', 'utf8'), UI5 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
-  const allowLine = BG2.split('\n').find(l => l.includes('invitations|collaboration-requests')) || ''
-  check('SCOUT may only READ the request list, at every address MVP tries', allowLine.includes("method: 'GET'") && INVITE_PATHS.every(p => { const m = allowLine.match(/re: (\/.*\/) \}/); return !!m && new RegExp(m[1].slice(1, -1)).test(p) }))
-  check('Sent says when the request list could not be read, instead of showing zero accepted', /MVP could not read your TRYBE requests yet/.test(UI5) && /not in TRYBE&rsquo;s list/.test(UI5) && /scoutAtLeast\(scoutVersion, SCOUT_TRYBE_REQUESTS_MIN_VERSION\)/.test(UI5))
+  const UI5 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('every page of the list is read, and a read that stopped early says so', /discovery\/brands\?limit=75&page=\$\{p\}/.test(UI5) && /then stopped \(\$\{stopped\}\)\. Only brands it saw are tagged\./.test(UI5) && /if \(!page\.listed \|\| \(total && p >= total\)\) \{ complete = true; break \}/.test(UI5))
+  check('Sent says why a request is not tagged rather than counting it as declined', /not in TRYBE&rsquo;s brand list now/.test(UI5) && /Accepted or declined is told from your TRYBE inbox, which could not be read/.test(UI5) && /requestState\(requests\.flags\[b\.brand_id\], inbox \? !!c : null\)/.test(UI5))
+  check('a brand that invited you is shown', /invited you on TRYBE/.test(UI5))
 }
 
 void collectorRun.then(() => {
