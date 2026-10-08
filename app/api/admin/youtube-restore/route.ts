@@ -43,11 +43,12 @@ export async function GET(req: Request) {
     ok: true,
     restoredThisRun: out.restored,
     youtubeDidNotShow: out.stillMissing,
+    notYouTubeIds: out.notYouTube,
     stoppedFor: out.stoppedFor ?? null,
     nowWithTitle: withTitle,
     stillEmpty,
     note: out.stoppedFor === 'quota' ? 'YouTube’s daily allowance is used up; the rest refills after midnight Pacific.'
       : out.stoppedFor === 'time' ? 'Out of time for this run. Open this page again to carry on.'
-      : stillEmpty ? `${stillEmpty} still empty: videos YouTube does not show to any of your logins or MVP's key (deleted, private on a channel not connected).` : 'Every video is filled.',
+      : stillEmpty ? `${stillEmpty} still empty: ${out.notYouTube} have an id that is not a YouTube video id, so YouTube cannot be asked about them; ${out.stillMissing} are videos YouTube does not show to any of your logins or MVP's key (deleted, or private on a channel not connected).` : 'Every video is filled.',
   })
 }

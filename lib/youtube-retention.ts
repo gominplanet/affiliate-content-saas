@@ -211,7 +211,7 @@ export async function retentionPass(sb: Sb, maxRows = 2000, deadlineAt = Infinit
  *  to YouTube in MVP, are asked for again and refilled when YouTube shows
  *  them. Never empties anything. A row asked about is stamped, so one YouTube
  *  no longer shows is asked again a day later, not every run. */
-export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity, opts: { userId?: string; everyRow?: boolean } = {}): Promise<{ restored: number; stillMissing: number; users: number; stoppedFor?: 'quota' | 'time' }> {
+export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity, opts: { userId?: string; everyRow?: boolean } = {}): Promise<{ restored: number; stillMissing: number; notYouTube: number; users: number; stoppedFor?: 'quota' | 'time' }> {
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString()
   const base = () => { let q = sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id').eq('title', ''); if (opts.userId) q = q.eq('user_id', opts.userId); return q }
   // everyRow (the admin's Refill now): every emptied row, whatever it was last
@@ -220,8 +220,11 @@ export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity,
   const stampable = !error
   if (error) ({ data: rows } = await base().limit(maxRows))
   const byUser = new Map<string, Array<{ id: string; channel: string }>>()
+  // Rows whose id is not a YouTube video id cannot be asked about; counted
+  // apart so they are never reported as deleted videos.
+  let notYouTube = 0
   for (const r of (rows ?? []) as Array<{ user_id: string; youtube_video_id: string; channel_id: string }>) {
-    if (!/^[A-Za-z0-9_-]{11}$/.test(r.youtube_video_id || '')) continue
+    if (!/^[A-Za-z0-9_-]{11}$/.test(r.youtube_video_id || '')) { notYouTube++; continue }
     byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), { id: r.youtube_video_id, channel: r.channel_id }])
   }
   let restored = 0, stillMissing = 0
@@ -250,5 +253,5 @@ export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity,
       }
     }
   }
-  return { restored, stillMissing, users: byUser.size, ...(quotaOut ? { stoppedFor: 'quota' as const } : timeOut ? { stoppedFor: 'time' as const } : {}) }
+  return { restored, stillMissing, notYouTube, users: byUser.size, ...(quotaOut ? { stoppedFor: 'quota' as const } : timeOut ? { stoppedFor: 'time' as const } : {}) }
 }
