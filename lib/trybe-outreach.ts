@@ -147,6 +147,43 @@ export function nextGapMs(sentThisRun: number, rand: () => number = Math.random,
   return span(MIN_GAP_MS, MAX_GAP_MS)
 }
 
+/** What a brand's TRYBE pay line offers. TRYBE writes it as free text ("$50
+ *  per video", "15% commission", "$25 + 10%"), so a line with no number in it
+ *  reads as unknown rather than as nothing. */
+export interface PayRead { kind: 'flat' | 'percent' | 'both' | null; dollars: number | null; percent: number | null }
+
+export function readPay(text: string | null | undefined): PayRead {
+  const s = String(text || '').replace(/,(?=\d{3}\b)/g, '')
+  const nums = (re: RegExp) => [...s.matchAll(re)].map(m => parseFloat(m[1])).filter(n => Number.isFinite(n) && n > 0)
+  const pct = nums(/(\d+(?:\.\d+)?)\s*%/g).filter(n => n <= 100)
+  const usd = [...nums(/\$\s*(\d+(?:\.\d+)?)/g), ...nums(/(\d+(?:\.\d+)?)\s*(?:usd|dollars?)\b/gi)]
+  // "50 per video" with no currency sign is still a flat fee.
+  if (!usd.length && /per\s+(video|post|piece|content)/i.test(s)) usd.push(...nums(/(\d+(?:\.\d+)?)(?!\s*%)/g))
+  const dollars = usd.length ? Math.max(...usd) : null
+  const percent = pct.length ? Math.max(...pct) : null
+  const kind = dollars != null && percent != null ? 'both' : dollars != null ? 'flat' : percent != null ? 'percent' : null
+  return { kind, dollars, percent }
+}
+
+export const BROWSE_SORTS = ['match', 'pay', 'creators', 'fit', 'newest'] as const
+export type BrowseSort = typeof BROWSE_SORTS[number]
+export const PAY_TYPES = ['any', 'flat', 'percent'] as const
+export type PayType = typeof PAY_TYPES[number]
+
+/** Does this pay line pass the pay-type filter? 'both' passes either. */
+export function payPasses(p: PayRead, want: PayType): boolean {
+  if (want === 'any') return true
+  return p.kind === 'both' || p.kind === want
+}
+
+/** Highest pay first: the flat fee leads, then the percent, then brands that
+ *  list no number at all. */
+export function payRank(p: PayRead): number {
+  if (p.dollars != null) return 1_000_000 + p.dollars * 100 + (p.percent ?? 0)
+  if (p.percent != null) return p.percent
+  return -1
+}
+
 /** One brand as SCOUT read it from TRYBE. Everything is untrusted page text,
  *  so each field is coerced and capped. */
 export interface ScannedBrand {

@@ -73,11 +73,26 @@ type Tab = 'find' | 'queue' | 'sent' | 'inbox'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
-  pay_text: string | null; trybe_score: number | null; total_creators: number | null; match: number
+  pay_text: string | null; pay_kind?: 'flat' | 'percent' | 'both' | null; trybe_score: number | null; total_creators: number | null; match: number
+  first_seen_at?: string | null
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
 }
+type LiveSort = 'match' | 'pay' | 'creators' | 'fit' | 'newest'
+type LivePay = 'any' | 'flat' | 'percent'
+const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
+  { id: 'match', label: 'Best match', says: 'Best matches first.' },
+  { id: 'pay', label: 'Highest pay', says: 'Highest pay first: flat fees by amount, then % of sales.' },
+  { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
+  { id: 'fit', label: 'Best fit', says: 'Highest AI fit score first. Brands not scored yet come after.' },
+  { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
+]
+const PAYS: Array<{ id: LivePay; label: string }> = [
+  { id: 'any', label: 'Any pay' },
+  { id: 'flat', label: 'Flat fee' },
+  { id: 'percent', label: '% of sales' },
+]
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
@@ -246,8 +261,12 @@ export default function TrybeOutreach() {
   const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting'>('all')
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
-  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number } | null>(null)
+  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number } | null>(null)
   const [showMine, setShowMine] = useState(false)
+  // SORT AND PAY FILTER (Seb, 2026-10-08 upgrade 3), done on the server so
+  // the order covers every match and not just the 60 on screen.
+  const [sortBy, setSortBy] = useState<LiveSort>('match')
+  const [payType, setPayType] = useState<LivePay>('any')
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [livePick, setLivePick] = useState<Set<string>>(new Set())
@@ -571,9 +590,9 @@ export default function TrybeOutreach() {
     setLiveLoading(true)
     const t = setTimeout(async () => {
       try {
-        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine })
+        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType })
         if (id !== liveReq.current) return // a newer search has started
-        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0 })
+        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0 })
         setLiveError(null)
         // Ticks stay only on brands still listed and still free to draft.
         setLivePick(p => new Set(Array.from(p).filter(x => (d.brands || []).some((b: LiveBrand) => b.brand_id === x && !TAKEN.includes(b.status as Brand['status'])))))
@@ -584,7 +603,7 @@ export default function TrybeOutreach() {
       }
     }, 350)
     return () => clearTimeout(t)
-  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Draft the brands ticked in the live list into Ready to send. */
   async function draftPicked(only?: string[]) {
@@ -970,7 +989,29 @@ export default function TrybeOutreach() {
                 </button>
               </div>
             </div>
-            <p className="text-[12px] mb-3" style={soft}>Best matches first. Tick the brands you want and MVP writes each one a message from your core message.</p>
+            <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} Tick the brands you want and MVP writes each one a message from your core message.</p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Sort brands">
+                <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Sort</span>
+                {SORTS.map(s => (
+                  <button key={s.id} onClick={() => setSortBy(s.id)} aria-pressed={sortBy === s.id}
+                    className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
+                    style={sortBy === s.id ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>{s.label}</button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by pay type">
+                <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Pay</span>
+                {PAYS.map(p => (
+                  <button key={p.id} onClick={() => setPayType(p.id)} aria-pressed={payType === p.id}
+                    className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
+                    style={payType === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border)' }}>{p.label}</button>
+                ))}
+              </div>
+            </div>
+            {/* Best fit with no scores would look like best match: say so. */}
+            {sortBy === 'fit' && live && live.brands.length > 0 && !live.brands.some(b => b.fit_score != null) && (
+              <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>None of these brands has a fit score yet, so they are in best match order. Scores come from the daily messages and Find brands.</p>
+            )}
             {/* WHY THE BUTTON IS OFF, said where the button is (Seb, 2026-10-07:
                 "what is the reason the write message is not clickable?"). The
                 daily run or a collection works on the list meanwhile, and its
@@ -1032,7 +1073,8 @@ export default function TrybeOutreach() {
                         {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}><Star size={10} /> TRYBE score {b.trybe_score}</span>}
                         {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={b.fit_score >= FIT_STRONG ? { background: 'rgba(22,163,74,0.14)', color: GREEN } : { background: 'rgba(180,83,9,0.10)', color: AMBER }}
                           title={`Fit ${b.fit_score} of 100: MVP's AI check of how well what this brand sells matches your niches and keywords, from its TRYBE profile and website. ${FIT_STRONG}+ is a strong fit.`}>Fit {b.fit_score}</span>}
-                        {b.total_creators != null && b.total_creators > 0 && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creators</span>}
+                        {b.total_creators != null && (b.total_creators > 0 || sortBy === 'creators') && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creator{b.total_creators === 1 ? '' : 's'}</span>}
+                        {sortBy === 'newest' && b.first_seen_at && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>First seen {new Date(b.first_seen_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
                       </span>
                       {b.fit_reason && <span className="block text-[12px] mt-1.5">{b.fit_reason}</span>}
                       {!b.fit_reason && b.about && <span className="block text-[12px] mt-1.5 line-clamp-2" style={soft}>{b.about}</span>}
@@ -1065,6 +1107,15 @@ export default function TrybeOutreach() {
                   : <>{live.hiddenMine} brand{live.hiddenMine === 1 ? '' : 's'} you already messaged, wrote to or removed {live.hiddenMine === 1 ? 'is' : 'are'} hidden. <button onClick={() => setShowMine(true)} className="font-semibold underline" style={{ color: PURPLE }}>Show them</button></>}
               </p>
             ) : null}
+            {/* What the pay filter left out, counted so the list is never quietly short. */}
+            {live && payType !== 'any' && ((live.payUnknown ?? 0) + (live.payOther ?? 0)) > 0 && (
+              <p className="text-[12px] mt-3" style={soft}>
+                Pay filter: {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying ${payType === 'flat' ? '% of sales only' : 'a flat fee only'}` : ''}
+                {live.payOther && live.payUnknown ? ' and ' : ''}
+                {live.payUnknown ? `${live.payUnknown.toLocaleString()} that list no pay amount` : ''} {(live.payOther ?? 0) + (live.payUnknown ?? 0) === 1 ? 'is' : 'are'} hidden.{' '}
+                <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button>
+              </p>
+            )}
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}

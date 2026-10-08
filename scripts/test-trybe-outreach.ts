@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
@@ -130,7 +130,7 @@ check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\
 
 // THE LIVE LIST (Seb, 2026-10-07: "as users change filters, the results ...
 // should change"). MVP's copy is searched on every change, nothing fetched.
-check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
+check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
 check('an older search never overwrites a newer one', /if \(id !== liveReq\.current\) return/.test(UI))
 check('browse leaves nothing out, so a brand on the list shows where it stands', /rpc\('trybe_directory_search', \{ p_words: words, p_user: null/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
 check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
@@ -321,6 +321,18 @@ check('a late answer for another conversation is dropped', /const current = open
   check('unread is read as a count, a flag, a nested count, or last-read time', u({ unreadCount: 2 }, at) === 2 && u({ hasUnread: true }, at) === 1 && u({ membership: { unread_count: 3 } }, at) === 3
     && u({ lastReadAt: '2026-10-08T14:00:00Z' }, at) === 1 && u({ lastReadAt: '2026-10-08T15:00:00Z' }, at) === 0 && u({ unreadCount: 0 }, at) === 0 && u({}, at) === 0)
   check('the inbox and the tiles re-read TRYBE every two minutes while in view', /setInterval\(\(\) => \{ if \(document\.visibilityState === 'visible'\) void loadList\(\) \}, 120_000\)/.test(INBOX) && /const t = setInterval\(tick, 120_000\)/.test(UI))
+}
+
+// Sort and pay filter (Seb, 2026-10-08 upgrade 3)
+{
+  const flat = readPay('$50 per video'), pct = readPay('15% commission'), both = readPay('$25 + 10% of sales'), none = readPay('Free product'), bare = readPay('75 per video'), big = readPay('$1,200')
+  check('pay lines read as flat, percent, both or unknown', flat.kind === 'flat' && flat.dollars === 50 && pct.kind === 'percent' && pct.percent === 15
+    && both.kind === 'both' && both.dollars === 25 && both.percent === 10 && none.kind === null && bare.kind === 'flat' && bare.dollars === 75 && big.dollars === 1200 && readPay(null).kind === null)
+  check('the pay filter keeps both-kind brands and drops unknown ones', payPasses(both, 'flat') && payPasses(both, 'percent') && !payPasses(pct, 'flat') && !payPasses(flat, 'percent') && !payPasses(none, 'flat') && payPasses(none, 'any'))
+  check('highest pay puts flat fees by amount, then percent, then unknown', payRank(big) > payRank(flat) && payRank(flat) > payRank(pct) && payRank(pct) > payRank(none))
+  const ROUTE = readFileSync('app/api/labs/trybe/route.ts', 'utf8'), UI2 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('browse sorts on the server and counts what the pay filter hid', /first_seen_at/.test(ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'"))) && /payUnknown,/.test(ROUTE) && /payOther,/.test(ROUTE) && /sort === 'fit'/.test(ROUTE))
+  check('the live list sends sort and pay type and re-searches when they change', /sort: sortBy, payType \}/.test(UI2) && /showMine, sortBy, payType\]/.test(UI2) && /Show any pay/.test(UI2) && /None of these brands has a fit score yet/.test(UI2))
 }
 
 void collectorRun.then(() => {

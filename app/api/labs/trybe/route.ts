@@ -37,6 +37,7 @@ import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
+  readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
 } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -311,7 +312,9 @@ export async function POST(request: Request) {
     const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
     const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
     const words = searchWords(terms)
-    const COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text'
+    const COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at'
+    const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
+    const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
     let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
     // No user given: nothing is left out, so a brand on the list still shows.
     const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: 400 })
@@ -332,10 +335,14 @@ export async function POST(request: Request) {
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
-    const ranked = rows
-      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0 }))
+    const matched = rows
+      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text) }))
       .filter(x => !terms.length || x.match > 0)
-      .sort((a, b) => b.match - a.match || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
+    // PAY TYPE FILTER. A brand whose pay line has no number cannot be placed,
+    // so it is left out and counted, never silently dropped.
+    const payUnknown = payType === 'any' ? 0 : matched.filter(x => x.pay.kind == null).length
+    const payOther = payType === 'any' ? 0 : matched.filter(x => x.pay.kind != null && !payPasses(x.pay, payType)).length
+    const ranked = matched.filter(x => payPasses(x.pay, payType))
     // DONE BRANDS LEAVE THE LIST (Seb, 2026-10-07: "these should be gone, no?
     // I changed keywords ... and i'm still seeing these"). A brand already
     // messaged, written, or removed is left out unless asked for, and the
@@ -346,6 +353,19 @@ export async function POST(request: Request) {
       const { data: mineRows } = await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason').eq('user_id', ownerId).in('brand_id', rankedIds.slice(i, i + 200))
       for (const m of (mineRows || []) as Array<Record<string, any>>) mineBy.set(m.brand_id, m) // eslint-disable-line @typescript-eslint/no-explicit-any
     }
+    // SORT (Seb, 2026-10-08 upgrade 3). Fit is the creator's own AI rating,
+    // so it is read after their list; ties always fall back to best match,
+    // then TRYBE's score, so the order is stable as filters change.
+    const byMatch = (a: typeof ranked[number], b: typeof ranked[number]) => b.match - a.match || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0)
+    const time = (v: unknown) => { const t = Date.parse(String(v || '')); return Number.isFinite(t) ? t : 0 }
+    const creators = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : Infinity
+    const fit = (id: string) => { const f = mineBy.get(id)?.fit_score; return typeof f === 'number' ? f : -1 }
+    ranked.sort((a, b) =>
+      sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
+        : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
+          : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
+            : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
+              : byMatch(a, b))
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed']
     const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
     const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
@@ -355,12 +375,17 @@ export async function POST(request: Request) {
       ok: true,
       matched: shown.length,
       hiddenMine,
+      payUnknown,
+      payOther,
+      sort,
+      payType,
       capped: rows.length >= (rpc.error ? 800 : 400),
-      brands: top.map(({ r, match }) => {
+      brands: top.map(({ r, match, pay }) => {
         const m = mineBy.get(r.brand_id)
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
-          pay_text: r.pay_text, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          pay_text: r.pay_text, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null, fit_score: m?.fit_score ?? null, fit_reason: m?.fit_reason ?? null,
         }
