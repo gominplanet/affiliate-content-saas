@@ -25,7 +25,7 @@ export function useTrybeAlerts(enabled: boolean, pathname: string): number {
     let cancelled = false
     const load = async () => {
       try {
-        const r = await fetch('/api/labs/trybe/alerts')
+        const r = await fetch('/api/labs/trybe/alerts', { signal: AbortSignal.timeout(20_000) })
         if (!r.ok || cancelled) return
         const d = await r.json()
         if (!cancelled) setUnread(Number(d?.unread) || 0)

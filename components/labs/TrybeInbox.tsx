@@ -310,7 +310,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     if (!id || !msgs?.length) return
     setSuggesting(true); setSuggestNote(null)
     try {
-      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(120_000), body: JSON.stringify({
         action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })),
       }) })
       const d = await r.json().catch(() => ({}))

@@ -71,7 +71,7 @@ export async function reportTrybeInbox(convos: Array<{ name: string; unread: num
   if (lastSent && lastSent.key === key && Date.now() - lastSent.at < 10 * 60_000) return
   lastSent = { key, at: Date.now() }
   try {
-    const r = await fetch('/api/labs/trybe/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap) })
+    const r = await fetch('/api/labs/trybe/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap), signal: AbortSignal.timeout(20_000) })
     if (!r.ok) lastSent = null // tried again on the next read
   } catch { lastSent = null }
 }
