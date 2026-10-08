@@ -67,6 +67,20 @@ export async function clearYouTubeData(sb: Sb, userId: string, youtubeVideoIds?:
   try { await scope(sb.from('youtube_videos').update({ yt_refreshed_at: null }).eq('user_id', userId)) } catch { /* pre-406 */ }
 }
 
+/** Every row a query returns, up to max: the database hands back at most
+ *  1,000 rows per read whatever .limit() says, which once left 339 of Seb's
+ *  emptied videos unseen by a refill asked for 2,500. */
+async function readPaged(make: () => Sb, max: number): Promise<{ rows: unknown[]; error: { message: string } | null }> {
+  const rows: unknown[] = []
+  for (let from = 0; from < max; from += 1000) {
+    const { data, error } = await make().range(from, Math.min(max, from + 1000) - 1)
+    if (error) return { rows, error }
+    rows.push(...(data ?? []))
+    if (!data || data.length < 1000) break
+  }
+  return { rows, error: null }
+}
+
 type Fresh = { title: string; description: string; channelTitle: string; channelId: string | null; thumb: string | null; views: number | null }
 
 async function videosList(ids: string[], token: string | null): Promise<{ ok: true; found: Map<string, Fresh> } | { ok: false; revoked: boolean; quota: boolean }> {
@@ -156,12 +170,12 @@ function connectedOf(chans: unknown[] | null, integ: { youtube_oauth_refresh_tok
 export async function retentionPass(sb: Sb, maxRows = 2000, deadlineAt = Infinity): Promise<{ refreshed: number; cleared: number; users: number; column: 'yt_refreshed_at' | 'updated_at'; stoppedFor?: 'quota' | 'time' }> {
   const cutoff = new Date(Date.now() - YT_REFRESH_DAYS * 86_400_000).toISOString()
   let column: 'yt_refreshed_at' | 'updated_at' = 'yt_refreshed_at'
-  let { data: rows, error } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
-    .or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${cutoff}`).neq('title', '').limit(maxRows)
+  let { rows, error } = await readPaged(() => sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
+    .or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${cutoff}`).neq('title', '').order('youtube_video_id'), maxRows)
   if (error) {
     column = 'updated_at'
-    ;({ data: rows } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
-      .lt('updated_at', cutoff).neq('title', '').limit(maxRows))
+    ;({ rows } = await readPaged(() => sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id,title')
+      .lt('updated_at', cutoff).neq('title', '').order('youtube_video_id'), maxRows))
   }
   const byUser = new Map<string, Array<{ id: string; channel: string }>>()
   for (const r of (rows ?? []) as Array<{ user_id: string; youtube_video_id: string; channel_id: string }>) {
@@ -216,9 +230,9 @@ export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity,
   const base = () => { let q = sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id').eq('title', ''); if (opts.userId) q = q.eq('user_id', opts.userId); return q }
   // everyRow (the admin's Refill now): every emptied row, whatever it was last
   // asked, for one creator.
-  let { data: rows, error } = opts.everyRow ? await base().limit(maxRows) : await base().or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${dayAgo}`).limit(maxRows)
+  let { rows, error } = await readPaged(() => (opts.everyRow ? base() : base().or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${dayAgo}`)).order('youtube_video_id'), maxRows)
   const stampable = !error
-  if (error) ({ data: rows } = await base().limit(maxRows))
+  if (error) ({ rows } = await readPaged(() => base().order('youtube_video_id'), maxRows))
   const byUser = new Map<string, Array<{ id: string; channel: string }>>()
   // Rows whose id is not a YouTube video id cannot be asked about; counted
   // apart so they are never reported as deleted videos.
