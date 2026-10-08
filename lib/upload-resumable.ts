@@ -11,6 +11,7 @@
 // costs one piece, never the file.
 
 import { STALL_MS } from '@/lib/upload-progress'
+import { saysExpired } from '@/lib/fresh-token'
 
 /** Storage's resumable endpoint takes 6MB pieces, the last one smaller. */
 export const CHUNK = 6 * 1024 * 1024
@@ -29,8 +30,9 @@ const b64 = (s: string) => btoa(unescape(encodeURIComponent(s)))
 export async function uploadResumable(opts: {
   supabaseUrl: string
   anonKey: string
-  /** Called before every piece, so a long upload never runs on an expired token. */
-  getAccessToken: () => Promise<string | null>
+  /** Called before every piece, so a long upload never runs on an expired
+   *  token; `force` when the server just refused one as expired. */
+  getAccessToken: (force?: boolean) => Promise<string | null>
   bucket: string
   path: string
   file: File
@@ -39,8 +41,8 @@ export async function uploadResumable(opts: {
   const base = opts.supabaseUrl.replace(/\/$/, '')
   const endpoint = `${base}/storage/v1/upload/resumable`
   const total = opts.file.size
-  const headers = async (): Promise<Record<string, string>> => {
-    const token = await opts.getAccessToken()
+  const headers = async (force = false): Promise<Record<string, string>> => {
+    const token = await opts.getAccessToken(force)
     if (!token) throw new Error('Signed out during the upload. Sign in again and add this one again.')
     return { authorization: `Bearer ${token}`, apikey: opts.anonKey, 'Tus-Resumable': '1.0.0' }
   }
@@ -50,13 +52,21 @@ export async function uploadResumable(opts: {
     `bucketName ${b64(opts.bucket)}`, `objectName ${b64(opts.path)}`,
     `contentType ${b64(opts.contentType)}`, `cacheControl ${b64('3600')}`,
   ].join(',')
-  const created = await fetch(endpoint, {
+  const open = async (force: boolean) => fetch(endpoint, {
     method: 'POST',
-    headers: { ...(await headers()), 'Upload-Length': String(total), 'Upload-Metadata': meta, 'x-upsert': 'false' },
+    headers: { ...(await headers(force)), 'Upload-Length': String(total), 'Upload-Metadata': meta, 'x-upsert': 'false' },
     signal: AbortSignal.timeout(30_000),
   })
+  let created = await open(false)
+  let msg = created.status !== 201 ? await created.text().catch(() => '') : ''
+  // AN EXPIRED SIGN-IN IS RENEWED AND ASKED AGAIN, not taken as "resumable
+  // is not available": that fell back to a single upload on the same expired
+  // token, and the file failed with '"exp" claim timestamp check failed'.
+  if (created.status !== 201 && saysExpired(msg)) {
+    created = await open(true)
+    msg = created.status !== 201 ? await created.text().catch(() => '') : ''
+  }
   if (created.status !== 201) {
-    const msg = await created.text().catch(() => '')
     throw new ResumableUnavailable(`Storage would not open a resumable upload (${created.status}${msg ? `: ${msg.slice(0, 120)}` : ''}).`)
   }
   const loc = created.headers.get('Location') || created.headers.get('location')
@@ -68,11 +78,15 @@ export async function uploadResumable(opts: {
   let resumes = 0      // every pick-up, for the progress line
   let stalled = 0      // drops in a row with nothing new arriving
   let lastDropAt = -1
+  let renew = false
   while (offset < total) {
     try {
-      offset = await sendPiece(uploadUrl, await headers(), opts.file, offset, total, opts.onProgress)
+      offset = await sendPiece(uploadUrl, await headers(renew), opts.file, offset, total, opts.onProgress)
+      renew = false
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e)
+      // The sign-in ran out between pieces: renewed before the next one.
+      renew = saysExpired(reason)
       resumes++
       // MAX_RESUMES counts drops IN A ROW. Counted over the whole file, a big
       // video on a flaky line failed after 13 drops even though every one of
@@ -84,7 +98,7 @@ export async function uploadResumable(opts: {
       // Where Storage has it up to: everything before this is kept. A missing
       // header is "not known", never zero: zero sent every later piece to the
       // wrong place and used up the pick-ups.
-      const at = await fetch(uploadUrl, { method: 'HEAD', headers: await headers(), signal: AbortSignal.timeout(20_000) }).catch(() => null)
+      const at = await fetch(uploadUrl, { method: 'HEAD', headers: await headers(renew), signal: AbortSignal.timeout(20_000) }).catch(() => null)
       const h = at?.headers.get('Upload-Offset') ?? null
       const known = h === null ? NaN : Number(h)
       if (at && at.ok && Number.isFinite(known) && known >= 0) offset = known

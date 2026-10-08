@@ -43,6 +43,7 @@ import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
+import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal, sizeWords } from '@/lib/clip-source-limits'
 import { FILES_REMOVED } from '@/lib/liftoff-cleanup'
 import { liftoffEstimate, estimateWords, overnightWorthy, foldSpeed, speedOf, UP_SPEED_KEY, AMAZON_US_PER_DAY } from '@/lib/liftoff-estimate'
@@ -1163,7 +1164,7 @@ export default function LaunchBoard() {
           await uploadResumable({
             supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
             anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            getAccessToken: async () => (await supabase.auth.getSession()).data.session?.access_token ?? null,
+            getAccessToken: (force) => freshAccessToken(supabase, force),
             bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
             onProgress: ({ sent }) => mark(key, { state: 'uploading', sent, lastMoveAt: Date.now() }),
             onResume: ({ resumes, reason }) => mark(key, { tries: resumes + 1, error: `Picked up where it stopped after: ${reason}` }),
@@ -1180,14 +1181,15 @@ export default function LaunchBoard() {
         // TWO RETRIES, each from a fresh session: a stalled connection does not
         // start moving again by being waited on.
         for (let attempt = 1; attempt <= 3 && !resumed; attempt++) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (!session) throw new Error('Signed out during the upload. Sign in again and add this one again.')
+          // A token good for the whole upload, renewed if it was about to run out.
+          const token = await freshAccessToken(supabase, attempt > 1)
+          if (!token) throw new Error('Signed out during the upload. Sign in again and add this one again.')
           mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: attempt, error: undefined })
           try {
             await uploadWithProgress({
               supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
               anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-              accessToken: session.access_token,
+              accessToken: token,
               bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
               onProgress: ({ sent }) => mark(key, { sent, lastMoveAt: Date.now() }),
               onSent: () => mark(key, { state: 'finishing', sentAt: Date.now() }),
@@ -1216,7 +1218,7 @@ export default function LaunchBoard() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : `Could not upload ${file.name}.`
         // A refusal for size says so, rather than storage's raw words.
-        mark(key, { state: 'failed', error: storageSizeRefusal(msg, file.size) || msg })
+        mark(key, { state: 'failed', error: storageSizeRefusal(msg, file.size) || (saysExpired(msg) ? 'Your sign-in ran out during the upload and could not be renewed. Refresh the page, sign in if asked, and add this video again.' : msg) })
       }
 
       // Its turn to be added, after the file before it.

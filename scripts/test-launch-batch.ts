@@ -2322,6 +2322,19 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a row with its file removed offers no Try again', /startsWith\(FILES_REMOVED\)/.test(BOARD))
 }
 
+// ── A SIGN-IN THAT RUNS OUT MID-UPLOAD IS RENEWED (Seb, 2026-10-08) ─────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const F = require('../lib/fresh-token') as typeof import('../lib/fresh-token')
+  const tok = (expSec: number) => `x.${Buffer.from(JSON.stringify({ exp: expSec })).toString('base64url')}.y`
+  check('a token\'s expiry is read from the token', F.jwtExpiresAt(tok(1791500000)) === 1791500000 * 1000 && F.jwtExpiresAt('nonsense') === null)
+  check('Storage\'s expired-token answer is recognised', F.saysExpired('Storage said 401: {"statusCode":"403","error":"Unauthorized","message":"\\"exp\\" claim timestamp check failed"}') && F.saysExpired('jwt expired') && !F.saysExpired('The connection dropped.'))
+  const RES = read('lib/upload-resumable.ts')
+  check('an expired token at the start is renewed and asked again, not taken as "no resumable upload"', /if \(created\.status !== 201 && saysExpired\(msg\)\) \{\s*created = await open\(true\)/.test(RES))
+  check('a piece refused as expired is renewed before the next one', /renew = saysExpired\(reason\)/.test(RES) && /await headers\(renew\)/.test(RES))
+  check('the page renews the token rather than reusing the cached one', /getAccessToken: \(force\) => freshAccessToken\(supabase, force\)/.test(BOARD) && /freshAccessToken\(supabase, attempt > 1\)/.test(BOARD))
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
