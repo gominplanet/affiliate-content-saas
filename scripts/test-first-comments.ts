@@ -182,6 +182,18 @@ check('a deleted video keeps its row when anything was made from it',
     && firstCommentDue({ publish_at: new Date(now - 60_000).toISOString(), last_checked_at: null }, now))
 }
 
+{
+  // Seb, 2026-10-08: recent videos listed as bare ids, "no product link".
+  const LIST = read('app/api/youtube/first-comment/videos/route.ts')
+  const POST = read('app/api/youtube/first-comment/route.ts')
+  const UI = read('components/first-comments/OlderVideos.tsx')
+  const FILL = read('lib/video-details-fill.ts')
+  check('a video known only by id gets its real title and description before it is listed', /fillMissingVideoDetails\(createAdminClient\(\), user\.id, bare\)/.test(LIST) && /descriptionKnown: v\.description != null/.test(LIST))
+  check('a comment is never written from a description MVP never read', /if \(!text && vid && \(!String\(vid\.title \|\| ''\)\.trim\(\) \|\| vid\.description == null\)\)/.test(POST) && /fillMissingVideoDetails\(admin, g\.user\.id, \[videoId\]\)/.test(POST))
+  check('the list never claims "no product link" about an unread description', /v\.descriptionKnown === false \? 'MVP could not read/.test(UI))
+  check('filling only adds what was missing, never replaces a title or description', /if \(!String\(row\.title \|\| ''\)\.trim\(\) && v\.title\) patch\.title = v\.title/.test(FILL) && /row\.description == null \|\| \(!String\(row\.description\)\.trim\(\) && v\.description\)/.test(FILL))
+}
+
 if (failures.length) {
   console.error(`\n❌ first-comments: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

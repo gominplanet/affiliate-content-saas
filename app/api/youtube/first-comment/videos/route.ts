@@ -10,6 +10,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { productLinkIn } from '@/lib/first-comment-text'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { fillMissingVideoDetails } from '@/lib/video-details-fill'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -64,6 +66,22 @@ export async function GET(req: Request) {
   const withFc = list.map((v) => ({ v, fc: byVideo.get(v.youtube_video_id) ?? null }))
   const shown = missing ? withFc.filter((x) => !x.fc || x.fc.state === 'failed' || x.fc.state === 'cancelled') : withFc
 
+  // VIDEOS KNOWN ONLY BY ID get their real title, description and thumbnail
+  // from YouTube before they are shown (lib/video-details-fill), so the list
+  // never says "no product link" about a description MVP never read.
+  const page = shown.slice(offset, offset + limit)
+  const bare = page.filter(({ v }) => !String(v.title || '').trim() || v.description == null).map(({ v }) => v.youtube_video_id)
+  if (bare.length) {
+    const filled = await fillMissingVideoDetails(createAdminClient(), user.id, bare).catch(() => new Map())
+    for (const x of page) {
+      const f = filled.get(x.v.youtube_video_id)
+      if (!f) continue
+      if (!String(x.v.title || '').trim()) x.v.title = f.title || x.v.title
+      if (x.v.description == null || !String(x.v.description).trim()) x.v.description = f.description
+      if (!x.v.thumbnail_url) x.v.thumbnail_url = f.thumbnailUrl
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     missingTable,
@@ -78,7 +96,7 @@ export async function GET(req: Request) {
       none: withFc.filter((x) => !x.fc || x.fc.state === 'failed' || x.fc.state === 'cancelled').length,
     },
     truncated: (vids ?? []).length >= SCAN,
-    videos: shown.slice(offset, offset + limit).map(({ v, fc }) => ({
+    videos: page.map(({ v, fc }) => ({
       youtubeVideoId: v.youtube_video_id,
       title: v.title,
       thumbnailUrl: v.thumbnail_url,
@@ -86,6 +104,8 @@ export async function GET(req: Request) {
       views: v.view_count,
       // Whether the comment will carry a product link, so the list can say.
       productLink: productLinkIn(v.description),
+      // Null description: never read, so "no link" would be a guess.
+      descriptionKnown: v.description != null,
       firstComment: fc ? { id: fc.id, state: fc.state, commentId: fc.comment_id, pinned: fc.pinned, pinError: fc.pin_error, lastError: fc.last_error, text: fc.text, postedAt: fc.posted_at } : null,
     })),
   })

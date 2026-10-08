@@ -17,6 +17,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { postFirstCommentIfPublic, type FirstCommentRow } from '@/lib/first-comments'
 import { writeFirstComment } from '@/lib/first-comment-writer'
 import { productLinkIn } from '@/lib/first-comment-text'
+import { fillMissingVideoDetails } from '@/lib/video-details-fill'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -55,8 +56,15 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
   // The video's channel, when MVP knows it; the job asks YouTube either way.
-  const { data: vid } = await admin.from('youtube_videos').select('channel_id,title,description')
+  let { data: vid } = await admin.from('youtube_videos').select('channel_id,title,description')
     .eq('user_id', g.user.id).eq('youtube_video_id', videoId).maybeSingle()
+  // NEVER WRITTEN FROM A DESCRIPTION MVP NEVER READ: a video saved by id only
+  // gets its real title and description from YouTube first, or its comment
+  // would go out without the product link the video has.
+  if (!text && vid && (!String(vid.title || '').trim() || vid.description == null)) {
+    const f = (await fillMissingVideoDetails(admin, g.user.id, [videoId]).catch(() => new Map())).get(videoId)
+    if (f) vid = { ...vid, title: String(vid.title || '').trim() ? vid.title : f.title, description: vid.description == null || !String(vid.description).trim() ? f.description : vid.description, channel_id: vid.channel_id || f.channelId }
+  }
   const channel = /^UC[\w-]{22}$/.test(String(vid?.channel_id || '')) ? String(vid?.channel_id) : null
   // NO TEXT IS NOT NO COMMENT. A push whose generated comment came back empty
   // used to queue nothing and say nothing; the comment is written here instead,

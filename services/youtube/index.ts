@@ -522,6 +522,32 @@ export class YouTubeOAuthService {
     return out
   }
 
+  /** Title, description, channel and thumbnail for specific videos, as this
+   *  login sees them (chunked 50 per call, 1 unit each). For videos MVP holds
+   *  only by id, so what it shows and writes comes from the real video. */
+  async getVideoSnippets(ids: string[]): Promise<Record<string, { title: string; description: string; channelId: string | null; channelTitle: string | null; thumbnailUrl: string | null; publishedAt: string | null }>> {
+    const out: Record<string, { title: string; description: string; channelId: string | null; channelTitle: string | null; thumbnailUrl: string | null; publishedAt: string | null }> = {}
+    const uniq = [...new Set((ids || []).filter(Boolean))]
+    for (let i = 0; i < uniq.length; i += 50) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'snippet', id: uniq.slice(i, i + 50).join(',') })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const v of (data.items ?? []) as any[]) {
+        if (!v?.id) continue
+        const t = v.snippet?.thumbnails || {}
+        out[v.id] = {
+          title: String(v.snippet?.title ?? ''),
+          description: String(v.snippet?.description ?? ''),
+          channelId: v.snippet?.channelId ?? null,
+          channelTitle: v.snippet?.channelTitle ?? null,
+          thumbnailUrl: (t.medium || t.high || t.default)?.url ?? null,
+          publishedAt: v.snippet?.publishedAt ?? null,
+        }
+      }
+    }
+    return out
+  }
+
   /** The channel a video is on, as YouTube says, or null when this login
    *  cannot see it (a private video on another channel reads as null). */
   async getVideoChannelId(videoId: string): Promise<string | null> {

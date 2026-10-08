@@ -28,7 +28,7 @@ type FirstComment = {
 }
 type Video = {
   youtubeVideoId: string; title: string | null; thumbnailUrl: string | null
-  publishedAt: string | null; views: number | null; productLink: string | null
+  publishedAt: string | null; views: number | null; productLink: string | null; descriptionKnown?: boolean
   firstComment: FirstComment | null
 }
 type Counts = { videos: number; pinned: number; postedNotPinned: number; waiting: number; none: number }
@@ -225,16 +225,16 @@ export default function OlderVideos() {
             <li key={v.youtubeVideoId} className="card p-2.5 flex items-start gap-3">
               <input type="checkbox" className="mt-1" disabled={!can || running} checked={selected.has(v.youtubeVideoId)} onChange={() => toggle(v.youtubeVideoId)}
                 aria-label={`Choose ${v.title || v.youtubeVideoId}`} />
-              {v.thumbnailUrl
+              {(v.thumbnailUrl || /^[A-Za-z0-9_-]{11}$/.test(v.youtubeVideoId))
                 // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={v.thumbnailUrl} alt="" width={96} height={54} className="rounded object-cover shrink-0" style={{ width: 96, height: 54 }} />
+                ? <img src={v.thumbnailUrl || `https://i.ytimg.com/vi/${v.youtubeVideoId}/mqdefault.jpg`} alt="" width={96} height={54} className="rounded object-cover shrink-0" style={{ width: 96, height: 54 }} />
                 : <div className="rounded bg-black/5 shrink-0" style={{ width: 96, height: 54 }} />}
               <div className="min-w-0 flex-1 text-[12.5px]">
                 <a href={`https://www.youtube.com/watch?v=${v.youtubeVideoId}`} target="_blank" rel="noreferrer" className="font-medium block truncate hover:underline" style={{ color: 'var(--text)' }}>{v.title || v.youtubeVideoId}</a>
                 <span className="block text-[11.5px] text-[#86868b] tabular-nums">
                   {v.publishedAt ? new Date(v.publishedAt).toLocaleDateString() : 'Date unknown'}
                   {v.views != null ? ` · ${v.views.toLocaleString()} views` : ''}
-                  {' · '}{v.productLink ? 'the comment carries the product link in its description' : 'no product link in its description, so the comment has none'}
+                  {' · '}{v.productLink ? 'the comment carries the product link in its description' : v.descriptionKnown === false ? 'MVP could not read this video\'s description from YouTube yet; it reads it again when posting' : 'no product link in its description, so the comment has none'}
                 </span>
                 {status && <span className="block text-[11.5px] mt-0.5" style={{ color: status.c }}>{status.t}</span>}
                 {fc?.text && fc.state !== 'failed' && <span className="block text-[11.5px] mt-0.5 text-[#6e6e73] dark:text-[#aeaeb2] line-clamp-2">&ldquo;{fc.text}&rdquo;</span>}
