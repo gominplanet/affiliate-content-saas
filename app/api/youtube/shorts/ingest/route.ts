@@ -17,7 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { ingestConfigured, ingestYouTubeVideo } from '@/lib/youtube-ingest'
+import { ingestConfigured, ingestYouTubeVideoWhy, ingestFailureWords } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { hasVideoTools } from '@/lib/amazon-plan'
@@ -82,13 +82,18 @@ export async function POST(request: Request) {
     const ytId = (video.youtube_video_id as string | null) || ''
     if (!ytId) return NextResponse.json({ error: 'This video has no YouTube id to fetch.' }, { status: 400 })
 
-    const result = await ingestYouTubeVideo(ytId, user.id)
-    if (!result) {
+    const got = await ingestYouTubeVideoWhy(ytId, user.id)
+    if (!got.ok) {
+      // WHY, ON SCREEN (Alejandro, 2026-10-08): "not able to fetch the MP4"
+      // said nothing about whether it was YouTube, the video or MVP.
+      console.error('[shorts/ingest] fetch failed', { video: ytId, why: got.why })
       return NextResponse.json({
-        error: "We couldn't fetch this video automatically. Upload the MP4 instead and we'll take it from there.",
+        error: `We couldn't fetch this video automatically: ${ingestFailureWords(got.why)}. Upload the MP4 instead and we'll take it from there.`,
+        why: got.why,
         needsUpload: true,
       }, { status: 502 })
     }
+    const result = got.result
 
     try {
       await sb.from('youtube_videos').update(

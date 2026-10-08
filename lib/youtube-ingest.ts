@@ -163,7 +163,8 @@ export function hasAudioTrack(info: AudioTrackInfo | null, lang: string): boolea
 /**
  * Ask the downloader service to fetch a YouTube video and return a hosted MP4
  * URL. Returns null when unconfigured or on any failure — the caller then falls
- * back to prompting the creator to upload the file.
+ * back to prompting the creator to upload the file. ingestYouTubeVideoWhy says
+ * why it failed, for a screen that should.
  */
 export async function ingestYouTubeVideo(
   youtubeVideoId: string,
@@ -176,8 +177,24 @@ export async function ingestYouTubeVideo(
    */
   opts?: { audioLanguage?: string | null },
 ): Promise<IngestResult | null> {
+  const r = await ingestYouTubeVideoWhy(youtubeVideoId, userId, opts)
+  return r.ok ? r.result : null
+}
+
+/**
+ * The same fetch, with the reason when it fails (Alejandro, 2026-10-08: a
+ * Short "gives an error not being able to fetch the MP4", and the screen
+ * could not say why, because every failure came back as the same null). The
+ * service digs yt-dlp's own ERROR line out and returns it as { error }.
+ */
+export async function ingestYouTubeVideoWhy(
+  youtubeVideoId: string,
+  userId?: string,
+  opts?: { audioLanguage?: string | null },
+): Promise<{ ok: true; result: IngestResult } | { ok: false; why: string }> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
-  if (!base || !youtubeVideoId) return null
+  if (!base) return { ok: false, why: 'not-configured' }
+  if (!youtubeVideoId) return { ok: false, why: 'no YouTube id' }
   const wantLang = (opts?.audioLanguage || '').trim().toLowerCase() || null
   try {
     const res = await fetch(`${base}/ingest`, {
@@ -194,26 +211,49 @@ export async function ingestYouTubeVideo(
       // Downloading + uploading a long video takes a while; give the service room.
       signal: AbortSignal.timeout(280_000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      let msg = body
+      try { const j = JSON.parse(body) as { error?: unknown }; if (typeof j?.error === 'string' && j.error) msg = j.error } catch { /* raw */ }
+      return { ok: false, why: `HTTP ${res.status}: ${msg || 'no reason given'}`.slice(0, 400) }
+    }
     const data = await res.json() as {
       url?: string; durationSeconds?: number; audioLanguage?: unknown; audioLanguageNote?: unknown
     }
-    if (!data?.url || !/^https:\/\//i.test(data.url)) return null
+    if (!data?.url || !/^https:\/\//i.test(data.url)) return { ok: false, why: 'the service answered without a video link' }
     // Read the SERVICE's answer, never echo the request. An older service that
     // does not know the field returns undefined, which becomes null here and
     // correctly reads as "this is the original audio".
     const got = typeof data.audioLanguage === 'string' ? data.audioLanguage : null
     return {
-      url: data.url,
-      durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : null,
-      audioLanguage: got,
-      audioLanguageNote: typeof data.audioLanguageNote === 'string'
-        ? data.audioLanguageNote
-        : (wantLang && !got ? `no ${wantLang} audio track on this video` : null),
+      ok: true,
+      result: {
+        url: data.url,
+        durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : null,
+        audioLanguage: got,
+        audioLanguageNote: typeof data.audioLanguageNote === 'string'
+          ? data.audioLanguageNote
+          : (wantLang && !got ? `no ${wantLang} audio track on this video` : null),
+      },
     }
-  } catch {
-    return null
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    return { ok: false, why: /abort|timeout/i.test(m) ? 'timeout' : `the service did not answer (${m})`.slice(0, 300) }
   }
+}
+
+/** A failed fetch in a creator's words, from the service's reason. Pure. */
+export function ingestFailureWords(why: string): string {
+  const w = String(why || '')
+  if (w === 'not-configured') return 'automatic fetch is not set up'
+  if (w === 'timeout') return 'the downloader took longer than five minutes'
+  if (/private video|members[- ]only|join this channel/i.test(w)) return 'YouTube says this video is private or members only'
+  if (/video unavailable|has been removed|no longer available/i.test(w)) return 'YouTube says this video is unavailable'
+  if (/not a bot|sign in to confirm/i.test(w)) return 'YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in)'
+  if (/DRM/i.test(w)) return 'YouTube only offered a protected copy'
+  if (/HTTP 401|HTTP 403/.test(w) && !/ERROR/i.test(w)) return 'the downloader refused MVP\u2019s key'
+  if (/did not answer|ECONNREFUSED|ENOTFOUND|HTTP 50[234]: (?!.*ERROR)/i.test(w)) return 'the downloader is not answering'
+  return `the downloader said: ${w.replace(/^HTTP \d+: /, '').replace(/^ERROR:\s*/i, '').slice(0, 200)}`
 }
 
 /**
