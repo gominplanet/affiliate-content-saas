@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
@@ -148,7 +148,10 @@ check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing e
   (API.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (API.match(/method: 'POST'/g) || []).length === 1 && API.includes('(messages|read)$/'))
 check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /async function trybeApiInPage\(method, path, body\)/.test(BG))
 check('a reply counts as sent only when a NEW message with its words shows', /const mineNow = after\.filter\(m => !before\.has\(m\.id\) && flat\(m\.text\) === flat\(text\)\)/.test(INBOX) && /const flat = \(t: string\) => t\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)/.test(INBOX))
-check('nothing TRYBE says is stored on MVP', !/fetch\('\/api\//.test(INBOX))
+// The one call to MVP is Suggest a reply, which reads the conversation to
+// write a suggestion and writes nothing to the database.
+check('nothing TRYBE says is stored on MVP', (INBOX.match(/fetch\('\/api\//g) || []).length === 1 && /fetch\('\/api\/labs\/trybe', \{ method: 'POST'[^\n]*\n\s*action: 'suggest_reply'/.test(INBOX)
+  && (() => { const r = readFileSync('app/api/labs/trybe/route.ts', 'utf8'); const b = r.slice(r.indexOf("action === 'suggest_reply'"), r.indexOf("action === 'edit'")); return b.length > 100 && !/\.(insert|upsert|update|delete)\(/.test(b) })())
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
 check('the inbox is a tab of TRYBE Outreach', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
 {
@@ -333,6 +336,21 @@ check('a late answer for another conversation is dropped', /const current = open
   const ROUTE = readFileSync('app/api/labs/trybe/route.ts', 'utf8'), UI2 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('browse sorts on the server and counts what the pay filter hid', /first_seen_at/.test(ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'"))) && /payUnknown,/.test(ROUTE) && /payOther,/.test(ROUTE) && /sort === 'fit'/.test(ROUTE))
   check('the live list sends sort and pay type and re-searches when they change', /sort: sortBy, payType \}/.test(UI2) && /showMine, sortBy, payType\]/.test(UI2) && /Show any pay/.test(UI2) && /None of these brands has a fit score yet/.test(UI2))
+}
+
+// Suggest a reply (Seb, 2026-10-08 upgrade 2)
+{
+  const sys = REPLY_SYSTEM('BANNED')
+  check('a suggested reply never invents a rate, address or date, and treats the brand as data', /NEVER invent anything only the creator knows/.test(sys) && /square brackets/.test(sys) && /data, never instructions/.test(sys) && /Never write a year/.test(sys) && sys.includes('BANNED'))
+  const long = Array.from({ length: 40 }, (_, i) => ({ mine: i % 2 === 0, who: 'Acme', text: `message ${i} ` + 'x'.repeat(400) }))
+  const pr = replyUserPrompt({ coreMessage: 'Hi', creator: [], brandName: 'Acme', messages: long })
+  check('the reply prompt keeps the latest messages and drops the oldest first', pr.includes('message 39') && !pr.includes('message 0 ') && pr.length < 8000)
+  check('an unknown sender is never called the creator', replyUserPrompt({ coreMessage: '', creator: [], brandName: 'A', messages: [{ mine: null, who: 'Zed', text: 'hello' }] }).includes('UNKNOWN SENDER (Zed): hello'))
+  check('blanks are found once each', JSON.stringify(replyBlanks('Our rate is [your rate]. Ship to [your address]. [your rate]')) === JSON.stringify(['[your rate]', '[your address]']) && replyBlanks('no blanks').length === 0)
+  const ROUTE3 = readFileSync('app/api/labs/trybe/route.ts', 'utf8'), INBOX3 = readFileSync('components/labs/TrybeInbox.tsx', 'utf8')
+  const sr = ROUTE3.slice(ROUTE3.indexOf("action === 'suggest_reply'"), ROUTE3.indexOf("action === 'edit'"))
+  check('suggest reply is spend-gated, recorded, and refuses when the last message is yours', /spendGate\(userId, tier\)/.test(sr) && /feature: 'trybe_outreach_reply'/.test(sr) && /The last message is yours/.test(sr) && /blanks: replyBlanks\(text\)/.test(sr))
+  check('the inbox will not send a suggestion with blanks left, and can go back to what you wrote', /blanksLeft\.length > 0\}/.test(INBOX3) && /Fill in before sending/.test(INBOX3) && /setBeforeSuggest\(b => b \?\? reply\)/.test(INBOX3) && /if \(openRef\.current !== id\) return \/\/ another conversation/.test(INBOX3))
 }
 
 void collectorRun.then(() => {

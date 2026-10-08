@@ -38,6 +38,7 @@ import {
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
+  REPLY_SYSTEM, replyUserPrompt, replyBlanks,
 } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -649,6 +650,37 @@ export async function POST(request: Request) {
       }
     }))
     return NextResponse.json({ ok: true, results })
+  }
+
+  if (action === 'suggest_reply') {
+    // The conversation comes from the page: MVP's server cannot reach TRYBE,
+    // SCOUT read it from the creator's own tab. Every field is capped.
+    const raw = Array.isArray(body.messages) ? body.messages : []
+    const messages = raw.slice(-30).map(m => {
+      const o = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>
+      return { mine: o.mine === true ? true : o.mine === false ? false : null, who: typeof o.who === 'string' ? o.who.slice(0, 80) : '', text: typeof o.text === 'string' ? o.text.slice(0, 2000) : '' }
+    }).filter(m => m.text.trim())
+    const brandName = typeof body.brandName === 'string' ? body.brandName.slice(0, 120) : 'the brand'
+    if (!messages.length) return NextResponse.json({ error: 'There is nothing in this conversation to reply to yet.' }, { status: 400 })
+    if (messages[messages.length - 1].mine === true) return NextResponse.json({ error: 'The last message is yours. MVP suggests a reply once the brand answers.' }, { status: 400 })
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    const settings = await readSettings(admin, ownerId)
+    const creator = await writerFacts(admin, ownerId)
+    try {
+      const msg = await createAnthropicClient().messages.create({
+        model: MODEL,
+        max_tokens: 400,
+        system: REPLY_SYSTEM(BANNED_RULE),
+        messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) }],
+      })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_reply', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)
+      if (!text) return NextResponse.json({ error: 'The suggestion came back empty. Try again.' }, { status: 502 })
+      return NextResponse.json({ ok: true, text, blanks: replyBlanks(text) })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not write a suggestion: ${e.message}` : 'MVP could not write a suggestion.' }, { status: 502 })
+    }
   }
 
   if (action === 'edit') {

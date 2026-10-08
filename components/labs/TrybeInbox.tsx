@@ -18,9 +18,10 @@
 // A reply counts as sent only when it shows up in the conversation after.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle } from 'lucide-react'
+import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { replyBlanks } from '@/lib/trybe-outreach'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
@@ -214,6 +215,12 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   const openRef = useRef<string | null>(null)
   const listing = useRef(false)
   const [readNote, setReadNote] = useState<string | null>(null)
+  // SUGGEST A REPLY (Seb, 2026-10-08 upgrade 2): what the box held before, to
+  // put back, and the [brackets] the suggestion left for the creator to fill.
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestNote, setSuggestNote] = useState<string | null>(null)
+  const [beforeSuggest, setBeforeSuggest] = useState<string | null>(null)
+  const [blanks, setBlanks] = useState<string[]>([])
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
 
   const loadList = useCallback(async (): Promise<Conversation[] | null> => {
@@ -276,7 +283,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
 
   async function open(c: Conversation) {
     openRef.current = c.id
-    setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null); setReadNote(null)
+    setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null); setReadNote(null); setSuggestNote(null); setBeforeSuggest(null); setBlanks([])
     const list = await loadMessages(c.id)
     if (c.unread > 0) await markRead(c, list)
   }
@@ -296,6 +303,27 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     const fresh = await loadList()
     const now = fresh?.find(x => x.id === c.id)
     if (now && now.unread > 0) setReadNote(`TRYBE still counts ${now.unread} unread here. It may clear when you open it on TRYBE.`)
+  }
+
+  async function suggestReply() {
+    const id = openId, convo = convos?.find(c => c.id === id)
+    if (!id || !msgs?.length) return
+    setSuggesting(true); setSuggestNote(null)
+    try {
+      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })),
+      }) })
+      const d = await r.json().catch(() => ({}))
+      if (openRef.current !== id) return // another conversation is open now
+      if (!r.ok || !d.text) { setSuggestNote(d.error || `MVP could not write a suggestion (${r.status}).`); return }
+      // Suggest another keeps what the creator wrote themselves to go back to.
+      setBeforeSuggest(b => b ?? reply)
+      setReply(d.text)
+      setBlanks(Array.isArray(d.blanks) ? d.blanks : replyBlanks(d.text))
+      setSendNote(null)
+    } catch {
+      if (openRef.current === id) setSuggestNote('MVP could not write a suggestion. Check your connection and try again.')
+    } finally { setSuggesting(false) }
   }
 
   async function sendReply() {
@@ -321,7 +349,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
       const mineNow = after.filter(m => !before.has(m.id) && flat(m.text) === flat(text))
       const seen = mineNow.length > 0
       if (seen) {
-        setReply(''); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' })
+        setReply(''); setBeforeSuggest(null); setBlanks([]); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' })
         // A REPLY SENT HERE IS YOURS FOR CERTAIN: whatever id TRYBE gave its
         // sender is you, so every message from that id lines up as yours.
         const learned = mineNow.flatMap(m => m.whoIds)
@@ -338,6 +366,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     } finally { setSending(false) }
   }
 
+  // Brackets from a suggestion still in the box: the reply is not ready yet.
+  const blanksLeft = blanks.filter(b => reply.includes(b))
+  const lastIsYours = !!msgs?.length && msgs[msgs.length - 1].mine === true
   const openConvo = useMemo(() => convos?.find(c => c.id === openId) || null, [convos, openId])
   const card = 'rounded-2xl border'
   const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
@@ -400,13 +431,30 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
             <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
               <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3} placeholder="Write a reply. Line breaks are kept."
                 className="w-full rounded-lg border p-2.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-              <div className="flex items-center gap-3 mt-2">
+              {blanksLeft.length > 0 && (
+                <p className="text-[12px] mt-1.5 inline-flex items-start gap-1" style={{ color: AMBER }}>
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Fill in before sending: {blanksLeft.join(', ')}. MVP never guesses a rate, an address or a date for you.
+                </p>
+              )}
+              {suggestNote && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{suggestNote}</p>}
+              <div className="flex flex-wrap items-center gap-3 mt-2">
+                <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
+                  title={lastIsYours ? 'The last message is yours. MVP suggests a reply once the brand answers.' : !msgs?.length ? 'Open a conversation with messages first.' : 'MVP writes a reply to the brand\u2019s latest message in your voice. You edit it, then send.'}>
+                  {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {beforeSuggest !== null ? 'Suggest another' : 'Suggest a reply'}
+                </button>
+                {beforeSuggest !== null && (
+                  <button onClick={() => { setReply(beforeSuggest); setBeforeSuggest(null); setBlanks([]) }} className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>
+                    <Undo2 size={12} /> {beforeSuggest ? 'Back to what you wrote' : 'Clear'}
+                  </button>
+                )}
                 {sendNote && (
                   <span className="text-[12px] inline-flex items-center gap-1" style={{ color: sendNote.tone === 'ok' ? '#16A34A' : sendNote.tone === 'bad' ? RED : AMBER }}>
                     {sendNote.tone !== 'ok' && <AlertTriangle size={12} />} {sendNote.text}
                   </span>
                 )}
-                <button onClick={() => void sendReply()} disabled={sending || !reply.trim()} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                <button onClick={() => void sendReply()} disabled={sending || suggesting || !reply.trim() || blanksLeft.length > 0}
+                  title={blanksLeft.length ? `Fill in ${blanksLeft.join(', ')} first.` : undefined} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
                   {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send reply
                 </button>
               </div>
