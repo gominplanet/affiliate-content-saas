@@ -2,7 +2,7 @@
 // server-side with the service-role client (only PUBLISHED pages are shown).
 // Phone-first: this is what someone taps from an Instagram/TikTok bio.
 
-import { shopTileImage } from '@/lib/tile-image'
+import { shopTileImage, healShopTiles } from '@/lib/tile-image'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { Youtube, Instagram, Facebook, Twitter, Music2, AtSign, Globe, Link2 } from 'lucide-react'
@@ -66,7 +66,9 @@ async function loadPage(handle: string): Promise<{ page: LinkPage; items: LinkPa
   if (!page) return null
   const { data: items } = await admin.from('link_page_items').select('*')
     .eq('page_id', page.id).eq('hidden', false).order('position', { ascending: true })
-  return { page: page as LinkPage, items: (items ?? []) as LinkPageItem[] }
+  // A card whose picture is a YouTube thumbnail, or none, gets a real one.
+  const healed = await healShopTiles(admin, page.user_id as string, (items ?? []) as LinkPageItem[])
+  return { page: page as LinkPage, items: healed }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {

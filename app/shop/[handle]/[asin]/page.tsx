@@ -13,7 +13,7 @@
 // page it opens match. A product no longer on the page sends the visitor to
 // the whole shop rather than to an error.
 
-import { shopTileImage } from '@/lib/tile-image'
+import { shopTileImage, healShopTiles } from '@/lib/tile-image'
 import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -40,7 +40,8 @@ async function load(handle: string, rawAsin: string): Promise<Loaded | null> {
     admin.from('youtube_videos').select('youtube_video_id').eq('user_id', page.user_id).eq('asin', asin)
       .order('published_at', { ascending: false }).limit(1).maybeSingle().then((r: { data: { youtube_video_id?: string } | null }) => r.data?.youtube_video_id || null, () => null),
   ])
-  return { page: page as LinkPage, item: item as LinkPageItem, blogUrl, videoId: video }
+  const [healed] = await healShopTiles(admin, page.user_id as string, [item as LinkPageItem])
+  return { page: page as LinkPage, item: healed, blogUrl, videoId: video }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string; asin: string }> }): Promise<Metadata> {

@@ -58,18 +58,58 @@ export async function tileImageFor(
   const a = String(asin ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(a)) return null
 
+  return (await cachedProductImage(db, a)) ?? amazonAsinImage(a)
+}
+
+/** The product's photo from MVP's own caches, or null. */
+export async function cachedProductImage(db: Db, asin: string): Promise<string | null> {
   for (const table of IMAGE_CACHES) {
     try {
-      const { data } = await db.from(table).select('image_url').eq('asin', a).limit(1).maybeSingle()
+      const { data } = await db.from(table).select('image_url').eq('asin', asin).limit(1).maybeSingle()
       const url = String(data?.image_url ?? '').trim()
-      if (/^https?:\/\//i.test(url)) return url
+      if (/^https?:\/\//i.test(url) && !isYouTubeImage(url)) return url
     } catch {
       // A cache table that does not exist on this database is not a reason to
       // give up on finding a picture.
     }
   }
+  return null
+}
 
-  return amazonAsinImage(a)
+/**
+ * MENDS TILES WHOSE PICTURE IS A YOUTUBE THUMBNAIL, OR NONE, when a shop page
+ * is drawn (Seb, 2026-10-08: the LEVEL8 card still showed nothing after the
+ * first fix, because Amazon's image widget, the last resort, gave nothing for
+ * a new product). In order: the product's photo from MVP's caches, then the
+ * thumbnail MVP made for the creator's video of it, then Amazon's widget. A
+ * real picture found is saved on the tile, so this happens once per tile.
+ */
+export async function healShopTiles<T extends { id: string; image_url: string | null; asin: string | null }>(
+  db: Db, userId: string, items: T[], max = 12,
+): Promise<T[]> {
+  let left = max
+  const out: T[] = []
+  for (const it of items) {
+    const u = String(it.image_url ?? '').trim()
+    const a = String(it.asin ?? '').trim().toUpperCase()
+    const needs = (!/^https?:\/\//i.test(u) || isYouTubeImage(u)) && /^[A-Z0-9]{10}$/.test(a)
+    if (!needs || left <= 0) { out.push(it); continue }
+    left--
+    let found = await cachedProductImage(db, a)
+    if (!found) {
+      try {
+        const { data } = await db.from('launch_items').select('thumbnail_url').eq('user_id', userId).eq('asin', a)
+          .not('thumbnail_url', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
+        const t = String(data?.thumbnail_url ?? '').trim()
+        if (/^https?:\/\//i.test(t) && !isYouTubeImage(t)) found = t
+      } catch { /* no Liftoff video for it */ }
+    }
+    if (found) {
+      try { await db.from('link_page_items').update({ image_url: found }).eq('id', it.id) } catch { /* shown now, saved next time */ }
+      out.push({ ...it, image_url: found })
+    } else out.push(it)
+  }
+  return out
 }
 
 /**

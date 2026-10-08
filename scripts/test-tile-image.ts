@@ -12,7 +12,7 @@
 // through to the next source, and the last source is built from the ASIN with
 // no network call, so there is no path where a caller ends up with null and
 // writes a grey card.
-import { tileImageFor, amazonAsinImage, shopTileImage } from '../lib/tile-image'
+import { tileImageFor, amazonAsinImage, shopTileImage, healShopTiles } from '../lib/tile-image'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -30,6 +30,24 @@ async function main() {
     check('a tile already saved with one shows the product photo instead', shopTileImage(signed, 'B0GL85L61L') === amazonAsinImage('B0GL85L61L'))
     check('a real product photo is kept as it is', shopTileImage('https://m.media-amazon.com/images/I/x.jpg', 'B0GL85L61L') === 'https://m.media-amazon.com/images/I/x.jpg')
     check('with no ASIN the saved picture is still shown rather than nothing', shopTileImage(signed, null) === signed)
+    // Amazon's widget gave nothing for a new product, so a real picture is
+    // found and saved: the thumbnail MVP made for the video of it.
+    const writes: unknown[] = []
+    const db = {
+      from: (t: string) => ({
+        select: () => {
+          const q: Record<string, unknown> = {}
+          const chain = () => q
+          Object.assign(q, { eq: chain, not: chain, order: chain, limit: chain,
+            maybeSingle: async () => ({ data: t === 'launch_items' ? { thumbnail_url: 'https://v3b.fal.media/files/b/x/made.jpeg' } : null }) })
+          return q
+        },
+        update: (v: unknown) => ({ eq: async () => { writes.push([t, v]); return { error: null } } }),
+      }),
+    }
+    const healed = await healShopTiles(db, 'u1', [{ id: 't1', image_url: signed, asin: 'B0GL85L61L' }, { id: 't2', image_url: 'https://m.media-amazon.com/images/I/x.jpg', asin: 'B000000002' }])
+    check('a card with a YouTube thumbnail gets the picture MVP made for the video, and it is saved', healed[0].image_url === 'https://v3b.fal.media/files/b/x/made.jpeg' && JSON.stringify(writes) === JSON.stringify([['link_page_items', { image_url: 'https://v3b.fal.media/files/b/x/made.jpeg' }]]))
+    check('a card with a real picture is left as it is', healed[1].image_url === 'https://m.media-amazon.com/images/I/x.jpg')
   }
 
   const ASIN = 'B0H298X69Z'
