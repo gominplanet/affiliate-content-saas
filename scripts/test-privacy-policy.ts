@@ -45,6 +45,11 @@ check('a whole chunk nobody sees empties nothing', /if \(pending\.length >= 10 &
 check('rows emptied for creators still connected are refilled, and the refill never empties', /export async function restorePass/.test(R) && !/clearYouTubeData/.test(R.slice(R.indexOf('export async function restorePass'))) && /restorePass\(sb, 2000, deadline\)/.test(r('app/api/cron/youtube-data-retention/route.ts')))
 check('the emptied fields include every YouTube field the policy lists',
   ['title', 'description', 'thumbnail_url', 'view_count', 'transcript'].every((f) => new RegExp(`\\b${f}:`).test(R.slice(R.indexOf('YT_CLEARED_FIELDS'), R.indexOf('} as const')))))
+check('an emptied row loses its last-refreshed time, so the refill takes it next run', /update\(\{ yt_refreshed_at: null \}\)/.test(R.slice(R.indexOf('export async function clearYouTubeData'), R.indexOf('type Fresh'))))
+{
+  const A = r('app/api/admin/youtube-restore/route.ts')
+  check('the admin Refill now is admin only and only refills', /if \(caller\?\.tier !== 'admin'\) return NextResponse\.json\(\{ error: 'Admin only' \}, \{ status: 403 \}\)/.test(A) && /restorePass\(sb, 2500/.test(A) && !/clearYouTubeData/.test(A))
+}
 const V = JSON.parse(r('vercel.json')) as { crons: Array<{ path: string }> }
 check('the retention pass runs every day', V.crons.some((c) => c.path === '/api/cron/youtube-data-retention'))
 check('migration 406 adds the refresh stamp, safe to run twice', /add column if not exists yt_refreshed_at/.test(r('supabase/migrations/406_youtube_data_retention.sql')))

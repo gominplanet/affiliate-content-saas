@@ -62,6 +62,9 @@ export async function clearYouTubeData(sb: Sb, userId: string, youtubeVideoIds?:
   const scope = (q: Sb) => (youtubeVideoIds ? q.in('youtube_video_id', youtubeVideoIds) : q)
   await scope(sb.from('youtube_videos').update({ ...YT_CLEARED_FIELDS, updated_at: now }).eq('user_id', userId))
   try { await scope(sb.from('youtube_videos').update({ transcript_cues: null, transcript_cues_fetched_at: null }).eq('user_id', userId)) } catch { /* column missing */ }
+  // AN EMPTIED ROW WAS NOT REFRESHED: its last-refreshed time goes too, so the
+  // refill (restorePass) takes it on its next run instead of a day later.
+  try { await scope(sb.from('youtube_videos').update({ yt_refreshed_at: null }).eq('user_id', userId)) } catch { /* pre-406 */ }
 }
 
 type Fresh = { title: string; description: string; channelTitle: string; channelId: string | null; thumb: string | null; views: number | null }
@@ -208,12 +211,14 @@ export async function retentionPass(sb: Sb, maxRows = 2000, deadlineAt = Infinit
  *  to YouTube in MVP, are asked for again and refilled when YouTube shows
  *  them. Never empties anything. A row asked about is stamped, so one YouTube
  *  no longer shows is asked again a day later, not every run. */
-export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity): Promise<{ restored: number; stillMissing: number; users: number; stoppedFor?: 'quota' | 'time' }> {
+export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity, opts: { userId?: string; everyRow?: boolean } = {}): Promise<{ restored: number; stillMissing: number; users: number; stoppedFor?: 'quota' | 'time' }> {
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString()
-  let { data: rows, error } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id')
-    .eq('title', '').or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${dayAgo}`).limit(maxRows)
+  const base = () => { let q = sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id').eq('title', ''); if (opts.userId) q = q.eq('user_id', opts.userId); return q }
+  // everyRow (the admin's Refill now): every emptied row, whatever it was last
+  // asked, for one creator.
+  let { data: rows, error } = opts.everyRow ? await base().limit(maxRows) : await base().or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${dayAgo}`).limit(maxRows)
   const stampable = !error
-  if (error) ({ data: rows } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id').eq('title', '').limit(maxRows))
+  if (error) ({ data: rows } = await base().limit(maxRows))
   const byUser = new Map<string, Array<{ id: string; channel: string }>>()
   for (const r of (rows ?? []) as Array<{ user_id: string; youtube_video_id: string; channel_id: string }>) {
     if (!/^[A-Za-z0-9_-]{11}$/.test(r.youtube_video_id || '')) continue
