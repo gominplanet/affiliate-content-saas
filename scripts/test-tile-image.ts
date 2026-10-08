@@ -20,6 +20,10 @@ const check = (name: string, cond: boolean, detail?: string) => {
 }
 
 async function main() {
+  // NO REAL KEEPA HERE. Vercel's build has the key, so these checks reached
+  // Keepa, got LEVEL8's real photo where they expected the fallback, and two
+  // production deploys failed on a tree that built clean without the key.
+  delete process.env.KEEPA_API_KEY
   // A YOUTUBE THUMBNAIL IS NOT A SHOP TILE (Seb, 2026-10-08: a pin made from a
   // video showed a broken picture on the shop page; YouTube's signed link for
   // a scheduled video had stopped working).
