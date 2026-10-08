@@ -44,6 +44,7 @@ import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal, sizeWords } from '@/lib/clip-source-limits'
+import { FILES_REMOVED } from '@/lib/liftoff-cleanup'
 import { liftoffEstimate, estimateWords, overnightWorthy, foldSpeed, speedOf, UP_SPEED_KEY, AMAZON_US_PER_DAY } from '@/lib/liftoff-estimate'
 
 const text = { color: 'var(--text)' } as const
@@ -2721,7 +2722,8 @@ export default function LaunchBoard() {
                     it would reach the same past time and keep it private
                     again; what it needs is a new time, which is set in
                     YouTube Studio, and the Open link beside it goes there. */}
-                {it.state === 'blocked' && !/^Kept private\./.test(it.reason || '') && (
+                {/* Nor for one whose file was removed: there is nothing to send. */}
+                {it.state === 'blocked' && !/^Kept private\./.test(it.reason || '') && !(it.reason || '').startsWith(FILES_REMOVED) && (
                   <button onClick={() => void retryItem(it.id)} disabled={busy === 'batch'}
                     className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
                     style={{ borderColor: '#d97706', color: '#d97706' }}>

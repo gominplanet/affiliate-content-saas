@@ -2300,6 +2300,28 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /liftoffEstimate\(\{ bytes: items\.map/.test(BOARD) && /Keep Chrome open and the computer awake/.test(BOARD) && /A good one to start before bed/.test(BOARD) && /measured when you added videos in this browser/.test(BOARD) && /localStorage\.setItem\(UP_SPEED_KEY/.test(BOARD))
 }
 
+// ── FILES ARE NOT KEPT FOR EVER (Seb, 2026-10-08) ───────────────────────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const C = require('../lib/liftoff-cleanup') as typeof import('../lib/liftoff-cleanup')
+  const now = Date.parse('2026-10-08T12:00:00Z')
+  const ago = (d: number) => now - d * C.DAY_MS
+  const base = { state: 'scheduled', youtube_video_id: 'vid00000001', lastAt: ago(3), batchLaunched: true, amazonDone: true, hasCta: true, hasOriginal: true }
+  const f = (o: Partial<typeof base>) => C.cleanupFor({ ...base, ...o }, now)
+  check('a batch never launched loses both files after 2 quiet days, and says why', (() => { const a = f({ batchLaunched: false, state: 'prepared', youtube_video_id: null }); return a.cta && a.original && (a.reason || '').startsWith(C.FILES_REMOVED) })())
+  check('but not after one day', !f({ batchLaunched: false, state: 'prepared', youtube_video_id: null, lastAt: ago(1) }).original)
+  check('on YouTube for 2 days: the CTA copy goes, the original stays for Clip Factory and Global Sync', (() => { const a = f({}); return a.cta && !a.original && a.reason === null })())
+  check('the original goes 30 quiet days after YouTube and Amazon are both done', f({ lastAt: ago(31) }).original && !f({ lastAt: ago(29) }).original && !f({ lastAt: ago(31), amazonDone: false }).original)
+  check('a video that could not go to YouTube loses its files after 2 days', (() => { const a = f({ state: 'blocked', youtube_video_id: null }); return a.cta && a.original && !!a.reason })())
+  check('a launched video still waiting to upload keeps its files 14 days', !f({ state: 'prepared', youtube_video_id: null, lastAt: ago(10) }).original && f({ state: 'prepared', youtube_video_id: null, lastAt: ago(15) }).original)
+  check('nothing is kept past 60 quiet days', f({ lastAt: ago(61), amazonDone: false }).original)
+  const CRON = read('app/api/cron/liftoff-cleanup/route.ts')
+  check('the cleanup removes only our files in the creator\'s own folder, and clears every pointer to them',
+    /path\.split\('\/'\)\[0\] !== it\.user_id/.test(CRON) && /from\('video_masters'\)\.delete\(\)/.test(CRON) && /source_video_url: null/.test(CRON) && /patch\.source_url = null/.test(CRON))
+  check('an unread Amazon grid stops the run rather than reading as done', /coverage: \$\{error\.message\}/.test(CRON))
+  check('a row with its file removed offers no Try again', /startsWith\(FILES_REMOVED\)/.test(BOARD))
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
