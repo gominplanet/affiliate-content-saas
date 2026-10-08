@@ -2306,8 +2306,8 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   const C = require('../lib/liftoff-cleanup') as typeof import('../lib/liftoff-cleanup')
   const now = Date.parse('2026-10-08T12:00:00Z')
   const ago = (d: number) => now - d * C.DAY_MS
-  const base = { state: 'scheduled', youtube_video_id: 'vid00000001', lastAt: ago(3), batchLaunched: true, amazonDone: true, hasCta: true, hasOriginal: true }
-  const f = (o: Partial<typeof base>) => C.cleanupFor({ ...base, ...o }, now)
+  const base: import('../lib/liftoff-cleanup').CleanupItem = { state: 'scheduled', youtube_video_id: 'vid00000001', lastAt: ago(3), batchLaunched: true, amazonDone: true, hasCta: true, hasOriginal: true }
+  const f = (o: Partial<import('../lib/liftoff-cleanup').CleanupItem>) => C.cleanupFor({ ...base, ...o }, now)
   check('a batch never launched loses both files after 2 quiet days, and says why', (() => { const a = f({ batchLaunched: false, state: 'prepared', youtube_video_id: null }); return a.cta && a.original && (a.reason || '').startsWith(C.FILES_REMOVED) })())
   check('but not after one day', !f({ batchLaunched: false, state: 'prepared', youtube_video_id: null, lastAt: ago(1) }).original)
   check('on YouTube for 2 days: the CTA copy goes, the original stays for Clip Factory and Global Sync', (() => { const a = f({}); return a.cta && !a.original && a.reason === null })())
