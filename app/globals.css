@@ -275,3 +275,43 @@ html { scroll-behavior: smooth; }
   background-color: var(--panel);
   border-color: var(--panel-border);
 }
+
+/* TEXT IS ALWAYS READABLE, IN EITHER MODE (Seb, 2026-10-08: a member wrote
+   "it's hard to see the text cause of the color", on the VA permissions
+   panel). About 200 places paint a light-only background (bg-white,
+   bg-gray-50, bg-gray-100) with no dark: version. In dark mode the text
+   inside them inherited the dark theme's near-white text: white on white.
+   This does not change those backgrounds (a white toggle knob or logo badge
+   is meant to stay white); it gives everything inside them the light
+   theme's text colours, the theme variables included, so text that follows
+   --text follows it here too. An element that sets its own dark:bg- is left
+   alone: it already has a dark design. */
+.dark .bg-white:not([class*="dark:bg-"]),
+.dark .bg-gray-50:not([class*="dark:bg-"]),
+.dark .bg-gray-100:not([class*="dark:bg-"]) {
+  --text:   #18181B;
+  --text-2: #52525B;
+  --text-3: #71717A;
+  color: #18181B;
+}
+/* Light grey text written for a dark background, sitting on a light one. */
+.dark .bg-white:not([class*="dark:bg-"]) :is(.dark\:text-gray-200, .dark\:text-gray-300, .dark\:text-gray-400, .dark\:text-zinc-300, .dark\:text-zinc-400),
+.dark .bg-gray-50:not([class*="dark:bg-"]) :is(.dark\:text-gray-200, .dark\:text-gray-300, .dark\:text-gray-400, .dark\:text-zinc-300, .dark\:text-zinc-400),
+.dark .bg-gray-100:not([class*="dark:bg-"]) :is(.dark\:text-gray-200, .dark\:text-gray-300, .dark\:text-gray-400, .dark\:text-zinc-300, .dark\:text-zinc-400) {
+  color: #52525B;
+}
+/* A row that turns white on hover, in dark mode, turns a dark shade instead. */
+.dark .hover\:bg-white:hover:not([class*="dark:hover:bg-"]),
+.dark .hover\:bg-gray-50:hover:not([class*="dark:hover:bg-"]),
+.dark .hover\:bg-gray-100:hover:not([class*="dark:hover:bg-"]) {
+  background-color: var(--surface-2);
+}
+/* And the same the other way: a dark-only background (bg-black, bg-gray-900,
+   bg-zinc-900, bg-neutral-900) in LIGHT mode gives the text inside it the
+   dark theme's text colours, unless the element sets its own text colour. */
+html:not(.dark) :is(.bg-black, .bg-gray-900, .bg-zinc-900, .bg-neutral-900):not([class*="text-"]) {
+  --text:   #FAFAFA;
+  --text-2: #D4D4D8;
+  --text-3: #A1A1AA;
+  color: #FAFAFA;
+}

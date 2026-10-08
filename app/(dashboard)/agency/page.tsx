@@ -434,7 +434,7 @@ export default function AgencyPage() {
               return (
                 <li key={m.id} className="py-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center dark:bg-white/10">
                       {m.role === 'admin' ? <Shield size={16} className="text-amber-600 dark:text-amber-400" /> : <UserIcon size={16} className="text-gray-500 dark:text-gray-400" />}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -459,19 +459,19 @@ export default function AgencyPage() {
                     </button>
                   </div>
                   {editing && memberDraftPerms && (
-                    <div className="mt-3 ml-12 border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                    <div className="mt-3 ml-12 border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2 dark:border-white/10 dark:bg-white/5">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                         {VA_PERMISSION_KEYS.map(key => {
                           const meta = VA_PERMISSION_META[key]
                           return (
-                            <label key={key} className="flex items-start gap-2 cursor-pointer p-1.5 rounded hover:bg-white">
+                            <label key={key} className="flex items-start gap-2 cursor-pointer p-1.5 rounded hover:bg-white dark:hover:bg-white/10">
                               <input
                                 type="checkbox"
                                 checked={memberDraftPerms[key]}
                                 onChange={() => toggleMemberDraftPerm(key)}
                                 className="accent-[#7C3AED] mt-0.5"
                               />
-                              <span className="text-xs">{meta.label}</span>
+                              <span className="text-xs text-gray-800 dark:text-gray-100">{meta.label}</span>
                             </label>
                           )
                         })}
@@ -515,7 +515,7 @@ export default function AgencyPage() {
               const grantedCount = VA_PERMISSION_KEYS.filter(k => invPerms[k]).length
               return (
                 <li key={inv.id} className="py-3 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center dark:bg-white/10">
                     <Mail size={16} className="text-gray-500 dark:text-gray-400" />
                   </div>
                   <div className="flex-1 min-w-0">
