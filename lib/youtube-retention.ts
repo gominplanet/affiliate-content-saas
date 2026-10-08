@@ -39,6 +39,7 @@
 // pass falls back to updated_at, which other features also touch, so it is
 // less strict but never deletes anything it should not.
 
+import { isYouTubeImage } from '@/lib/own-thumbnail'
 import { ytFetch, isQuotaRefusalBody } from '@/lib/youtube-quota'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 
@@ -156,7 +157,11 @@ async function askEveryWay(ids: string[], channel: string, logins: { byChannel: 
 }
 
 async function writeFresh(sb: Sb, userId: string, id: string, f: Fresh, stamp: string, column: 'yt_refreshed_at' | 'updated_at', oldChannel: string) {
-  const patch: Record<string, unknown> = { title: f.title, description: f.description, channel_title: f.channelTitle, thumbnail_url: f.thumb, view_count: f.views, updated_at: stamp }
+  const patch: Record<string, unknown> = { title: f.title, description: f.description, channel_title: f.channelTitle, view_count: f.views, updated_at: stamp }
+  // MVP's own thumbnail stays (lib/own-thumbnail): only a YouTube image, or
+  // none, is replaced by what YouTube reports.
+  const { data: had } = await sb.from('youtube_videos').select('thumbnail_url').eq('user_id', userId).eq('youtube_video_id', id).maybeSingle()
+  if (!had?.thumbnail_url || isYouTubeImage(had.thumbnail_url)) patch.thumbnail_url = f.thumb
   if (column === 'yt_refreshed_at') patch.yt_refreshed_at = stamp
   if ((!oldChannel || oldChannel === 'unknown') && f.channelId) patch.channel_id = f.channelId
   await sb.from('youtube_videos').update(patch).eq('user_id', userId).eq('youtube_video_id', id)

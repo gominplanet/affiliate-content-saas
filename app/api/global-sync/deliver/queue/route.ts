@@ -5,6 +5,7 @@
 // the creator's logged-in Creator Hub session. Returns the localized title and
 // the market's video (the dub when there is one, else the master render) plus
 // the ASIN, per market not yet delivered.
+import { isYouTubeImage } from '@/lib/own-thumbnail'
 import { dailyRoomFor } from '@/lib/daily-uploads'
 import { NextResponse } from 'next/server'
 import { UPLOAD_MARKET, DUBS_ENABLED } from '@/lib/markets'
@@ -125,6 +126,17 @@ export async function GET(req: Request) {
       const fileByYt = new Map(((masters ?? []) as Array<{ youtube_video_id: string; file_url: string }>).map((m) => [m.youtube_video_id, m.file_url]))
       for (const [vid, yt] of ytIdByVideo) { const f = fileByYt.get(yt); if (f) srcByVideo.set(vid, f) }
     } catch { /* table not there yet: the upload is skipped and says so, as before */ }
+  }
+
+  // THE THUMBNAIL MVP MADE FOR A LIFTOFF VIDEO, first (lib/own-thumbnail).
+  // The video row's own can have been replaced by YouTube's image link, which
+  // for a video still private or scheduled serves YouTube's auto frame: three
+  // Amazon uploads went up with a plain frame that way (Seb, 2026-10-08).
+  if (videoIds.length) {
+    const { data: made } = await sb.from('launch_items').select('video_id,thumbnail_url').eq('user_id', user.id).in('video_id', videoIds).not('thumbnail_url', 'is', null)
+    for (const m of (made ?? []) as Array<{ video_id: string; thumbnail_url: string | null }>) {
+      if (m.thumbnail_url && /^https:\/\//i.test(m.thumbnail_url) && !isYouTubeImage(m.thumbnail_url)) thumbByVideo.set(m.video_id, m.thumbnail_url)
+    }
   }
 
   // The text-free thumbnail for non-English markets (migration 306). Read it in

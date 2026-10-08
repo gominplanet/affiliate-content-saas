@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { keepOwnThumbnail } from '@/lib/own-thumbnail'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -138,10 +139,13 @@ export async function POST(request: Request) {
     const incomingIds = videos.map(v => v.youtubeVideoId)
     const { data: existing } = await supabase
       .from('youtube_videos')
-      .select('youtube_video_id')
+      .select('youtube_video_id,thumbnail_url')
       .eq('user_id', ownerId)
       .in('youtube_video_id', incomingIds)
     const existingIds = new Set((existing ?? []).map((r: { youtube_video_id: string }) => r.youtube_video_id))
+    // MVP's own thumbnail is not replaced by YouTube's copy (lib/own-thumbnail).
+    const ownThumb = new Map(((existing ?? []) as Array<{ youtube_video_id: string; thumbnail_url: string | null }>).map((r) => [r.youtube_video_id, r.thumbnail_url]))
+    for (const row of rows) row.thumbnail_url = keepOwnThumbnail(ownThumb.get(row.youtube_video_id), row.thumbnail_url) ?? row.thumbnail_url
     const newVideos = videos.filter(v => !existingIds.has(v.youtubeVideoId))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
