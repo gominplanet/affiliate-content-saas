@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
+import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
 const failures: string[] = []
@@ -351,6 +352,20 @@ check('a late answer for another conversation is dropped', /const current = open
   const sr = ROUTE3.slice(ROUTE3.indexOf("action === 'suggest_reply'"), ROUTE3.indexOf("action === 'edit'"))
   check('suggest reply is spend-gated, recorded, and refuses when the last message is yours', /spendGate\(userId, tier\)/.test(sr) && /feature: 'trybe_outreach_reply'/.test(sr) && /The last message is yours/.test(sr) && /blanks: replyBlanks\(text\)/.test(sr))
   check('the inbox will not send a suggestion with blanks left, and can go back to what you wrote', /blanksLeft\.length > 0\}/.test(INBOX3) && /Fill in before sending/.test(INBOX3) && /setBeforeSuggest\(b => b \?\? reply\)/.test(INBOX3) && /if \(openRef\.current !== id\) return \/\/ another conversation/.test(INBOX3))
+}
+
+// Reply alerts (Seb, 2026-10-08 upgrade 4)
+{
+  const snap = inboxSnapshot([{ name: 'Old', unread: 1, at: 1 }, { name: 'Read', unread: 0, at: 5 }, { name: 'New', unread: 2, at: 9 }])
+  check('the alert counts unread messages, newest conversation first, and skips read ones', snap.unread === 3 && JSON.stringify(snap.names) === JSON.stringify(['New', 'Old']))
+  const t0 = Date.parse('2026-10-08T12:00:00Z')
+  check('an old count is never shown as current', freshUnread({ unread: 4, checkedAt: '2026-10-08T11:00:00Z' }, t0) === 4 && freshUnread({ unread: 4, checkedAt: new Date(t0 - TRYBE_ALERT_FRESH_MS - 1).toISOString() }, t0) === null && freshUnread({ unread: null, checkedAt: '2026-10-08T11:00:00Z' }, t0) === null && freshUnread({ unread: 2, checkedAt: null }, t0) === null)
+  check('the Today line names who wrote and when MVP looked', whoWrote(['A']) === 'A' && whoWrote(['A', 'B']) === 'A and B' && whoWrote(['A', 'B', 'C', 'D']) === 'A, B and 2 more' && checkedAgo('2026-10-08T11:40:00Z', t0) === '20 minutes ago' && checkedAgo('2026-10-08T09:00:00Z', t0) === '3 hours ago')
+  const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8'), HOOK = readFileSync('components/layout/useTrybeAlerts.ts', 'utf8'), TODAY = readFileSync('lib/today-list.ts', 'utf8'), UI4 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('the menu item shows the unread count', /badge: trybeUnread > 0 \? trybeUnread : 'New'/.test(SHELL) && /useTrybeAlerts\(canUsePreview\('trybe_outreach', effectiveTier\), pathname\)/.test(SHELL))
+  check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe-outreach'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
+  check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe-outreach\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
+  check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /if \(inbox\) void reportTrybeInbox\(inbox\.convos\)/.test(UI4) && /get\('tab'\) === 'inbox'/.test(UI4))
 }
 
 void collectorRun.then(() => {

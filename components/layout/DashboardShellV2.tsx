@@ -65,6 +65,7 @@ import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
 import AmazonTagNudge from './AmazonTagNudge'
 import ScoutRequired from './ScoutRequired'
+import { useTrybeAlerts } from './useTrybeAlerts'
 // TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
@@ -377,6 +378,8 @@ export default function DashboardShellV2({
   // the REAL tier so the admin tools + the view-as dropdown never vanish while
   // previewing (you'd have no way back).
   const effectiveTier: Tier = isAdmin && viewAs !== 'admin' ? viewAs : (tier as Tier)
+  // Unread TRYBE messages on the TRYBE Outreach item (upgrade 4).
+  const trybeUnread = useTrybeAlerts(canUsePreview('trybe_outreach', effectiveTier), pathname)
 
   // Paid = any non-trial plan (Creator, Studio, Pro, admin). Not a feature
   // gate on its own — used for generic paid-vs-trial UI copy.
@@ -526,7 +529,7 @@ export default function DashboardShellV2({
         // in the creator's words, SCOUT sends them. Open to Pro (Seb,
         // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
         // PRODUCTS").
-        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE Outreach', gate: canUsePreview('trybe_outreach', effectiveTier), badge: 'New' },
+        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE Outreach', gate: canUsePreview('trybe_outreach', effectiveTier), badge: trybeUnread > 0 ? trybeUnread : 'New' },
       ],
     },
     {

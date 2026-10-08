@@ -26,6 +26,7 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
+import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
@@ -329,6 +330,13 @@ export default function TrybeOutreach() {
     document.addEventListener('visibilitychange', tick)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick) }
   }, [canInbox, loadInbox, tab])
+  // REPLY ALERTS (upgrade 4): every fresh read of the inbox is noted on MVP,
+  // so the menu count and the Today list show it on other pages.
+  useEffect(() => { if (inbox) void reportTrybeInbox(inbox.convos) }, [inbox])
+  // The Today list and the menu count link straight to the Inbox tab.
+  useEffect(() => {
+    try { if (new URLSearchParams(window.location.search).get('tab') === 'inbox') setTab('inbox') } catch { /* no URL */ }
+  }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
   // when the inbox cannot be read. Each brand once per visit.

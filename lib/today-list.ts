@@ -15,6 +15,7 @@ import { HELD_FOR_PAID_PROMOTION } from '@/lib/launch-batch'
 import { canUsePreview } from '@/lib/labs-preview'
 import { REFRESH_AFTER_DAYS } from '@/lib/post-refresh'
 import { listDealPosts } from '@/lib/deal-aftercare-server'
+import { freshUnread, whoWrote, checkedAgo } from '@/lib/trybe-alerts'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -22,7 +23,7 @@ type Sb = any
 export type TodayKind =
   | 'reconnect' | 'liftoff_blocked' | 'liftoff_held' | 'liftoff_launch' | 'liftoff_amazon'
   | 'failed_posts' | 'held_posts' | 'encore' | 'pin_comments' | 'failed_comments'
-  | 'cc_matches' | 'price_alerts' | 'ended_deals' | 'refresh_due'
+  | 'cc_matches' | 'price_alerts' | 'ended_deals' | 'refresh_due' | 'trybe_replies'
 
 export type TodayItem = {
   kind: TodayKind
@@ -47,6 +48,8 @@ const RANK: Record<TodayKind, number> = {
   liftoff_launch: 84,
   failed_comments: 80,
   held_posts: 78,
+  // A brand waiting on an answer is money on the table, and it goes cold.
+  trybe_replies: 74,
   encore: 70,
   cc_matches: 66,
   pin_comments: 60,
@@ -184,6 +187,20 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
       if (error) throw new Error(error)
       const n = posts.filter((p) => p.state === 'ended' && p.phase === 'deal').length
       if (n) items.push(item('ended_deals', 'upkeep', n, `${plural(n, 'deal post has', 'deal posts have')} ended`, 'Turn each into a lasting review so the page keeps earning.', '/ended-deals', 'Convert'))
+    }),
+
+    // TRYBE REPLIES (upgrade 4): what SCOUT last read from the creator's TRYBE
+    // inbox (lib/trybe-alerts.ts), only while recent, and saying when.
+    canUsePreview('trybe_outreach', tier) && read('TRYBE inbox', async () => {
+      const r = await sb.from('trybe_outreach_settings').select('inbox_unread, inbox_unread_names, inbox_checked_at').eq('user_id', ownerId).maybeSingle()
+      if (r.error) throw new Error(r.error.message)
+      const at = (r.data?.inbox_checked_at as string | null) ?? null
+      const n = freshUnread({ unread: r.data?.inbox_unread ?? null, checkedAt: at }, now.getTime())
+      if (!n || !at) return
+      const names = Array.isArray(r.data?.inbox_unread_names) ? (r.data.inbox_unread_names as string[]) : []
+      items.push(item('trybe_replies', 'money', n, `${plural(n, 'unread TRYBE message', 'unread TRYBE messages')}`,
+        `${names.length ? `From ${whoWrote(names)}. ` : ''}Checked ${checkedAgo(at, now.getTime())}. Suggest a reply writes the answer for you.`,
+        '/trybe-outreach?tab=inbox', 'Open inbox'))
     }),
 
     canUsePreview('post_refresh', tier) && read('posts due an update', async () => {
