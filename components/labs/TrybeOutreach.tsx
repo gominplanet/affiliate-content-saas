@@ -20,9 +20,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Plus, Trash2, Tag,
+import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -180,12 +180,38 @@ function convoFor(brand: string, convos: Conversation[]): Conversation | null {
   return hits.sort((x, y) => y.at - x.at)[0] || null
 }
 
+/** The brand's TRYBE conversation, when it counts as an answer to MVP's
+ *  request: only for a request that went (sent, already requested, or not
+ *  yet confirmed), and only a conversation active after it was sent. A chat
+ *  from before the request is not a reply to it. */
+const WENT: Array<Brand['status']> = ['sent', 'already', 'sending']
+function replyConvo(b: Brand, convos: Conversation[]): Conversation | null {
+  if (!WENT.includes(b.status)) return null
+  const c = convoFor(b.name, convos)
+  if (!c) return null
+  const sentAt = Date.parse(b.send_started_at || b.sent_at || '')
+  return Number.isFinite(sentAt) && c.at > 0 && c.at < sentAt ? null : c
+}
+
+/** One number tile. */
+function Stat({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) {
+  return (
+    <div className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>{label}</p>
+      <p className="text-[24px] font-bold leading-tight mt-0.5 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
+      {hint && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</p>}
+    </div>
+  )
+}
+
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('find')
   const [core, setCore] = useState('')
   const [cap, setCap] = useState(20)
+  // The cap the server holds, for the tile and Send all; `cap` is the input.
+  const [savedCap, setSavedCap] = useState(20)
   const [used, setUsed] = useState(0)
   const [cats, setCats] = useState<string[]>([])
   const [kws, setKws] = useState<string[]>([])
@@ -231,6 +257,8 @@ export default function TrybeOutreach() {
   // the half-typed message or a box ticked a second ago.
   const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
   const stopRef = useRef(false)
+  // Leaving the page stops a send run: nothing sends with nothing on screen.
+  useEffect(() => () => { stopRef.current = true }, [])
   const autoRan = useRef(false)
 
   const say = (name: string, text: string, tone: LogLine['tone']) => setLog(l => [{ at: Date.now(), name, text, tone }, ...l].slice(0, 200))
@@ -241,6 +269,7 @@ export default function TrybeOutreach() {
       setBrands(d.brands || [])
       setCore(c => c || d.settings?.coreMessage || '')
       setCap(d.settings?.dailyCap ?? 20)
+      setSavedCap(d.settings?.dailyCap ?? 20)
       setUsed(d.usedToday ?? 0)
       const c = d.settings?.categories || [], k = d.settings?.keywords || []
       setSavedKey(prefsKey(c, k))
@@ -277,8 +306,8 @@ export default function TrybeOutreach() {
   const stampedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!inbox) return
-    const fresh = brands.filter(b => ['sent', 'already', 'sending'].includes(b.status) && !b.replied_at && !stampedRef.current.has(b.brand_id))
-      .map(b => ({ b, c: convoFor(b.name, inbox.convos) })).filter(x => x.c)
+    const fresh = brands.filter(b => !b.replied_at && !stampedRef.current.has(b.brand_id))
+      .map(b => ({ b, c: replyConvo(b, inbox.convos) })).filter(x => x.c)
     if (!fresh.length) return
     for (const x of fresh) stampedRef.current.add(x.b.brand_id)
     void api({ action: 'replied', replies: fresh.map(x => ({ id: x.b.brand_id, at: x.c!.at ? new Date(x.c!.at).toISOString() : null })) })
@@ -304,7 +333,7 @@ export default function TrybeOutreach() {
   const unjudged = useMemo(() => brands.filter(b => (b.status === 'new' || b.status === 'not_fit') && b.fit_prefs !== savedKey), [brands, savedKey])
   const history = useMemo(() => brands.filter(b => ['sent', 'sending', 'failed', 'already'].includes(b.status))
     .sort((a, b) => Date.parse(b.send_started_at || b.sent_at || '0') - Date.parse(a.send_started_at || a.sent_at || '0')), [brands])
-  const remaining = Math.max(0, cap - used)
+  const remaining = Math.max(0, savedCap - used)
 
   // Categories offered: the usual ones, the ones TRYBE showed on brands found,
   // and any already picked.
@@ -324,7 +353,11 @@ export default function TrybeOutreach() {
     try {
       const d = await api({ action: 'settings', coreMessage: core, dailyCap: cap, categories: cats, keywords: kws, dailyFind })
       setCap(d.settings.dailyCap)
+      setSavedCap(d.settings.dailyCap)
       setSavedKey(prefsKey(d.settings.categories || [], d.settings.keywords || []))
+      // THE DAILY RUN GOES BY WHAT WAS SAVED: unticking it and saving used to
+      // leave the old "on" here, and the run wrote twenty messages anyway.
+      setSaved({ core: d.settings.coreMessage || '', dailyFind: d.settings.dailyFind !== false })
       if (!quiet) toast.success('Saved')
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Save failed'); return false }
@@ -357,7 +390,8 @@ export default function TrybeOutreach() {
       try {
         const d = await api({ action: 'draft', brandIds: chunk })
         for (const r of (d.results || []) as Array<{ ok: boolean }>) r.ok ? ok++ : failed++
-      } catch (e) { failed += chunk.length; toast.error(e instanceof Error ? e.message : 'Draft failed'); break }
+      // The rest are counted too: a stop must not make them vanish from the total.
+      } catch (e) { failed += ids.length - i; toast.error(e instanceof Error ? e.message : 'Draft failed'); break }
       setFinding({ stage: 'Writing messages', done: Math.min(ids.length, i + 4), total: ids.length })
     }
     return { ok, failed }
@@ -373,7 +407,7 @@ export default function TrybeOutreach() {
       try {
         const d = await api({ action: 'match', brandIds: chunk })
         for (const r of (d.results || []) as Array<{ ok: boolean; fit?: boolean }>) { if (!r.ok) failed++; else if (r.fit) fit++; else no++ }
-      } catch (e) { failed += chunk.length; toast.error(e instanceof Error ? e.message : 'Fit check failed'); break }
+      } catch (e) { failed += ids.length - i; toast.error(e instanceof Error ? e.message : 'Fit check failed'); break }
       setFinding({ stage: 'Reading websites and checking fit', done: Math.min(ids.length, i + 5), total: ids.length })
     }
     return { fit, no, failed }
@@ -512,7 +546,7 @@ export default function TrybeOutreach() {
     if (loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding) return
     if (!saved.core.trim() || savedKey === prefsKey([], [])) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
-    if (Date.now() - last < 20 * 3600_000) return
+    if (Date.now() - last < RECOLLECT_MS) return
     autoRan.current = true
     toast('Finding today\u2019s brands that fit your niche. SCOUT works in a tab behind this one for a few minutes.', { duration: 9000 })
     void findBrands(true)
@@ -571,7 +605,9 @@ export default function TrybeOutreach() {
     if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); return }
     const notes: string[] = []
     setFindNotes([])
-    try { await collectFromTrybe(notes, true) } finally {
+    try { await collectFromTrybe(notes, true) } catch (e) {
+      notes.push(e instanceof Error ? e.message : 'Refreshing from TRYBE failed.')
+    } finally {
       setFinding(null); setFindNotes(notes)
       await load(); setLiveNonce(n => n + 1)
     }
@@ -581,7 +617,7 @@ export default function TrybeOutreach() {
     const ids = found.filter(b => selected.has(b.brand_id)).map(b => b.brand_id)
     if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
     if (!core.trim()) { toast.error('Write your core message first'); return }
-    await api({ action: 'settings', coreMessage: core, dailyCap: cap }).catch(() => null)
+    if (!(await saveSettings(true))) return
     const r = await draftIds(ids)
     setFinding(null)
     if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
@@ -590,10 +626,19 @@ export default function TrybeOutreach() {
     await load()
   }
 
-  async function saveDraft(b: Brand, text: string) {
-    if (text === b.draft) return
-    patch(b.brand_id, { draft: text })
-    await api({ action: 'edit', brandId: b.brand_id, draft: text }).catch(e => toast.error(e.message))
+  // SAVED BEFORE IT IS SENT: Send now waits for the save in flight, and a
+  // save that failed stops the send instead of sending the older copy.
+  const pendingSave = useRef<Map<string, Promise<boolean>>>(new Map())
+  async function saveDraft(b: Brand, text: string): Promise<boolean> {
+    const inFlight = pendingSave.current.get(b.brand_id)
+    if (inFlight) await inFlight
+    if (text === (brands.find(x => x.brand_id === b.brand_id)?.draft ?? b.draft) && !inFlight) return true
+    const job = api({ action: 'edit', brandId: b.brand_id, draft: text })
+      .then(() => { patch(b.brand_id, { draft: text }); return true })
+      .catch(e => { toast.error(`Not saved: ${e instanceof Error ? e.message : 'error'}`); return false })
+      .finally(() => { if (pendingSave.current.get(b.brand_id) === job) pendingSave.current.delete(b.brand_id) })
+    pendingSave.current.set(b.brand_id, job)
+    return job
   }
 
   async function skip(b: Brand, undo = false) {
@@ -707,27 +752,24 @@ export default function TrybeOutreach() {
 
   const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
   const sentRows = history.map(b => {
+    // The chat is shown for any brand; it counts as a reply only per replyConvo.
     const c = inbox ? convoFor(b.name, inbox.convos) : null
+    const answered = WENT.includes(b.status) && (!!b.replied_at || (inbox ? !!replyConvo(b, inbox.convos) : false))
     const lastMine = c && inbox ? lastIsMine(c, inbox.me, inbox.myName) : null
     // REPLIED = A CONVERSATION EXISTS (Seb, 2026-10-08: "i know for a fact
     // that brands have responded"). TRYBE opens a chat with a brand only once
     // it accepts or writes back, so a sent brand with one has answered, whoever
     // wrote last. TRYBE's list does not reliably say who wrote last, which
     // left this at zero. A reply stamped before (replied_at) stays a reply.
-    const reply: 'replied' | 'none' | 'unknown' = b.replied_at || c ? 'replied' : !inbox ? 'unknown' : 'none'
+    const reply: 'replied' | 'none' | 'unknown' = answered ? 'replied' : !inbox ? 'unknown' : 'none'
     return { b, c, reply, lastMine }
   })
   const repliedCount = sentRows.filter(r => r.reply === 'replied').length
+  // Out of requests that went, not every attempt: a failed send never asked anyone.
+  const wentCount = history.filter(b => WENT.includes(b.status)).length
   const weekAgo = Date.now() - 7 * 86_400_000
   // This week: stamped in the last seven days, or seen now and not yet stamped.
   const repliedWeek = sentRows.filter(r => r.reply === 'replied' && (r.b.replied_at ? Date.parse(r.b.replied_at) >= weekAgo : true)).length
-  const Stat = ({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) => (
-    <div className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      <p className="text-[10px] font-bold uppercase tracking-wider" style={soft}>{label}</p>
-      <p className="text-[24px] font-bold leading-tight mt-0.5 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
-      {hint && <p className="text-[11px] mt-0.5" style={soft}>{hint}</p>}
-    </div>
-  )
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5" style={{ color: 'var(--text)' }}>
@@ -755,10 +797,10 @@ export default function TrybeOutreach() {
 
       {/* The numbers that matter today. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <Stat label="Sent today" value={`${used} of ${cap}`} hint={remaining ? `${remaining} left today` : 'Daily cap reached'} />
+        <Stat label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : 'Daily cap reached'} />
         <Stat label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} />
-        <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${history.length} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
-        <Stat label="Unread" value={inbox ? String(unread) : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : ' '} tone={unread ? PURPLE : undefined} />
+        <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
+        <Stat label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'n/a' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} />
       </div>
 
       {finding && (
@@ -1121,7 +1163,7 @@ export default function TrybeOutreach() {
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. Pick brands in Find brands and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(() => sendOne({ ...b, draft: t }))} canSend={access === 'granted' && remaining > 0 && !finding} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -1141,7 +1183,7 @@ export default function TrybeOutreach() {
         </div>
       )}
 
-      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onConvos={onInboxConvos}
+      {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
         brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? { id: b.brand_id, name: b.name } : null }} scoutOpens={scoutOpens} />}
 
       {tab === 'sent' && (

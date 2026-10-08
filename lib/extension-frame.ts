@@ -1067,7 +1067,7 @@ export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; 
  *  addresses, reading, posting a message or marking read. Resolves, never
  *  throws. */
 export async function requestTrybeApi(method: 'GET' | 'POST', path: string, body?: unknown): Promise<TrybeApiResult> {
-  const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 50_000)
+  const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
@@ -1095,7 +1095,7 @@ export interface TrybeSendResult { outcome: 'sent' | 'already' | 'failed' | 'unc
 /** SCOUT presses Request to Join for one brand with this message. A missing
  *  answer is 'unconfirmed', never 'failed': SCOUT may have pressed Send. */
 export async function requestTrybeSend(url: string, name: string, message: string): Promise<TrybeSendResult> {
-  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message }, 120_000)
+  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message }, 160_000)
   return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 
@@ -1104,7 +1104,7 @@ export interface TrybeOpenResult { ok: boolean; error?: string; via?: string }
 /** SCOUT 1.41.8+: opens TRYBE in front on one brand's own popup, so the
  *  creator can request samples. Nothing is pressed. */
 export async function requestTrybeOpenBrand(brandId: string, name: string): Promise<TrybeOpenResult> {
-  const res = await sendToExtension<TrybeOpenResult>({ type: 'MVP_TRYBE_OPEN', brandId, name }, 45_000)
+  const res = await sendToExtension<TrybeOpenResult>({ type: 'MVP_TRYBE_OPEN', brandId, name }, 70_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 

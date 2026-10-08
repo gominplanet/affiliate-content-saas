@@ -78,9 +78,28 @@ export function normalizeSite(raw: string | null | undefined): string | null {
   } catch { return null }
 }
 
+async function readCapped(res: Response, max: number): Promise<string> {
+  if (!res.body) return (await res.text()).slice(0, max)
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let got = 0
+  while (got < max) {
+    const { done, value } = await reader.read()
+    if (done || !value) break
+    chunks.push(value); got += value.length
+  }
+  try { await reader.cancel() } catch { /* already closed */ }
+  const all = new Uint8Array(Math.min(got, max))
+  let at = 0
+  for (const c of chunks) { const part = c.subarray(0, Math.min(c.length, all.length - at)); all.set(part, at); at += part.length; if (at >= all.length) break }
+  return new TextDecoder().decode(all)
+}
+
 async function getText(url: string, accept: string): Promise<{ ok: boolean; status: number; text: string; finalType: string }> {
   const res = await safeFetch(url, { headers: { 'user-agent': UA, accept }, signal: AbortSignal.timeout(12_000) })
-  const text = res.ok ? (await res.text()).slice(0, 600_000) : ''
+  // READ UP TO A CAP, never the whole body: a site can stream hundreds of MB
+  // inside the timeout, and only the first 600 KB is ever used.
+  const text = res.ok ? await readCapped(res, 600_000) : ''
   return { ok: res.ok, status: res.status, text, finalType: res.headers.get('content-type') || '' }
 }
 

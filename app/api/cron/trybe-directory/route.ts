@@ -61,13 +61,18 @@ export async function GET(request: Request) {
       const res = await researchBrandSite(r.website).catch((e) => ({ summary: '', products: [] as string[], error: e instanceof Error ? e.message : 'error' }))
       const ok = !!(res.summary || res.products.length)
       ok ? read++ : failed++
-      await sb.from('trybe_directory').update({
+      const { error: upErr } = await sb.from('trybe_directory').update({
         site_summary: res.summary || null,
         site_products: res.products,
         site_text: ok ? siteSearchText(res.summary, res.products) : null,
         site_error: ok ? null : (res.error || 'Nothing readable on the website.'),
         site_fetched_at: new Date().toISOString(),
       }).eq('brand_id', r.brand_id)
+      // A WRITE THAT FAILED STILL STAMPS THE ROW, with why: otherwise every run
+      // read the same sixty sites again and never moved past them.
+      if (upErr) {
+        await sb.from('trybe_directory').update({ site_error: `MVP could not save what it read: ${upErr.message}`.slice(0, 300), site_fetched_at: new Date().toISOString() }).eq('brand_id', r.brand_id)
+      }
     }))
   }
   return NextResponse.json({ ok: true, asked: rows.length, read, failed, ms: Date.now() - started })

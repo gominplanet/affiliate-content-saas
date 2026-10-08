@@ -165,10 +165,13 @@ const SAY: Record<string, string> = {
 const errWords = (r: { error?: string; status?: number }) =>
   r.error ? (SAY[r.error] || r.error) : r.status === 401 || r.status === 403 ? `TRYBE refused it (${r.status}): open jointrybe.com, sign in, and try again.` : `TRYBE answered ${r.status ?? 'nothing'}.`
 
-export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvos, brandLink, scoutOpens = false }: {
+export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpened, onConvos, brandLink, scoutOpens = false }: {
   scoutVersion: string | null; allowed: boolean
   /** A conversation the page asked to open (Sent's "Open chat"). */
   openRequest?: { id: string; n: number } | null
+  /** Told once the requested conversation is open, so it is not opened again
+   *  on the next visit to the Inbox tab. */
+  onOpened?: () => void
   /** Every fresh conversation list, so the page's unread count follows. */
   onConvos?: (convos: Conversation[]) => void
   /** The brand's own TRYBE page for a conversation, when it is a brand on
@@ -190,10 +193,16 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
   const [me, setMe] = useState<string[]>(() => (typeof window === 'undefined' ? [] : savedMe()))
   const [myName, setMyName] = useState('')
   const threadRef = useRef<HTMLDivElement | null>(null)
+  // The conversation on screen, for answers that arrive late: an answer for
+  // another conversation is dropped, never shown under this one's name.
+  const openRef = useRef<string | null>(null)
+  const listing = useRef(false)
   const [readNote, setReadNote] = useState<string | null>(null)
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
 
   const loadList = useCallback(async (): Promise<Conversation[] | null> => {
+    if (listing.current) return null
+    listing.current = true
     setLoadingList(true); setListNote(null)
     try {
       // Who "you" are on TRYBE, to tell your messages from the brand's.
@@ -211,19 +220,22 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
       onConvos?.(list)
       if (!list.length) setListNote(listOf(r.json).length ? `MVP could not read TRYBE's conversations. TRYBE sent: ${shapeOf(r.json)}.` : 'No conversations on TRYBE yet.')
       return list
-    } finally { setLoadingList(false) }
-  }, [me, myName, onConvos]) // eslint-disable-line react-hooks/exhaustive-deps
+    } finally { setLoadingList(false); listing.current = false }
+  }, [myName, onConvos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMessages = useCallback(async (id: string, quiet = false) => {
     if (!quiet) { setLoadingMsgs(true); setMsgNote(null) }
     try {
       const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(id)}/messages?page=1&limit=50`)
-      if (!r.ok) { setMsgNote(errWords(r)); if (!quiet) setMsgs([]); return [] as Message[] }
+      const current = openRef.current === id
+      if (!r.ok) { if (current) { setMsgNote(errWords(r)); if (!quiet) setMsgs([]) } return [] as Message[] }
       const list = listOf(r.json).map(m => readMessage(m, me, myName)).filter((m): m is Message => !!m).sort((a, b) => a.at - b.at)
-      setMsgs(list)
-      if (!list.length && listOf(r.json).length) setMsgNote(`MVP could not read these messages. TRYBE sent: ${shapeOf(r.json)}.`)
+      if (current) {
+        setMsgs(list)
+        if (!list.length && listOf(r.json).length) setMsgNote(`MVP could not read these messages. TRYBE sent: ${shapeOf(r.json)}.`)
+      }
       return list
-    } finally { if (!quiet) setLoadingMsgs(false) }
+    } finally { if (!quiet && openRef.current === id) setLoadingMsgs(false) }
   }, [me, myName])
 
   useEffect(() => { if (ready && convos === null) void loadList() }, [ready, convos, loadList])
@@ -232,7 +244,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
   useEffect(() => {
     if (!openRequest || !convos || handled.current === openRequest.n) return
     const c = convos.find(x => x.id === openRequest.id)
-    if (c) { handled.current = openRequest.n; void open(c) }
+    if (c) { handled.current = openRequest.n; void open(c); onOpened?.() }
   }, [openRequest, convos]) // eslint-disable-line react-hooks/exhaustive-deps
   // THE THREAD SCROLLS, NOT THE PAGE (Seb, 2026-10-07: "the window always
   // kind of jumps up. And then comes back down"). scrollIntoView moved every
@@ -240,6 +252,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
   useEffect(() => { const el = threadRef.current; if (el) el.scrollTop = el.scrollHeight }, [msgs])
 
   async function open(c: Conversation) {
+    openRef.current = c.id
     setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null); setReadNote(null)
     const list = await loadMessages(c.id)
     if (c.unread > 0) await markRead(c, list)
@@ -266,22 +279,29 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
     const text = reply.trim()
     if (!openId || !text) return
     setSending(true); setSendNote(null)
+    // ONLY A NEW MESSAGE CONFIRMS IT: an older message with the same words (a
+    // brand's "Thanks!") neither confirms this reply nor teaches who you are.
+    const before = new Set((msgs || []).map(m => m.id))
     try {
       // The reply's shape. Confirmed 2026-10-07: a reply sent from MVP this way
       // showed in the conversation on TRYBE (Seb checked it on TRYBE's side).
       const r = await requestTrybeApi('POST', `/backend/api/channels/${encodeURIComponent(openId)}/messages`, { content: text })
-      if (!r.ok) { setSendNote({ tone: 'bad', text: `Not sent: ${errWords(r)}${r.text ? ` (${r.text.slice(0, 160)})` : ''}` }); return }
+      // A REPLY THAT TIMED OUT MAY HAVE GONE: the conversation is read again
+      // before anything says "Not sent", so it is never sent twice by mistake.
+      const timedOut = !r.ok && (r.error === 'timeout' || r.error === 'SCOUT did not answer.')
+      if (!r.ok && !timedOut) { setSendNote({ tone: 'bad', text: `Not sent: ${errWords(r)}${r.text ? ` (${r.text.slice(0, 160)})` : ''}` }); return }
       // SENT MEANS SEEN: read the conversation again and look for it.
       const after = await loadMessages(openId, true)
       // Compared with spacing flattened: TRYBE may store line breaks or runs
       // of spaces differently, and that is still the same reply.
       const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
-      const seen = after.some(m => flat(m.text) === flat(text))
+      const mineNow = after.filter(m => !before.has(m.id) && flat(m.text) === flat(text))
+      const seen = mineNow.length > 0
       if (seen) {
         setReply(''); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' })
         // A REPLY SENT HERE IS YOURS FOR CERTAIN: whatever id TRYBE gave its
         // sender is you, so every message from that id lines up as yours.
-        const learned = after.filter(m => flat(m.text) === flat(text)).flatMap(m => m.whoIds)
+        const learned = mineNow.flatMap(m => m.whoIds)
         if (learned.length) {
           const next = Array.from(new Set([...me, ...learned]))
           setMe(next)
@@ -291,7 +311,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onConvo
         // The list shows the new latest message.
         void loadList()
       }
-      else setSendNote({ tone: 'warn', text: 'TRYBE accepted the reply but it does not show in the conversation yet. Check it on TRYBE before sending it again.' })
+      else setSendNote({ tone: 'warn', text: timedOut ? 'TRYBE did not answer in time, and the reply does not show in the conversation yet. Check it on TRYBE before sending it again.' : 'TRYBE accepted the reply but it does not show in the conversation yet. Check it on TRYBE before sending it again.' })
     } finally { setSending(false) }
   }
 
