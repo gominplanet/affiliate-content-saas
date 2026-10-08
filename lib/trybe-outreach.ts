@@ -134,7 +134,14 @@ export function countsTowardCap(row: { status: string; send_started_at: string |
 
 /** The wait before the next request, in ms. `sentThisRun` is how many have
  *  gone in this run so far. */
-export function nextGapMs(sentThisRun: number, rand: () => number = Math.random): number {
+/** A run of fewer messages than this waits SHORT_GAP_MS between them (Seb,
+ *  2026-10-08: "if anything is set up under 40 messages, there should be
+ *  only 10 seconds pause between messages"). */
+export const SHORT_RUN_UNDER = 40
+export const SHORT_GAP_MS = 10_000
+
+export function nextGapMs(sentThisRun: number, rand: () => number = Math.random, runSize = Infinity): number {
+  if (runSize < SHORT_RUN_UNDER) return SHORT_GAP_MS
   const span = (lo: number, hi: number) => Math.round(lo + rand() * (hi - lo))
   if (sentThisRun > 0 && sentThisRun % BREAK_EVERY === 0) return span(BREAK_MS[0], BREAK_MS[1])
   return span(MIN_GAP_MS, MAX_GAP_MS)

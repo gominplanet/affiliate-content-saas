@@ -31,6 +31,7 @@ for (const r of [0, 0.5, 0.999]) {
 }
 check('every fifth send takes a longer break', nextGapMs(5, () => 0) >= BREAK_MS[0])
 check('MIN gap is at least 45 seconds', MIN_GAP_MS >= 45_000)
+check('a run under 40 messages waits 10 seconds between them, a bigger one keeps the long gaps', nextGapMs(5, () => 0.5, 39) === 10_000 && nextGapMs(1, () => 0.5, 1) === 10_000 && nextGapMs(1, () => 0, 40) >= MIN_GAP_MS && nextGapMs(5, () => 0, 40) >= BREAK_MS[0])
 
 // Scanned input is untrusted
 check('a bad brand id is refused', sanitizeScanned({ brandId: '<script>', name: 'X' }) === null)

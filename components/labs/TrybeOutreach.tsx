@@ -24,7 +24,7 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
-import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
@@ -203,6 +203,7 @@ export default function TrybeOutreach() {
   const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
   const [log, setLog] = useState<LogLine[]>([])
+  const [runSize, setRunSize] = useState(0)
   const [directory, setDirectory] = useState<Directory | null>(null)
   // How MVP's copy of TRYBE is doing (counts, collection notes) is for the
   // admin only (Seb, 2026-10-07): it makes no difference to a creator.
@@ -627,6 +628,7 @@ export default function TrybeOutreach() {
     if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); say(label, 'Not started: SCOUT is not allowed on TRYBE yet.', 'bad'); return }
     if (!list.length) { say(label, remaining ? 'Nothing in the queue to send.' : 'Today’s cap is used. The queue waits for tomorrow.', 'warn'); return }
     stopRef.current = false
+    setRunSize(list.length)
     setRunning(true)
     say(label, `Starting: ${list.length} request${list.length === 1 ? '' : 's'}, one at a time. Keep this tab open.`, 'info')
     let sentThisRun = 0
@@ -665,7 +667,7 @@ export default function TrybeOutreach() {
         lastFailed = res.outcome === 'failed'
         if (res.outcome === 'sent') sentThisRun++
         if (i < list.length - 1 && !stopRef.current) {
-          const gap = nextGapMs(sentThisRun)
+          const gap = nextGapMs(sentThisRun, Math.random, list.length)
           setWaitUntil(Date.now() + gap); setNow(Date.now())
           const end = Date.now() + gap
           while (Date.now() < end && !stopRef.current) await new Promise(r => setTimeout(r, 500))
@@ -1083,8 +1085,8 @@ export default function TrybeOutreach() {
           </p>
           {sendBlocked && !running && queue.length > 0 && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
           {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
-            ? 'Keep this tab open. SCOUT sends each request in a TRYBE tab behind this one, 45 seconds to 2 minutes apart, with a longer pause every five. It comes to the front only if TRYBE needs it.'
-            : 'Keep this tab open. SCOUT opens TRYBE for each request and brings you back, 45 seconds to 2 minutes apart, with a longer pause every five.'}</p>}
+            ? `Keep this tab open. SCOUT sends each request in a TRYBE tab behind this one, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}. It comes to the front only if TRYBE needs it.`
+            : `Keep this tab open. SCOUT opens TRYBE for each request and brings you back, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}.`}</p>}
           {log.length > 0 && (
             <div className="rounded-xl border p-3 mb-3 max-h-56 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
               <p className="text-[12px] font-semibold mb-1">Run log</p>
