@@ -300,6 +300,16 @@ export default function TrybeOutreach() {
     if (r.ok) { setInbox({ convos: r.convos, me: r.me, myName: r.myName }); setInboxError(null) } else setInboxError(r.error)
   }, [])
   useEffect(() => { if (canInbox) void loadInbox() }, [canInbox, loadInbox])
+  // The tiles and Sent stay current too: every two minutes while in view, and
+  // straight away when the tab comes back into view. The Inbox tab reads its
+  // own list on the same rhythm.
+  useEffect(() => {
+    if (!canInbox) return
+    const tick = () => { if (document.visibilityState === 'visible' && tab !== 'inbox') void loadInbox() }
+    const t = setInterval(tick, 120_000)
+    document.addEventListener('visibilitychange', tick)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick) }
+  }, [canInbox, loadInbox, tab])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
   // when the inbox cannot be read. Each brand once per visit.

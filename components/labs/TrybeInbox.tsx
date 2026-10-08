@@ -55,6 +55,22 @@ export function listOf(json: unknown): unknown[] {
 export interface Conversation { id: string; name: string; last: string; at: number; unread: number; raw: Obj }
 interface Message { id: string; text: string; who: string; whoId: string; whoIds: string[]; at: number; mine: boolean | null }
 
+/** UNREAD, IN EVERY SHAPE TRYBE MAY USE (Seb, 2026-10-08: a new chat from
+ *  OROS was new on TRYBE and not on MVP). A count when TRYBE gives one; else a
+ *  yes/no flag; else the time it was last read against its latest message. */
+function unreadOf(raw: Obj, at: number): number {
+  const n = pick(raw, ['unreadCount', 'unread_count', 'unreadMessages', 'unread_messages', 'unreadMessageCount', 'newMessages', 'unread'])
+  if (typeof n === 'number' && n > 0) return n
+  if (typeof n === 'string' && Number(n) > 0) return Number(n)
+  if (n === true) return 1
+  const flag = pick(raw, ['hasUnread', 'has_unread', 'isUnread', 'is_unread', 'unseen', 'isNew'])
+  if (flag === true) return 1
+  const readRaw = pick(raw, ['lastReadAt', 'last_read_at', 'readAt', 'read_at', 'lastSeenAt', 'last_seen_at', 'lastViewedAt'])
+  const readAt = Date.parse(str(readRaw))
+  if (at > 0 && readRaw !== undefined && (!Number.isFinite(readAt) || at > readAt + 1000)) return 1
+  return typeof n === 'number' ? n : 0
+}
+
 export function readConversation(raw: unknown): Conversation | null {
   if (!isObj(raw)) return null
   const id = str(raw.id ?? raw.channelId ?? raw.channel_id ?? raw._id)
@@ -63,8 +79,8 @@ export function readConversation(raw: unknown): Conversation | null {
   const last = str(lastObj ? pick(lastObj, ['content', 'text', 'body', 'message']) : pick(raw, ['lastMessageText', 'last_message_text', 'preview']))
   const name = str(pick(raw, ['name', 'title', 'channelName', 'displayName', 'brandName', 'brand_name'])) || 'Conversation'
   const atRaw = pick(raw, ['lastMessageAt', 'last_message_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at']) ?? (lastObj ? pick(lastObj, ['createdAt', 'created_at']) : undefined)
-  const unread = Number(pick(raw, ['unreadCount', 'unread_count', 'unread', 'unreadMessages'])) || 0
-  return { id, name, last, at: Date.parse(str(atRaw)) || 0, unread, raw }
+  const at = Date.parse(str(atRaw)) || 0
+  return { id, name, last, at, unread: unreadOf(raw, at), raw }
 }
 
 export function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
@@ -150,7 +166,7 @@ export async function fetchTrybeInbox(): Promise<{ ok: true; convos: Conversatio
   const po = isObj(p.json) && isObj(p.json.data) ? p.json.data : isObj(p.json) ? p.json : null
   const me = Array.from(new Set([...(p.ok ? myIds(p.json) : []), ...(typeof window === 'undefined' ? [] : savedMe())]))
   const myName = po ? fullName(po as Obj) : ''
-  const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
+  const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=100')
   if (!r.ok) return { ok: false, error: errWords(r) }
   return { ok: true, convos: listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c), me, myName }
 }
@@ -213,7 +229,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
         const po = isObj(p.json) && isObj(p.json.data) ? p.json.data : isObj(p.json) ? p.json : null
         if (po) setMyName(fullName(po as Obj))
       }
-      const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=50')
+      const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=100')
       if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }
       const list = listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c).sort((a, b) => b.at - a.at)
       setConvos(list)
@@ -239,6 +255,13 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   }, [me, myName])
 
   useEffect(() => { if (ready && convos === null) void loadList() }, [ready, convos, loadList])
+  // KEPT CURRENT: the list is read again every two minutes while the page is
+  // in view, so a new conversation shows without pressing Refresh.
+  useEffect(() => {
+    if (!ready) return
+    const t = setInterval(() => { if (document.visibilityState === 'visible') void loadList() }, 120_000)
+    return () => clearInterval(t)
+  }, [ready, loadList])
   // Sent's "Open chat": open that conversation once the list is here.
   const handled = useRef(0)
   useEffect(() => {

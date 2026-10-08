@@ -311,6 +311,18 @@ check('SCOUT\'s inbox tab survives a service worker restart and is opened once',
 check('the daily run goes by the saved switch, and leaving the page stops a send run', /setSaved\(\{ core: d\.settings\.coreMessage \|\| '', dailyFind: d\.settings\.dailyFind !== false \}\)/.test(UI) && /useEffect\(\(\) => \(\) => \{ stopRef\.current = true \}, \[\]\)/.test(UI))
 check('a late answer for another conversation is dropped', /const current = openRef\.current === id/.test(INBOX))
 
+{
+  // Seb, 2026-10-08: OROS's new chat was new on TRYBE, not on MVP.
+  const src = INBOX.slice(INBOX.indexOf('function unreadOf('), INBOX.indexOf('export function readConversation('))
+  const js = src.replace('(raw: Obj, at: number): number', '(raw, at)')
+  const helpers = 'const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v); const str = (v) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : ""); function pick(o, keys) { for (const k of keys) { const v = o[k]; if (v != null && v !== "") return v } for (const v of Object.values(o)) if (isObj(v)) for (const k of keys) { const w = v[k]; if (w != null && w !== "") return w } return undefined }'
+  const u = new Function(`${helpers} ${js}; return unreadOf`)() as (raw: Record<string, unknown>, at: number) => number
+  const at = Date.parse('2026-10-08T15:00:00Z')
+  check('unread is read as a count, a flag, a nested count, or last-read time', u({ unreadCount: 2 }, at) === 2 && u({ hasUnread: true }, at) === 1 && u({ membership: { unread_count: 3 } }, at) === 3
+    && u({ lastReadAt: '2026-10-08T14:00:00Z' }, at) === 1 && u({ lastReadAt: '2026-10-08T15:00:00Z' }, at) === 0 && u({ unreadCount: 0 }, at) === 0 && u({}, at) === 0)
+  check('the inbox and the tiles re-read TRYBE every two minutes while in view', /setInterval\(\(\) => \{ if \(document\.visibilityState === 'visible'\) void loadList\(\) \}, 120_000\)/.test(INBOX) && /const t = setInterval\(tick, 120_000\)/.test(UI))
+}
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')
