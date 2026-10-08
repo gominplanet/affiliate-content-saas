@@ -37,8 +37,12 @@ check('disconnect revokes at Google and empties the stored YouTube data',
   /oauth2\.googleapis\.com\/revoke/.test(D) && /await clearYouTubeData\(sb, user\.id\)/.test(D))
 const R = r('lib/youtube-retention.ts')
 check('the retention pass refreshes rows older than 30 days', /export const YT_REFRESH_DAYS = 30/.test(R) && /export async function retentionPass/.test(R))
-check('and empties what YouTube no longer shows or a revoked login cannot read',
-  /if \(!f\) \{ gone\.push\(id\); continue \}/.test(R) && /if \(got\.revoked\) \{ await clearYouTubeData/.test(R) && /if \(!connected\) \{\s*await clearYouTubeData/.test(R))
+check('and empties what YouTube no longer shows, only when every way of asking answered',
+  /if \(failed \|\| !order\.length\) return \{ found, gone: \[\], quota: false \}/.test(R) && /if \(got\.gone\.length\) \{ await clearYouTubeData\(sb, userId, got\.gone\)/.test(R) && /if \(!connectedOf\(chans, integ\)\) \{\s*\/\/ Disconnected in MVP/.test(R))
+check('a 401 or a token that threw is never taken for a revoked login or a deleted video',
+  !/got\.revoked\) \{ await clearYouTubeData/.test(R) && /\} catch \{ trouble = true \}/.test(R) && /let failed = logins\.trouble/.test(R))
+check('a whole chunk nobody sees empties nothing', /if \(pending\.length >= 10 && pending\.length === ids\.length\) return \{ found, gone: \[\], quota: false \}/.test(R))
+check('rows emptied for creators still connected are refilled, and the refill never empties', /export async function restorePass/.test(R) && !/clearYouTubeData/.test(R.slice(R.indexOf('export async function restorePass'))) && /restorePass\(sb, 2000, deadline\)/.test(r('app/api/cron/youtube-data-retention/route.ts')))
 check('the emptied fields include every YouTube field the policy lists',
   ['title', 'description', 'thumbnail_url', 'view_count', 'transcript'].every((f) => new RegExp(`\\b${f}:`).test(R.slice(R.indexOf('YT_CLEARED_FIELDS'), R.indexOf('} as const')))))
 const V = JSON.parse(r('vercel.json')) as { crons: Array<{ path: string }> }

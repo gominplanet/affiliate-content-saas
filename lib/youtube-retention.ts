@@ -18,6 +18,23 @@
 //   video YouTube no longer shows, a creator with no YouTube connection, and a
 //   login Google refuses (revoked) all get their stored YouTube fields emptied.
 //
+// NEVER EMPTIED ON A GUESS (2026-10-08). The first version emptied every row
+// one login could not see and every chunk a single 401 came back on, and it
+// never looked at an emptied row again, so mistakes were permanent: Seb's
+// whole catalogue, 3,371 videos, lost its titles and descriptions in three
+// nights, and the product links in them with it. Now:
+//  - a video is gone only when every way of asking answered and none saw it:
+//    the login of its own channel, every other connected channel's login,
+//    and MVP's API key; any ask that failed (401, outage, a token refresh
+//    that threw) means "ask again tomorrow", never "gone";
+//  - a whole chunk of ten or more that nobody sees is a login problem, not
+//    ten deletions, and nothing is emptied;
+//  - a revoked Google login fails to refresh, so that creator's videos are
+//    asked with the API key alone: public ones stay fresh, private ones are
+//    emptied, as the policy asks;
+//  - restorePass refills rows that were emptied, for creators still
+//    connected, from YouTube.
+//
 // yt_refreshed_at (migration 406) records the last refresh; without it the
 // pass falls back to updated_at, which other features also touch, so it is
 // less strict but never deletes anything it should not.
@@ -47,7 +64,7 @@ export async function clearYouTubeData(sb: Sb, userId: string, youtubeVideoIds?:
   try { await scope(sb.from('youtube_videos').update({ transcript_cues: null, transcript_cues_fetched_at: null }).eq('user_id', userId)) } catch { /* column missing */ }
 }
 
-type Fresh = { title: string; description: string; channelTitle: string; thumb: string | null; views: number | null }
+type Fresh = { title: string; description: string; channelTitle: string; channelId: string | null; thumb: string | null; views: number | null }
 
 async function videosList(ids: string[], token: string | null): Promise<{ ok: true; found: Map<string, Fresh> } | { ok: false; revoked: boolean; quota: boolean }> {
   const url = new URL(`${BASE}/videos`)
@@ -66,12 +83,70 @@ async function videosList(ids: string[], token: string | null): Promise<{ ok: tr
     const th = v.snippet?.thumbnails ?? {}
     found.set(v.id, {
       title: String(v.snippet?.title ?? ''), description: String(v.snippet?.description ?? ''),
-      channelTitle: String(v.snippet?.channelTitle ?? ''),
+      channelTitle: String(v.snippet?.channelTitle ?? ''), channelId: v.snippet?.channelId ?? null,
       thumb: (th.maxres ?? th.high ?? th.medium ?? th.default)?.url ?? null,
       views: v.statistics?.viewCount != null ? Number(v.statistics.viewCount) : null,
     })
   }
   return { ok: true, found }
+}
+
+/** Every login a creator has, by channel, and whether any could not be had.
+ *  A token that threw is trouble (ask again tomorrow), never "no login". */
+async function loginsOf(sb: Sb, userId: string): Promise<{ byChannel: Map<string, string>; all: string[]; trouble: boolean }> {
+  const byChannel = new Map<string, string>()
+  const all: string[] = []
+  let trouble = false
+  const { data: chans } = await sb.from('youtube_channels').select('channel_id').eq('user_id', userId)
+  for (const c of (chans ?? []) as Array<{ channel_id: string | null }>) {
+    if (!c.channel_id) continue
+    try {
+      const t = await getChannelOAuthToken(sb, userId, c.channel_id)
+      if (t) { byChannel.set(c.channel_id, t); if (!all.includes(t)) all.push(t) }
+    } catch { trouble = true }
+  }
+  try { const t = await getChannelOAuthToken(sb, userId); if (t && !all.includes(t)) all.push(t) } catch { trouble = true }
+  return { byChannel, all, trouble }
+}
+
+/** Ask for these videos every way there is: the channel's own login first,
+ *  then every other login, then MVP's API key. `gone` holds only the ids no
+ *  one saw when every ask answered; any failed ask leaves `gone` empty. */
+async function askEveryWay(ids: string[], channel: string, logins: { byChannel: Map<string, string>; all: string[]; trouble: boolean }): Promise<{ found: Map<string, Fresh>; gone: string[]; quota: boolean }> {
+  const found = new Map<string, Fresh>()
+  const own = logins.byChannel.get(channel) ?? null
+  const order: Array<string | null> = []
+  if (own) order.push(own)
+  for (const t of logins.all) if (!order.includes(t)) order.push(t)
+  if (process.env.YOUTUBE_API_KEY) order.push(null)
+  let pending = ids.slice()
+  let failed = logins.trouble
+  for (const t of order) {
+    if (!pending.length) break
+    const got = await videosList(pending, t)
+    if (!got.ok) {
+      if (got.quota) return { found, gone: [], quota: true }
+      failed = true
+      continue
+    }
+    for (const id of pending) { const f = got.found.get(id); if (f) found.set(id, f) }
+    pending = pending.filter((id) => !found.has(id))
+  }
+  if (failed || !order.length) return { found, gone: [], quota: false }
+  // A WHOLE CHUNK NOBODY SEES is a login problem, not that many deletions.
+  if (pending.length >= 10 && pending.length === ids.length) return { found, gone: [], quota: false }
+  return { found, gone: pending, quota: false }
+}
+
+async function writeFresh(sb: Sb, userId: string, id: string, f: Fresh, stamp: string, column: 'yt_refreshed_at' | 'updated_at', oldChannel: string) {
+  const patch: Record<string, unknown> = { title: f.title, description: f.description, channel_title: f.channelTitle, thumbnail_url: f.thumb, view_count: f.views, updated_at: stamp }
+  if (column === 'yt_refreshed_at') patch.yt_refreshed_at = stamp
+  if ((!oldChannel || oldChannel === 'unknown') && f.channelId) patch.channel_id = f.channelId
+  await sb.from('youtube_videos').update(patch).eq('user_id', userId).eq('youtube_video_id', id)
+}
+
+function connectedOf(chans: unknown[] | null, integ: { youtube_oauth_refresh_token?: string | null } | null): boolean {
+  return (chans ?? []).length > 0 || !!integ?.youtube_oauth_refresh_token
 }
 
 /** One daily pass over stale rows. Returns what it did, for the cron's log. */
@@ -104,48 +179,71 @@ export async function retentionPass(sb: Sb, maxRows = 2000, deadlineAt = Infinit
     if (Date.now() > deadlineAt) { timeOut = true; break }
     const { data: chans } = await sb.from('youtube_channels').select('channel_id').eq('user_id', userId)
     const { data: integ } = await sb.from('integrations').select('youtube_oauth_refresh_token').eq('user_id', userId).maybeSingle()
-    const connected = (chans ?? []).length > 0 || !!integ?.youtube_oauth_refresh_token
-    if (!connected) {
+    if (!connectedOf(chans, integ)) {
+      // Disconnected in MVP: the policy asks for deletion, and nothing here
+      // could refresh it.
       await clearYouTubeData(sb, userId, vids.map((v) => v.id))
       cleared += vids.length
       continue
     }
-    // Asked with the login of the channel each video is on, so a private or
-    // scheduled video is seen; a channel connected by URL only has no login
-    // and is asked with MVP's API key (public videos only).
+    const logins = await loginsOf(sb, userId)
     const byChannel = new Map<string, string[]>()
     for (const v of vids) byChannel.set(v.channel, [...(byChannel.get(v.channel) ?? []), v.id])
     for (const [channel, ids] of byChannel) {
-    if (quotaOut || timeOut) break
-    // A TOKEN THAT COULD NOT BE HAD IS NOT A CHANNEL WITHOUT ONE. A refresh
-    // that threw used to fall back to the API key, which cannot see private
-    // or scheduled videos, so they read as gone and their data was emptied.
-    // null (connected by URL only) is the API key's job; a throw waits.
-    let token: string | null
-    try { token = await getChannelOAuthToken(sb, userId, channel) } catch { continue }
-    for (let i = 0; i < ids.length; i += 50) {
-      if (Date.now() > deadlineAt) { timeOut = true; break }
-      const chunk = ids.slice(i, i + 50)
-      const got = await videosList(chunk, token)
-      if (!got.ok) {
-        // Google refused the login: access was revoked there. Anything else
-        // (quota, outage) is tried again tomorrow, well inside the 30 days.
-        if (got.revoked) { await clearYouTubeData(sb, userId, chunk); cleared += chunk.length; continue }
-        if (got.quota) quotaOut = true
-        break
+      if (quotaOut || timeOut) break
+      for (let i = 0; i < ids.length; i += 50) {
+        if (Date.now() > deadlineAt) { timeOut = true; break }
+        const chunk = ids.slice(i, i + 50)
+        const got = await askEveryWay(chunk, channel, logins)
+        if (got.quota) { quotaOut = true; break }
+        for (const [id, f] of got.found) { await writeFresh(sb, userId, id, f, stamp, column, channel); refreshed++ }
+        if (got.gone.length) { await clearYouTubeData(sb, userId, got.gone); cleared += got.gone.length }
       }
-      const gone: string[] = []
-      for (const id of chunk) {
-        const f = got.found.get(id)
-        if (!f) { gone.push(id); continue }
-        const patch: Record<string, unknown> = { title: f.title, description: f.description, channel_title: f.channelTitle, thumbnail_url: f.thumb, view_count: f.views, updated_at: stamp }
-        if (column === 'yt_refreshed_at') patch.yt_refreshed_at = stamp
-        await sb.from('youtube_videos').update(patch).eq('user_id', userId).eq('youtube_video_id', id)
-        refreshed++
-      }
-      if (gone.length) { await clearYouTubeData(sb, userId, gone); cleared += gone.length }
-    }
     }
   }
   return { refreshed, cleared, users: byUser.size, column, ...(quotaOut ? { stoppedFor: 'quota' as const } : timeOut ? { stoppedFor: 'time' as const } : {}) }
+}
+
+/** REFILL WHAT WAS EMPTIED: rows with no title, for creators still connected
+ *  to YouTube in MVP, are asked for again and refilled when YouTube shows
+ *  them. Never empties anything. A row asked about is stamped, so one YouTube
+ *  no longer shows is asked again a day later, not every run. */
+export async function restorePass(sb: Sb, maxRows = 2000, deadlineAt = Infinity): Promise<{ restored: number; stillMissing: number; users: number; stoppedFor?: 'quota' | 'time' }> {
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString()
+  let { data: rows, error } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id')
+    .eq('title', '').or(`yt_refreshed_at.is.null,yt_refreshed_at.lt.${dayAgo}`).limit(maxRows)
+  const stampable = !error
+  if (error) ({ data: rows } = await sb.from('youtube_videos').select('user_id,youtube_video_id,channel_id').eq('title', '').limit(maxRows))
+  const byUser = new Map<string, Array<{ id: string; channel: string }>>()
+  for (const r of (rows ?? []) as Array<{ user_id: string; youtube_video_id: string; channel_id: string }>) {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(r.youtube_video_id || '')) continue
+    byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), { id: r.youtube_video_id, channel: r.channel_id }])
+  }
+  let restored = 0, stillMissing = 0
+  let quotaOut = false, timeOut = false
+  const stamp = new Date().toISOString()
+  for (const [userId, vids] of byUser) {
+    if (quotaOut || timeOut) break
+    if (Date.now() > deadlineAt) { timeOut = true; break }
+    const { data: chans } = await sb.from('youtube_channels').select('channel_id').eq('user_id', userId)
+    const { data: integ } = await sb.from('integrations').select('youtube_oauth_refresh_token').eq('user_id', userId).maybeSingle()
+    if (!connectedOf(chans, integ)) continue
+    const logins = await loginsOf(sb, userId)
+    const byChannel = new Map<string, string[]>()
+    for (const v of vids) byChannel.set(v.channel, [...(byChannel.get(v.channel) ?? []), v.id])
+    for (const [channel, ids] of byChannel) {
+      if (quotaOut || timeOut) break
+      for (let i = 0; i < ids.length; i += 50) {
+        if (Date.now() > deadlineAt) { timeOut = true; break }
+        const chunk = ids.slice(i, i + 50)
+        const got = await askEveryWay(chunk, channel, logins)
+        if (got.quota) { quotaOut = true; break }
+        for (const [id, f] of got.found) { await writeFresh(sb, userId, id, f, stamp, stampable ? 'yt_refreshed_at' : 'updated_at', channel); restored++ }
+        const missing = chunk.filter((id) => !got.found.has(id))
+        stillMissing += missing.length
+        if (missing.length && stampable) await sb.from('youtube_videos').update({ yt_refreshed_at: stamp }).eq('user_id', userId).in('youtube_video_id', missing)
+      }
+    }
+  }
+  return { restored, stillMissing, users: byUser.size, ...(quotaOut ? { stoppedFor: 'quota' as const } : timeOut ? { stoppedFor: 'time' as const } : {}) }
 }

@@ -100,7 +100,7 @@ const read = (p: string) => readFileSync(p, 'utf8')
     ['app/api/cron/heal-thumbnails/route.ts', /if \(left\(\) < 60_000\)/],
     ['app/api/cron/auto-blog/route.ts', /deferred_out_of_time/],
     ['app/api/cron/check-favorite-brands/route.ts', /if \(left\(\) < 30_000\)/],
-    ['app/api/cron/youtube-data-retention/route.ts', /retentionPass\(createAdminClient\(\), 2000, Date\.now\(\)/],
+    ['app/api/cron/youtube-data-retention/route.ts', /retentionPass\(sb, 2000, deadline\)/],
   ] as const) check(`${file} stops with time to spare`, re.test(read(file)))
   check('weekly digest starts its last digest with room to finish it',
     /const deadline = Date\.now\(\) \+ 170_000/.test(read('app/api/cron/weekly-deal-digest/route.ts')))

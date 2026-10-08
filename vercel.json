@@ -146,7 +146,7 @@
     },
     {
       "path": "/api/cron/youtube-data-retention",
-      "schedule": "17 9 * * *"
+      "schedule": "17 * * * *"
     }
   ],
   "git": {
