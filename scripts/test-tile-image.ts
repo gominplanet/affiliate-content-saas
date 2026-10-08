@@ -12,7 +12,7 @@
 // through to the next source, and the last source is built from the ASIN with
 // no network call, so there is no path where a caller ends up with null and
 // writes a grey card.
-import { tileImageFor, amazonAsinImage, shopTileImage, healShopTiles } from '../lib/tile-image'
+import { tileImageFor, amazonAsinImage, shopTileImage, healShopTiles, isAmazonWidgetImage } from '../lib/tile-image'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -48,6 +48,24 @@ async function main() {
     const healed = await healShopTiles(db, 'u1', [{ id: 't1', image_url: signed, asin: 'B0GL85L61L' }, { id: 't2', image_url: 'https://m.media-amazon.com/images/I/x.jpg', asin: 'B000000002' }])
     check('a card with a YouTube thumbnail gets the picture MVP made for the video, and it is saved', healed[0].image_url === 'https://v3b.fal.media/files/b/x/made.jpeg' && JSON.stringify(writes) === JSON.stringify([['link_page_items', { image_url: 'https://v3b.fal.media/files/b/x/made.jpeg' }]]))
     check('a card with a real picture is left as it is', healed[1].image_url === 'https://m.media-amazon.com/images/I/x.jpg')
+    // The pin path saved Amazon's widget link on the LEVEL8 card. The widget
+    // gives nothing for a new product, so it counts as no picture at all.
+    check('Amazon\'s widget link is recognised as a guess', isAmazonWidgetImage(amazonAsinImage('B0GL85L61L')) && !isAmazonWidgetImage('https://m.media-amazon.com/images/I/x.jpg'))
+    const keepaWrites: unknown[] = []
+    const keepaDb = {
+      from: (t: string) => ({
+        select: () => {
+          const q: Record<string, unknown> = {}
+          const chain = () => q
+          Object.assign(q, { eq: chain, not: chain, order: chain, limit: chain,
+            maybeSingle: async () => ({ data: t === 'keepa_product_cache' ? { image_url: 'https://m.media-amazon.com/images/I/level8.jpg' } : null }) })
+          return q
+        },
+        update: (v: unknown) => ({ eq: async () => { keepaWrites.push([t, v]); return { error: null } } }),
+      }),
+    }
+    const [mended] = await healShopTiles(keepaDb, 'u1', [{ id: 't3', image_url: amazonAsinImage('B0GL85L61L'), asin: 'B0GL85L61L' }])
+    check('a card saved with the widget link gets the real product photo, and it is saved', mended.image_url === 'https://m.media-amazon.com/images/I/level8.jpg' && keepaWrites.length === 1)
   }
 
   const ASIN = 'B0H298X69Z'
