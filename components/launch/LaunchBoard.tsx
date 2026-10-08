@@ -43,6 +43,7 @@ import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
+import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal } from '@/lib/clip-source-limits'
 
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -1117,8 +1118,8 @@ export default function LaunchBoard() {
       let ok = false
       try {
         if (!file.type.startsWith('video/')) throw new Error(`${file.name} is not a video.`)
-        if (file.size > 500 * 1024 * 1024) {
-          throw new Error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under 500MB.`)
+        if (file.size > BULK_VIDEO_MAX_BYTES) {
+          throw new Error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under ${BULK_VIDEO_MAX_BYTES / 1024 / 1024}MB.`)
         }
         const probed = await probeVideo(file)
         // THE SAME RULE AS VIDEO LAUNCHPAD. That path refuses vertical and
@@ -1181,7 +1182,9 @@ export default function LaunchBoard() {
         }
         ok = true
       } catch (e) {
-        mark(key, { state: 'failed', error: e instanceof Error ? e.message : `Could not upload ${file.name}.` })
+        const msg = e instanceof Error ? e.message : `Could not upload ${file.name}.`
+        // A refusal for size says so, rather than storage's raw words.
+        mark(key, { state: 'failed', error: storageSizeRefusal(msg, file.size) || msg })
       }
 
       // Its turn to be added, after the file before it.
@@ -1684,7 +1687,7 @@ export default function LaunchBoard() {
               {uploading > 0 ? `Uploading ${uploading} ${uploading === 1 ? 'video' : 'videos'}. Keep this tab open until they finish.` : 'Choose videos'}
             </span>
             <span className="block text-[11.5px] mt-0.5" style={muted}>
-              Pick several at once. Up to {maxItems} per batch, under 500MB each.
+              Pick several at once. Up to {maxItems} per batch, under {BULK_VIDEO_MAX_BYTES / 1024 / 1024}MB each.
             </span>
           </label>
 

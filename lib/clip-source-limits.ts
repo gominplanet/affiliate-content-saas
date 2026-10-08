@@ -10,6 +10,12 @@
 
 export const SOURCE_VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
+/** How big a Bulk Amazon upload video may be (Seb, 2026-10-08: a video over
+ *  500 MB failed; "maybe 800MB?"). Everything after the upload copes: YouTube
+ *  gets it in 32 MB pieces across runs (launch-drain takes up to 2 GB), the
+ *  CTA render streams it, and storage holds it once its bucket allows it. */
+export const BULK_VIDEO_MAX_BYTES = 800 * 1024 * 1024
+
 export function sizeWords(bytes: number): string {
   return bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.round(bytes / 1024 / 1024)} MB`
 }
