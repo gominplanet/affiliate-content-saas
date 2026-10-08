@@ -2283,9 +2283,26 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /setUploading\(\(n\) => n \+ picked\.length\)/.test(BOARD))
 }
 
+// ── HOW LONG, BEFORE THE PRESS (Seb, 2026-10-08) ────────────────────────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const E = require('../lib/liftoff-estimate') as typeof import('../lib/liftoff-estimate')
+  const MB = 1024 * 1024
+  const big = E.liftoffEstimate({ bytes: Array(20).fill(800 * MB), upMbps: null, youtube: 'studio', amazon: true })
+  check('twenty 800MB videos on a typical line read as hours, worth starting before bed',
+    big.minutes[0] >= 240 && big.minutes[1] <= 720 && E.overnightWorthy(big.minutes) && /hours/.test(E.estimateWords(big.minutes)) && !big.measured && big.upMbps === E.DEFAULT_UP_MBPS)
+  const fast = E.liftoffEstimate({ bytes: [100 * MB, 100 * MB], upMbps: 200, youtube: 'studio', amazon: true })
+  check('a small batch on a fast line reads as minutes, and the measured speed is used', fast.measured && fast.minutes[1] < 90 && /minutes/.test(E.estimateWords(fast.minutes)) && !E.overnightWorthy(fast.minutes))
+  const unk = E.liftoffEstimate({ bytes: [100 * MB, null], upMbps: 20, youtube: 'studio', amazon: false })
+  check('an unknown size is counted at the average and said', unk.unknownSizes === 1 && unk.totalBytes === 200 * MB)
+  check('the kept speed is the median of the last five', E.speedOf(E.foldSpeed([10, 50, 20, 30, 40], 1000)) === 40 && E.speedOf([]) === null)
+  check('the estimate sits above Launch, says to keep Chrome open and the computer awake, and what it rests on',
+    /liftoffEstimate\(\{ bytes: items\.map/.test(BOARD) && /Keep Chrome open and the computer awake/.test(BOARD) && /A good one to start before bed/.test(BOARD) && /measured when you added videos in this browser/.test(BOARD) && /localStorage\.setItem\(UP_SPEED_KEY/.test(BOARD))
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ launch-batch: ten videos, one CTA, a schedule YouTube confirmed, and a page that never ticks a step the worker would refuse')
+console.log('✅ launch-batch: twenty videos, one CTA, a schedule YouTube confirmed, and a page that never ticks a step the worker would refuse')

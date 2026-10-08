@@ -43,7 +43,8 @@ import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
-import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal } from '@/lib/clip-source-limits'
+import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal, sizeWords } from '@/lib/clip-source-limits'
+import { liftoffEstimate, estimateWords, overnightWorthy, foldSpeed, speedOf, UP_SPEED_KEY, AMAZON_US_PER_DAY } from '@/lib/liftoff-estimate'
 
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -290,6 +291,23 @@ export default function LaunchBoard() {
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
   // YouTube through SCOUT (Labs): SCOUT uploads in Studio, no YouTube API.
   const [studioUpload, setStudioUpload] = useState(false)
+  // Each video's size, read from storage for the launch estimate.
+  const [fileSizes, setFileSizes] = useState<Record<string, number | null>>({})
+  const sizeKey = items.filter((i) => i.source_url).map((i) => i.id).join('|')
+  useEffect(() => {
+    if (!batch || batch.state === 'launched' || batch.state === 'launching') return
+    const todo = items.filter((i) => i.source_url && !(i.id in fileSizes))
+    if (!todo.length) return
+    let cancelled = false
+    void Promise.all(todo.map(async (i) => {
+      try {
+        const r = await fetch(i.source_url as string, { method: 'HEAD', signal: AbortSignal.timeout(10_000) })
+        const n = Number(r.headers.get('content-length'))
+        return [i.id, r.ok && n > 0 ? n : null] as const
+      } catch { return [i.id, null] as const }
+    })).then((got) => { if (!cancelled) setFileSizes((had) => ({ ...had, ...Object.fromEntries(got) })) })
+    return () => { cancelled = true }
+  }, [sizeKey, batch?.state]) // eslint-disable-line react-hooks/exhaustive-deps
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
   // THE CREATOR'S SAVED FACES, for choosing one per video. A channel with two
@@ -1138,6 +1156,7 @@ export default function LaunchBoard() {
         // whole file again (lib/upload-resumable). On a slow line a 288MB video
         // used to restart from zero two or three times and still fail.
         let resumed = false
+        const t0 = Date.now()
         try {
           mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: 1, error: undefined })
           await uploadResumable({
@@ -1182,6 +1201,17 @@ export default function LaunchBoard() {
           }
         }
         ok = true
+        // THE CREATOR'S OWN UPLOAD SPEED, for the launch estimate: the same
+        // line and direction SCOUT uploads on. Files go up side by side, so
+        // each one's speed is a share of the line. Small files say little.
+        if (file.size >= 20 * 1024 * 1024) {
+          const lanes = Math.min(UPLOAD_LANES, picked.length)
+          const mbps = (file.size * 8) / Math.max(1, (Date.now() - t0) / 1000) / 1_000_000 * lanes
+          try {
+            const kept = JSON.parse(localStorage.getItem(UP_SPEED_KEY) || '[]') as number[]
+            localStorage.setItem(UP_SPEED_KEY, JSON.stringify(foldSpeed(Array.isArray(kept) ? kept : [], mbps)))
+          } catch { /* this browser only; the estimate assumes a typical speed */ }
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : `Could not upload ${file.name}.`
         // A refusal for size says so, rather than storage's raw words.
@@ -2103,6 +2133,36 @@ export default function LaunchBoard() {
               {blocker}
             </p>
           )}
+
+          {/* HOW LONG, BEFORE THE PRESS (Seb, 2026-10-08: "if it says four
+              hours ... at least you tell people. So that might be something
+              that people do at night"). */}
+          {!scheduleLocked && items.length > 0 && (() => {
+            let kept: number[] = []
+            try { const v = JSON.parse(localStorage.getItem(UP_SPEED_KEY) || '[]'); if (Array.isArray(v)) kept = v.filter((x) => typeof x === 'number') } catch { /* assumed below */ }
+            const amazonGoes = batch.amazon_later ? true : batch.markets.length > 0
+            const yt: 'studio' | 'api' | 'none' = !youtubeOn ? 'none' : studioUpload ? 'studio' : 'api'
+            const est = liftoffEstimate({ bytes: items.map((i) => fileSizes[i.id] ?? null), upMbps: speedOf(kept), youtube: yt, amazon: amazonGoes })
+            const where = yt === 'studio' && amazonGoes ? 'to YouTube Studio and to Amazon' : yt === 'studio' ? 'to YouTube Studio' : amazonGoes ? 'to Amazon' : 'into YouTube Studio to finish its settings'
+            return (
+              <div className="text-[12.5px] px-3 py-2.5 rounded-lg flex flex-col gap-1" style={{ background: 'rgba(14,165,164,0.08)' }}>
+                <p className="font-semibold" style={text}>
+                  {estimateWords(est.minutes).replace(/^about/, 'About')} of uploading for {items.length} {items.length === 1 ? 'video' : 'videos'} ({sizeWords(est.totalBytes)}{est.unknownSizes ? ', some sizes estimated' : ''}).
+                </p>
+                <p style={muted}>
+                  After you press Launch, SCOUT sends each video from this Chrome {where}, one at a time{yt === 'api' ? ' (MVP\u2019s servers upload the file to YouTube)' : ''}.
+                  Keep Chrome open and the computer awake, not asleep. You can close this page and walk away.
+                </p>
+                {overnightWorthy(est.minutes) && <p style={text}>A good one to start before bed: launch tonight and it is done by morning.</p>}
+                {est.amazonNextDay > 0 && <p style={{ color: '#d97706' }}>Amazon takes {AMAZON_US_PER_DAY} a day on the US store, so {est.amazonNextDay} go the next day.</p>}
+                <p className="text-[11.5px]" style={muted}>
+                  {est.measured
+                    ? `Based on your upload speed, about ${est.upMbps} Mbps, measured when you added videos in this browser.`
+                    : `Assumes a typical home upload of ${est.upMbps} Mbps. MVP measures yours the next time you add videos in this browser.`}
+                </p>
+              </div>
+            )
+          })()}
 
           <button
             ref={setMainLaunchEl}
