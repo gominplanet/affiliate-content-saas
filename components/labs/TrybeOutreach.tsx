@@ -1,7 +1,7 @@
 'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// TRYBE Outreach (Labs). Seb's flow, 2026-10-06:
+// TRYBE Outreach (Pro, in Find products since 2026-10-08). Seb's flow, 2026-10-06:
 //   1. Write the core message: the idea of what goes out. Line breaks are kept.
 //   2. Pick categories and keywords. SCOUT searches TRYBE for the keywords and
 //      presses the categories as TRYBE's own filters; MVP reads each brand's
@@ -735,7 +735,7 @@ export default function TrybeOutreach() {
       <div className="flex flex-wrap items-start gap-3">
         <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
         <div className="flex-1 min-w-[14rem]">
-          <h1 className="text-[22px] font-bold leading-tight flex items-center gap-2">TRYBE Outreach <span className="text-[10px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>Labs</span></h1>
+          <h1 className="text-[22px] font-bold leading-tight flex items-center gap-2">TRYBE Outreach</h1>
           <p className="text-[13px] mt-0.5" style={soft}>Find brands that fit your channel, send each a first message in your words, and answer them here.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
