@@ -264,8 +264,9 @@ check('a reply sent from MVP teaches who you are, and the list shows it after', 
 
 // The redesign (Seb, 2026-10-07): numbers up top, who replied, one-click
 // Message, compact cards with Send now.
-check('the page shows sent today, ready, replied and unread', /<Stat label="Sent today"/.test(UI) && /<Stat label="Ready to send"/.test(UI) && /<Stat label="Replied"/.test(UI) && /<Stat label="Unread"/.test(UI))
-check('a sent brand is marked replied only when its TRYBE chat ends with them', /lastMine === false \? 'replied'/.test(UI) && /!c \? 'none'/.test(UI) && /export function lastIsMine/.test(INBOX))
+check('the page shows sent today, ready, replied and unread', /<Stat label="Sent today"/.test(UI) && /<Stat label="Ready to send"/.test(UI) && /<Stat label="Replied this week"/.test(UI) && /<Stat label="Unread"/.test(UI))
+check('a sent brand with a TRYBE conversation counts as replied, and a stamped reply stays one', /const reply: 'replied' \| 'none' \| 'unknown' = b\.replied_at \|\| c \? 'replied'/.test(UI) && /action: 'replied', replies:/.test(UI) && /action === 'replied'/.test(ROUTE) && /\.is\('replied_at', null\)/.test(ROUTE))
+check('the Replied tile counts this week, with the all-time count under it', /<Stat label="Replied this week"/.test(UI) && /sent have replied/.test(UI) && /add column if not exists replied_at timestamptz/.test(readFileSync('supabase/migrations/419_trybe_replied.sql', 'utf8')))
 check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ id: c\.id, n: \(o\?\.n \?\? 0\) \+ 1 \}\)\); setTab\('inbox'\)/.test(UI) && /openRequest=\{openChat\}/.test(UI) && /handled\.current === openRequest\.n/.test(INBOX))
 check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
 check('Send now saves the text shown before sending it', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(\(\) => sendOne\(\{ \.\.\.b, draft: t \}\)\)\}/.test(UI))

@@ -60,6 +60,8 @@ interface Brand {
   fit_score?: number | null
   fit_reason?: string | null
   fit_prefs?: string | null
+  /** When MVP first saw this brand's TRYBE conversation (migration 419). */
+  replied_at?: string | null
 }
 
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
@@ -270,6 +272,19 @@ export default function TrybeOutreach() {
   }, [])
   useEffect(() => { if (canInbox) void loadInbox() }, [canInbox, loadInbox])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
+  // A reply seen for the first time is saved, so it counts from then on even
+  // when the inbox cannot be read. Each brand once per visit.
+  const stampedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!inbox) return
+    const fresh = brands.filter(b => ['sent', 'already', 'sending'].includes(b.status) && !b.replied_at && !stampedRef.current.has(b.brand_id))
+      .map(b => ({ b, c: convoFor(b.name, inbox.convos) })).filter(x => x.c)
+    if (!fresh.length) return
+    for (const x of fresh) stampedRef.current.add(x.b.brand_id)
+    void api({ action: 'replied', replies: fresh.map(x => ({ id: x.b.brand_id, at: x.c!.at ? new Date(x.c!.at).toISOString() : null })) })
+      .then(() => { for (const x of fresh) patch(x.b.brand_id, { replied_at: x.c!.at ? new Date(x.c!.at).toISOString() : new Date().toISOString() }) })
+      .catch(() => { /* before migration 419 the live count still shows */ })
+  }, [inbox, brands]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!waitUntil) return
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -694,11 +709,18 @@ export default function TrybeOutreach() {
   const sentRows = history.map(b => {
     const c = inbox ? convoFor(b.name, inbox.convos) : null
     const lastMine = c && inbox ? lastIsMine(c, inbox.me, inbox.myName) : null
-    // Replied: TRYBE has a conversation with this brand and they wrote last.
-    const reply: 'replied' | 'waiting' | 'open' | 'none' | 'unknown' = !inbox ? 'unknown' : !c ? 'none' : lastMine === false ? 'replied' : lastMine === true ? 'waiting' : 'open'
-    return { b, c, reply }
+    // REPLIED = A CONVERSATION EXISTS (Seb, 2026-10-08: "i know for a fact
+    // that brands have responded"). TRYBE opens a chat with a brand only once
+    // it accepts or writes back, so a sent brand with one has answered, whoever
+    // wrote last. TRYBE's list does not reliably say who wrote last, which
+    // left this at zero. A reply stamped before (replied_at) stays a reply.
+    const reply: 'replied' | 'none' | 'unknown' = b.replied_at || c ? 'replied' : !inbox ? 'unknown' : 'none'
+    return { b, c, reply, lastMine }
   })
   const repliedCount = sentRows.filter(r => r.reply === 'replied').length
+  const weekAgo = Date.now() - 7 * 86_400_000
+  // This week: stamped in the last seven days, or seen now and not yet stamped.
+  const repliedWeek = sentRows.filter(r => r.reply === 'replied' && (r.b.replied_at ? Date.parse(r.b.replied_at) >= weekAgo : true)).length
   const Stat = ({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) => (
     <div className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <p className="text-[10px] font-bold uppercase tracking-wider" style={soft}>{label}</p>
@@ -735,7 +757,7 @@ export default function TrybeOutreach() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <Stat label="Sent today" value={`${used} of ${cap}`} hint={remaining ? `${remaining} left today` : 'Daily cap reached'} />
         <Stat label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} />
-        <Stat label="Replied" value={inbox ? `${repliedCount} of ${history.length}` : '...'} hint={inbox ? 'Brands that wrote back' : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedCount ? GREEN : undefined} />
+        <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${history.length} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
         <Stat label="Unread" value={inbox ? String(unread) : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : ' '} tone={unread ? PURPLE : undefined} />
       </div>
 
@@ -1148,16 +1170,15 @@ export default function TrybeOutreach() {
           )}
           {!history.length && <p className="text-[13px]" style={soft}>Nothing sent yet.</p>}
           <div className="space-y-2">
-            {sentRows.filter(r => sentFilter === 'all' || (sentFilter === 'replied' ? r.reply === 'replied' : r.reply !== 'replied')).map(({ b, c, reply }) => (
+            {sentRows.filter(r => sentFilter === 'all' || (sentFilter === 'replied' ? r.reply === 'replied' : r.reply !== 'replied')).map(({ b, c, reply, lastMine }) => (
               <div key={b.brand_id} className="flex items-start gap-3 rounded-xl border p-3" style={{ borderColor: reply === 'replied' ? 'rgba(22,163,74,0.45)' : 'var(--border)' }}>
                 <BrandMark name={b.name} website={b.website} size={36} />
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
                     <span className="text-[14px] font-semibold">{b.name}</span>
                     <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
-                    {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied</span>}
-                    {reply === 'waiting' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
-                    {reply === 'open' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Conversation open</span>}
+                    {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied{b.replied_at ? ` ${new Date(b.replied_at).toLocaleDateString()}` : ''}</span>}
+                    {reply === 'replied' && lastMine === true && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
                     {reply === 'none' && (b.status === 'sent' || b.status === 'already') && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>No reply yet</span>}
                     {c && c.unread > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 text-white" style={{ background: PURPLE }}>{c.unread} new</span>}
                   </div>

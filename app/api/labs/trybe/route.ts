@@ -12,7 +12,7 @@
 //   POST {action:'adopt'}     put brands picked from the live list on the creator's list
 //   POST {action:'import'}    brands SCOUT read from TRYBE's Discover Brands
 //   POST {action:'draft'}     research each brand's website, write its message
-//   POST {action:'edit'|'skip'|'unskip'|'remove'|'reset'}
+//   POST {action:'edit'|'skip'|'unskip'|'remove'|'reset'|'replied'}
 //   POST {action:'claim'}     reserve one send under the daily cap
 //   POST {action:'result'}    what SCOUT saw happen to that send
 //
@@ -593,6 +593,24 @@ export async function POST(request: Request) {
     const status = action === 'skip' ? 'skipped' : (row.draft ? 'drafted' : 'new')
     await admin.from('trybe_brands').update({ status, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
     return NextResponse.json({ ok: true, status })
+  }
+
+  if (action === 'replied') {
+    // REPLIES KEPT (Seb, 2026-10-08: "keep the replied number for the week").
+    // The page found these brands' TRYBE conversations; the first sighting is
+    // stamped and never moved, so the count does not swing with the inbox.
+    const list = (Array.isArray(body.replies) ? body.replies : []).slice(0, 200)
+      .map((r: { id?: unknown; at?: unknown }) => ({ id: String(r?.id || ''), at: Date.parse(String(r?.at || '')) }))
+      .filter((r: { id: string }) => /^[A-Za-z0-9-]{6,80}$/.test(r.id))
+    let stamped = 0
+    for (const r of list) {
+      const at = Number.isFinite(r.at) && r.at <= Date.now() ? new Date(r.at).toISOString() : now
+      const { data, error } = await admin.from('trybe_brands').update({ replied_at: at })
+        .eq('user_id', ownerId).eq('brand_id', r.id).is('replied_at', null).in('status', ['sent', 'already', 'sending']).select('brand_id')
+      if (error) return NextResponse.json({ error: /column .* does not exist|schema cache/i.test(error.message) ? 'Replies need migration 419 in Supabase first.' : error.message, needsMigration: /column .* does not exist|schema cache/i.test(error.message) }, { status: 500 })
+      stamped += (data || []).length
+    }
+    return NextResponse.json({ ok: true, stamped })
   }
 
   if (action === 'remove') {
