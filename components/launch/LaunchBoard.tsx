@@ -33,7 +33,7 @@ import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, requestStoreCheck, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
 import { runStudioUploads } from '@/lib/studio-upload-client'
-import { isStudioWaiting, DRAFT_REASON_PREFIX, STUDIO_DRAFT_SAVING } from '@/lib/studio-upload'
+import { isStudioWaiting, isStudioRetry, DRAFT_REASON_PREFIX, STUDIO_DRAFT_SAVING } from '@/lib/studio-upload'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioRunSettled, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
@@ -418,7 +418,8 @@ export default function LaunchBoard() {
   uploadTick.current = () => {
     if (!scoutCanUpload || !batch || uploadRunning.current || studioRunning.current || amazonRunning.current) return uploadRunning.current
     if (batch.state !== 'launched' && batch.state !== 'launching') return false
-    if (!items.some((i) => (i.state === 'prepared' && !i.youtube_video_id && isStudioWaiting(i.reason)) || isScoutDraft(i))) return false
+    // Waiting, or failed with tries left: both go to SCOUT from this page.
+    if (!items.some((i) => (i.state === 'prepared' && !!i.planned_publish_at && !i.youtube_video_id && (isStudioWaiting(i.reason) || isStudioRetry(i.reason))) || isScoutDraft(i))) return false
     uploadRunning.current = true
     void runStudioUploads({
       background: true,

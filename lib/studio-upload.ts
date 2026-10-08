@@ -49,6 +49,15 @@ export function isStudioRunning(reason: string | null | undefined): boolean {
   return String(reason || '').startsWith(STUDIO_UPLOAD_RUNNING)
 }
 
+/** A SCOUT upload that failed and has tries left: the row stays 'prepared'
+ *  with SCOUT's words on it, and the server offers it again. (Seb, 2026-10-08:
+ *  closing the Studio window failed three uploads, and the Liftoff page never
+ *  started them again because it only looked for rows still "Waiting".) */
+export function isStudioRetry(reason: string | null | undefined): boolean {
+  const r = String(reason || '')
+  return !isStudioRunning(r) && /^(?:SCOUT |Studio |YouTube Studio |The file went into Studio)/.test(r)
+}
+
 /** A YouTube video id, or null. */
 export function cleanVideoId(v: unknown): string | null {
   const s = String(v ?? '').trim()

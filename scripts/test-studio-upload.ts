@@ -7,7 +7,7 @@
 // the same video twice, and each state must read as itself on the board.
 import { readFileSync } from 'node:fs'
 import { storeStudioRun, readStudioRun, studioRunSettled, studioRunHeadline } from '../lib/studio-finish'
-import { scoutSawPaidPromotion, apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
+import { scoutSawPaidPromotion, apiCommentAllowed, API_BACKLOG_COMMENTS_PER_DAY, SCOUT_BACKLOG_GRACE_MS, leaveCommentToScout, SCOUT_COMMENT_GRACE_MS, studioDid, scheduleHeld, usesStudioUpload, isStudioWaiting, isStudioRunning, isStudioRetry, cleanVideoId, studioUploadFailureText, STUDIO_UPLOAD_WAITING, STUDIO_UPLOAD_RUNNING } from '../lib/studio-upload'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -223,6 +223,16 @@ check('SCOUT sets tags, thumbnail and playlist on Details', /K\.steps\.uploadTag
     /did\.publishAt && did\.scheduleVerified/.test(read('lib/launch-release.ts')) && /\(apiBlind && viaStudio\.scheduleVerified\)/.test(read('app/api/cron/launch-drain/route.ts')))
   check('the upload timeout carries the video id YouTube already gave', /sendResponse\(\{ ok: false, steps: \[\], error: 'timeout', videoId/.test(bg))
   check('storefront sync posts to the storefront route again', /async function pushStorefrontToMvp\(earnings, totals\)/.test(bg) && /pushStorefrontToMvp\(r\.rows, r\.totals\)/.test(bg))
+}
+
+// A FAILED TRY IS STARTED AGAIN FROM THE PAGE (Seb, 2026-10-08: closing the
+// Studio window failed three uploads, and the Liftoff page never retried them).
+{
+  const ok = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
+  ok('a SCOUT failure with tries left reads as a retry', isStudioRetry('SCOUT could not upload it (Frame with ID 0 was removed.).') && isStudioRetry(studioUploadFailureText('no-result', 'Studio did not answer')) && isStudioRetry(studioUploadFailureText('no-picker', '')))
+  ok('waiting, running and done are not retries', !isStudioRetry(STUDIO_UPLOAD_WAITING) && !isStudioRetry(STUDIO_UPLOAD_RUNNING + ' Try 2 of 3.') && !isStudioRetry(null))
+  const BOARD = readFileSync('components/launch/LaunchBoard.tsx', 'utf8')
+  ok('the Liftoff page starts SCOUT on a failed upload with tries left, not only on a waiting one', /\(isStudioWaiting\(i\.reason\) \|\| isStudioRetry\(i\.reason\)\)/.test(BOARD))
 }
 
 if (failures.length) {
