@@ -190,7 +190,7 @@ const APP = 'https://www.mvpaffiliate.io'
   check('video pins refuse a redirect too', /if \(rawLink && isBlockedPinLink\(rawLink\)\)/.test(readFileSync('app/api/pinterest/video-pin/route.ts', 'utf8')))
   const PAGE = readFileSync('app/shop/[handle]/[asin]/page.tsx', 'utf8')
   check('the product page buys through the same click counter, and sends a gone product to the shop',
-    /href=\{`\/api\/link-click\?i=\$\{item\.id\}`\}/.test(PAGE) && /if \(!data\.item\) redirect\(/.test(PAGE) && /images: data\.item\.image_url/.test(PAGE))
+    /href=\{`\/api\/link-click\?i=\$\{item\.id\}`\}/.test(PAGE) && /if \(!data\.item\) redirect\(/.test(PAGE) && /images: shopTileImage\(data\.item\.image_url, data\.item\.asin\)/.test(PAGE))
   check('a shopper who is not logged in can use the buy buttons', /'\/api\/link-click',/.test(readFileSync('middleware.ts', 'utf8')))
   const PICK = readFileSync('components/pinterest/PinDestinationPicker.tsx', 'utf8')
   check('the picker opens on the saved choice and saves a change at once, putting it back when the save failed',
