@@ -14308,6 +14308,9 @@ const TRYBE_API_ALLOW = [
   { method: 'POST', re: /^\/backend\/api\/channels\/[A-Za-z0-9-]{6,80}\/(messages|read)$/ },
   { method: 'GET', re: /^\/backend\/api\/(contexts|inbox|profile)(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/discovery\/[\w-]+(\?[\w=&%.-]*)?$/ },
+  // 1.42.0: the creator's own requests to brands and where each stands
+  // (accepted, pending, declined), for MVP's Sent tab. Read only.
+  { method: 'GET', re: /^\/backend\/api\/(invitations|collaboration-requests|collaborations|requests|applications|partnerships)(\?[\w=&%.-]*)?$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never

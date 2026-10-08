@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs'
 import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
+import { stateOf, itemState, readRequests, requestFor, acceptRate, INVITE_PATHS } from '../lib/trybe-invites'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
 
 const failures: string[] = []
@@ -366,6 +367,25 @@ check('a late answer for another conversation is dropped', /const current = open
   check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe-outreach'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
   check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe-outreach\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
   check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /if \(inbox\) void reportTrybeInbox\(inbox\.convos\)/.test(UI4) && /get\('tab'\) === 'inbox'/.test(UI4))
+}
+
+// Accepted, pending, declined (Seb, 2026-10-08 upgrade 1)
+{
+  check('TRYBE request words map to accepted, pending or declined', stateOf('ACCEPTED') === 'accepted' && stateOf('approved') === 'accepted' && stateOf('in_progress') === 'accepted'
+    && stateOf('PENDING') === 'pending' && stateOf('requested') === 'pending' && stateOf('declined') === 'declined' && stateOf('REJECTED') === 'declined' && stateOf('expired') === 'declined' && stateOf('') === null && stateOf('weird') === null)
+  check('a status is read from a flag or one level in', itemState({ isAccepted: true }) === 'accepted' && itemState({ invitation: { status: 'declined' } }) === 'declined' && itemState({ brand: { status: 'active' } }) === null)
+  const read = readRequests({ data: { items: [
+    { id: 'r1', status: 'accepted', brand: { id: 'brand-aaaa1', name: 'Acme Co' }, updatedAt: '2026-10-07T10:00:00Z' },
+    { id: 'r2', requestStatus: 'PENDING', brandName: 'Oros' },
+    { id: 'r3', brand: { id: 'brand-bbbb2', name: 'NoStatus' } },
+  ] } })
+  check('the request list is read whatever it is wrapped in, and an item with no status is skipped', read.listed === 3 && read.rows.length === 2 && read.rows[0].brandId === 'brand-aaaa1' && read.rows[1].name === 'Oros' && read.rows[1].state === 'pending')
+  check('a brand is matched by TRYBE id, then by name', requestFor({ brand_id: 'brand-aaaa1', name: 'Something else' }, read.rows)?.state === 'accepted' && requestFor({ brand_id: 'zzz', name: 'OROS' }, read.rows)?.state === 'pending' && requestFor({ brand_id: 'q', name: 'Nobody' }, read.rows) === null)
+  check('the acceptance rate leaves pending requests out, and is unknown until one is answered', acceptRate(['accepted', 'declined', 'pending', 'accepted']) === 67 && acceptRate(['pending']) === null)
+  const BG2 = readFileSync('extension/background.js', 'utf8'), UI5 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  const allowLine = BG2.split('\n').find(l => l.includes('invitations|collaboration-requests')) || ''
+  check('SCOUT may only READ the request list, at every address MVP tries', allowLine.includes("method: 'GET'") && INVITE_PATHS.every(p => { const m = allowLine.match(/re: (\/.*\/) \}/); return !!m && new RegExp(m[1].slice(1, -1)).test(p) }))
+  check('Sent says when the request list could not be read, instead of showing zero accepted', /MVP could not read your TRYBE requests yet/.test(UI5) && /not in TRYBE&rsquo;s list/.test(UI5) && /scoutAtLeast\(scoutVersion, SCOUT_TRYBE_REQUESTS_MIN_VERSION\)/.test(UI5))
 }
 
 void collectorRun.then(() => {

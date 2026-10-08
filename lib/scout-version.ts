@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.41.9'
+export const SCOUT_LATEST_VERSION = '1.42.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Creator Connections access is proved from every campaign SCOUT sees, and the TRYBE inbox signs in reliably.'
+  'TRYBE: MVP can show which brands accepted, declined or still have your request pending.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -86,6 +86,9 @@ export const SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION = '1.41.7'
 /** The oldest SCOUT that opens one brand's own popup on TRYBE for the
  *  creator (On TRYBE links, Labs). */
 export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'
+/** The oldest SCOUT that may read the creator's own list of TRYBE requests
+ *  (accepted, pending, declined) for MVP's Sent tab. GET only. */
+export const SCOUT_TRYBE_REQUESTS_MIN_VERSION = '1.42.0'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */
