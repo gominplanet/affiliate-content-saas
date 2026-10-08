@@ -118,6 +118,10 @@ const publicPaths = [
   // is born: a landing page is the one route where being logged out is the
   // normal case, so the default (gate it) is exactly backwards.
   '/run-your-storefront',
+  // A letter from Seb to the communities he wants to partner with, sent by
+  // hand to people who are not signed in. Kept out of the sitemap and
+  // marked noindex on the page itself.
+  '/partner',
   '/join',
   // Reached ONLY from a link in an email, by definition from a logged-out
   // browser. A confirmation that lands on a login page is a subscriber who
