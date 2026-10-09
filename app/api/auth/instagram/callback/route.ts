@@ -10,7 +10,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
 import { clearChannelFailures } from '@/lib/channel-health'
-import { exchangeCodeForTokens, subscribeToComments } from '@/services/instagram'
+import { exchangeCodeForTokens, subscribeToComments, fetchIgProfessionalId } from '@/services/instagram'
 import { syncInstagramAccount } from '@/lib/social-accounts'
 
 export async function GET(request: NextRequest) {
@@ -85,6 +85,16 @@ export async function GET(request: NextRequest) {
       })
     } catch (e) {
       console.warn('[instagram/callback] syncInstagramAccount failed:', e)
+    }
+
+    // THE PROFESSIONAL ID TOO. Comment webhooks name the account by it, not by
+    // the app-scoped id saved above, so without it a comment on a post MVP did
+    // not publish could not be traced back to its owner. Best-effort.
+    try {
+      const proId = await fetchIgProfessionalId(tokens.accessToken)
+      if (proId) await supabase.from('integrations').update({ instagram_business_id: proId } as never).eq('user_id', user.id)
+    } catch (e) {
+      console.warn('[instagram/callback] professional id not saved:', e)
     }
 
     // Auto-subscribe this account to the `comments` webhook so comment→DM works

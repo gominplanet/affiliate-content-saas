@@ -17,22 +17,6 @@
 import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { processFacebookCommentEvent, type FbCommentEvent } from '@/lib/fb-dm'
-import { createAdminClient } from '@/lib/supabase/admin'
-
-// Diagnostic breadcrumb → ig_dm_sends (shows up in the Auto-DM status panel's
-// "Recent attempts"). Lets us SEE whether Meta is delivering events at all, vs.
-// us dropping them (bad signature / a non-comment event). No PII stored.
-async function logFbDiag(error: string): Promise<void> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (createAdminClient() as any).from('ig_dm_sends').insert({
-      comment_id: `diag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      status: 'skipped',
-      error: error.slice(0, 400),
-      platform: 'facebook',
-    })
-  } catch { /* best-effort */ }
-}
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -92,19 +76,10 @@ export async function POST(req: Request) {
   let body: any = null
   try { body = JSON.parse(raw) } catch { /* Meta always sends JSON; ignore junk */ }
 
-  // TEMP diagnostic: log EVERY inbound JSON POST (Meta's Test button, real
-  // events, anything) so we can definitively see whether Meta is reaching us
-  // and whether the signature matches. Bounded to JSON bodies. Remove once
-  // comment→DM is confirmed live.
-  // Only a signed request is logged: anyone on the internet can POST here.
-  if (sigOk && body && typeof body === 'object') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const shape = Array.isArray(body.entry)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (body.entry as any[]).flatMap((e: any) => (e.changes ?? []).map((c: any) => `${c.field}/${c.value?.item ?? '?'}/${c.value?.verb ?? '?'}`)).slice(0, 6).join(', ')
-      : Object.keys(body).slice(0, 6).join(',')
-    await logFbDiag(`POST received (sig=${sigOk ? 'ok' : 'BAD'}) [${shape || 'empty'}]`)
-  }
+  // NO ROW PER PAGE EVENT. A temporary breadcrumb logged every signed POST
+  // (every video posted, edited or liked on the Page) and buried the comment
+  // rows under about 850 others. Each comment now writes its own row saying
+  // what happened to it (lib/fb-dm.ts), which is the question that log was for.
 
   if (!sigOk) return new Response('Invalid signature', { status: 401 })
 

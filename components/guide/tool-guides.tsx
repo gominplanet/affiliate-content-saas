@@ -622,19 +622,19 @@ export function ClipFactoryGuide() {
 export function InstagramDmGuide() {
   return (
     <ToolGuide
-      version={2}
+      version={3}
       guideKey="instagram-dm"
       accent="#E1306C"
       icon={<Instagram size={20} />}
       title="Your guide to Instagram Auto-DM"
       subtitle="A keyword comment triggers an automatic DM with your link."
       sections={[
-        { icon: <Clock size={18} />, title: 'Waiting on Meta approval', body: <>Instagram messaging needs Meta to approve MVP’s app, and that review is still in progress. You can set everything up now; no DMs are sent until approval lands, and then they start on their own.</> },
-        { icon: <MessageCircle size={18} />, title: 'How it works', body: <>Turn on <strong>Enable comment → auto-DM</strong>. When someone comments your keyword on an Instagram or Facebook post that MVP published, MVP sends them a DM with that post’s own affiliate link.</> },
+        { icon: <Clock size={18} />, title: 'Until Meta approves the app', body: <>Until Meta approves MVP’s two messaging permissions, only comments from you and people listed on the app come through. <strong>Check Meta approval</strong> opens the page where approval shows.</> },
+        { icon: <MessageCircle size={18} />, title: 'How it works', body: <>Turn on <strong>comment → auto-DM</strong>. A comment with your keyword on a post MVP published sends that post’s own affiliate link. With <strong>Also on posts MVP did not publish</strong> on, posts you made in the app send your backup link, or your Link in Bio shop.</> },
         { icon: <KeyRound size={18} />, title: 'Pick a trigger keyword', body: <>The <strong>Trigger keyword</strong> is matched as a whole word and is not case sensitive, so a comment of “link please!” triggers on LINK.</> },
-        { icon: <Mail size={18} />, title: 'Write the DM', body: <>In <strong>DM message</strong>, put <strong>{'{link}'}</strong> where the post’s link should go and keep the opt-out line, which Meta requires. The <strong>Preview</strong> shows exactly what people will receive.</> },
+        { icon: <Mail size={18} />, title: 'Write the DM', body: <>In <strong>DM message</strong>, put <strong>{'{link}'}</strong> where the link should go. MVP adds the affiliate disclosure if your message does not have one. The <strong>Preview</strong> shows what people receive.</> },
         { icon: <Send size={18} />, title: 'Reply in public too', body: <>Leave <strong>Also reply publicly</strong> on so other viewers see the DM is on its way, then hit <strong>Save settings</strong>.</> },
-        { icon: <Video size={18} />, title: 'A Reel with its own keyword', body: <>Once approval lands, the Instagram publish step in Clip Factory can give a single Reel its own trigger word and link. Those Reels are listed under <strong>Your Auto-DM Reels</strong>, where <strong>Off</strong> stops one.</> },
+        { icon: <Video size={18} />, title: 'A post with its own keyword', body: <>Under <strong>Your Instagram posts</strong>, <strong>Own link</strong> gives any post its own keyword and link, including posts you made in the Instagram app. <strong>Recent comments</strong> shows what happened to every comment MVP received.</> },
       ]}
     />
   )

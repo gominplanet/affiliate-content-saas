@@ -11,7 +11,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
-import { resolvePostDmLink, matchesKeyword, renderMessage } from '@/lib/ig-dm'
+import { resolvePostDmLink, matchesKeyword, renderMessage, logDmOutcome, fallbackDmLink, anyPostOn, PUBLIC_REPLY, type DmSettings } from '@/lib/ig-dm'
 import { postProductAsin } from '@/lib/post-product-link'
 import { resolveCloakedLink } from '@/lib/link-cloak'
 import { sendPrivateReply, replyToCommentPublic } from '@/services/facebook'
@@ -29,78 +29,70 @@ type Sb = any
 
 /**
  * Process one Facebook comment webhook event end-to-end. Idempotent +
- * best-effort: every early-return is a deliberate skip and nothing throws (the
- * webhook must always 200 to Meta). Returns a short outcome for logging.
+ * best-effort: nothing throws (the webhook must always 200 to Meta), and every
+ * comment leaves one row in the log saying what happened to it.
+ *
+ * A comment on a Page post MVP published sends that post's own link. Any other
+ * Page post (unless "every post" is off) sends the creator's backup link, else
+ * their Link in Bio shop.
  */
 export async function processFacebookCommentEvent(ev: FbCommentEvent): Promise<string> {
   const sb: Sb = createAdminClient()
 
-  // Ignore the Page's own comments/replies.
+  // Ignore the Page's own comments/replies, including MVP's public reply.
   if (ev.commenterId && ev.commenterId === ev.pageId) return 'skip:self'
+  if (ev.text.trim() === PUBLIC_REPLY) return 'skip:self'
   const page = String(ev.pageId).replace(/[^0-9]/g, '')
   if (!page) return 'skip:bad-page'
 
+  let userId: string | null = null
+  let keyword = ''
+  const skip = async (why: string, code: string): Promise<string> => {
+    await logDmOutcome(sb, {
+      user_id: userId, comment_id: ev.commentId, media_id: ev.postId, commenter_id: ev.commenterId,
+      platform: 'facebook', why, keyword: keyword || null,
+    })
+    return code
+  }
+
   // 1. Which user owns this Page? The webhook entry.id is the Page id, which we
-  //    stored on connect — no app-scoped/business id mismatch like Instagram.
+  //    stored on connect.
   const { data: integRaw } = await sb
     .from('integrations')
     .select('user_id,facebook_page_id,facebook_page_access_token')
     .eq('facebook_page_id', page)
     .maybeSingle()
   const integ = decryptIntegrationRow(integRaw) // page token is stored encrypted
-  const userId = integ?.user_id as string | undefined
-  if (!userId) {
-    // Diagnostic trace (mig 171 nullable user_id) so a "webhook fired but no
-    // matching Page" miss is visible — vs. no row, which means it never fired.
-    console.warn('[fb-dm] no user for page', page)
-    await sb.from('ig_dm_sends').insert({
-      comment_id: ev.commentId, media_id: ev.postId, commenter_id: ev.commenterId,
-      status: 'skipped', error: `no-user for page ${page}`, platform: 'facebook',
-    }).then(() => {}, () => {})
-    return 'skip:no-user'
-  }
+  userId = (integ?.user_id as string | undefined) ?? null
+  if (!userId) return skip(`No MVP account is connected to Facebook Page ${page}.`, 'skip:no-user')
   const pageToken = integ?.facebook_page_access_token as string | undefined
-  if (!pageToken) return 'skip:no-token'
+  if (!pageToken) return skip('Facebook is not connected in MVP (no Page token). Reconnect Facebook.', 'skip:no-token')
 
-  // 2. Global settings — shared with Instagram. Must be enabled.
-  const { data: settings } = await sb
-    .from('ig_dm_settings')
-    .select('enabled,keyword,message_template,reply_to_comment')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (!settings?.enabled) return 'skip:disabled'
+  // 2. Global settings, shared with Instagram. Read whole so a column a
+  //    migration has not added yet cannot fail the read.
+  const { data: settingsRow } = await sb.from('ig_dm_settings').select('*').eq('user_id', userId).maybeSingle()
+  const settings = (settingsRow ?? null) as DmSettings | null
+  keyword = settings?.keyword || ''
+  if (!settings?.enabled) return skip('Auto-DM is turned off.', 'skip:disabled')
 
   // 3. Keyword gate.
-  if (!matchesKeyword(ev.text, settings.keyword)) return 'skip:no-keyword'
+  if (!matchesKeyword(ev.text, keyword)) return skip(`The comment did not contain "${keyword}".`, 'skip:no-keyword')
 
-  // 4. Dedupe — claim the comment (unique comment_id). A conflict = already
-  //    handled (Meta redelivery), so skip without a second DM.
-  const { error: claimErr } = await sb.from('ig_dm_sends').insert({
-    user_id: userId,
-    comment_id: ev.commentId,
-    media_id: ev.postId,
-    commenter_id: ev.commenterId,
-    keyword: settings.keyword,
-    status: 'sent',
-    platform: 'facebook',
-  })
-  if (claimErr) return 'skip:duplicate'
-
-  // 5. Resolve the link for the commented-on Page post.
+  // 4. The link: the MVP post's own, else the backup for any other post.
   let link: string | null = null
+  let mvpPost = false
   if (ev.postId) {
     const { data: post } = await sb
       .from('blog_posts')
       .select('geniuslink_code,content,wordpress_url')
       .eq('user_id', userId)
       .eq('facebook_post_id', ev.postId)
+      .limit(1)
       .maybeSingle()
     if (post) {
+      mvpPost = true
       link = resolvePostDmLink(post)
-      // Cloak per the creator's chosen link style, the same as every other
-      // surface. Without this the reply sent whatever was stored on the post,
-      // which for anything generated while Geniuslink was connected was a
-      // geni.us link, months after the creator moved to Passport.
+      // Cloak per the creator's chosen link style, the same as every other surface.
       if (link) {
         link = await resolveCloakedLink({
           supabase: sb, userId, destination: link, asin: postProductAsin(post),
@@ -109,24 +101,42 @@ export async function processFacebookCommentEvent(ev: FbCommentEvent): Promise<s
       }
     }
   }
+  if (!mvpPost) {
+    if (!anyPostOn(settings)) return skip('Not a post MVP published, and Auto-DM is set to MVP posts only.', 'skip:not-mvp-post')
+    link = await fallbackDmLink(sb, userId, settings)
+  }
   if (!link) {
-    await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'no link for post' }).eq('comment_id', ev.commentId)
-    return 'skip:no-link'
+    return skip(mvpPost
+      ? 'No link to send: MVP found no product link on this post.'
+      : 'No link to send: this post was not made by MVP, and there is no backup link or published Link in Bio shop.', 'skip:no-link')
   }
 
+  // 5. Dedupe: claim the comment as "sending". Only Meta's answer makes it sent.
+  const { error: claimErr } = await sb.from('ig_dm_sends').insert({
+    user_id: userId,
+    comment_id: ev.commentId,
+    media_id: ev.postId,
+    commenter_id: ev.commenterId,
+    keyword,
+    status: 'sending',
+    link_sent: link,
+    platform: 'facebook',
+  })
+  if (claimErr) return 'skip:duplicate'
+
   // 6. Send the private reply.
-  const message = renderMessage(settings.message_template, link)
+  const message = renderMessage(settings.message_template || '', link)
   try {
-    await sendPrivateReply({ commentId: ev.commentId, message, pageAccessToken: pageToken })
-    await sb.from('ig_dm_sends').update({ status: 'sent', link_sent: link }).eq('comment_id', ev.commentId)
+    const id = await sendPrivateReply({ commentId: ev.commentId, message, pageAccessToken: pageToken })
+    await sb.from('ig_dm_sends').update({ status: 'sent', error: id ? null : 'Meta accepted it but returned no message id.' }).eq('comment_id', ev.commentId)
   } catch (e) {
-    await sb.from('ig_dm_sends').update({ status: 'failed', link_sent: link, error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', ev.commentId)
+    await sb.from('ig_dm_sends').update({ status: 'failed', error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', ev.commentId)
     return 'fail:send'
   }
 
   // 7. Optional public "Sent you a DM!" reply (best-effort).
-  if (settings.reply_to_comment) {
-    await replyToCommentPublic({ commentId: ev.commentId, message: 'Sent you a DM! 📩', pageAccessToken: pageToken })
+  if (settings.reply_to_comment !== false) {
+    await replyToCommentPublic({ commentId: ev.commentId, message: PUBLIC_REPLY, pageAccessToken: pageToken })
   }
-  return 'sent'
+  return mvpPost ? 'sent' : 'sent:any'
 }

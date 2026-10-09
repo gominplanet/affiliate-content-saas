@@ -77,10 +77,101 @@ export type { PostLinkStyle }
  * naturally is left exactly as written.
  */
 export function renderMessage(template: string, link: string, amazonDestination = false): string {
-  const t = (template && template.trim()) || 'Here you go \u{1F517} {link}'
+  const t = stripStopLine(template) || 'Here you go \u{1F517} {link}'
   let out = t.includes('{link}') ? t.replace(/\{link\}/g, link) : `${t}\n${link}`
   if (amazonDestination && !/\bamazon\b/i.test(out)) out = `${out}\n\nThis link goes to Amazon.`
   return ensureDisclaimer(out)
+}
+
+/**
+ * "Reply STOP to opt out" WAS IN THE DEFAULT MESSAGE, and nothing read the
+ * replies (Seb, 2026-10-09). A DM that promises an opt-out MVP never honours is
+ * worse than no line at all, and Meta does not ask for one on a private reply
+ * (it is a single answer to a comment the person wrote). Saved templates still
+ * hold it, so it is taken out when the message is built.
+ */
+export function stripStopLine(template: string | null | undefined): string {
+  return String(template ?? '').replace(/\s*reply\s+stop\s+to\s+opt\s+out\.?/gi, '').trim()
+}
+
+/** What MVP posts under a comment after sending the DM. Its own reply comes back
+ *  as a comment event, and with the keyword "DM" it would match. */
+export const PUBLIC_REPLY = 'Sent you a DM! \u{1F4E9}'
+
+/** The settings row read as a whole (`select('*')`), so a column a migration has
+ *  not added yet reads as its default instead of failing the read, which would
+ *  silently turn every DM into "Auto-DM is off". */
+export type DmSettings = {
+  enabled?: boolean
+  keyword?: string
+  message_template?: string
+  reply_to_comment?: boolean
+  any_post?: boolean | null
+  fallback_link?: string | null
+}
+
+/** Every post, not only the ones MVP published, unless the creator turned it off. */
+export function anyPostOn(s: DmSettings | null | undefined): boolean {
+  return s?.any_post !== false
+}
+
+/** The creator's Link in Bio shop, when it is published. */
+export async function shopPageUrl(sb: Sb, userId: string): Promise<string | null> {
+  try {
+    const { data } = await sb.from('link_pages').select('handle,published').eq('user_id', userId).maybeSingle()
+    const handle = String(data?.handle ?? '').trim()
+    if (!handle || data?.published === false) return null
+    const origin = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/+$/, '')
+    return `${origin}/shop/${encodeURIComponent(handle)}`
+  } catch {
+    return null
+  }
+}
+
+/** The link for a comment on a post MVP did not publish: the creator's own
+ *  choice, else their Link in Bio shop. Never an invented product link. */
+export async function fallbackDmLink(sb: Sb, userId: string, s: DmSettings | null | undefined): Promise<string | null> {
+  const own = String(s?.fallback_link ?? '').trim()
+  if (/^https?:\/\//i.test(own)) return own
+  return shopPageUrl(sb, userId)
+}
+
+/**
+ * ONE ROW PER COMMENT, saying what happened (Seb, 2026-10-09). The log used to
+ * hold a row only when a DM went out or failed, so a comment skipped because
+ * the keyword was missing, the feature was off, or the post was not MVP's left
+ * nothing behind, and that looked exactly like Meta never sending the comment.
+ * The comment id is unique, so a redelivery of the same comment adds nothing.
+ */
+export async function logDmOutcome(sb: Sb, row: {
+  user_id: string | null; comment_id: string; media_id: string | null; commenter_id: string | null
+  platform: 'instagram' | 'facebook'; why: string; keyword?: string | null
+}): Promise<void> {
+  try {
+    await sb.from('ig_dm_sends').insert({
+      user_id: row.user_id, comment_id: row.comment_id, media_id: row.media_id, commenter_id: row.commenter_id,
+      keyword: row.keyword ?? null, status: 'skipped', error: row.why.slice(0, 400), platform: row.platform,
+    })
+  } catch { /* a log row is never a reason to fail the webhook */ }
+}
+
+/** The MVP user behind an Instagram account id from a webhook. The webhook can
+ *  carry either the app-scoped id or the professional account id (migration
+ *  170), so both are tried. */
+export async function ownerOfIgAccount(sb: Sb, igAccountId: string): Promise<string | null> {
+  const id = String(igAccountId || '').replace(/[^0-9]/g, '')
+  if (!id) return null
+  try {
+    const { data } = await sb.from('integrations').select('user_id')
+      .or(`instagram_user_id.eq.${id},instagram_business_id.eq.${id}`).limit(1).maybeSingle()
+    if (data?.user_id) return String(data.user_id)
+  } catch { /* instagram_business_id missing: try the publishing id alone */ }
+  try {
+    const { data } = await sb.from('integrations').select('user_id').eq('instagram_user_id', id).limit(1).maybeSingle()
+    return data?.user_id ? String(data.user_id) : null
+  } catch {
+    return null
+  }
 }
 
 /** Read the user's IG token, refreshing + persisting it if it's near expiry. */
@@ -114,141 +205,142 @@ async function getValidIgToken(
 
 /**
  * Process one comment webhook event end-to-end. Idempotent + best-effort:
- * every early-return is a deliberate skip, and nothing throws (the webhook must
- * always 200 to Meta). Returns a short outcome for logging.
+ * nothing throws (the webhook must always 200 to Meta), and every comment
+ * leaves one row in the log saying what happened to it.
  *
- * Resolution is driven by the MEDIA id, not the account id. A media id is
- * globally unique and MVP stored it at publish time, so `media → user + link`
- * sidesteps the app-scoped-vs-Business-Account id mismatch that plagues the
- * webhook's entry.id (see migration 170) — we never need to match the account.
- *
- * Two link sources, checked in order:
- *   A) a standalone ig_dm_campaigns row (the upload-a-Reel feature) — its own
- *      keyword + link, self-gated by status='active';
- *   B) an MVP-published blog post — the user's global ig_dm_settings keyword +
- *      that post's own resolved affiliate link.
+ * Resolution is driven by the MEDIA id first. Three link sources, in order:
+ *   A) an ig_dm_campaigns row: a Reel published with Auto-DM, or any existing
+ *      post the creator picked on the Auto-DM page, with its own keyword + link;
+ *   B) an MVP-published blog post: the global keyword + that post's own link;
+ *   C) any other post on the account (unless "every post" is off): the global
+ *      keyword + the creator's fallback link, else their Link in Bio shop.
+ *      Before C, a comment on a post MVP did not publish was dropped, and most
+ *      creators post from their phone.
  */
 export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
   const sb: Sb = createAdminClient()
 
-  // Ignore the account's own comments/replies.
+  // Ignore the account's own comments/replies, including MVP's public reply.
   if (ev.commenterId && ev.commenterId === ev.igAccountId) return 'skip:self'
+  if (ev.text.trim() === PUBLIC_REPLY) return 'skip:self'
 
   const media = ev.mediaId ? String(ev.mediaId).replace(/[^0-9]/g, '') : ''
   if (!media) return 'skip:no-media'
 
-  let userId: string | undefined
+  let userId: string | null = null
   let keyword = ''
   let link: string | null = null
   // Whether the link lands on Amazon, captured where we still know: after the
   // cloak it is unreadable from the URL.
   let amazonDest = false
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let settings: any = null
-  let source: 'campaign' | 'global' = 'global'
+  let settings: DmSettings | null = null
+  let source: 'campaign' | 'global' | 'any' = 'global'
+  const skip = async (why: string, code: string): Promise<string> => {
+    await logDmOutcome(sb, {
+      user_id: userId, comment_id: ev.commentId, media_id: ev.mediaId, commenter_id: ev.commenterId,
+      platform: 'instagram', why, keyword: keyword || null,
+    })
+    return code
+  }
+  const readSettings = async (uid: string): Promise<DmSettings | null> => {
+    const { data } = await sb.from('ig_dm_settings').select('*').eq('user_id', uid).maybeSingle()
+    return (data ?? null) as DmSettings | null
+  }
 
-  // A) Standalone per-post campaign?
+  // A) A per-post campaign?
   const { data: campaign } = await sb
     .from('ig_dm_campaigns')
     .select('user_id,keyword,link,status')
     .eq('ig_media_id', media)
     .maybeSingle()
   if (campaign) {
-    if (campaign.status !== 'active') return 'skip:campaign-inactive'
     userId = campaign.user_id
     keyword = campaign.keyword
+    if (campaign.status !== 'active') return skip('Auto-DM is turned off for this post.', 'skip:campaign-inactive')
     link = campaign.link
     source = 'campaign'
-    // Pull the user's template/public-reply prefs (optional) for the DM body.
-    const { data: s } = await sb
-      .from('ig_dm_settings')
-      .select('message_template,reply_to_comment')
-      .eq('user_id', userId)
-      .maybeSingle()
-    settings = s
+    settings = await readSettings(campaign.user_id)
   } else {
-    // B) MVP-published blog post → global settings + that post's own link.
+    // B) An MVP-published blog post: global settings + that post's own link.
     const { data: post } = await sb
       .from('blog_posts')
       .select('user_id,geniuslink_code,content,wordpress_url')
       .or(`instagram_image_post_id.eq.${media},instagram_reel_id.eq.${media},instagram_story_id.eq.${media}`)
+      .limit(1)
       .maybeSingle()
-    if (!post) {
-      // Diagnostic trace row (user_id null, mig 171) so a "webhook fired but we
-      // don't recognise the media" miss is visible in the DB — vs. no row at
-      // all, which means the webhook never fired (Meta subscription issue).
-      console.warn('[ig-dm] no campaign/post for media', media)
-      await sb.from('ig_dm_sends').insert({
-        comment_id: ev.commentId, media_id: ev.mediaId, commenter_id: ev.commenterId,
-        status: 'skipped', error: `no campaign/post for media ${media}`,
-      }).then(() => {}, () => {})
-      return 'skip:no-media-match'
-    }
-    userId = post.user_id
-    const { data: s } = await sb
-      .from('ig_dm_settings')
-      .select('enabled,keyword,message_template,reply_to_comment')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!s?.enabled) return 'skip:disabled'
-    settings = s
-    keyword = s.keyword
-    link = resolvePostDmLink(post)
-    // Cloak it the same way every other surface does. This path used to send
-    // whatever resolvePostDmLink returned, which for any post generated while
-    // Geniuslink was connected meant a geni.us link going out in DMs long after
-    // the creator moved to Passport. A campaign link (branch A) is the
-    // creator's own pasted URL and is left exactly as they typed it.
-    if (link) {
-      amazonDest = !!postProductAsin(post)
-      link = await resolveCloakedLink({
-        supabase: sb, userId: userId as string, destination: link, asin: postProductAsin(post),
-        channel: 'instagram', source: 'instagram', label: null,
-      })
+    if (post) {
+      userId = post.user_id
+      settings = await readSettings(post.user_id)
+      keyword = settings?.keyword || ''
+      if (!settings?.enabled) return skip('Auto-DM is turned off.', 'skip:disabled')
+      link = resolvePostDmLink(post)
+      // Cloak it the same way every other surface does: a post generated while
+      // Geniuslink was connected still sends the creator's current link style.
+      if (link) {
+        amazonDest = !!postProductAsin(post)
+        link = await resolveCloakedLink({
+          supabase: sb, userId: post.user_id, destination: link, asin: postProductAsin(post),
+          channel: 'instagram', source: 'instagram', label: null,
+        })
+      }
+    } else {
+      // C) Any other post on the account.
+      userId = await ownerOfIgAccount(sb, ev.igAccountId)
+      if (!userId) return skip(`No MVP account is connected to Instagram account ${ev.igAccountId || '(none given)'}.`, 'skip:no-user')
+      settings = await readSettings(userId)
+      keyword = settings?.keyword || ''
+      if (!settings?.enabled) return skip('Auto-DM is turned off.', 'skip:disabled')
+      if (!anyPostOn(settings)) return skip('Not a post MVP published, and Auto-DM is set to MVP posts only.', 'skip:not-mvp-post')
+      link = await fallbackDmLink(sb, userId, settings)
+      source = 'any'
     }
   }
 
-  if (!userId) return 'skip:no-user'
-
   // Keyword gate.
-  if (!matchesKeyword(ev.text, keyword)) return 'skip:no-keyword'
+  if (!matchesKeyword(ev.text, keyword)) return skip(`The comment did not contain "${keyword}".`, 'skip:no-keyword')
+  if (!link) {
+    return skip(source === 'any'
+      ? 'No link to send: this post was not made by MVP, and there is no backup link or published Link in Bio shop.'
+      : 'No link to send: MVP found no product link on this post.', 'skip:no-link')
+  }
 
-  // Dedupe — claim the comment (unique comment_id). A conflict = already handled
-  // (Meta redelivery), so we skip without a second DM.
+  // Dedupe: claim the comment (unique comment_id). A conflict means it was
+  // already handled (Meta redelivery), so no second DM.
+  //
+  // CLAIMED AS "sending", NOT "sent". It used to be written as sent before the
+  // DM went out, so a run cut off mid-send left a row saying sent for a DM that
+  // never left. Only Meta's answer turns it into sent.
   const { error: claimErr } = await sb.from('ig_dm_sends').insert({
     user_id: userId,
     comment_id: ev.commentId,
     media_id: ev.mediaId,
     commenter_id: ev.commenterId,
     keyword,
-    status: 'sent', // optimistic; downgraded to 'failed' below on error
+    status: 'sending',
+    link_sent: link,
+    platform: 'instagram',
   })
   if (claimErr) return 'skip:duplicate'
 
-  if (!link) {
-    await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'no link for media' }).eq('comment_id', ev.commentId)
-    return 'skip:no-link'
-  }
-
   // Token + send.
-  const tok = await getValidIgToken(sb, userId)
+  const tok = await getValidIgToken(sb, userId as string)
   if (!tok) {
-    await sb.from('ig_dm_sends').update({ status: 'failed', error: 'no IG token' }).eq('comment_id', ev.commentId)
+    await sb.from('ig_dm_sends').update({ status: 'failed', error: 'Instagram is not connected in MVP (no token). Reconnect Instagram.' }).eq('comment_id', ev.commentId)
     return 'fail:no-token'
   }
 
   const message = renderMessage(settings?.message_template || '', link, amazonDest)
   try {
-    await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
-    await sb.from('ig_dm_sends').update({ status: 'sent', link_sent: link }).eq('comment_id', ev.commentId)
+    const sent = await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
+    await sb.from('ig_dm_sends').update({ status: 'sent', error: sent.messageId ? null : 'Meta accepted it but returned no message id.' }).eq('comment_id', ev.commentId)
   } catch (e) {
-    await sb.from('ig_dm_sends').update({ status: 'failed', link_sent: link, error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', ev.commentId)
+    await sb.from('ig_dm_sends').update({ status: 'failed', error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', ev.commentId)
     return 'fail:send'
   }
 
   // Optional public "Sent you a DM!" reply (best-effort).
-  if (settings?.reply_to_comment) {
-    await replyToComment({ commentId: ev.commentId, message: 'Sent you a DM! 📩', accessToken: tok.accessToken })
+  if (settings?.reply_to_comment !== false) {
+    await replyToComment({ commentId: ev.commentId, message: PUBLIC_REPLY, accessToken: tok.accessToken })
   }
-  return source === 'campaign' ? 'sent:campaign' : 'sent'
+  return source === 'campaign' ? 'sent:campaign' : source === 'any' ? 'sent:any' : 'sent'
 }

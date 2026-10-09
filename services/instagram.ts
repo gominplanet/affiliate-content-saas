@@ -422,14 +422,88 @@ export async function sendPrivateReply(opts: {
  *  for comment→DM events to actually fire — and it's the piece a user can't do
  *  manually, so we call it on connect. Best-effort; returns whether it stuck. */
 export async function subscribeToComments(opts: { igUserId: string; accessToken: string }): Promise<boolean> {
+  return (await subscribeToCommentsWhy(opts)).ok
+}
+
+/** The same, with Meta's own words when it refuses. Instagram stopped sending
+ *  comments to MVP after Aug 13 and nothing on screen said so: a refused
+ *  subscription was a console line nobody read. */
+export async function subscribeToCommentsWhy(opts: { igUserId: string; accessToken: string }): Promise<{ ok: boolean; error: string | null }> {
   try {
     const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/subscribed_apps?subscribed_fields=comments&access_token=${encodeURIComponent(opts.accessToken)}`
     const res = await fetchWithTimeout(url, { method: 'POST' })
     const data = await res.json().catch(() => ({})) as { success?: boolean; error?: { message: string } }
-    if (!res.ok) { console.warn('[instagram] subscribe_apps failed:', data?.error?.message || res.status); return false }
-    return data.success !== false
+    if (!res.ok) {
+      console.warn('[instagram] subscribe_apps failed:', data?.error?.message || res.status)
+      return { ok: false, error: data?.error?.message || `Instagram said ${res.status}.` }
+    }
+    return data.success === false ? { ok: false, error: 'Instagram did not confirm the subscription.' } : { ok: true, error: null }
   } catch (e) {
-    console.warn('[instagram] subscribe_apps threw:', e instanceof Error ? e.message : String(e))
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Which webhook fields this account is subscribed to for MVP's app, or the
+ *  error Instagram gave instead. */
+export async function commentSubscription(opts: { igUserId: string; accessToken: string }): Promise<{ fields: string[] | null; error: string | null }> {
+  try {
+    const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/subscribed_apps?access_token=${encodeURIComponent(opts.accessToken)}`
+    const res = await fetchWithTimeout(url)
+    const data = await res.json().catch(() => ({})) as { data?: { subscribed_fields?: string[] }[]; error?: { message: string } }
+    if (!res.ok || !Array.isArray(data.data)) return { fields: null, error: data?.error?.message || `Instagram said ${res.status}.` }
+    return { fields: Array.from(new Set(data.data.flatMap((a) => a.subscribed_fields ?? []))), error: null }
+  } catch (e) {
+    return { fields: null, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** The account's professional id (17841...), the one comment webhooks carry,
+ *  which is not the app-scoped id the login returns (migration 170). */
+export async function fetchIgProfessionalId(accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`)
+    const data = await res.json().catch(() => ({})) as { user_id?: string | number }
+    const id = String(data?.user_id ?? '').replace(/[^0-9]/g, '')
+    return res.ok && id ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** The account's recent posts, for picking one to give its own keyword + link. */
+export async function listRecentMedia(opts: { igUserId: string; accessToken: string; limit?: number }): Promise<{
+  media: { id: string; caption: string; mediaType: string; productType: string; thumb: string | null; permalink: string | null; timestamp: string | null }[]
+  error: string | null
+}> {
+  try {
+    const fields = 'id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp'
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/media?fields=${fields}&limit=${Math.min(50, opts.limit ?? 30)}&access_token=${encodeURIComponent(opts.accessToken)}`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await res.json().catch(() => ({})) as { data?: any[]; error?: { message: string } }
+    if (!res.ok || !Array.isArray(data.data)) return { media: [], error: data?.error?.message || `Instagram said ${res.status}.` }
+    return {
+      media: data.data.map((m) => ({
+        id: String(m.id),
+        caption: String(m.caption ?? '').slice(0, 300),
+        mediaType: String(m.media_type ?? ''),
+        productType: String(m.media_product_type ?? ''),
+        thumb: (m.thumbnail_url || (m.media_type === 'VIDEO' ? null : m.media_url) || null) as string | null,
+        permalink: (m.permalink ?? null) as string | null,
+        timestamp: (m.timestamp ?? null) as string | null,
+      })),
+      error: null,
+    }
+  } catch (e) {
+    return { media: [], error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Does this account own the post? A media read with its own token answers it. */
+export async function ownsMedia(opts: { mediaId: string; accessToken: string }): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${encodeURIComponent(opts.mediaId)}?fields=id&access_token=${encodeURIComponent(opts.accessToken)}`)
+    return res.ok
+  } catch {
     return false
   }
 }
