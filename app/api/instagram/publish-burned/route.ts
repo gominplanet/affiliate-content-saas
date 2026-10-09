@@ -18,6 +18,8 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, subscribeToComments } from '@/services/instagram'
+import { dmLinkOptions } from '@/lib/dm-link-options'
+import { syncLinkInBioTile } from '@/lib/amazon-social-publish'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { toUserMessage } from '@/lib/friendly-error'
 import { addProductUrlToBio } from '@/lib/link-bio-import'
@@ -59,7 +61,7 @@ export async function POST(request: Request) {
       thumbOffsetMs?: number
       // Optional: attach a comment→DM campaign to this Reel. When present + valid,
       // commenting `keyword` on the published Reel auto-DMs `link` (lib/ig-dm.ts).
-      autoDm?: { link?: string; keyword?: string; productName?: string }
+      autoDm?: { link?: string; keyword?: string; productName?: string; kind?: string; videoId?: string }
       // Clip Factory Enhance-step product: the link (and optional name) the
       // creator typed. When their Link in Bio has auto-import on, we add it as a
       // shop tile. Falls back to the auto-DM link when a dedicated one isn't sent.
@@ -113,6 +115,16 @@ export async function POST(request: Request) {
         })
         if (insErr) console.error('[publish-burned] campaign insert failed:', insErr.message || insErr)
         else autoDm = true
+        // THE PAGE THE DM SENDS PEOPLE TO HAS THE PRODUCT ON IT. A DM pointing
+        // at the Link in Bio product page must land on a tile with the
+        // affiliate link, so the product is put on the page now.
+        if (dm.kind === 'shop') {
+          try {
+            const o = await dmLinkOptions(sb, user.id, { videoId: dm.videoId, product: body.product })
+            const aff = o.options.find((x) => x.kind === 'amazon')
+            if (o.asin && aff) await syncLinkInBioTile(sb, user.id, { asin: o.asin, title: (dm.productName || o.title || 'Shop this').trim(), url: aff.url }, false)
+          } catch { /* the Reel and the DM still work; the page just lacks the tile */ }
+        }
         // Make sure this account receives comment webhooks (idempotent).
         try { await subscribeToComments({ igUserId: igAccount.externalId, accessToken: igAccount.accessToken }) } catch { /* non-fatal */ }
       }
@@ -129,7 +141,10 @@ export async function POST(request: Request) {
       // If the creator opted in, feature this product on their Link in Bio shop
       // page automatically. Best-effort — never fail (or undo) a live Reel.
       try {
-        const bioUrl = (body.product || '').trim() || (body.autoDm?.link || '').trim()
+        // Only a product link becomes a shop tile: a DM link that is the blog
+        // post or the shop page itself is not a product.
+        const dmIsProduct = !body.autoDm?.kind || body.autoDm.kind === 'amazon'
+        const bioUrl = (body.product || '').trim() || (dmIsProduct ? (body.autoDm?.link || '').trim() : '')
         const bioTitle = (body.productTitle || '').trim() || (body.autoDm?.productName || '').trim()
         await addProductUrlToBio(supabase, user.id, { url: bioUrl, title: bioTitle })
       } catch { /* non-fatal */ }

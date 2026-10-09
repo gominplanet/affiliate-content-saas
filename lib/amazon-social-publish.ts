@@ -95,7 +95,7 @@ export async function writeSocialCaption(opts: {
  *  A creator with no shop page is not a failure: there is nothing to add to, the
  *  caption's link-in-bio line is their own permanent bio link, and that is a
  *  setup choice rather than something that broke. */
-async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }, inStory: boolean): Promise<string | null> {
+export async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }, inStory: boolean): Promise<string | null> {
   let handle: string | null = null
   try {
     const { data: page } = await db.from('link_pages').select('id, handle').eq('user_id', userId).maybeSingle()

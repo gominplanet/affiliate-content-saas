@@ -668,6 +668,7 @@ export function ShortsStudioModal({
         <InstagramBurnedModal
           burnedVideoUrl={igPost.url}
           initialCaption={igPost.caption}
+          videoId={videoId}
           onClose={() => setIgPost(null)}
           onPosted={() => { void markPosted(igPost.id, 'instagram'); toast.success('Posted to Instagram') }}
         />

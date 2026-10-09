@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { stripStopLine, renderMessage, matchesKeyword, anyPostOn, fallbackDmLink, PUBLIC_REPLY } from '../lib/ig-dm'
 import { dmLogWords, SENDING_STALE_MS } from '../lib/dm-log-words'
 import { withDmCta } from '../lib/dm-caption-cta'
+import { pickDmLink } from '../lib/dm-link-options'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -95,6 +96,21 @@ async function main() {
   check('a caption with no bio line gets the line above the hashtags', /Great\.\n\nComment LINK[^\n]*\n\n#x/.test(withDmCta('Great.\n\n#x', 'LINK')))
   const modal = read('components/InstagramBurnedModal.tsx')
   check('the Shorts Instagram window offers Auto-DM to Labs accounts', /tier === 'admin'/.test(modal) && /withDmCta\(/.test(modal))
+
+  // The DM link is picked for the creator (Seb, 2026-10-09).
+  const opts = [
+    { kind: 'blog' as const, url: 'https://blog/x', label: 'Blog post', note: '' },
+    { kind: 'amazon' as const, url: 'https://mvpl.ink/a', label: 'Amazon link', note: '' },
+  ]
+  check('the creator\'s last choice is preselected when it exists', pickDmLink(opts, 'amazon')?.kind === 'amazon')
+  check('a last choice this clip lacks falls back to the first that exists', pickDmLink(opts, 'shop')?.kind === 'blog')
+  check('no options means no preselected link', pickDmLink([], 'shop') === null)
+  const modal2 = read('components/InstagramBurnedModal.tsx')
+  check('the window offers the found links and remembers the choice', /dm-link-options/.test(modal2) && /mvp\.ig\.dmLinkKind/.test(modal2))
+  check('Shorts Studio passes the video so its blog post can be found', /videoId=\{videoId\}/.test(read('components/content/ShortsStudioModal.tsx')))
+  const pub = read('app/api/instagram/publish-burned/route.ts')
+  check('a DM to the Link in Bio page puts the product on that page', /dm\.kind === 'shop'[\s\S]*syncLinkInBioTile/.test(pub))
+  check('a blog or shop DM link never becomes a product tile', /dmIsProduct/.test(pub))
 
   if (failed) { console.error(`\n${failed} Auto-DM check(s) failed`); process.exit(1) }
   console.log('\nALL PASS')

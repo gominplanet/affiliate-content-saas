@@ -17,10 +17,15 @@ import { igDmEnabled } from '@/lib/feature-flags'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { withDmCta, dmCtaLine } from '@/lib/dm-caption-cta'
 
+type DmChoice = { kind: 'shop' | 'blog' | 'amazon'; url: string; label: string; note: string }
+const DM_KIND_KEY = 'mvp.ig.dmLinkKind'
+const DM_ORDER: DmChoice['kind'][] = ['shop', 'blog', 'amazon']
+
 export function InstagramBurnedModal({
   burnedVideoUrl,
   initialCaption,
   defaultDmLink,
+  videoId,
   product,
   productTitle,
   coverOffsetMs,
@@ -31,6 +36,9 @@ export function InstagramBurnedModal({
   initialCaption?: string
   /** Prefills the auto-DM link (e.g. the clip's product/affiliate link). */
   defaultDmLink?: string
+  /** The source video (youtube_videos.id), so MVP can offer its blog post,
+   *  Link in Bio page and affiliate link as the DM link. */
+  videoId?: string
   /** Clip Factory product link + name (from the Enhance step). When the creator's
    *  Link in Bio has auto-import on, publishing adds it as a shop tile — sent
    *  independently of the auto-DM toggle. */
@@ -55,13 +63,46 @@ export function InstagramBurnedModal({
   const [autoDm, setAutoDm] = useState(false)
   const [dmKeyword, setDmKeyword] = useState('LINK')
   const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())
+  // THE LINK IS PICKED FOR THE CREATOR (Seb, 2026-10-09). MVP works out the
+  // Link in Bio page, the blog post and the affiliate link for this clip and
+  // preselects the kind they chose last time; pasting their own still works.
+  const [choices, setChoices] = useState<DmChoice[] | null>(null)
+  const [dmKind, setDmKind] = useState<DmChoice['kind'] | 'custom'>('custom')
+  useEffect(() => {
+    if (!dmAvailable) return
+    let off = false
+    const q = new URLSearchParams()
+    if (videoId) q.set('videoId', videoId)
+    if (product && product.trim()) q.set('product', product.trim())
+    else if (defaultDmLink && defaultDmLink.trim()) q.set('product', defaultDmLink.trim())
+    fetch(`/api/instagram/dm-link-options?${q.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { options?: DmChoice[] } | null) => {
+        if (off) return
+        const opts = Array.isArray(d?.options) ? d!.options : []
+        setChoices(opts)
+        let last: string | null = null
+        try { last = localStorage.getItem(DM_KIND_KEY) } catch { /* private window */ }
+        const pick = opts.find((o) => o.kind === last) ?? DM_ORDER.map((k) => opts.find((o) => o.kind === k)).find(Boolean)
+        if (pick) { setDmKind(pick.kind); setDmLink(pick.url) }
+      })
+      .catch(() => { if (!off) setChoices([]) })
+    return () => { off = true }
+  }, [dmAvailable, videoId, product, defaultDmLink])
+  const choose = (c: DmChoice) => {
+    setDmKind(c.kind)
+    setDmLink(c.url)
+    try { localStorage.setItem(DM_KIND_KEY, c.kind) } catch { /* private window */ }
+  }
   // On by default once we know it is available and a link is ready.
   const dmDefaulted = useRef(false)
   useEffect(() => {
     if (dmDefaulted.current || !dmAvailable) return
-    dmDefaulted.current = true
-    if (defaultDmLink && defaultDmLink.trim()) setAutoDm(true)
-  }, [dmAvailable, defaultDmLink])
+    if ((defaultDmLink && defaultDmLink.trim()) || (choices && choices.length)) {
+      dmDefaulted.current = true
+      setAutoDm(true)
+    } else if (choices) dmDefaulted.current = true
+  }, [dmAvailable, defaultDmLink, choices])
   // THE CAPTION SAYS HOW TO GET THE LINK (Seb, 2026-10-09). With Auto-DM on,
   // "Link in bio" becomes "Comment LINK and I'll DM you the link.", follows the
   // keyword as it is typed, and goes back to "Link in bio." when turned off.
@@ -84,7 +125,7 @@ export function InstagramBurnedModal({
           caption,
           ...(product && product.trim() ? { product: product.trim(), productTitle: (productTitle || '').trim() } : {}),
           ...(typeof coverOffsetMs === 'number' && coverOffsetMs >= 0 ? { thumbOffsetMs: Math.round(coverOffsetMs) } : {}),
-          ...(wantDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword.trim() || 'LINK' } } : {}),
+          ...(wantDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword.trim() || 'LINK', kind: dmKind === 'custom' ? undefined : dmKind, videoId, productName: (productTitle || '').trim() || undefined } } : {}),
         }),
       })
       const json = await res.json()
@@ -99,7 +140,7 @@ export function InstagramBurnedModal({
     } finally {
       setPosting(false)
     }
-  }, [posting, posted, burnedVideoUrl, caption, product, productTitle, coverOffsetMs, autoDm, dmKeyword, dmLink, onPosted])
+  }, [posting, posted, burnedVideoUrl, caption, product, productTitle, coverOffsetMs, autoDm, dmKeyword, dmLink, dmKind, videoId, onPosted])
 
   const closeAllowed = !posting
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -185,9 +226,30 @@ export function InstagramBurnedModal({
                       className="flex-1 text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                     />
                   </div>
+                  {choices === null && (
+                    <p className="text-[11px] text-[#86868b] inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Finding this product&apos;s links…</p>
+                  )}
+                  {choices && choices.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Link to send">
+                      {choices.map((c) => (
+                        <button key={c.kind} type="button" role="radio" aria-checked={dmKind === c.kind} onClick={() => choose(c)} title={c.note}
+                          className={`text-[12px] font-semibold px-2.5 py-1 rounded-full border ${dmKind === c.kind
+                            ? 'border-[#7C3AED] bg-[#7C3AED]/10 text-[#7C3AED]'
+                            : 'border-gray-200 dark:border-white/10 text-[#3a3a3c] dark:text-[#d2d2d7]'}`}>
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {choices && choices.length > 0 && dmKind !== 'custom' && (
+                    <p className="text-[10px] text-[#86868b] -mt-0.5">{choices.find((c) => c.kind === dmKind)?.note}</p>
+                  )}
+                  {choices && choices.length === 0 && (
+                    <p className="text-[11px] text-[#86868b]">MVP found no blog post, Link in Bio page or product for this clip. Paste the link to send.</p>
+                  )}
                   <input
                     value={dmLink}
-                    onChange={(e) => setDmLink(e.target.value)}
+                    onChange={(e) => { setDmLink(e.target.value); setDmKind('custom') }}
                     placeholder="Link to DM them (https://…)"
                     className="w-full text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                   />
