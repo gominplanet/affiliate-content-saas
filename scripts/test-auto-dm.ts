@@ -94,6 +94,9 @@ async function main() {
   check('a new keyword updates the line', /Comment MIRROR and/.test(withDmCta(on, 'mirror')))
   check('Auto-DM off puts "Link in bio." back', withDmCta(on, null) === cap)
   check('a caption with no bio line gets the line above the hashtags', /Great\.\n\nComment LINK[^\n]*\n\n#x/.test(withDmCta('Great.\n\n#x', 'LINK')))
+  const adFirst = withDmCta('#ad #sponsored\n\nGreat dryer.\n\n#hair\n\n\u{1F4CC} As an Amazon Associate I earn.', 'LINK')
+  check('a caption opening with #ad gets the line under the body, not under the disclosure', /Great dryer\.\n\nComment LINK[^\n]*\n\n#hair/.test(adFirst), adFirst)
+  check('a short product link is followed to find the product', /resolveTrueDestination\(productUrl\)/.test(read('lib/dm-link-options.ts')))
   const modal = read('components/InstagramBurnedModal.tsx')
   check('the Shorts Instagram window offers Auto-DM to Labs accounts', /tier === 'admin'/.test(modal) && /withDmCta\(/.test(modal))
 

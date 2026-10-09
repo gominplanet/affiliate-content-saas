@@ -27,7 +27,11 @@ export function withDmCta(caption: string, keyword: string | null): string {
   if (OURS.test(text)) return text.replace(OURS, line)
   if (BIO.test(text)) return text.replace(BIO, line)
   const lines = text.split('\n')
-  const at = lines.findIndex((l) => /^\s*(#|\u{1F4CC}|As an Amazon Associate)/u.test(l))
+  // Above the first hashtags or disclosure AFTER the body. A caption that opens
+  // with "#ad #sponsored" put the line at the very bottom, under the disclosure.
+  const tail = /^\s*(#|\u{1F4CC}|As an Amazon Associate)/u
+  const body = lines.findIndex((l) => l.trim() !== '' && !tail.test(l))
+  const at = body < 0 ? -1 : lines.findIndex((l, i) => i > body && tail.test(l))
   if (at <= 0) return text.trim() ? `${text.trimEnd()}\n\n${line}` : line
   const before = lines.slice(0, at).join('\n').trimEnd()
   return `${before}\n\n${line}\n\n${lines.slice(at).join('\n')}`.slice(0, 2200)

@@ -15,6 +15,11 @@ import { asinFromAmazonUrl } from '@/lib/asin'
 import { extractAsin } from '@/services/amazon'
 import { productPageUrl } from '@/lib/pinterest-destination'
 import { resolveCloakedLink } from '@/lib/link-cloak'
+import { resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { postProductAsin } from '@/lib/post-product-link'
+
+/** Short and cloaked links that carry no ASIN until they are followed. */
+const SHORT_LINK = /(?:geni\.us|\bgnz\.|mvpl\.ink|\/go\/[a-z0-9]+|amzn\.to|a\.co\/|bit\.ly|tinyurl\.com|rebrand\.ly)/i
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -41,6 +46,7 @@ export async function dmLinkOptions(db: Db, userId: string, input: { videoId?: s
   let title = ''
   let productUrl = String(input.product ?? '').trim()
   let blogUrl: string | null = null
+  let blogAsin: string | null = null
 
   // The video: its product and its blog post.
   const videoId = String(input.videoId ?? '').trim()
@@ -55,14 +61,23 @@ export async function dmLinkOptions(db: Db, userId: string, input: { videoId?: s
       }
     } catch { /* no video row */ }
     try {
-      const { data: p } = await db.from('blog_posts').select('wordpress_url')
+      const { data: p } = await db.from('blog_posts').select('wordpress_url,content')
         .eq('user_id', userId).eq('video_id', videoId).not('wordpress_url', 'is', null)
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       const u = String(p?.wordpress_url ?? '').trim()
       if (/^https?:\/\//i.test(u)) blogUrl = u
+      blogAsin = p ? postProductAsin(p) : null
     } catch { /* no post */ }
   }
   if (!asin && productUrl) asin = asinFromAmazonUrl(productUrl) || extractAsin(productUrl)
+  // A SHORT LINK IS FOLLOWED TO ITS PRODUCT (Seb, 2026-10-09: the Link in Bio
+  // choice fell back to the whole shop because the video's product link was a
+  // geni.us / mvpl.ink / amzn.to link, which names no ASIN until followed).
+  if (!asin && productUrl && SHORT_LINK.test(productUrl)) {
+    try { asin = asinFromAmazonUrl(await resolveTrueDestination(productUrl)) } catch { /* unreachable redirect */ }
+  }
+  // The blog post for the video names the product too.
+  if (!asin && blogAsin) asin = blogAsin
   if (asin && !/^[A-Z0-9]{10}$/.test(asin)) asin = null
 
   const options: DmLinkOption[] = []
