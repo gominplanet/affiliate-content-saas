@@ -367,6 +367,9 @@ function InstagramDm() {
               <p className="text-[13px] flex items-center gap-2" style={{ color: 'var(--text-faint)' }}><Loader2 size={13} className="animate-spin" /> Loading your posts…</p>
             )}
             {postsError && <p className="text-[13px] text-[#ff3b30]">Could not list your posts: {postsError}</p>}
+            {!postsLoading && !postsError && posts.length === 0 && (
+              <p className="text-[13px] text-[#ff3b30]">Instagram sent back no posts, and gave no reason. Press Refresh above; if it stays empty, reconnect Instagram.</p>
+            )}
             {posts.map(p => {
               const w = sendsWords(p)
               const own = p.campaign?.status === 'active'

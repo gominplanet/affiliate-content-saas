@@ -477,10 +477,26 @@ export async function listRecentMedia(opts: { igUserId: string; accessToken: str
 }> {
   try {
     const fields = 'id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp'
-    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/media?fields=${fields}&limit=${Math.min(50, opts.limit ?? 30)}&access_token=${encodeURIComponent(opts.accessToken)}`)
+    // `me`, not the stored id: the account the token belongs to, whichever of
+    // its two ids MVP saved (migration 170). An empty list came back on the
+    // Auto-DM page with no error, so an empty answer now says how many posts
+    // Instagram itself counts, and is never shown as an empty success.
+    const limit = Math.min(50, opts.limit ?? 30)
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/me/media?fields=${fields}&limit=${limit}&access_token=${encodeURIComponent(opts.accessToken)}`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json().catch(() => ({})) as { data?: any[]; error?: { message: string } }
     if (!res.ok || !Array.isArray(data.data)) return { media: [], error: data?.error?.message || `Instagram said ${res.status}.` }
+    if (!data.data.length) {
+      const count = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/me?fields=username,media_count&access_token=${encodeURIComponent(opts.accessToken)}`)
+        .then((r) => r.json()).catch(() => ({})) as { username?: string; media_count?: number }
+      const n = typeof count.media_count === 'number' ? count.media_count : null
+      return {
+        media: [],
+        error: n
+          ? `Instagram says @${count.username || 'this account'} has ${n} posts but sent back none. Reconnect Instagram and try again.`
+          : `Instagram sent back no posts for @${count.username || 'this account'}${n === 0 ? ', and counts none on the account' : ''}.`,
+      }
+    }
     return {
       media: data.data.map((m) => ({
         id: String(m.id),
