@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { stripStopLine, renderMessage, matchesKeyword, anyPostOn, fallbackDmLink, PUBLIC_REPLY } from '../lib/ig-dm'
 import { dmLogWords, SENDING_STALE_MS } from '../lib/dm-log-words'
+import { withDmCta } from '../lib/dm-caption-cta'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -84,6 +85,16 @@ async function main() {
   check('both new routes stay Labs, admin only', /normalizeTier\(integ\?\.tier\) !== 'admin'/.test(debug) && /normalizeTier\(integ\?\.tier\) !== 'admin'/.test(read('app/api/instagram/dm-posts/route.ts')))
   const mig = read('supabase/migrations/422_auto_dm_any_post.sql')
   check('migration 422 is safe to run twice', /add column if not exists any_post/.test(mig) && /add column if not exists fallback_link/.test(mig))
+
+  // The caption tells viewers how to get the link (Seb, 2026-10-09).
+  const cap = 'Holds any angle. Link in bio.\n\n#mirror\n\n\u{1F4CC} As an Amazon Associate I earn from qualifying purchases.'
+  const on = withDmCta(cap, 'LINK')
+  check('Auto-DM on swaps "Link in bio" for the comment line', /Comment LINK and I.ll DM you the link\./.test(on) && !/link in bio/i.test(on), on)
+  check('a new keyword updates the line', /Comment MIRROR and/.test(withDmCta(on, 'mirror')))
+  check('Auto-DM off puts "Link in bio." back', withDmCta(on, null) === cap)
+  check('a caption with no bio line gets the line above the hashtags', /Great\.\n\nComment LINK[^\n]*\n\n#x/.test(withDmCta('Great.\n\n#x', 'LINK')))
+  const modal = read('components/InstagramBurnedModal.tsx')
+  check('the Shorts Instagram window offers Auto-DM to Labs accounts', /tier === 'admin'/.test(modal) && /withDmCta\(/.test(modal))
 
   if (failed) { console.error(`\n${failed} Auto-DM check(s) failed`); process.exit(1) }
   console.log('\nALL PASS')

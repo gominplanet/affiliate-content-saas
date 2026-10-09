@@ -10,10 +10,12 @@
  * via /api/instagram/post-direct-video. This one takes a finished burned URL
  * (e.g. from Shorts Studio) and posts via /api/instagram/publish-burned.
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X, Instagram } from 'lucide-react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { igDmEnabled } from '@/lib/feature-flags'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { withDmCta, dmCtaLine } from '@/lib/dm-caption-cta'
 
 export function InstagramBurnedModal({
   burnedVideoUrl,
@@ -46,11 +48,27 @@ export function InstagramBurnedModal({
   const [posted, setPosted] = useState(false)
 
   // Auto-DM: commenting `dmKeyword` on the Reel DMs `dmLink` to that person.
-  // Hidden until Meta approves the messaging permissions (igDmEnabled).
-  const dmAvailable = igDmEnabled()
-  const [autoDm, setAutoDm] = useState(dmAvailable && !!(defaultDmLink && defaultDmLink.trim()))
+  // Everyone once Meta approves the messaging permissions (igDmEnabled); until
+  // then Labs, so admin accounts can use it with their testers.
+  const tier = useEffectiveTier()
+  const dmAvailable = igDmEnabled() || tier === 'admin'
+  const [autoDm, setAutoDm] = useState(false)
   const [dmKeyword, setDmKeyword] = useState('LINK')
   const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())
+  // On by default once we know it is available and a link is ready.
+  const dmDefaulted = useRef(false)
+  useEffect(() => {
+    if (dmDefaulted.current || !dmAvailable) return
+    dmDefaulted.current = true
+    if (defaultDmLink && defaultDmLink.trim()) setAutoDm(true)
+  }, [dmAvailable, defaultDmLink])
+  // THE CAPTION SAYS HOW TO GET THE LINK (Seb, 2026-10-09). With Auto-DM on,
+  // "Link in bio" becomes "Comment LINK and I'll DM you the link.", follows the
+  // keyword as it is typed, and goes back to "Link in bio." when turned off.
+  useEffect(() => {
+    if (!dmAvailable) return
+    setCaption((c) => withDmCta(c, autoDm ? (dmKeyword.trim() || 'LINK') : null))
+  }, [autoDm, dmKeyword, dmAvailable])
 
   const submit = useCallback(async () => {
     if (posting || posted) return
@@ -174,8 +192,11 @@ export function InstagramBurnedModal({
                     className="w-full text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                   />
                   <p className="text-[10px] text-[#86868b]">
-                    Anyone who comments <span className="font-semibold">{(dmKeyword || 'LINK').toUpperCase()}</span> on this Reel gets your link in their DMs automatically. Tip: add &quot;Comment {(dmKeyword || 'LINK').toUpperCase()} for the link&quot; to the caption or the video.
+                    Anyone who comments <span className="font-semibold">{(dmKeyword || 'LINK').toUpperCase()}</span> on this Reel gets your link in their DMs automatically. The caption now says &quot;{dmCtaLine(dmKeyword)}&quot;
                   </p>
+                  {!/^https?:\/\//i.test(dmLink.trim()) && (
+                    <p className="text-[11px] text-[#ff3b30]">Paste the link to send, or this Reel posts without Auto-DM.</p>
+                  )}
                 </div>
               )}
             </div>
