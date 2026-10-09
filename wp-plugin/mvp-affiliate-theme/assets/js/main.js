@@ -13,6 +13,46 @@
     });
   }
 
+  // ── Header menu: one row, or its own row when it cannot fit ────────────────
+  // A long tagline plus the header pills squeezed the category menu into a
+  // single column on desktop. Measured in the one-row layout: if the menu
+  // wraps, it moves to its own full-width row under the brand. Re-measured
+  // when the width changes and when the platform plugin injects its pills.
+  var headerInner = header && header.querySelector('.mvp-header-inner');
+  var navMenu = header && header.querySelector('.mvp-nav-menu');
+  if (headerInner && navMenu) {
+    var fitHeaderNav = function () {
+      if (window.innerWidth <= 900) { header.classList.remove('mvp-header--two-row'); return; }
+      header.classList.remove('mvp-header--two-row');
+      var items = navMenu.children;
+      var wraps = false;
+      if (items.length > 1) {
+        var top = items[0].offsetTop;
+        for (var i = 1; i < items.length; i++) {
+          if (Math.abs(items[i].offsetTop - top) > 4) { wraps = true; break; }
+        }
+      }
+      if (wraps) header.classList.add('mvp-header--two-row');
+    };
+    var fitTimer = null;
+    var lastWidth = 0;
+    var scheduleFit = function () {
+      if (fitTimer) clearTimeout(fitTimer);
+      fitTimer = setTimeout(fitHeaderNav, 60);
+    };
+    fitHeaderNav();
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      scheduleFit();
+    });
+    window.addEventListener('load', fitHeaderNav);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeaderNav);
+    if (window.MutationObserver) {
+      new MutationObserver(scheduleFit).observe(headerInner, { childList: true });
+    }
+  }
+
   // ── Search drawer toggle ───────────────────────────────────────────────────
   var searchToggle = document.querySelector('[data-mvp-search-toggle]');
   var searchDrawer = document.querySelector('[data-mvp-search]');

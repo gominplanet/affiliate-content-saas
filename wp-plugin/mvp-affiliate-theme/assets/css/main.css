@@ -233,6 +233,13 @@ html, body { overflow-x: clip; }
   flex-direction: column;
   gap: 2px;
   color: var(--mvp-header-fg, var(--mvp-text));
+  /* A long tagline used to make the brand as wide as the whole sentence, and
+     the menu beside it was squeezed into one narrow column: categories stacked
+     one per line down the header ("makes my blog look like garbage", a member,
+     2026-10-09). The brand now has a ceiling and the tagline wraps. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 320px;
 }
 .mvp-header-brand:hover { opacity: 1; }
 .mvp-header-title {
@@ -247,6 +254,11 @@ html, body { overflow-x: clip; }
   color: var(--mvp-header-muted, var(--mvp-text-muted));
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 /* Aggregate blog-reads chip when it lands in the header (under the tagline).
    Strip the plugin's centered-pill look and make it a tiny muted line that
@@ -271,16 +283,20 @@ html, body { overflow-x: clip; }
 }
 .mvp-blog-reads-slot--header .mvp-blog-reads svg { width: 11px !important; height: 11px !important; }
 
-.mvp-header-nav { flex: 1; display: flex; justify-content: center; }
+.mvp-header-nav { flex: 1; min-width: 0; display: flex; justify-content: center; }
 .mvp-nav-menu {
   display: flex;
   gap: 6px;
+  row-gap: 2px;
   margin: 0; padding: 0; list-style: none;
   flex-wrap: wrap;
+  justify-content: center;
 }
 .mvp-nav-menu li { position: relative; }
 .mvp-nav-menu a {
   display: inline-block;
+  /* "Electronics & Tech" is one label: it never breaks over two lines. */
+  white-space: nowrap;
   padding: 8px 14px;
   color: var(--mvp-header-fg, var(--mvp-text));
   font-size: 14px;
@@ -320,6 +336,20 @@ html, body { overflow-x: clip; }
 .mvp-searchform-submit {
   background: transparent; border: 0; padding: 0 14px;
   color: var(--mvp-text-muted); height: 100%;
+}
+
+/* THE MENU GETS ITS OWN ROW when it cannot fit on one line beside the brand,
+   the search and the header pills (main.js adds the class after measuring).
+   Two clean rows beat one row whose categories wrap into a column. */
+@media (min-width: 901px) {
+  .mvp-header--two-row .mvp-header-inner { flex-wrap: wrap; row-gap: 6px; }
+  .mvp-header--two-row .mvp-header-brand { margin-right: auto; max-width: min(560px, 55%); }
+  .mvp-header--two-row .mvp-header-nav {
+    order: 99;
+    flex-basis: 100%;
+    padding-top: 6px;
+    border-top: 1px solid var(--mvp-header-border, var(--mvp-border));
+  }
 }
 
 @media (max-width: 900px) {
