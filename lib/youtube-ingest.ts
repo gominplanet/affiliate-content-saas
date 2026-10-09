@@ -251,6 +251,11 @@ export function ingestFailureWords(why: string): string {
   if (/video unavailable|has been removed|no longer available/i.test(w)) return 'YouTube says this video is unavailable'
   if (/not a bot|sign in to confirm/i.test(w)) return 'YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in)'
   if (/DRM/i.test(w)) return 'YouTube only offered a protected copy'
+  // THE PROXY ACCOUNT RAN OUT (Seb, 2026-10-09): every fetch failed with the
+  // proxy's own "Tunnel connection failed: 402 Payment Required" pasted on
+  // screen. It is MVP's paid proxy plan, not the member's video, so it says so.
+  if (/402 Payment Required/i.test(w) || (/proxy/i.test(w) && /\b402\b/.test(w))) return 'MVP\u2019s download service is out of credit, so automatic fetching is paused for everyone (we\u2019re on it)'
+  if (/unable to connect to proxy|ProxyError|407 Proxy Authentication/i.test(w)) return 'MVP\u2019s download service cannot reach its proxy right now'
   if (/HTTP 401|HTTP 403/.test(w) && !/ERROR/i.test(w)) return 'the downloader refused MVP\u2019s key'
   if (/did not answer|ECONNREFUSED|ENOTFOUND|HTTP 50[234]: (?!.*ERROR)/i.test(w)) return 'the downloader is not answering'
   return `the downloader said: ${w.replace(/^HTTP \d+: /, '').replace(/^ERROR:\s*/i, '').slice(0, 200)}`

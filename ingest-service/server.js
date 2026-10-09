@@ -235,7 +235,32 @@ async function selfUpdateYtDlp() {
 const app = express()
 app.use(express.json({ limit: '6mb' })) // cookies.txt pushes can be a few hundred KB
 
-app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD }))
+// A PROXY THAT IS SET IS NOT A PROXY THAT WORKS (2026-10-09). /health said
+// "proxy: true" while the proxy refused every request with "402 Payment
+// Required" (the plan had run out), so the status looked healthy and every
+// fetch failed. One tiny request through the proxy, cached for five minutes,
+// says whether it actually carries traffic and, if not, the proxy's own answer.
+let proxyProbe = { at: 0, ok: null, status: null, error: null }
+function probeProxy() {
+  if (!PROXY) return Promise.resolve({ ok: null, status: null, error: null })
+  if (Date.now() - proxyProbe.at < 5 * 60_000) return Promise.resolve(proxyProbe)
+  return new Promise((resolve) => {
+    execFile('curl', ['-sS', '-x', PROXY, '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '12', 'https://www.youtube.com/generate_204'],
+      { timeout: 15_000 }, (err, stdout, stderr) => {
+        const code = Number(String(stdout || '').trim()) || null
+        const ok = !err && code !== null && code < 400
+        // Never echo the proxy URL: it carries the account's password.
+        const why = ok ? null : String(stderr || (err && err.message) || `HTTP ${code}`).replace(PROXY, '[proxy]').trim().slice(0, 200)
+        proxyProbe = { at: Date.now(), ok, status: code, error: why }
+        resolve(proxyProbe)
+      })
+  })
+}
+
+app.get('/health', async (_req, res) => {
+  const p = await probeProxy()
+  res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD })
+})
 
 // Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
 // youtube.com/google.com cookies in-browser and pushes them here (via the MVP

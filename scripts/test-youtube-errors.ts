@@ -24,6 +24,9 @@ check('the playlist picker does not send a quota error to reconnect', /Playlists
 // fetch the MP4", with nothing about whether YouTube, the video or MVP).
 check('a bot wall is named as YouTube refusing the downloader', /refusing MVP/.test(ingestFailureWords("HTTP 502: ERROR: [youtube] abc: Sign in to confirm you're not a bot")))
 check('a private video is named as private', /private or members only/.test(ingestFailureWords('HTTP 502: ERROR: [youtube] abc: Private video. Sign in if you\'ve been granted access')))
+check('a proxy out of credit is named as MVP\'s service, not the member\'s video', /out of credit/.test(ingestFailureWords("HTTP 502: ERROR: [youtube] I_TI-k4-GrA: Unable to download API page: ('Unable to connect to proxy', OSError('Tunnel connection failed: 402 Payment Required'))")))
+check('the raw proxy error is not pasted on screen', !/Tunnel connection/.test(ingestFailureWords("HTTP 502: ERROR: Unable to connect to proxy, OSError('Tunnel connection failed: 402 Payment Required')")))
+check('the downloader health check makes a real request through the proxy', /generate_204/.test(readFileSync('ingest-service/server.js', 'utf8')) && /proxyOk/.test(readFileSync('ingest-service/server.js', 'utf8')))
 check('a service that is down is named as down', /not answering/.test(ingestFailureWords('the service did not answer (fetch failed)')))
 check('anything else shows the downloader\'s own words', /downloader said: Requested format is not available/.test(ingestFailureWords('HTTP 502: ERROR: Requested format is not available')))
 {

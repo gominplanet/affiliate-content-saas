@@ -37,13 +37,18 @@ export async function GET() {
   const raw = typeof health?.build === 'string' ? String(health.build) : ''
   const build = raw && raw !== 'unknown' ? raw : null
   const same = !!build && !!app && app.startsWith(build)
+  // The proxy is checked with a real request now (ingest-service /health), so
+  // a proxy that refuses traffic is the headline, not a footnote under "up".
+  const proxyDown = health?.proxyOk === false
   const verdict = error
     ? error
+    : proxyDown
+      ? `The video service is up, but its proxy is refusing traffic, so every YouTube fetch fails: ${String(health?.proxyError || 'no reason given')}. A "402" means the proxy plan is out of credit: top it up with the provider in YT_DLP_PROXY on Railway.`
     : !build
       ? 'The service is up but does not report its build (it predates build reporting, or runs outside Railway). Redeploy it once so it reports one.'
       : same
         ? 'The video service runs the same commit as the app, so Railway redeploys it on every push.'
         : `The video service runs commit ${build.slice(0, 7)}; the app is on ${app ? app.slice(0, 7) : 'an unknown commit'}. If nothing in ingest-service changed between them this is fine; otherwise Railway is not following pushes and needs a manual redeploy (or Auto Deploy switched on for the main branch).`
 
-  return NextResponse.json({ ok: !error, verdict, serviceBuild: build, appBuild: app, health })
+  return NextResponse.json({ ok: !error && !proxyDown, verdict, serviceBuild: build, appBuild: app, health })
 }
