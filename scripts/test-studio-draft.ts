@@ -177,7 +177,7 @@ const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
     /const held = applied && \(willFinish \? statusOutcome !== 'set' : statusOutcome === 'held'\)/.test(CPR) && /Sent, NOT scheduled \(see below\)/.test(CPR))
   check('the outcome is only "set" when something set it',
     /if \(studioSetVisibility\(fin\)\) \{ setStatusOutcome\('set'\); return \}/.test(CPR)
-    && /if \(res2\.ok && d2\.statusOk !== false\) setStatusOutcome\('set'\)/.test(CPR))
+    && /if \(res2\.ok && d2\.statusOk !== false\) \{\s*setStatusOutcome\('set'\)/.test(CPR))
   check('Retry finishes the push it follows, with the time that push used',
     /pushedRef\.current = \{ publishAt, isDraft \}/.test(CPR) && /const publishAt = pushed \? pushed\.publishAt/.test(CPR)
     && /has passed\. Pick a new time and push again\./.test(CPR))

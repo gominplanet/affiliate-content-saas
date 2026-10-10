@@ -19,7 +19,7 @@ import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosi
 import { pinFirstComment } from '@/lib/first-comment-pins'
 import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
-import { draftVisibility, productLinkFor, studioDisclosuresConfirmed, studioSetVisibility, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone } from '@/lib/studio-finish'
+import { draftVisibility, roundUpToQuarterHour, productLinkFor, studioDisclosuresConfirmed, studioSetVisibility, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone } from '@/lib/studio-finish'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
@@ -783,6 +783,10 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
   // push sends no status, and the button used to turn green with "Scheduled
   // on YouTube" before (and whether or not) anything set the schedule.
   const [statusOutcome, setStatusOutcome] = useState<'set' | 'held' | null>(null)
+  // WHICH ROUTE SET THE TIME. When SCOUT could not set it in Studio and MVP
+  // then scheduled it through YouTube's API, the SCOUT panel still shows its
+  // own failure; this says what happened next, so the two never contradict.
+  const [scheduleNote, setScheduleNote] = useState<string | null>(null)
   // The time and draft choice the push actually used, so Retry finishes THAT
   // push. Recomputed from the dropdown, "in 1 hour" became an hour from the
   // retry, not from the push.
@@ -1401,6 +1405,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
     // result kept the next push's result hidden.
     setApplyError(null)
     setStatusOutcome(null)
+    setScheduleNote(null)
     setFinishResult(null)
     setFinishError(null)
     setFinishCheckDone(false)
@@ -1682,6 +1687,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
           setApplying(false)
           pushedRef.current = { publishAt, isDraft }
           setStatusOutcome(null)
+    setScheduleNote(null)
           const fin = await runStudioFinish(publishAt)
           await settleAfterStudio(fin, publishAt, isDraft)
         }
@@ -1732,14 +1738,16 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
       if (!scheduleAt) return null
       const t = new Date(scheduleAt) // datetime-local → local time
       if (isNaN(t.getTime()) || t.getTime() <= Date.now()) return null
-      return t.toISOString()
+      // On a quarter hour, the only times Studio keeps (lib/studio-finish).
+      return new Date(roundUpToQuarterHour(t.getTime())).toISOString()
     }
     const offsets: Record<'in1h' | 'in6h' | 'in24h', number> = {
       in1h: 1 * 60 * 60 * 1000,
       in6h: 6 * 60 * 60 * 1000,
       in24h: 24 * 60 * 60 * 1000,
     }
-    return new Date(Date.now() + offsets[mode]).toISOString()
+    // "In 1 hour" is the next quarter hour after that: 10:42 now schedules 11:45.
+    return new Date(roundUpToQuarterHour(Date.now() + offsets[mode])).toISOString()
   }
 
   /** Min value for the datetime-local picker (5 min out, local time). */
@@ -1794,6 +1802,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
     }
     setApplyError(null)
     setStatusOutcome(null)
+    setScheduleNote(null)
     const fin = await runStudioFinish(publishAt)
     await settleAfterStudio(fin, publishAt, isDraft)
   }
@@ -1907,7 +1916,14 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
         setApplyError(`${d2.heldBack} See it in YouTube Studio.`)
         return
       }
-      if (res2.ok && d2.statusOk !== false) setStatusOutcome('set')
+      if (res2.ok && d2.statusOk !== false) {
+        setStatusOutcome('set')
+        const vis = fin?.steps.find((s) => s.step === 'visibility')
+        if (publishAt && vis && !vis.ok && !vis.skipped) {
+          const when = new Date(publishAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          setScheduleNote(`SCOUT could not set the time in Studio, so MVP scheduled it through YouTube instead, for ${when}. YouTube took it. The SCOUT step marked ✕ below is the Studio attempt.`)
+        }
+      }
       if (!res2.ok || d2.statusOk === false) {
         setApplyError(`Studio settings are in, but ${publishAt ? 'scheduling' : `setting it to ${proSettings.privacyStatus}`} through YouTube did not go through. It is still ${where}. Open it on YouTube and ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
       }
@@ -3855,6 +3871,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                       {proSettings.scheduleMode === 'custom' && (
                         <input
                           type="datetime-local"
+                          step={900}
                           value={proSettings.scheduleAt}
                           min={localDatetimeMin()}
                           onChange={e => setProSettings(s => ({ ...s, scheduleAt: e.target.value }))}
@@ -3968,6 +3985,11 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                 {applyError && (
                   <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2 break-all">
                     ❌ {applyError}
+                  </p>
+                )}
+                {scheduleNote && !applyError && (
+                  <p className="text-xs text-[#1c7a35] dark:text-[#34c759] bg-[#34c759]/5 border border-[#34c759]/25 rounded-lg px-3 py-2">
+                    {scheduleNote}
                   </p>
                 )}
 

@@ -17,6 +17,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCOUT_LATEST_VERSION } from '../lib/scout-version'
+import { roundUpToQuarterHour } from '../lib/studio-finish'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -263,6 +264,20 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.endscreen = ') + 12000)
   check('the Details-page path presses the End screen row and reuses the editor steps',
     /if \(o\.detailsRow\) \{/.test(kit) && /\/\^end screen\$\/i\.test\(deepText\(el\)\)/.test(kit) && /const viaRow = await openedEditor\(25000\)/.test(kit) && /if \(await waitFor\(editorOpen, 5000, 500\)\) return await inEditor\(\)/.test(kit))
+}
+
+
+// ── Studio keeps quarter hours only (Seb, 2026-10-10: 11:42 became 1:00 PM) ──
+{
+  const at = (h: number, m: number, sec = 0) => new Date(2026, 9, 10, h, m, sec).getTime()
+  const hm = (ms: number) => { const d = new Date(ms); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
+  check('11:42 is scheduled at 11:45, never earlier', hm(roundUpToQuarterHour(at(11, 42))) === '11:45')
+  check('a quarter hour stays where it is', hm(roundUpToQuarterHour(at(11, 45))) === '11:45')
+  check('seconds past a quarter move to the next one', hm(roundUpToQuarterHour(at(11, 45, 20))) === '12:00')
+  check('11:52 rolls over to 12:00', hm(roundUpToQuarterHour(at(11, 52))) === '12:00')
+  const CP = readFileSync(join(process.cwd(), 'app/(dashboard)/co-pilot/page.tsx'), 'utf8')
+  check('Co-Pilot rounds "In 1 hour" and a picked time up to a quarter hour', /roundUpToQuarterHour\(Date\.now\(\) \+ offsets\[mode\]\)/.test(CP) && /roundUpToQuarterHour\(t\.getTime\(\)\)/.test(CP) && /step=\{900\}/.test(CP))
+  check('when Studio would not keep the time and YouTube did, the page says which route set it', /SCOUT could not set the time in Studio, so MVP scheduled it through YouTube instead/.test(CP))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

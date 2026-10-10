@@ -161,6 +161,21 @@ export function studioDisclosuresConfirmed(r: StudioFinishResult | null): boolea
   return !!(d && d.ok)
 }
 
+/** STUDIO ONLY KEEPS QUARTER HOURS (Seb, 2026-10-10). "In 1 hour" made
+ *  11:42 AM; SCOUT typed it, and Studio put back 1:00 PM on Apply, twice (and
+ *  7:09 PM did the same on Oct 5). Its own time list is :00, :15, :30, :45.
+ *  So a schedule time is moved UP to the next quarter hour, never earlier.
+ *  Pure. */
+export const STUDIO_TIME_STEP_MS = 15 * 60 * 1000
+export function roundUpToQuarterHour(ms: number): number {
+  const d = new Date(ms)
+  d.setSeconds(0, 0)
+  const step = 15
+  const m = d.getMinutes()
+  if (m % step !== 0 || new Date(ms).getSeconds() !== 0 || new Date(ms).getMilliseconds() !== 0) d.setMinutes(m - (m % step) + step)
+  return d.getTime()
+}
+
 /** A visibility instruction for a draft, from a publish time or a choice. */
 export function draftVisibility(publishAt: string | null, privacy: string): StudioVisibility {
   if (publishAt) return { mode: 'schedule', publishAt }
