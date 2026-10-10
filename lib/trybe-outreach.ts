@@ -5,7 +5,8 @@
 //
 // THE BRAKES. The creator has sent 40 to 50 requests by hand back to back with
 // no trouble, but a tool doing it is held to a slower, steadier pace:
-//   - a daily cap, 20 to start (settings allow 1 to 50), counted over the LAST
+//   - a daily cap, 20 to start (settings allow 1 to 80, TRYBE's own limit for
+//     a rolling 24 hours, Seb 2026-10-09), counted over the LAST
 //     24 HOURS, not since midnight, so a batch at 11pm and another at 1am can
 //     never add up to twice the cap;
 //   - a send MVP started and never heard back about counts toward the cap, so
@@ -14,7 +15,8 @@
 //     pause every few, so the rhythm never looks like a script.
 
 export const DEFAULT_DAILY_CAP = 20
-export const MAX_DAILY_CAP = 50
+/** TRYBE's own ceiling: 80 requests in any 24 hours. */
+export const MAX_DAILY_CAP = 80
 export const MIN_GAP_MS = 45_000
 export const MAX_GAP_MS = 120_000
 /** After this many sends in one run, one longer pause. */
@@ -130,6 +132,17 @@ export function countsTowardCap(row: { status: string; send_started_at: string |
   if (!row.send_started_at) return false
   const t = Date.parse(row.send_started_at)
   return Number.isFinite(t) && now - t < 24 * 3600_000
+}
+
+/**
+ * WHEN THE NEXT SEND OPENS UP, once the cap is used (Seb, 2026-10-09). The cap
+ * is a rolling 24 hours, so the answer is the moment the oldest counted send
+ * turns 24 hours old, never "tomorrow" or midnight. Null while there is room.
+ */
+export function nextFreeAt(rows: Array<{ status: string; send_started_at: string | null }>, cap: number, now: number): string | null {
+  const times = rows.filter((r) => countsTowardCap(r, now)).map((r) => Date.parse(r.send_started_at as string)).sort((a, b) => a - b)
+  if (times.length < cap) return null
+  return new Date(times[times.length - cap] + 24 * 3600_000).toISOString()
 }
 
 /** The wait before the next request, in ms. `sentThisRun` is how many have

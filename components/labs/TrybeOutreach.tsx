@@ -24,7 +24,7 @@ import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTria
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
-import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
@@ -228,6 +228,17 @@ function Stat({ label, value, hint, tone }: { label: string; value: string; hint
   )
 }
 
+
+/** When the next send opens up, in the creator's own clock. */
+function opensWords(at: string | null): string {
+  if (!at) return 'Daily cap reached.'
+  const t = new Date(at)
+  if (!Number.isFinite(t.getTime())) return 'Daily cap reached.'
+  const sameDay = t.toDateString() === new Date().toDateString()
+  const time = t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `Next one can go at ${time}${sameDay ? '' : ' tomorrow'}.`
+}
+
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
@@ -237,6 +248,9 @@ export default function TrybeOutreach() {
   // The cap the server holds, for the tile and Send all; `cap` is the input.
   const [savedCap, setSavedCap] = useState(20)
   const [used, setUsed] = useState(0)
+  // When the next send opens up, once the cap is used: the oldest counted send
+  // turning 24 hours old, never midnight (Seb, 2026-10-09).
+  const [freeAt, setFreeAt] = useState<string | null>(null)
   const [cats, setCats] = useState<string[]>([])
   const [kws, setKws] = useState<string[]>([])
   const [kwInput, setKwInput] = useState('')
@@ -301,6 +315,7 @@ export default function TrybeOutreach() {
       setCap(d.settings?.dailyCap ?? 20)
       setSavedCap(d.settings?.dailyCap ?? 20)
       setUsed(d.usedToday ?? 0)
+      setFreeAt(d.nextFreeAt ?? null)
       const c = d.settings?.categories || [], k = d.settings?.keywords || []
       setSavedKey(prefsKey(c, k))
       setDailyFind(d.settings?.dailyFind !== false)
@@ -777,7 +792,7 @@ export default function TrybeOutreach() {
   async function sendAll() { await runSends(queue.slice(0, remaining), 'Send all') }
   /** One message now, without waiting for the rest. */
   async function sendOne(b: Brand) {
-    if (!remaining) { toast.error('Today’s cap is used.'); return }
+    if (!remaining) { toast.error(`All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}`); return }
     await runSends([b], 'Send now')
   }
 
@@ -786,7 +801,7 @@ export default function TrybeOutreach() {
     // send all"). A send that could not start used to note it on a row the
     // reload then wiped, so a run could end with nothing on screen.
     if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); say(label, 'Not started: SCOUT is not allowed on TRYBE yet.', 'bad'); return }
-    if (!list.length) { say(label, remaining ? 'Nothing in the queue to send.' : 'Today’s cap is used. The queue waits for tomorrow.', 'warn'); return }
+    if (!list.length) { say(label, remaining ? 'Nothing in the queue to send.' : `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)} The queue waits until then.`, 'warn'); return }
     stopRef.current = false
     setRunSize(list.length)
     setRunning(true)
@@ -798,9 +813,10 @@ export default function TrybeOutreach() {
         if (stopRef.current) { say(label, 'Stopped.', 'warn'); break }
         const b = list[i]
         const c = await api({ action: 'claim', brandId: b.brand_id }).catch(e => ({ ok: false, error: e.message }))
-        if (c.capped) { say(label, `Daily cap reached (${c.usedToday} of ${c.dailyCap} in the last 24 hours).`, 'warn'); toast.message('Daily cap reached'); break }
+        if (c.capped) { setFreeAt(c.nextFreeAt ?? null); say(label, `All ${c.dailyCap} sends of the last 24 hours are used. ${opensWords(c.nextFreeAt ?? null)}`, 'warn'); toast.message('Daily cap reached'); break }
         if (!c.ok) { say(b.name, `Not started: ${c.error || 'MVP could not reserve it'}.`, 'bad'); toast.error(`${b.name}: ${c.error || 'could not start'}`); continue }
         setUsed(c.usedToday)
+        if (c.nextFreeAt) setFreeAt(c.nextFreeAt)
         setCurrent(b.brand_id)
         patch(b.brand_id, { status: 'sending', send_started_at: new Date().toISOString(), error: null })
         say(b.name, 'SCOUT is opening TRYBE to send it.', 'info')
@@ -848,7 +864,7 @@ export default function TrybeOutreach() {
   const soft = { color: 'var(--text-soft)' }
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50'
   const busy = !!finding || running
-  const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.' : !remaining ? 'Today’s cap is used.' : !queue.length ? 'Nothing drafted yet.' : null
+  const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.' : !remaining ? `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}` : !queue.length ? 'Nothing drafted yet.' : null
 
   const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
   const sentRows = history.map(b => {
@@ -900,7 +916,7 @@ export default function TrybeOutreach() {
 
       {/* The numbers that matter today. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <Stat label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : 'Daily cap reached'} />
+        <Stat label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} />
         <Stat label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} />
         <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
         <Stat label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'n/a' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} />
@@ -1021,7 +1037,8 @@ export default function TrybeOutreach() {
           )}
           <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <label className="text-[13px] flex items-center gap-2">Daily cap
-              <input type="number" min={1} max={50} value={cap} onChange={e => setCap(Number(e.target.value))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
+              <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
+              <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (TRYBE allows up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
             </label>
             <label className="text-[13px] flex items-center gap-2">
               <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />

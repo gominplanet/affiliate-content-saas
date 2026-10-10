@@ -39,6 +39,7 @@ import {
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
   REPLY_SYSTEM, replyUserPrompt, replyBlanks,
+  nextFreeAt, MAX_DAILY_CAP,
 } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -88,12 +89,21 @@ async function siteFacts(r: Record<string, any>): Promise<{ summary: string; pro
   return { summary: res.summary, products: res.products, siteError: res.error, fetchedAt: new Date().toISOString(), fresh }
 }
 
-async function usedToday(admin: Db, ownerId: string): Promise<number> {
+async function capRows(admin: Db, ownerId: string): Promise<Array<{ status: string; send_started_at: string | null }>> {
   const since = new Date(Date.now() - 24 * 3600_000).toISOString()
   const { data } = await admin.from('trybe_brands').select('status, send_started_at')
     .eq('user_id', ownerId).in('status', ['sent', 'sending']).gte('send_started_at', since)
+  return (data || []) as Array<{ status: string; send_started_at: string | null }>
+}
+
+async function usedToday(admin: Db, ownerId: string): Promise<number> {
   const now = Date.now()
-  return ((data || []) as Array<{ status: string; send_started_at: string | null }>).filter(r => countsTowardCap(r, now)).length
+  return (await capRows(admin, ownerId)).filter(r => countsTowardCap(r, now)).length
+}
+
+/** When the next send opens up, for a cap that is used (null while there is room). */
+async function nextFree(admin: Db, ownerId: string, cap: number): Promise<string | null> {
+  return nextFreeAt(await capRows(admin, ownerId), cap, Date.now())
 }
 
 export async function GET() {
@@ -111,7 +121,7 @@ export async function GET() {
   try { worked = await getWorkedWithBrands(supabase as Db, ownerId) } catch { /* best-effort */ }
   if (rows.error) return NextResponse.json({ error: dbWords(rows.error.message) }, { status: 500 })
   const brands = rows.rows.map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))) }))
-  return NextResponse.json({ ok: true, settings, usedToday: used, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin' })
+  return NextResponse.json({ ok: true, settings, usedToday: used, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap), maxDailyCap: MAX_DAILY_CAP, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin' })
 }
 
 /** A brand's products with the ones naming a keyword first, so a search for
@@ -752,7 +762,7 @@ export async function POST(request: Request) {
     const settings = await readSettings(admin, ownerId)
     const used = await usedToday(admin, ownerId)
     if (used >= settings.dailyCap) {
-      return NextResponse.json({ ok: false, capped: true, usedToday: used, dailyCap: settings.dailyCap })
+      return NextResponse.json({ ok: false, capped: true, usedToday: used, dailyCap: settings.dailyCap, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap) })
     }
     const { data: row } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
     if (!row) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
@@ -770,9 +780,9 @@ export async function POST(request: Request) {
     if (after > settings.dailyCap) {
       await admin.from('trybe_brands').update({ status: row.status, send_started_at: null, sent_message: row.sent_message ?? null, error: row.error ?? null, updated_at: now })
         .eq('user_id', ownerId).eq('brand_id', brandId).eq('status', 'sending')
-      return NextResponse.json({ ok: false, capped: true, usedToday: after - 1, dailyCap: settings.dailyCap })
+      return NextResponse.json({ ok: false, capped: true, usedToday: after - 1, dailyCap: settings.dailyCap, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap) })
     }
-    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url) })
+    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, nextFreeAt: used + 1 >= settings.dailyCap ? await nextFree(admin, ownerId, settings.dailyCap) : null, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url) })
   }
 
   if (action === 'result') {

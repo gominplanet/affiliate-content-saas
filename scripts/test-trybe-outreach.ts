@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks, nextFreeAt } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
@@ -18,7 +18,23 @@ const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) 
 
 // Cap
 check('default cap is 20', DEFAULT_DAILY_CAP === 20 && clampCap(undefined) === 20)
-check('cap is held to 1..50', clampCap(0) === 1 && clampCap(500) === 50 && clampCap(35) === 35)
+{
+  // THE CAP IS A ROLLING 24 HOURS (Seb, 2026-10-09): when it is used, the next
+  // send opens the moment the oldest counted send turns 24 hours old.
+  const now = Date.parse('2026-10-09T18:00:00Z')
+  const rows = [
+    { status: 'sent', send_started_at: '2026-10-09T09:00:00Z' },
+    { status: 'sent', send_started_at: '2026-10-09T10:00:00Z' },
+    { status: 'sent', send_started_at: '2026-10-08T15:00:00Z' },
+  ]
+  check('no next-send time while there is room', nextFreeAt(rows, 5, now) === null)
+  check('a send older than 24 hours no longer counts against the cap', nextFreeAt(rows, 3, now) === null)
+  check('the next free slot is 24 hours after the oldest of the last cap sends', nextFreeAt(rows.slice(0, 2), 2, now) === '2026-10-10T09:00:00.000Z')
+  const ui = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('no screen says the cap resets "today" or "tomorrow" as if at midnight', !/Today.s cap is used|waits for tomorrow/.test(ui))
+  check('the cap setting says TRYBE allows up to 80 in a rolling 24 hours', /rolling 24 hours \(TRYBE allows up to \{MAX_DAILY_CAP\}/.test(ui))
+}
+check('cap is held to 1..80, TRYBE\'s own limit', clampCap(0) === 1 && clampCap(500) === 80 && clampCap(80) === 80 && clampCap(35) === 35)
 const now = Date.parse('2026-10-06T12:00:00Z')
 check('a sent request from 23h ago counts', countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T13:00:00Z' }, now))
 check('a sent request from 25h ago does not', !countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T11:00:00Z' }, now))
@@ -275,7 +291,7 @@ check('the Replied tile counts this week, with the all-time count under it', /<S
 check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ id: c\.id, n: \(o\?\.n \?\? 0\) \+ 1 \}\)\); setTab\('inbox'\)/.test(UI) && /openRequest=\{openChat\}/.test(UI) && /handled\.current === openRequest\.n/.test(INBOX))
 check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
 check('Send now waits for the save and never sends after a failed one', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(ok => \{ if \(ok\) void sendOne\(\{ \.\.\.b, draft: t \}\) \}\)\}/.test(UI) && /const inFlight = pendingSave\.current\.get\(b\.brand_id\)/.test(UI))
-check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{ await runSends\(queue\.slice\(0, remaining\), 'Send all'\) \}/.test(UI) && /if \(!remaining\) \{ toast\.error\('Today’s cap is used\.'\); return \}/.test(UI))
+check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{ await runSends\(queue\.slice\(0, remaining\), 'Send all'\) \}/.test(UI) && /if \(!remaining\) \{ toast\.error\(`All \$\{savedCap\} sends of the last 24 hours are used\. \$\{opensWords\(freeAt\)\}`\); return \}/.test(UI))
 {
   const n = (s: string) => s
   void n
