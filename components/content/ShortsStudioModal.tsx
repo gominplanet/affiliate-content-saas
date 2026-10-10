@@ -115,6 +115,7 @@ export function ShortsStudioModal({
   // and "trim silences" (cut dead air). Both handled by the render service.
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
   const [trimById, setTrimById] = useState<Record<string, boolean>>({})
+  const [hookById, setHookById] = useState<Record<string, boolean>>({})
   // In-app editor: the clip being edited + its draft (trim/hook/caption), and a
   // saving flag. Edits persist via /api/youtube/shorts/update; re-render uses them.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -211,6 +212,7 @@ export function ShortsStudioModal({
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
+          hook: hookById[clip.id] !== false,
           trimSilence: trimById[clip.id] === true,
         }),
       })
@@ -225,14 +227,15 @@ export function ShortsStudioModal({
       // that moves the counter. Refreshing on mount alone is how a creator
       // rendered her way to fifty while the number above her sat still.
       notifyShortsUsageChanged()
-      toast.success('Short rendered')
+      // Says what went in, so a render without the cuts never reads as one with them.
+      toast.success(data.trimSkipped ? 'Short rendered, without trimming silences (the backup renderer cannot cut them)' : data.trimmedSec > 0 ? `Short rendered, ${Number(data.trimmedSec).toFixed(1)}s of silence cut` : 'Short rendered')
     } catch (e) {
       toast.error(errText(e))
       setClips(prev => prev.map(c => (c.id === clip.id ? { ...c, status: 'failed', renderError: errText(e) } : c)))
     } finally {
       setRenderingId(null)
     }
-  }, [hasSource, styleById, captionsById, layoutById, trimById])
+  }, [hasSource, styleById, captionsById, layoutById, trimById, hookById])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
@@ -579,6 +582,17 @@ export function ShortsStudioModal({
                         <option value="center">Standard</option>
                         <option value="split">Split screen</option>
                       </select>
+                    {/* Hook card: the clip's hook over its first seconds. */}
+                    <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Show the hook as a title card for the first 2 seconds">
+                      <input
+                        type="checkbox"
+                        checked={hookById[clip.id] !== false}
+                        onChange={e => setHookById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
+                        disabled={rendering}
+                        className="accent-[#7C3AED]"
+                      />
+                      Hook title
+                    </label>
                       {/* Trim silences: cut dead air for a tighter, faster clip. */}
                       <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
                         <input

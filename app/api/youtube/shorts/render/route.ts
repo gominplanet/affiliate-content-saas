@@ -26,6 +26,7 @@ import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { shortsCapFor } from '@/lib/usage-cap'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
 import { hasVideoTools } from '@/lib/amazon-plan'
+import { silenceCuts } from '@/lib/shorts-snap'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })
     }
 
-    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean; reframe?: string }
+    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean; reframe?: string; hook?: boolean; trimSilence?: boolean }
     const shortId = (body.shortId || '').trim()
     // Captions default ON; captions:false renders a clean clip (no burned text).
     const withCaptions = body.captions !== false
@@ -93,9 +94,11 @@ export async function POST(request: Request) {
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
     // Layout (ingest service handles it; older builds ignore it).
-    const renderOpts = {
+    const renderOpts: { reframe: 'split' | 'center'; hook?: string; segments?: Array<[number, number]> } = {
       reframe: body.reframe === 'split' ? 'split' as const : 'center' as const,
     }
+    // The hook card opens the clip unless the creator turns it off.
+    const withHook = body.hook !== false
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -138,9 +141,22 @@ export async function POST(request: Request) {
     // render service can accent-color them in the burned captions — the visual
     // that makes Hormozi/Opus-style captions pop. Backward-compatible: an older
     // render build ignores the extra `hl` field.
-    const cuesWithHl = rawCues.map(c => ({ ...c, hl: isPowerWord(c.text) }))
+    let cuesWithHl = rawCues.map(c => ({ ...c, hl: isPowerWord(c.text) }))
     const startSec = Number(short.start_sec)
     const endSec = Number(short.end_sec)
+    if (withHook && String(short.hook || '').trim()) renderOpts.hook = String(short.hook).trim()
+    // TRIM SILENCES (Seb, 2026-10-10: the box was sent and ignored). The dead
+    // air between words is cut, and the caption words move onto the shortened
+    // timeline so they still land on the mouth (lib/shorts-snap silenceCuts).
+    let trimmedSec = 0
+    if (body.trimSilence === true && rawCues.length > 1) {
+      const cut = silenceCuts(cuesWithHl, endSec - startSec)
+      if (cut.segments.length >= 2) {
+        renderOpts.segments = cut.segments
+        cuesWithHl = cut.words.map(w => ({ ...w, hl: !!w.hl }))
+        trimmedSec = cut.savedSec
+      }
+    }
 
     let renderedUrl: string | null = null
     let engine = 'ffmpeg-ass'
@@ -202,7 +218,8 @@ export async function POST(request: Request) {
         endSec: usingClip ? (clip!.durationSeconds ?? (endSec - startSec)) : endSec,
         captions: withCaptions ? buildCaptionChunks(rawCues.map(c => ({ start: c.startSec, end: c.endSec, text: c.text }))) : [],
         style,
-        hook: '',
+        // Cloudinary cannot cut silences or time a card: the hook stays up as a title.
+        hook: renderOpts.hook ?? '',
         sourcePublicId: usingClip ? null : ((video?.cloudinary_source_id as string | null) || null),
       })
       // Purge the intermediate trim regardless of outcome (we don't retain it).
@@ -270,7 +287,14 @@ export async function POST(request: Request) {
     // the cap the old (non-atomic) way so the quota still advances.
     if (!reservationId) recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: 'reserved', images: 0 })
     renderSucceeded = true
-    return NextResponse.json({ ok: true, short: updated ? rowToShort(updated) : null })
+    return NextResponse.json({
+      ok: true, short: updated ? rowToShort(updated) : null,
+      // Said back so the card can tell a trimmed render from an untrimmed one.
+      trimmedSec: engine === 'ffmpeg-ass' ? trimmedSec : 0,
+      // The backup renderer (Cloudinary) cannot cut silences.
+      trimSkipped: !!renderOpts.segments && engine !== 'ffmpeg-ass',
+      hook: !!renderOpts.hook,
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[shorts/render]', msg)

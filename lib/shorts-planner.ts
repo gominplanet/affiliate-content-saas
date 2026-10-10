@@ -16,6 +16,7 @@ import type { TranscriptCue, ClipSuggestion } from '@/lib/shorts-types'
 import { cuesToTimestampedText } from '@/lib/shorts-transcript'
 import { sliceCuesToWindow } from '@/lib/shorts-captions'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
+import { snapToSentences } from '@/lib/shorts-snap'
 
 const MODEL = 'claude-sonnet-4-6'
 // Cheap first pass that scores where the good moments ARE, so the expensive
@@ -56,6 +57,14 @@ export interface PlanOpts {
 }
 
 interface Hotspot { startSec: number; endSec: number; score: number }
+
+/** The planner's answer could not be read even after asking again. */
+export class PlanUnreadableError extends Error {
+  constructor() {
+    super('The AI picked moments but its answer came back unreadable twice, so no clips were saved. This search was not counted. Press Find Shorts again.')
+    this.name = 'PlanUnreadableError'
+  }
+}
 
 /** Facebook's limit for a Page Reel published through its API (Reels
  *  Publishing API: 3 to 90 seconds). The Group copy goes up through Facebook
@@ -234,7 +243,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     const reduced = cues.filter(c => chosen.some(w => c.start >= w.startSec && c.start < w.endSec))
     if (reduced.length > 0) promptCues = reduced
   }
-  const timestamped = cuesToTimestampedText(promptCues)
+  const timestamped = cuesToTimestampedText(promptCues, 16000, { withEnds: true })
 
   const system =
     `You are a short-form video editor who cuts ${minSec}–${maxSec}s vertical ${unit} out of long YouTube videos. ` +
@@ -253,7 +262,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     (opts.voiceBlock ? `\nWRITE THE HOOKS AND CAPTIONS IN THE CREATOR'S OWN VOICE (this overrides the generic tone above):\n${opts.voiceBlock}\n\n` : '') +
     `VIDEO LENGTH: ${Math.round(videoEnd)}s\n\n` +
     (desc ? `VIDEO DESCRIPTION (for product + context — use it to make hooks, captions and hashtags land the product; do NOT quote it as a subtitle):\n${desc}\n\n` : '') +
-    `Timestamps below are [mm:ss]; seconds = minutes*60 + seconds.\n\n` +
+    `Each line below is [start-end] in mm:ss, when that line starts and finishes; seconds = minutes*60 + seconds.\n\n` +
     `TRANSCRIPT:\n${timestamped}\n\n` +
     `Pick the ${count} BEST moments to cut as standalone ${unit}. A great moment is: a strong hook or ` +
     `bold claim, a surprising result/number, a mini-story with a payoff, a before/after, a hot take, or a clear ` +
@@ -266,7 +275,8 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
       : '') +
     `Rules:\n` +
     `- startSec/endSec are integer SECONDS on the video timeline; endSec-startSec must be ${minSec}–${maxSec}.\n` +
-    `- Clips must NOT overlap. Spread them across the video.\n` +
+    `- Clips must NOT overlap. Spread them across the video.\n` +    `- Start on the FIRST word of a sentence (a line's start time) and end right AFTER a finished thought (a line's end time). ` +
+    `Never open mid-sentence or cut off the payoff; a viewer must hear the whole point.\n` +
     `- hook: a punchy on-screen title (≤ 8 words) that fits the moment. No clickbait that the clip doesn't deliver.\n` +
     `- caption: 1–2 sentence post caption in the creator's ${tone} voice. Open with the strongest hook, ` +
     `add 1–2 relevant emoji (never more, never decorative rows of them), and end with a light engagement ` +
@@ -278,30 +288,43 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     `[{"startSec":90,"endSec":112,"hook":"...","caption":"...","reason":"why this works","score":78,` +
     `"hashtags":["#x","#y","#z"]}]`
 
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 2000,
-    system,
-    messages: [{ role: 'user', content: user }],
-  })
-  try {
-    recordAnthropicUsage(msg, {
-      userId: opts.telemetry?.userId ?? null,
-      tier: opts.telemetry?.tier ?? null,
-      feature: 'shorts_plan',
+  // AN ANSWER MVP CANNOT READ IS SAID, NOT HIDDEN. A reply cut off at the
+  // token limit used to parse as "no clips", which the page showed as "no
+  // strong moments in this video". It is asked once more, with room, and if it
+  // still cannot be read the creator is told that instead.
+  const ask = async (extra: string) => {
+    const msg = await anthropic.messages.create({
       model: MODEL,
+      max_tokens: 4000,
+      system,
+      messages: [{ role: 'user', content: user + extra }],
     })
-  } catch { /* telemetry is best-effort */ }
-
-  const text = msg.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('')
-  const rawClips = parseJSONArray(text)
+    try {
+      recordAnthropicUsage(msg, {
+        userId: opts.telemetry?.userId ?? null,
+        tier: opts.telemetry?.tier ?? null,
+        feature: 'shorts_plan',
+        model: MODEL,
+      })
+    } catch { /* telemetry is best-effort */ }
+    const text = msg.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('')
+    return { text, cut: msg.stop_reason === 'max_tokens' }
+  }
+  let reply = await ask('')
+  let rawClips = parseJSONArray(reply.text)
+  if (rawClips.length === 0 && (reply.cut || /\S/.test(reply.text))) {
+    reply = await ask('\n\nReturn ONLY the JSON array. Keep each caption and reason short.')
+    rawClips = parseJSONArray(reply.text)
+    if (rawClips.length === 0 && (reply.cut || !/^\s*\[\s*\]\s*$/.test(reply.text))) throw new PlanUnreadableError()
+  }
 
   const out: ClipSuggestion[] = []
   for (const rc of rawClips) {
     const ws = Number(rc.startSec)
     const we = Number(rc.endSec)
     if (!Number.isFinite(ws) || !Number.isFinite(we) || we <= ws) continue
-    const win = snapWindow(cues, ws, we, minSec, maxSec)
+    // Whole sentences first; word edges only when no sentence-clean window fits.
+    const win = snapToSentences(cues, ws, we, minSec, maxSec) ?? snapWindow(cues, ws, we, minSec, maxSec)
     if (!win) continue
     // Subtitles are lifted VERBATIM from the transcript — the no-fabrication line.
     // Stored WORD-level (clip-relative) so the caption engine can animate each

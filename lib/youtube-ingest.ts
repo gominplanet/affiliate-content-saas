@@ -306,6 +306,10 @@ export async function clipSegment(
  *  reframe 'split' = seamless top center-crop over the full horizontal frame. */
 export interface RenderShortOpts {
   reframe?: 'center' | 'split'
+  /** Burned as a card over the first seconds of the clip. */
+  hook?: string
+  /** Trim silences: the clip-relative stretches to keep. */
+  segments?: Array<[number, number]>
 }
 
 export async function renderShort(
@@ -377,6 +381,8 @@ async function renderShortReq(
           ...source, startSec, endSec, words: words || [],
           ...(userId ? { userId } : {}),
           ...(opts?.reframe ? { reframe: opts.reframe } : {}),
+          ...(opts?.hook ? { hook: opts.hook } : {}),
+          ...(opts?.segments?.length ? { segments: opts.segments } : {}),
         }),
         signal: AbortSignal.timeout(280_000),
       })

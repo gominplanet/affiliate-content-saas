@@ -120,19 +120,22 @@ export function cuesToText(cues: TranscriptCue[]): string {
 /** A compact, timestamped rendering of the transcript for the LLM: one line per
  *  cue as `[mm:ss] text`. Capped to `maxChars` so a 2-hour video can't blow the
  *  prompt budget (we keep the START of the video, where hooks cluster). */
-export function cuesToTimestampedText(cues: TranscriptCue[], maxChars = 16000): string {
+export function cuesToTimestampedText(cues: TranscriptCue[], maxChars = 16000, opts: { withEnds?: boolean } = {}): string {
   const fmt = (sec: number) => {
     const m = Math.floor(sec / 60)
     const s = Math.floor(sec % 60)
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
+  // withEnds: "[01:32-01:41]". The clip planner used to see only start times,
+  // so every end it chose was a guess at when a line finished.
+  const stamp = (c: TranscriptCue) => (opts.withEnds ? `${fmt(c.start)}-${fmt(Math.ceil(c.end))}` : fmt(c.start))
   // Word-level cues (Whisper chunk_level:'word') would emit one line per word and
   // blow the budget — merge them into ~sentence lines first (keeping each line's
   // start time) so the LLM sees compact, timestamped context.
   const lines = mergeCuesToLines(cues)
   let out = ''
   for (const c of lines) {
-    const line = `[${fmt(c.start)}] ${c.text}\n`
+    const line = `[${stamp(c)}] ${c.text}\n`
     if (out.length + line.length > maxChars) break
     out += line
   }

@@ -73,6 +73,8 @@ export function ShortsCreatePanel({
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
+  const [trimById, setTrimById] = useState<Record<string, boolean>>({})
+  const [hookById, setHookById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // In-app editor: which clip + its draft (trim/hook/caption) + saving flag.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -226,6 +228,8 @@ export function ShortsCreatePanel({
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
+          hook: hookById[clip.id] !== false,
+          trimSilence: trimById[clip.id] === true,
         }),
       })
       // Our route always returns JSON, so a non-JSON body means a platform/gateway
@@ -246,7 +250,8 @@ export function ShortsCreatePanel({
       // that moves the counter. Refreshing on mount alone is how a creator
       // rendered her way to fifty while the number above her sat still.
       notifyShortsUsageChanged()
-      toast.success('Short rendered')
+      // Says what went in, so a render without the cuts never reads as one with them.
+      toast.success(data.trimSkipped ? 'Short rendered, without trimming silences (the backup renderer cannot cut them)' : data.trimmedSec > 0 ? `Short rendered, ${Number(data.trimmedSec).toFixed(1)}s of silence cut` : 'Short rendered')
     } catch (e) {
       // THE CONNECTION DROPPED, NOT THE RENDER. "Failed to fetch" is the
       // browser saying it lost MVP before an answer came back; a heavy render
@@ -288,7 +293,7 @@ export function ShortsCreatePanel({
     } finally {
       setRenderingId((cur) => (cur === clip.id ? null : cur))
     }
-  }, [canRender, styleById, captionsById, layoutById, videoId])
+  }, [canRender, styleById, captionsById, layoutById, trimById, hookById, videoId])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
@@ -490,6 +495,28 @@ export function ShortsCreatePanel({
                     <option value="center">Standard</option>
                     <option value="split">Split screen</option>
                   </select>
+                  {/* Hook card: the clip's hook over its first seconds. */}
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Show the hook as a title card for the first 2 seconds">
+                    <input
+                      type="checkbox"
+                      checked={hookById[clip.id] !== false}
+                      onChange={e => setHookById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
+                      disabled={rendering}
+                      className="accent-[#7C3AED]"
+                    />
+                    Hook title
+                  </label>
+                  {/* Trim silences: cut dead air for a tighter, faster clip. */}
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
+                    <input
+                      type="checkbox"
+                      checked={trimById[clip.id] === true}
+                      onChange={e => setTrimById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
+                      disabled={rendering}
+                      className="accent-[#7C3AED]"
+                    />
+                    Trim silences
+                  </label>
                   <button
                     onClick={() => renderClip(clip)}
                     disabled={rendering}

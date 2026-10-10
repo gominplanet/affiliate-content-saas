@@ -30,7 +30,7 @@ import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
-import { planShorts, reelWindow } from '@/lib/shorts-planner'
+import { planShorts, reelWindow, PlanUnreadableError } from '@/lib/shorts-planner'
 import { sliceCuesToWindow } from '@/lib/shorts-captions'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
@@ -424,6 +424,7 @@ export async function POST(request: Request) {
       video: { id: video.id as string, youtubeVideoId, title: videoTitle },
     })
   } catch (err) {
+    if (err instanceof PlanUnreadableError) return NextResponse.json({ error: err.message, unreadable: true }, { status: 502 })
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[shorts/plan]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })

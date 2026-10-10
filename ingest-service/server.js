@@ -28,6 +28,7 @@ const { execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { buildAss, assTime, assEscape, keepSegments, trimFilters } = require('./render-filters')
 const zlib = require('zlib')
 const { pipeline } = require('stream/promises')
 const { Readable } = require('stream')
@@ -618,119 +619,22 @@ app.post('/clip', async (req, res) => {
   }
 })
 
-// ── Hormozi-style captions (FFmpeg + libass) ────────────────────────────────
-// Word-by-word: 1–3 words on screen, the ACTIVE word pops (scale bounce) and
-// turns yellow as it's spoken. Rendered as an ASS subtitle burned by ffmpeg,
-// which is what the good caption tools do — Cloudinary's static text can't.
+// Captions, the hook card and the silence cuts live in render-filters.js so
+// they can be tested without ffmpeg (test-render-filters.js).
 
-function assTime(sec) {
-  let s = Number(sec)
-  if (!Number.isFinite(s) || s < 0) s = 0
-  const cs = Math.round(s * 100)
-  const h = Math.floor(cs / 360000)
-  const m = Math.floor((cs % 360000) / 6000)
-  const ss = Math.floor((cs % 6000) / 100)
-  const c = cs % 100
-  return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${String(c).padStart(2, '0')}`
-}
-
-// Strip ASS-special chars so a stray brace/backslash can't break the subtitle.
-function assEscape(t) {
-  return String(t == null ? '' : t).replace(/[{}\\]/g, '').replace(/\r?\n/g, ' ').trim()
-}
-
-// Normalize incoming cues to per-WORD timing. Single-word cues (Whisper
-// word-level) pass through with real timings; multi-word cues (phrase-level
-// source) are split evenly across their span so we still get word animation.
-function toWords(cues) {
-  const out = []
-  for (const c of Array.isArray(cues) ? cues : []) {
-    const start = Number(c && (c.startSec != null ? c.startSec : c.start))
-    let end = Number(c && (c.endSec != null ? c.endSec : c.end))
-    const text = assEscape(c && c.text)
-    if (!text || !Number.isFinite(start)) continue
-    if (!Number.isFinite(end) || end <= start) end = start + 0.4
-    const toks = text.split(/\s+/).filter(Boolean)
-    if (toks.length <= 1) { out.push({ start, end, text: toks[0] || text }); continue }
-    const per = (end - start) / toks.length
-    toks.forEach((w, i) => out.push({ start: start + i * per, end: start + (i + 1) * per, text: w }))
-  }
-  return out.sort((a, b) => a.start - b.start)
-}
-
-// Group words into short lines (<=maxWords, break on a speech pause or sentence).
-function groupLines(words, maxWords, gap) {
-  const lines = []
-  let cur = []
-  const flush = () => { if (cur.length) { lines.push(cur); cur = [] } }
-  for (const w of words) {
-    if (cur.length) {
-      const g = w.start - cur[cur.length - 1].end
-      if (cur.length >= maxWords || g > gap || /[.!?]$/.test(cur[cur.length - 1].text)) flush()
-    }
-    cur.push(w)
-  }
-  flush()
-  return lines
-}
-
-function buildAss(cues) {
-  const words = toWords(cues)
-  const lines = groupLines(words, 3, 0.6)
-  const HIGHLIGHT = '&H0000FFFF&' // yellow, ASS is &HBBGGRR
-
-  const header = [
-    '[Script Info]',
-    'ScriptType: v4.00+',
-    'PlayResX: 1080',
-    'PlayResY: 1920',
-    'WrapStyle: 1',
-    'ScaledBorderAndShadow: yes',
-    '',
-    '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    // Anton 108, white fill, black outline 8 + shadow 4, bottom-center, MarginV 520.
-    'Style: Cap,Anton,108,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,8,4,2,120,120,520,1',
-    '',
-    '[Events]',
-    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-  ].join('\n')
-
-  // Flatten to ONE global, time-ordered sequence (each word tagged with its
-  // line). Building events per-line let a line's last word hold to its own end,
-  // which (a) left a gap before the next line → flicker, and (b) could overlap
-  // the next line when Whisper word times cross → two lines stacked ("stepping
-  // over each other"). Here every word event ends exactly when the NEXT word
-  // starts, so the track is gap-free and never overlaps.
-  const seq = []
-  for (const line of lines) for (let i = 0; i < line.length; i++) seq.push({ line, i, start: line[i].start, end: line[i].end })
-  seq.sort((a, b) => a.start - b.start)
-
-  const events = []
-  for (let k = 0; k < seq.length; k++) {
-    const cur = seq[k]
-    const start = cur.start
-    const next = seq[k + 1]
-    const end = Math.max(start + 0.05, next ? next.start : cur.end)
-    const text = cur.line.map((w, j) => {
-      const up = w.text.toUpperCase()
-      return j === cur.i
-        ? `{\\c${HIGHLIGHT}\\fscx118\\fscy118\\t(0,90,\\fscx100\\fscy100)}${up}{\\r}`
-        : up
-    }).join(' ')
-    events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Cap,,0,0,0,,${text}`)
-  }
-  return `${header}\n${events.join('\n')}\n`
-}
-
-function ffmpegRender(input, startSec, dur, vf, outPath) {
+function ffmpegRender(input, startSec, dur, vf, outPath, af) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
       // -ss before -i is fast AND frame-accurate in modern ffmpeg; output PTS
       // resets to 0 at startSec, so the clip-relative caption timings line up.
-      '-ss', String(startSec), '-i', input, '-t', String(dur),
+      // With silences cut (af set) the output is shorter than the window, so the
+      // window is limited on the INPUT side, or ffmpeg reads to the source's end.
+      '-ss', String(startSec), ...(af ? ['-t', String(dur), '-i', input] : ['-i', input, '-t', String(dur)]),
       '-vf', vf,
+      // Cut silences keep every frame they select at its own time; without this
+      // the encoder resamples to 25 fps and drops frames (tested: 102 of 122).
+      ...(af ? ['-af', af, '-fps_mode', 'passthrough'] : []),
       // crf 20 + the "faster" preset give Instagram a sharper, higher-bitrate
       // source to re-encode from, which is where the visible quality lives once
       // the platform compresses again. Both cost some CPU on a short clip, not RAM.
@@ -866,13 +770,14 @@ app.post('/stream-audio', async (req, res) => {
 const { reframeChain, cropAt } = require('./render-filters')
 
 // Run ffmpeg with a -filter_complex graph (the split-screen path).
-function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath) {
+function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath, inputLimited) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
-      '-ss', String(startSec), '-i', input, '-t', String(dur),
+      '-ss', String(startSec), ...(inputLimited ? ['-t', String(dur), '-i', input] : ['-i', input, '-t', String(dur)]),
       '-filter_complex', filterComplex,
       '-map', '[vout]', '-map', audioMap,
+      ...(inputLimited ? ['-fps_mode', 'passthrough'] : []),
       '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
@@ -888,7 +793,7 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
 //   - youtubeVideoId: download ONLY the [start,end] section (bandwidth saver)
 //   - videoUrl: a hosted source (a creator upload) — download + seek
 // Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId,
-//         reframe?: 'center'|'split' }.
+//         reframe?: 'center'|'split', hook?: string, segments?: [[a,b],...] }.
 app.post('/render-short', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const url = String(req.body?.videoUrl || '').trim()
@@ -942,7 +847,13 @@ app.post('/render-short', async (req, res) => {
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
 
     const withCaptions = words.length > 0
-    if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
+    // The hook card opens the clip whether or not captions are on.
+    const hook = typeof req.body?.hook === 'string' ? req.body.hook.slice(0, 90) : ''
+    const withAss = withCaptions || !!assEscape(hook)
+    if (withAss) fs.writeFileSync(assTmp, buildAss(words, { hook }))
+    // Trim silences: only the keep-segments the route worked out are rendered.
+    const segs = keepSegments(req.body?.segments, dur)
+    const trim = segs ? trimFilters(segs) : null
     // Output at 1080x1920 (9:16), the native Instagram Reels / TikTok / YouTube
     // Shorts frame. Rendering smaller means the platform upscales on its side and
     // the result looks soft, which is what creators were reporting. The captions
@@ -956,18 +867,26 @@ app.post('/render-short', async (req, res) => {
     if (reframeMode === 'split') {
       // Split-screen path — a -filter_complex graph (vstack of the two halves),
       // optionally burning captions. Audio passes through untouched.
-      const graph = reframeChain('[0:v]', 'split', W, H, withCaptions ? assTmp : null, cropX)
-      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, '0:a?', outTmp)
+      const graph = trim
+        ? `[0:v]${trim.v}[vt];${reframeChain('[vt]', 'split', W, H, withAss ? assTmp : null, cropX)};[0:a]${trim.a}[aout]`
+        : reframeChain('[0:v]', 'split', W, H, withAss ? assTmp : null, cropX)
+      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, trim ? '[aout]' : '0:a?', outTmp, !!trim)
     } else {
       // Default path — the original simple -vf center-crop (unchanged, low-risk).
       const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${cropAt(cropX)}`
-      const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
-      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
+      const vf = `${trim ? `${trim.v},` : ''}${reframe}${withAss ? `,ass=${assTmp}` : ''}`
+      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp, trim ? trim.a : null)
     }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
-    return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
+    // What was actually made: the length after cuts, and whether cuts and the
+    // hook went in, so the app can tell a trimmed render from an untrimmed one.
+    return res.json({
+      url: publicUrl(key),
+      durationSeconds: Math.round((trim ? trim.seconds : dur) * 10) / 10,
+      trimmed: !!trim, hook: withAss && !!assEscape(hook),
+    })
   } catch (e) {
     console.error('[render-short] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })

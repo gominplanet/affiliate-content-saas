@@ -69,4 +69,34 @@ ok('a cropX outside 0 to 1 is ignored', () => {
   assert.strictEqual(cropAt(1.5), ''); assert.strictEqual(cropAt('x'), ''); assert.strictEqual(cropAt(undefined), '')
 })
 
+console.log('buildAss: hook card and power words')
+const { buildAss, keepSegments, trimFilters } = require('./render-filters')
+const W3 = [{ startSec: 0.2, endSec: 0.6, text: 'costs' }, { startSec: 0.6, endSec: 1.0, text: '$40', hl: true }]
+ok('the hook opens the clip on its own style, then fades', () => {
+  const a = buildAss(W3, { hook: 'This beats a {500} amp' })
+  assert.ok(/Style: Hook,/.test(a))
+  assert.ok(/Dialogue: 1,0:00:00\.00,0:00:02\.40,Hook,,0,0,0,,\{\\fad\(120,250\)\}THIS BEATS A 500 AMP/.test(a), 'hook event with braces stripped')
+})
+ok('no hook, no hook event', () => { assert.ok(!/,Hook,,/.test(buildAss(W3))) })
+ok('a hook alone (captions off) still makes a valid script', () => { const a = buildAss([], { hook: 'Hi' }); assert.ok(/,Hook,,/.test(a) && !/,Cap,,/.test(a)) })
+ok('a power word is coloured when it is not the spoken word', () => {
+  const a = buildAss(W3)
+  assert.ok(a.includes('{\\c&H0066FF33&}$40{\\r}'), 'green $40 while "costs" is spoken')
+})
+
+console.log('trim silences: keep-segments')
+ok('clean ordered segments pass, one segment is nothing to cut', () => {
+  assert.deepStrictEqual(keepSegments([[0, 1.5], [2, 4]], 10), [[0, 1.5], [2, 4]])
+  assert.strictEqual(keepSegments([[0, 4]], 10), null)
+  assert.strictEqual(keepSegments('x', 10), null)
+})
+ok('overlapping segments are not trusted', () => { assert.strictEqual(keepSegments([[0, 3], [2, 4]], 10), null) })
+ok('segments are clamped to the clip', () => { assert.deepStrictEqual(keepSegments([[0, 1], [2, 99]], 10), [[0, 1], [2, 10]]) })
+ok('select and aselect keep the same stretches, quoted', () => {
+  const t = trimFilters([[0, 1], [2, 3.5]])
+  assert.strictEqual(t.v, "select='between(t,0,1)+between(t,2,3.5)',setpts=N/FRAME_RATE/TB")
+  assert.strictEqual(t.a, "aselect='between(t,0,1)+between(t,2,3.5)',asetpts=N/SR/TB")
+  assert.strictEqual(t.seconds, 2.5)
+})
+
 console.log(`\n✓ All reframe-filter tests passed (${pass}).`)
