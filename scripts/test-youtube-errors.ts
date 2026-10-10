@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { youTubeErrorText } from '../services/youtube'
 import { ingestFailureWords } from '../lib/youtube-ingest'
+import { toGb, usedPct } from '../lib/proxy-usage'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -27,6 +28,12 @@ check('a private video is named as private', /private or members only/.test(inge
 check('a proxy out of credit is named as MVP\'s service, not the member\'s video', /out of credit/.test(ingestFailureWords("HTTP 502: ERROR: [youtube] I_TI-k4-GrA: Unable to download API page: ('Unable to connect to proxy', OSError('Tunnel connection failed: 402 Payment Required'))")))
 check('the raw proxy error is not pasted on screen', !/Tunnel connection/.test(ingestFailureWords("HTTP 502: ERROR: Unable to connect to proxy, OSError('Tunnel connection failed: 402 Payment Required')")))
 check('the downloader health check makes a real request through the proxy', /generate_204/.test(readFileSync('ingest-service/server.js', 'utf8')) && /proxyOk/.test(readFileSync('ingest-service/server.js', 'utf8')))
+// THE PROXY'S DATA IS ON THE ADMIN PAGE (Seb, 2026-10-09: the plan ran out
+// unnoticed and every fetch failed).
+check('proxy bytes read as GB', toGb(3_200_000_000) === 3.2)
+check('usage is a share of the plan, and an unlimited plan has none', usedPct(8, 10) === 80 && usedPct(5, null) === null)
+check('the admin costs page shows the proxy gauge', /<ProxyUsage \/>/.test(readFileSync('app/(dashboard)/admin/costs/page.tsx', 'utf8')))
+check('the proxy gauge is admin only', /tier !== 'admin'/.test(readFileSync('app/api/admin/proxy-usage/route.ts', 'utf8')))
 check('a service that is down is named as down', /not answering/.test(ingestFailureWords('the service did not answer (fetch failed)')))
 check('anything else shows the downloader\'s own words', /downloader said: Requested format is not available/.test(ingestFailureWords('HTTP 502: ERROR: Requested format is not available')))
 {

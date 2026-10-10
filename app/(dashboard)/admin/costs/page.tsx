@@ -5,6 +5,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { YouTubeQuota } from '@/components/admin/YouTubeQuota'
+import { ProxyUsage } from '@/components/admin/ProxyUsage'
 
 interface TierAgg { cost: number; calls: number; activeUsers: number }
 interface FeatureAgg { cost: number; calls: number }
@@ -59,6 +60,7 @@ export default function AdminCostsPage() {
       <PageHero title="AI Cost (admin)" subtitle="Real model spend from ai_usage telemetry. Pricing is approximate list pricing." />
 
       <YouTubeQuota />
+      <ProxyUsage />
 
       <div className="flex items-center gap-2 mb-5">
         {[7, 30, 90].map(d => (
