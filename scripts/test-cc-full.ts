@@ -65,17 +65,19 @@ check('a field Amazon left out keeps its value; rows that cannot be stored are s
 
 // ── Campaigns missing from Amazon's export are marked full, never deleted ─────
 {
-  const full = { live: 955236, stagedHasSpots: true }
-  check('a real export hides what it left out; a partial upload or replace mode does not', ccShouldHideMissing('add-only', 900000, full) && !ccShouldHideMissing('add-only', 40000, full) && !ccShouldHideMissing('add-only', null, full) && !ccShouldHideMissing('replace', 900000, full))
-  // 2026-10-10: 105,838 rows with no Open slots column emptied the catalogue.
-  check('the upload that emptied the catalogue (105,838 of 955,236, no counts) hides nothing', !ccShouldHideMissing('add-only', 105838, { live: 955236, stagedHasSpots: false }) && !ccShouldHideMissing('add-only', 105838, full))
-  check('an upload with no open-slots counts hides nothing, and says why', /no open-slots counts/.test(ccHideMissingBlock('add-only', 900000, { live: 955236, stagedHasSpots: false }) || ''))
-  check('a fact MVP could not read blocks the hide', !ccShouldHideMissing('add-only', 900000, { live: null, stagedHasSpots: true }) && !ccShouldHideMissing('add-only', 900000, { live: 955236, stagedHasSpots: null }))
-  const M423 = read('supabase/migrations/423_cc_keep_spot_counts.sql')
-  check('migration 423: a merge keeps a known count when the upload has none', /available_slot\s+= COALESCE\(EXCLUDED\.available_slot, c\.available_slot\)/.test(M423) && /total_slot\s+= COALESCE\(EXCLUDED\.total_slot, c\.total_slot\)/.test(M423))
-  check('migration 423: the hide pass marks nothing when no staged row has a count', /IF NOT EXISTS \(SELECT 1 FROM cc_campaign_catalog_import WHERE available_slot IS NOT NULL\)/.test(M423))
-  check('the uploader requires the Open slots and Total slots columns', /key: 'available_slot', label: 'Open slots', required: true/.test(read('components/admin/CcCatalogUploader.tsx')) && /key: 'total_slot', label: 'Total slots', required: true/.test(read('components/admin/CcCatalogUploader.tsx')))
-  check('the CC page says when the catalogue has no spot counts at all', /spotsMissing/.test(read('app/api/cc/campaigns/route.ts')) && /MVP has no open spot counts for any campaign right now/.test(read('app/(dashboard)/cc-campaigns/page.tsx')))
+  const live = { live: 955236 }
+  check('a whole export hides what it left out; a partial upload or replace mode does not', ccShouldHideMissing('add-only', 442394, live) && !ccShouldHideMissing('add-only', 40000, live) && !ccShouldHideMissing('add-only', null, live) && !ccShouldHideMissing('replace', 900000, live))
+  // 2026-10-10: 105,838 rows (one part of the export) marked the rest full.
+  check('the partial upload that emptied the catalogue (105,838 of 955,236) hides nothing, and says why', !ccShouldHideMissing('add-only', 105838, live) && /looks like part of the export/.test(ccHideMissingBlock('add-only', 105838, live) || ''))
+  check('Amazon\'s export without spot counts can still hide what it left out', ccShouldHideMissing('add-only', 442394, { live: 955236, stagedHasSpots: false }))
+  check('a live count MVP could not read blocks the hide', !ccShouldHideMissing('add-only', 900000, { live: null }))
+  const M424 = read('supabase/migrations/424_cc_export_without_counts.sql')
+  check('migration 424: a campaign in the export with no count becomes open, count unknown; a real or recent live count is kept', /WHEN EXCLUDED\.available_slot IS NOT NULL THEN EXCLUDED\.available_slot WHEN c\.available_slot > 0 THEN c\.available_slot WHEN c\.last_live_at > now\(\) - interval '24 hours' THEN c\.available_slot ELSE NULL END/.test(M424))
+  check('migration 424: missing from the export is full, count known or not', /AND \(c\.available_slot > 0 OR c\.available_slot IS NULL\)/.test(M424) && !/IF NOT EXISTS \(SELECT 1 FROM cc_campaign_catalog_import WHERE available_slot IS NOT NULL\)/.test(M424))
+  check('the uploader accepts an export without slot columns and says what that means', /key: 'available_slot', label: 'Open slots', required: false/.test(read('components/admin/CcCatalogUploader.tsx')) && /Amazon&rsquo;s export does not include spot counts/.test(read('components/admin/CcCatalogUploader.tsx')))
+  const R = read('app/api/cc/campaigns/route.ts')
+  check('"Has open spots" means open or count unknown', /qb\.or\('available_slot\.gt\.0,available_slot\.is\.null'\)/.test(R) && !/qb\.gt\('available_slot', 0\)/.test(R))
+  check('the CC page says when everything is marked full, and a card says when the count is unknown', /spotsMissing/.test(R) && /Every campaign in MVP\\'s catalogue is marked full right now/.test(read('app/(dashboard)/cc-campaigns/page.tsx')) && /Spot count not given/.test(read('app/(dashboard)/cc-campaigns/page.tsx')))
   const M = read('supabase/migrations/403_cc_hide_missing.sql')
   check('migration 403 sets open spots to 0 on rows not in staging, and deletes nothing', /SET available_slot = 0/.test(M) && /c\.available_slot > 0/.test(M) && /NOT EXISTS \(\s*SELECT 1 FROM cc_campaign_catalog_import/.test(M) && !/DELETE/i.test(M.replace(/--[^\n]*/g, '')))
   const D = read('app/api/cron/drain-cc-import/route.ts')

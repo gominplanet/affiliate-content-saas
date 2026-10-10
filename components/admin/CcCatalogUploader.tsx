@@ -26,10 +26,12 @@ const FIELDS = [
   { key: 'starts_at', label: 'Start date', required: false },
   { key: 'budget', label: 'Budget', required: false },
   { key: 'budget_remaining', label: 'Budget remaining', required: false },
-  // REQUIRED (Seb, 2026-10-10): an upload with no open-slots column merged
-  // 105,838 campaigns with no count, and the catalogue lost every open spot.
-  { key: 'available_slot', label: 'Open slots', required: true },
-  { key: 'total_slot', label: 'Total slots', required: true },
+  // NOT REQUIRED: Amazon's export stopped carrying slot counts (2026-10-10, its
+  // columns end at Budget Remaining). Without them a campaign in the upload is
+  // "open, count unknown" and one missing from it is full; SCOUT's live checks
+  // fill in real counts. The note under the columns says so.
+  { key: 'available_slot', label: 'Open slots', required: false },
+  { key: 'total_slot', label: 'Total slots', required: false },
 ] as const
 type FieldKey = typeof FIELDS[number]['key']
 
@@ -311,6 +313,11 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
       )}
 
       {/* Clear-vs-append choice */}
+      {files.length > 0 && phase !== 'done' && !mapping.available_slot && (
+        <p className="mt-3 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          No open slots column. Amazon&rsquo;s export does not include spot counts, so every campaign in this upload counts as <b>open</b> (count unknown), and campaigns missing from it are marked <b>full</b> once the whole export is in. SCOUT&rsquo;s live checks fill in real counts.
+        </p>
+      )}
       {files.length > 0 && phase !== 'done' && (
         <label className="mt-3 flex items-center gap-2 text-[12px] cursor-pointer" style={{ color: 'var(--text-soft)' }}
           title="ON = fresh weekly import (clears staging first). OFF = add these files to what's already staged.">

@@ -262,6 +262,10 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         </div>
       </div>
 
+      {/* Open in Amazon's latest list, which no longer gives a count. */}
+      {c.totalSlots == null && c.spotsLeft == null && (
+        <p className="text-[10px] text-[var(--text-3)]">Open in Amazon&rsquo;s latest list. Spot count not given.</p>
+      )}
       {/* Spots */}
       {c.totalSlots != null && (
         <div>
@@ -1041,7 +1045,7 @@ export default function CcCampaignsPage() {
                 ? `None of your joined Amazon campaigns match “${q.trim()}”. Try a different keyword, or clear the search.`
                 : 'No joined campaigns came back from Amazon. Make sure SCOUT is installed and you’re logged into Amazon, then try again.')
             : spotsMissing
-              ? 'MVP has no open spot counts for any campaign right now: the last catalogue upload came without them. Untick "Has open spots" to see campaigns; spot counts come back with the next full upload.'
+              ? 'Every campaign in MVP\'s catalogue is marked full right now, which means the last catalogue upload went wrong. Untick "Has open spots" to see campaigns; they come back with the next full upload.'
               : 'No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.'}
         </div>
       ) : (() => {

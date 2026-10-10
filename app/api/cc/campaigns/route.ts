@@ -271,7 +271,10 @@ export async function GET(request: NextRequest) {
         // Strict: only campaigns we KNOW have open spots (available_slot > 0).
         // A null slot count is "unknown", not "has spots", so it must NOT pass the
         // filter (this is the bulletproof behaviour — the toggle promises open spots).
-        if (hasSpots) qb = qb.gt('available_slot', 0)
+        // OPEN OR COUNT UNKNOWN (2026-10-10): Amazon's export no longer has spot
+        // counts, so a campaign in it is joinable with no number (NULL), and one
+        // missing from it is set to 0 by the hide pass (migration 424).
+        if (hasSpots) qb = qb.or('available_slot.gt.0,available_slot.is.null')
         // Null-safe exclusion: `rep_asin NOT IN (...)` is NULL (→ dropped) for
         // rows with a null rep_asin, which would silently hide untouched campaigns.
         // Keep null-rep_asin rows in with an explicit OR.
@@ -493,7 +496,7 @@ export async function GET(request: NextRequest) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: any1, error: e1 } = await (supabase as any).from('cc_campaign_catalog')
-          .select('campaign_id').gte('ends_at', today).gt('available_slot', 0).limit(1)
+          .select('campaign_id').gte('ends_at', today).or('available_slot.gt.0,available_slot.is.null').limit(1)
         spotsMissing = !e1 && Array.isArray(any1) && any1.length === 0
       } catch { /* unknown: the plain empty message stands */ }
     }

@@ -111,7 +111,8 @@ export async function GET(request: Request) {
         .select(signals ? `${BASE_COLS}, ${SIGNAL_COLS}` : BASE_COLS, { count: 'estimated' })
         .gte('ends_at', runwayCutoff)
       if (minCommission > 0) query = query.gte('commission_pct', minCommission)
-      if (openSlotsOnly) query = query.gt('available_slot', 0)
+      // Open, or open with the count unknown (Amazon's export has no counts, migration 424).
+      if (openSlotsOnly) query = query.or('available_slot.gt.0,available_slot.is.null')
       if (signals) {
         // Product-signal filters are STRICT: a filter must mean what it says.
         // "500+ sold/mo" only matches rows we KNOW sold 500+ — a product with no
