@@ -42,5 +42,10 @@ check('the list carries each card\'s age, read apart from the main query', /sele
 const full = readFileSync('app/api/cc/campaign-full/route.ts', 'utf8')
 check('a campaign found full on Accept is stamped as a live check', /last_live_at: new Date\(\)\.toISOString\(\)/.test(full))
 
+const bg = readFileSync('extension/background.js', 'utf8')
+check('SCOUT accept-and-message reports a full campaign instead of swallowing it', /if \(r && r\.full\) \{ fullSeen = /.test(bg) && /const full = fullSeen \? \{ full: true/.test(bg))
+const frame = readFileSync('lib/extension-frame.ts', 'utf8')
+check('a full campaign from accept-and-message is marked full for everyone', /if \(resp\.full\) \{[\s\S]{0,400}\/api\/cc\/campaign-full/.test(frame.slice(frame.indexOf('export async function requestAcceptAndSendBrand'))))
+
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

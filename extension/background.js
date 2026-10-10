@@ -12931,11 +12931,16 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
   const t0 = Date.now()
   const step = (s) => { try { console.debug('[MVP SCOUT] send-step', s, `${Date.now() - t0}ms`, detailsUrl.slice(0, 90)) } catch (e) {} }
   let tabId = null
+  // FULL ON AMAZON is reported, not swallowed (Seb, 2026-10-10). This path only
+  // checked "accepted or not", so a campaign Amazon said was full never reached
+  // MVP and kept showing open spots for everyone.
+  let fullSeen = null
   const runAccept = async () => {
     for (let i = 0; i < 4; i++) {
       const ar = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
       const r = ar && ar[0] && ar[0].result
       if (r && r.ok) return true
+      if (r && r.full) { fullSeen = { said: r.said || null }; return false }
       await _sleep(700)
     }
     return false
@@ -13008,8 +13013,9 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
       finally { if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} } }
       if (accepted) { await reload(); sr = await runSend() }
     }
-    if (sr && sr.ok) return { ...sr, accepted }
-    return sr || { ok: false, reason: 'send-failed', accepted }
+    const full = fullSeen ? { full: true, said: fullSeen.said } : {}
+    if (sr && sr.ok) return { ...sr, accepted, ...full }
+    return sr ? { ...sr, ...full } : { ok: false, reason: fullSeen ? 'full' : 'send-failed', accepted, ...full }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {

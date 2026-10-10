@@ -415,19 +415,28 @@ export async function setScoutCcRecipe(recipe: { send: CcRecipeTemplate; search:
   return { ok: !!resp?.ok, applied: !!resp?.applied }
 }
 
-export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
+export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean; full?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   // Pass the ASIN so SCOUT can VERIFY the campaign it opened really sells this
   // product before sending — the last line of defence against a stale cached URL
   // delivering the recap to the wrong brand.
-  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; accepted?: boolean }>(
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; accepted?: boolean; full?: boolean; said?: string }>(
     { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message, asin: (asin || '').toUpperCase() || undefined },
     185000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, accepted: resp.accepted }
+  // FULL ON AMAZON, from the accept-and-message path too (SCOUT 1.43.0): mark it
+  // full for every creator, as plain Accept does. The message may still have
+  // gone out (Amazon lets a creator message a brand they have not joined).
+  if (resp.full) {
+    try {
+      const campaignId = new URL(detailsUrl).searchParams.get('campaignId') || ''
+      if (campaignId) await fetch('/api/cc/campaign-full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId }), signal: AbortSignal.timeout(15000) })
+    } catch { /* the result still says it is full */ }
+  }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.full && !resp.ok ? 'This campaign is full on Amazon, so it could not be joined. MVP has taken it off the list for everyone.' : resp.reason, groups: resp.groups, accepted: resp.accepted, full: !!resp.full }
 }
 
 export interface AcceptCampaignResult {
