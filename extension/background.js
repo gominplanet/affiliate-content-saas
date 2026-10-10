@@ -13837,9 +13837,79 @@ async function trybeRun(func, args, tabId) {
   return res && res[0] ? res[0].result : null
 }
 
+
+// ── ONE WINDOW FOR SCOUT'S OWN WORK (Seb, 2026-10-10: "when doing trybe
+// outreach can we stop opening so many windows.. i would like scout to simply
+// work in one window in the background"). Every TRYBE send opened a tab in the
+// creator's own window, its sign-in tab another, and a send that stalled came
+// to the front. Now SCOUT keeps ONE window of its own, opened minimized, with
+// a page saying what it is. Its tabs open and close in there; it is only
+// brought up when TRYBE refuses to send from a hidden page, then minimized
+// again; and it closes itself after five quiet minutes.
+const SCOUT_WORK_KEY = 'scoutWorkWindow'
+const SCOUT_WORK_IDLE_ALARM = 'scout-work-idle'
+let scoutWorkOpening = null
+async function scoutWorkWindowId() {
+  if (scoutWorkOpening) return scoutWorkOpening
+  scoutWorkOpening = (async () => {
+    let id = null
+    try { const got = await chrome.storage.session.get(SCOUT_WORK_KEY); id = got ? got[SCOUT_WORK_KEY] : null } catch (e) {}
+    if (id != null) { try { const w = await chrome.windows.get(id); if (w && w.id != null) return w.id } catch (e) {} }
+    const w = await chrome.windows.create({ url: chrome.runtime.getURL('scout-working.html'), focused: false, state: 'minimized' })
+    try { await chrome.storage.session.set({ [SCOUT_WORK_KEY]: w.id }) } catch (e) {}
+    return w.id
+  })()
+  try { return await scoutWorkOpening } finally { scoutWorkOpening = null }
+}
+function scoutWorkTouch() { try { chrome.alarms.create(SCOUT_WORK_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {} }
+// A tab for SCOUT's work, in SCOUT's window. If that window cannot be made,
+// the old way (a tab behind, in the current window) rather than no work.
+async function openWorkTab(url) {
+  scoutWorkTouch()
+  try {
+    const windowId = await scoutWorkWindowId()
+    return await chrome.tabs.create({ windowId, url, active: true })
+  } catch (e) {
+    return chrome.tabs.create({ url, active: false })
+  }
+}
+// Brought up only when a page will not work hidden; minimized again after.
+async function showWorkTab(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId)
+    await chrome.tabs.update(tabId, { active: true })
+    await chrome.windows.update(t.windowId, { state: 'normal', focused: true })
+  } catch (e) {}
+}
+async function hideWorkWindow() {
+  try {
+    const got = await chrome.storage.session.get(SCOUT_WORK_KEY)
+    const id = got ? got[SCOUT_WORK_KEY] : null
+    if (id != null) await chrome.windows.update(id, { state: 'minimized' })
+  } catch (e) {}
+}
+async function scoutWorkIdleCheck() {
+  try {
+    const got = await chrome.storage.session.get(SCOUT_WORK_KEY)
+    const id = got ? got[SCOUT_WORK_KEY] : null
+    if (id == null) return
+    const tabs = await chrome.tabs.query({ windowId: id })
+    const page = chrome.runtime.getURL('scout-working.html')
+    // Still working (any tab but its own page): look again in five minutes.
+    if (tabs.some((t) => (t.url || t.pendingUrl || '') !== page)) { scoutWorkTouch(); return }
+    await chrome.windows.remove(id)
+    await chrome.storage.session.remove(SCOUT_WORK_KEY)
+  } catch (e) {}
+}
+try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === SCOUT_WORK_IDLE_ALARM) void scoutWorkIdleCheck() }) } catch (e) {}
+
 async function trybeBackTo(callerTabId) {
+  await hideWorkWindow()
   if (callerTabId == null) return
-  try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {}
+  try {
+    const t = await chrome.tabs.update(callerTabId, { active: true })
+    if (t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
+  } catch (e) {}
 }
 
 // In page: is this TRYBE's discover screen, a sign-in screen, or still loading?
@@ -14088,8 +14158,10 @@ async function trybeScan({ knownNames, max, keywords, categories }, callerTabId)
   const brands = []
   const failures = []
   try {
-    const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: true })
+    // In SCOUT's own window, brought up while it reads TRYBE's list on screen.
+    const tab = await openWorkTab(TRYBE_DISCOVER)
     tabId = tab.id
+    await showWorkTab(tabId)
     await waitForTabLoad(tabId, 30000)
     let state = 'loading'
     for (let i = 0; i < 20 && state === 'loading'; i++) {
@@ -14436,7 +14508,7 @@ async function trybeApiTabId() {
       await trybeHookOff()
     }
     await trybeHookOn()
-    const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
+    const tab = await openWorkTab(TRYBE_DISCOVER)
     await trybeApiTabSet({ id: tab.id, at: Date.now(), opened: Date.now() })
     await waitForTabLoad(tab.id, 30000)
     await _sleep(1500)
@@ -14479,8 +14551,8 @@ async function trybeHarvest({ maxPages }, callerTabId) {
   // TRYBE's own code makes its first request. Removed again in finally.
   const hooked = await trybeHookOn()
   try {
-    // Behind, not in front: this only reads TRYBE's data, nothing on screen.
-    const tab = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: false })
+    // In SCOUT's own window: this only reads TRYBE's data, nothing on screen.
+    const tab = await openWorkTab(TRYBE_DISCOVER)
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     let state = 'loading'
@@ -14700,9 +14772,9 @@ async function trybeSend({ url, name, message }, callerTabId) {
   let cameForward = false
   // Once the page has been asked to send, an error is no longer "not sent".
   let asked = false
-  const forward = async () => { cameForward = true; try { await chrome.tabs.update(tabId, { active: true }) } catch (e) {} }
+  const forward = async () => { cameForward = true; await showWorkTab(tabId) }
   try {
-    const tab = await chrome.tabs.create({ url: safe, active: false })
+    const tab = await openWorkTab(safe)
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(1500)

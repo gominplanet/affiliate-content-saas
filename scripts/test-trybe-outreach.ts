@@ -6,7 +6,7 @@
 // sends "so it doesn't seem like it's a bot doing it". This guard holds the
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks, nextFreeAt } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
@@ -123,7 +123,7 @@ check('a TRYBE category matches', nicheScore(sb, ['Books & Education'], []) >= 2
 check('TRYBE category list is read by name', JSON.stringify(readCategories({ data: [{ category: 'Fashion & Apparel', emoji: 'x' }, { category: 'Beauty & Personal Care' }] })) === JSON.stringify(['Fashion & Apparel', 'Beauty & Personal Care']))
 const harvest = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('// In page: one Request to Join'))
 check('collecting the list reads TRYBE pages and never clicks anything', /\/backend\/api\/discovery\/brands\?limit=75&page=/.test(harvest) && !/\.click\(\)/.test(harvest))
-check('collecting runs in a tab behind, not in front', /url: TRYBE_DISCOVER, active: false/.test(harvest))
+check('collecting runs out of sight, in SCOUT\'s own window', /url: TRYBE_DISCOVER, active: false/.test(harvest) || /openWorkTab\(TRYBE_DISCOVER\)/.test(BG.slice(BG.indexOf('async function trybeHarvest('), BG.indexOf('async function trybeHarvest(') + 900)))
 check('the directory is shared, written by the server only', /action === 'directory'/.test(ROUTE) && /from\('trybe_directory'\)\.upsert/.test(ROUTE))
 check('the shortlist leaves out brands already on the list', /\.filter\(r => !have\.has\(r\.brand_id\)\)/.test(ROUTE))
 check('websites are read in the background', /researchBrandSite/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
@@ -249,7 +249,14 @@ check('products naming a keyword are shown first', /productsFirst\(r\.site_produ
 
 // 1.41.7: sends run in a tab behind, and a fallback never sends twice.
 const SENDER = BG.slice(BG.indexOf('async function trybeSend('), BG.indexOf('\n}\n', BG.indexOf('async function trybeSend(')))
-check('a send opens TRYBE in a tab behind, never in front first', /chrome\.tabs\.create\(\{ url: safe, active: false \}\)/.test(SENDER) && !/active: true \}\)/.test(SENDER.slice(0, SENDER.indexOf('const forward'))))
+// 1.44.0 (Seb, 2026-10-10: "stop opening so many windows"): SCOUT's own window.
+check('a send opens TRYBE in SCOUT\'s own window, never in the creator\'s', /const tab = await openWorkTab\(safe\)/.test(SENDER) && !/chrome\.tabs\.create\(/.test(SENDER))
+const WORK = BG.slice(BG.indexOf("const SCOUT_WORK_KEY"), BG.indexOf('async function trybeBackTo('))
+check('SCOUT\'s window opens minimized, not focused, with a page saying what it is', /chrome\.windows\.create\(\{ url: chrome\.runtime\.getURL\('scout-working\.html'\), focused: false, state: 'minimized' \}\)/.test(WORK) && existsSync('extension/scout-working.html'))
+check('one window, reused: its id is kept and checked before another is made', /chrome\.storage\.session\.get\(SCOUT_WORK_KEY\)/.test(WORK) && /chrome\.windows\.get\(id\)/.test(WORK))
+check('it closes itself after five quiet minutes, never while a tab is working', /SCOUT_WORK_IDLE_ALARM/.test(WORK) && /tabs\.some\(\(t\) => \(t\.url \|\| t\.pendingUrl \|\| ''\) !== page\)/.test(WORK) && /chrome\.windows\.remove\(id\)/.test(WORK))
+check('TRYBE\'s sign-in tab, the list reader and the brand scan all work in SCOUT\'s window', /await trybeHookOn\(\)\s*const tab = await openWorkTab\(TRYBE_DISCOVER\)/.test(BG) && (BG.match(/await openWorkTab\(TRYBE_DISCOVER\)/g) || []).length >= 3)
+check('after SCOUT had to come forward, its window is minimized and the creator\'s page comes back', /async function trybeBackTo\(callerTabId\) \{\s*await hideWorkWindow\(\)/.test(BG))
 check('a send is retried in front only when Send Request was never pressed', /res\.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT\.includes\(res\.error\)/.test(SENDER) && !/'not-signed-in'/.test(BG.slice(BG.indexOf('const TRYBE_RETRY_IN_FRONT'), BG.indexOf('const TRYBE_RETRY_IN_FRONT') + 300)))
 check('after a press, the tab in front is only looked at, never pressed again', (SENDER.match(/trybeRun\(trybeSendInPage/g) || []).length === 2 && /res\.outcome === 'unconfirmed' && pressed && Date\.now\(\) - startedAt < 110000\) \{\s*await forward\(\)\s*await _sleep\(3000\)\s*const open = await trybeRun\(trybeBoxStillOpenInPage/.test(SENDER))
 check('MVP\'s tab is brought back only when SCOUT took the screen', /if \(cameForward\) await trybeBackTo\(callerTabId\)/.test(SENDER))
