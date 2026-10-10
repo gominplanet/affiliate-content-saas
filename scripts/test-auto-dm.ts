@@ -110,6 +110,7 @@ async function main() {
   check('no options means no preselected link', pickDmLink([], 'shop') === null)
   const modal2 = read('components/InstagramBurnedModal.tsx')
   check('the window offers the found links and remembers the choice', /dm-link-options/.test(modal2) && /mvp\.ig\.dmLinkKind/.test(modal2))
+  check('Clip Factory passes the source video too', /videoId=\{clip\?\.sourceVideoId \|\| selectedVideo\?\.id/.test(read('components/clip-factory/ClipFactory.tsx')))
   check('Shorts Studio passes the video so its blog post can be found', /videoId=\{videoId\}/.test(read('components/content/ShortsStudioModal.tsx')))
   const pub = read('app/api/instagram/publish-burned/route.ts')
   check('a DM to the Link in Bio page puts the product on that page', /dm\.kind === 'shop'[\s\S]*syncLinkInBioTile/.test(pub))

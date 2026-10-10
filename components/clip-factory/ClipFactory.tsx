@@ -1512,6 +1512,9 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           burnedVideoUrl={publishUrl}
           initialCaption={igCaption ?? publishCaption}
           defaultDmLink={product.trim()}
+          // The source video, when MVP knows it, so the Auto-DM link choices
+          // include its blog post (Seb, 2026-10-09).
+          videoId={clip?.sourceVideoId || selectedVideo?.id || undefined}
           product={product.trim() || undefined}
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           coverOffsetMs={coverOffsetMs}
