@@ -28,6 +28,7 @@ import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/sh
 import { hasVideoTools } from '@/lib/amazon-plan'
 import { silenceCuts } from '@/lib/shorts-snap'
 import { cleanHook } from '@/lib/shorts-hooks'
+import { makeRenderJob, BACKGROUND_RENDER_SEC } from '@/lib/render-job'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
     // Layout (ingest service handles it; older builds ignore it).
-    const renderOpts: { reframe: 'split' | 'center'; hook?: string; segments?: Array<[number, number]> } = {
+    const renderOpts: { reframe: 'split' | 'center'; hook?: string; segments?: Array<[number, number]>; background?: { callbackUrl: string; job: string } } = {
       reframe: body.reframe === 'split' ? 'split' as const : 'center' as const,
     }
     // THE HOOK CARD IS THE CREATOR'S CHOICE (Seb, 2026-10-10): off unless
@@ -163,6 +164,17 @@ export async function POST(request: Request) {
       }
     }
 
+    // A LONG CLIP RENDERS IN THE BACKGROUND (Seb, 2026-10-10: a 3:55 whole
+    // video, split screen, timed out at five minutes). The service answers at
+    // once and posts the outcome to render-callback; the clip reads
+    // "rendering" until then, and the page watches for it.
+    if (ingestConfigured() && endSec - startSec > BACKGROUND_RENDER_SEC) {
+      const job = makeRenderJob({ shortId, userId: user.id, reservationId })
+      const origin = (process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/+$/, '')
+      if (job && /^https:\/\//i.test(origin)) renderOpts.background = { callbackUrl: `${origin}/api/youtube/shorts/render-callback`, job }
+    }
+    let pending = false
+
     let renderedUrl: string | null = null
     let engine = 'ffmpeg-ass'
 
@@ -172,7 +184,8 @@ export async function POST(request: Request) {
     if (ingestConfigured()) {
       if (hasSource) {
         const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-        if (r?.url) renderedUrl = r.url
+        if (r?.pending) pending = true
+        else if (r?.url) renderedUrl = r.url
       } else {
         // (a) PRIORITIZE the reliable proxy download (the same yt-dlp +
         //     residential-proxy + PO-token path Clip Factory uses via /ingest).
@@ -197,18 +210,32 @@ export async function POST(request: Request) {
               }).eq('id', short.video_id).eq('user_id', user.id)
             } catch { /* the URL still works this render; a failed cache write isn't fatal */ }
             const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-            if (r?.url) renderedUrl = r.url
+            if (r?.pending) pending = true
+            else if (r?.url) renderedUrl = r.url
           }
         }
 
         // (b) Fallback: on-the-fly segment fetch — for videos too long to fully
         //     download, or if the proxy download itself failed. Cheap but the
         //     less reliable path (YouTube blocks it more often).
-        if (!renderedUrl) {
+        if (!renderedUrl && !pending) {
           const seg = await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-          if (seg?.url) renderedUrl = seg.url
+          if (seg?.pending) pending = true
+          else if (seg?.url) renderedUrl = seg.url
         }
       }
+    }
+
+    // ACCEPTED FOR A BACKGROUND RENDER: the clip says so, the reserved render
+    // slot stays reserved (render-callback gives it back on a failure), and the
+    // page watches the clip until the service posts the outcome.
+    if (pending) {
+      const { data: waiting } = await sb.from('youtube_shorts')
+        .update({ status: 'rendering', render_error: null, subtitle_style: style, updated_at: new Date().toISOString() })
+        .eq('id', shortId).eq('user_id', user.id).select('*').maybeSingle()
+      renderSucceeded = true
+      if (!reservationId) recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: 'reserved', images: 0 })
+      return NextResponse.json({ ok: true, pending: true, short: waiting ? rowToShort(waiting) : null, trimmedSec, hook: !!renderOpts.hook })
     }
 
     // FALLBACK: Cloudinary (static captions) — only possible with a hosted

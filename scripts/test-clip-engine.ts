@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import { sentenceUnits, snapToSentences, silenceCuts } from '../lib/shorts-snap'
 import { cuesToTimestampedText } from '../lib/shorts-transcript'
 import { cleanHook, cleanHookOptions, HOOK_MAX_CHARS } from '../lib/shorts-hooks'
+import { makeRenderJob, readRenderJob, backgroundFailureWords, BACKGROUND_RENDER_SEC } from '../lib/render-job'
+import { renderingInBackground } from '../lib/background-render'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -84,9 +86,36 @@ for (const f of ['components/vertical/ShortsCreatePanel.tsx', 'components/conten
   check(`${f.split('/').pop()}: the toast says when silences were or were not cut`, /without trimming silences/.test(src) && /of silence cut/.test(src))
 }
 const server = read('ingest-service/server.js')
-check('the render service burns the hook and cuts the silences', /buildAss\(words, \{ hook \}\)/.test(server) && /keepSegments\(req\.body\?\.segments, dur\)/.test(server) && /trimFilters\(segs\)/.test(server))
+check('the render service burns the hook and cuts the silences', /buildAss\(words, \{ hook \}\)/.test(server) && /keepSegments\(body\?\.segments, dur\)/.test(server) && /trimFilters\(segs\)/.test(server))
 check('a trimmed render keeps every frame', /'-fps_mode', 'passthrough'/.test(server))
 check('the Docker image ships the caption code', /COPY server\.js render-filters\.js/.test(read('ingest-service/Dockerfile')))
+
+
+// ── Long clips render in the background (Seb, 2026-10-10: a 3:55 whole video timed out) ──
+{
+  process.env.YOUTUBE_INGEST_SECRET = 'test-secret'
+  const job = makeRenderJob({ shortId: 'clip-1', userId: 'user-1', reservationId: 'res-1' })
+  const back = job ? readRenderJob(job) : null
+  check('a background render job reads back as the clip, owner and render slot it was made for', !!back && back.shortId === 'clip-1' && back.userId === 'user-1' && back.reservationId === 'res-1')
+  check('a job token that was changed is refused', !!job && readRenderJob(job.replace('clip-1', 'clip-2')) === null)
+  check('a 3:55 clip renders in the background; a 30 second one in the request', 235 > BACKGROUND_RENDER_SEC && 30 <= BACKGROUND_RENDER_SEC)
+  check('a timed-out background render says what to try, and that no render was used', /15 minutes/.test(backgroundFailureWords('ffmpeg: [signal SIGKILL]')) && /Nothing was used/.test(backgroundFailureWords('x')))
+  const now = Date.parse('2026-10-10T18:00:00Z')
+  check('a clip rendering for 5 minutes still reads as rendering; one silent for 30 does not', renderingInBackground({ status: 'rendering', updatedAt: '2026-10-10T17:55:00Z' }, now) && !renderingInBackground({ status: 'rendering', updatedAt: '2026-10-10T17:30:00Z' }, now))
+  const svc = read('ingest-service/server.js')
+  check('the render service answers a background render at once and posts the outcome back', /res\.status\(202\)\.json\(\{ accepted: true \}\)/.test(svc) && /postRenderCallback\(callbackUrl, \{ job, ok: true, \.\.\.out \}\)/.test(svc) && /postRenderCallback\(callbackUrl, \{ job, ok: false/.test(svc))
+  check('a background render may run 15 minutes and keeps the whole video (not cut at 3)', /maxDur: 900, timeoutMs: 15 \* 60_000/.test(svc) && /Math\.min\(o\.maxDur \|\| 180, endSec - startSec\)/.test(svc))
+  check('background renders run one at a time on the render box', /renderQueue = renderQueue\.then/.test(svc))
+  const cb = read('app/api/youtube/shorts/render-callback/route.ts')
+  check('the callback checks the ingest secret and the signed job, marks the clip, and gives a failed render its slot back', /x-ingest-secret/.test(cb) && /readRenderJob\(body\.job\)/.test(cb) && /status: 'rendered'/.test(cb) && /from\('ai_usage'\)\.delete\(\)\.eq\('id', job\.reservationId\)/.test(cb))
+  check('the callback is reachable without a login', /'\/api\/youtube\/shorts\/render-callback'/.test(read('middleware.ts')))
+  const rr = read('app/api/youtube/shorts/render/route.ts')
+  check('the render route sends long clips to the background and marks them rendering', /endSec - startSec > BACKGROUND_RENDER_SEC/.test(rr) && /status: 'rendering'/.test(rr) && /pending: true/.test(rr))
+  for (const f of ['components/vertical/ShortsCreatePanel.tsx', 'components/content/ShortsStudioModal.tsx']) {
+    const src = read(f)
+    check(`${f.split('/').pop()}: a background render is said, watched until it lands, and labelled on the card`, /renders in the background/.test(src) && /waitForBackgroundRender\(videoId, c\.id\)/.test(src) && /Rendering in the background…/.test(src))
+  }
+}
 
 if (failed) { console.error(`\n${failed} clip engine check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

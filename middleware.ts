@@ -58,6 +58,10 @@ const publicPaths = [
   // route checks the secret it was given at the start. Without this entry the
   // call was sent to /login and every finished run was silently lost.
   '/api/creator/sync/callback',
+  // The ingest service reports a background render here (a long clip whose
+  // render cannot finish inside the request). No session; the route checks the
+  // ingest secret and a signed job token (lib/render-job).
+  '/api/youtube/shorts/render-callback',
   // "Work with brands" inbox — public POST hit by the WP blog's brand-contact
   // form (cross-origin, no session). Enforces its OWN auth: HMAC + honeypot +
   // hCaptcha. CORS preflight (OPTIONS) must reach the handler too. Note the

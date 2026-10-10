@@ -60,8 +60,11 @@ export interface ShortRow {
   score: number
   hashtags: string[]
   subtitles: CaptionChunk[]
-  status: 'suggested' | 'rendered' | 'failed'
+  /** 'rendering': a long clip rendering in the background (render-callback). */
+  status: 'suggested' | 'rendering' | 'rendered' | 'failed'
   renderedUrl: string | null
+  /** When the row last changed, so a background render that never came back can be told apart. */
+  updatedAt?: string | null
   subtitleStyle: SubtitleStyle
   renderError: string | null
   // Cross-post history: ISO timestamp of when this clip was published to each

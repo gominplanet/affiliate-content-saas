@@ -622,7 +622,7 @@ app.post('/clip', async (req, res) => {
 // Captions, the hook card and the silence cuts live in render-filters.js so
 // they can be tested without ffmpeg (test-render-filters.js).
 
-function ffmpegRender(input, startSec, dur, vf, outPath, af) {
+function ffmpegRender(input, startSec, dur, vf, outPath, af, timeoutMs) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
@@ -644,7 +644,7 @@ function ffmpegRender(input, startSec, dur, vf, outPath, af) {
       // lookahead buffers. Negligible quality hit for a short clip.
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
-    ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+    ], { maxBuffer: 1024 * 1024 * 64, timeout: timeoutMs || 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
       else resolve()
     })
@@ -770,7 +770,7 @@ app.post('/stream-audio', async (req, res) => {
 const { reframeChain, cropAt } = require('./render-filters')
 
 // Run ffmpeg with a -filter_complex graph (the split-screen path).
-function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath, inputLimited) {
+function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath, inputLimited, timeoutMs) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
@@ -781,7 +781,7 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
       '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
-    ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+    ], { maxBuffer: 1024 * 1024 * 64, timeout: timeoutMs || 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
       else resolve()
     })
@@ -794,25 +794,28 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
 //   - videoUrl: a hosted source (a creator upload) — download + seek
 // Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId,
 //         reframe?: 'center'|'split', hook?: string, segments?: [[a,b],...] }.
-app.post('/render-short', async (req, res) => {
-  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
-  const url = String(req.body?.videoUrl || '').trim()
-  const ytVid = String(req.body?.youtubeVideoId || '').trim()
-  const startSec = Math.max(0, Number(req.body?.startSec) || 0)
-  const endSec = Number(req.body?.endSec)
-  const words = Array.isArray(req.body?.words) ? req.body.words : []
-  const userId = String(req.body?.userId || '').trim()
-  const reframeMode = req.body?.reframe === 'split' ? 'split' : 'center'
+async function renderShortJob(body, opts) {
+  const o = opts || {}
+  const bad = (msg) => { const e = new Error(msg); e.status = 400; return e }
+  const url = String(body?.videoUrl || '').trim()
+  const ytVid = String(body?.youtubeVideoId || '').trim()
+  const startSec = Math.max(0, Number(body?.startSec) || 0)
+  const endSec = Number(body?.endSec)
+  const words = Array.isArray(body?.words) ? req.body.words : []
+  const userId = String(body?.userId || '').trim()
+  const reframeMode = body?.reframe === 'split' ? 'split' : 'center'
   // Where the 9:16 window sits across the frame (0 left, 1 right); unset is centre.
-  const cropX = req.body?.cropX
+  const cropX = body?.cropX
   const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
   // stream: the source is a long stream (an Amazon Live replay playlist or a
   // big mp4). ffmpeg reads the window straight from it, so the whole replay is
   // never downloaded.
-  const fromStream = !fromYouTube && req.body?.stream === true
-  if (!fromYouTube && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
-  if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
-  const dur = Math.min(180, endSec - startSec)
+  const fromStream = !fromYouTube && body?.stream === true
+  if (!fromYouTube && !/^https?:\/\//i.test(url)) throw bad('bad source')
+  if (!Number.isFinite(endSec) || endSec <= startSec) throw bad('bad window')
+  // A request MVP waits on stays inside 3 minutes; a background render (a
+  // whole video, 2026-10-10) may run to 15, so a 3:55 video is not cut short.
+  const dur = Math.min(o.maxDur || 180, endSec - startSec)
   const srcTmp = path.join(os.tmpdir(), `rsrc-${Date.now()}.mp4`)
   const assTmp = path.join(os.tmpdir(), `rcap-${Date.now()}.ass`)
   const outTmp = path.join(os.tmpdir(), `rout-${Date.now()}.mp4`)
@@ -848,11 +851,11 @@ app.post('/render-short', async (req, res) => {
 
     const withCaptions = words.length > 0
     // The hook card opens the clip whether or not captions are on.
-    const hook = typeof req.body?.hook === 'string' ? req.body.hook.slice(0, 90) : ''
+    const hook = typeof body?.hook === 'string' ? req.body.hook.slice(0, 90) : ''
     const withAss = withCaptions || !!assEscape(hook)
     if (withAss) fs.writeFileSync(assTmp, buildAss(words, { hook }))
     // Trim silences: only the keep-segments the route worked out are rendered.
-    const segs = keepSegments(req.body?.segments, dur)
+    const segs = keepSegments(body?.segments, dur)
     const trim = segs ? trimFilters(segs) : null
     // Output at 1080x1920 (9:16), the native Instagram Reels / TikTok / YouTube
     // Shorts frame. Rendering smaller means the platform upscales on its side and
@@ -870,28 +873,74 @@ app.post('/render-short', async (req, res) => {
       const graph = trim
         ? `[0:v]${trim.v}[vt];${reframeChain('[vt]', 'split', W, H, withAss ? assTmp : null, cropX)};[0:a]${trim.a}[aout]`
         : reframeChain('[0:v]', 'split', W, H, withAss ? assTmp : null, cropX)
-      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, trim ? '[aout]' : '0:a?', outTmp, !!trim)
+      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, trim ? '[aout]' : '0:a?', outTmp, !!trim, o.timeoutMs)
     } else {
       // Default path — the original simple -vf center-crop (unchanged, low-risk).
       const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${cropAt(cropX)}`
       const vf = `${trim ? `${trim.v},` : ''}${reframe}${withAss ? `,ass=${assTmp}` : ''}`
-      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp, trim ? trim.a : null)
+      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp, trim ? trim.a : null, o.timeoutMs)
     }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
     // What was actually made: the length after cuts, and whether cuts and the
     // hook went in, so the app can tell a trimmed render from an untrimmed one.
-    return res.json({
+    return {
       url: publicUrl(key),
       durationSeconds: Math.round((trim ? trim.seconds : dur) * 10) / 10,
       trimmed: !!trim, hook: withAss && !!assEscape(hook),
-    })
-  } catch (e) {
-    console.error('[render-short] failed', e && e.message)
-    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+    }
   } finally {
     cleanupTmp(srcTmp, assTmp, outTmp)
+  }
+}
+
+// ── BACKGROUND RENDERS (Seb, 2026-10-10: a 3:55 whole video, split screen,
+// timed out). MVP's request can only stay open five minutes, and a long
+// 1080x1920 render takes longer than that. With async + callbackUrl the
+// service answers 202 at once, renders in its own time (one at a time, so a
+// small box is not asked to encode two at once), and posts the outcome back
+// to MVP, which marks the clip rendered or failed with the reason.
+let renderQueue = Promise.resolve()
+async function postRenderCallback(callbackUrl, payload) {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(callbackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(SECRET ? { 'x-ingest-secret': SECRET } : {}) },
+        body: JSON.stringify(payload),
+      })
+      if (r.ok) return
+      console.error('[render-short async] callback', r.status)
+    } catch (e) { console.error('[render-short async] callback', e && e.message) }
+    await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
+  }
+}
+
+app.post('/render-short', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const body = req.body || {}
+  const callbackUrl = String(body.callbackUrl || '')
+  if (body.async === true && /^https:\/\//i.test(callbackUrl)) {
+    const job = String(body.job || '').slice(0, 200)
+    res.status(202).json({ accepted: true })
+    renderQueue = renderQueue.then(async () => {
+      try {
+        const out = await renderShortJob(body, { maxDur: 900, timeoutMs: 15 * 60_000 })
+        await postRenderCallback(callbackUrl, { job, ok: true, ...out })
+      } catch (e) {
+        console.error('[render-short async] failed', e && e.message)
+        await postRenderCallback(callbackUrl, { job, ok: false, error: String((e && e.message) || e).slice(0, 300) })
+      }
+    })
+    return
+  }
+  try {
+    return res.json(await renderShortJob(body))
+  } catch (e) {
+    if (e && e.status === 400) return res.status(400).json({ error: e.message })
+    console.error('[render-short] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   }
 })
 

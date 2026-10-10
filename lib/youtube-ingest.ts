@@ -32,6 +32,8 @@ function setIngestError(e: string | null) { _lastIngestError = e }
 
 export interface IngestResult {
   url: string
+  /** A background render was accepted; the outcome arrives by callback. */
+  pending?: boolean
   durationSeconds: number | null
   /**
    * The audio language actually on the file, when one was requested.
@@ -310,6 +312,9 @@ export interface RenderShortOpts {
   hook?: string
   /** Trim silences: the clip-relative stretches to keep. */
   segments?: Array<[number, number]>
+  /** Render in the background: the service answers at once and posts the
+   *  outcome to callbackUrl with this job token (lib/render-job). */
+  background?: { callbackUrl: string; job: string }
 }
 
 export async function renderShort(
@@ -383,6 +388,7 @@ async function renderShortReq(
           ...(opts?.reframe ? { reframe: opts.reframe } : {}),
           ...(opts?.hook ? { hook: opts.hook } : {}),
           ...(opts?.segments?.length ? { segments: opts.segments } : {}),
+          ...(opts?.background ? { async: true, callbackUrl: opts.background.callbackUrl, job: opts.background.job } : {}),
         }),
         signal: AbortSignal.timeout(280_000),
       })
@@ -402,6 +408,8 @@ async function renderShortReq(
         setIngestError(lastDetail)
         return null
       }
+      // ACCEPTED FOR A BACKGROUND RENDER: the result comes to render-callback.
+      if (res.status === 202 && opts?.background) return { url: '', durationSeconds: null, pending: true }
       const data = await res.json() as { url?: string; durationSeconds?: number }
       if (!data?.url || !/^https:\/\//i.test(data.url)) { setIngestError('render service returned no video url'); return null }
       return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }

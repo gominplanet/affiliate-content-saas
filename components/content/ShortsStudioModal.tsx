@@ -14,7 +14,7 @@
  *      same upload the Instagram burner uses.
  */
 import { HookPicker, type HookChoice } from '@/components/clips/HookPicker'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check, Pencil } from 'lucide-react'
@@ -27,6 +27,7 @@ import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
+import { renderingInBackground, waitForBackgroundRender } from '@/lib/background-render'
 
 // TikTok publish reuses the existing compliant modal (creator info + privacy
 // picker required by TikTok's API). Lazy — only loads when a creator posts.
@@ -226,6 +227,13 @@ export function ShortsStudioModal({
         throw new Error(data.error || 'Render failed')
       }
       if (data.short) setClips(prev => prev.map(c => (c.id === clip.id ? data.short : c)))
+      // A LONG CLIP RENDERS IN THE BACKGROUND (lib/render-job): said, then
+      // watched until the render service reports, rendered or failed.
+      if (data.pending) {
+        notifyShortsUsageChanged()
+        toast('This clip is long, so it renders in the background. It shows here when it is done; you can keep working or leave the page.', { duration: 10000 })
+        return
+      }
       // A render is the only thing that spends a slot, so it is the only thing
       // that moves the counter. Refreshing on mount alone is how a creator
       // rendered her way to fifty while the number above her sat still.
@@ -239,6 +247,27 @@ export function ShortsStudioModal({
       setRenderingId(null)
     }
   }, [hasSource, styleById, captionsById, layoutById, trimById, hookById])
+  // EVERY CLIP RENDERING IN THE BACKGROUND IS WATCHED, whether this page
+  // started it or it was already rendering when the page opened (the render
+  // goes on after the page is closed). Each clip once; said when it lands.
+  const watchedRenders = useRef(new Set<string>())
+  useEffect(() => {
+    for (const c of clips) {
+      if (!renderingInBackground(c) || watchedRenders.current.has(c.id)) continue
+      watchedRenders.current.add(c.id)
+      void waitForBackgroundRender(videoId, c.id).then((done) => {
+        watchedRenders.current.delete(c.id)
+        if (done) {
+          setClips(prev => prev.map(x => (x.id === c.id ? done : x)))
+          notifyShortsUsageChanged()
+          if (done.status === 'rendered') toast.success('Your long clip finished rendering')
+          else toast.error(done.renderError || 'The background render failed.')
+        } else {
+          toast.error('The background render has not come back after 25 minutes. Press Render Short again.')
+        }
+      })
+    }
+  }, [clips, videoId])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
@@ -452,7 +481,7 @@ export function ShortsStudioModal({
               {visibleClips.map(clip => {
                 const style = styleById[clip.id] || clip.subtitleStyle || 'bold-white'
                 const captionsOn = captionsById[clip.id] !== false
-                const rendering = renderingId === clip.id
+                const rendering = renderingId === clip.id || renderingInBackground(clip)
                 const ytLink = clip.youtubeVideoId
                   ? `https://youtu.be/${clip.youtubeVideoId}?t=${Math.floor(clip.startSec)}`
                   : null
@@ -606,7 +635,7 @@ export function ShortsStudioModal({
                         style={{ backgroundColor: rendering ? '#9ca3af' : PURPLE }}
                       >
                         {rendering ? <Loader2 size={12} className="animate-spin" /> : <Scissors size={12} />}
-                        {rendering ? 'Rendering…' : clip.status === 'rendered' ? 'Re-render' : 'Render Short'}
+                        {renderingInBackground(clip) ? 'Rendering in the background…' : rendering ? 'Rendering…' : clip.status === 'rendered' ? 'Re-render' : 'Render Short'}
                       </button>
                       {clip.status === 'rendered' && clip.renderedUrl && (
                         <>
