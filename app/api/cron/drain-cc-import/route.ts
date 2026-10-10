@@ -14,7 +14,8 @@
 // the foreground merge (merge_cc_catalog_step / merge_cc_catalog_purge_cursor).
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { ccMergeMode, ccShouldPurge, ccShouldHideMissing } from '@/lib/cc-merge-mode'
+import { ccMergeMode, ccShouldPurge, ccHideMissingBlock } from '@/lib/cc-merge-mode'
+import { ccHideFacts } from '@/lib/cc-hide-facts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -122,8 +123,9 @@ export async function GET(request: Request) {
       const { count } = await admin.from('cc_campaign_catalog_import').select('campaign_id', { count: 'estimated', head: true })
       staged = count == null ? null : Number(count)
     } catch { staged = null }
-    if (!ccShouldHideMissing(mode, staged)) {
-      await finish({ purged: 0, purgeSkipped: true, hidden: 0, hideSkipped: staged == null ? 'could not count the upload' : 'upload looks partial' })
+    const block = ccHideMissingBlock(mode, staged, await ccHideFacts(admin))
+    if (block) {
+      await finish({ purged: 0, purgeSkipped: true, hidden: 0, hideSkipped: block })
       return NextResponse.json({ ok: true, done: true, mode, upserted, purged: 0, purgeSkipped: true, hideSkipped: true })
     }
     phase = 'hide'; cursor = ''; hidden = 0; scannedTotal = 0

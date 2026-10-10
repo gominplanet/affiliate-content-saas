@@ -26,8 +26,10 @@ const FIELDS = [
   { key: 'starts_at', label: 'Start date', required: false },
   { key: 'budget', label: 'Budget', required: false },
   { key: 'budget_remaining', label: 'Budget remaining', required: false },
-  { key: 'available_slot', label: 'Open slots', required: false },
-  { key: 'total_slot', label: 'Total slots', required: false },
+  // REQUIRED (Seb, 2026-10-10): an upload with no open-slots column merged
+  // 105,838 campaigns with no count, and the catalogue lost every open spot.
+  { key: 'available_slot', label: 'Open slots', required: true },
+  { key: 'total_slot', label: 'Total slots', required: true },
 ] as const
 type FieldKey = typeof FIELDS[number]['key']
 

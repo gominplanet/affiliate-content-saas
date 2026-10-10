@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { liveSpotTerms } from '../lib/cc-live-spots'
-import { ccShouldHideMissing, describeCcMergeOutcome } from '../lib/cc-merge-mode'
+import { ccShouldHideMissing, ccHideMissingBlock, describeCcMergeOutcome } from '../lib/cc-merge-mode'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const failures: string[] = []
@@ -65,13 +65,23 @@ check('a field Amazon left out keeps its value; rows that cannot be stored are s
 
 // ── Campaigns missing from Amazon's export are marked full, never deleted ─────
 {
-  check('a real export hides what it left out; a partial upload or replace mode does not', ccShouldHideMissing('add-only', 352257) && !ccShouldHideMissing('add-only', 40000) && !ccShouldHideMissing('add-only', null) && !ccShouldHideMissing('replace', 900000))
+  const full = { live: 955236, stagedHasSpots: true }
+  check('a real export hides what it left out; a partial upload or replace mode does not', ccShouldHideMissing('add-only', 900000, full) && !ccShouldHideMissing('add-only', 40000, full) && !ccShouldHideMissing('add-only', null, full) && !ccShouldHideMissing('replace', 900000, full))
+  // 2026-10-10: 105,838 rows with no Open slots column emptied the catalogue.
+  check('the upload that emptied the catalogue (105,838 of 955,236, no counts) hides nothing', !ccShouldHideMissing('add-only', 105838, { live: 955236, stagedHasSpots: false }) && !ccShouldHideMissing('add-only', 105838, full))
+  check('an upload with no open-slots counts hides nothing, and says why', /no open-slots counts/.test(ccHideMissingBlock('add-only', 900000, { live: 955236, stagedHasSpots: false }) || ''))
+  check('a fact MVP could not read blocks the hide', !ccShouldHideMissing('add-only', 900000, { live: null, stagedHasSpots: true }) && !ccShouldHideMissing('add-only', 900000, { live: 955236, stagedHasSpots: null }))
+  const M423 = read('supabase/migrations/423_cc_keep_spot_counts.sql')
+  check('migration 423: a merge keeps a known count when the upload has none', /available_slot\s+= COALESCE\(EXCLUDED\.available_slot, c\.available_slot\)/.test(M423) && /total_slot\s+= COALESCE\(EXCLUDED\.total_slot, c\.total_slot\)/.test(M423))
+  check('migration 423: the hide pass marks nothing when no staged row has a count', /IF NOT EXISTS \(SELECT 1 FROM cc_campaign_catalog_import WHERE available_slot IS NOT NULL\)/.test(M423))
+  check('the uploader requires the Open slots and Total slots columns', /key: 'available_slot', label: 'Open slots', required: true/.test(read('components/admin/CcCatalogUploader.tsx')) && /key: 'total_slot', label: 'Total slots', required: true/.test(read('components/admin/CcCatalogUploader.tsx')))
+  check('the CC page says when the catalogue has no spot counts at all', /spotsMissing/.test(read('app/api/cc/campaigns/route.ts')) && /MVP has no open spot counts for any campaign right now/.test(read('app/(dashboard)/cc-campaigns/page.tsx')))
   const M = read('supabase/migrations/403_cc_hide_missing.sql')
   check('migration 403 sets open spots to 0 on rows not in staging, and deletes nothing', /SET available_slot = 0/.test(M) && /c\.available_slot > 0/.test(M) && /NOT EXISTS \(\s*SELECT 1 FROM cc_campaign_catalog_import/.test(M) && !/DELETE/i.test(M.replace(/--[^\n]*/g, '')))
   const D = read('app/api/cron/drain-cc-import/route.ts')
-  check('the background drain runs the hide pass after an add-only merge, and says when it skipped it', /phase = 'hide'/.test(D) && /rpc\('hide_cc_missing_cursor'/.test(D) && /hideSkipped: 'run migration 403'/.test(D) && /'upload looks partial'/.test(D))
+  check('the background drain runs the hide pass after an add-only merge, and says when it skipped it', /phase = 'hide'/.test(D) && /rpc\('hide_cc_missing_cursor'/.test(D) && /hideSkipped: 'run migration 403'/.test(D) && /ccHideMissingBlock\(mode, staged, await ccHideFacts\(admin\)\)/.test(D) && /hideSkipped: block/.test(D))
   const A = read('app/api/admin/import-cc-catalog/route.ts')
-  check('a foreground add-only merge hands off to the hide pass; "hide missing" works on the merged upload', /if \(ccShouldHideMissing\(mode, stagedNow\)\)/.test(A) && /mode === 'hide-missing'/.test(A))
+  check('a foreground add-only merge hands off to the hide pass; "hide missing" works on the merged upload', /hideBlocked = ccHideMissingBlock\(mode, stagedNow, await ccHideFacts\(admin\)\)/.test(A) && /mode === 'hide-missing'/.test(A) && /Nothing was marked full\. \$\{blocked\}/.test(A))
   const P = read('app/(dashboard)/admin/cc-import/page.tsx')
   check('the admin page shows how many were marked full, or that it was skipped and why', /Hide campaigns missing from this upload/.test(P) && /campaigns missing from the upload were marked full/.test(P) && /were NOT marked full/.test(P))
   check('the merge result says the hide is running', /being marked full in the background/.test(describeCcMergeOutcome({ mode: 'add-only', upserted: 10, purged: 0, hiding: true })))

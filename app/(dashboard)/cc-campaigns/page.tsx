@@ -358,6 +358,9 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
 
 export default function CcCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  // The catalogue has no open spot counts at all (a broken upload), as opposed
+  // to nothing matching: said differently on screen.
+  const [spotsMissing, setSpotsMissing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [nextPage, setNextPage] = useState<number | null>(null)
@@ -639,6 +642,7 @@ export default function CcCampaignsPage() {
       if (!res.ok || !j.ok) { toast.error(j?.error || 'Failed to load campaigns'); return }
       setLocked(false)
       setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
+      if (!append) setSpotsMissing(j.spotsMissing === true)
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
       // Only page 1 carries a count; load-more keeps the figure already shown
@@ -1036,7 +1040,9 @@ export default function CcCampaignsPage() {
             ? (q.trim()
                 ? `None of your joined Amazon campaigns match “${q.trim()}”. Try a different keyword, or clear the search.`
                 : 'No joined campaigns came back from Amazon. Make sure SCOUT is installed and you’re logged into Amazon, then try again.')
-            : 'No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.'}
+            : spotsMissing
+              ? 'MVP has no open spot counts for any campaign right now: the last catalogue upload came without them. Untick "Has open spots" to see campaigns; spot counts come back with the next full upload.'
+              : 'No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.'}
         </div>
       ) : (() => {
         // Hide-joined / hide-posted are client-side over the loaded pages, using

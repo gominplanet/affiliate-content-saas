@@ -19,7 +19,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { fetchKeepaTokenStatus } from '@/services/keepa'
-import { ccShouldHideMissing, ccMergeMode, ccShouldPurge, ccNeedsPurgeGuards, describeCcMergeOutcome } from '@/lib/cc-merge-mode'
+import { ccHideMissingBlock, ccMergeMode, ccShouldPurge, ccNeedsPurgeGuards, describeCcMergeOutcome } from '@/lib/cc-merge-mode'
+import { ccHideFacts } from '@/lib/cc-hide-facts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -269,6 +270,16 @@ export async function POST(request: Request) {
     // purge phase in add-only mode, which the cron turns into the hide pass,
     // with the same partial-upload check (lib/cc-merge-mode ccShouldHideMissing).
     if ((body as { mode?: string }).mode === 'hide-missing') {
+      // The same checks as the automatic pass, BEFORE anything is armed: a
+      // partial upload, or one with no open-slots counts, marks nothing full.
+      let stagedNow: number | null = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { count } = await (admin as any).from('cc_campaign_catalog_import').select('campaign_id', { count: 'estimated', head: true })
+        stagedNow = typeof count === 'number' ? count : null
+      } catch { stagedNow = null }
+      const blocked = ccHideMissingBlock('add-only', stagedNow, await ccHideFacts(admin))
+      if (blocked) return NextResponse.json({ error: `Nothing was marked full. ${blocked}`, hideBlocked: true }, { status: 409 })
       try {
         await (admin as unknown as { from: (t: string) => any }).from('system_flags').upsert( // eslint-disable-line @typescript-eslint/no-explicit-any
           { key: 'cc_import_drain', active: true, value: { phase: 'purge', cursor: '', upserted: 0, purged: 0, mode: 'add-only', hidden: 0, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
@@ -452,9 +463,11 @@ export async function POST(request: Request) {
     // Add-only: hand the missing campaigns to the background hide pass (the
     // cron, migration 403), when the upload is big enough to be a real export.
     let hiding = false
+    let hideBlocked: string | null = null
     if (purgeSkipped) {
       const stagedNow = stagedCount ?? await estCount('cc_campaign_catalog_import')
-      if (ccShouldHideMissing(mode, stagedNow)) {
+      hideBlocked = ccHideMissingBlock(mode, stagedNow, await ccHideFacts(admin))
+      if (!hideBlocked) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (admin as any).from('system_flags').upsert(
@@ -475,6 +488,7 @@ export async function POST(request: Request) {
       mode,
       purgeSkipped,
       hiding,
+      hideBlocked,
       summary: describeCcMergeOutcome({ mode, upserted, purged, hiding }),
       warning: purgeMissing
         ? 'Merge finished and all campaigns are live, but cleanup of fallen-out campaigns was skipped: the purge DB function isn’t installed. Run migration 220 in Supabase to enable it (nothing else is blocked).'

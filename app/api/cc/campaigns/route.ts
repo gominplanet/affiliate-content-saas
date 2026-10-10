@@ -483,9 +483,25 @@ export async function GET(request: NextRequest) {
     } catch { /* no ages; the counts still show */ }
     const shown = shownBase.map((e) => ({ ...e, ...(fresh.get(e.campaignId) ?? { spotsCheckedAt: null, spotsLive: false }) }))
 
+    // NO OPEN SPOT COUNTS AT ALL is not "nothing matches" (Seb, 2026-10-10: an
+    // upload without spot counts left the catalogue with none, and every search
+    // read "No live campaigns match these filters"). When the open-spots filter
+    // empties a search, MVP checks whether ANY live campaign has a count, and
+    // the page says which of the two it is.
+    let spotsMissing = false
+    if (hasSpots && !joinedOnly && shown.length === 0 && page === 1) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: any1, error: e1 } = await (supabase as any).from('cc_campaign_catalog')
+          .select('campaign_id').gte('ends_at', today).gt('available_slot', 0).limit(1)
+        spotsMissing = !e1 && Array.isArray(any1) && any1.length === 0
+      } catch { /* unknown: the plain empty message stands */ }
+    }
+
     return NextResponse.json({
       ok: true,
       campaigns: shown,
+      spotsMissing,
       // `total` stays the number of ranked, de-duplicated cards this request can
       // page through. It is NOT the size of the catalogue, and calling it that on
       // screen is what made a 893,644-campaign catalogue read as 219 campaigns.

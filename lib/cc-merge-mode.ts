@@ -66,8 +66,42 @@ export function ccNeedsPurgeGuards(mode: CcMergeMode): boolean {
  *  CSV of five) would otherwise hide most of the catalogue until the next one. */
 export const CC_HIDE_MIN_STAGED = 100_000
 
-export function ccShouldHideMissing(mode: CcMergeMode, stagedEstimate: number | null | undefined): boolean {
-  return mode === 'add-only' && typeof stagedEstimate === 'number' && stagedEstimate >= CC_HIDE_MIN_STAGED
+/** AND ONLY FOR AN UPLOAD THAT IS MOST OF THE CATALOGUE, CARRYING SPOT COUNTS
+ *  (Seb, 2026-10-10: CC search came back empty for everyone). An upload of
+ *  105,838 rows passed the 100,000 floor against 955,236 live campaigns, and
+ *  its "Open slots" column had not been mapped, so every one of its rows had no
+ *  count. Hide missing then set the other 850,000 to full, and "Has open spots"
+ *  hid the entire catalogue. Both facts are now checked before anything is
+ *  marked full. */
+export const CC_HIDE_MIN_SHARE = 0.7
+
+export type CcHideFacts = {
+  /** Live campaigns in the catalogue now (ends today or later). */
+  live?: number | null
+  /** Whether ANY staged row carries an open-slots value. */
+  stagedHasSpots?: boolean | null
+}
+
+/** Why missing campaigns must NOT be marked full, in words; null when it is
+ *  safe. Pure. */
+export function ccHideMissingBlock(mode: CcMergeMode, stagedEstimate: number | null | undefined, facts: CcHideFacts = {}): string | null {
+  if (mode !== 'add-only') return 'Replace mode removes missing campaigns instead.'
+  if (typeof stagedEstimate !== 'number') return 'MVP could not count the upload.'
+  if (stagedEstimate < CC_HIDE_MIN_STAGED) return `The upload has ${stagedEstimate.toLocaleString('en-US')} rows, which looks partial.`
+  if (facts.stagedHasSpots !== true) {
+    return facts.stagedHasSpots === false
+      ? 'The upload has no open-slots counts (the Open slots column was not mapped), so nothing was marked full.'
+      : 'MVP could not check that the upload has open-slots counts, so nothing was marked full.'
+  }
+  if (typeof facts.live !== 'number') return 'MVP could not count the live catalogue, so nothing was marked full.'
+  if (stagedEstimate < facts.live * CC_HIDE_MIN_SHARE) {
+    return `The upload has ${stagedEstimate.toLocaleString('en-US')} rows against ${facts.live.toLocaleString('en-US')} live campaigns, so it looks partial. Upload every ZIP of the export together, then try again.`
+  }
+  return null
+}
+
+export function ccShouldHideMissing(mode: CcMergeMode, stagedEstimate: number | null | undefined, facts: CcHideFacts = {}): boolean {
+  return ccHideMissingBlock(mode, stagedEstimate, facts) === null
 }
 
 /** One line of plain English for what a finished merge actually did.
