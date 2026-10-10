@@ -68,7 +68,10 @@ const PILL_IDLE = 'text-[#1d1d1f] dark:text-[#f5f5f7] bg-black/[0.04] dark:bg-wh
 const PILL_ON = 'text-white border-transparent'
 // A selected-but-outline chip (e.g. style/position choices): purple text + tint.
 const PILL_SEL = 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]'
-const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
+// The "comment the word" CTAs go with Instagram Auto-DM: the viewer comments
+// LINK and MVP DMs them the link (Seb, 2026-10-09). Edit the word to match the
+// Auto-DM keyword.
+const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'COMMENT "LINK" FOR THE LINK 👇', 'COMMENT LINK 💬', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS = [
   { key: 'lower-left', label: 'Lower third', desc: 'Bottom, clears the IG and TikTok buttons' },
   { key: 'upper-left', label: 'Upper third', desc: 'Top of the screen' },
