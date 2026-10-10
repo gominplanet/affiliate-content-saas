@@ -10,7 +10,7 @@
  * the content engine (browse → publish in one place).
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
@@ -31,6 +31,8 @@ import FavoriteBrandsPanel from '@/components/campaigns/FavoriteBrandsPanel'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import { ccProofIds } from '@/lib/cc-access'
+import { refreshLiveSpots, liveSpotTerms, type LiveSpotsResult } from '@/lib/cc-live-spots'
+import { brandsToRecheck, spotAgeWords } from '@/lib/cc-spot-freshness'
 
 // Max campaigns selectable for one bulk-message run.
 const BULK_MAX = 100
@@ -61,6 +63,9 @@ interface Campaign {
   trust: Trust
   score: number
   detailsUrl: string
+  /** When the open spots were last confirmed, and whether live or by upload. */
+  spotsCheckedAt?: string | null
+  spotsLive?: boolean
 }
 
 const SORTS = [
@@ -264,6 +269,12 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             <span>{c.spotsLeft != null ? `${c.spotsLeft.toLocaleString()} of ${c.totalSlots.toLocaleString()} spots left` : 'Spots'}</span>
             {c.pctFilled != null && <span>{c.pctFilled}% full</span>}
           </div>
+          {/* A five-day-old count must not read as today's (Seb, 2026-10-10). */}
+          {spotAgeWords({ spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive }) && (
+            <p className="text-[9.5px] mb-1" style={{ color: c.spotsLive ? '#1c7a35' : 'var(--text-3)' }}>
+              {spotAgeWords({ spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive })}
+            </p>
+          )}
           <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${c.pctFilled ?? 0}%`, background: c.isFull ? '#ff3b30' : (c.pctFilled ?? 0) > 80 ? '#ff9500' : '#34c759' }} />
           </div>
@@ -743,6 +754,41 @@ export default function CcCampaignsPage() {
     return () => clearTimeout(t)
   }, [joinedOnly, fetchPage])
 
+  // OPEN SPOTS CHECKED LIVE, BY ITSELF (Seb, 2026-10-10: "too many campaigns
+  // are showing not full but actually are"). Spot counts came from the weekly
+  // upload, and campaigns fill within days. After the list loads, SCOUT checks
+  // the brands on screen whose counts are stale, straight from Amazon, and the
+  // live counts go into the shared catalogue: a campaign that filled drops out
+  // of "Has open spots" for every creator, not just this one. Three brands per
+  // load, and one browser re-checks a brand at most every six hours.
+  const [liveCheck, setLiveCheck] = useState<{ state: 'checking'; terms: string[] } | { state: 'done'; r: LiveSpotsResult } | null>(null)
+  const liveBusy = useRef(false)
+  // One automatic check per search: the reload after a check must not start
+  // another on the next brands, and another after that.
+  const liveRanFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (joinedOnly || locked || loading || !campaigns.length || liveBusy.current) return
+    const searchKey = `${q.trim().toLowerCase()}|${sort}|${minCommission}|${payingOnly}|${hasSpots}`
+    if (liveRanFor.current === searchKey) return
+    liveRanFor.current = searchKey
+    let checked: Record<string, number> = {}
+    try { checked = JSON.parse(localStorage.getItem('mvp.cc.liveChecked') || '{}') } catch { /* private window */ }
+    const now = Date.now()
+    const terms = q.trim()
+      ? (checked[q.trim().toLowerCase()] && now - checked[q.trim().toLowerCase()] < 6 * 3600_000 ? [] : liveSpotTerms(q, []))
+      : brandsToRecheck(campaigns.slice(0, 24), checked, now)
+    if (!terms.length) return
+    liveBusy.current = true
+    for (const t of terms) checked[t.toLowerCase()] = now
+    try { localStorage.setItem('mvp.cc.liveChecked', JSON.stringify(checked)) } catch { /* private window */ }
+    setLiveCheck({ state: 'checking', terms })
+    void refreshLiveSpots(terms).then((r) => {
+      setLiveCheck({ state: 'done', r })
+      // Reload so a campaign found full leaves the list now, not next visit.
+      if (r.saved > 0) void fetchPage(1, false)
+    }).catch(() => setLiveCheck(null)).finally(() => { liveBusy.current = false })
+  }, [joinedOnly, locked, loading, campaigns, q, sort, minCommission, payingOnly, hasSpots, fetchPage])
+
   // Joined-only is a LIVE SCOUT search — each run opens an Amazon tab, so it must
   // ONLY re-run on the keyword (fetchJoinedLive depends on q) and the toggle. The
   // commission / paying / spots filters don't apply to it and must NOT re-trigger
@@ -1035,6 +1081,17 @@ export default function CcCampaignsPage() {
         }
         return (
         <>
+          {liveCheck && !joinedOnly && (
+            <p className="text-[11.5px] mb-2" style={{ color: liveCheck.state === 'done' && liveCheck.r.failed && !liveCheck.r.saved ? '#c2410c' : 'var(--text-3)' }}>
+              {liveCheck.state === 'checking'
+                ? `Checking open spots live on Amazon for ${liveCheck.terms.join(', ')}…`
+                : liveCheck.r.failed && !liveCheck.r.saved
+                  ? 'Could not check spots live (SCOUT is not connected, or Amazon did not answer). Each card says how old its count is.'
+                  : liveCheck.r.saved
+                    ? `Checked ${liveCheck.r.terms.join(', ')} live on Amazon: ${liveCheck.r.saved.toLocaleString()} campaign${liveCheck.r.saved === 1 ? '' : 's'} updated${liveCheck.r.nowFull ? `, ${liveCheck.r.nowFull.toLocaleString()} turned out full and are now hidden` : ''}.`
+                    : `Checked ${liveCheck.r.terms.join(', ')} live on Amazon: nothing changed.`}
+            </p>
+          )}
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
             <p className="text-xs text-[var(--text-3)]">
               {joinedOnly

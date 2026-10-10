@@ -21,8 +21,15 @@ export async function POST(request: Request) {
   const campaignId = typeof body.campaignId === 'string' ? body.campaignId.trim() : ''
   if (!/^amzn1\.campaign\.[A-Za-z0-9._-]{4,120}$/.test(campaignId)) return NextResponse.json({ error: 'Which campaign?' }, { status: 400 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (createAdminClient() as any).from('cc_campaign_catalog')
-    .update({ available_slot: 0 }).eq('campaign_id', campaignId).select('campaign_id')
+  // Stamped as a live check, so the card says "checked live just now" rather
+  // than showing the upload's age (migration 413). A database without that
+  // column still gets the 0.
+  const db = createAdminClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+  let { data, error } = await db.from('cc_campaign_catalog')
+    .update({ available_slot: 0, last_live_at: new Date().toISOString(), last_live_by: user.id }).eq('campaign_id', campaignId).select('campaign_id')
+  if (error && /last_live/i.test(error.message)) {
+    ({ data, error } = await db.from('cc_campaign_catalog').update({ available_slot: 0 }).eq('campaign_id', campaignId).select('campaign_id'))
+  }
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   // Say whether a row changed: a campaign MVP never had is not "removed".
   return NextResponse.json({ ok: true, marked: (data ?? []).length > 0 })

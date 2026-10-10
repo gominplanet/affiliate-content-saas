@@ -24,6 +24,7 @@ import { ccAccessOk } from '@/lib/cc-access'
 import { ccRequestUrl } from '@/lib/cc-urls'
 import { productSignals, groupBySignals } from '@/lib/cc-dedupe'
 import { type Tier } from '@/lib/tier'
+import { spotFreshness } from '@/lib/cc-spot-freshness'
 import { ccAsinFromQuery, ccTsQuery } from '@/lib/cc-search-query'
 
 export const dynamic = 'force-dynamic'
@@ -463,7 +464,24 @@ export async function GET(request: NextRequest) {
     })
 
     const start = (page - 1) * limit
-    const shown = deduped.slice(start, start + limit)
+    const shownBase = deduped.slice(start, start + limit)
+
+    // HOW FRESH EACH CARD'S SPOTS ARE: the newer of the last live check by a
+    // creator's SCOUT and the weekly upload. Read apart from the main query so
+    // a database without the live-audit columns (migration 413) still lists
+    // campaigns; the cards then simply carry no age.
+    const fresh = new Map<string, ReturnType<typeof spotFreshness>>()
+    try {
+      const ids = shownBase.map((e) => e.campaignId).filter(Boolean)
+      if (ids.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: f } = await (supabase as any).from('cc_campaign_catalog').select('campaign_id,last_live_at,imported_at').in('campaign_id', ids)
+        for (const r of (f ?? []) as Array<{ campaign_id: string; last_live_at: string | null; imported_at: string | null }>) {
+          fresh.set(r.campaign_id, spotFreshness(r.last_live_at, r.imported_at))
+        }
+      }
+    } catch { /* no ages; the counts still show */ }
+    const shown = shownBase.map((e) => ({ ...e, ...(fresh.get(e.campaignId) ?? { spotsCheckedAt: null, spotsLive: false }) }))
 
     return NextResponse.json({
       ok: true,
