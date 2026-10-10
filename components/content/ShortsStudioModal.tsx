@@ -13,6 +13,7 @@
  *      creator uploads once (YouTube ToS: we never server-pull the video) — the
  *      same upload the Instagram burner uses.
  */
+import { HookPicker, type HookChoice } from '@/components/clips/HookPicker'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
@@ -115,7 +116,7 @@ export function ShortsStudioModal({
   // and "trim silences" (cut dead air). Both handled by the render service.
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
   const [trimById, setTrimById] = useState<Record<string, boolean>>({})
-  const [hookById, setHookById] = useState<Record<string, boolean>>({})
+  const [hookById, setHookById] = useState<Record<string, HookChoice>>({})
   // In-app editor: the clip being edited + its draft (trim/hook/caption), and a
   // saving flag. Edits persist via /api/youtube/shorts/update; re-render uses them.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -212,7 +213,9 @@ export function ShortsStudioModal({
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
-          hook: hookById[clip.id] !== false,
+          // Off unless ticked; the words are the creator's pick or their own.
+          hook: hookById[clip.id]?.on === true,
+          hookText: hookById[clip.id]?.text ?? '',
           trimSilence: trimById[clip.id] === true,
         }),
       })
@@ -582,17 +585,9 @@ export function ShortsStudioModal({
                         <option value="center">Standard</option>
                         <option value="split">Split screen</option>
                       </select>
-                    {/* Hook card: the clip's hook over its first seconds. */}
-                    <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Show the hook as a title card for the first 2 seconds">
-                      <input
-                        type="checkbox"
-                        checked={hookById[clip.id] !== false}
-                        onChange={e => setHookById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
-                        disabled={rendering}
-                        className="accent-[#7C3AED]"
-                      />
-                      Hook title
-                    </label>
+                    {/* Hook title card: off unless ticked, with hook options or the creator's own. */}
+                    <HookPicker shortId={clip.id} clipHook={clip.hook} value={hookById[clip.id]} disabled={rendering}
+                      onChange={(v) => setHookById(prev => ({ ...prev, [clip.id]: v }))} />
                       {/* Trim silences: cut dead air for a tighter, faster clip. */}
                       <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
                         <input

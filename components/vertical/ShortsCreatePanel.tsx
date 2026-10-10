@@ -10,6 +10,7 @@
  * This is the same plan/ingest/render pipeline the ShortsStudioModal uses, minus
  * the publish pills (publishing happens in Clip Factory's own stage).
  */
+import { HookPicker, type HookChoice } from '@/components/clips/HookPicker'
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check, Trash2 } from 'lucide-react'
@@ -74,7 +75,7 @@ export function ShortsCreatePanel({
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
   const [trimById, setTrimById] = useState<Record<string, boolean>>({})
-  const [hookById, setHookById] = useState<Record<string, boolean>>({})
+  const [hookById, setHookById] = useState<Record<string, HookChoice>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // In-app editor: which clip + its draft (trim/hook/caption) + saving flag.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -228,7 +229,9 @@ export function ShortsCreatePanel({
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
-          hook: hookById[clip.id] !== false,
+          // Off unless ticked; the words are the creator's pick or their own.
+          hook: hookById[clip.id]?.on === true,
+          hookText: hookById[clip.id]?.text ?? '',
           trimSilence: trimById[clip.id] === true,
         }),
       })
@@ -495,17 +498,9 @@ export function ShortsCreatePanel({
                     <option value="center">Standard</option>
                     <option value="split">Split screen</option>
                   </select>
-                  {/* Hook card: the clip's hook over its first seconds. */}
-                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Show the hook as a title card for the first 2 seconds">
-                    <input
-                      type="checkbox"
-                      checked={hookById[clip.id] !== false}
-                      onChange={e => setHookById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
-                      disabled={rendering}
-                      className="accent-[#7C3AED]"
-                    />
-                    Hook title
-                  </label>
+                  {/* Hook title card: off unless ticked, with hook options or the creator's own. */}
+                  <HookPicker shortId={clip.id} clipHook={clip.hook} value={hookById[clip.id]} disabled={rendering}
+                    onChange={(v) => setHookById(prev => ({ ...prev, [clip.id]: v }))} />
                   {/* Trim silences: cut dead air for a tighter, faster clip. */}
                   <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
                     <input

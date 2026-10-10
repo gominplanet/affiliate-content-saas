@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sentenceUnits, snapToSentences, silenceCuts } from '../lib/shorts-snap'
 import { cuesToTimestampedText } from '../lib/shorts-transcript'
+import { cleanHook, cleanHookOptions, HOOK_MAX_CHARS } from '../lib/shorts-hooks'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -63,7 +64,15 @@ check('the page is told the answer was unreadable, not "no moments"', /err insta
 
 // The render route and both screens.
 const route = read('app/api/youtube/shorts/render/route.ts')
-check('the hook is sent unless turned off', /const withHook = body\.hook !== false/.test(route) && /renderOpts\.hook = String\(short\.hook\)/.test(route))
+check('the hook card is OFF unless the creator ticks it (Seb, 2026-10-10)', /const withHook = body\.hook === true/.test(route) && !/body\.hook !== false/.test(route))
+check('the card shows the creator\'s pick or their own words', /cleanHook\(typeof body\.hookText === 'string' \? body\.hookText : short\.hook\)/.test(route))
+check('hook options: the clip\'s own first, no blanks or repeats, at most five', JSON.stringify(cleanHookOptions(['Big claim', '', 'big claim', 'A', 'B', 'C', 'D', 'E'])) === JSON.stringify(['Big claim', 'A', 'B', 'C', 'D']))
+check('a typed hook is tidied: no dashes, no line breaks, capped', cleanHook('Wait \u2014 this\nworks') === 'Wait, this works' && cleanHook('x'.repeat(90)).length === HOOK_MAX_CHARS)
+const hooksRoute = read('app/api/youtube/shorts/hooks/route.ts')
+check('more hooks are written from what the clip actually says, for paying plans only', /WHAT THE CLIP SAYS/.test(hooksRoute) && /hasVideoTools\(tier\)/.test(hooksRoute) && /\.eq\('user_id', user\.id\)/.test(hooksRoute))
+check('a clip with no transcript says so instead of inventing hooks', /cannot write more hooks for it\. Write your own instead/.test(hooksRoute))
+const picker = read('components/clips/HookPicker.tsx')
+check('the picker offers options, More hooks and Write my own, and says when none is picked', /More hooks/.test(picker) && /Write my own/.test(picker) && /renders without a title card/.test(picker) && /const on = value\?\.on === true/.test(picker))
 check('Trim silences is used, not ignored', /body\.trimSilence === true/.test(route) && /silenceCuts\(cuesWithHl/.test(route) && /renderOpts\.segments = cut\.segments/.test(route))
 check('the backup renderer shows the hook too', /hook: renderOpts\.hook \?\? ''/.test(route))
 check('the answer says whether silences were cut', /trimmedSec:/.test(route) && /trimSkipped:/.test(route))
@@ -71,7 +80,7 @@ const ingest = read('lib/youtube-ingest.ts')
 check('the hook and the cuts reach the render service', /hook: opts\.hook/.test(ingest) && /segments: opts\.segments/.test(ingest))
 for (const f of ['components/vertical/ShortsCreatePanel.tsx', 'components/content/ShortsStudioModal.tsx']) {
   const src = read(f)
-  check(`${f.split('/').pop()}: Hook title and Trim silences are offered and sent`, /Hook title/.test(src) && /Trim silences/.test(src) && /hook: hookById\[clip\.id\] !== false/.test(src) && /trimSilence: trimById\[clip\.id\] === true/.test(src))
+  check(`${f.split('/').pop()}: the hook picker and Trim silences are offered and sent`, /<HookPicker shortId=\{clip\.id\}/.test(src) && /Trim silences/.test(src) && /hook: hookById\[clip\.id\]\?\.on === true/.test(src) && /hookText: hookById\[clip\.id\]\?\.text/.test(src) && /trimSilence: trimById\[clip\.id\] === true/.test(src))
   check(`${f.split('/').pop()}: the toast says when silences were or were not cut`, /without trimming silences/.test(src) && /of silence cut/.test(src))
 }
 const server = read('ingest-service/server.js')
