@@ -67,8 +67,20 @@ export async function GET() {
       return (data?.length ?? 0) > 0
     } catch { return null }
   }
+  // WHETHER ANY STAGED ROW IS STILL UNMERGED. The "Do this next" box counted a
+  // merge as done only when it ran in this tab, so after a background merge it
+  // kept saying "Add to live catalog" (Seb, 2026-10-09). The partial index on
+  // _merged = false (migration 214) makes this instant.
+  const hasUnmergedCheck = async (): Promise<boolean | null> => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (admin as any).from('cc_campaign_catalog_import').select('campaign_id').eq('_merged', false).limit(1)
+      if (error) return null
+      return (data?.length ?? 0) > 0
+    } catch { return null }
+  }
   const today = new Date().toISOString().slice(0, 10)
-  const [staged, live, enriched, enrichable, hasStaged, keepa] = await Promise.all([
+  const [staged, live, enriched, enrichable, hasStaged, keepa, hasUnmerged] = await Promise.all([
     countOf('cc_campaign_catalog_import'),
     countOf('cc_campaign_catalog'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,6 +95,7 @@ export async function GET() {
     // Live Keepa token balance — the shared budget enrichment / Deal Radar /
     // the Product Finder all draw from. /token doesn't cost product tokens.
     fetchKeepaTokenStatus(),
+    hasUnmergedCheck(),
   ])
   // Background-drain status (migration 251) so the UI can show "merging in the
   // background" progress even with the tab closed. Best-effort; absent → null.
@@ -96,7 +109,7 @@ export async function GET() {
     }
   } catch { /* pre-251 DB — no background status */ }
 
-  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, keepa, drain })
+  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, hasUnmerged, keepa, drain })
 }
 
 export async function POST(request: Request) {

@@ -162,6 +162,17 @@ const base: ImportState = {
   check('no year stamped into the copy', !/\b20\d\d\b/.test(copy))
 }
 
+// A BACKGROUND MERGE COUNTS AS DONE (Seb, 2026-10-09: the box still said
+// "Add to live catalog" after the background merge had finished).
+{
+  const page = readFileSync('app/(dashboard)/admin/cc-import/page.tsx', 'utf8')
+  const route = readFileSync('app/api/admin/import-cc-catalog/route.ts', 'utf8')
+  check('the next step counts every staged row merged as done, not only a merge in this tab',
+    /merged: !!result \|\| counts\?\.hasUnmerged === false/.test(page))
+  check('the counts say whether any staged row is still unmerged, through the _merged index',
+    /\.eq\('_merged', false\)\.limit\(1\)/.test(route) && /hasUnmerged/.test(route))
+}
+
 if (failures.length) {
   console.error(`\n❌ cc-import-steps: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

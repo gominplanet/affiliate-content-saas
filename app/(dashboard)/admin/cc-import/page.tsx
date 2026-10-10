@@ -17,7 +17,7 @@ import { nextStep, mergeLabel, backgroundLabel } from '@/lib/cc-import-steps'
 import { requestCcCatalogScan } from '@/lib/extension-frame'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
-interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
+interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; hasUnmerged?: boolean | null; keepa: KeepaStatus | null }
 
 export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
@@ -56,7 +56,7 @@ export default function AdminCcImportPage() {
       const r = await fetch('/api/admin/import-cc-catalog')
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
-      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, keepa: d.keepa ?? null })
+      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, hasUnmerged: d.hasUnmerged ?? null, keepa: d.keepa ?? null })
       setDrain(d.drain ?? null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
@@ -416,7 +416,9 @@ export default function AdminCcImportPage() {
       {(() => {
         const step = nextStep({
           filesPicked: 0, uploaded: !!result, stagingEmpty: counts?.hasStaged === false ? true : counts?.hasStaged === true ? false : null,
-          merging, draining: !!drain?.active, merged: !!result, addOnly,
+          // Merged in this tab, OR every staged row is already flagged merged
+          // (a background merge, or one from an earlier visit).
+          merging, draining: !!drain?.active, merged: !!result || counts?.hasUnmerged === false, addOnly,
         })
         return (
           <div className="card p-4 mb-3" style={{ borderColor: step.waiting ? 'var(--border)' : 'rgba(124,58,237,0.45)' }}>
