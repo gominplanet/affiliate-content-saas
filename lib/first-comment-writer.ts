@@ -29,7 +29,7 @@ ${link ? `PRODUCT LINK: ${link}` : 'PRODUCT LINK: none'}
 
 Write 2 or 3 short, friendly sentences in the creator's voice:
 - open with one useful takeaway from the video (no hype, no claims the video does not make, no health or medical claims)
-${link ? `- include the product link exactly as given, followed by "(paid link)"` : '- no links'}
+${link ? `- include the product link exactly as given, followed by "(paid link)", right after a short lead-in that names the product, like "Check out the [product] here:" (MVP adds which store it opens)` : '- no links'}
 - end with a question that invites viewers to reply
 - no hashtags, no emojis at the start, no em dashes`,
       }],

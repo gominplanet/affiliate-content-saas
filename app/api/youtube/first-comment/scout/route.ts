@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { usesStudioUpload } from '@/lib/studio-upload'
+import { nameLinkStores } from '@/lib/link-store'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -50,7 +51,14 @@ export async function GET() {
   const { data: soon } = await sb.from('video_first_comments').select('publish_at')
     .eq('user_id', user.id).eq('state', 'waiting').gt('publish_at', now)
     .order('publish_at', { ascending: true }).limit(1)
-  return NextResponse.json({ ok: true, on: true, comments: data ?? [], nextAt: (soon ?? [])[0]?.publish_at ?? null })
+  // A comment queued before stores were named gets its store before SCOUT
+  // posts it, and the row is updated so the page shows what went out.
+  const comments = await Promise.all((data ?? []).map(async (c: { id: string; text: string | null }) => {
+    const text = (await nameLinkStores(user.id, String(c.text || ''))).text.slice(0, 1500)
+    if (text !== c.text) await sb.from('video_first_comments').update({ text }).eq('id', c.id).eq('state', 'waiting')
+    return { ...c, text }
+  }))
+  return NextResponse.json({ ok: true, on: true, comments, nextAt: (soon ?? [])[0]?.publish_at ?? null })
 }
 
 export async function POST(req: Request) {

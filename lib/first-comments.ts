@@ -15,6 +15,7 @@
 import { getChannelOAuthToken, listYouTubeChannels } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { isQuotaError } from '@/lib/youtube-quota'
+import { nameLinkStores } from '@/lib/link-store'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -226,13 +227,16 @@ export async function postFirstCommentIfPublic(sb: Sb, rowIn: FirstCommentRow, p
     .update({ state: 'posting', updated_at: at }).eq('id', row.id).in('state', ['waiting', 'failed']).select('id')
   if (!took || took.length === 0) return { state: 'waiting', publishAt: null, reason: 'no_answer' }
   try {
-    const id = await yt.postComment(row.youtube_video_id, row.text)
+    // A comment queued before stores were named gets its store now, and the
+    // row keeps the words that actually went out.
+    const text = (await nameLinkStores(row.user_id, row.text)).text.slice(0, 1500)
+    const id = await yt.postComment(row.youtube_video_id, text)
     if (!id) return fail('YouTube did not return the comment id, so MVP cannot tell whether it was posted.')
     // Written until it lands: a lost write here would leave the row looking
     // unposted and invite a second comment.
     for (let w = 0; w < 3; w++) {
       const { error: wErr } = await sb.from('video_first_comments').update({
-        state: 'posted', comment_id: id, posted_at: at, last_checked_at: at, last_error: null, updated_at: at,
+        state: 'posted', comment_id: id, text, posted_at: at, last_checked_at: at, last_error: null, updated_at: at,
         channel_id: status.channelId ?? row.channel_id,
       }).eq('id', row.id)
       if (!wErr) break

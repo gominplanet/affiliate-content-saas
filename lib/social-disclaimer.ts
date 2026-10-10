@@ -97,7 +97,8 @@ export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLi
 
 export type LinkDestination = 'amazon' | 'walmart' | 'ltk' | 'blog' | 'youtube' | 'tiktok' | 'fbgroup'
 
-const DEST_NAME: Record<LinkDestination, string> = {
+/** The store or place a link lands on, as a reader would name it. */
+export const DEST_NAME: Record<LinkDestination, string> = {
   amazon: 'Amazon', walmart: 'Walmart', ltk: 'LTK', blog: 'my blog', youtube: 'YouTube', tiktok: 'TikTok Shop',
   fbgroup: 'my Facebook group',
 }
@@ -112,7 +113,8 @@ export const DEST_LABEL: Record<LinkDestination, string> = {
   fbgroup: 'Join the conversation in my Facebook group:',
 }
 export const UNKNOWN_LINK_LABEL = 'Check it out here:'
-const DEST_SAID: Record<LinkDestination, RegExp> = {
+/** Words that already name the destination, so it is never named twice. */
+export const DEST_SAID: Record<LinkDestination, RegExp> = {
   amazon: /amazon/i, walmart: /walmart/i, ltk: /\bltk\b/i, blog: /\bblog\b/i, youtube: /youtube/i, tiktok: /tiktok/i,
   fbgroup: /\bgroup\b/i,
 }

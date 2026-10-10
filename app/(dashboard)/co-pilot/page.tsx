@@ -238,6 +238,9 @@ interface GeneratedMetadata {
   tags: string[]
   pinnedComment: string
   title_alternatives: string[]
+  /** Set when MVP could not confirm which store a link in the pinned comment
+   *  opens, so it named none. Null when every store was confirmed. */
+  pinnedCommentStoreNote?: string | null
 }
 
 interface AgentInsights {
@@ -1518,6 +1521,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
       const productBullets = data.productBullets as string[]
       const productDescription = data.productDescription as string
 
+      generatedMeta.pinnedCommentStoreNote = typeof data.pinnedCommentStoreNote === 'string' ? data.pinnedCommentStoreNote : null
       setGenerated(generatedMeta)
       // The server recorded a generate marker (mig 150), so this video will
       // reclassify to "Metadata sent" on the next drafts load — intentionally NOT
@@ -3768,6 +3772,9 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
                   </div>
                 </details>
+                {generated.pinnedCommentStoreNote && (
+                  <p className="text-[11px] text-[#ff9500] mt-2">{generated.pinnedCommentStoreNote}</p>
+                )}
               </div>
 
               {/* Pro batch-apply settings panel — Pro/admin only */}

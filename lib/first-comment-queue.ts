@@ -9,6 +9,7 @@
 // retry or a second bulk pass never adds a second comment.
 import { writeFirstComment } from '@/lib/first-comment-writer'
 import { productLinkIn } from '@/lib/first-comment-text'
+import { nameLinkStores } from '@/lib/link-store'
 
 export type QueueOutcome =
   | { queued: true; id: string; written: 'sent' | 'ai' | 'plain' }
@@ -34,6 +35,8 @@ export async function queueFirstComment(
     text = w.text.slice(0, 1500)
     written = w.written
   }
+  // The store each link opens, confirmed and named before it (lib/link-store).
+  text = (await nameLinkStores(a.userId, text)).text.slice(0, 1500)
   const channel = /^UC[\w-]{22}$/.test(String(a.channelId || '')) ? String(a.channelId) : null
   const { data: ins, error } = await sb.from('video_first_comments').insert({
     user_id: a.userId, youtube_video_id: a.youtubeVideoId, channel_id: channel,

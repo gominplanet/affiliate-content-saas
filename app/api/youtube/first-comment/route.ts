@@ -17,6 +17,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { postFirstCommentIfPublic, type FirstCommentRow } from '@/lib/first-comments'
 import { writeFirstComment } from '@/lib/first-comment-writer'
 import { productLinkIn } from '@/lib/first-comment-text'
+import { nameLinkStores } from '@/lib/link-store'
 import { fillMissingVideoDetails } from '@/lib/video-details-fill'
 
 export const runtime = 'nodejs'
@@ -78,6 +79,9 @@ export async function POST(req: Request) {
     text = w.text.slice(0, 1500)
     written = w.written
   }
+
+  // The store each link opens, confirmed and named before it (lib/link-store).
+  text = (await nameLinkStores(g.user.id, text)).text.slice(0, 1500)
 
   const { data: existing, error: exErr } = await admin.from('video_first_comments')
     .select('id,user_id,youtube_video_id,channel_id,text,state,comment_id,created_at')

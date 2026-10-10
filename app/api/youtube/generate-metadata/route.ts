@@ -29,9 +29,13 @@ import { deriveProductName } from '@/lib/product-name'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { canUsePreview } from '@/lib/labs-preview'
 import { readComparisonSlots, shortProductName, comparisonLinkLines } from '@/lib/comparison-products'
+import { nameLinkStores, unconfirmedStoreWords, confirmLinkStores } from '@/lib/link-store'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { detectShorts } from '@/lib/shorts-detect'
+
+/** Stores a description's product line can name (not "my blog" and the like). */
+const SHOP_STORES = new Set(['Amazon', 'Walmart', 'LTK', 'TikTok Shop'])
 
 export const maxDuration = 120
 
@@ -502,7 +506,7 @@ RULES:
 - 2-3 punchy sentences
 - Start with a hook or key insight from the video
 ${hasLink
-  ? '- Include the affiliate link naturally\n- End with a CTA (check price, grab yours, limited stock, etc.)'
+  ? '- Put the affiliate link right after a short lead-in that names the product, like "Check out the [product] here:" (MVP adds which store it opens, so do not name a store yourself)\n- End with a CTA (check price, grab yours, limited stock, etc.)'
   : '- End with a CTA that drives engagement — invite a comment, ask a question, prompt a like or subscribe — never push a product link'}
 - Feel human and conversational — not salesy
 
@@ -1383,6 +1387,17 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── The store, named right before each link (Seb, 2026-10-10) ────────────
+    // "Check out the X on Amazon: link". Only a store MVP CONFIRMED is named
+    // (Passport looked up, short links followed); one it could not confirm is
+    // left alone and the page says so, rather than guessing Amazon.
+    let pinnedCommentStoreNote: string | null = null
+    if (engagementResult.pinnedComment && /https?:\/\//.test(engagementResult.pinnedComment)) {
+      const named = await nameLinkStores(user.id, engagementResult.pinnedComment, comparison ? null : seoProductName)
+      engagementResult.pinnedComment = named.text
+      pinnedCommentStoreNote = unconfirmedStoreWords(named.unconfirmed)
+    }
+
     // ── Assemble description ──────────────────────────────────────────────────
     // Honor the creator's explicit preference (Brand Profile → Brand
      // Outreach Contact). Fall back to whichever channel they actually
@@ -1400,8 +1415,17 @@ export async function POST(request: Request) {
     // not. Defaults here are byte-identical to the strings this route used to
     // hard-code, so an account that has never touched them sees no change.
     const lineOverrides = (brand?.yt_description_lines as Record<string, unknown> | null) ?? null
+    // THE STORE THE LINK OPENS, CONFIRMED (lib/link-store). A known ASIN is
+    // Amazon; any other product link is looked up or followed, so a Walmart or
+    // LTK link says so, and one MVP cannot confirm names no store at all.
+    let linkShop = isProduct ? 'AMAZON' : 'the product'
+    if (!isProduct && affiliateUrl && !comparison) {
+      const c = await confirmLinkStores(user.id, affiliateUrl).catch(() => null)
+      const store = c?.confirmed[0]?.store
+      if (store && SHOP_STORES.has(store)) linkShop = store.toUpperCase()
+    }
     const lineValues = {
-      shop: isProduct ? 'AMAZON' : 'the product',
+      shop: linkShop,
       link: affiliateUrl || '',
       site: websiteUrl || '',
       collab: collabUrl || websiteUrl || '',
@@ -1443,7 +1467,8 @@ export async function POST(request: Request) {
         // ONE LINE PER PRODUCT, each with its own link, in the creator's order.
         descParts.push(
           `The products in this video (affiliate links):`,
-          ...comparisonLinkLines(comparison.map((c, i) => ({ name: comparisonNames?.[i] ?? shortProductName(c.title), label: c.label, link: c.link }))),
+          // Each line names the store its link opens: "1. Sony XM5 on Amazon: link".
+          ...(await nameLinkStores(user.id, comparisonLinkLines(comparison.map((c, i) => ({ name: comparisonNames?.[i] ?? shortProductName(c.title), label: c.label, link: c.link }))).join('\n'))).text.split('\n'),
           `----------`,
           LINES.disclosureProduct,
         )
@@ -1516,7 +1541,7 @@ export async function POST(request: Request) {
     // put the CTA back at the very top so a creator never publishes a
     // description missing the link.
     if (affiliateUrl && !descParts.some(p => typeof p === 'string' && p.includes(affiliateUrl))) {
-      const shopLabel = isProduct ? 'AMAZON' : 'the product'
+      const shopLabel = linkShop
       descParts.unshift(
         `Check Today's Price and Availability on ${shopLabel} here: ${affiliateUrl}`,
         `(affiliate link)`,
@@ -1712,6 +1737,7 @@ export async function POST(request: Request) {
         title_alternatives: (titleResult.alternatives || []).map((t: string) => emphasizeOneWord(scrubTitle(t), seoProductName)),
         title_scores: titleScores,
       },
+      pinnedCommentStoreNote,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

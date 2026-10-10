@@ -57,7 +57,7 @@ check('comparison videos are open to Pro and admin, not to other plans',
     && inOrder(M, "canUsePreview('comparison', tier)", 'discoverProductForVideo('))
   check('the one-product mismatch check does not fire on a comparison title', /&& !comparison\s*\n\s*&& productDiscoverySource === 'caller'/.test(M))
   check('the description has one link per product, and the ASIN line lists them all',
-    /\.\.\.comparisonLinkLines\(comparison\.map/.test(M) && /Product ASINs: \$\{comparison\.map\(\(c\) => c\.asin\)\.join\(', '\)\}/.test(M))
+    /\.\.\.(?:\(await nameLinkStores\(user\.id, )?comparisonLinkLines\(comparison\.map/.test(M) && /Product ASINs: \$\{comparison\.map\(\(c\) => c\.asin\)\.join\(', '\)\}/.test(M))
   check('each extra product gets the same link style the first one got, and says when it could not',
     /if \(passportUsed\) \{/.test(M) && /if \(geniuslinkUsed\) \{/.test(M) && /if \(bitlyUsed && ytStyle\.bitlyToken\)/.test(M) && /linkNote: l\.note/.test(M))
   check('the titles and the description are written as a comparison with no invented winner',
