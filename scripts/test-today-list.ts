@@ -60,6 +60,23 @@ async function main() {
   check('opening the recap stops the top bar flashing', /localStorage\.setItem\(RECAP_SEEN_KEY/.test(page))
   check('the top bar carries the recap button', /<RecapTopbarButton \/>/.test(r('components/layout/DashboardShellV2.tsx')))
 
+  // THE CC UPLOAD REMINDER (Seb, 2026-10-10): Monday and Thursday, AST, until an upload.
+  {
+    const { ccUploadDue, uploadDayName } = await import('../lib/cc-upload-due')
+    const sat = Date.parse('2026-10-10T16:00:00Z') // Saturday, noon AST
+    check('a Friday upload covers the Thursday reminder', !ccUploadDue('2026-10-09T15:00:00Z', sat).due)
+    const mon = Date.parse('2026-10-12T14:00:00Z') // Monday, 10am AST
+    const m = ccUploadDue('2026-10-09T15:00:00Z', mon)
+    check('on Monday it is due again, named as Monday', m.due && uploadDayName(m.since) === 'Monday')
+    check('an upload on Monday clears it', !ccUploadDue('2026-10-12T13:00:00Z', mon).due)
+    check('Sunday night AST is still before Monday', !ccUploadDue('2026-10-09T15:00:00Z', Date.parse('2026-10-12T03:30:00Z')).due)
+    check('a missed Thursday stays due over the weekend', ccUploadDue('2026-10-05T15:00:00Z', sat).due)
+    check('no upload on record reads as due', ccUploadDue(null, sat).due)
+    const tl = r('lib/today-list.ts')
+    check('the reminder is admin only and links to the CC import', /tier === 'admin' && read\('CC upload'/.test(tl) && /'\/admin\/cc-import', 'Upload ZIPs'/.test(tl))
+    check('every staging upload records when it happened', /CC_LAST_UPLOAD_FLAG/.test(r('app/api/admin/import-cc-catalog/stage/route.ts')))
+  }
+
   if (failures.length) {
     console.error(`\n❌ today-list: ${failures.length} failure(s)\n`)
     for (const f of failures) console.error(`   • ${f}`)

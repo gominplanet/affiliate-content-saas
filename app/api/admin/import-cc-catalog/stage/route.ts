@@ -8,6 +8,7 @@
 // (~1-2k rows). Pass reset:true on the very first batch to clear staging before
 // a fresh import. After all batches, the admin clicks Merge (separate endpoint).
 
+import { CC_LAST_UPLOAD_FLAG } from '@/lib/cc-upload-due'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -74,6 +75,15 @@ export async function POST(request: Request) {
       if (error) return NextResponse.json({ error: toUserMessage(error, 'Row insert failed.'), detail: error.message?.slice(0, 200), insertedSoFar: inserted }, { status: 500 })
       inserted += chunk.length
     }
+    // WHEN THE LAST UPLOAD HAPPENED, for the Monday and Thursday reminder on the
+    // admin Today list (lib/cc-upload-due.ts). Best effort.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('system_flags').upsert(
+        { key: CC_LAST_UPLOAD_FLAG, active: true, value: { at: new Date().toISOString() }, updated_at: new Date().toISOString() },
+        { onConflict: 'key' },
+      )
+    } catch { /* the reminder may show once more; the upload stands */ }
     return NextResponse.json({ ok: true, inserted })
   } catch (err) {
     console.error('[import-cc-catalog/stage]', err instanceof Error ? err.message : err)

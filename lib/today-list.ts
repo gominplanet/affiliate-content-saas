@@ -16,6 +16,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { REFRESH_AFTER_DAYS } from '@/lib/post-refresh'
 import { listDealPosts } from '@/lib/deal-aftercare-server'
 import { freshUnread, whoWrote, checkedAgo } from '@/lib/trybe-alerts'
+import { ccUploadDue, uploadDayName, uploadAgo, CC_LAST_UPLOAD_FLAG } from '@/lib/cc-upload-due'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -24,6 +25,7 @@ export type TodayKind =
   | 'reconnect' | 'liftoff_blocked' | 'liftoff_held' | 'liftoff_launch' | 'liftoff_amazon'
   | 'failed_posts' | 'held_posts' | 'encore' | 'pin_comments' | 'failed_comments'
   | 'cc_matches' | 'price_alerts' | 'ended_deals' | 'refresh_due' | 'trybe_replies'
+  | 'cc_upload'
 
 export type TodayItem = {
   kind: TodayKind
@@ -48,6 +50,8 @@ const RANK: Record<TodayKind, number> = {
   liftoff_launch: 84,
   failed_comments: 80,
   held_posts: 78,
+  // The catalogue every member searches goes stale without it (admin only).
+  cc_upload: 76,
   // A brand waiting on an answer is money on the table, and it goes cold.
   trybe_replies: 74,
   encore: 70,
@@ -187,6 +191,20 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
       if (error) throw new Error(error)
       const n = posts.filter((p) => p.state === 'ended' && p.phase === 'deal').length
       if (n) items.push(item('ended_deals', 'upkeep', n, `${plural(n, 'deal post has', 'deal posts have')} ended`, 'Turn each into a lasting review so the page keeps earning.', '/ended-deals', 'Convert'))
+    }),
+
+    // CC UPLOAD DUE (admin): the two Amazon ZIPs every Monday and Thursday, so
+    // the catalogue's open spots stay current (lib/cc-upload-due.ts).
+    tier === 'admin' && read('CC upload', async () => {
+      const r = await sb.from('system_flags').select('value').eq('key', CC_LAST_UPLOAD_FLAG).maybeSingle()
+      if (r.error) throw new Error(r.error.message)
+      const at = (r.data?.value?.at as string | undefined) ?? null
+      const { due, since } = ccUploadDue(at, now.getTime())
+      if (!due) return
+      const last = at ? `Last upload ${uploadAgo(at, now.getTime())}.` : 'No upload recorded yet.'
+      items.push(item('cc_upload', 'upkeep', 1, `Upload this week's Creator Connections ZIPs`,
+        `Due ${uploadDayName(since)}. ${last} Campaigns fill within days, so the open spots go stale without it.`,
+        '/admin/cc-import', 'Upload ZIPs'))
     }),
 
     // TRYBE REPLIES (upgrade 4): what SCOUT last read from the creator's TRYBE
