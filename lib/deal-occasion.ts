@@ -24,13 +24,19 @@
  *
  * ⚠️  Flip to FALSE the moment the next Amazon sale starts to bring it back.
  *
- * OPEN for Prime Big Deal Days (October). Note that "open" is not the same as
- * "publish anything today": Amazon holds pre-announcement deals under embargo,
- * and lib/deal-embargo.ts is what keeps a post about an October deal from going
- * live in September. Unpausing without that guard is what would put a creator's
- * Associates account at risk, so the two belong together.
+ * PAUSED 2026-10-10 (Seb: "close the deals hub feature till I tell you to
+ * reopen it, prime day is over"). Reopen only when Seb says so. When it opens
+ * again, lib/deal-embargo.ts still keeps a pre-announcement deal from going
+ * live early; the two belong together.
  */
-export const DEALS_HUB_PAUSED = false
+export const DEALS_HUB_PAUSED = true
+
+/** Closed for this account right now: paused between sales, admins excepted
+ *  so they can stage a post ahead of the next one. A season switch, not a plan
+ *  rule, so it lives here and not in the tier tables. */
+export function dealsHubClosedFor(tier: string | null | undefined): boolean {
+  return DEALS_HUB_PAUSED && tier !== 'admin'
+}
 
 export type DealOccasionSlug =
   | 'none'

@@ -36,6 +36,7 @@
 //   DELETE canUseDealsHub — the paid tiers that have a blog, matching the
 //          sidebar. Both read lib/feature-access rather than listing tiers.
 
+import { dealsHubClosedFor } from '@/lib/deal-occasion'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
@@ -358,6 +359,11 @@ export async function POST(req: Request) {
   const tier = normalizeTier(dealIntg?.tier)
   if (!canUseDealRadar(tier)) {
     return NextResponse.json({ error: 'Deal posts are available on paid plans.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
+  }
+  // CLOSED BETWEEN SALES (DEALS_HUB_PAUSED): the page says so, and a direct
+  // request is refused too, so no deal post goes out while it is closed.
+  if (dealsHubClosedFor(tier)) {
+    return NextResponse.json({ error: 'Deals Hub is closed until the next Amazon sale event. Nothing was made.', code: 'deals_paused' }, { status: 403 })
   }
   // NOTE: the monthly generation/deal cap is CONSUMED on the real publish path
   // only (just before the Sonnet writer runs, after the refresh + preview +
