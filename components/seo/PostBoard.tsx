@@ -13,9 +13,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, Loader2, Check, Link2, Send, Share2, Wrench, Type, Megaphone, Map as MapIcon, ChevronDown, AlertTriangle } from 'lucide-react'
+import { ExternalLink, Loader2, Check, Link2, Share2, Wrench, Type, Megaphone, Map as MapIcon, ChevronDown, AlertTriangle } from 'lucide-react'
 import { buildBoard, backlinkVerdict, laneInfo, sharedLinks, PLATFORM_LABEL, type DoctorPost, type Diagnosis, type Lane, type Step, type LaneInfo } from '@/lib/post-doctor'
-import { openRequestIndexing, readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
+import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
+import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
 
 const TONE: Record<LaneInfo['tone'], string> = {
   red: '#ff3b30', amber: '#ff9500', violet: '#7C3AED', blue: '#0a84ff', green: '#34c759', grey: '#8e8e93',
@@ -131,7 +132,7 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
                         {shared.length === 0 ? 'Not shared from MVP yet' : `Shared on ${shared.map((s) => PLATFORM_LABEL[s] || s).join(', ')}`}
                       </span>
                       {p.inSitemap === false && <span className="text-[#ff9500] font-medium">Not in your sitemap</span>}
-                      {recentReq && <span className="text-[#34c759] font-medium">Sent to Google {ago(recentReq)}</span>}
+                      {recentReq && <span className="text-[#34c759] font-medium">Opened in Search Console {ago(recentReq)}</span>}
                     </div>
                     <p className="mt-1.5 text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7]">{p.dx.why}</p>
 
@@ -218,13 +219,9 @@ function StepAction({ step, post, connected, property, canBrandRecap, recentReq,
     case 'request':
       if (!connected || !post.url) return <p className="text-[11px] text-[#86868b] mt-0.5">Connect Search Console first.</p>
       return (
-        <div className="flex items-center flex-wrap">
-          <button onClick={() => void openRequestIndexing(post.url!, property)} className={recentReq ? quiet : primary}>
-            <Send size={11} /> {recentReq ? 'Ask again' : 'Request indexing'} <ExternalLink size={10} />
-          </button>
-          {recentReq
-            ? <span className="mt-1 text-[11px] text-[#86868b]">Sent {ago(recentReq)}. Asking again within a week does not speed Google up.</span>
-            : <span className="mt-1 text-[11px] text-[#86868b]">Opens Search Console on this post: press Request indexing there.</span>}
+        <div className="mt-1 flex flex-col gap-1 items-start">
+          <RequestIndexingButton url={post.url} property={property} small again={!!recentReq} />
+          {recentReq && <span className="text-[11px] text-[#86868b]">Opened {ago(recentReq)}. Asking again within a week does not speed Google up.</span>}
         </div>
       )
     case 'share':

@@ -16,7 +16,8 @@ import { ExternalLink, Check, AlertTriangle, Copy, Loader2, ChevronDown } from '
 import { toast } from 'sonner'
 import { reasonGuide, requestQueue, REPORT_GUIDE, REQUESTS_PER_DAY, type Severity } from '@/lib/indexing-help'
 import { gscSitemapsUrl } from '@/lib/gsc-links'
-import { readRequested, openRequestIndexing, REQUESTED_EVENT } from '@/lib/gsc-request-client'
+import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
+import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
 
 type Post = { postId: string; title: string; url: string | null; indexed: boolean | null; coverageState: string | null }
 type SitemapRow = { path: string; lastSubmitted: string | null; lastDownloaded: string | null; pending: boolean; errors: number; warnings: number; urls: number }
@@ -57,7 +58,6 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
   const queue = useMemo(() => requestQueue(posts, requested), [posts, requested])
   // Google's own link (a hand-built inspect link opened Google's 404); the
   // shared helper opens it and remembers the request for a week.
-  const openInspect = (url: string) => openRequestIndexing(url, property)
   const requestedToday = Object.values(requested).filter((t) => Date.now() - Date.parse(t) < 86_400_000).length
 
   // Every post not in Google, grouped by Google's reason.
@@ -123,19 +123,16 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
       {/* 2. Request indexing */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10 flex flex-col gap-2">
         <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">2. Request indexing for today&apos;s {queue.length || ''} best posts</p>
-        <p className="text-xs text-[#86868b]">Google lets you ask about {REQUESTS_PER_DAY} pages a day, by hand: there is no way for MVP to press it for you. Each button opens that post in Search Console; wait for the check, then press <b>Request indexing</b>. MVP remembers what you asked for and shows new posts next time.{requestedToday > 0 ? ` You have opened ${requestedToday} today.` : ''}</p>
+        <p className="text-xs text-[#86868b]">Google lets you ask about {REQUESTS_PER_DAY} pages a day, by hand: there is no way for MVP to press it for you. Press a post's button and MVP fetches Google's own link for it; open that link, wait for Google's check, then press <b>Request indexing</b>. MVP remembers what you asked for and shows new posts next time.{requestedToday > 0 ? ` You have opened ${requestedToday} today.` : ''}</p>
         {queue.length === 0 ? (
           <p className="text-xs text-[#34c759]">Nothing to request right now: every post that needs it was asked about this week, or is waiting on a fix below first.</p>
         ) : (
           <div className="flex flex-col divide-y divide-gray-100 dark:divide-white/5">
             {queue.map((p) => (
-              <div key={p.url!} className="flex items-center gap-3 py-1.5">
+              <div key={p.url!} className="flex items-center flex-wrap gap-x-3 gap-y-1 py-1.5">
                 <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 min-w-0 truncate" title={p.title}>{p.title}</span>
                 <span className="text-[10px] text-[#86868b] hidden sm:inline">{reasonGuide(p.coverageState).label}</span>
-                <button onClick={() => void openInspect(p.url!)}
-                  className="text-[11px] font-semibold text-white bg-[#7C3AED] rounded-full px-2.5 py-1 inline-flex items-center gap-1 flex-shrink-0">
-                  Request indexing <ExternalLink size={10} />
-                </button>
+                <RequestIndexingButton url={p.url!} property={property} small />
               </div>
             ))}
           </div>
@@ -164,9 +161,9 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
                 {guide.tool && <Link href={guide.tool.href} className="text-[11px] font-medium text-[#7C3AED] hover:underline self-start">Open {guide.tool.label} →</Link>}
                 <div className="flex flex-col mt-1">
                   {ps.slice(0, 15).map((p) => (
-                    <div key={p.postId} className="flex items-center gap-2 py-1">
+                    <div key={p.postId} className="flex items-center flex-wrap gap-x-2 gap-y-1 py-1">
                       <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 min-w-0 truncate">{p.title}</span>
-                      {p.url && <button onClick={() => void openInspect(p.url!)} className="text-[10px] font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-0.5 flex-shrink-0">Inspect in Google <ExternalLink size={9} /></button>}
+                      {p.url && <RequestIndexingButton url={p.url} property={property} small label="Inspect in Google" />}
                     </div>
                   ))}
                   {ps.length > 15 && <p className="text-[10px] text-[#86868b]">and {ps.length - 15} more</p>}

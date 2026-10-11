@@ -50,8 +50,13 @@ check('the SEO page shows the indexing help when Search Console is connected', /
 // 2026-10-11: the hand-built inspect link opened Google's 404 page.
 const help = read('components/seo/IndexingHelp.tsx')
 const opener = read('lib/gsc-request-client.ts')
-check('Request indexing opens Google\'s own inspection link, from the URL Inspection API', /openRequestIndexing\(/.test(help) && /\/api\/seo\/inspect-link\?url=/.test(opener) && !/inspectLink\(/.test(help + opener) && /inspectionResultLink/.test(read('lib/gsc.ts')))
-check('no link from Google: the address is copied and Search Console opens, with what to do', /navigator\.clipboard\?\.writeText\(url\)/.test(opener) && /Inspect any URL/.test(opener))
+const btn = read('components/seo/RequestIndexingButton.tsx')
+const board = read('components/seo/PostBoard.tsx')
+check('Request indexing uses Google\'s own inspection link, from the URL Inspection API', /<RequestIndexingButton/.test(help) && /<RequestIndexingButton/.test(board) && /\/api\/seo\/inspect-link\?url=/.test(opener) && !/inspectLink\(/.test(help + opener + btn) && /inspectionResultLink/.test(read('lib/gsc.ts')))
+// 2026-10-11 again: an empty tab opened first and steered later stayed blank.
+check('no tab is opened in advance: the link is fetched, then shown as a real link to click', !/window\.open\(/.test(help + opener + btn + board) && /<a href=\{state\.link\} target="_blank"/.test(btn))
+check('no link from Google: says why, copies the address, links Search Console with what to do', /state\.error/.test(btn) && /clipboard\.writeText\(url\)/.test(btn) && /Inspect any URL/.test(btn))
+check('a visit is recorded only when Google\'s page is actually opened', /onClick=\{\(\) => markRequested\(url\)\}/.test(btn))
 
 if (failed) { console.error(`\n${failed} indexing check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
