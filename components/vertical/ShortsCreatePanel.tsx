@@ -567,6 +567,11 @@ export function ShortsCreatePanel({
                   >
                     {removingId === clip.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Remove
                   </button>
+                  {/* A BACKGROUND RENDER THAT NEVER REPORTED (2026-10-11): the render service
+                      restarted or lost it. Said, so the card never just goes back to "Render Short". */}
+                  {clip.status === 'rendering' && !renderingInBackground(clip) && (
+                    <span className="text-[11px] text-[#ff9500] inline-flex items-center gap-1"><AlertCircle size={11} /> This render never came back: the render service may have restarted mid-render. Press Render Short again; Standard layout renders much faster than Split screen.</span>
+                  )}
                   {clip.status === 'failed' && clip.renderError && (
                     <span className="text-[11px] text-[#ff3b30] inline-flex items-center gap-1"><AlertCircle size={11} /> {clip.renderError}</span>
                   )}

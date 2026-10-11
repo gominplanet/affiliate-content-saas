@@ -426,12 +426,14 @@ export async function GET(request: Request) {
   // coverage_state (from URL Inspection) so the page can mirror GSC's "Why pages
   // aren't indexed" breakdown — the user sees which pile is fixable (404 →
   // redirect) vs benign (noindex archives) vs waiting (discovered/crawled).
-  const REASON_META: Record<string, { label: string; fixable: 'redirect' | 'benign' | 'wait' | 'other' }> = {
+  const REASON_META: Record<string, { label: string; fixable: 'urgent' | 'redirect' | 'benign' | 'wait' | 'other' }> = {
     'not found (404)':                     { label: 'Not found (404)',            fixable: 'redirect' },
     'soft 404':                            { label: 'Soft 404',                   fixable: 'redirect' },
     'page with redirect':                  { label: 'Page with redirect',         fixable: 'other' },
     'redirect error':                      { label: 'Redirect error',             fixable: 'other' },
-    "excluded by 'noindex' tag":           { label: 'Excluded by noindex',        fixable: 'benign' },
+    // A POST with noindex is never harmless: only archive pages are noindexed on
+    // purpose (the plugin), and archives are not in this list. (2026-10-11)
+    "excluded by 'noindex' tag":           { label: 'Post set to noindex',        fixable: 'urgent' },
     'blocked by robots.txt':               { label: 'Blocked by robots.txt',      fixable: 'other' },
     'alternate page with proper canonical tag': { label: 'Alternate w/ canonical', fixable: 'benign' },
     'duplicate without user-selected canonical': { label: 'Duplicate, no canonical', fixable: 'other' },

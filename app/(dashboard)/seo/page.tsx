@@ -27,6 +27,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { gscSitemapsUrl, gscPageIndexingUrl } from '@/lib/gsc-links'
+import IndexingHelp from '@/components/seo/IndexingHelp'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -48,7 +49,7 @@ interface PostRow {
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; urlGuessed?: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; urlGuessed?: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'urgent' | 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -1025,12 +1026,13 @@ export default function SeoPage() {
               waiting on Google. */}
           {data.connected && (data.summary.reasons?.length ?? 0) > 0 && (() => {
             const meta: Record<string, { dot: string; note: string }> = {
+              urgent:   { dot: '#ff3b30', note: 'Fix now: these posts tell Google not to index them. See step 3 below' },
               redirect: { dot: '#ff3b30', note: 'Fixable: send these to a live page with Fix 404s' },
               other:    { dot: '#ff9500', note: 'Worth a look' },
               wait:     { dot: '#5856d6', note: 'Waiting on Google. Keep the sitemap fresh' },
               benign:   { dot: '#8e8e93', note: 'Expected: archive/duplicate pages, nothing to do' },
             }
-            const order = { redirect: 0, other: 1, wait: 2, benign: 3 } as const
+            const order = { urgent: 0, redirect: 1, other: 2, wait: 3, benign: 4 } as const
             const reasons = [...(data.summary.reasons || [])].sort((a, b) => (order[a.fixable] - order[b.fixable]) || (b.count - a.count))
             const fixable = reasons.filter(r => r.fixable === 'redirect').reduce((s, r) => s + r.count, 0)
             return (
@@ -1056,6 +1058,16 @@ export default function SeoPage() {
               </div>
             )
           })()}
+
+          {/* GET POSTS INTO GOOGLE (2026-10-11): sitemap status, today's Request
+              indexing list, and what to do about each of Google's reasons. */}
+          {data.connected && (
+            <IndexingHelp
+              property={data.property}
+              posts={data.posts.map(p => ({ postId: p.postId, title: p.title, url: p.url, indexed: p.indexed, coverageState: p.coverageState }))}
+              blogUrl={(() => { const u = data.posts.find(p => p.url)?.url; try { return u ? new URL(u).origin : null } catch { return null } })()}
+            />
+          )}
 
           {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
               impressions for with no post squarely targeting them. */}
