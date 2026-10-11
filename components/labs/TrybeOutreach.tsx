@@ -23,13 +23,16 @@ import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, type LucideIcon } from 'lucide-react'
-import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, type TrybeScanPass } from '@/lib/extension-frame'
+import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { readAdLibraryCount, META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
+import { afterAccept } from '@/lib/trybe-playbook'
+import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -64,11 +67,17 @@ interface Brand {
   fit_prefs?: string | null
   /** When MVP first saw this brand's TRYBE conversation (migration 419). */
   replied_at?: string | null
+  /** After the brand accepted (migration 425). */
+  kickoff_draft?: string | null
+  kickoff_sent_at?: string | null
+  followup_sent_at?: string | null
+  video_plan?: AfterBrand['video_plan']
+  video_plan_at?: string | null
 }
 
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 /** MVP's copy of every TRYBE brand (shared), and how complete it is. */
-interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[] }
+interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
 type Tab = 'find' | 'queue' | 'sent' | 'inbox'
@@ -80,6 +89,9 @@ interface LiveBrand {
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
+  /** Cole's picks (lib/trybe-pick): the score, why, and how many signals were read. */
+  pick?: number; pick_reasons?: PickReason[]; pick_read?: number
+  meta_ads?: number | null; meta_ads_checked_at?: string | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -88,10 +100,11 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
-type LiveSort = 'match' | 'pay' | 'creators' | 'fit' | 'newest'
+type LiveSort = 'match' | 'picks' | 'pay' | 'creators' | 'fit' | 'newest'
 type LivePay = 'any' | 'flat' | 'percent'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
+  { id: 'picks', label: 'Best bets', says: 'Best bets first: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), and not on TikTok Shop. How the top TRYBE creators pick brands.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: flat fees by amount, then % of sales.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score first. Brands not scored yet come after.' },
@@ -295,6 +308,12 @@ export default function TrybeOutreach() {
   const [livePick, setLivePick] = useState<Set<string>>(new Set())
   const [liveNonce, setLiveNonce] = useState(0)
   const liveReq = useRef(0)
+  // COLE'S PICKS (Seb, 2026-10-12): TRYBE's Top 100 and Meta ad counts, read
+  // by SCOUT 1.45.0, with what happened said under the list.
+  const [signalNote, setSignalNote] = useState<string | null>(null)
+  const [metaRun, setMetaRun] = useState<number | null>(null)
+  const [topRun, setTopRun] = useState(false)
+  const topTried = useRef(false)
   // What the server has saved, which is what the daily find goes by: never
   // the half-typed message or a box ticked a second ago.
   const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
@@ -441,6 +460,16 @@ export default function TrybeOutreach() {
   const canSearchTrybe = scoutAtLeast(scoutVersion, SCOUT_TRYBE_FIND_MIN_VERSION)
   // 1.41.2: SCOUT collects the whole TRYBE list and MVP searches its own copy.
   const canHarvest = scoutAtLeast(scoutVersion, SCOUT_TRYBE_HARVEST_MIN_VERSION)
+  // 1.45.0: TRYBE's Top 100 and Meta's Ad Library (Cole's picks).
+  const canPlaybook = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)
+  // Read once a day by itself, quietly, when the page opens.
+  useEffect(() => {
+    if (!canPlaybook || topTried.current || !directory) return
+    const at = directory.top100?.at ? Date.parse(directory.top100.at) : 0
+    if (Date.now() - at < TOP100_FRESH_MS) return
+    topTried.current = true
+    void readTop100(true)
+  }, [canPlaybook, directory]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const queue = useMemo(() => brands.filter(b => b.status === 'drafted' && b.draft).sort((a, b) => priority(b) - priority(a)), [brands])
   const found = useMemo(() => brands.filter(b => b.status === 'new' && b.fit_prefs === savedKey).sort((a, b) => priority(b) - priority(a)), [brands, savedKey])
@@ -726,6 +755,48 @@ export default function TrybeOutreach() {
       setFinding(null); setFindNotes(notes)
       await load(); setLiveNonce(n => n + 1)
     }
+  }
+
+  /** TRYBE's Top 100 videos, read by SCOUT from the creator's own TRYBE and
+   *  counted per brand on MVP (shared). A brand seen in it often is spending. */
+  async function readTop100(quiet = false) {
+    if (!canPlaybook) return
+    setTopRun(true)
+    try {
+      const r = await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives')
+      if (!r.ok) { if (!quiet) setSignalNote(`TRYBE's Top 100 could not be read: ${r.error || `TRYBE answered ${r.status ?? 'nothing'}`}.`); return }
+      const d = await api({ action: 'top100', json: r.json })
+      if (!d.read) setSignalNote(`MVP could not read TRYBE's Top 100 from what TRYBE sent (${(d.keys || []).join(', ') || 'no fields'}).`)
+      else if (!quiet || !d.kept) setSignalNote(d.kept ? 'TRYBE\u2019s Top 100 was read in the last few hours, so that copy is used.' : `TRYBE's Top 100 read: ${d.brands} brand${d.brands === 1 ? ' has' : 's have'} videos in it right now.`)
+      setLiveNonce(n => n + 1)
+      void load()
+    } catch (e) {
+      setSignalNote(e instanceof Error ? e.message : 'TRYBE\u2019s Top 100 could not be saved.')
+    } finally { setTopRun(false) }
+  }
+
+  /** How many active Meta ads mention each brand shown, read by SCOUT from
+   *  Meta's public Ad Library (up to 25 at a time). */
+  async function checkMetaAds() {
+    const shown = live?.brands || []
+    const todo = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
+    if (!todo.length) { setSignalNote('Every brand shown already has a Meta ad count from this week.'); return }
+    setMetaRun(todo.length); setSignalNote(null)
+    try {
+      const r = await requestMetaAdsCounts(todo.map(b => ({ brandId: b.brand_id, name: b.name })))
+      if (!r.ok) {
+        setSignalNote(r.error === 'no-access' ? 'SCOUT is not allowed on Facebook, so it could not open Meta\u2019s Ad Library. Press the button again and allow it when Chrome asks.' : `SCOUT could not read Meta's Ad Library: ${r.error || 'no answer'}.`)
+        return
+      }
+      const results = (r.results || []).map(x => ({ brandId: x.brandId, count: x.text ? readAdLibraryCount(x.text) : null }))
+      const ok = results.filter(x => x.count != null)
+      if (ok.length) await api({ action: 'meta_ads', results: ok })
+      const missed = todo.length - ok.length
+      setSignalNote(`Meta ads read for ${ok.length} of ${todo.length} brand${todo.length === 1 ? '' : 's'}.${missed ? ` ${missed} showed no count on Meta's page, so ${missed === 1 ? 'it is' : 'they are'} left as not read.` : ''}`)
+      setLiveNonce(n => n + 1)
+    } catch (e) {
+      setSignalNote(e instanceof Error ? e.message : 'The Meta ad counts could not be saved.')
+    } finally { setMetaRun(null) }
   }
 
   async function draftSelected() {
@@ -1101,6 +1172,35 @@ export default function TrybeOutreach() {
                 ))}
               </div>
             </div>
+            {/* WHAT BEST BETS READS, and how much of it is read: a signal not
+                read yet is said as not read, never scored as zero. */}
+            {sortBy === 'picks' && (() => {
+              const shown = live?.brands || []
+              const metaRead = shown.filter(b => b.meta_ads_checked_at).length
+              const topAt = directory?.top100?.at
+              const todoMeta = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25).length
+              return (
+                <div className="rounded-xl border px-3 py-2.5 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)' }}>
+                  <p className="font-semibold">What Best bets reads</p>
+                  <p><b>Creators per brand</b>, from TRYBE: fewer means more of the budget for you.</p>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span><b>TRYBE&rsquo;s Top 100</b>: {topAt ? `read ${new Date(topAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${directory?.top100?.brands != null ? `, ${directory.top100.brands} brands in it` : ''}` : 'not read yet'}. A brand in it is spending on ads.</span>
+                    {canPlaybook && <button onClick={() => void readTop100(false)} disabled={topRun} className="font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>{topRun ? 'Reading...' : 'Read it now'}</button>}
+                  </p>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span><b>Meta ads running</b>: read for {metaRead} of the {shown.length} shown.</span>
+                    {canPlaybook && todoMeta > 0 && (
+                      <button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
+                        {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library for {metaRun} brands, about {Math.ceil(metaRun * 8 / 60)} min</> : `Check ${todoMeta} in Meta's Ad Library`}
+                      </button>
+                    )}
+                  </p>
+                  <p><b>TikTok Shop</b>, from each brand&rsquo;s website, read in the background: brands not on it have less competition.</p>
+                  {!canPlaybook && access === 'granted' && <p style={{ color: AMBER }}>SCOUT {SCOUT_TRYBE_PLAYBOOK_MIN_VERSION} reads TRYBE&rsquo;s Top 100 and Meta&rsquo;s Ad Library. Yours is {scoutVersion || 'unknown'}; Chrome updates it by itself once the new version is published.</p>}
+                  {signalNote && <p style={{ color: PURPLE }}>{signalNote}</p>}
+                </div>
+              )
+            })()}
             {/* Best fit with no scores would look like best match: say so. */}
             {sortBy === 'fit' && live && live.brands.length > 0 && !live.brands.some(b => b.fit_score != null) && (
               <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>None of these brands has a fit score yet, so they are in best match order. Scores come from the daily messages and Find brands.</p>
@@ -1169,6 +1269,16 @@ export default function TrybeOutreach() {
                         {b.total_creators != null && (b.total_creators > 0 || sortBy === 'creators') && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creator{b.total_creators === 1 ? '' : 's'}</span>}
                         {sortBy === 'newest' && b.first_seen_at && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>First seen {new Date(b.first_seen_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
                       </span>
+                      {sortBy === 'picks' && (
+                        <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-[11px] font-bold rounded-md px-2 py-0.5" style={{ background: (b.pick ?? 0) >= 40 ? 'rgba(22,163,74,0.14)' : 'rgba(124,58,237,0.08)', color: (b.pick ?? 0) >= 40 ? GREEN : PURPLE }}
+                            title="How good a bet this brand is by the top TRYBE creators' rules: few creators, real ad spend, not on TikTok Shop. Only what MVP has read counts.">Best bet {b.pick ?? 0}</span>
+                          {(b.pick_reasons || []).slice(0, 4).map(r => (
+                            <span key={r.text} className="text-[11px] rounded-md px-2 py-0.5" style={r.tone === 'good' ? { background: 'rgba(22,163,74,0.10)', color: GREEN } : r.tone === 'bad' ? { background: 'rgba(220,38,38,0.08)', color: RED } : { background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{r.text}</span>
+                          ))}
+                          {(b.pick_read ?? 0) < 2 && <span className="text-[11px]" style={soft}>Little read about it yet</span>}
+                        </span>
+                      )}
                       {b.fit_reason && <span className="block text-[12px] mt-1.5">{b.fit_reason}</span>}
                       {!b.fit_reason && b.about && <span className="block text-[12px] mt-1.5 line-clamp-2" style={soft}>{b.about}</span>}
                       {b.products.length > 0 && (
@@ -1356,6 +1466,19 @@ export default function TrybeOutreach() {
               : inboxError ? `Replies could not be read from TRYBE: ${inboxError}`
               : canInbox ? 'Reading replies from your TRYBE inbox...' : 'Allow SCOUT on TRYBE to see which brands replied.'}
           </p>
+          {/* WHAT TO DO NEXT, counted across the brands with a chat. */}
+          {inbox && (() => {
+            const states = sentRows.filter(r => r.c && WENT.includes(r.b.status))
+              .map(r => afterAccept({ chat: true, lastIsMine: r.lastMine, lastAt: r.c!.at, kickoffSentAt: r.b.kickoff_sent_at, followupSentAt: r.b.followup_sent_at }).state)
+            const n = (k: string) => states.filter(x => x === k).length
+            if (!states.length) return null
+            return (
+              <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}>
+                <b>Next steps:</b>{' '}
+                {[n('send_first') && `${n('send_first')} accepted and waiting for your first message`, n('no_answer') && `${n('no_answer')} not answering (don't film for them yet)`, n('answered') && `${n('answered')} answered, safe to film 2 or 3`, n('waiting') && `${n('waiting')} waiting for an answer`].filter(Boolean).join(' · ')}.
+              </p>
+            )
+          })()}
           {/* ACCEPTED, PENDING, DECLINED (upgrade 1), from TRYBE's own request
               list. Not read is said as not read, never as zero accepted. */}
           {(history.length > 0 || (requests?.invites.length ?? 0) > 0) && (() => {
@@ -1442,6 +1565,12 @@ export default function TrybeOutreach() {
                     {b.status === 'sending' && current === b.brand_id && <span className="inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> Sending now</span>}
                   </div>
                   {c?.last && <p className="text-[12px] mt-1.5 rounded-lg px-2.5 py-1.5 line-clamp-2" style={{ background: 'var(--surface-2, rgba(0,0,0,0.04))' }}>{c.last}</p>}
+                  {/* AFTER A YES (Cole's playbook): message before you film,
+                      don't film for a brand nobody answers for, then video ideas. */}
+                  {c && inbox && WENT.includes(b.status) && (
+                    <TrybeAfterAccept b={b} chatId={c.id} lastIsMine={lastMine} lastAt={c.at} me={inbox.me} myName={inbox.myName} canSend={canInbox}
+                      onPatch={p => patch(b.brand_id, p as Partial<Brand>)} />
+                  )}
                 </div>
                 {c && (
                   <button onClick={() => { setOpenChat(o => ({ id: c.id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }}

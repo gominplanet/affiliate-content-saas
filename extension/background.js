@@ -12371,6 +12371,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_META_ADS') {
+    // 1.45.0: how many active Meta ads mention each brand, read from Meta's
+    // public Ad Library in SCOUT's own window. Nothing is pressed.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
+    metaAdsCounts({ brands: msg.brands })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_OPEN') {
     // 1.41.8: open one brand's own popup on TRYBE for the creator, in front.
     // Nothing is pressed: Request to Join stays theirs.
@@ -14389,6 +14398,11 @@ const TRYBE_API_ALLOW = [
   // 1.42.0: the creator's own requests to brands and where each stands
   // (accepted, pending, declined), for MVP's Sent tab. Read only.
   { method: 'GET', re: /^\/backend\/api\/(invitations|collaboration-requests|collaborations|requests|applications|partnerships)(\?[\w=&%.-]*)?$/ },
+  // 1.45.0 (Cole's playbook): TRYBE's own Top 100 videos, a brand's public
+  // details and top videos, and the creator's own requests. Read only.
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/top-creatives(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/(details|top-formats|leaderboard)(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/discovery\/creators\/me\/(requests|sent-requests|invites|inbox)(\?[\w=&%.-]*)?$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never
@@ -14527,6 +14541,67 @@ async function trybeApiIdleCheck() {
   await trybeHookOff()
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_API_IDLE_ALARM) void trybeApiIdleCheck() }) } catch (e) {}
+
+// ── META AD LIBRARY COUNTS (1.45.0, Cole's playbook) ────────────────────────
+// A brand that runs many Meta ads is spending, and TRYBE creators are paid out
+// of that spend. Meta's Ad Library is public: SCOUT opens it for each brand,
+// in SCOUT's own minimized window, and reads the result count the page shows
+// ("~1,200 results", "No ads match"). Read only, one brand at a time, a few
+// seconds apart. The text is handed to MVP as read; MVP turns it into a number.
+const META_ADS_MAX = 25
+function metaAdsUrl(name) {
+  const q = encodeURIComponent('"' + String(name || '').replace(/"/g, '').trim() + '"')
+  return 'https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&q=' + q + '&search_type=keyword_exact_phrase'
+}
+// In page, alone: wait for the count to show, then hand back the words.
+async function metaAdsReadInPage() {
+  const find = () => {
+    const t = String(document.body ? document.body.innerText : '')
+    const none = t.match(/No ads match[^\n]{0,80}/i)
+    if (none) return none[0]
+    const m = t.match(/~?\s*[\d.,]+\s*[KkMm]?\s+results?\b/)
+    return m ? m[0] : null
+  }
+  for (let i = 0; i < 40; i++) {
+    const got = find()
+    if (got) return { text: got }
+    if (/log in|sign up/i.test(String(document.title || '')) && i > 10) break
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  return { text: null, title: String(document.title || '').slice(0, 80) }
+}
+async function metaAdsCounts({ brands }) {
+  let has = false
+  try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
+  if (!has) has = await askFacebookAccess()
+  if (!has) return { ok: false, error: 'no-access' }
+  const list = (Array.isArray(brands) ? brands : []).slice(0, META_ADS_MAX)
+    .map((b) => ({ brandId: String((b && b.brandId) || '').slice(0, 80), name: String((b && b.name) || '').slice(0, 120) }))
+    .filter((b) => b.brandId && b.name)
+  const results = []
+  let tab = null
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i]
+      try {
+        if (!tab) tab = await openWorkTab(metaAdsUrl(b.name))
+        else await chrome.tabs.update(tab.id, { url: metaAdsUrl(b.name) })
+        await waitForTabLoad(tab.id, 30000)
+        await _sleep(1500)
+        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage })
+        const got = res && res[0] ? res[0].result : null
+        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: got && got.text ? null : ('count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')) })
+      } catch (e) {
+        results.push({ brandId: b.brandId, name: b.name, text: null, error: e && e.message ? e.message : 'error' })
+      }
+      scoutWorkTouch()
+      if (i < list.length - 1) await _sleep(2000 + Math.floor(Math.random() * 2000))
+    }
+  } finally {
+    if (tab) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
+  }
+  return { ok: true, results }
+}
 
 async function trybeApi({ method, path, body }) {
   if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }

@@ -29,6 +29,8 @@ export interface DirectoryBrand {
   trybeScore: number | null
   totalCreators: number | null
   rating: number | null
+  /** What TRYBE says creators earn with the brand ("$10K+"), when it says. */
+  earningsBucket?: string | null
   raw: Record<string, unknown>
 }
 
@@ -101,6 +103,7 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
     trybeScore: num(pick(raw, ['trybeScore', 'trybe_score', 'score'])),
     totalCreators: num(pick(raw, ['totalCreators', 'total_creators', 'creatorsCount', 'creatorCount', 'creators_count'])),
     rating: num(pick(raw, ['rating', 'averageRating', 'avgRating'])),
+    earningsBucket: text(pick(raw, ['creatorEarningsBucket', 'creator_earnings_bucket', 'earningsBucket', 'creatorEarnings', 'creator_earnings']), 60),
     raw: raw as Record<string, unknown>,
   }
 }
@@ -123,6 +126,7 @@ export function mergeDirectory(items: unknown[]): DirectoryBrand[] {
       trybeScore: had.trybeScore ?? b.trybeScore,
       totalCreators: had.totalCreators ?? b.totalCreators,
       rating: had.rating ?? b.rating,
+      earningsBucket: had.earningsBucket ?? b.earningsBucket,
     })
   }
   return Array.from(by.values())

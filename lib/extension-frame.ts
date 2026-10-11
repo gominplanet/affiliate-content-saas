@@ -1080,6 +1080,16 @@ export async function requestTrybeApi(method: 'GET' | 'POST', path: string, body
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
+export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ brandId: string; name: string; text: string | null; error: string | null }> }
+
+/** SCOUT 1.45.0+: how many active Meta ads mention each brand, read from
+ *  Meta's public Ad Library in SCOUT's own window (up to 25 at a time). The
+ *  page text is returned as read; lib/trybe-pick readAdLibraryCount reads it. */
+export async function requestMetaAdsCounts(brands: Array<{ brandId: string; name: string }>): Promise<MetaAdsResult> {
+  const res = await sendToExtension<MetaAdsResult>({ type: 'MVP_TRYBE_META_ADS', brands: brands.slice(0, 25) }, 300_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
 export interface TrybeHarvestResult {
   ok: boolean; error?: string | null
   pages?: number; totalPages?: number | null; total?: number | null

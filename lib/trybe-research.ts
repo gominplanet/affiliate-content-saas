@@ -18,6 +18,7 @@
 // researched one.
 
 import { safeFetch } from '@/lib/ssrf-guard'
+import { siteSocials } from '@/lib/trybe-pick'
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
 
@@ -25,6 +26,12 @@ export interface SiteResearch {
   summary: string
   products: string[]
   error: string | null
+  /** TikTok on the home page (lib/trybe-pick siteSocials); null when the
+   *  home page could not be read. */
+  socials?: { tiktokHandle: string | null; tiktokShop: boolean } | null
+  /** Products marked down on the brand's own store right now (Shopify's
+   *  compare-at price above the price): a ready call to action. */
+  onSale?: string[]
 }
 
 function decode(s: string): string {
@@ -109,23 +116,27 @@ export async function researchBrandSite(rawUrl: string | null | undefined): Prom
 
   let summary = ''
   let error: string | null = null
+  let socials: SiteResearch['socials'] = null
   try {
     const home = await getText(url, 'text/html,application/xhtml+xml')
-    if (home.ok) summary = pageSummary(home.text)
+    if (home.ok) { summary = pageSummary(home.text); socials = siteSocials(home.text) }
     else error = `The website answered ${home.status}.`
   } catch (e) {
     error = `The website could not be read (${e instanceof Error ? e.message : 'error'}).`
   }
 
   const products: string[] = []
+  const onSale: string[] = []
   try {
     const origin = new URL(url).origin
     const res = await getText(`${origin}/products.json?limit=30`, 'application/json')
     if (res.ok && /json/i.test(res.finalType)) {
-      const data = JSON.parse(res.text) as { products?: Array<{ title?: string; product_type?: string }> }
+      const data = JSON.parse(res.text) as { products?: Array<{ title?: string; product_type?: string; variants?: Array<{ price?: string; compare_at_price?: string | null }> }> }
       for (const p of data.products || []) {
         const t = String(p.title || '').replace(/\s+/g, ' ').trim()
         if (t && t.length < 120 && !products.includes(t)) products.push(t)
+        const marked = (p.variants || []).some(v => Number(v.compare_at_price) > Number(v.price) && Number(v.price) > 0)
+        if (t && marked && onSale.length < 8 && !onSale.includes(t)) onSale.push(t)
         if (products.length >= 15) break
       }
     }
@@ -133,5 +144,5 @@ export async function researchBrandSite(rawUrl: string | null | undefined): Prom
 
   // A site that blocked the home page but listed products is still researched.
   if (!summary && products.length) error = null
-  return { summary, products, error }
+  return { summary, products, error, socials, onSale }
 }

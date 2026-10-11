@@ -20,6 +20,8 @@
 // reloaded, or open twice, cannot send more than the cap allows.
 
 import { outreachNiche } from '@/lib/outreach-niche'
+import { pickScore, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
+import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -172,12 +174,13 @@ async function allRows<T>(make: () => any, max: number): Promise<{ rows: T[]; er
 async function directoryStats(admin: Db) {
   try {
     const head = { count: 'exact' as const, head: true }
-    const [all, withSite, read, collected, meta] = await Promise.all([
+    const [all, withSite, read, collected, meta, top] = await Promise.all([
       admin.from('trybe_directory').select('brand_id', head),
       admin.from('trybe_directory').select('brand_id', head).not('website', 'is', null),
       admin.from('trybe_directory').select('brand_id', head).not('site_text', 'is', null),
       admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle(),
       admin.from('trybe_directory_meta').select('value').eq('key', 'categories').maybeSingle(),
+      admin.from('trybe_directory_meta').select('value').eq('key', 'top100').maybeSingle(),
     ])
     if (all.error) return null
     // ONLY A WHOLE COLLECTION COUNTS as collected: one that stopped partway
@@ -191,6 +194,8 @@ async function directoryStats(admin: Db) {
       lastCollectedAt: c.complete && c.at ? c.at : null,
       lastPartial: !c.complete && c.at ? { at: c.at, pages: c.pages ?? null, totalPages: c.totalPages ?? null } : null,
       categories: Array.isArray(meta.data?.value) ? (meta.data.value as string[]) : [],
+      // When TRYBE's Top 100 was last read into MVP (Cole's playbook).
+      top100: (top.data?.value || null) as { at?: string; entries?: number; brands?: number; matched?: number } | null,
     }
   } catch { return null }
 }
@@ -302,6 +307,10 @@ export async function POST(request: Request) {
       const missing = /does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
     }
+    // What TRYBE says creators earn with each brand (migration 425), written
+    // on its own so a database without the column never fails the collection.
+    const buckets = list.filter(b => b.earningsBucket).map(b => ({ brand_id: b.brandId, name: rows.find(r => r.brand_id === b.brandId)?.name || b.name, earnings_bucket: b.earningsBucket }))
+    if (buckets.length) { try { await admin.from('trybe_directory').upsert(buckets, { onConflict: 'brand_id' }) } catch { /* before migration 425 */ } }
     // The last chunk of a collection says how far SCOUT got.
     // A member may mark a WHOLE collection only (a partial one is an admin's
     // to record), so nobody can tell every member to skip a day's collection.
@@ -315,6 +324,140 @@ export async function POST(request: Request) {
     })
   }
 
+  // ── COLE'S PLAYBOOK (Seb, 2026-10-12) ─────────────────────────────────────
+
+  if (action === 'top100') {
+    // TRYBE's Top 100 videos, as SCOUT read them from the creator's own TRYBE
+    // (GET /backend/api/creator/v2/top-creatives). Shared: each brand's count of
+    // videos in it right now is kept on MVP's copy of TRYBE. A brand seen in it
+    // many times "is spending a good amount of money" (Cole).
+    const raw = body.json
+    if (JSON.stringify(raw ?? null).length > 600_000) return NextResponse.json({ error: 'That list is too large.' }, { status: 400 })
+    const entries = readTopCreatives(raw).slice(0, 150)
+    if (!entries.length) {
+      const keys = raw && typeof raw === 'object' ? Object.keys(raw as object).slice(0, 20) : []
+      return NextResponse.json({ ok: true, read: 0, matched: 0, keys })
+    }
+    // Shared, so not rewritten by every visit: once in a few hours is enough.
+    const { data: last } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', 'top100').maybeSingle()
+    if (last?.updated_at && Date.now() - Date.parse(last.updated_at) < 3 * 3600_000 && tier !== 'admin') {
+      return NextResponse.json({ ok: true, read: entries.length, matched: (last.value as { matched?: number })?.matched ?? null, kept: true })
+    }
+    const { byId, byName } = tallyTop(entries)
+    const hits = new Map<string, { hits: number; best: number | null }>(byId)
+    if (byName.size) {
+      const { data: named } = await admin.from('trybe_directory').select('brand_id, name').in('name', Array.from(new Set(entries.map(e => e.brandName).filter(Boolean))) as string[])
+      for (const r of (named || []) as Array<{ brand_id: string; name: string }>) {
+        const t = byName.get(r.name.toLowerCase())
+        if (t && !hits.has(r.brand_id)) hits.set(r.brand_id, t)
+      }
+    }
+    const { error: clearErr } = await admin.from('trybe_directory').update({ top100_hits: 0, top100_best_rank: null, top100_checked_at: now }).gt('top100_hits', 0)
+    if (clearErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(clearErr.message) ? 'The Top 100 needs migration 425 in Supabase first.' : clearErr.message }, { status: 500 })
+    let matched = 0
+    for (const [id, t] of hits) {
+      const { data: up } = await admin.from('trybe_directory').update({ top100_hits: t.hits, top100_best_rank: t.best, top100_checked_at: now }).eq('brand_id', id).select('brand_id')
+      if ((up || []).length) matched++
+    }
+    // Every brand is now "read": one not in the Top 100 counts 0, not unknown.
+    await admin.from('trybe_directory').update({ top100_checked_at: now }).is('top100_checked_at', null)
+    await admin.from('trybe_directory_meta').upsert({ key: 'top100', value: { at: now, entries: entries.length, brands: hits.size, matched }, updated_at: now })
+    return NextResponse.json({ ok: true, read: entries.length, brands: hits.size, matched })
+  }
+
+  if (action === 'meta_ads') {
+    // How many active Meta ads mention each brand, as SCOUT read Meta's Ad
+    // Library in the creator's own Chrome. Shared; a count kept less than six
+    // days is not replaced, so one member cannot rewrite every brand's count.
+    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown }>
+    let saved = 0
+    for (const x of list) {
+      const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
+      const n = typeof x.count === 'number' && Number.isFinite(x.count) && x.count >= 0 && x.count <= 1_000_000 ? Math.round(x.count) : null
+      if (!id || n == null) continue
+      const stale = new Date(Date.now() - 6 * 86_400_000).toISOString()
+      const { data: up, error: upErr } = await admin.from('trybe_directory').update({ meta_ads: n, meta_ads_checked_at: now })
+        .eq('brand_id', id).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${stale}`).select('brand_id')
+      if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? 'Meta ad counts need migration 425 in Supabase first.' : upErr.message }, { status: 500 })
+      if ((up || []).length) saved++
+    }
+    return NextResponse.json({ ok: true, saved })
+  }
+
+  if (action === 'kickoff' || action === 'followup') {
+    // The first message after a brand accepts, or a follow up when nobody
+    // answered (lib/trybe-playbook). Written here, edited and sent by the
+    // creator from the page, through SCOUT, into the brand's own TRYBE chat.
+    const { data: row } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
+    if (!row) return NextResponse.json({ error: 'That brand is not on your list.' }, { status: 404 })
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    const settings = await readSettings(admin, ownerId)
+    const creator = await writerFacts(admin, ownerId)
+    const f = await siteFacts(row)
+    const facts = { name: row.name, categories: row.categories || [], about: row.about, siteSummary: f.summary, products: f.products, payText: row.pay_text }
+    try {
+      const msg = await createAnthropicClient().messages.create({
+        model: MODEL, max_tokens: 500,
+        system: action === 'kickoff' ? KICKOFF_SYSTEM(BANNED_RULE) : FOLLOWUP_SYSTEM(BANNED_RULE),
+        messages: [{ role: 'user', content: action === 'kickoff'
+          ? kickoffUserPrompt({ coreMessage: settings.coreMessage, creator, brand: facts })
+          : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}` }],
+      })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_kickoff', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
+      if (!text) return NextResponse.json({ error: 'The message came back empty. Try again.' }, { status: 502 })
+      // Kept so it is there next visit; before migration 425 it is only shown.
+      try { await admin.from('trybe_brands').update({ kickoff_draft: text, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId) } catch { /* shown either way */ }
+      return NextResponse.json({ ok: true, text, researched: !!(f.summary || f.products.length) })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not write it: ${e.message}` : 'MVP could not write it.' }, { status: 502 })
+    }
+  }
+
+  if (action === 'kickoff_sent') {
+    // Stamped only after the page SAW the message in the TRYBE conversation.
+    const col = body.kind === 'followup' ? 'followup_sent_at' : 'kickoff_sent_at'
+    const { error } = await admin.from('trybe_brands').update({ [col]: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
+    if (error) return NextResponse.json({ error: /does not exist|schema cache/i.test(error.message) ? 'Saving when it went needs migration 425 in Supabase first. The message itself was sent.' : error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, at: now })
+  }
+
+  if (action === 'video_plan') {
+    // ONE BODY, MANY HOOKS (Cole: "the middle of the video is pretty much the
+    // same"). The brand's real products and, read fresh, what is on sale on
+    // its own store right now, so a sale call to action is only ever true.
+    const { data: row } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
+    if (!row) return NextResponse.json({ error: 'That brand is not on your list.' }, { status: 404 })
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    const site = await researchBrandSite(row.website).catch(() => null)
+    const products = site?.products?.length ? site.products : (Array.isArray(row.site_products) ? row.site_products : [])
+    const onSale = site?.onSale || []
+    const summary = site?.summary || row.site_summary || ''
+    if (!products.length && !summary && !row.about) return NextResponse.json({ error: 'MVP could not read what this brand sells (its website did not answer), so it cannot plan videos for it yet.' }, { status: 422 })
+    const product = typeof body.product === 'string' ? body.product.slice(0, 140) : ''
+    try {
+      const msg = await createAnthropicClient().messages.create({
+        model: MODEL, max_tokens: 2200,
+        system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${product ? `\n\nPlan the videos about this product: ${product}` : ''}` }],
+      })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
+      if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
+      const plan = honestCtas(parsed, onSale)
+      let saved = true
+      try {
+        const { error: upErr } = await admin.from('trybe_brands').update({ video_plan: { ...plan, onSale, products: products.slice(0, 15) }, video_plan_at: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
+        if (upErr) saved = false
+      } catch { saved = false }
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
+    }
+  }
+
   if (action === 'browse') {
     // LIVE FILTERING (Seb, 2026-10-07: "as users change filters, the results
     // ... should change"). MVP's copy of TRYBE is searched as the creator
@@ -324,7 +467,15 @@ export async function POST(request: Request) {
     const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
     const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
     const words = searchWords(terms)
-    const COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at'
+    const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at'
+    // The pick signals (migration 425): asked for, and left out when the
+    // database does not have them yet, so the list never breaks on them.
+    const PICK_COLS = ', tiktok_handle, tiktok_shop, socials_checked_at, meta_ads, meta_ads_checked_at, top100_hits, top100_best_rank, top100_checked_at, earnings_bucket'
+    let COLS = BASE_COLS + PICK_COLS
+    {
+      const probe = await admin.from('trybe_directory').select(COLS).limit(1)
+      if (probe.error && /does not exist|schema cache/i.test(probe.error.message)) COLS = BASE_COLS
+    }
     const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
     const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
     let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -347,8 +498,19 @@ export async function POST(request: Request) {
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
+    // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
+    const topRead = rows.some(r => r.top100_checked_at)
+    const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      totalCreators: typeof r.total_creators === 'number' ? r.total_creators : null,
+      metaAds: typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS ? r.meta_ads : null,
+      top100Hits: topRead ? (r.top100_hits ?? 0) : null,
+      top100BestRank: r.top100_best_rank ?? null,
+      tiktokShop: r.socials_checked_at ? (r.tiktok_shop === true ? true : r.tiktok_shop === false || r.tiktok_handle ? false : null) : null,
+      tiktokHandle: r.tiktok_handle ?? null,
+      earningsBucket: r.earnings_bucket ?? null,
+    })
     const matched = rows
-      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text) }))
+      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text), pick: pickOf(r) }))
       .filter(x => !terms.length || x.match > 0)
     // PAY TYPE FILTER. A brand whose pay line has no number cannot be placed,
     // so it is left out and counted, never silently dropped.
@@ -376,6 +538,7 @@ export async function POST(request: Request) {
       sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
+            : sort === 'picks' ? b.pick.score - a.pick.score || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
               : byMatch(a, b))
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed']
@@ -392,7 +555,7 @@ export async function POST(request: Request) {
       sort,
       payType,
       capped: rows.length >= (rpc.error ? 800 : 400),
-      brands: top.map(({ r, match, pay }) => {
+      brands: top.map(({ r, match, pay, pick }) => {
         const m = mineBy.get(r.brand_id)
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
@@ -400,6 +563,8 @@ export async function POST(request: Request) {
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null, fit_score: m?.fit_score ?? null, fit_reason: m?.fit_reason ?? null,
+          pick: pick.score, pick_reasons: pick.reasons, pick_read: pick.read,
+          meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
         }
       }),
     })

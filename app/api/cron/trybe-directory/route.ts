@@ -13,7 +13,9 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { researchBrandSite } from '@/lib/trybe-research'
+import { researchBrandSite, normalizeSite, type SiteResearch } from '@/lib/trybe-research'
+import { siteSocials } from '@/lib/trybe-pick'
+import { safeFetch } from '@/lib/ssrf-guard'
 import { siteSearchText } from '@/lib/trybe-directory'
 
 export const runtime = 'nodejs'
@@ -23,6 +25,8 @@ export const maxDuration = 120
  *  websites on TRYBE are all read within a day of the first collection. */
 const PER_RUN = 60
 const AT_ONCE = 10
+/** Older website reads given the TikTok check per run. */
+const SOCIALS_PER_RUN = 80
 /** A read that failed is tried again after this long. */
 const RETRY_FAILED_MS = 30 * 86_400_000
 /** Stop starting new reads this close to the time limit. */
@@ -58,7 +62,7 @@ export async function GET(request: Request) {
   let read = 0, failed = 0
   for (let i = 0; i < rows.length && Date.now() - started < BUDGET_MS; i += AT_ONCE) {
     await Promise.all(rows.slice(i, i + AT_ONCE).map(async (r) => {
-      const res = await researchBrandSite(r.website).catch((e) => ({ summary: '', products: [] as string[], error: e instanceof Error ? e.message : 'error' }))
+      const res: SiteResearch = await researchBrandSite(r.website).catch((e) => ({ summary: '', products: [] as string[], error: e instanceof Error ? e.message : 'error' }))
       const ok = !!(res.summary || res.products.length)
       ok ? read++ : failed++
       const { error: upErr } = await sb.from('trybe_directory').update({
@@ -73,7 +77,41 @@ export async function GET(request: Request) {
       if (upErr) {
         await sb.from('trybe_directory').update({ site_error: `MVP could not save what it read: ${upErr.message}`.slice(0, 300), site_fetched_at: new Date().toISOString() }).eq('brand_id', r.brand_id)
       }
+      // TikTok on the home page (migration 425), saved on its own so a
+      // database without those columns never costs the website read above.
+      if (res.socials) {
+        await sb.from('trybe_directory').update({ tiktok_handle: res.socials.tiktokHandle, tiktok_shop: res.socials.tiktokShop, socials_checked_at: new Date().toISOString() }).eq('brand_id', r.brand_id)
+      }
     }))
   }
-  return NextResponse.json({ ok: true, asked: rows.length, read, failed, ms: Date.now() - started })
+
+  // WEBSITES READ BEFORE THE TIKTOK CHECK (migration 425): the home page only,
+  // for whether the brand is on TikTok or TikTok Shop (Cole: brands not on
+  // TikTok have less competition). Before the migration this finds nothing.
+  let socials = 0
+  if (Date.now() - started < BUDGET_MS) {
+    const { data: older } = await sb.from('trybe_directory')
+      .select('brand_id, website')
+      .is('socials_checked_at', null).not('site_fetched_at', 'is', null).is('site_error', null).not('website', 'is', null)
+      .order('trybe_score', { ascending: false, nullsFirst: false })
+      .limit(SOCIALS_PER_RUN)
+    const list = (older || []) as Array<{ brand_id: string; website: string }>
+    for (let i = 0; i < list.length && Date.now() - started < BUDGET_MS; i += AT_ONCE) {
+      await Promise.all(list.slice(i, i + AT_ONCE).map(async (r) => {
+        const url = normalizeSite(r.website)
+        let found: { tiktokHandle: string | null; tiktokShop: boolean } | null = null
+        try {
+          const res = url ? await safeFetch(url, { headers: { accept: 'text/html' }, signal: AbortSignal.timeout(10_000) }) : null
+          if (res && res.ok) found = siteSocials((await res.text()).slice(0, 600_000))
+        } catch { /* stamped below as checked, with nothing found */ }
+        // A home page that would not load is stamped too, as unknown, so the
+        // same pages are not asked every run.
+        await sb.from('trybe_directory').update(found
+          ? { tiktok_handle: found.tiktokHandle, tiktok_shop: found.tiktokShop, socials_checked_at: new Date().toISOString() }
+          : { socials_checked_at: new Date().toISOString() }).eq('brand_id', r.brand_id)
+        if (found) socials++
+      }))
+    }
+  }
+  return NextResponse.json({ ok: true, asked: rows.length, read, failed, socials, ms: Date.now() - started })
 }
