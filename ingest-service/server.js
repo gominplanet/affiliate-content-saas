@@ -801,7 +801,7 @@ async function renderShortJob(body, opts) {
   const ytVid = String(body?.youtubeVideoId || '').trim()
   const startSec = Math.max(0, Number(body?.startSec) || 0)
   const endSec = Number(body?.endSec)
-  const words = Array.isArray(body?.words) ? req.body.words : []
+  const words = Array.isArray(body?.words) ? body.words : []
   const userId = String(body?.userId || '').trim()
   const reframeMode = body?.reframe === 'split' ? 'split' : 'center'
   // Where the 9:16 window sits across the frame (0 left, 1 right); unset is centre.
@@ -851,7 +851,7 @@ async function renderShortJob(body, opts) {
 
     const withCaptions = words.length > 0
     // The hook card opens the clip whether or not captions are on.
-    const hook = typeof body?.hook === 'string' ? req.body.hook.slice(0, 90) : ''
+    const hook = typeof body?.hook === 'string' ? body.hook.slice(0, 90) : ''
     const withAss = withCaptions || !!assEscape(hook)
     if (withAss) fs.writeFileSync(assTmp, buildAss(words, { hook }))
     // Trim silences: only the keep-segments the route worked out are rendered.

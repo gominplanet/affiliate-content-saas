@@ -106,6 +106,10 @@ check('the Docker image ships the caption code', /COPY server\.js render-filters
   check('the render service answers a background render at once and posts the outcome back', /res\.status\(202\)\.json\(\{ accepted: true \}\)/.test(svc) && /postRenderCallback\(callbackUrl, \{ job, ok: true, \.\.\.out \}\)/.test(svc) && /postRenderCallback\(callbackUrl, \{ job, ok: false/.test(svc))
   check('a background render may run 15 minutes and keeps the whole video (not cut at 3)', /maxDur: 900, timeoutMs: 15 \* 60_000/.test(svc) && /Math\.min\(o\.maxDur \|\| 180, endSec - startSec\)/.test(svc))
   check('background renders run one at a time on the render box', /renderQueue = renderQueue\.then/.test(svc))
+  // 2026-10-11: two "req.body" lines survived the move into renderShortJob, and
+  // every render with captions failed with "req is not defined".
+  const jobSrc = svc.slice(svc.indexOf('async function renderShortJob('), svc.indexOf('let renderQueue'))
+  check('the render job reads only its own body, never the request it no longer has', !/\breq\b/.test(jobSrc), (jobSrc.match(/.*\breq\b.*/g) || []).join(' | '))
   const cb = read('app/api/youtube/shorts/render-callback/route.ts')
   check('the callback checks the ingest secret and the signed job, marks the clip, and gives a failed render its slot back', /x-ingest-secret/.test(cb) && /readRenderJob\(body\.job\)/.test(cb) && /status: 'rendered'/.test(cb) && /from\('ai_usage'\)\.delete\(\)\.eq\('id', job\.reservationId\)/.test(cb))
   check('the callback is reachable without a login', /'\/api\/youtube\/shorts\/render-callback'/.test(read('middleware.ts')))
