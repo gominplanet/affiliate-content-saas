@@ -8,11 +8,12 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Bookmark, Loader2, ExternalLink, MessageSquare, Trash2, Star, PenLine, Handshake } from 'lucide-react'
+import { Bookmark, Loader2, ExternalLink, MessageSquare, Trash2, Star, PenLine, Handshake, Check, Send } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
 import { FromLinkModal } from '@/components/content/FromLinkModal'
 import { requestFindCampaign } from '@/lib/extension-frame'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
@@ -43,6 +44,9 @@ function detailsUrlFor(s: SavedCampaign): string {
   return ''
 }
 
+// Same ceiling as Brand campaigns' bulk message (one background run).
+const BULK_MAX = 100
+
 export default function SavedCampaignsPage() {
   const [items, setItems] = useState<SavedCampaign[] | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -52,6 +56,64 @@ export default function SavedCampaignsPage() {
   const [createFor, setCreateFor] = useState<SavedCampaign | null>(null)
   const [accepting, setAccepting] = useState<string | null>(null)
   const [accepted, setAccepted] = useState<Set<string>>(new Set())
+
+  // BULK MESSAGE (Seb, 2026-10-11: "saved campaigns should have the top 25,
+  // top 50, top 100, select all button and then the message all brands
+  // selected button next to it"). Same window as Brand campaigns: it folds
+  // several products from one brand into one thread and skips brands already
+  // messaged. Wayward finds are not CC campaigns, so they are never selected.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [messagedAsins, setMessagedAsins] = useState<Set<string>>(new Set())
+  const [acceptedAsins, setAcceptedAsins] = useState<Set<string>>(new Set())
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/campaigns/list', { cache: 'no-store', signal: AbortSignal.timeout(20_000) })
+      if (!res.ok) return
+      const j = await res.json().catch(() => ({}))
+      const m = new Set<string>(), a = new Set<string>()
+      for (const r of (Array.isArray(j?.campaigns) ? j.campaigns : []) as Array<{ asin?: string; messaged_at?: string | null; accepted_at?: string | null }>) {
+        const asin = String(r.asin || '').toUpperCase()
+        if (!asin) continue
+        if (r.messaged_at) m.add(asin)
+        if (r.accepted_at) a.add(asin)
+      }
+      setMessagedAsins(m); setAcceptedAsins(a)
+    } catch { /* the selection still works; the window checks again */ }
+  }, [])
+  useEffect(() => { void loadStatus() }, [loadStatus])
+  const ccItems = useMemo(() => (items ?? []).filter((s) => s.source !== 'wayward'), [items])
+  const toggleSelect = (id: string) => setSelected((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) { next.delete(id); return next }
+    if (next.size >= BULK_MAX) { toast.error(`You can select up to ${BULK_MAX} campaigns at once.`); return prev }
+    next.add(id)
+    return next
+  })
+  // Top N skips brands already messaged; All takes every CC campaign (up to the ceiling).
+  const selectTop = (n: number) => {
+    const pick = ccItems.filter((s) => !messagedAsins.has(s.asin.toUpperCase())).slice(0, Math.min(n, BULK_MAX))
+    setSelected(new Set(pick.map((s) => s.id)))
+    if (pick.length === 0) toast('Every saved campaign here has already been messaged.')
+  }
+  const selectAll = () => {
+    const pick = ccItems.slice(0, BULK_MAX)
+    setSelected(new Set(pick.map((s) => s.id)))
+    if (ccItems.length > BULK_MAX) toast(`Selected the first ${BULK_MAX}, the most one message run takes.`)
+  }
+  const selectedItems = useMemo(() => ccItems.filter((s) => selected.has(s.id)), [ccItems, selected])
+  // How many messages will actually go out: one per brand, brands already messaged left out.
+  const messageableCount = useMemo(() => {
+    const seen = new Set<string>()
+    let n = 0
+    for (const s of selectedItems) {
+      if (messagedAsins.has(s.asin.toUpperCase())) continue
+      const b = (s.brand || '').trim().toLowerCase()
+      if (b) { if (seen.has(b)) continue; seen.add(b) }
+      n++
+    }
+    return n
+  }, [selectedItems, messagedAsins])
 
   const accept = async (s: SavedCampaign) => {
     if (accepting) return
@@ -121,9 +183,42 @@ export default function SavedCampaignsPage() {
           </p>
         </div>
       ) : (
+        <>
+        {ccItems.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 text-[12px]">
+            <span style={{ color: 'var(--text-3)' }}>Select:</span>
+            {[25, 50, 100].map((n) => (
+              <button key={n} onClick={() => selectTop(n)} className="px-2.5 py-1.5 rounded-md border font-medium" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>Top {n}</button>
+            ))}
+            <button onClick={selectAll} className="px-2.5 py-1.5 rounded-md border font-medium" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>Select all</button>
+            {selected.size > 0 && (
+              <button onClick={() => setSelected(new Set())} className="px-1.5 py-1.5 font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>Clear</button>
+            )}
+            <button onClick={() => setBulkOpen(true)} disabled={messageableCount === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold text-white disabled:opacity-40"
+              style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+              title={selected.size === 0 ? 'Select campaigns first' : messageableCount === 0 ? 'Every selected brand has already been messaged' : 'Message every selected brand, one at a time in the background'}>
+              <Send size={13} /> {selected.size === 0 ? 'Message selected brands' : `Message ${messageableCount} ${messageableCount === 1 ? 'brand' : 'brands'}`}
+            </button>
+            {selected.size > 0 && (
+              <span style={{ color: 'var(--text-3)' }}>
+                {selected.size} selected{messageableCount !== selected.size ? ` · ${selected.size - messageableCount} already messaged or the same brand` : ''}
+              </span>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {items.map((s) => (
-            <div key={s.id} className="card p-4 flex flex-col gap-3">
+            <div key={s.id} className="card p-4 flex flex-col gap-3 relative" style={selected.has(s.id) ? { outline: '2px solid #7C3AED', outlineOffset: -1 } : undefined}>
+              {s.source !== 'wayward' && (
+                <button type="button" onClick={() => toggleSelect(s.id)} aria-pressed={selected.has(s.id)}
+                  aria-label={selected.has(s.id) ? 'Deselect' : 'Select for bulk message'}
+                  title={selected.has(s.id) ? 'Selected: click to remove' : 'Select for bulk message'}
+                  className="absolute top-2 left-2 z-10 w-6 h-6 rounded-md border flex items-center justify-center"
+                  style={{ background: selected.has(s.id) ? '#7C3AED' : 'var(--surface)', borderColor: selected.has(s.id) ? '#7C3AED' : 'var(--border)' }}>
+                  {selected.has(s.id) && <Check size={14} className="text-white" />}
+                </button>
+              )}
               <div className="flex gap-3">
                 <div className="w-16 h-16 rounded-lg bg-[var(--surface-2)] border border-[var(--border-2)] flex items-center justify-center overflow-hidden flex-shrink-0">
                   {s.image_url
@@ -225,6 +320,24 @@ export default function SavedCampaignsPage() {
             </div>
           ))}
         </div>
+        </>
+      )}
+
+      {bulkOpen && (
+        <BulkMessageBrandModal
+          campaigns={selectedItems.map((s): BulkCampaign => ({
+            campaignId: s.campaign_id || s.id,
+            product: s.title || s.asin,
+            asin: s.asin,
+            brand: s.brand,
+            detailsUrl: detailsUrlFor(s),
+            commissionPct: s.commission_pct,
+          }))}
+          alreadyMessaged={messagedAsins}
+          alreadyAccepted={acceptedAsins}
+          onClose={() => { setBulkOpen(false); setSelected(new Set()); void loadStatus() }}
+          onDone={() => void loadStatus()}
+        />
       )}
 
       {msgModal && (
