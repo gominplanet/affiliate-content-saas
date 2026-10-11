@@ -2639,6 +2639,9 @@ export default function ContentPage() {
     if (params.get('new') === 'link') setFromLinkOpen(true)
     const v = params.get('video')
     if (v) setFocusVideoId(v)
+    // ?q=<title> (from the SEO page's "Share it"): open on that post.
+    const q = params.get('q')
+    if (q) setPostSearch(q)
   }, [])
   useEffect(() => {
     if (!focusVideoId) return

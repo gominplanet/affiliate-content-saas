@@ -15,12 +15,12 @@ import Link from 'next/link'
 import { ExternalLink, Check, AlertTriangle, Copy, Loader2, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { reasonGuide, requestQueue, REPORT_GUIDE, REQUESTS_PER_DAY, type Severity } from '@/lib/indexing-help'
-import { gscSitemapsUrl, gscPageIndexingUrl } from '@/lib/gsc-links'
+import { gscSitemapsUrl } from '@/lib/gsc-links'
+import { readRequested, openRequestIndexing, REQUESTED_EVENT } from '@/lib/gsc-request-client'
 
 type Post = { postId: string; title: string; url: string | null; indexed: boolean | null; coverageState: string | null }
 type SitemapRow = { path: string; lastSubmitted: string | null; lastDownloaded: string | null; pending: boolean; errors: number; warnings: number; urls: number }
 
-const REQ_KEY = 'mvp.seo.requested.v1'
 const TONE: Record<Severity, { dot: string; word: string }> = {
   urgent: { dot: '#ff3b30', word: 'Fix now' },
   fix: { dot: '#ff9500', word: 'Fix' },
@@ -28,9 +28,6 @@ const TONE: Record<Severity, { dot: string; word: string }> = {
   fine: { dot: '#8e8e93', word: 'Nothing to do' },
 }
 
-function readRequested(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(REQ_KEY) || '{}') || {} } catch { return {} }
-}
 function ago(iso: string | null): string {
   if (!iso) return 'never'
   const d = Math.round((Date.now() - Date.parse(iso)) / 86_400_000)
@@ -43,7 +40,13 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
   const [openReason, setOpenReason] = useState<string | null>(null)
   const [showDecoder, setShowDecoder] = useState(false)
 
-  useEffect(() => { setRequested(readRequested()) }, [])
+  // Requests made from the per-post board count here too.
+  useEffect(() => {
+    const sync = () => setRequested(readRequested())
+    sync()
+    window.addEventListener(REQUESTED_EVENT, sync)
+    return () => window.removeEventListener(REQUESTED_EVENT, sync)
+  }, [])
   useEffect(() => {
     fetch('/api/seo/sitemap-status', { cache: 'no-store', signal: AbortSignal.timeout(20_000) })
       .then((r) => r.json())
@@ -52,30 +55,9 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
   }, [])
 
   const queue = useMemo(() => requestQueue(posts, requested), [posts, requested])
-  const markRequested = (url: string) => {
-    const next = { ...readRequested(), [url]: new Date().toISOString() }
-    try { localStorage.setItem(REQ_KEY, JSON.stringify(next)) } catch { /* the link still opens */ }
-    setRequested(next)
-  }
-  // GOOGLE'S OWN LINK (2026-10-11: a hand-built inspect link opened Google's
-  // 404). The tab opens at once, so the browser does not block it, then goes
-  // to the link the URL Inspection API returned. No link: the address is
-  // copied and Search Console opens, to paste it into the bar at the top.
-  const openInspect = async (url: string) => {
-    markRequested(url)
-    const w = window.open('about:blank', '_blank')
-    try {
-      const r = await fetch(`/api/seo/inspect-link?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(25_000) })
-      const d = await r.json().catch(() => ({})) as { link?: string | null; indexed?: boolean; error?: string }
-      if (d.indexed) toast.success('Google now says this post is indexed. Nothing to request.')
-      if (d.link && w) { w.location.href = d.link; return }
-      throw new Error(d.error || 'no link')
-    } catch {
-      try { await navigator.clipboard?.writeText(url) } catch { /* shown below anyway */ }
-      if (w) w.location.href = gscPageIndexingUrl(property)
-      toast('Google did not give MVP a direct link for this post. Its address is copied: paste it into the "Inspect any URL" bar at the top of Search Console, then press Request indexing.', { duration: 12000 })
-    }
-  }
+  // Google's own link (a hand-built inspect link opened Google's 404); the
+  // shared helper opens it and remembers the request for a week.
+  const openInspect = (url: string) => openRequestIndexing(url, property)
   const requestedToday = Object.values(requested).filter((t) => Date.now() - Date.parse(t) < 86_400_000).length
 
   // Every post not in Google, grouped by Google's reason.

@@ -49,8 +49,9 @@ const page = read('app/(dashboard)/seo/page.tsx')
 check('the SEO page shows the indexing help when Search Console is connected', /<IndexingHelp/.test(page))
 // 2026-10-11: the hand-built inspect link opened Google's 404 page.
 const help = read('components/seo/IndexingHelp.tsx')
-check('Request indexing opens Google\'s own inspection link, from the URL Inspection API', /\/api\/seo\/inspect-link\?url=/.test(help) && !/inspectLink\(/.test(help) && /inspectionResultLink/.test(read('lib/gsc.ts')))
-check('no link from Google: the address is copied and Search Console opens, with what to do', /navigator\.clipboard\?\.writeText\(url\)/.test(help) && /Inspect any URL/.test(help))
+const opener = read('lib/gsc-request-client.ts')
+check('Request indexing opens Google\'s own inspection link, from the URL Inspection API', /openRequestIndexing\(/.test(help) && /\/api\/seo\/inspect-link\?url=/.test(opener) && !/inspectLink\(/.test(help + opener) && /inspectionResultLink/.test(read('lib/gsc.ts')))
+check('no link from Google: the address is copied and Search Console opens, with what to do', /navigator\.clipboard\?\.writeText\(url\)/.test(opener) && /Inspect any URL/.test(opener))
 
 if (failed) { console.error(`\n${failed} indexing check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

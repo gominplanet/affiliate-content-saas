@@ -13,7 +13,7 @@ import { Loader2, Bot, ExternalLink, ChevronDown } from 'lucide-react'
 
 interface Fix { label: string; hint: string; count: number; share: number }
 interface Worst { id: string; title: string | null; url: string | null; score: number; grade: string }
-interface Summary { ok?: boolean; scored?: number; avgScore?: number; grades?: Record<string, number>; topFixes?: Fix[]; worst?: Worst[] }
+interface Summary { ok?: boolean; failed?: string; scored?: number; avgScore?: number; grades?: Record<string, number>; topFixes?: Fix[]; worst?: Worst[] }
 
 const AIO = '#7C3AED'
 /** What the number actually means, for someone who has never seen it before. A
@@ -32,7 +32,9 @@ export default function AioReadinessCard() {
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
-    fetch('/api/seo/aio-summary').then(r => r.json()).then(setData).catch(() => setData({ scored: 0 })).finally(() => setLoading(false))
+    fetch('/api/seo/aio-summary', { signal: AbortSignal.timeout(60_000) })
+      .then(async r => { const d = await r.json().catch(() => null); setData(r.ok && d ? d : { scored: 0, failed: d?.error || `the server answered ${r.status}` }) })
+      .catch(() => setData({ scored: 0, failed: 'MVP could not reach the server' })).finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -49,7 +51,9 @@ export default function AioReadinessCard() {
         <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)' }}><Bot size={17} style={{ color: AIO }} /></div>
         <div>
           <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>AI-answer readiness</p>
-          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>Your next generated post gets an AIO score here: how likely ChatGPT, Perplexity, and Google AI Overviews are to quote it.</p>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{data?.failed
+            ? `The scores did not load: ${data.failed}. Reload the page to try again.`
+            : 'Your next generated post gets an AIO score here: how likely ChatGPT, Perplexity, and Google AI Overviews are to quote it.'}</p>
         </div>
       </div>
     )

@@ -21,13 +21,14 @@ import ConsolidationCard from '@/components/seo/Consolidation'
 import AioReadinessCard from '@/components/seo/AioReadinessCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
-import { gscSitemapsUrl, gscPageIndexingUrl } from '@/lib/gsc-links'
 import IndexingHelp from '@/components/seo/IndexingHelp'
+import PostBoard from '@/components/seo/PostBoard'
+import { canUsePreview } from '@/lib/labs-preview'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -46,10 +47,18 @@ interface PostRow {
    *  when it comes back. Used for the "Recently dropped" alert on the SEO page. */
   droppedAt: string | null
   clicks: number; impressions: number; position: number | null; ctr: number | null
+  publishedAt?: string | null
+  urlGuessed?: boolean
+  /** Your other posts whose text links here; null when MVP cannot count. */
+  linkedFrom?: string[] | null
+  /** Platforms MVP shared this post to. */
+  shared?: string[]
+  /** Posts already in Google that could link here. */
+  linkSources?: { postId: string; title: string }[]
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; urlGuessed?: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'urgent' | 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; urlGuessed?: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'urgent' | 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number; linksCounted?: boolean }
   posts: PostRow[]
 }
 
@@ -98,29 +107,13 @@ export default function SeoPage() {
   // checklist. step = which stage is running; null = idle.
   const [getFound, setGetFound] = useState<{
     step: number; done: boolean
-    results: { purged: boolean; pinged: number; links: number; posts: number }
+    results: { purged: boolean; pinged: number; pingError?: string; links: number; posts: number }
   } | null>(null)
   // Per-row "Check" button — set of postIds currently being rechecked, so we
   // can show a spinner on the right row(s) while the GSC call is in flight.
   const [rechecking, setRechecking] = useState<Set<string>>(new Set())
   // "Check visible" bulk re-check progress (null = idle).
   const [checkingAll, setCheckingAll] = useState<{ done: number; total: number } | null>(null)
-  // Bulk-index selection — postIds the user has ticked. Cap is 50 (matches
-  // Google's daily Indexing API quota per account, so we never start work
-  // that's guaranteed to fail mid-batch).
-  const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(new Set())
-  /** Live progress while the bulk-index loop is running. null when idle.
-   *  `results` is per-postId outcome ('submitted'/'quota'/'forbidden'/'failed'
-   *  /'pending'). The UI shows a strip with N/M done + each row gets a
-   *  status icon. */
-  const [bulkIndexProgress, setBulkIndexProgress] = useState<{
-    current: number
-    total: number
-    currentTitle: string | null
-    results: Record<string, 'pending' | 'submitted' | 'quota' | 'forbidden' | 'failed'>
-    aborted: boolean
-  } | null>(null)
-  const BULK_INDEX_CAP = 50
   const [refreshPriceProgress, setRefreshPriceProgress] = useState<{ done: number; total: number; current?: string } | null>(null)
   // "Sync bodies from WordPress" — one-time repair for legacy/imported posts
   // whose blog_posts.content is empty (they score near-zero because the overview
@@ -273,179 +266,6 @@ export default function SeoPage() {
     finally { setSavingTitle(false) }
   }, [load])
 
-  // "Request indexing" — submit directly via Google's Indexing API instead
-  // of opening GSC and waiting for the user to click Request Indexing
-  // themselves. Three outcomes:
-  //
-  //   1. GSC not connected at all          → tell them to connect on /seo.
-  //   2. Connected but missing the new     → 412 from the API; nudge to
-  //      indexing scope (older OAuth)        reconnect.
-  //   3. Submission accepted / failed /    → toast the per-URL outcome.
-  //      quota                              "Submitted — Google will crawl
-  //                                          within 24h." / "Quota hit."
-  //
-  // We DELIBERATELY don't fall back to opening GSC anymore — that flow
-  // was the whole reason this feature exists. If indexing fails, the
-  // toast tells the user what to do.
-  const requestIndexing = useCallback(async (url: string) => {
-    setFixMsg({ ok: true, text: 'Submitting to Google…' })
-    try {
-      const res = await fetch('/api/seo/request-index', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: [url] }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (res.status === 403 || d.proRequired) {
-        setFixMsg({ ok: false, text: d.error || 'Manual index submission is a Pro feature: your posts still index automatically via your sitemap.' })
-        return
-      }
-      if (res.status === 412 || d.scopeMissing) {
-        setFixMsg({ ok: false, text: `${d.error || 'We need indexing permission.'} On /seo, click Disconnect on the Search Console card, then Connect again. Google will show a new consent screen that includes the indexing scope.` })
-        return
-      }
-      if (res.status === 429 || d.limitReached) {
-        setFixMsg({ ok: false, text: d.error || 'Daily indexing cap hit. Try again tomorrow.' })
-        return
-      }
-      if (!res.ok) {
-        setFixMsg({ ok: false, text: d.error || 'Submission failed. Try again in a moment.' })
-        return
-      }
-      const result = (d.results || [])[0]
-      if (result?.outcome === 'submitted') {
-        setFixMsg({ ok: true, text: `Submitted to Google. Crawl usually happens within 24h. (${d.dailyRemaining ?? '–'} of 2 daily nudges left.)` })
-      } else if (result?.outcome === 'quota') {
-        setFixMsg({ ok: false, text: result.message || 'Google\'s daily quota is exhausted for now.' })
-      } else if (result?.outcome === 'forbidden') {
-        setFixMsg({ ok: false, text: result.message || 'Google declined. Reconnect Search Console.' })
-      } else {
-        setFixMsg({ ok: false, text: result?.message || 'Submission failed.' })
-      }
-    } catch (e) {
-      setFixMsg({ ok: false, text: e instanceof Error ? e.message : 'Submission failed.' })
-    }
-  }, [])
-
-  /** Toggle a postId in the bulk-index selection. Enforces the BULK_INDEX_CAP
-   *  ceiling so we never let the user queue more than Google can accept in a
-   *  day. */
-  const toggleSelect = useCallback((postId: string) => {
-    setSelectedPostIds(prev => {
-      const next = new Set(prev)
-      if (next.has(postId)) next.delete(postId)
-      else if (next.size < BULK_INDEX_CAP) next.add(postId)
-      else {
-        setFixMsg({ ok: false, text: `Bulk index is capped at ${BULK_INDEX_CAP} posts per run (Google's daily limit). Unselect something first.` })
-      }
-      return next
-    })
-  }, [])
-
-  /** Bulk-index handler — loops through the selected postIds sequentially,
-   *  hits /api/seo/request-index per URL, and updates progress state between
-   *  each call so the UI can render N/M done + a per-row status icon.
-   *
-   *  Why sequential and not batched: the server endpoint already accepts up
-   *  to 50 URLs in one call, but it submits them sequentially anyway (rate
-   *  limits) and returns ONLY when all 50 finish. From the user's seat that
-   *  looks like a frozen spinner. Looping client-side gives live progress.
-   *
-   *  Stop conditions:
-   *    - user clicks Cancel (sets aborted=true mid-loop)
-   *    - 429 / quota response (no point continuing — every subsequent call
-   *      will also 429)
-   *    - 412 / scope-missing (same — Google needs reconnect first) */
-  const runBulkIndex = useCallback(async (postIds: string[]) => {
-    if (postIds.length === 0 || !data) return
-    setFixMsg(null)
-    // Build initial progress state with every row marked 'pending'.
-    const initialResults: Record<string, 'pending' | 'submitted' | 'quota' | 'forbidden' | 'failed'> = {}
-    for (const id of postIds) initialResults[id] = 'pending'
-    const titleByPostId = new Map(data.posts.map(p => [p.postId as string, p.title]))
-
-    setBulkIndexProgress({
-      current: 0,
-      total: postIds.length,
-      currentTitle: titleByPostId.get(postIds[0]) ?? null,
-      results: initialResults,
-      aborted: false,
-    })
-
-    let submitted = 0
-    let failed = 0
-    let stopReason: 'completed' | 'quota' | 'scope' | 'aborted' = 'completed'
-
-    for (let i = 0; i < postIds.length; i++) {
-      // Refetch the latest progress before each iteration to see if the user
-      // hit Cancel. We do this via the setState callback form below; here
-      // we just check a local snapshot we keep updating.
-      let aborted = false
-      setBulkIndexProgress(prev => {
-        if (prev?.aborted) aborted = true
-        return prev
-          ? { ...prev, current: i + 1, currentTitle: titleByPostId.get(postIds[i]) ?? null }
-          : prev
-      })
-      if (aborted) { stopReason = 'aborted'; break }
-
-      const post = data.posts.find(p => p.postId === postIds[i])
-      const url = post?.url
-      if (!url) {
-        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'failed' } } : prev)
-        failed++
-        continue
-      }
-      try {
-        const res = await fetch('/api/seo/request-index', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls: [url] }),
-        })
-        const d = await res.json().catch(() => ({} as { results?: Array<{ outcome?: string }>; scopeMissing?: boolean; limitReached?: boolean; error?: string }))
-        if (res.status === 412 || d.scopeMissing) {
-          stopReason = 'scope'
-          setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'forbidden' } } : prev)
-          break
-        }
-        if (res.status === 429 || d.limitReached) {
-          stopReason = 'quota'
-          setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'quota' } } : prev)
-          break
-        }
-        const outcome = (d.results?.[0]?.outcome as string | undefined) ?? (res.ok ? 'submitted' : 'failed')
-        const normalised: 'submitted' | 'quota' | 'forbidden' | 'failed' =
-          outcome === 'submitted' ? 'submitted'
-          : outcome === 'quota' ? 'quota'
-          : outcome === 'forbidden' ? 'forbidden'
-          : 'failed'
-        if (normalised === 'submitted') submitted++
-        else if (normalised === 'quota') { stopReason = 'quota'; setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: normalised } } : prev); break }
-        else failed++
-        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: normalised } } : prev)
-      } catch {
-        failed++
-        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'failed' } } : prev)
-      }
-    }
-
-    // Wrap-up toast — distinct copy per stop reason.
-    const summary = stopReason === 'completed'
-      ? `Bulk indexing complete: ${submitted} submitted${failed > 0 ? `, ${failed} failed` : ''}.`
-      : stopReason === 'quota'
-      ? `Stopped at Google's daily quota: ${submitted} submitted before the cap hit. Try the rest tomorrow.`
-      : stopReason === 'scope'
-      ? 'Stopped: Google needs to be reconnected for the indexing scope. Disconnect Search Console on /seo and reconnect.'
-      : `Cancelled: ${submitted} submitted before you stopped.`
-    setFixMsg({ ok: stopReason === 'completed' && failed === 0, text: summary })
-    // Clear the selection on success; leave it on quota/abort so the user
-    // can see what didn't ship.
-    if (stopReason === 'completed') setSelectedPostIds(new Set())
-    // Leave the progress strip up for ~5s so the user can read the final
-    // status, then auto-clear.
-    setTimeout(() => setBulkIndexProgress(null), 5000)
-  }, [data])
-
   // Per-row "Check now" — fresh Google URL Inspection on a single post, updates
   // the row in place so the user sees the new status without a full overview
   // reload. The daily cron keeps everything current overnight; this is the
@@ -481,7 +301,7 @@ export default function SeoPage() {
 
   // "Check visible" — re-check indexing for every post currently shown, one at
   // a time (Google's URL Inspection API is rate-limited, so we never fan out).
-  // Capped at BULK_INDEX_CAP so a huge library can't blow the daily quota in
+  // Capped at 50 so a huge library can't blow the daily quota in
   // one click. Each row updates in place via recheckIndexing.
   const checkVisible = useCallback(async (targets: { postId: string; url: string | null }[]) => {
     const list = targets.filter(t => !!t.url).slice(0, 50)
@@ -550,16 +370,21 @@ export default function SeoPage() {
   // non-technical creator never has to know which tool does what. Every step
   // reuses an existing, non-destructive endpoint.
   const runGetFound = useCallback(async () => {
-    const results = { purged: false, pinged: 0, links: 0, posts: 0 }
+    const results: { purged: boolean; pinged: number; pingError?: string; links: number; posts: number } = { purged: false, pinged: 0, links: 0, posts: 0 }
     setGetFound({ step: 0, done: false, results: { ...results } })
-    // 1 — refresh the sitemap + ping Google's cache, Bing, Copilot & AI crawlers.
+    // 1 — refresh the sitemap (Google reads it; Google has no ping any more)
+    //     and send every post to Bing and Copilot through IndexNow. A refusal
+    //     is kept and shown, so "sent" and "not sent" never look the same.
     try {
-      const pr = await fetch('/api/seo/purge-sitemap', { method: 'POST' })
+      const pr = await fetch('/api/seo/purge-sitemap', { method: 'POST', signal: AbortSignal.timeout(60_000) })
       if (pr.ok) results.purged = true
-      const ir = await fetch('/api/seo/indexnow', { method: 'POST' })
-      const id = await ir.json().catch(() => ({}))
+    } catch { /* shown as not refreshed */ }
+    try {
+      const ir = await fetch('/api/seo/indexnow', { method: 'POST', signal: AbortSignal.timeout(60_000) })
+      const id = await ir.json().catch(() => ({})) as { submitted?: number; error?: string; sites?: { error?: string }[] }
       results.pinged = id.submitted || 0
-    } catch { /* best-effort */ }
+      if (!ir.ok || !results.pinged) results.pingError = id.sites?.find(x => x.error)?.error || id.error || `Bing did not accept the list (${ir.status}).`
+    } catch { results.pingError = 'MVP could not reach Bing just now.' }
     setGetFound({ step: 1, done: false, results: { ...results } })
     // 2 — heal any changed permalinks so old URLs 301 instead of 404.
     try {
@@ -853,7 +678,7 @@ export default function SeoPage() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click: we handle the rest</p>
-                <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes your sitemap, pings Google, Bing &amp; AI crawlers, heals broken links, and auto-fixes SEO issues on every post.</p>
+                <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes the sitemap Google reads, sends every post to Bing and Copilot, heals changed links, and auto-fixes SEO issues on every post. Google cannot be pinged; it reads your sitemap on its own schedule.</p>
               </div>
               <button onClick={runGetFound} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold text-white bg-[#34c759] hover:bg-[#2fb350] transition-colors shadow-sm">
                 <Zap size={18} /> Get my blog found
@@ -866,7 +691,7 @@ export default function SeoPage() {
                 <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done: your blog is set up to be found' : 'Getting your blog found…'}</p>
               </div>
               <div className="space-y-1.5">
-                {['Refreshing your sitemap + pinging Google, Bing & AI', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
+                {['Refreshing your sitemap and sending your posts to Bing and Copilot', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
                   const st = getFound.step > i ? 'done' : getFound.step === i ? 'active' : 'todo'
                   return (
                     <div key={i} className="flex items-center gap-2 text-[13px]">
@@ -881,8 +706,8 @@ export default function SeoPage() {
               {getFound.done && (() => {
                 const r = getFound.results
                 const parts = [
-                  r.purged ? 'refreshed your sitemap' : null,
-                  r.pinged ? `pinged Bing/Copilot with ${r.pinged} pages` : null,
+                  r.purged ? 'refreshed your sitemap' : 'could not refresh your sitemap (update the MVP plugin)',
+                  r.pinged ? `sent ${r.pinged} posts to Bing and Copilot` : `did not send your posts to Bing: ${r.pingError || 'no reason given'}`,
                   r.links ? `healed ${r.links} link${r.links === 1 ? '' : 's'}` : null,
                   r.posts ? `improved ${r.posts} post${r.posts === 1 ? '' : 's'}` : null,
                 ].filter(Boolean)
@@ -924,9 +749,6 @@ export default function SeoPage() {
           to a single line when nothing is blocked, because eight green ticks
           against names nobody recognises is a wall that teaches people to skim
           past the one time it turns amber. */}
-      <AiVisibilityCard />
-      <AioReadinessCard />
-
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
           <Loader2 size={16} className="animate-spin" /> Scoring your posts…
@@ -935,7 +757,28 @@ export default function SeoPage() {
         <div className="card p-5 border border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">{error}</div>
       ) : !data ? null : (
         <div className="flex flex-col gap-4">
-          <IndexingGuide property={data.property} connected={data.connected} />
+          {/* WHAT EACH POST NEEDS (2026-10-11): every post in one stage, with
+              its next steps and the buttons that do them. First, because it is
+              the answer to "which post do I touch, and how". */}
+          <PostBoard
+            posts={data.posts.map(p => ({
+              postId: p.postId, title: p.title, url: p.url, publishedAt: p.publishedAt,
+              indexed: p.indexed, coverageState: p.coverageState, droppedAt: p.droppedAt, inSitemap: p.inSitemap, urlGuessed: p.urlGuessed,
+              clicks: p.clicks, impressions: p.impressions, position: p.position, ctr: p.ctr, score: p.score, hasBody: p.hasBody,
+              linkedFrom: p.linkedFrom ?? null, shared: p.shared ?? [], linkSources: p.linkSources ?? [],
+            }))}
+            connected={data.connected}
+            property={data.property}
+            linksCounted={data.summary.linksCounted !== false}
+            canBrandRecap={tier !== null && canUsePreview('brand_recap', tier)}
+            onOpenPost={(id) => {
+              setFilterNotIndexed(false)
+              setExpanded(id)
+              setTimeout(() => document.getElementById(`seo-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+            }}
+            onGoToGetFound={() => document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            onRefreshUrls={() => void resyncUrls()}
+          />
 
           {/* Revenue-opportunity worklist (Phase 2). Self-contained — fetches
               /api/seo/opportunities and ranks every post by its single highest-
@@ -1020,45 +863,6 @@ export default function SeoPage() {
             )}
           </div>
 
-          {/* Why aren't they indexed — mirrors GSC's breakdown so the user knows
-              which pile is worth acting on. 404/soft-404 → fixable with redirects;
-              noindex/canonical → benign (archives); discovered/crawled → just
-              waiting on Google. */}
-          {data.connected && (data.summary.reasons?.length ?? 0) > 0 && (() => {
-            const meta: Record<string, { dot: string; note: string }> = {
-              urgent:   { dot: '#ff3b30', note: 'Fix now: these posts tell Google not to index them. See step 3 below' },
-              redirect: { dot: '#ff3b30', note: 'Fixable: send these to a live page with Fix 404s' },
-              other:    { dot: '#ff9500', note: 'Worth a look' },
-              wait:     { dot: '#5856d6', note: 'Waiting on Google. Keep the sitemap fresh' },
-              benign:   { dot: '#8e8e93', note: 'Expected: archive/duplicate pages, nothing to do' },
-            }
-            const order = { urgent: 0, redirect: 1, other: 2, wait: 3, benign: 4 } as const
-            const reasons = [...(data.summary.reasons || [])].sort((a, b) => (order[a.fixable] - order[b.fixable]) || (b.count - a.count))
-            const fixable = reasons.filter(r => r.fixable === 'redirect').reduce((s, r) => s + r.count, 0)
-            return (
-              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Why posts aren&apos;t indexed</p>
-                  {fixable > 0 && (
-                    <Link href="/tools/redirects" className="text-xs font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1">
-                      Fix {fixable} with redirects →
-                    </Link>
-                  )}
-                </div>
-                <div className="divide-y divide-gray-100 dark:divide-white/5">
-                  {reasons.map(r => (
-                    <div key={r.reason} className="flex items-center gap-3 px-4 py-2">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: meta[r.fixable].dot }} />
-                      <span className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-shrink-0 w-40 truncate">{r.reason}</span>
-                      <span className="text-xs text-[#86868b] flex-1 truncate hidden sm:block">{meta[r.fixable].note}</span>
-                      <span className="text-sm font-semibold tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{r.count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-
           {/* GET POSTS INTO GOOGLE (2026-10-11): sitemap status, today's Request
               indexing list, and what to do about each of Google's reasons. */}
           {data.connected && (
@@ -1072,6 +876,11 @@ export default function SeoPage() {
           {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
               impressions for with no post squarely targeting them. */}
           {data.connected && <QueryGapsCard />}
+
+          {/* AI search: which AI crawlers can read the blog, and how ready the
+              posts are to be quoted in AI answers. */}
+          <AiVisibilityCard />
+          <AioReadinessCard />
 
           {/* One-time "sync bodies from WordPress" prompt. Legacy/imported posts
               are live on WP but have no body stored in MVP, so they score near-
@@ -1126,176 +935,37 @@ export default function SeoPage() {
             )}
           </div>
 
-          {/* Bulk index toolbar — only shown when GSC is connected (no point
-              indexing if we can't submit), only when something is selected
-              OR a run is in progress. The toolbar floats just above the
-              posts table so users keep their place. */}
-          {data.connected && (selectedPostIds.size > 0 || bulkIndexProgress) && (() => {
-            const selectableUrlsForBulk = posts
-              .filter(p => selectedPostIds.has(p.postId) && p.url)
-              .map(p => p.postId)
-            const running = !!bulkIndexProgress && (bulkIndexProgress.current < bulkIndexProgress.total) && !bulkIndexProgress.aborted
-            return (
-              <div className="card p-3 flex items-center gap-3 flex-wrap bg-[#34c759]/5 border-[#34c759]/30">
-                {bulkIndexProgress ? (
-                  <>
-                    <Loader2 size={14} className={`text-[#34c759] ${running ? 'animate-spin' : ''}`} />
-                    <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      Indexing {bulkIndexProgress.current} of {bulkIndexProgress.total}
-                      {bulkIndexProgress.currentTitle && running && (
-                        <span className="text-[#86868b] font-normal">
-                          {' · '}{bulkIndexProgress.currentTitle.slice(0, 60)}{bulkIndexProgress.currentTitle.length > 60 ? '…' : ''}
-                        </span>
-                      )}
-                    </span>
-                    <div className="flex-1 min-w-[100px] h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full bg-[#34c759] transition-all" style={{ width: `${(bulkIndexProgress.current / Math.max(1, bulkIndexProgress.total)) * 100}%` }} />
-                    </div>
-                    {running ? (
-                      <button
-                        onClick={() => setBulkIndexProgress(prev => prev ? { ...prev, aborted: true } : prev)}
-                        className="px-3 py-1.5 text-xs font-semibold text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setBulkIndexProgress(null)}
-                        className="px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:bg-gray-100 dark:hover:bg-white/5 rounded transition-colors"
-                      >
-                        Dismiss
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      {selectedPostIds.size} selected
-                    </span>
-                    <span className="text-xs text-[#86868b]">
-                      {selectedPostIds.size >= BULK_INDEX_CAP ? '(cap reached)' : `up to ${BULK_INDEX_CAP - selectedPostIds.size} more`}
-                    </span>
-                    <div className="flex-1" />
-                    <button
-                      onClick={() => setSelectedPostIds(new Set())}
-                      className="px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-                    >
-                      Clear
-                    </button>
-                    <button
-                      onClick={() => void runBulkIndex(selectableUrlsForBulk)}
-                      disabled={selectableUrlsForBulk.length === 0}
-                      className="px-4 py-1.5 text-xs font-semibold text-white bg-[#34c759] hover:bg-[#2ea44f] disabled:opacity-50 rounded-lg inline-flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      <CheckCircle size={12} /> Index {selectableUrlsForBulk.length} post{selectableUrlsForBulk.length === 1 ? '' : 's'}
-                    </button>
-                  </>
-                )}
-              </div>
-            )
-          })()}
-
           {/* Posts table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
-            {/* Select-all-visible header — only shown when GSC is connected. */}
-            {data.connected && posts.length > 0 && (() => {
-              const selectableHere = posts.filter(p => p.url && p.indexed !== true)
-              const allSelected = selectableHere.length > 0 && selectableHere.every(p => selectedPostIds.has(p.postId))
-              const anySelected = selectableHere.some(p => selectedPostIds.has(p.postId))
-              return (
-                <div className="px-3 py-2 text-[11px] text-[#86868b] dark:text-[#8e8e93] flex items-center gap-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={el => { if (el) el.indeterminate = !allSelected && anySelected }}
-                    onChange={() => {
-                      if (allSelected) {
-                        // Deselect just the visible rows; preserve any
-                        // selections from a different filter view.
-                        setSelectedPostIds(prev => {
-                          const next = new Set(prev)
-                          for (const p of selectableHere) next.delete(p.postId)
-                          return next
-                        })
-                      } else {
-                        // Add up to BULK_INDEX_CAP from the visible rows.
-                        setSelectedPostIds(prev => {
-                          const next = new Set(prev)
-                          for (const p of selectableHere) {
-                            if (next.size >= BULK_INDEX_CAP) break
-                            next.add(p.postId)
-                          }
-                          return next
-                        })
-                      }
-                    }}
-                    className="accent-[#34c759] w-3.5 h-3.5"
-                    title={`Select up to ${BULK_INDEX_CAP} posts for bulk indexing`}
-                  />
-                  <span>Select visible (max {BULK_INDEX_CAP}) for bulk indexing</span>
-                  {/* Bulk re-check indexing for every post shown (sequential,
-                      capped at 50 to respect Google's daily quota). */}
-                  <button
-                    onClick={() => checkVisible(posts)}
-                    disabled={!!checkingAll}
-                    className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-60 disabled:no-underline"
-                    title="Re-check Google indexing status for every post shown (up to 50)"
-                  >
-                    {checkingAll
-                      ? <><Loader2 size={11} className="animate-spin" /> Checking {checkingAll.done}/{checkingAll.total}…</>
-                      : <><RefreshCw size={11} /> Check visible</>}
-                  </button>
-                </div>
-              )
-            })()}
+            {/* What this list is, and the one bulk action that belongs here. */}
+            <div className="px-3 py-2 text-[11px] text-[#86868b] dark:text-[#8e8e93] flex items-center gap-2 bg-gray-50/50 dark:bg-white/[0.02]">
+              <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] text-[12px]">Every post: score and on-page checks</span>
+              <span className="hidden sm:inline">Open a post to see each check, with a Fix button where MVP can fix it.</span>
+              {data.connected && posts.length > 0 && (
+                <button
+                  onClick={() => checkVisible(posts)}
+                  disabled={!!checkingAll}
+                  className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-60 disabled:no-underline"
+                  title="Ask Google again about every post shown (up to 50). The overnight check does this for you."
+                >
+                  {checkingAll
+                    ? <><Loader2 size={11} className="animate-spin" /> Checking {checkingAll.done}/{checkingAll.total}…</>
+                    : <><RefreshCw size={11} /> Ask Google about these now</>}
+                </button>
+              )}
+            </div>
             {posts.length === 0 ? (
               <div className="p-6 text-sm text-[#86868b] text-center">{filterNotIndexed ? 'No posts are marked “not indexed” right now. 🎉' : 'No published posts yet.'}</div>
             ) : posts.map((p) => {
               const open = expanded === p.postId
               const failing = p.checks.filter(c => !c.pass && c.weight > 0)
               const autoFixable = p.checks.filter(c => isAutoFixable(p, c)).length
-              const selectable = !!p.url && p.indexed !== true && data.connected
-              const isSelected = selectedPostIds.has(p.postId)
-              const bulkOutcome = bulkIndexProgress?.results[p.postId]
               return (
-                <div key={p.postId} className={isSelected ? 'bg-[#34c759]/5' : undefined}>
+                <div key={p.postId} id={`seo-row-${p.postId}`} className="scroll-mt-24">
                   <button
                     onClick={() => setExpanded(open ? null : p.postId)}
                     className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   >
-                    {/* Selection checkbox — only when this post is eligible
-                        for indexing (has a URL + GSC connected + not already
-                        indexed). Wrapped in a span with onClick stopPropagation
-                        so ticking it doesn't ALSO expand the row. */}
-                    {selectable ? (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleSelect(p.postId) }}
-                        className="flex items-center justify-center flex-shrink-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          tabIndex={-1}
-                          className="accent-[#34c759] w-3.5 h-3.5 pointer-events-none"
-                          title={selectedPostIds.size >= BULK_INDEX_CAP && !isSelected ? `Bulk cap is ${BULK_INDEX_CAP}` : 'Tick to bulk-index this post'}
-                        />
-                      </span>
-                    ) : (
-                      <span className="w-3.5 flex-shrink-0" />
-                    )}
-                    {/* Bulk-run status badge — shown when a bulk run has
-                        either recorded an outcome for this row OR has it
-                        queued as pending. */}
-                    {bulkOutcome && (
-                      <span className="flex-shrink-0" title={`Bulk index: ${bulkOutcome}`}>
-                        {bulkOutcome === 'submitted' && <CheckCircle size={13} className="text-[#34c759]" />}
-                        {bulkOutcome === 'pending' && <Loader2 size={13} className="text-[#86868b] animate-spin" />}
-                        {bulkOutcome === 'quota' && <AlertCircle size={13} className="text-[#ff9500]" />}
-                        {bulkOutcome === 'forbidden' && <AlertCircle size={13} className="text-[#ff3b30]" />}
-                        {bulkOutcome === 'failed' && <X size={13} className="text-[#ff3b30]" />}
-                      </span>
-                    )}
                     {open ? <ChevronDown size={14} className="text-[#86868b] flex-shrink-0" /> : <ChevronRight size={14} className="text-[#86868b] flex-shrink-0" />}
                     {/* score donut */}
                     <span className="flex items-center justify-center w-9 h-9 rounded-full text-[11px] font-bold flex-shrink-0" style={{ color: scoreColor(p.score), background: `${scoreColor(p.score)}1a` }}>
@@ -1340,15 +1010,6 @@ export default function SeoPage() {
                           ? <Loader2 size={11} className="animate-spin" />
                           : <RefreshCw size={11} />}
                         <span className="hidden md:inline">Check</span>
-                      </button>
-                    )}
-                    {data.connected && p.url && p.indexed !== true && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
-                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline flex-shrink-0"
-                        title="Submit this post to Google for indexing. Sends a request via Google's Indexing API (no manual Search Console step)"
-                      >
-                        Index <ExternalLink size={11} />
                       </button>
                     )}
                     {p.wordpressPostId && (
@@ -1607,90 +1268,6 @@ export default function SeoPage() {
         </div>
       )}
     </>
-  )
-}
-
-/**
- * Collapsible "how indexing works" explainer that sits at the top of the page.
- * Sets expectations (optimization vs. indexing, realistic timing) and gives the
- * exact steps + live, property-aware Search Console links to speed Google up.
- */
-function IndexingGuide({ property, connected }: { property: string | null; connected: boolean }) {
-  const [open, setOpen] = useState(false)
-  const sitemapsUrl = gscSitemapsUrl(property)
-  const pageIndexingUrl = gscPageIndexingUrl(property)
-  return (
-    <div className="card overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-      >
-        <Gauge size={18} className="text-[#5856d6] flex-shrink-0" />
-        <span className="flex-1 min-w-0">
-          <span className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">How indexing works, and what to expect</span>
-          <span className="block text-[12px] text-[#6e6e73] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-            Your score measures how well a post is <em>optimized</em>. Indexing is separate: whether search engines have added it to their results. We submit to Bing, Yandex &amp; Copilot instantly; Google indexes on its own schedule (days to weeks).
-          </span>
-        </span>
-        {open ? <ChevronDown size={16} className="text-[#86868b] flex-shrink-0" /> : <ChevronRight size={16} className="text-[#86868b] flex-shrink-0" />}
-      </button>
-
-      {open && (
-        <div className="px-4 pb-5 pt-3 sm:pl-12 flex flex-col gap-4 border-t border-gray-100 dark:border-white/10 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0]">
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What “indexed” means</p>
-            <p>Indexing is when a search engine adds your post to its results so people can actually find it. A post can score 100 and still be waiting to get indexed. That’s normal, especially on a newer site. Optimization (your score) and indexing (the engine’s decision) are two different steps.</p>
-          </div>
-
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What MVP does for you, automatically</p>
-            <ul className="list-disc pl-5 flex flex-col gap-1">
-              <li>Optimizes every post for search &amp; AI Overviews (answer-first intros, FAQ, internal links, alt text, structured data) so it’s ready to rank.</li>
-              <li>Keeps your sitemap fresh and pings it the moment you publish, so engines can find new posts fast.</li>
-              <li>Instantly notifies Bing, Yandex &amp; Copilot on publish (IndexNow). These often index within hours.</li>
-              <li>Refreshes every post’s Google indexing status overnight, so the worklist below is already current when you open this page. Hit <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Check</strong> on any row for an instant re-check.</li>
-              <li>Pulls each post’s real status from Google Search Console so you can see what’s live.</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What to expect</p>
-            <ul className="list-disc pl-5 flex flex-col gap-1">
-              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Bing, Yandex, Copilot:</strong> usually a few hours to a day or two.</li>
-              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. The <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Index</strong> button sends Google a direct request through its Indexing API: a strong nudge, but Google still decides when (and whether) to index. Days to a few weeks is normal, sometimes longer for a new site, so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected, not a problem with your post.</li>
-              <li>Impressions show up before clicks, so 0 clicks at the start is normal.</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How to get indexed by Google faster</p>
-            <ol className="list-decimal pl-5 flex flex-col gap-2">
-              <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Submit your sitemap (one-time).</span> Open{' '}
-                <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
-              </li>
-              <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Nudge a priority post (optional, Pro).</span> Your posts already index on their own via the sitemap above. You don’t need to do anything. On <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pro</strong>, you also get a manual accelerator: click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on a post and MVP sends Google a direct request through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong>: no Search Console, no pasting. It’s capped at <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">2 a day</strong> (that quota is shared across all of MVP, so it’s deliberately small), and it’s a nudge, not a guarantee. Use it on the one or two posts you care most about; leave the rest to index naturally.
-              </li>
-              <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on the social channels you’ve connected: every share is a crawlable link back. Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
-              </li>
-              <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Check what Google is actually seeing.</span> Open{' '}
-                <a href={pageIndexingUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Page indexing <ExternalLink size={11} /></a>{' '}
-                for the real reason anything isn’t indexed. If you see a <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not found (404)</strong> group, those are dead URLs still holding ranking history. Export that list and{' '}
-                <Link href="/tools/redirects" className="text-[#7C3AED] hover:underline">Fix 404s</Link>{' '}
-                matches each one to the right live post and redirects it, so the history carries over instead of being lost.
-              </li>
-            </ol>
-          </div>
-
-          {!connected && (
-            <p className="text-[12px] text-[#86868b]">Connect Google Search Console to see live index status and get one-click links here.</p>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 

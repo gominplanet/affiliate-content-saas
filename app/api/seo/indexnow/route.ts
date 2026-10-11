@@ -29,13 +29,17 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: posts } = await supabase
     .from('blog_posts')
-    .select('slug,wordpress_site_id')
+    .select('slug,wordpress_site_id,wordpress_url')
     .eq('user_id', user.id)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(2000)
-  const allPosts = ((posts ?? []) as { slug: string | null; wordpress_site_id: string | null }[])
-    .filter(p => !!p.slug)
+  // Each post's address as WordPress gave it. A slug glued onto the site root
+  // is a guess: on most blogs it misses the trailing slash, and on some the
+  // category, so Bing was sent addresses that redirect or do not exist.
+  const allPosts = ((posts ?? []) as { slug: string | null; wordpress_site_id: string | null; wordpress_url: string | null }[])
+    .filter(p => !!p.slug || !!p.wordpress_url)
+    .map(p => ({ ...p, slug: p.wordpress_url || p.slug }))
   if (allPosts.length === 0) return NextResponse.json({ error: 'No published posts to submit.' }, { status: 422 })
 
   // Build a sites map so legacy rows (wordpress_site_id null) bucket to the
@@ -84,7 +88,7 @@ export async function POST() {
       return { site: site.site_label, error: 'IndexNow not available — update the MVP plugin to v1.0.11+ on this site.' }
     }
 
-    const urls = slugs.map(slug => `${wpBase}/${slug}`)
+    const urls = slugs.map(slug => /^https?:\/\//i.test(slug) ? slug : `${wpBase}/${slug}`)
     const result = await submitToIndexNow(wpBase, key, urls)
     if (!result.ok) {
       return { site: site.site_label, error: `IndexNow rejected the request (status ${result.status}).` }
@@ -121,7 +125,7 @@ async function submitForSingleSite(
   if (!key) {
     return NextResponse.json({ error: 'IndexNow isn’t available yet — update the MVP plugin (Setup → reinstall) to v1.0.11+, which hosts the IndexNow key. Then try again.' }, { status: 409 })
   }
-  const urls = slugs.map(slug => `${wpBase}/${slug}`)
+  const urls = slugs.map(slug => /^https?:\/\//i.test(slug) ? slug : `${wpBase}/${slug}`)
   const result = await submitToIndexNow(wpBase, key, urls)
   if (!result.ok) {
     return NextResponse.json({ error: `IndexNow rejected the request (status ${result.status}). Make sure ${wpBase}/${key}.txt is reachable.` }, { status: 502 })

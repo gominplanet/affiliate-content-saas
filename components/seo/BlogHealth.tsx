@@ -33,10 +33,18 @@ const stageLabel: Record<string, string> = {
 export default function BlogHealthCard() {
   const [data, setData] = useState<BlogHealth | null>(null)
   const [loading, setLoading] = useState(true)
+  // A failed load says so. It used to remove the card (or crash on an error
+  // reply), which looked the same as a blog with nothing to report.
+  const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/seo/blog-health').then(r => r.json()).then(setData)
-      .catch(() => setData(null)).finally(() => setLoading(false))
+    fetch('/api/seo/blog-health', { signal: AbortSignal.timeout(60_000) })
+      .then(async r => {
+        const d = await r.json().catch(() => null)
+        if (!r.ok || !d || !Array.isArray(d.daily)) { setFailed(d?.error || `the server answered ${r.status}`); return }
+        setData(d)
+      })
+      .catch(() => setFailed('MVP could not reach the server')).finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -44,6 +52,14 @@ export default function BlogHealthCard() {
       <div className="rounded-2xl border p-4 mb-5 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <Loader2 size={15} className="animate-spin" style={{ color: 'var(--text-faint)' }} />
         <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Working out how your blog is doing…</span>
+      </div>
+    )
+  }
+  if (failed) {
+    return (
+      <div className="rounded-2xl border p-4 mb-5 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <span className="text-[13px] flex-1" style={{ color: 'var(--text-soft)' }}>How your blog is doing did not load: {failed}</span>
+        <button onClick={() => window.location.reload()} className="text-[12px] font-semibold text-[#7C3AED] hover:underline">Try again</button>
       </div>
     )
   }

@@ -10,8 +10,18 @@ export async function submitToIndexNow(
   key: string,
   urlList: string[],
 ): Promise<{ ok: boolean; status: number; submitted: number }> {
-  const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
-  const urls = Array.from(new Set(urlList.filter(Boolean))).slice(0, 10000)
+  // The host exactly as the site serves it. IndexNow refuses URLs whose host is
+  // not the one named here, so stripping "www." made every submission from a
+  // www site fail. The key file lives on this same host.
+  // So the host comes from the post addresses themselves (WordPress's own
+  // permalinks), matched to the site with or without "www.".
+  const bare = (h: string) => h.toLowerCase().replace(/^www\./, '')
+  const siteHost = bare(host.replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+  const hostOf = (u: string) => { try { return new URL(u).host.toLowerCase() } catch { return '' } }
+  const urls = Array.from(new Set(urlList.filter(Boolean).filter((u) => bare(hostOf(u)) === siteHost))).slice(0, 10000)
+  const cleanHost = urls.length ? hostOf(urls[0]) : siteHost
+  // One host per submission: drop any stragglers spelled the other way.
+  for (let i = urls.length - 1; i >= 0; i--) if (hostOf(urls[i]) !== cleanHost) urls.splice(i, 1)
   if (!cleanHost || !key || urls.length === 0) return { ok: false, status: 0, submitted: 0 }
 
   try {

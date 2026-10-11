@@ -173,3 +173,53 @@ export function insertRelatedLinks(content: string, block: string): string {
   const at = offsets[offsets.length - 1]
   return content.slice(0, at) + block + content.slice(at)
 }
+
+// ── Linking TO a post from another one (SEO page, 2026-10-11) ────────────────
+
+/** An address reduced to host + path, so http/https, www, a query string and a
+ *  trailing slash are not the reason two links to the same post look apart. */
+export function bareUrl(u: string | null | undefined): string {
+  const s = String(u || '').trim().toLowerCase()
+  if (!s) return ''
+  return s
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+}
+
+/** Every address a post's HTML links to, as bare URLs. */
+export function linkedAddresses(html: string | null | undefined): Set<string> {
+  const out = new Set<string>()
+  const re = /href\s*=\s*["']([^"']+)["']/gi
+  let m: RegExpExecArray | null
+  const s = String(html || '')
+  while ((m = re.exec(s)) !== null) {
+    const b = bareUrl(m[1])
+    if (b) out.add(b)
+  }
+  return out
+}
+
+/** Add one link card pointing at `target` to a post's body: into its existing
+ *  "Also worth considering" block when it has one, otherwise as a new block in
+ *  the same place the auto-fixer puts it. Never adds a second link to a post
+ *  the body already links to. Pure. */
+export function addLinkToPost(content: string, target: LinkCandidate): { content: string; added: boolean; reason?: string } {
+  if (!target.url || !target.title) return { content, added: false, reason: 'That post has no address.' }
+  if (linkedAddresses(content).has(bareUrl(target.url))) {
+    return { content, added: false, reason: 'This post already links there.' }
+  }
+  const typeLabel = target.postType === 'comparison' ? 'Comparison' : target.postType === 'guide' ? 'Guide' : 'Review'
+  const card = `<a class="gr-ac-card" href="${esc(target.url)}">
+  <span class="gr-ac-chip">${esc(typeLabel)}</span>
+  <span class="gr-ac-title">${esc(target.title)}</span>
+  <span class="gr-ac-arrow" aria-hidden="true">→</span>
+</a>`
+  const grid = content.match(/<div class="gr-ac-grid">/)
+  if (grid && grid.index !== undefined) {
+    const at = grid.index + grid[0].length
+    return { content: `${content.slice(0, at)}\n${card}${content.slice(at)}`, added: true }
+  }
+  return { content: insertRelatedLinks(content, renderRelatedLinksBlock([target])), added: true }
+}

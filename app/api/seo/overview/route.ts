@@ -25,6 +25,7 @@ import { fetchSitemapSlugs } from '@/lib/sitemap'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { bareUrl, linkedAddresses, pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 
 export const maxDuration = 120
 
@@ -362,6 +363,7 @@ export async function GET(request: Request) {
       // this row is about an address that may not exist.
       urlGuessed,
       score, checks,
+      publishedAt: p.published_at,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
       inSitemap,
       coverageState, lastCrawl,
@@ -382,6 +384,113 @@ export async function GET(request: Request) {
       clicks: row.clicks, impressions: row.impressions, position: row.position, ctr: row.ctr,
       seo_score: score, score_detail: checks, checked_at: new Date().toISOString(),
     })
+  }
+
+  // ── Paths in: links from the creator's other posts, and social shares ─────
+  // (SEO page board, 2026-10-11.) Which of your own posts link to each one,
+  // counted from the stored bodies, so a post nothing points at can be named.
+  // When too many bodies are missing from MVP the count would call linked posts
+  // orphans, so it is reported as unknown (null) instead.
+  const withBody = livePosts.filter(p => (p.content || '').trim()).length
+  const linkCountable = livePosts.length > 0 && withBody / livePosts.length >= 0.6
+  const idByBare = new Map<string, string>()
+  const idByHostSlug = new Map<string, string>()
+  for (const r of out) {
+    const b = bareUrl(r.url as string | null)
+    if (!b) continue
+    idByBare.set(b, r.postId as string)
+    const host = b.split('/')[0]
+    const slug = String(r.slug || '').toLowerCase()
+    if (slug) idByHostSlug.set(`${host}|${slug}`, r.postId as string)
+  }
+  const linkedFrom = new Map<string, Set<string>>()
+  if (linkCountable) {
+    for (const p of livePosts) {
+      for (const addr of linkedAddresses(p.content)) {
+        const segs = addr.split('/')
+        const target = idByBare.get(addr) ?? idByHostSlug.get(`${segs[0]}|${segs[segs.length - 1]}`)
+        if (!target || target === p.id) continue
+        const set = linkedFrom.get(target) ?? new Set<string>()
+        set.add(p.id)
+        linkedFrom.set(target, set)
+      }
+    }
+  }
+
+  // Where MVP shared each post: the per-platform ids on the post, plus scheduled
+  // pushes that went out. Read on its own so a column this database lacks costs
+  // the share list, never the whole page.
+  const sharedBy = new Map<string, Set<string>>()
+  const addShare = (id: string, platform: string) => {
+    const set = sharedBy.get(id) ?? new Set<string>()
+    set.add(platform === 'twitter' ? 'x' : platform)
+    sharedBy.set(id, set)
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: soc, error: socErr } = await (supabase as any)
+      .from('blog_posts')
+      .select('id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id')
+      .eq('user_id', ownerId).not('wordpress_post_id', 'is', null)
+      .order('published_at', { ascending: false, nullsFirst: false }).limit(POSTS_OVERVIEW_CAP)
+    if (!socErr) {
+      for (const r of (soc ?? []) as Record<string, string | null>[]) {
+        if (r.facebook_post_id) addShare(r.id as string, 'facebook')
+        if (r.pinterest_pin_id) addShare(r.id as string, 'pinterest')
+        if (r.threads_post_id) addShare(r.id as string, 'threads')
+        if (r.linkedin_post_id) addShare(r.id as string, 'linkedin')
+        if (r.twitter_post_id) addShare(r.id as string, 'x')
+        if (r.bluesky_post_uri) addShare(r.id as string, 'bluesky')
+        if (r.telegram_message_id) addShare(r.id as string, 'telegram')
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: sched } = await (supabase as any)
+      .from('scheduled_posts').select('blog_post_id,platform')
+      .eq('user_id', ownerId).eq('status', 'completed').limit(5000)
+    for (const r of (sched ?? []) as { blog_post_id: string; platform: string }[]) addShare(r.blog_post_id, r.platform)
+  } catch { /* shares stay unknown; the board says "not shared from MVP" only from what it read */ }
+
+  // Posts Google already shows that could link to the ones that need a path in.
+  // Topical match (lib/internal-links), strongest first, never a post that
+  // already links there.
+  const indexedSources: (LinkCandidate & { postId: string })[] = out
+    .filter(r => r.indexed === true && r.url)
+    .sort((a, b) => (b.impressions as number) - (a.impressions as number))
+    .slice(0, 150)
+    .map(r => {
+      const p = livePosts.find(x => x.id === r.postId)
+      return {
+        postId: r.postId as string,
+        title: String(r.title || ''),
+        url: String(r.url),
+        keyword: p?.seo_keyword ?? null,
+        contentSnippet: String(p?.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 800),
+        postType: p?.post_type ?? null,
+      }
+    })
+  const needsPath = (r: Record<string, unknown>) => {
+    const pos = (r.position as number | null) ?? 0
+    return r.indexed !== true || (r.impressions as number) < 30 || (pos >= 8 && pos <= 20)
+  }
+  let sourcesBudget = 150
+  for (const r of out) {
+    const id = r.postId as string
+    r.linkedFrom = linkCountable ? [...(linkedFrom.get(id) ?? [])] : null
+    r.shared = [...(sharedBy.get(id) ?? [])]
+    r.linkSources = []
+    if (!needsPath(r) || sourcesBudget <= 0 || indexedSources.length === 0) continue
+    sourcesBudget--
+    const already = linkedFrom.get(id) ?? new Set<string>()
+    const p = livePosts.find(x => x.id === id)
+    const pool = indexedSources.filter(c => c.postId !== id && !already.has(c.postId) && (livePosts.find(x => x.id === c.postId)?.wordpress_site_id ?? null) === (p?.wordpress_site_id ?? null))
+    const picked = pickRelatedPosts({
+      title: String(r.title || ''),
+      keyword: p?.seo_keyword ?? null,
+      contentSnippet: String(p?.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 800),
+      postType: p?.post_type ?? null,
+    }, pool, 3, 2) as (LinkCandidate & { postId: string })[]
+    r.linkSources = picked.map(c => ({ postId: c.postId, title: c.title }))
   }
 
   // Persist the snapshot (best-effort; never block the response).
@@ -473,6 +582,8 @@ export async function GET(request: Request) {
     reasons,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),
+    /** False when too few post bodies are stored in MVP to count links honestly. */
+    linksCounted: linkCountable,
   }
 
   // Expose the connected sites so the SEO page can render a per-site filter.

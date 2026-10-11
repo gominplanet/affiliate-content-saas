@@ -312,7 +312,7 @@ export default function RedirectsPage() {
         )}
 
         {matches && matches.length === 0 && (
-          <div className="card p-8 text-center" style={{ color: 'var(--text-faint)' }}>No URLs found in what you pasted.</div>
+          <div className="card p-8 text-center" style={{ color: 'var(--text-faint)' }}>MVP found no web addresses in what you added. Paste the list from Search Console's "Not found (404)" report (one address per line), or drop its export file.</div>
         )}
       </div>
     </>

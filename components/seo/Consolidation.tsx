@@ -56,9 +56,16 @@ export default function ConsolidationCard() {
   const [expandWins, setExpandWins] = useState(false)
   const [expandMerge, setExpandMerge] = useState(false)
 
+  const [failed, setFailed] = useState<string | null>(null)
+
   useEffect(() => {
-    fetch('/api/seo/consolidation').then(r => r.json()).then(setData)
-      .catch(() => setData(null)).finally(() => setLoading(false))
+    fetch('/api/seo/consolidation', { signal: AbortSignal.timeout(90_000) })
+      .then(async r => {
+        const d = await r.json().catch(() => null)
+        if (!r.ok || !d || d.error) { setFailed(d?.error || `the server answered ${r.status}`); return }
+        setData(d)
+      })
+      .catch(() => setFailed('MVP could not reach the server')).finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -66,6 +73,14 @@ export default function ConsolidationCard() {
       <div className="rounded-2xl border p-4 mb-5 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <Loader2 size={15} className="animate-spin" style={{ color: 'var(--text-faint)' }} />
         <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Checking which posts are earning their place…</span>
+      </div>
+    )
+  }
+  if (failed) {
+    return (
+      <div className="rounded-2xl border p-4 mb-5 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <span className="text-[13px] flex-1" style={{ color: 'var(--text-soft)' }}>Posts not earning their place did not load: {failed}</span>
+        <button onClick={() => window.location.reload()} className="text-[12px] font-semibold text-[#7C3AED] hover:underline">Try again</button>
       </div>
     )
   }

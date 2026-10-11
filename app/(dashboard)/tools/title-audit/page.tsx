@@ -30,6 +30,8 @@ interface Mismatch {
 interface ScanState {
   scanning: boolean
   scannedCount: number
+  /** Why the last scan stopped early, kept on screen (a toast fades). */
+  error?: string | null
   totalCount: number | null
   nextOffset: number
   hasMore: boolean
@@ -52,7 +54,7 @@ export default function TitleAuditPage() {
   const [editing, setEditing] = useState<Record<string, string>>({})
 
   async function runScan() {
-    setScan(prev => ({ ...prev, scanning: true, mismatches: [], scannedCount: 0, nextOffset: 0, hasMore: true, startedAt: Date.now() }))
+    setScan(prev => ({ ...prev, scanning: true, error: null, mismatches: [], scannedCount: 0, nextOffset: 0, hasMore: true, startedAt: Date.now() }))
     setApplied(new Set())
     let offset = 0
     let allMismatches: Mismatch[] = []
@@ -94,8 +96,9 @@ export default function TitleAuditPage() {
       setScan(prev => ({ ...prev, scanning: false }))
       toast.success(`Scan complete: ${allMismatches.length} mismatch${allMismatches.length === 1 ? '' : 'es'} found out of ${scanned} post${scanned === 1 ? '' : 's'}`)
     } catch (e) {
-      setScan(prev => ({ ...prev, scanning: false }))
-      toast.error(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setScan(prev => ({ ...prev, scanning: false, error: msg }))
+      toast.error(msg)
     }
   }
 
@@ -241,7 +244,14 @@ export default function TitleAuditPage() {
         )}
       </div>
 
-      {scan.mismatches.length === 0 && !scan.scanning && scan.scannedCount > 0 && (
+      {scan.error && !scan.scanning && (
+        <div className="mt-6 card p-4 border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">
+          The scan stopped{scan.scannedCount > 0 ? ` after ${scan.scannedCount} post${scan.scannedCount === 1 ? '' : 's'}` : ''}: {scan.error}
+          {scan.scannedCount > 0 && <span className="block text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1">Results below cover only the posts it reached.</span>}
+        </div>
+      )}
+
+      {scan.mismatches.length === 0 && !scan.scanning && scan.scannedCount > 0 && !scan.error && (
         <div className="mt-6 card p-6 text-center border-[#34c759]/30 bg-[#34c759]/5">
           <CheckCircle2 size={24} className="mx-auto text-[#34c759]" />
           <p className="mt-2 text-sm font-semibold text-[#34c759]">No mismatches found</p>

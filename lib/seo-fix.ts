@@ -148,7 +148,7 @@ Article (for grounding): ${plain}` }],
     // no seo_keyword and short titles — the body widens the signal.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: others } = await supabase
-      .from('blog_posts').select('title,slug,seo_keyword,post_type,content')
+      .from('blog_posts').select('title,slug,seo_keyword,post_type,content,wordpress_url')
       .eq('user_id', userId).not('wordpress_post_id', 'is', null).neq('id', post.id).limit(200)
     // Strip HTML + cap to first 800 chars per candidate — token-overlap math
     // doesn't benefit from more, and we want the candidate list to stay light.
@@ -161,7 +161,9 @@ Article (for grounding): ${plain}` }],
       .filter(o => o.title && o.slug)
       .map(o => ({
         title: o.title as string,
-        url: `${wpBase}/${o.slug}`,
+        // The address WordPress gave the post, so the link does not land on a
+        // redirect (or a 404 on a site whose permalinks carry a category).
+        url: (o.wordpress_url as string | null) || `${wpBase}/${o.slug}`,
         keyword: o.seo_keyword || undefined,
         contentSnippet: stripSnippet(o.content as string | null),
         postType: (o.post_type as string | null) || undefined,

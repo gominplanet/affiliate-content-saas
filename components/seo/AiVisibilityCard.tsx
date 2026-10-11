@@ -33,8 +33,16 @@ export default function AiVisibilityCard() {
     )
   }
   if (!data || data.error) {
+    // No WordPress site: the page says that elsewhere. Anything else is said
+    // here, not hidden.
     if (data?.code === 'no_site') return null
-    return null
+    const failed = data?.error || 'no answer'
+    return (
+      <div className="rounded-2xl border p-4 mb-5 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <span className="text-[13px] flex-1" style={{ color: 'var(--text-soft)' }}>The AI crawler check did not load: {failed}</span>
+        <button onClick={() => window.location.reload()} className="text-[12px] font-semibold text-[#7C3AED] hover:underline">Try again</button>
+      </div>
+    )
   }
 
   const blocked = data.blockedCount ?? 0
