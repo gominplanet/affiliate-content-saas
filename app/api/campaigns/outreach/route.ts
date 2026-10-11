@@ -22,6 +22,7 @@
  * Human-in-the-loop by design: this only DRAFTS. SCOUT places the text in the
  * box; the creator reviews and clicks Amazon's Send.
  */
+import { outreachNiche } from '@/lib/outreach-niche'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
@@ -126,7 +127,10 @@ export async function POST(request: Request) {
     const mediaKit = s('media_kit_url')
     const linkHub = s('linktree_url') || s('website_url')
     const youtube = s('youtube_url') || s('youtube_channel')
-    const niche = s('niche') || (Array.isArray(bp['niches']) ? (bp['niches'] as unknown[]).map(String).slice(0, 3).join(', ') : '')
+    // Which niche, if any, the message names (lib/outreach-niche): the ticked
+    // categories, the Brand page niche when none are ticked, or nothing at all
+    // when the creator chose "Don't mention a niche or category".
+    const nicheLine = outreachNiche(bp)
 
     // Saved Outreach Profile (migration 155) — the creator's reusable template
     // pieces. These are USER-PROVIDED real facts (they typed them), so the draft
@@ -134,7 +138,6 @@ export async function POST(request: Request) {
     // generic brand fields and drive the OINK-style multi-message structure.
     const op = (bp['outreach_profile'] && typeof bp['outreach_profile'] === 'object') ? (bp['outreach_profile'] as Record<string, unknown>) : {}
     const ops = (k: string) => { const v = op[k]; return typeof v === 'string' && v.trim() ? v.trim() : '' }
-    const opCategories = Array.isArray(op['categories']) ? (op['categories'] as unknown[]).map(String).map(x => x.trim()).filter(Boolean) : []
     const opStorefront = ops('storefrontUrl')
     const opShipName = ops('shipName')
     const opShipAddress = ops('shipAddress')
@@ -147,8 +150,7 @@ export async function POST(request: Request) {
     if (ops('intro')) facts.push(`Who I am / credibility (TRUE — use it): ${ops('intro')}`)
     else if (creatorName) facts.push(`Creator/brand name: ${creatorName}`)
     if (ops('offer')) facts.push(`What I offer brands: ${ops('offer')}`)
-    if (opCategories.length) facts.push(`Content categories I cover: ${opCategories.join(', ')}`)
-    else if (niche) facts.push(`Niche: ${niche}`)
+    if (nicheLine.fact) facts.push(nicheLine.fact)
     if (mediaKit) facts.push(`Media kit: ${mediaKit}`)
     if (ops('linktree') || linkHub) facts.push(`Portfolio / work samples: ${ops('linktree') || linkHub}`)
     if (ops('youtube') || youtube) facts.push(`YouTube: ${ops('youtube') || youtube}`)
@@ -193,6 +195,7 @@ export async function POST(request: Request) {
     if (!wantSample) asks.push('Do NOT include a sample-request / shipping message (skip that message entirely).')
     const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
     if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
+    if (nicheLine.rule) asks.push(nicheLine.rule)
     if (template) {
       asks.push('THIS IS A REUSABLE TEMPLATE sent to MANY different brands. In the PRODUCT message, write the product name as the literal token [[PRODUCT]] and its ASIN as the literal token [[ASIN]] — copy those tokens EXACTLY, character for character. Do NOT invent, name, or describe a specific product, and do NOT name any brand. Greet neutrally ("Hi there,").')
     }

@@ -7,6 +7,7 @@
  * pitch. UPDATE (not upsert) — mirrors the /api/learn convention; the
  * brand_profiles row exists by onboarding.
  */
+import { brandPageNiche } from '@/lib/outreach-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -22,10 +23,12 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase as any)
       .from('brand_profiles')
-      .select('outreach_profile')
+      .select('*')
       .eq('user_id', ownerId)
       .maybeSingle()
-    return NextResponse.json({ ok: true, outreachProfile: data?.outreach_profile ?? null })
+    // The Brand page niche, so the card can say what a message uses when no
+    // category is ticked (lib/outreach-niche).
+    return NextResponse.json({ ok: true, outreachProfile: data?.outreach_profile ?? null, brandNiche: brandPageNiche(data || {}) })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
@@ -73,6 +76,8 @@ export async function POST(request: Request) {
         intro: s('intro', 800),
         offer: s('offer', 800),
         categories: cats,
+        // "Don't mention a niche or category" in brand messages.
+        omitCategories: p.omitCategories === true,
         youtube: s('youtube', 300),
         blog: s('blog', 300),
         linktree: s('linktree', 300),

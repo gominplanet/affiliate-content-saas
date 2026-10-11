@@ -19,6 +19,8 @@ interface Profile {
   intro: string
   offer: string
   categories: string[]
+  /** Leave every niche and category out of brand messages. */
+  omitCategories: boolean
   youtube: string
   blog: string
   linktree: string
@@ -31,7 +33,7 @@ interface Profile {
 }
 
 const EMPTY: Profile = {
-  greetingStyle: '', intro: '', offer: '', categories: [],
+  greetingStyle: '', intro: '', offer: '', categories: [], omitCategories: false,
   youtube: '', blog: '', linktree: '', storefrontUrl: '',
   shipName: '', shipAddress: '', phone: '', email: '', signoff: '',
 }
@@ -55,6 +57,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
   const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [brandNiche, setBrandNiche] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -62,6 +65,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
       try {
         const res = await fetch('/api/collaborations/profile')
         const d = await res.json().catch(() => ({}))
+        if (alive && typeof d?.brandNiche === 'string') setBrandNiche(d.brandNiche)
         if (alive && d?.outreachProfile && typeof d.outreachProfile === 'object') {
           setP({ ...EMPTY, ...d.outreachProfile, categories: Array.isArray(d.outreachProfile.categories) ? d.outreachProfile.categories : [] })
         }
@@ -146,7 +150,11 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
 
               <div>
                 <label className={label} style={labelStyle}>Categories you cover</label>
-                <div className="flex flex-wrap gap-1.5">
+                <label className="flex items-center gap-2 text-[12px] mb-2 cursor-pointer" style={{ color: 'var(--text)' }}>
+                  <input type="checkbox" checked={p.omitCategories} onChange={e => set('omitCategories', e.target.checked)} className="accent-[#7C3AED]" />
+                  Don&apos;t mention a niche or category in my messages
+                </label>
+                <div className={`flex flex-wrap gap-1.5 ${p.omitCategories ? 'opacity-40 pointer-events-none' : ''}`}>
                   {allCats.map(c => (
                     <button key={c} type="button" onClick={() => toggleCat(c)}
                       className="text-[11px] px-2 py-1 rounded-full border"
@@ -155,6 +163,16 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
                     </button>
                   ))}
                 </div>
+                {/* What a message will actually say, so an empty picker is never a guess. */}
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+                  {p.omitCategories
+                    ? 'Messages name no niche or category. Save to apply.'
+                    : p.categories.length
+                      ? `Messages mention: ${p.categories.join(', ')}.`
+                      : brandNiche
+                        ? `Nothing ticked, so messages use the niche from your Brand page: ${brandNiche}. Tick the box above to leave it out.`
+                        : 'Nothing ticked, and no niche on your Brand page: messages name none.'}
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

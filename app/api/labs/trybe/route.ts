@@ -19,6 +19,7 @@
 // The cap is enforced here, at claim time, not in the browser: a page that is
 // reloaded, or open twice, cannot send more than the cap allows.
 
+import { outreachNiche } from '@/lib/outreach-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -199,13 +200,13 @@ async function writerFacts(admin: Db, ownerId: string): Promise<string[]> {
   const bp = (data || {}) as Record<string, unknown>
   const op = (bp.outreach_profile && typeof bp.outreach_profile === 'object') ? bp.outreach_profile as Record<string, unknown> : {}
   const s = (o: Record<string, unknown>, k: string) => { const v = o[k]; return typeof v === 'string' && v.trim() ? v.trim().slice(0, 600) : '' }
-  const cats = Array.isArray(op.categories) ? (op.categories as unknown[]).map(String).filter(Boolean).slice(0, 8) : []
+  const nicheLine = outreachNiche(bp)
   return [
     (s(bp, 'brand_name') || s(bp, 'creator_name') || s(bp, 'display_name')) && `Name: ${s(bp, 'brand_name') || s(bp, 'creator_name') || s(bp, 'display_name')}`,
     s(op, 'intro') && `About them: ${s(op, 'intro')}`,
     s(op, 'offer') && `What they offer: ${s(op, 'offer')}`,
-    cats.length ? `Categories they cover: ${cats.join(', ')}` : '',
-    s(bp, 'niche') && `Niche: ${s(bp, 'niche')}`,
+    nicheLine.fact,
+    nicheLine.rule,
     (s(op, 'youtube') || s(bp, 'youtube_url')) && `YouTube: ${s(op, 'youtube') || s(bp, 'youtube_url')}`,
     s(op, 'storefrontUrl') && `Amazon storefront: ${s(op, 'storefrontUrl')}`,
     s(op, 'signoff') && `Sign-off: ${s(op, 'signoff')}`,
