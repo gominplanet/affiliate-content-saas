@@ -59,7 +59,7 @@ export default function ConsolidationCard() {
   const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/seo/consolidation', { signal: AbortSignal.timeout(90_000) })
+    fetch('/api/seo/consolidation')
       .then(async r => {
         const d = await r.json().catch(() => null)
         if (!r.ok || !d || d.error) { setFailed(d?.error || `the server answered ${r.status}`); return }
