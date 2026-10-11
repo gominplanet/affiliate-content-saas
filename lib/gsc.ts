@@ -117,7 +117,8 @@ export async function inspectUrl(token: string, property: string, inspectionUrl:
     })
     if (!res.ok) return null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = (await res.json() as any)?.inspectionResult?.indexStatusResult
+    const ir = (await res.json() as any)?.inspectionResult
+    const r = ir?.indexStatusResult
     if (!r) return null
     return {
       verdict: r.verdict ?? null,
@@ -125,7 +126,9 @@ export async function inspectUrl(token: string, property: string, inspectionUrl:
       indexed: /indexed/i.test(r.coverageState || '') && !/not indexed/i.test(r.coverageState || ''),
       lastCrawl: r.lastCrawlTime ?? null,
       robotsTxtState: r.robotsTxtState ?? null,
-      inspectionLink: r.googleCanonical ? null : null,
+      // Google's own link to this URL in Search Console's inspection (where
+      // Request indexing is). A link MVP built by hand opened Google's 404.
+      inspectionLink: typeof ir?.inspectionResultLink === 'string' ? ir.inspectionResultLink : null,
     }
   } catch {
     return null

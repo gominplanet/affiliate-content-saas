@@ -47,6 +47,10 @@ const sm = read('app/api/seo/sitemap-status/route.ts')
 check('sitemap status is read from Search Console, and a failure is said', /webmasters\/v3\/sites\//.test(sm) && /cannot say whether your sitemap is submitted/.test(sm))
 const page = read('app/(dashboard)/seo/page.tsx')
 check('the SEO page shows the indexing help when Search Console is connected', /<IndexingHelp/.test(page))
+// 2026-10-11: the hand-built inspect link opened Google's 404 page.
+const help = read('components/seo/IndexingHelp.tsx')
+check('Request indexing opens Google\'s own inspection link, from the URL Inspection API', /\/api\/seo\/inspect-link\?url=/.test(help) && !/inspectLink\(/.test(help) && /inspectionResultLink/.test(read('lib/gsc.ts')))
+check('no link from Google: the address is copied and Search Console opens, with what to do', /navigator\.clipboard\?\.writeText\(url\)/.test(help) && /Inspect any URL/.test(help))
 
 if (failed) { console.error(`\n${failed} indexing check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
