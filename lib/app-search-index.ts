@@ -66,6 +66,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Articles', href: '/articles', group: 'Blog', keywords: 'articles how to informational long form' },
   { label: 'Ended deals', href: '/ended-deals', group: 'Blog', keywords: 'ended deals expired sale deal aftercare' },
   { label: 'SEO and indexing', href: '/seo', group: 'Blog', keywords: 'seo & indexing search console index indexing google ranking keywords gsc rebuild' },
+  { label: 'SEO guide', href: '/seo/guide', group: 'Blog', keywords: 'seo guide help how does seo work indexing explained search console beginner confused' },
   { label: 'Ads', href: '/ads', group: 'Blog', keywords: 'adsense google ads ca-pub banners sidebar homepage in-content monetize ads.txt' },
   { label: 'Blog design', href: '/customize', group: 'Blog', keywords: 'customize blog theme colors color palette primary secondary hero layout fonts show hide dates' },
   { label: 'Site Verification & Meta Tags', href: '/customize', group: 'Blog design', keywords: 'site verification meta tags verify ownership head tags search console' },

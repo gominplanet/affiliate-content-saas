@@ -21,7 +21,7 @@ import ConsolidationCard from '@/components/seo/Consolidation'
 import AioReadinessCard from '@/components/seo/AioReadinessCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil, BookOpen, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -636,6 +636,19 @@ export default function SeoPage() {
           </>
         }
       />
+
+      {/* THE GUIDE, FIRST THING ON THE PAGE (Seb, 2026-10-12: "a guide for
+          confused users ... clickable at the top of that page"). */}
+      <Link href="/seo/guide"
+        className="mb-4 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-[#7C3AED]/60"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)' }}>
+        <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}><BookOpen size={17} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>New here, or not sure what this page means? Read the SEO guide</span>
+          <span className="block text-[12.5px]" style={{ color: 'var(--text-2)' }}>Your first 15 minutes, a 10 minute weekly routine, every section and stage, and every word in plain language.</span>
+        </span>
+        <ArrowRight size={16} className="flex-shrink-0" style={{ color: '#7C3AED' }} />
+      </Link>
 
       <SeoHubTabs />
 
