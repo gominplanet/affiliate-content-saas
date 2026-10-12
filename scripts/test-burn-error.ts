@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cloudErrorText, burnErrorMessage } from '../lib/burn-error'
+import { cloudErrorText, burnErrorMessage, cloudinaryRefusedSize } from '../lib/burn-error'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -32,8 +32,15 @@ check('anything else passes its reason through', burnErrorMessage('HTTP 400: Inv
 const svc = read('services/cloudinary/index.ts')
 check('the Cloudinary service never turns an error into String(e)', !/e instanceof Error \? e\.message : String\(e\)/.test(svc) && (svc.match(/cloudErrorText\(e\)/g) || []).length >= 5)
 check('the video upload is given longer than the SDK default 60s', /folder: 'ig-overlays',\s*\n\s*timeout: 150_000/.test(svc))
-check('the burn route explains the failure', /burnErrorMessage\(getLastOverlayError\(\)\)/.test(read('app/api/instagram/burn/route.ts')))
+check('the burn route explains the failure', /burnErrorMessage\(cloudReason\)/.test(read('app/api/instagram/burn/route.ts')))
 check('Clip Factory survives a reply that is not JSON', /await res\.json\(\)\.catch\(\(\) => \(\{ error: res\.status === 504/.test(read('components/clip-factory/ClipFactory.tsx')))
+
+check('too big and too slow hand over to the render server; a bad transform does not', cloudinaryRefusedSize(cloudErrorText(apiShape)) && cloudinaryRefusedSize(cloudErrorText(timeoutShape)) && cloudinaryRefusedSize('Video is too large to process synchronously') && !cloudinaryRefusedSize('HTTP 400: Invalid transformation'))
+const route = read('app/api/instagram/burn/route.ts')
+check('a clip Cloudinary refuses, or a long one, burns on MVP\'s render server', /if \(!burnedUrl && \(long \|\| cloudinaryRefusedSize\(cloudReason\)\)\)/.test(route) && /await renderCta\(videoUrl,/.test(route) && /const LONG_CLIP_SEC = 120/.test(route))
+check('the route has time for a render server burn', /export const maxDuration = 600/.test(route))
+check('the answer says which burner made it, and the page says so', /\n\s*via,\n/.test(route) && /data\.via === 'render-server'/.test(read('components/clip-factory/ClipFactory.tsx')))
+check('the page sends the clip length', /durationSec: clip\.durationSec,/.test(read('components/clip-factory/ClipFactory.tsx')))
 
 if (failed) { console.error(`\n${failed} burn error check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

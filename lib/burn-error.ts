@@ -29,6 +29,13 @@ export function cloudErrorText(e: unknown): string {
   return String(e)
 }
 
+/** Cloudinary turned the video down for its size or took too long with it:
+ *  the cases MVP's own render server can take over. */
+export function cloudinaryRefusedSize(raw: string | null | undefined): boolean {
+  const r = String(raw || '')
+  return /file size too large|too large to process|maximum is \d+|exceeds.*(size|limit)|request timeout|timeouterror|\(499\)|timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(r)
+}
+
 const SHORTER = 'Use a shorter clip (under about 90 seconds works best), or press "Skip and publish as is" to post it without the overlay.'
 
 /** What the creator sees when the burn did not work. */

@@ -760,6 +760,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           product: product.trim() || undefined,
           productName: productName.trim() || undefined,
           stickerDurationSec: burnDuration,
+          durationSec: clip.durationSec,
         }),
       })
       // A route that ran out of time answers with a page, not JSON.
@@ -774,7 +775,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       // Never let a caption-less burn wipe the clip's own AI caption.
       setComposedCaption(((data.caption as string) || '').trim() || fallbackCaption)
       setStage('publish')
-      toast.success('Overlay burned')
+      toast.success(data.via === 'render-server' ? 'Overlay burned on MVP\'s render server (this clip was too long for the quick burner)' : 'Overlay burned')
     } catch (e) { toast.error(errText(e)) }
     finally { setBurning(false) }
   }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, badgePos, badgeWidthPct, product, productName, burnDuration, fallbackCaption])
@@ -1402,6 +1403,11 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
               </button>
               <button onClick={skipEnhance} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Skip and publish as is</button>
             </div>
+            {/* A long clip burns on MVP's render server and takes minutes: said,
+                so a spinner that keeps going does not look stuck. */}
+            {burning && (clip?.durationSec ?? 0) > 120 && (
+              <p className="text-[12px] text-[#86868b]">This clip is {fmtDuration(clip?.durationSec ?? 0)} long, so MVP burns it on its own render server. That takes a few minutes; keep this page open.</p>
+            )}
           </div>
 
           {/* Preview — badge overlaid on the clip, drag to place it */}
