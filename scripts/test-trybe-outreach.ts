@@ -405,7 +405,7 @@ check('a late answer for another conversation is dropped', /const current = open
   check('the acceptance rate leaves pending requests out, and is unknown until one is answered', acceptRate(['accepted', 'declined', 'pending', 'accepted']) === 67 && acceptRate(['pending']) === null)
   const UI5 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('every page of the list is read, and a read that stopped early says so', /discovery\/brands\?limit=75&page=\$\{p\}/.test(UI5) && /then stopped \(\$\{stopped\}\)\. Only brands it saw are tagged\./.test(UI5) && /if \(!page\.listed \|\| \(total && p >= total\)\) \{ complete = true; break \}/.test(UI5))
-  check('Sent says why a request is not tagged rather than counting it as declined', /not in TRYBE&rsquo;s brand list now/.test(UI5) && /Accepted or declined is told from your TRYBE inbox, which could not be read/.test(UI5) && /requestState\(requests\.flags\[b\.brand_id\], inbox \? !!c : null\)/.test(UI5))
+  check('Sent says why a request is not tagged rather than counting it as declined', /not in TRYBE&rsquo;s brand list now/.test(UI5) && /Accepted or declined is told from your TRYBE inbox, which could not be read/.test(UI5) && /requestState\(requests\.flags\[b\.brand_id\], inbox \? answered : null\)/.test(UI5))
   check('a brand that invited you is shown', /invited you on TRYBE/.test(UI5))
 }
 

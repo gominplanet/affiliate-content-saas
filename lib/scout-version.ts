@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.45.0'
+export const SCOUT_LATEST_VERSION = '1.45.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: reads TRYBE\'s Top 100 and how many Meta ads each brand runs, so MVP can show the brands worth your time.'
+  'TRYBE: the Meta ad check answers in time with what it read, reopens a closed tab, and says when Facebook is not in English.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pickScore, siteSocials, readTopCreatives, tallyTop, readAdLibraryCount, bucketDollars, adLibraryUrl } from '../lib/trybe-pick'
-import { afterAccept, parseVideoPlan, honestCtas, scriptFor, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
+import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -39,14 +39,19 @@ check('Ad Library searched by the exact brand name, active US ads', /active_stat
 // 2 and 3. After a yes
 const now = Date.parse('2026-10-12T12:00:00Z')
 const day = 86_400_000
-check('no chat: nothing to do', afterAccept({ chat: false, lastIsMine: null, lastAt: 0 }, now).state === 'none')
-check('accepted, nothing sent: message before you film', afterAccept({ chat: true, lastIsMine: false, lastAt: now - day }, now).state === 'send_first')
-check('sent today: waiting, do not film', (() => { const a = afterAccept({ chat: true, lastIsMine: true, lastAt: now - 3600_000, kickoffSentAt: new Date(now - 3600_000).toISOString() }, now); return a.state === 'waiting' && a.filmOk === false })())
-const quiet = afterAccept({ chat: true, lastIsMine: true, lastAt: now - (NO_ANSWER_DAYS + 1) * day }, now)
+const R = (myAts: number[], brandAts: number[]) => ({ ok: true, myAts, brandAts })
+check('no chat: nothing to do', afterAccept({ chat: false }, now).state === 'none')
+check('chat not read yet: checking, never a verdict', afterAccept({ chat: true }, now).state === 'checking')
+check('a chat that could not be read says so, never "don\'t film"', afterAccept({ chat: true, read: { ok: false, myAts: [], brandAts: [] } }, now).state === 'unknown')
+check('who wrote is told from the messages, not the list', readChat([{ mine: null, at: 1 }, { mine: null, at: 2 }]).ok === false && readChat([{ mine: true, at: 1 }, { mine: false, at: 2 }]).ok)
+check('accepted, nothing sent: message before you film', afterAccept({ chat: true, read: R([], [now - day]) }, now).state === 'send_first')
+check('sent today: waiting, do not film', (() => { const a = afterAccept({ chat: true, read: R([now - 3600_000], []) }, now); return a.state === 'waiting' && a.filmOk === false })())
+const quiet = afterAccept({ chat: true, read: R([now - (NO_ANSWER_DAYS + 1) * day], []) }, now)
 check(`no answer in ${NO_ANSWER_DAYS}+ days: don't film yet, with a follow up`, quiet.state === 'no_answer' && /Don't film yet/.test(quiet.says))
-const yes = afterAccept({ chat: true, lastIsMine: false, lastAt: now - 3600_000, kickoffSentAt: new Date(now - 2 * day).toISOString() }, now)
+const yes = afterAccept({ chat: true, read: R([now - 2 * day], [now - 3600_000]) }, now)
 check('they answered after your message: safe to film 2 or 3', yes.state === 'answered' && yes.filmOk === true && /2 or 3/.test(yes.says))
-check('a message older than your kickoff is not an answer', afterAccept({ chat: true, lastIsMine: false, lastAt: now - 3 * day, kickoffSentAt: new Date(now - 2 * day).toISOString() }, now).state !== 'answered')
+check('answered stays answered after you write back (review 2026-10-12)', afterAccept({ chat: true, read: R([now - 5 * day, now - 4 * day], [now - 4.5 * day]) }, now).state === 'answered')
+check('a message from the brand before yours is not an answer', afterAccept({ chat: true, read: R([], [now - 3 * day]), kickoffSentAt: new Date(now - 2 * day).toISOString() }, now).state === 'waiting')
 check('the first message asks for a call and their ad spend, and starts with 2 or 3 videos', /ten minutes for a quick call/.test(KICKOFF_SYSTEM('')) && /spend on ads each month/.test(KICKOFF_SYSTEM('')) && /two or three videos/.test(KICKOFF_SYSTEM('')))
 
 // 4. One body, many hooks
@@ -69,7 +74,7 @@ const bg = read('extension/background.js')
 check('SCOUT may read TRYBE\'s Top 100, read only', /creator\\\/v2\\\/top-creatives/.test(bg) && /method: 'GET', re: \/\^\\\/backend\\\/api\\\/creator\\\/v2\\\/top-creatives/.test(bg))
 check('SCOUT reads Meta\'s Ad Library behind the TRYBE origin check, with Facebook access asked first', /msg\.type === 'MVP_TRYBE_META_ADS'/.test(bg) && /async function metaAdsCounts[\s\S]{0,400}askFacebookAccess/.test(bg))
 const manifest = JSON.parse(read('extension/manifest.json')) as { version: string }
-check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.45\.0'/.test(read('lib/scout-version.ts')) && manifest.version === '1.45.0')
+check('SCOUT version bumped in lockstep', read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`) && /^1\.4[5-9]\./.test(manifest.version))
 const route = read('app/api/labs/trybe/route.ts')
 check('the route saves the Top 100 and Meta counts, guarded against rewrites', /action === 'top100'/.test(route) && /action === 'meta_ads'/.test(route) && /meta_ads_checked_at\.lt\./.test(route))
 check('the route writes the first message, the follow up and the plan', /action === 'kickoff' \|\| action === 'followup'/.test(route) && /action === 'video_plan'/.test(route) && /honestCtas\(/.test(route))
@@ -84,6 +89,21 @@ const page = read('components/labs/TrybeOutreach.tsx')
 check('the page offers Best bets and the after-a-yes panel', /id: 'picks', label: 'Best bets'/.test(page) && /<TrybeAfterAccept/.test(page))
 const mig = read('supabase/migrations/425_trybe_playbook.sql')
 check('migration 425 is safe to run twice', !/add column (?!if not exists)/i.test(mig) && /create index if not exists/.test(mig))
+
+// Review fixes, 2026-10-12 (three reviews of the whole page).
+const ui = read('components/labs/TrybeOutreach.tsx')
+check('a request list that could not be read is said, never shown as 0 accepted', /if \(pages === 0\) \{ setRequestsFailed/.test(ui) && /could not read where your requests stand/.test(ui))
+check('"not in TRYBE\'s list" only after a whole read', /requests\.complete \? went\.filter/.test(ui))
+check('Accepted and Replied use the same rule (a chat after the request)', /requestState\(requests\.flags\[b\.brand_id\], inbox \? answered : null\)/.test(ui))
+check('the after-a-yes panel shows only for a chat after the request, and the counts come from the panels', /reply === 'replied' && \(\s*<TrybeAfterAccept/.test(ui) && /onState=\{onAfterState\}/.test(ui) && /afterStates\[r\.b\.brand_id\] \|\| 'checking'/.test(ui))
+check('the daily find never pulls you out of the Inbox, and a failed TRYBE read is not marked done', /setTab\(t => \(t === 'find' \|\| t === 'queue' \? 'queue' : t\)\)/.test(ui) && /if \(!collected\)/.test(ui))
+check('Meta check runs in batches with progress and says why a brand was not read', /i \+= 8/.test(ui) && /not-english/.test(ui) && /could-not-open/.test(ui) && /already-running/.test(ui))
+check('a creator never sees a migration number', /function setupWords/.test(route) && route.slice(route.indexOf('export async function POST(')).split('\n').filter(l => /migration \d+ in Supabase first/.test(l) && /error/.test(l) && !/setupWords/.test(l)).length === 0)
+check('only an admin replaces the shared Top 100, and a read matching nothing changes nothing', /if \(tier !== 'admin'\) \{\s*const fresh/.test(route) && /NOTHING MATCHED, NOTHING CHANGED/.test(route))
+check('Best bets ranks a wider pool than the keyword search keeps', /sort === 'picks' \|\| sort === 'creators' \? 1200 : 400/.test(route))
+check('SCOUT\'s Meta check stops on a deadline, keeps alive, and reopens a closed tab', /notReached\.push/.test(bg) && /const ka = startKeepAlive\(\)[\s\S]{0,200}for \(let i = 0; i < list\.length/.test(bg) && /catch \(e\) \{ tab = null \}/.test(bg))
+const afterUi = read('components/labs/TrybeAfterAccept.tsx')
+check('a message already in the chat is not sent twice, and a lost answer is checked before "Not sent"', /already in your TRYBE chat, so it was not sent again/.test(afterUi) && /const maybeSent = !r\.ok && !r\.status/.test(afterUi))
 
 if (failed) { console.error(`\n${failed} TRYBE playbook check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

@@ -17,15 +17,28 @@
 
 // ── Where an accepted brand stands ───────────────────────────────────────────
 
-export type AfterState = 'none' | 'send_first' | 'waiting' | 'no_answer' | 'answered'
+export type AfterState = 'none' | 'checking' | 'unknown' | 'send_first' | 'waiting' | 'no_answer' | 'answered'
+
+/** The conversation, read message by message: when you wrote and when the
+ *  brand wrote. TRYBE's conversation list often does not say who wrote last,
+ *  so the stage is never told from the list alone (review 2026-10-12: a brand
+ *  that answered was told "don't film yet"). */
+export interface ChatRead { ok: boolean; myAts: number[]; brandAts: number[] }
+
+/** A chat read from its messages. Not ok when nobody in it can be told
+ *  apart (MVP does not know which sender is you yet). */
+export function readChat(messages: Array<{ mine: boolean | null; at: number }>): ChatRead {
+  const myAts = messages.filter((m) => m.mine === true && m.at > 0).map((m) => m.at)
+  const brandAts = messages.filter((m) => m.mine === false && m.at > 0).map((m) => m.at)
+  const unknown = messages.filter((m) => m.mine === null).length
+  return { ok: !(messages.length > 0 && unknown === messages.length), myAts, brandAts }
+}
 
 export interface AfterInput {
-  /** TRYBE has a conversation with this brand (it accepted, or wrote). */
+  /** TRYBE has a conversation with this brand, opened after the request. */
   chat: boolean
-  /** Who wrote the conversation's last message: you, them, or unknown. */
-  lastIsMine: boolean | null
-  /** When that last message was written (ms), 0 when unknown. */
-  lastAt: number
+  /** The conversation as read; undefined while it is being read. */
+  read?: ChatRead | null
   kickoffSentAt?: string | null
   followupSentAt?: string | null
 }
@@ -40,20 +53,22 @@ const DAY = 86_400_000
 /** What to do next with a brand that accepted. Pure. */
 export function afterAccept(a: AfterInput, now = Date.now()): After {
   if (!a.chat) return { state: 'none', days: null, label: '', says: '', filmOk: null }
-  const kick = Date.parse(a.kickoffSentAt || '')
-  const fol = Date.parse(a.followupSentAt || '')
-  const mineAt = Math.max(Number.isFinite(kick) ? kick : 0, Number.isFinite(fol) ? fol : 0, a.lastIsMine === true ? a.lastAt : 0)
-  const wrote = mineAt > 0
-  // They wrote after you did: a person is reading.
-  if (wrote && a.lastIsMine === false && a.lastAt > mineAt) {
+  if (a.read === undefined || a.read === null) return { state: 'checking', days: null, label: 'Reading the chat', says: 'MVP is reading this conversation on TRYBE to see who wrote last.', filmOk: null }
+  if (!a.read.ok) return { state: 'unknown', days: null, label: 'Could not read this chat', says: 'MVP could not tell who wrote what. Open the chat to see where it stands.', filmOk: null }
+  const stamps = [a.kickoffSentAt, a.followupSentAt].map((x) => Date.parse(x || '')).filter((t) => Number.isFinite(t) && t > 0)
+  const mine = [...a.read.myAts, ...stamps]
+  if (!mine.length) {
+    return { state: 'send_first', days: null, label: 'Message before you film', says: 'Accepted. Send them a first message and wait for a person to answer before you film, so your videos do not sit unapproved.', filmOk: false }
+  }
+  const firstMine = Math.min(...mine)
+  // Answered once a person at the brand wrote after your first message: it
+  // stays answered, whoever wrote last since.
+  if (a.read.brandAts.some((t) => t > firstMine)) {
     return { state: 'answered', days: null, label: 'They answered', says: 'A person at the brand is reading. Safe to film 2 or 3 videos to start.', filmOk: true }
   }
-  if (!wrote) {
-    return { state: 'send_first', days: null, label: 'Message before you film', says: 'Accepted. Send them a first message and wait for an answer before you film, so your videos do not sit unapproved.', filmOk: false }
-  }
-  const days = Math.floor((now - mineAt) / DAY)
+  const days = Math.floor((now - Math.max(...mine)) / DAY)
   if (days >= NO_ANSWER_DAYS) {
-    return { state: 'no_answer', days, label: `No answer in ${days} days`, says: 'Don\'t film yet: nobody at the brand has answered. Send a short follow up, or put your time into a brand that answers.', filmOk: false }
+    return { state: 'no_answer', days, label: `No answer to your message in ${days} days`, says: 'Don\'t film yet: nobody at the brand has answered. Send a short follow up, or put your time into a brand that answers.', filmOk: false }
   }
   return { state: 'waiting', days, label: days === 0 ? 'Messaged today' : `Messaged ${days} day${days === 1 ? '' : 's'} ago`, says: 'Waiting for a person at the brand to answer. Hold off filming until they do.', filmOk: false }
 }

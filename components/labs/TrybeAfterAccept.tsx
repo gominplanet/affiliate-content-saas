@@ -19,7 +19,7 @@ import { toast } from 'sonner'
 import { Loader2, Send, Sparkles, Copy, Check, AlertTriangle, Clapperboard, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { listOf, readMessage } from '@/components/labs/TrybeInbox'
-import { afterAccept, scriptFor, HOOK_STYLE_WORDS, type VideoPlan } from '@/lib/trybe-playbook'
+import { afterAccept, readChat, scriptFor, HOOK_STYLE_WORDS, type VideoPlan, type ChatRead, type AfterState } from '@/lib/trybe-playbook'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -45,20 +45,42 @@ async function api(body: Record<string, unknown>) {
 
 const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
 
-export default function TrybeAfterAccept({ b, chatId, lastIsMine, lastAt, me, myName, canSend, onPatch }: {
+// ONE CHAT AT A TIME through SCOUT, kept two minutes per version of the
+// chat (its latest message time), so a Sent tab of thirty brands does not
+// send thirty requests to TRYBE at once and does not read them twice.
+const chatCache = new Map<string, { at: number; read: ChatRead }>()
+let chatChain: Promise<unknown> = Promise.resolve()
+function readChatQueued(chatId: string, version: number, me: string[], myName: string): Promise<ChatRead> {
+  const key = `${chatId}:${version}`
+  const hit = chatCache.get(key)
+  if (hit && Date.now() - hit.at < 120_000) return Promise.resolve(hit.read)
+  const job = chatChain.then(async () => {
+    const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(chatId)}/messages?page=1&limit=50`)
+    const read: ChatRead = r.ok
+      ? readChat(listOf(r.json).map((m) => readMessage(m, me, myName)).filter((m): m is NonNullable<ReturnType<typeof readMessage>> => !!m))
+      : { ok: false, myAts: [], brandAts: [] }
+    chatCache.set(key, { at: Date.now(), read })
+    return read
+  })
+  chatChain = job.catch(() => null)
+  return job
+}
+
+export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSend, onPatch, onState }: {
   b: AfterBrand
   chatId: string
-  lastIsMine: boolean | null
+  /** The conversation's latest message time: a new message means read again. */
   lastAt: number
   me: string[]
   myName: string
-  /** SCOUT can post into the TRYBE conversation. */
+  /** SCOUT can read and post into the TRYBE conversation. */
   canSend: boolean
   onPatch: (p: Partial<AfterBrand>) => void
+  /** The stage, told to the page so its counts match the panels. */
+  onState?: (brandId: string, state: AfterState) => void
 }) {
-  // When the creator last wrote in this chat, read from the conversation when
-  // the list cannot say (they may have written on TRYBE itself).
-  const [myLastAt, setMyLastAt] = useState<number | null>(null)
+  // The chat, read message by message (null while reading).
+  const [chat, setChat] = useState<ChatRead | null>(null)
   const [composer, setComposer] = useState<{ kind: 'kickoff' | 'followup'; text: string } | null>(null)
   const [writing, setWriting] = useState(false)
   const [sending, setSending] = useState(false)
@@ -71,29 +93,29 @@ export default function TrybeAfterAccept({ b, chatId, lastIsMine, lastAt, me, my
 
   useEffect(() => { setPlan(b.video_plan || null) }, [b.video_plan])
 
-  // The list says the brand wrote last and MVP has no message on record: read
-  // the chat once for a message of the creator's own, so a creator who wrote on
-  // TRYBE is not told to "message before you film".
+  // EVERY STAGE FROM THE CHAT ITSELF (review 2026-10-12): TRYBE's list often
+  // does not say who wrote last, and telling it from the list told a brand
+  // that answered "don't film yet". A chat that cannot be read says so.
   useEffect(() => {
-    if (lastIsMine !== false || b.kickoff_sent_at || b.followup_sent_at || myLastAt !== null || !canSend) return
+    if (!canSend) { setChat({ ok: false, myAts: [], brandAts: [] }); return }
     let live = true
-    void requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(chatId)}/messages?page=1&limit=50`).then((r) => {
-      if (!live || !r.ok) return
-      const mine = listOf(r.json).map((m) => readMessage(m, me, myName)).filter((m) => m && m.mine === true) as Array<{ at: number }>
-      setMyLastAt(mine.length ? Math.max(...mine.map((m) => m.at)) : 0)
-    }).catch(() => { /* the list's answer stands */ })
+    setChat(null)
+    void readChatQueued(chatId, lastAt, me, myName).then((r) => { if (live) setChat(r) }).catch(() => { if (live) setChat({ ok: false, myAts: [], brandAts: [] }) })
     return () => { live = false }
-  }, [chatId, lastIsMine, b.kickoff_sent_at, b.followup_sent_at, canSend, me, myName, myLastAt])
+  }, [chatId, lastAt, canSend, me, myName])
 
-  const followupAt = [b.followup_sent_at, myLastAt ? new Date(myLastAt).toISOString() : null].filter(Boolean).sort().pop() || null
-  const st = afterAccept({ chat: true, lastIsMine, lastAt, kickoffSentAt: b.kickoff_sent_at, followupSentAt: followupAt })
+  const st = afterAccept({ chat: true, read: chat, kickoffSentAt: b.kickoff_sent_at, followupSentAt: b.followup_sent_at })
+  useEffect(() => { onState?.(b.brand_id, st.state) }, [b.brand_id, st.state, onState])
   const tone = st.state === 'answered' ? GREEN : st.state === 'no_answer' ? RED : st.state === 'send_first' ? AMBER : 'var(--text-soft)'
 
-  async function write(kind: 'kickoff' | 'followup') {
+  async function write(kind: 'kickoff' | 'followup', fresh = false) {
+    // The first message written before is opened again, not paid for twice.
+    if (kind === 'kickoff' && !fresh && b.kickoff_draft) { setComposer({ kind, text: b.kickoff_draft }); setNote(null); return }
     setWriting(true); setNote(null)
     try {
       const d = await api({ action: kind, brandId: b.brand_id })
       setComposer({ kind, text: d.text })
+      if (kind === 'kickoff') onPatch({ kickoff_draft: d.text })
       if (!d.researched) setNote({ tone: 'warn', text: 'MVP could not read their website, so the ideas are general. Add a product of theirs before sending.' })
     } catch (e) { setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'MVP could not write it.' }) }
     finally { setWriting(false) }
@@ -110,20 +132,31 @@ export default function TrybeAfterAccept({ b, chatId, lastIsMine, lastAt, me, my
         return r.ok ? listOf(r.json).map((m) => readMessage(m, me, myName)).filter(Boolean) as Array<{ id: string; text: string }> : null
       }
       const before = await read()
+      // ALREADY THERE (another tab, or a send that went before an error): not
+      // posted a second time.
+      if (before && before.some((m) => flat(m.text) === flat(text))) {
+        setComposer(null)
+        setNote({ tone: 'ok', text: 'This message is already in your TRYBE chat, so it was not sent again.' })
+        return
+      }
       const seenBefore = new Set((before || []).map((m) => m.id))
       const r = await requestTrybeApi('POST', `/backend/api/channels/${encodeURIComponent(chatId)}/messages`, { content: text })
-      const timedOut = !r.ok && (r.error === 'timeout' || r.error === 'SCOUT did not answer.')
-      if (!r.ok && !timedOut) { setNote({ tone: 'bad', text: `Not sent: TRYBE answered ${r.status ?? r.error ?? 'nothing'}.` }); return }
+      // Only an answer FROM TRYBE says it was refused. No status (SCOUT lost
+      // the page, the tab closed, a timeout) may still have sent it, so the
+      // chat is read before anything says "Not sent".
+      const maybeSent = !r.ok && !r.status
+      if (!r.ok && !maybeSent) { setNote({ tone: 'bad', text: `Not sent: TRYBE answered ${r.status}.` }); return }
       // SENT MEANS SEEN in the conversation, never "the request went".
       const after = await read()
       const seen = !!after && after.some((m) => !seenBefore.has(m.id) && flat(m.text) === flat(text))
-      if (!seen) { setNote({ tone: 'warn', text: 'TRYBE did not show the message in the conversation yet. Check it on TRYBE before sending again.' }); return }
+      if (!seen) { setNote({ tone: 'warn', text: maybeSent ? `SCOUT lost touch with TRYBE (${r.error || 'no answer'}) and the message does not show in the chat yet. Check it on TRYBE before sending again.` : 'TRYBE did not show the message in the conversation yet. Check it on TRYBE before sending again.' }); return }
+      chatCache.clear()
       const kind = composer.kind
       setComposer(null)
       setNote({ tone: 'ok', text: kind === 'kickoff' ? 'Sent. It shows in your TRYBE chat. Wait for a person to answer before you film.' : 'Follow up sent. It shows in your TRYBE chat.' })
       const at = new Date().toISOString()
       onPatch(kind === 'kickoff' ? { kickoff_sent_at: at } : { followup_sent_at: at })
-      await api({ action: 'kickoff_sent', brandId: b.brand_id, kind }).catch((e) => setNote({ tone: 'warn', text: `Sent, but MVP could not save when: ${e instanceof Error ? e.message : 'error'}` }))
+      await api({ action: 'kickoff_sent', brandId: b.brand_id, kind }).catch((e) => setNote({ tone: 'warn', text: `Sent, but MVP could not save when it went: ${e instanceof Error ? e.message : 'error'}` }))
     } finally { setSending(false) }
   }
 
@@ -134,7 +167,7 @@ export default function TrybeAfterAccept({ b, chatId, lastIsMine, lastAt, me, my
       const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
       setPlan(p); setPlanOpen(true)
       onPatch({ video_plan: p, video_plan_at: new Date().toISOString() })
-      if (!d.saved) setPlanNote('These ideas are shown but could not be saved (migration 425 is needed). Copy what you want to keep.')
+      if (!d.saved) setPlanNote('These ideas are shown but could not be saved, so they will be gone next visit. Copy what you want to keep.')
     } catch (e) { setPlanNote(e instanceof Error ? e.message : 'MVP could not plan the videos.') }
     finally { setPlanning(false) }
   }
@@ -175,7 +208,7 @@ export default function TrybeAfterAccept({ b, chatId, lastIsMine, lastAt, me, my
             <button onClick={() => void send()} disabled={sending || !composer.text.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
               {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send on TRYBE
             </button>
-            <button onClick={() => void write(composer.kind)} disabled={writing} className={btn} style={{ border: '1px solid var(--border)' }}>
+            <button onClick={() => void write(composer.kind, true)} disabled={writing} className={btn} style={{ border: '1px solid var(--border)' }}>
               {writing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Write it again
             </button>
             <button onClick={() => setComposer(null)} className="text-[12px] font-semibold" style={soft}>Cancel</button>

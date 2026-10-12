@@ -25,6 +25,7 @@ export const maxDuration = 120
  *  websites on TRYBE are all read within a day of the first collection. */
 const PER_RUN = 60
 const AT_ONCE = 10
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
 /** Older website reads given the TikTok check per run. */
 const SOCIALS_PER_RUN = 80
 /** A read that failed is tried again after this long. */
@@ -101,8 +102,13 @@ export async function GET(request: Request) {
         const url = normalizeSite(r.website)
         let found: { tiktokHandle: string | null; tiktokShop: boolean } | null = null
         try {
-          const res = url ? await safeFetch(url, { headers: { accept: 'text/html' }, signal: AbortSignal.timeout(10_000) }) : null
-          if (res && res.ok) found = siteSocials((await res.text()).slice(0, 600_000))
+          const res = url ? await safeFetch(url, { headers: { accept: 'text/html', 'user-agent': BROWSER_UA }, signal: AbortSignal.timeout(10_000) }) : null
+          const html = res && res.ok ? (await res.text()).slice(0, 600_000) : ''
+          const s = html ? siteSocials(html) : null
+          // "Not on TikTok" only from what is plainly the brand's real page: a
+          // bot check or consent wall that answers 200 says nothing either way.
+          const realPage = /<title[^>]*>[^<]{2,}<\/title>/i.test(html) && html.length > 3000
+          if (s && (s.tiktokHandle || s.tiktokShop || realPage)) found = s
         } catch { /* stamped below as checked, with nothing found */ }
         // A home page that would not load is stamped too, as unknown, so the
         // same pages are not asked every run.

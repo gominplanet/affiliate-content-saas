@@ -57,6 +57,12 @@ const RESEARCH_TTL_MS = 14 * 24 * 3600_000
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
+/** A database update Seb has not run yet: named for an admin, who can run
+ *  it; said plainly to a creator, who cannot. */
+function setupWords(tier: string | null | undefined, adminText: string): string {
+  return tier === 'admin' ? adminText : 'TRYBE Outreach is finishing an update on MVP. Try again in a few minutes.'
+}
+
 async function gate() {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
@@ -238,7 +244,7 @@ export async function POST(request: Request) {
     const { error } = await admin.from('trybe_outreach_settings').upsert(row)
     if (error) {
       const missing = /column .* does not exist|schema cache/i.test(error.message)
-      return NextResponse.json({ error: missing ? 'The niche settings need migration 416 in Supabase first.' : error.message }, { status: 500 })
+      return NextResponse.json({ error: missing ? setupWords(tier, 'The niche settings need migration 416 in Supabase first.') : error.message }, { status: 500 })
     }
     return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId) })
   }
@@ -305,12 +311,22 @@ export async function POST(request: Request) {
     const { error } = await admin.from('trybe_directory').upsert(rows, { onConflict: 'brand_id' })
     if (error) {
       const missing = /does not exist|schema cache/i.test(error.message)
-      return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
+      return NextResponse.json({ error: missing ? setupWords(tier, 'The TRYBE directory needs migration 417 in Supabase first.') : error.message }, { status: 500 })
     }
     // What TRYBE says creators earn with each brand (migration 425), written
     // on its own so a database without the column never fails the collection.
-    const buckets = list.filter(b => b.earningsBucket).map(b => ({ brand_id: b.brandId, name: rows.find(r => r.brand_id === b.brandId)?.name || b.name, earnings_bucket: b.earningsBucket }))
-    if (buckets.length) { try { await admin.from('trybe_directory').upsert(buckets, { onConflict: 'brand_id' }) } catch { /* before migration 425 */ } }
+    // Same rule as every other shared field: a member fills a missing bucket,
+    // an admin may change one.
+    const withBucket = list.filter(b => b.earningsBucket)
+    if (withBucket.length) {
+      const { data: haveB, error: bErr } = await admin.from('trybe_directory').select('brand_id, earnings_bucket').in('brand_id', withBucket.map(b => b.brandId))
+      if (!bErr) {
+        const had = new Map(((haveB || []) as Array<{ brand_id: string; earnings_bucket: string | null }>).map(r => [r.brand_id, r.earnings_bucket]))
+        const buckets = withBucket.filter(b => trusted || !had.get(b.brandId))
+          .map(b => ({ brand_id: b.brandId, name: rows.find(r => r.brand_id === b.brandId)?.name || b.name, earnings_bucket: b.earningsBucket }))
+        if (buckets.length) await admin.from('trybe_directory').upsert(buckets, { onConflict: 'brand_id' })
+      }
+    }
     // The last chunk of a collection says how far SCOUT got.
     // A member may mark a WHOLE collection only (a partial one is an admin's
     // to record), so nobody can tell every member to skip a day's collection.
@@ -334,14 +350,16 @@ export async function POST(request: Request) {
     const raw = body.json
     if (JSON.stringify(raw ?? null).length > 600_000) return NextResponse.json({ error: 'That list is too large.' }, { status: 400 })
     const entries = readTopCreatives(raw).slice(0, 150)
-    if (!entries.length) {
-      const keys = raw && typeof raw === 'object' ? Object.keys(raw as object).slice(0, 20) : []
-      return NextResponse.json({ ok: true, read: 0, matched: 0, keys })
-    }
-    // Shared, so not rewritten by every visit: once in a few hours is enough.
+    const sample = raw && typeof raw === 'object' ? JSON.stringify(raw).slice(0, 300) : String(raw).slice(0, 120)
+    if (!entries.length) return NextResponse.json({ ok: true, read: 0, matched: 0, sample })
+    // SHARED, SO GUARDED (review 2026-10-12): every member's Best bets reads
+    // this, so only an admin's read replaces it, the same rule as TRYBE's
+    // category list. A member's read is used to show that it worked.
     const { data: last } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', 'top100').maybeSingle()
-    if (last?.updated_at && Date.now() - Date.parse(last.updated_at) < 3 * 3600_000 && tier !== 'admin') {
-      return NextResponse.json({ ok: true, read: entries.length, matched: (last.value as { matched?: number })?.matched ?? null, kept: true })
+    if (tier !== 'admin') {
+      const fresh = last?.updated_at && Date.now() - Date.parse(last.updated_at) < 30 * 3600_000
+      return NextResponse.json({ ok: true, read: entries.length, matched: (last?.value as { matched?: number })?.matched ?? null, kept: true,
+        notSaved: fresh ? null : 'MVP reads TRYBE\u2019s Top 100 for everyone once a day. Today\u2019s copy is not in yet.' })
     }
     const { byId, byName } = tallyTop(entries)
     const hits = new Map<string, { hits: number; best: number | null }>(byId)
@@ -352,8 +370,16 @@ export async function POST(request: Request) {
         if (t && !hits.has(r.brand_id)) hits.set(r.brand_id, t)
       }
     }
+    // NOTHING MATCHED, NOTHING CHANGED: a read whose brands are not in MVP's
+    // copy (other ids, other names) must not wipe yesterday's counts and stamp
+    // every brand as read with none.
+    {
+      const ids = Array.from(hits.keys())
+      const { data: known } = ids.length ? await admin.from('trybe_directory').select('brand_id').in('brand_id', ids) : { data: [] }
+      if (!(known || []).length) return NextResponse.json({ ok: true, read: entries.length, matched: 0, sample })
+    }
     const { error: clearErr } = await admin.from('trybe_directory').update({ top100_hits: 0, top100_best_rank: null, top100_checked_at: now }).gt('top100_hits', 0)
-    if (clearErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(clearErr.message) ? 'The Top 100 needs migration 425 in Supabase first.' : clearErr.message }, { status: 500 })
+    if (clearErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(clearErr.message) ? setupWords(tier, 'The Top 100 needs migration 425 in Supabase first.') : clearErr.message }, { status: 500 })
     let matched = 0
     for (const [id, t] of hits) {
       const { data: up } = await admin.from('trybe_directory').update({ top100_hits: t.hits, top100_best_rank: t.best, top100_checked_at: now }).eq('brand_id', id).select('brand_id')
@@ -376,9 +402,11 @@ export async function POST(request: Request) {
       const n = typeof x.count === 'number' && Number.isFinite(x.count) && x.count >= 0 && x.count <= 1_000_000 ? Math.round(x.count) : null
       if (!id || n == null) continue
       const stale = new Date(Date.now() - 6 * 86_400_000).toISOString()
-      const { data: up, error: upErr } = await admin.from('trybe_directory').update({ meta_ads: n, meta_ads_checked_at: now })
-        .eq('brand_id', id).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${stale}`).select('brand_id')
-      if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? 'Meta ad counts need migration 425 in Supabase first.' : upErr.message }, { status: 500 })
+      // A member fills a count nobody read this week; an admin may correct one.
+      let q = admin.from('trybe_directory').update({ meta_ads: n, meta_ads_checked_at: now }).eq('brand_id', id)
+      if (tier !== 'admin') q = q.or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${stale}`)
+      const { data: up, error: upErr } = await q.select('brand_id')
+      if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? setupWords(tier, 'Meta ad counts need migration 425 in Supabase first.') : upErr.message }, { status: 500 })
       if ((up || []).length) saved++
     }
     return NextResponse.json({ ok: true, saved })
@@ -418,8 +446,9 @@ export async function POST(request: Request) {
   if (action === 'kickoff_sent') {
     // Stamped only after the page SAW the message in the TRYBE conversation.
     const col = body.kind === 'followup' ? 'followup_sent_at' : 'kickoff_sent_at'
-    const { error } = await admin.from('trybe_brands').update({ [col]: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
-    if (error) return NextResponse.json({ error: /does not exist|schema cache/i.test(error.message) ? 'Saving when it went needs migration 425 in Supabase first. The message itself was sent.' : error.message }, { status: 500 })
+    const { data: stamped, error } = await admin.from('trybe_brands').update({ [col]: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId).select('brand_id')
+    if (!error && !(stamped || []).length) return NextResponse.json({ error: 'That brand is not on your list, so MVP could not note the message.' }, { status: 404 })
+    if (error) return NextResponse.json({ error: /does not exist|schema cache/i.test(error.message) ? setupWords(tier, 'Saving when it went needs migration 425 in Supabase first. The message itself was sent.') : error.message }, { status: 500 })
     return NextResponse.json({ ok: true, at: now })
   }
 
@@ -480,7 +509,11 @@ export async function POST(request: Request) {
     const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
     let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
     // No user given: nothing is left out, so a brand on the list still shows.
-    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: 400 })
+    // Best bets and Fewest creators rank a wider pool: the search keeps its
+    // best keyword matches first, and small brands with few creators (the
+    // best bets) would never reach the list from 400.
+    const pool = sort === 'picks' || sort === 'creators' ? 1200 : 400
+    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
     if (!rpc.error) {
       const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
       for (let i = 0; i < ids.length; i += 200) {
@@ -494,7 +527,7 @@ export async function POST(request: Request) {
       const { data, error: e } = await q.order('trybe_score', { ascending: false, nullsFirst: false }).limit(800)
       if (e) {
         const missing = /does not exist|schema cache/i.test(e.message)
-        return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : e.message }, { status: 500 })
+        return NextResponse.json({ error: missing ? setupWords(tier, 'The TRYBE directory needs migration 417 in Supabase first.') : e.message }, { status: 500 })
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
@@ -565,7 +598,7 @@ export async function POST(request: Request) {
       payOther,
       sort,
       payType,
-      capped: rows.length >= (rpc.error ? 800 : 400),
+      capped: rows.length >= (rpc.error ? 800 : pool),
       brands: top.map(({ r, match, pay, pick }) => {
         const m = mineBy.get(r.brand_id)
         return {
@@ -655,7 +688,7 @@ export async function POST(request: Request) {
     }
     if (error) {
       const missing = /does not exist|schema cache/i.test(error.message)
-      return NextResponse.json({ error: missing ? 'The TRYBE directory needs migration 417 in Supabase first.' : error.message }, { status: 500 })
+      return NextResponse.json({ error: missing ? setupWords(tier, 'The TRYBE directory needs migration 417 in Supabase first.') : error.message }, { status: 500 })
     }
     const scored = cands
       .map(r => ({ r, score: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, settings.categories, settings.keywords) : (r.trybe_score ?? 0) }))
@@ -908,7 +941,7 @@ export async function POST(request: Request) {
       const at = Number.isFinite(r.at) && r.at <= Date.now() ? new Date(r.at).toISOString() : now
       const { data, error } = await admin.from('trybe_brands').update({ replied_at: at })
         .eq('user_id', ownerId).eq('brand_id', r.id).is('replied_at', null).in('status', ['sent', 'already', 'sending']).select('brand_id')
-      if (error) return NextResponse.json({ error: /column .* does not exist|schema cache/i.test(error.message) ? 'Replies need migration 419 in Supabase first.' : error.message, needsMigration: /column .* does not exist|schema cache/i.test(error.message) }, { status: 500 })
+      if (error) return NextResponse.json({ error: /column .* does not exist|schema cache/i.test(error.message) ? setupWords(tier, 'Replies need migration 419 in Supabase first.') : error.message, needsMigration: /column .* does not exist|schema cache/i.test(error.message) }, { status: 500 })
       stamped += (data || []).length
     }
     return NextResponse.json({ ok: true, stamped })

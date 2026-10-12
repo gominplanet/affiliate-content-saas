@@ -12374,8 +12374,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_TRYBE_META_ADS') {
     // 1.45.0: how many active Meta ads mention each brand, read from Meta's
     // public Ad Library in SCOUT's own window. Nothing is pressed.
+    // 1.45.1: a deadline inside the run, so it answers with what it read
+    // before MVP stops waiting, never a bare timeout that loses every count.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
-    metaAdsCounts({ brands: msg.brands })
+    metaAdsCounts({ brands: msg.brands, endsAt: Date.now() + 240000 })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -14516,6 +14518,9 @@ async function trybeApiTabId() {
           await trybeApiTabSet(kept)
           return kept.id
         }
+        // Still open but off TRYBE (navigated away): closed, so it does not
+        // keep SCOUT's window open for good.
+        if (t) { try { await chrome.tabs.remove(kept.id) } catch (e) {} }
       } catch (e) {}
       // Gone: its watcher use ends with it.
       await trybeApiTabSet(null)
@@ -14555,6 +14560,10 @@ function metaAdsUrl(name) {
 }
 // In page, alone: wait for the count to show, then hand back the words.
 async function metaAdsReadInPage() {
+  // Facebook in another language words the count differently ("Ergebnisse",
+  // "resultados"): said so at once instead of waiting for English words.
+  const lang = String((document.documentElement && document.documentElement.lang) || '').toLowerCase()
+  const english = !lang || lang.startsWith('en')
   const find = () => {
     const t = String(document.body ? document.body.innerText : '')
     const none = t.match(/No ads match[^\n]{0,80}/i)
@@ -14562,15 +14571,20 @@ async function metaAdsReadInPage() {
     const m = t.match(/~?\s*[\d.,]+\s*[KkMm]?\s+results?\b/)
     return m ? m[0] : null
   }
-  for (let i = 0; i < 40; i++) {
+  // A clock deadline, not a count of tries: a minimized window runs timers
+  // slowly, and 40 tries could take far longer than 20 seconds.
+  const until = Date.now() + 15000
+  while (Date.now() < until) {
     const got = find()
     if (got) return { text: got }
-    if (/log in|sign up/i.test(String(document.title || '')) && i > 10) break
+    if (!english && Date.now() > until - 12000) return { text: null, lang }
     await new Promise((r) => setTimeout(r, 500))
   }
-  return { text: null, title: String(document.title || '').slice(0, 80) }
+  return { text: null, title: String(document.title || '').slice(0, 80), lang }
 }
-async function metaAdsCounts({ brands }) {
+let metaAdsRunning = false
+async function metaAdsCounts({ brands, endsAt }) {
+  if (metaAdsRunning) return { ok: false, error: 'already-running' }
   let has = false
   try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
   if (!has) has = await askFacebookAccess()
@@ -14579,28 +14593,43 @@ async function metaAdsCounts({ brands }) {
     .map((b) => ({ brandId: String((b && b.brandId) || '').slice(0, 80), name: String((b && b.name) || '').slice(0, 120) }))
     .filter((b) => b.brandId && b.name)
   const results = []
+  const notReached = []
+  const deadline = Number(endsAt) || (Date.now() + 240000)
   let tab = null
+  metaAdsRunning = true
+  // Kept alive for the whole run, so Chrome does not stop SCOUT halfway and
+  // leave the tab open with nobody to close it.
+  const ka = startKeepAlive()
   try {
     for (let i = 0; i < list.length; i++) {
       const b = list[i]
+      // Never start a brand that cannot finish before MVP stops waiting.
+      if (Date.now() > deadline - 50000) { notReached.push(b.brandId); continue }
       try {
+        // The tab may have been closed by hand: a new one, not an error per brand.
+        if (tab) { try { await chrome.tabs.get(tab.id) } catch (e) { tab = null } }
         if (!tab) tab = await openWorkTab(metaAdsUrl(b.name))
         else await chrome.tabs.update(tab.id, { url: metaAdsUrl(b.name) })
-        await waitForTabLoad(tab.id, 30000)
+        await waitForTabLoad(tab.id, 25000)
         await _sleep(1500)
         const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage })
         const got = res && res[0] ? res[0].result : null
-        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: got && got.text ? null : ('count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')) })
+        const why = got && got.text ? null
+          : got && got.lang && !/^en/.test(got.lang) ? 'not-english (' + got.lang + ')'
+            : 'count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')
+        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why })
       } catch (e) {
-        results.push({ brandId: b.brandId, name: b.name, text: null, error: e && e.message ? e.message : 'error' })
+        results.push({ brandId: b.brandId, name: b.name, text: null, error: 'could-not-open: ' + (e && e.message ? e.message : 'error') })
       }
       scoutWorkTouch()
-      if (i < list.length - 1) await _sleep(2000 + Math.floor(Math.random() * 2000))
+      if (i < list.length - 1) await _sleep(1500 + Math.floor(Math.random() * 1500))
     }
   } finally {
+    metaAdsRunning = false
+    stopKeepAlive(ka)
     if (tab) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
   }
-  return { ok: true, results }
+  return { ok: true, results, notReached }
 }
 
 async function trybeApi({ method, path, body }) {
