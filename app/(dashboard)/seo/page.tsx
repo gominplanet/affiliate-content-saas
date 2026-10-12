@@ -758,6 +758,7 @@ export default function SeoPage() {
             property={data.property}
             linksCounted={data.summary.linksCounted !== false}
             canBrandRecap={tier !== null && canUsePreview('brand_recap', tier)}
+            tier={tier}
             onOpenPost={(id) => {
               setFilterNotIndexed(false)
               setExpanded(id)

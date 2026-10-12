@@ -133,11 +133,13 @@ export function OrphanPostShare(props: {
    *  (shared with VideoCard) — Pinterest uses an image flow, not the text
    *  SocialPreviewModal the other platforms here use. */
   onPinPreview: (data: PinPreviewData) => void
+  /** Told after a platform is published to (not scheduled). Optional. */
+  onPublished?: (platform: string) => void
 }) {
   const {
     postId, postUrl, postTitle, postImage, initialPosted, pinned, userTier,
     fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
-    brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview,
+    brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview, onPublished,
   } = props
 
   // Seed from persisted markers so already-published platforms show "On …" on
@@ -227,7 +229,7 @@ export function OrphanPostShare(props: {
             ...(open.key === 'facebook' && defaultFbAccount ? { socialAccountId: defaultFbAccount.id } : {}),
           }}
           onClose={() => setOpen(null)}
-          onPublished={() => { setPosted(prev => new Set(prev).add(open.key)); setOpen(null) }}
+          onPublished={() => { setPosted(prev => new Set(prev).add(open.key)); onPublished?.(open.key); setOpen(null) }}
           // SCHEDULED IS NOT POSTED. This flipped the pill to "On X" for a push
           // that had not happened yet (and might fail). The modal toasts the
           // time; the Scheduled tab shows the pending row.

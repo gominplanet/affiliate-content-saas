@@ -18,6 +18,8 @@ import { buildBoard, backlinkVerdict, laneInfo, LANES, sharedLinks, lanePlan, bu
 import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
 import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
 import { InfoTip } from '@/components/seo/SeoExplain'
+import ShareNowModal, { type SharePost } from '@/components/seo/ShareNowModal'
+import type { Tier } from '@/lib/tier'
 
 const TONE: Record<LaneInfo['tone'], string> = {
   red: '#ff3b30', amber: '#ff9500', violet: '#7C3AED', blue: '#0a84ff', green: '#34c759', grey: '#8e8e93',
@@ -30,13 +32,15 @@ const ago = (iso: string) => {
 
 type LinkState = Record<string, 'busy' | 'done' | 'already' | { error: string }>
 
-export default function PostBoard({ posts, connected, property, linksCounted, canBrandRecap, onOpenPost, onGoToGetFound, onRefreshUrls, onReload }: {
+export default function PostBoard({ posts, connected, property, linksCounted, canBrandRecap, tier = null, onOpenPost, onGoToGetFound, onRefreshUrls, onReload }: {
   posts: DoctorPost[]
   connected: boolean
   property: string | null
   /** False when too few post bodies are stored in MVP to count links honestly. */
   linksCounted: boolean
   canBrandRecap: boolean
+  /** For the share buttons: which platforms the plan allows. */
+  tier?: Tier | null
   onOpenPost: (postId: string) => void
   onGoToGetFound: () => void
   onRefreshUrls: () => void
@@ -47,6 +51,12 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
   const [lane, setLane] = useState<Lane | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [stagesHelp, setStagesHelp] = useState(false)
+  // SHARE IT opens the share buttons right here (Seb, 2026-10-12), and a
+  // platform published to from here shows on the post straight away.
+  const [shareFor, setShareFor] = useState<SharePost | null>(null)
+  const [sharedNow, setSharedNow] = useState<Record<string, string[]>>({})
+  const sharedOf = (p: DoctorPost) => [...(p.shared ?? []), ...(sharedNow[p.postId] ?? [])]
+  const openShare = (p: DoctorPost) => setShareFor({ postId: p.postId, title: p.title, url: p.url, shared: sharedOf(p) })
   const [links, setLinks] = useState<LinkState>({})
   const [requested, setRequested] = useState<Record<string, string>>({})
   const titleOf = useMemo(() => new Map(posts.map((p) => [p.postId, p.title])), [posts])
@@ -164,7 +174,7 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
 
         <div className="p-4 pt-3 flex flex-col gap-3">
           {shown.map((p) => {
-            const shared = sharedLinks(p)
+            const shared = sharedLinks({ ...p, shared: sharedOf(p).map((s) => (s === 'twitter' ? 'x' : s)) })
             const req = p.url ? requested[p.url] : undefined
             const recentReq = req && Date.now() - Date.parse(req) < 7 * DAY ? req : null
             const linkedN = Array.isArray(p.linkedFrom) ? p.linkedFrom.length : null
@@ -200,7 +210,7 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
                             <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{s.text}</span>
                             <StepAction step={s} post={p} connected={connected} property={property} canBrandRecap={canBrandRecap}
                               recentReq={recentReq} links={links} titleOf={titleOf}
-                              onAddLink={addLink} onOpenPost={onOpenPost} onGoToGetFound={onGoToGetFound} onRefreshUrls={onRefreshUrls} />
+                              onAddLink={addLink} onOpenPost={onOpenPost} onGoToGetFound={onGoToGetFound} onRefreshUrls={onRefreshUrls} onShare={openShare} />
                           </div>
                         </li>
                       ))}
@@ -235,7 +245,9 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
                   <span className="block text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{p.title}</span>
                   <span className="block text-[11px] text-[#86868b]">{laneInfo(p.dx.lane).title}</span>
                 </span>
-                <Link href={`/content?tab=posts&q=${encodeURIComponent(p.title.slice(0, 60))}`} className="text-[11px] font-semibold text-white bg-[#7C3AED] rounded-full px-2.5 py-1 flex-shrink-0">Share it</Link>
+                {(sharedNow[p.postId] ?? []).length > 0
+                  ? <span className="text-[11px] font-semibold text-[#34c759] inline-flex items-center gap-1 flex-shrink-0"><Check size={12} /> Shared on {(sharedNow[p.postId] ?? []).map((s) => PLATFORM_LABEL[s === 'twitter' ? 'x' : s] || s).join(', ')}</span>
+                  : <button onClick={() => openShare(p)} className="text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] rounded-full px-2.5 py-1 flex-shrink-0">Share it</button>}
               </div>
             ))}
           </div>
@@ -243,6 +255,10 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
       )}
 
       <BacklinkCard verdict={verdict} canBrandRecap={canBrandRecap} />
+      {shareFor && (
+        <ShareNowModal post={shareFor} tier={tier} onClose={() => setShareFor(null)}
+          onShared={(platform) => setSharedNow((m) => ({ ...m, [shareFor.postId]: [...(m[shareFor.postId] ?? []), platform] }))} />
+      )}
     </div>
   )
 }
@@ -339,7 +355,7 @@ function PlanCard({ plan, posts, requested, property, links, bulk, onBulkLinks, 
   )
 }
 
-function StepAction({ step, post, connected, property, canBrandRecap, recentReq, links, titleOf, onAddLink, onOpenPost, onGoToGetFound, onRefreshUrls }: {
+function StepAction({ step, post, connected, property, canBrandRecap, recentReq, links, titleOf, onAddLink, onOpenPost, onGoToGetFound, onRefreshUrls, onShare }: {
   step: Step
   post: DoctorPost & { dx: Diagnosis }
   connected: boolean
@@ -352,6 +368,7 @@ function StepAction({ step, post, connected, property, canBrandRecap, recentReq,
   onOpenPost: (postId: string) => void
   onGoToGetFound: () => void
   onRefreshUrls: () => void
+  onShare: (post: DoctorPost) => void
 }) {
   const btn = 'mt-1 mr-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold'
   const primary = `${btn} text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50`
@@ -373,7 +390,7 @@ function StepAction({ step, post, connected, property, canBrandRecap, recentReq,
         </div>
       )
     case 'share':
-      return <div><Link href={`/content?tab=posts&q=${encodeURIComponent(post.title.slice(0, 60))}`} className={primary}><Share2 size={11} /> Share it</Link></div>
+      return <div><button onClick={() => onShare(post)} className={primary}><Share2 size={11} /> Share it</button></div>
     case 'improve':
       return <div><button onClick={() => onOpenPost(post.postId)} className={quiet}><Wrench size={11} /> Open its checks</button></div>
     case 'title':

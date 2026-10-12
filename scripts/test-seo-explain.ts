@@ -51,5 +51,14 @@ check('no year in the explanations', !/\b20\d\d\b/.test(words))
 const seoGuide = guide.slice(guide.indexOf('export function SeoGuide'), guide.indexOf('// ── Ads'))
 check('the page guide matches the page: no Index button, no Indexing API', !/Indexing API|Nudge Google with Index/.test(seoGuide) && /The four steps/.test(seoGuide))
 
+
+// Share it opens the share buttons in place (Seb, 2026-10-12).
+const share = read('components/seo/ShareNowModal.tsx')
+const orphan = read('components/content/OrphanPostShare.tsx')
+check('Share it on the SEO page opens the share modal, not a trip to Content', /<ShareNowModal /.test(board) && /onClick=\{\(\) => openShare\(p\)\}/.test(board) && /onClick=\{\(\) => onShare\(post\)\}/.test(board) && !/href=\{`\/content\?tab=posts&q=/.test(board))
+check('the modal uses the same share buttons and previews as Content', /<OrphanPostShare/.test(share) && /<PinterestPreviewModal/.test(share) && /\/api\/blog\/pinterest-post/.test(share))
+check('connected accounts are read the way the publisher reads them, and an unknown read is said', /\/api\/social\/connected/.test(share) && /could not read which accounts are connected/.test(share) && /No social account is connected yet/.test(share))
+check('a share made here shows on the post, and a schedule does not count as shared', /onPublished\?\.\(open\.key\)/.test(orphan) && /onScheduled=\{\(\) => \{ setOpen\(null\) \}\}/.test(orphan) && /Shared on/.test(board))
+
 if (failed) { console.error(`\n${failed} SEO explain check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
