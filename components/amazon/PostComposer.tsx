@@ -13,6 +13,7 @@ import SavedProductImage, { useSavedProductImage } from '@/components/product/Sa
 import MadeBefore from '@/components/product/MadeBefore'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { productFields, firstProduct, readProductList, productBoxHint, comparisonNote } from '@/lib/product-list'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -41,6 +42,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [reusedNote, setReusedNote] = useState<string | null>(null)
+  const [cmpNote, setCmpNote] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
@@ -63,6 +65,8 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   // panel says in words which image this is and where it came from. Generating
   // replaces it.
   const resolvedAsin = (() => {
+    // Several products: one product's saved image is not a comparison.
+    if (readProductList(product).length >= 2) return null
     const raw = product.trim()
     if (/^[A-Z0-9]{10}$/i.test(raw)) return raw.toUpperCase()
     return asinFromAmazonUrl(raw) || null
@@ -112,12 +116,12 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     if (!saved || thumbUrl || genBusy) return
     setThumbUrl(saved.imageUrl)
     setUsingSaved(true)
-    if (product.trim()) writeCaption(product.trim())
+    if (product.trim()) writeCaption(firstProduct(product))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved?.imageUrl])
 
   const generate = useCallback(async () => {
-    const raw = product.trim()
+    const raw = firstProduct(product)
     if (!raw) { setGenError('Paste an Amazon product link or ASIN first.'); return }
     if (mode === 'face' && !faceId) { setGenError('Pick a face, or switch to Product only.'); return }
     setGenBusy(true); setGenError(null); setThumbUrl(null); setUsingSaved(false); setResult(null); setCaption('')
@@ -132,7 +136,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     const bodyReq: Record<string, unknown> = {
       videoTitle: 'Product spotlight', textMode: 'graphic', format: fmt, briefKey: bk,
       ...(network === 'instagram' ? { ctaLinkInBio: linkInBioCta } : {}),
-      ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
+      ...productFields(product),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       headlineStyle: headlineStyleValue(question),
       // Apparel goes ON the person. Meaningless without a face, and the server
@@ -153,6 +157,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       // Facebook reuses the product's thumbnail or Instagram design rather than
       // designing a new one; say so, so a reused picture never passes for new.
       setReusedNote(typeof data.reusedNote === 'string' ? data.reusedNote : null)
+      setCmpNote(comparisonNote(data.comparison))
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
@@ -162,7 +167,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     if (!thumbUrl) return
     if (when === 'later' && !scheduleAt) { setPubError('Pick a date and time to schedule.'); return }
     setPubBusy(true); setPubError(null); setResult(null)
-    const raw = product.trim()
+    const raw = firstProduct(product)
     const isUrl = /^https?:\/\//i.test(raw)
     try {
       const res = await fetch(cfg.endpoint, {
@@ -227,6 +232,8 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Amazon product link or ASIN</span>
           <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G" className={inputCls} />
+          <span className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>{productBoxHint(product, true)}</span>
+          {cmpNote && <span className="text-[11.5px] text-[#d97706]">{cmpNote}</span>}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setMode('face')} disabled={faces.length === 0} className={selCls(mode === 'face')} style={mode === 'face' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
@@ -273,7 +280,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         <div className="empty:hidden">
           <MadeBefore asin={resolvedAsin} only={['design']} formats={[cfg.format]}
             heading={`You already have a ${cfg.label} design for this product. Reuse it for free, or design a new one.`}
-            onUseImage={(url) => { setThumbUrl(url); setUsingSaved(true); if (product.trim()) writeCaption(product.trim()) }} />
+            onUseImage={(url) => { setThumbUrl(url); setUsingSaved(true); if (product.trim()) writeCaption(firstProduct(product)) }} />
         </div>
         {saved && (
           <SavedProductImage

@@ -65,11 +65,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   // The video carries the product photo the designed thumbnail is built from.
-  const { data: video } = post.video_id
-    ? await sb.from('youtube_videos')
-        .select('id,title,description,asin,product_image_url')
-        .eq('id', post.video_id).eq('user_id', user.id).maybeSingle()
-    : { data: null }
+  // With every product it covers (asins, migration 375): a comparison video's
+  // post gets a hero that shows all of them. Read without it when the column
+  // is not there, so the button keeps working.
+  let video: Record<string, unknown> | null = null
+  if (post.video_id) {
+    const withAll = await sb.from('youtube_videos')
+      .select('id,title,description,asin,asins,product_image_url')
+      .eq('id', post.video_id).eq('user_id', user.id).maybeSingle()
+    video = withAll.error
+      ? (await sb.from('youtube_videos').select('id,title,description,asin,product_image_url').eq('id', post.video_id).eq('user_id', user.id).maybeSingle()).data
+      : withAll.data
+  }
 
   const { data: integ } = await sb.from('integrations')
     .select('tier,subscription_period_start,subscription_period_end')
@@ -90,6 +97,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     video,
     description: (video?.description as string | null) ?? null,
     asin: (video?.asin as string | null) ?? null,
+    asins: Array.isArray(video?.asins) ? (video!.asins as string[]) : null,
     wordpressUrl: site.wordpress_url ?? null,
     fallbackTitle: (post.title as string) || 'this post',
     slug: (post.slug as string) || String(post.id).slice(0, 8),

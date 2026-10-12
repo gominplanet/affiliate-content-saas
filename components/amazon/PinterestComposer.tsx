@@ -13,6 +13,7 @@ import MadeBefore from '@/components/product/MadeBefore'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import PinDestinationPicker from '@/components/pinterest/PinDestinationPicker'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { productFields, firstProduct, readProductList, productBoxHint, comparisonNote } from '@/lib/product-list'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -49,11 +50,14 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   // 2:3 and a recalled YouTube thumbnail is 16:9, so reusing it is a deliberate
   // choice about brand consistency over pin shape, not a default.
   const resolvedAsin = (() => {
-    const raw = product.trim()
+    // Several products: one product's saved image is not a comparison.
+    if (readProductList(product).length >= 2) return null
+    const raw = firstProduct(product)
     if (/^[A-Z0-9]{10}$/i.test(raw)) return raw.toUpperCase()
     return asinFromAmazonUrl(raw) || null
   })()
   const { saved } = useSavedProductImage(resolvedAsin)
+  const [cmpNote, setCmpNote] = useState<string | null>(null)
   const [usingSaved, setUsingSaved] = useState(false)
   // Opt this post out of the affiliate link entirely and send clicks to the
   // creator's own TikTok Shop instead (lib/post-destination).
@@ -98,7 +102,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   }, [])
 
   const generate = useCallback(async () => {
-    const raw = product.trim()
+    const raw = firstProduct(product)
     if (!raw) { setGenError('Paste an Amazon product link or ASIN first.'); return }
     if (mode === 'face' && !faceId) { setGenError('Pick a face, or switch to Product only.'); return }
     setGenBusy(true); setGenError(null); setThumbUrl(null); setUsingSaved(false); setResult(null)
@@ -129,7 +133,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       textMode: 'graphic',
       format: 'pin', // 2:3 vertical 1000×1500, text-heavy shopping pin
       briefKey: bk,
-      ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
+      ...productFields(product),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       headlineStyle: headlineStyleValue(question),
       // Apparel goes ON the person. Meaningless without a face, and the server
@@ -147,6 +151,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No thumbnail came back. Try again.')
       setThumbUrl(url)
+      setCmpNote(comparisonNote(data.comparison))
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Thumbnail failed. Try again.')
     } finally { setGenBusy(false) }
@@ -164,7 +169,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
 
   /** Fill the pin title and description for a reused image. */
   const fillPinCopy = useCallback(() => {
-    const raw = product.trim()
+    const raw = firstProduct(product)
     if (!raw) return
     const isUrl = /^https?:\/\//i.test(raw)
     setCopyBusy(true)
@@ -182,7 +187,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     if (!thumbUrl) return
     if (when === 'later' && !scheduleAt) { setPubError('Pick a date and time to schedule.'); return }
     setPubBusy(true); setPubError(null); setResult(null)
-    const raw = product.trim()
+    const raw = firstProduct(product)
     const isUrl = /^https?:\/\//i.test(raw)
     try {
       const res = await fetch('/api/amazon/pin', {
@@ -244,6 +249,8 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Amazon product link or ASIN</span>
           <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G" className={inputCls} />
+          <span className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>{productBoxHint(product, true)}</span>
+          {cmpNote && <span className="text-[11.5px] text-[#d97706]">{cmpNote}</span>}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setMode('face')} disabled={faces.length === 0}

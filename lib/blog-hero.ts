@@ -21,7 +21,7 @@
 
 import { checkNewPicture } from '@/lib/post-logo-sweep'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
-import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
+import { generateArtDirectorBlogHero, generateArtDirectorRoundupHero } from '@/lib/art-director-pin'
 import { getBrandPresetId } from '@/lib/brand-preset'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -81,6 +81,9 @@ export async function rebuildPostHero(opts: {
   video: { id?: string | null; title?: string | null; product_image_url?: string | null } | null
   description?: string | null
   asin?: string | null
+  /** Every product the video covers (a comparison, migration 375). Two or
+   *  more make a hero that shows all of them (Seb, 2026-10-12). */
+  asins?: string[] | null
   wordpressUrl?: string | null
   fallbackTitle: string
   slug: string
@@ -118,6 +121,27 @@ export async function rebuildPostHero(opts: {
       return { ok: false, reason: 'paused', message: 'spend ceiling reached or trial over' }
     }
 
+    // TWO OR MORE PRODUCTS: one hero that shows them all, built from each
+    // product's own photo. Fewer than two photos found falls back to the
+    // single-product hero below, so the post is never left without one.
+    const many = [...new Set((opts.asins ?? []).map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))].slice(0, 4)
+    if (many.length >= 2) {
+      const refs = await Promise.all(many.map((a) => resolveProductReference({
+        title: null, description: null, asin: a, traceTag: `${tag}[${a}]`, userId: opts.userId, tier: opts.tier,
+      }).catch(() => null)))
+      const products = refs.map((r, i) => r?.productImageUrl ? { imageUrl: r.productImageUrl, title: (r.productTitle || `Product ${i + 1}`).split(/[,|(\[]/)[0].trim().slice(0, 80) } : null)
+        .filter((x): x is { imageUrl: string; title: string } => !!x)
+      if (products.length >= 2) {
+        const multi = await generateArtDirectorRoundupHero({
+          presetId: await getBrandPresetId(opts.userId),
+          products, category: opts.fallbackTitle, kind: 'guide',
+          userId: opts.userId, tier: opts.tier,
+        })
+        if (multi) return await placeHero(opts, multi, products.map((p) => p.title).join(' vs '), tag)
+        console.warn(`${tag} comparison hero failed, falling back to the single-product hero`)
+      }
+    }
+
     const ref = await resolveProductReference({
       uploadedUrl: (opts.video?.product_image_url || '')?.trim() || null,
       title: opts.video?.title ?? null,
@@ -146,24 +170,35 @@ export async function rebuildPostHero(opts: {
       console.warn(`${tag} hero generation returned null — keeping the current thumb`)
       return { ok: false, reason: 'generator_failed', message: 'hero generation returned null' }
     }
-    // NEVER A STORE LOGO (lib/post-logo-sweep checkNewPicture): thrown away,
-    // and the current thumb is kept.
-    const logo = await checkNewPicture({ base64: hero.data, mediaType: hero.mediaType }, { userId: opts.userId, tier: opts.tier ?? null, feature: 'new_picture_logo_check' }, { title: ref.productTitle || opts.fallbackTitle })
-    if (!logo.ok) {
-      console.warn(`${tag} hero had a store logo (${logo.marks.join(', ')}) — thrown away, keeping the current thumb`)
-      return { ok: false, reason: 'store_logo', message: `the picture showed ${logo.marks.join(', ')}, so it was not used` }
-    }
-
-    const media = await opts.wpService.uploadImageFromBase64(hero.data, `${opts.slug}-adhero.jpg`, hero.mediaType)
-    if (!media?.id) {
-      return { ok: false, reason: 'upload_failed', message: 'WordPress did not return a media id' }
-    }
-    await opts.wpService.updatePost(opts.wpPostId, { featured_media: media.id })
-    console.log(`${tag} set Art Director hero`, { mediaId: media.id })
-    return { ok: true, imageUrl: media.source_url || null, mediaId: media.id }
+    return await placeHero(opts, hero, ref.productTitle || opts.fallbackTitle, tag)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     console.warn(`${tag} failed — keeping the current thumb:`, message)
     return { ok: false, reason: 'error', message }
   }
+}
+
+/** Check a designed hero for store logos, upload it and set it on the post.
+ *  Shared by the single-product and the comparison hero, so both keep the
+ *  current thumb on any failure. */
+async function placeHero(
+  opts: { wpService: Wp; wpPostId: number; slug: string; userId: string; tier: string | null },
+  hero: { data: string; mediaType: string },
+  title: string,
+  tag: string,
+): Promise<HeroOutcome> {
+  // NEVER A STORE LOGO (lib/post-logo-sweep checkNewPicture): thrown away,
+  // and the current thumb is kept.
+  const logo = await checkNewPicture({ base64: hero.data, mediaType: hero.mediaType }, { userId: opts.userId, tier: opts.tier ?? null, feature: 'new_picture_logo_check' }, { title })
+  if (!logo.ok) {
+    console.warn(`${tag} hero had a store logo (${logo.marks.join(', ')}) — thrown away, keeping the current thumb`)
+    return { ok: false, reason: 'store_logo', message: `the picture showed ${logo.marks.join(', ')}, so it was not used` }
+  }
+  const media = await opts.wpService.uploadImageFromBase64(hero.data, `${opts.slug}-adhero.jpg`, hero.mediaType)
+  if (!media?.id) {
+    return { ok: false, reason: 'upload_failed', message: 'WordPress did not return a media id' }
+  }
+  await opts.wpService.updatePost(opts.wpPostId, { featured_media: media.id })
+  console.log(`${tag} set Art Director hero`, { mediaId: media.id })
+  return { ok: true, imageUrl: media.source_url || null, mediaId: media.id }
 }

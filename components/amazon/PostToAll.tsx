@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, User, Package, Rocket, Check, AlertCircle, ExternalLink } from 'lucide-react'
+import { productFields, firstProduct, productBoxHint, comparisonNote } from '@/lib/product-list'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
@@ -129,7 +130,8 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   const setNet = (k: NetKey, patch: Partial<NetState>) => setNets(prev => ({ ...prev, [k]: { ...prev[k], ...patch } }))
 
   const run = useCallback(async () => {
-    const raw = product.trim()
+    // The image compares every product pasted; the post links the first.
+    const raw = firstProduct(product)
     if (!raw) return
     if (mode === 'face' && !faceId) return
     // Connected AND chosen. Both, every time.
@@ -139,6 +141,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
     const productField = isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }
+    const designFields = productFields(product)
     const bk = `${(isAsin ? raw.toUpperCase() : raw)}::all::${Date.now()}` // shared brief across all networks
 
     // Sequential so one shared art-director brief is generated first, then reused
@@ -154,7 +157,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
             headlineStyle: headlineStyleValue(question),
             wearProduct: wear && mode === 'face',
             ...(mode === 'face' ? { expression } : {}),
-            ...(n.extra || {}), ...productField, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
+            ...(n.extra || {}), ...designFields, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
           }),
         })
         const genData = await genRes.json().catch(() => ({}))
@@ -162,6 +165,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
         const imageUrl = (Array.isArray(genData.thumbnailUrls) && genData.thumbnailUrls[0]) || genData.thumbnailUrl
         if (!imageUrl) throw new Error('No design came back')
 
+        const cmpNote = comparisonNote(genData.comparison)
         setNet(n.key, { status: 'posting' })
         const pubRes = await fetch(n.endpoint, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -176,7 +180,8 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           // Carry the sentence through. The routes return it as geniuslinkNote
           // for wire-compatibility, but it covers Passport substitutions and
           // Link-in-Bio tile failures too, and it is a complete sentence.
-          note: (pubData.geniuslinkNote as string) || undefined,
+          // Fewer products in the image than were pasted is said too.
+          note: (pubData.geniuslinkNote as string) ? [(pubData.geniuslinkNote as string), cmpNote].filter(Boolean).join(' ') : (cmpNote || undefined),
         })
       } catch (e) {
         setNet(n.key, { status: 'error', error: e instanceof Error ? e.message : 'Failed' })
@@ -224,6 +229,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
         <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G"
           className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]" />
       )}
+      {!hideProductInput && <p className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>{productBoxHint(product, true)}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => setMode('face')} disabled={faces.length === 0}
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? 'border-[#d97706] text-[#d97706] bg-[#d97706]/5' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'face' ? { color: 'var(--text)' } : undefined}>

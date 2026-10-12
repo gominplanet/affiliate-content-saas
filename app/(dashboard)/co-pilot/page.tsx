@@ -2317,8 +2317,15 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
           // calling them a comparison would tell the model they are different.
           // A Short gets a vertical 9:16 thumbnail, the shape of the Short itself.
           ...(shortMode ? { format: 'short' } : {}),
-          ...(canCompare && compareOn && compareResult && compareResult.length > 1 && !opts?.productImageUrlsOverride?.length
-            ? { comparisonAsins: compareResult.map((r) => r.asin) } : {}),
+          // Before the metadata has run (or after a reload), the products typed
+          // into the comparison slots: the server follows ASINs and links alike.
+          ...(canCompare && compareOn && !opts?.productImageUrlsOverride?.length
+            ? (compareResult && compareResult.length > 1
+              ? { comparisonAsins: compareResult.map((r) => r.asin) }
+              : compareSlots.filter((sl) => sl.input.trim()).length > 1
+                ? { comparisonAsins: compareSlots.map((sl) => sl.input.trim()).filter(Boolean) }
+                : {})
+            : {}),
           productCompositionNote: productCompositionNote.trim() || undefined,
           // Creator's free-text "describe your thumbnail" direction.
           scenePrompt: scenePrompt.trim() || undefined,

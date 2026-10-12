@@ -2792,6 +2792,8 @@ async function handleGenerate(request: Request) {
         video: v as { id?: string | null; title?: string | null; product_image_url?: string | null },
         description: rawDescription,
         asin: effectiveAsin ?? null,
+        // A comparison video's post shows every product it covers.
+        asins: Array.isArray((v as Record<string, unknown>).asins) ? ((v as Record<string, unknown>).asins as string[]) : null,
         wordpressUrl: site.wordpress_url ?? null,
         fallbackTitle: generated.title,
         slug: youtubeVideoId || slug,

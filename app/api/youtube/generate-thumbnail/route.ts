@@ -28,7 +28,6 @@ import { normalizeExpression, expressionDirective, expressionDescription, EXPRES
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
 import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
-import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
@@ -1856,15 +1855,28 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // quietly dropped one.
     let comparisonNames: string[] = []
     let comparisonAsked = 0
-    const isComparison = Array.isArray(comparisonAsins) && comparisonAsins.length >= 2 && canUsePreview('comparison', tier)
+    // TWO OR MORE PRODUCTS, ANYWHERE (Seb, 2026-10-12: "if user pastes 3
+    // asins, the image should reflect those three products"). Open to every
+    // plan now, not only Co-Pilot's Labs comparison video, and a product may
+    // be an ASIN or a link (followed to its product, like the single one).
+    const cmpItems = Array.isArray(comparisonAsins)
+      ? [...new Map((comparisonAsins as unknown[]).map((a) => String(a || '').trim()).filter(Boolean).map((a): [string, string] => {
+          const asin = /^[A-Z0-9]{10}$/i.test(a) ? a.toUpperCase() : (asinFromAmazonUrl(a)?.toUpperCase() ?? null)
+          return [asin || a.toLowerCase(), a]
+        })).values()].filter((a) => /^[A-Z0-9]{10}$/i.test(a) || /^https?:\/\//i.test(a)).slice(0, 4)
+      : []
+    const isComparison = cmpItems.length >= 2
     if (isComparison && customProductRefs.length === 0) {
-      const list = [...new Set((comparisonAsins as string[]).map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))].slice(0, 4)
+      const list = cmpItems
       comparisonAsked = list.length
-      const found = await Promise.all(list.map((a) => resolveProductReference({
-        title: null, description: null, asin: a,
-        traceTag: `[thumbnail-cmp:${a}]`, userId: user.id, tier: null, fastImage: false,
-      }).catch(() => null)))
-      const got = list.map((a, i) => ({ asin: a, url: found[i]?.productImageUrl ?? null, title: found[i]?.productTitle ?? a }))
+      const found = await Promise.all(list.map((a) => {
+        const isAsin = /^[A-Z0-9]{10}$/i.test(a)
+        return resolveProductReference({
+          title: null, description: isAsin ? null : a, asin: isAsin ? a.toUpperCase() : null,
+          traceTag: `[thumbnail-cmp:${a.slice(0, 40)}]`, userId: user.id, tier: null, fastImage: false,
+        }).catch(() => null)
+      }))
+      const got = list.map((a, i) => ({ asin: a, url: found[i]?.productImageUrl ?? null, title: found[i]?.productTitle ?? `Product ${i + 1}` }))
         .filter((g): g is { asin: string; url: string; title: string } => !!g.url)
       if (got.length >= 2) {
         customProductRefs.push(...got.map((g) => g.url))

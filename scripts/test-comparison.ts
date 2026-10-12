@@ -70,8 +70,10 @@ check('comparison videos are open to Pro and admin, not to other plans',
 // ── the thumbnail route ─────────────────────────────────────────────────────
 {
   const T = read('app/api/youtube/generate-thumbnail/route.ts')
-  check('comparison photos are gated on the preview and never override the creator\'s own uploads',
-    /canUsePreview\('comparison', tier\)/.test(T) && /if \(isComparison && customProductRefs\.length === 0\)/.test(T))
+  // 2026-10-12 (Seb): two or more products make a comparison image on every
+  // plan and every image tool, not only the Labs comparison video.
+  check('comparison photos are used for every plan and never override the creator\'s own uploads',
+    /const isComparison = cmpItems\.length >= 2/.test(T) && /if \(isComparison && customProductRefs\.length === 0\)/.test(T))
   check('every product photo reaches the model, in both render paths',
     /productPngsP\.map\(\(b, i\) => \(\{ data: b/.test(T) && /productPngs\.forEach\(\(b, i\) => refs\.push/.test(T)
     && !/refs\.push\(\{ data: productBytes, filename: 'product\.png'/.test(T)

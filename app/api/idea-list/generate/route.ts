@@ -28,7 +28,7 @@ import { resolveAffiliateUrl } from '@/lib/weekly-digest'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { fetchIdeaList, normalizeListUrl, cleanListName } from '@/lib/amazon-idea-list'
 import { buildCampaignHero } from '@/lib/hero-image'
-import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
+import { generateArtDirectorBlogHero, generateArtDirectorRoundupHero } from '@/lib/art-director-pin'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { toUserMessage } from '@/lib/friendly-error'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -230,7 +230,21 @@ ${fullListCta}`)
       // Primary: the Art Director engine (gpt-image) — the SAME designed-thumbnail
       // look MVP uses for its posts (bold headline + the product, on a styled
       // background), grounded on the top pick and titled with the guide.
-      if (topImg) {
+      // TWO OR MORE PICKS: a hero that shows the top ones together (Seb,
+      // 2026-10-12), not the first pick alone on a guide about several.
+      const withPhotos = picks.filter(p => p.image).slice(0, 4)
+      if (withPhotos.length >= 2) {
+        try {
+          const ad = await generateArtDirectorRoundupHero({
+            presetId: await getBrandPresetId(user.id),
+            products: withPhotos.map(p => ({ imageUrl: p.image as string, title: String(p.title || '').split(/[,|(\[]/)[0].trim().slice(0, 80) || 'Product' })),
+            category: angle || postTitle, kind: 'guide',
+            userId: user.id, tier,
+          })
+          if (ad?.data) heroB64 = ad.data
+        } catch { /* falls back to the single-product hero */ }
+      }
+      if (!heroB64 && topImg) {
         try {
           const ad = await generateArtDirectorBlogHero({
         presetId: await getBrandPresetId(user.id),
