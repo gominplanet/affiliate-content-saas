@@ -14585,9 +14585,13 @@ async function metaAdsReadInPage() {
 let metaAdsRunning = false
 async function metaAdsCounts({ brands, endsAt }) {
   if (metaAdsRunning) return { ok: false, error: 'already-running' }
+  // Taken at once, before any await, so two calls close together cannot both run.
+  metaAdsRunning = true
   let has = false
-  try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
-  if (!has) has = await askFacebookAccess()
+  try {
+    try { has = await chrome.permissions.contains({ origins: FB_ORIGINS }) } catch (e) {}
+    if (!has) has = await askFacebookAccess()
+  } finally { if (!has) metaAdsRunning = false }
   if (!has) return { ok: false, error: 'no-access' }
   const list = (Array.isArray(brands) ? brands : []).slice(0, META_ADS_MAX)
     .map((b) => ({ brandId: String((b && b.brandId) || '').slice(0, 80), name: String((b && b.name) || '').slice(0, 120) }))
@@ -14596,7 +14600,6 @@ async function metaAdsCounts({ brands, endsAt }) {
   const notReached = []
   const deadline = Number(endsAt) || (Date.now() + 240000)
   let tab = null
-  metaAdsRunning = true
   // Kept alive for the whole run, so Chrome does not stop SCOUT halfway and
   // leave the tab open with nobody to close it.
   const ka = startKeepAlive()

@@ -475,7 +475,7 @@ export default function TrybeOutreach() {
   const canPlaybook = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)
   // Read once a day by itself, quietly, when the page opens.
   useEffect(() => {
-    if (!canPlaybook || topTried.current || !directory) return
+    if (!canPlaybook || topTried.current || !directory || !isAdmin) return
     const at = directory.top100?.at ? Date.parse(directory.top100.at) : 0
     if (Date.now() - at < TOP100_FRESH_MS) return
     topTried.current = true
@@ -791,9 +791,9 @@ export default function TrybeOutreach() {
       const r = await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives')
       if (!r.ok) { setSignalNote({ tone: quiet ? 'warn' : 'bad', text: `TRYBE's Top 100 could not be read${quiet ? ' this time' : ''}: ${r.error || `TRYBE answered ${r.status ?? 'nothing'}`}. Make sure you are signed in to TRYBE.` }); return }
       const d = await api({ action: 'top100', json: r.json })
-      if (d.notSaved) { if (!quiet) setSignalNote({ tone: 'ok', text: d.notSaved }) }
+      if (d.notSaved) { if (!quiet) setSignalNote({ tone: 'warn', text: d.notSaved }) }
       else if (!d.read || !d.matched) setSignalNote({ tone: 'bad', text: `MVP read TRYBE's Top 100 but could not match its videos to brands${isAdmin && d.sample ? ` (TRYBE sent: ${d.sample})` : ''}. Nothing was changed.` })
-      else if (!quiet || !d.kept) setSignalNote({ tone: 'ok', text: d.kept ? 'TRYBE\u2019s Top 100 was read in the last few hours, so that copy is used.' : `TRYBE's Top 100 read: ${d.matched} brand${d.matched === 1 ? ' has' : 's have'} videos in it right now.` })
+      else if (!quiet) setSignalNote({ tone: 'ok', text: `TRYBE's Top 100 read: ${d.matched} brand${d.matched === 1 ? ' has' : 's have'} videos in it right now.` })
       setLiveNonce(n => n + 1)
       void load()
     } catch (e) {
@@ -809,7 +809,7 @@ export default function TrybeOutreach() {
     const todo = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
     if (!todo.length) { setSignalNote({ tone: 'ok', text: 'Every brand shown already has a Meta ad count from this week.' }); return }
     setMetaRun({ done: 0, total: todo.length }); setSignalNote(null)
-    let read = 0, noCount = 0, notEnglish = '', couldNot = 0, stopped = ''
+    let read = 0, noCount = 0, notEnglish = '', couldNot = 0, late = 0, stopped = ''
     try {
       for (let i = 0; i < todo.length; i += 8) {
         if (leftRef.current) { stopped = 'You left the page.'; break }
@@ -831,12 +831,14 @@ export default function TrybeOutreach() {
         }
         if (ok.length) await api({ action: 'meta_ads', results: ok })
         read += ok.length
+        late += (r.notReached || []).length
         setMetaRun({ done: Math.min(todo.length, i + 8), total: todo.length })
         if (notEnglish) break
       }
       const parts = [`Meta ads read for ${read} of ${todo.length} brand${todo.length === 1 ? '' : 's'}.`]
       if (noCount) parts.push(`${noCount} showed no result count on Meta's page, so ${noCount === 1 ? 'it stays' : 'they stay'} not read.`)
       if (couldNot) parts.push(`SCOUT could not open Meta's page for ${couldNot}.`)
+      if (late) parts.push(`SCOUT ran out of time before ${late}; press again to read ${late === 1 ? 'it' : 'them'}.`)
       if (notEnglish) parts.push(`Facebook is not in English in this Chrome (${notEnglish}), so the counts cannot be read. Switch Facebook to English and press again.`)
       if (stopped) parts.push(stopped)
       setSignalNote({ tone: stopped || notEnglish ? 'bad' : read < todo.length ? 'warn' : 'ok', text: parts.join(' ') })
@@ -1233,8 +1235,9 @@ export default function TrybeOutreach() {
                   <p className="font-semibold">What Best bets reads</p>
                   <p><b>Creators per brand</b>, from TRYBE: fewer means more of the budget for you.</p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span><b>TRYBE&rsquo;s Top 100</b>: {topAt ? `read ${new Date(topAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${directory?.top100?.matched != null ? `, ${directory.top100.matched} of your brands in it` : ''}` : 'not read yet'}. A brand in it is spending on ads.</span>
-                    {canPlaybook && <button onClick={() => void readTop100(false)} disabled={topRun} className="font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>{topRun ? 'Reading...' : 'Read it now'}</button>}
+                    <span><b>TRYBE&rsquo;s Top 100</b>: {topAt ? `read ${new Date(topAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${directory?.top100?.matched != null ? `, ${directory.top100.matched} brands in it` : ''}` : 'not read yet'}. A brand in it is spending on ads.</span>
+                    {canPlaybook && isAdmin && <button onClick={() => void readTop100(false)} disabled={topRun} className="font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>{topRun ? 'Reading...' : 'Read it now'}</button>}
+                    {topAt && Date.now() - Date.parse(topAt) > 30 * 3600_000 && <span style={{ color: AMBER }}>This copy is more than a day old.</span>}
                   </p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span><b>Meta ads running</b>: read for {metaRead} of the {shown.length} shown.</span>
@@ -1569,6 +1572,7 @@ export default function TrybeOutreach() {
                 {notListed > 0 && <p style={soft}>{notListed} sent {notListed === 1 ? 'brand is' : 'brands are'} not in TRYBE&rsquo;s brand list now, so {notListed === 1 ? 'it is' : 'they are'} not tagged.</p>}
                 {needInbox > 0 && <p style={soft}>{needInbox} {needInbox === 1 ? 'request is' : 'requests are'} no longer pending. Accepted or declined is told from your TRYBE inbox, which could not be read.</p>}
                 {requestsNote && <p style={{ color: AMBER }}>{requestsNote}</p>}
+                {requestsFailed && <p style={{ color: AMBER }}>The latest read failed ({requestsFailed}), so these are from {new Date(requests.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>}
                 {/* A brand that invited the creator is the warmest lead there is. */}
                 {requests.invites.length > 0 && (
                   <p className="rounded-lg px-2.5 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ background: 'rgba(22,163,74,0.10)' }}>

@@ -1080,7 +1080,7 @@ export async function requestTrybeApi(method: 'GET' | 'POST', path: string, body
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
-export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ brandId: string; name: string; text: string | null; error: string | null }> }
+export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ brandId: string; name: string; text: string | null; error: string | null }>; /** Brands SCOUT had no time left for. */ notReached?: string[] }
 
 /** SCOUT 1.45.0+: how many active Meta ads mention each brand, read from
  *  Meta's public Ad Library in SCOUT's own window (up to 25 at a time). The

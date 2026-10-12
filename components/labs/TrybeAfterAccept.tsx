@@ -48,20 +48,30 @@ const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
 // ONE CHAT AT A TIME through SCOUT, kept two minutes per version of the
 // chat (its latest message time), so a Sent tab of thirty brands does not
 // send thirty requests to TRYBE at once and does not read them twice.
+// Keyed by who "you" are too: a read made before MVP knew which sender is
+// you is never reused once it does. A read that could not tell is not kept.
 const chatCache = new Map<string, { at: number; read: ChatRead }>()
+const inFlight = new Map<string, Promise<ChatRead>>()
 let chatChain: Promise<unknown> = Promise.resolve()
+const CHAT_KEEP_MS = 10 * 60_000
 function readChatQueued(chatId: string, version: number, me: string[], myName: string): Promise<ChatRead> {
-  const key = `${chatId}:${version}`
-  const hit = chatCache.get(key)
-  if (hit && Date.now() - hit.at < 120_000) return Promise.resolve(hit.read)
+  const key = `${chatId}:${version}:${me.join(',')}:${myName}`
+  const fresh = () => { const hit = chatCache.get(key); return hit && Date.now() - hit.at < CHAT_KEEP_MS ? hit.read : null }
+  const now = fresh()
+  if (now) return Promise.resolve(now)
+  const going = inFlight.get(key)
+  if (going) return going
   const job = chatChain.then(async () => {
+    const again = fresh()
+    if (again) return again
     const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(chatId)}/messages?page=1&limit=50`)
     const read: ChatRead = r.ok
       ? readChat(listOf(r.json).map((m) => readMessage(m, me, myName)).filter((m): m is NonNullable<ReturnType<typeof readMessage>> => !!m))
       : { ok: false, myAts: [], brandAts: [] }
-    chatCache.set(key, { at: Date.now(), read })
+    if (read.ok) chatCache.set(key, { at: Date.now(), read })
     return read
-  })
+  }).finally(() => inFlight.delete(key))
+  inFlight.set(key, job)
   chatChain = job.catch(() => null)
   return job
 }
@@ -96,13 +106,16 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
   // EVERY STAGE FROM THE CHAT ITSELF (review 2026-10-12): TRYBE's list often
   // does not say who wrote last, and telling it from the list told a brand
   // that answered "don't film yet". A chat that cannot be read says so.
+  // By content, not identity: the inbox refresh hands over a new list of the
+  // same ids every two minutes, which is not a reason to read every chat again.
+  const meKey = me.join(',')
   useEffect(() => {
     if (!canSend) { setChat({ ok: false, myAts: [], brandAts: [] }); return }
     let live = true
-    setChat(null)
-    void readChatQueued(chatId, lastAt, me, myName).then((r) => { if (live) setChat(r) }).catch(() => { if (live) setChat({ ok: false, myAts: [], brandAts: [] }) })
+    // The last read stays on screen while a newer one is fetched.
+    void readChatQueued(chatId, lastAt, meKey ? meKey.split(',') : [], myName).then((r) => { if (live) setChat(r) }).catch(() => { if (live) setChat({ ok: false, myAts: [], brandAts: [] }) })
     return () => { live = false }
-  }, [chatId, lastAt, canSend, me, myName])
+  }, [chatId, lastAt, canSend, meKey, myName])
 
   const st = afterAccept({ chat: true, read: chat, kickoffSentAt: b.kickoff_sent_at, followupSentAt: b.followup_sent_at })
   useEffect(() => { onState?.(b.brand_id, st.state) }, [b.brand_id, st.state, onState])
@@ -183,8 +196,8 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
   return (
     <div className="mt-2 rounded-lg border px-3 py-2.5 text-[12px]" style={{ borderColor: 'var(--border)', background: 'var(--surface-2, rgba(0,0,0,0.03))' }}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold" style={{ color: tone }}>{st.label}</span>
-        <span style={soft}>{st.says}</span>
+        <span className="font-semibold" style={{ color: tone }}>{!canSend ? 'SCOUT cannot read this chat right now' : st.label}</span>
+        <span style={soft}>{!canSend ? 'Allow SCOUT on TRYBE and be signed in to TRYBE, then reload this page.' : st.says}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2 mt-2">
         {(st.state === 'send_first' || st.state === 'no_answer') && !composer && (

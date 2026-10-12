@@ -359,7 +359,7 @@ export async function POST(request: Request) {
     if (tier !== 'admin') {
       const fresh = last?.updated_at && Date.now() - Date.parse(last.updated_at) < 30 * 3600_000
       return NextResponse.json({ ok: true, read: entries.length, matched: (last?.value as { matched?: number })?.matched ?? null, kept: true,
-        notSaved: fresh ? null : 'MVP reads TRYBE\u2019s Top 100 for everyone once a day. Today\u2019s copy is not in yet.' })
+        notSaved: fresh ? null : 'MVP\u2019s copy of TRYBE\u2019s Top 100 is more than a day old. It is read for everyone from the MVP team\u2019s own TRYBE.' })
     }
     const { byId, byName } = tallyTop(entries)
     const hits = new Map<string, { hits: number; best: number | null }>(byId)
