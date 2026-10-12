@@ -296,3 +296,143 @@ export function backlinkVerdict(board: Board): BacklinkVerdict {
     detail: 'Real links from sites in your niche lift every post a little. Point them at the posts that already earn, and link from those to the rest.',
   }
 }
+
+// ── One plan per stage (Alejandro, 2026-10-12: 71 posts "Google has not read
+// these", each repeating the same three steps, and no way to tell where to
+// start). A stage with many posts is one problem with one plan: what is going
+// on, in the blog's own numbers, then the moves in order, each done for the
+// whole stage at once where it can be. Pure, so the plan is tested.
+
+export type PlanMoveKind = 'sitemap' | 'link_all' | 'request_today' | 'share' | 'improve' | 'titles' | 'brand' | 'pace'
+export interface PlanMove {
+  kind: PlanMoveKind
+  /** What to do and why, with the stage's own numbers. */
+  text: string
+  /** Posts this move is for; 0 means it is already done for this stage. */
+  count: number
+}
+export interface LanePlan { headline: string; why: string; moves: PlanMove[] }
+
+type DxPost = DoctorPost & { dx: Diagnosis }
+
+/** How many requests Search Console takes in a day, about. */
+export const REQUESTS_PER_DAY = 10
+/** Links added per press, so one press never republishes half the blog. */
+export const BULK_LINKS = 10
+/** New links from any one post per press, so no post becomes a link list. */
+export const PER_SOURCE = 2
+/** Published in the last 30 days, above which the pace itself is named. */
+export const FAST_PACE = 20
+
+/** The posts a link would help that have a post in Google to link from. */
+function linkable(p: DxPost): boolean {
+  const linked = new Set(p.linkedFrom ?? [])
+  if (Array.isArray(p.linkedFrom) && p.linkedFrom.length >= 3) return false
+  return (p.linkSources ?? []).some((s) => !linked.has(s.postId))
+}
+
+/** One link per post, from its best source not used PER_SOURCE times
+ *  already, at most BULK_LINKS. Posts no post links to come first, then the
+ *  newest. Pure. */
+export function bulkLinkPairs(posts: DxPost[], done: Set<string> = new Set(), max = BULK_LINKS): Array<{ from: string; to: string; fromTitle: string; toTitle: string }> {
+  const used = new Map<string, number>()
+  const order = posts.filter(linkable).sort((a, b) =>
+    (Array.isArray(a.linkedFrom) && a.linkedFrom.length === 0 ? 0 : 1) - (Array.isArray(b.linkedFrom) && b.linkedFrom.length === 0 ? 0 : 1)
+    || (Date.parse(b.publishedAt || '') || 0) - (Date.parse(a.publishedAt || '') || 0))
+  const out: Array<{ from: string; to: string; fromTitle: string; toTitle: string }> = []
+  for (const p of order) {
+    if (out.length >= max) break
+    const linked = new Set(p.linkedFrom ?? [])
+    const src = (p.linkSources ?? []).find((s) => !linked.has(s.postId) && !done.has(`${s.postId}>${p.postId}`) && (used.get(s.postId) ?? 0) < PER_SOURCE)
+    if (!src) continue
+    used.set(src.postId, (used.get(src.postId) ?? 0) + 1)
+    out.push({ from: src.postId, to: p.postId, fromTitle: src.title, toTitle: p.title })
+  }
+  return out
+}
+
+/** Today's requests to Google: posts not asked about in the last week, the
+ *  ones with a path in first (a link, a share), then the newest. Pure. */
+export function requestQueue(posts: DxPost[], requested: Record<string, string>, now = Date.now(), n = REQUESTS_PER_DAY): DxPost[] {
+  const recent = (u: string | null) => { const t = u ? Date.parse(requested[u] || '') : NaN; return Number.isFinite(t) && now - t < 7 * DAY }
+  const hasPath = (p: DxPost) => (Array.isArray(p.linkedFrom) && p.linkedFrom.length > 0) || sharedLinks(p).length > 0
+  return posts.filter((p) => p.url && !recent(p.url))
+    .sort((a, b) => Number(hasPath(b)) - Number(hasPath(a)) || (Date.parse(b.publishedAt || '') || 0) - (Date.parse(a.publishedAt || '') || 0))
+    .slice(0, Math.max(0, n - requestedToday(requested, now)))
+}
+
+/** Requests opened since midnight, in this browser. */
+export function requestedToday(requested: Record<string, string>, now = Date.now()): number {
+  const start = new Date(now); start.setHours(0, 0, 0, 0)
+  return Object.values(requested).filter((v) => { const t = Date.parse(v); return Number.isFinite(t) && t >= start.getTime() && t <= now }).length
+}
+
+/** The plan for one stage, or null when a stage needs none. Pure. */
+export function lanePlan(lane: Lane, posts: DxPost[], allPosts: DxPost[], connected: boolean, now = Date.now()): LanePlan | null {
+  const n = posts.length
+  if (n === 0) return null
+  const missing = posts.filter((p) => p.inSitemap === false).length
+  const canLink = posts.filter(linkable).length
+  const noSource = posts.filter((p) => !(p.linkSources ?? []).length).length
+  const orphans = posts.filter((p) => Array.isArray(p.linkedFrom) && p.linkedFrom.length === 0).length
+  const unshared = posts.filter((p) => sharedLinks(p).length === 0 && !!p.url).length
+  const thin = posts.filter((p) => p.hasBody === false).length
+  const recent = allPosts.filter((p) => { const t = Date.parse(p.publishedAt || ''); return Number.isFinite(t) && now - t < 30 * DAY }).length
+  const inGoogle = allPosts.filter((p) => p.indexed === true).length
+  const posts1 = (k: number) => plural(k, 'post')
+  const moves: PlanMove[] = []
+  const linkMove = (why: string) => moves.push({
+    kind: 'link_all', count: canLink,
+    text: canLink
+      ? `${why} ${canLink} of these have a post in Google on the same topic to link from${orphans ? `; ${orphans} have no link from any of your posts` : ''}.${noSource ? ` ${posts1(noSource)} have no post in Google on their topic yet: link to them from the next post you publish on it.` : ''}`
+      : noSource === n ? 'None of these has a post in Google on the same topic to link from yet. Link to them from the next post you publish on each topic.' : 'Each of these already has links from your posts.',
+  })
+  const shareMove = (why: string) => moves.push({ kind: 'share', count: unshared, text: unshared ? `${why} ${posts1(unshared)} here were never shared from MVP.` : 'All of these were shared from MVP.' })
+
+  switch (lane) {
+    case 'unseen': {
+      if (missing || connected) moves.push({ kind: 'sitemap', count: missing, text: missing ? `${posts1(missing)} are missing from your sitemap, the list Google reads first. Refresh it once and all of them are in.` : 'All of these are in your sitemap, so Google has the addresses.' })
+      linkMove('Google follows links. A link from a post it already shows is the strongest path in, and MVP adds them for you, ten at a time.')
+      if (connected) moves.push({ kind: 'request_today', count: Math.min(n, REQUESTS_PER_DAY), text: `Ask Google about ${REQUESTS_PER_DAY} a day, not all ${n}: Search Console allows about ${REQUESTS_PER_DAY} a day and asking twice does not help. MVP lists today's ${REQUESTS_PER_DAY}, the ones with a path in first.` })
+      shareMove('A share brings first readers and another path in.')
+      if (recent >= FAST_PACE) moves.push({ kind: 'pace', count: recent, text: `You published ${recent} posts in the last 30 days, and Google has ${inGoogle} of your posts so far. Google reads a young blog a few pages a day, so it falls behind a fast pace. Keep publishing, and link every new post from an older one in Google: that is what lets Google keep up.` })
+      return {
+        headline: `${posts1(n)} Google has not read yet. Here is the plan for all of them.`,
+        why: 'Google knows most of these addresses and has not visited them. On a growing blog that is normal: Google reads a few pages a day and picks the ones other pages point to. Nothing is broken, and pressing Request indexing on every post will not change it. Paths in will.',
+        moves,
+      }
+    }
+    case 'passed': {
+      moves.push({ kind: 'improve', count: n, text: thin
+        ? `Google read these and kept similar pages instead. Make each one worth keeping: your own photos or video, real testing notes, a clear verdict. ${posts1(thin)} have no text stored in MVP: rebuild them from the video.`
+        : 'Google read these and kept similar pages instead. Make each one worth keeping: your own photos or video, real testing notes, a clear verdict. Open each post\'s checks below.' })
+      linkMove('Then link to them from posts Google shows, so Google sees they matter.')
+      if (connected) moves.push({ kind: 'request_today', count: Math.min(n, REQUESTS_PER_DAY), text: 'After a post is improved, ask Google to look again, once. Not before: Google already read it.' })
+      return { headline: `${posts1(n)} Google read and chose not to show yet.`, why: 'This is Google saying "not worth keeping yet", not "not found". A request alone will not change it; the post and its links will.', moves }
+    }
+    case 'buried': {
+      linkMove('Google has these but sees no reason to show them. Links from your strongest posts are the quickest lift you control.')
+      moves.push({ kind: 'titles', count: n, text: 'Check each title names what someone actually searches: the product, the verdict, who it is for. Title Check does all of them at once.' })
+      moves.push({ kind: 'brand', count: n, text: 'Links from other sites lift posts Google already has more than anything you do on your own blog. The easiest: send each brand your review.' })
+      shareMove('First readers help other sites find the post.')
+      return { headline: `${posts1(n)} in Google that almost nobody sees.`, why: `Google indexed them and shows them for almost nothing (under ${BURIED_MAX_IMPRESSIONS} views in 28 days). They are not broken; they need links and a title that matches a real search.`, moves }
+    }
+    case 'close': {
+      linkMove('These are on page two, the quickest wins on the blog. Links from your own strongest posts can move them.')
+      moves.push({ kind: 'improve', count: n, text: 'Refresh each one so it answers the search better than the posts above it. Open each post\'s checks below.' })
+      moves.push({ kind: 'brand', count: n, text: 'One link from another site moves a page-two post more than anything else. Send each brand your review.' })
+      return { headline: `${posts1(n)} on page two of Google.`, why: 'Google already ranks these for real searches, just below the fold. A small push moves them onto page one.', moves }
+    }
+    case 'fresh': {
+      shareMove('This is when a share helps most: first readers, and a path for Google.')
+      linkMove('Link each from an older post Google already shows.')
+      return { headline: `${posts1(n)} published in the last few days.`, why: 'Too new to judge. Google usually takes days to weeks with a new post.', moves }
+    }
+    case 'unclicked': {
+      moves.push({ kind: 'titles', count: n, text: 'People see these and choose another result. Rewrite each title so it answers the search. Title Check does all of them at once.' })
+      return { headline: `${posts1(n)} seen in Google and not clicked.`, why: 'The ranking is there. The title is what loses the click.', moves }
+    }
+    default:
+      return null
+  }
+}

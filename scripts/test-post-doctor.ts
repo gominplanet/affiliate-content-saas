@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { laneFor, diagnose, buildBoard, backlinkVerdict, type DoctorPost } from '../lib/post-doctor'
+import { laneFor, diagnose, buildBoard, backlinkVerdict, lanePlan, bulkLinkPairs, requestQueue, requestedToday, BULK_LINKS, PER_SOURCE, REQUESTS_PER_DAY, type DoctorPost } from '../lib/post-doctor'
 import { addLinkToPost, linkedAddresses, bareUrl } from '../lib/internal-links'
 
 let failed = 0
@@ -92,6 +92,40 @@ check('link-to republishes the post and says when it already linked', /updatePos
 const idx = read('lib/indexnow.ts')
 check('IndexNow keeps the host the posts live on (a www site was refused)', !/replace\(\/\^www\\\.\/, ''\)\s*\n\s*const urls/.test(idx) && /hostOf\(urls\[0\]\)/.test(idx))
 check('IndexNow sends WordPress\'s own addresses, not slugs glued to the site', /wordpress_url \|\| p\.slug/.test(read('app/api/seo/indexnow/route.ts')))
+
+
+// One plan per stage (Alejandro, 2026-10-12: 71 posts "Google has not read
+// these", each repeating the same three steps).
+const many = Array.from({ length: 71 }, (_, i) => P({
+  postId: `u${i}`, title: `Post ${i}`, url: `https://b.com/u${i}/`, indexed: false, coverageState: 'Discovered - currently not indexed',
+  publishedAt: new Date(now - (10 + i) * 86_400_000).toISOString(), inSitemap: i < 5 ? false : true,
+  linkedFrom: i % 2 ? [] : ['x1'], shared: i < 3 ? ['pinterest'] : [],
+  linkSources: i < 60 ? [{ postId: `s${i % 4}`, title: `Source ${i % 4}` }, { postId: `s${(i + 1) % 4 + 4}`, title: 'Other' }] : [],
+}))
+const mb = buildBoard(many, now)
+const lane = mb.lanes.find((l) => l.info.id === 'unseen')!
+const plan = lanePlan('unseen', lane.posts, mb.lanes.flatMap((l) => l.posts), true, now)!
+check('71 unread posts get one plan, with the count in the headline', !!plan && /71 posts/.test(plan.headline))
+check('the plan says nothing is broken and requesting all of them will not help', /Nothing is broken/.test(plan.why) && /will not change it/.test(plan.why))
+check('moves in order: sitemap, links, today\'s requests, share', plan.moves.map((m) => m.kind).slice(0, 4).join(',') === 'sitemap,link_all,request_today,share', plan.moves.map((m) => m.kind).join(','))
+check('the sitemap move counts the posts missing from it', plan.moves[0].count === 5 && /5 posts are missing/.test(plan.moves[0].text))
+check('posts with no post in Google on their topic are named, not hidden', /11 posts have no post in Google on their topic/.test(plan.moves[1].text), plan.moves[1].text)
+check('the request move asks for 10 a day, not all 71', /10 a day, not all 71/.test(plan.moves[2].text))
+const pairs = bulkLinkPairs(lane.posts)
+check(`one press adds at most ${BULK_LINKS} links`, pairs.length === BULK_LINKS)
+const per = new Map<string, number>(); for (const x of pairs) per.set(x.from, (per.get(x.from) ?? 0) + 1)
+check(`no post gets more than ${PER_SOURCE} new links in one press`, Math.max(...per.values()) <= PER_SOURCE)
+check('posts no post links to are linked first', pairs.slice(0, 8).every((x) => Number(x.to.slice(1)) % 2 === 1), pairs.map((x) => x.to).join(','))
+const next = bulkLinkPairs(lane.posts, new Set(pairs.map((x) => `${x.from}>${x.to}`)))
+check('the next press never repeats a link already tried', next.every((x) => !pairs.some((y) => y.from === x.from && y.to === x.to)))
+const q = requestQueue(lane.posts, {}, now)
+check(`today's requests: ${REQUESTS_PER_DAY}, the ones with a path in first`, q.length === REQUESTS_PER_DAY && q.every((x) => (Array.isArray(x.linkedFrom) && x.linkedFrom.length > 0) || (x.shared ?? []).length > 0))
+const asked: Record<string, string> = Object.fromEntries(q.slice(0, 4).map((x) => [x.url!, new Date(now - 60_000).toISOString()]))
+check('opened today counts against the 10, and an opened post is not listed again', requestedToday(asked, now) === 4 && requestQueue(lane.posts, asked, now).length === 6 && !requestQueue(lane.posts, asked, now).some((x) => asked[x.url!]))
+check('a stage needing nothing has no plan', lanePlan('working', lane.posts, lane.posts, true, now) === null)
+const boardUi = read('components/seo/PostBoard.tsx')
+check('the board shows the plan above the posts, with bulk links and today\'s requests', /<PlanCard plan=\{plan\}/.test(boardUi) && /runBulkLinks/.test(boardUi) && /requestQueue\(posts, requested\)/.test(boardUi))
+check('a bulk run says what was added, already there, and not added', /link\{bulk\.added === 1 \? '' : 's'\} added/.test(boardUi) && /already there/.test(boardUi) && /not added/.test(boardUi))
 
 if (failed) { console.error(`\n${failed} post board check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

@@ -13,8 +13,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, Loader2, Check, Link2, Share2, Wrench, Type, Megaphone, Map as MapIcon, ChevronDown, AlertTriangle } from 'lucide-react'
-import { buildBoard, backlinkVerdict, laneInfo, sharedLinks, PLATFORM_LABEL, type DoctorPost, type Diagnosis, type Lane, type Step, type LaneInfo } from '@/lib/post-doctor'
+import { ExternalLink, Loader2, Check, Link2, Share2, Wrench, Type, Megaphone, Map as MapIcon, ChevronDown, AlertTriangle, ListChecks, Search, Gauge, RotateCcw } from 'lucide-react'
+import { buildBoard, backlinkVerdict, laneInfo, sharedLinks, lanePlan, bulkLinkPairs, requestQueue, requestedToday, PLATFORM_LABEL, REQUESTS_PER_DAY, BULK_LINKS, type DoctorPost, type Diagnosis, type Lane, type Step, type LaneInfo, type LanePlan, type PlanMove } from '@/lib/post-doctor'
 import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
 import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
 
@@ -29,7 +29,7 @@ const ago = (iso: string) => {
 
 type LinkState = Record<string, 'busy' | 'done' | 'already' | { error: string }>
 
-export default function PostBoard({ posts, connected, property, linksCounted, canBrandRecap, onOpenPost, onGoToGetFound, onRefreshUrls }: {
+export default function PostBoard({ posts, connected, property, linksCounted, canBrandRecap, onOpenPost, onGoToGetFound, onRefreshUrls, onReload }: {
   posts: DoctorPost[]
   connected: boolean
   property: string | null
@@ -39,6 +39,8 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
   onOpenPost: (postId: string) => void
   onGoToGetFound: () => void
   onRefreshUrls: () => void
+  /** Reads the board again (after links were added). */
+  onReload?: () => void
 }) {
   const board = useMemo(() => buildBoard(posts), [posts])
   const [lane, setLane] = useState<Lane | null>(null)
@@ -76,6 +78,38 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
   }
 
   const verdict = backlinkVerdict(board)
+  const allDx = useMemo(() => board.lanes.flatMap((l) => l.posts), [board])
+  const plan = current ? lanePlan(current.info.id, current.posts, allDx, connected) : null
+
+  // LINK THEM ALL (ten at a time): the same link as the per-post button, one
+  // after another, each outcome kept on its post and counted at the end.
+  const [bulk, setBulk] = useState<{ running: boolean; done: number; of: number; added: number; already: number; failed: string[] } | null>(null)
+  const runBulkLinks = async () => {
+    if (!current || bulk?.running) return
+    const tried = new Set(Object.keys(links))
+    const pairs = bulkLinkPairs(current.posts, tried)
+    if (!pairs.length) return
+    const st = { running: true, done: 0, of: pairs.length, added: 0, already: 0, failed: [] as string[] }
+    setBulk({ ...st })
+    for (const pr of pairs) {
+      const k = `${pr.from}>${pr.to}`
+      setLinks((s) => ({ ...s, [k]: 'busy' }))
+      try {
+        const r = await fetch('/api/seo/link-to', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fromPostId: pr.from, toPostId: pr.to }), signal: AbortSignal.timeout(60_000) })
+        const d = await r.json().catch(() => ({})) as { ok?: boolean; added?: boolean; error?: string }
+        if (!r.ok || !d.ok) throw new Error(d.error || `MVP could not add the link (${r.status}).`)
+        setLinks((s) => ({ ...s, [k]: d.added ? 'done' : 'already' }))
+        if (d.added) st.added++; else st.already++
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'MVP could not add the link.'
+        setLinks((s) => ({ ...s, [k]: { error: msg } }))
+        st.failed.push(`${pr.toTitle}: ${msg}`)
+      }
+      st.done++
+      setBulk({ ...st })
+    }
+    setBulk({ ...st, running: false })
+  }
 
   if (posts.length === 0) return null
 
@@ -104,7 +138,14 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
             )
           })}
         </div>
-        {current && <p className="px-4 pt-2 text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5]">{current.info.blurb}</p>}
+        {current && !plan && <p className="px-4 pt-2 text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5]">{current.info.blurb}</p>}
+        {current && plan && (
+          <PlanCard plan={plan} posts={current.posts} requested={requested} property={property} links={links} bulk={bulk}
+            onBulkLinks={() => void runBulkLinks()} onGoToGetFound={onGoToGetFound} onReload={onReload} />
+        )}
+        {current && plan && current.posts.length > 0 && (
+          <p className="px-4 pt-3 text-[11px] font-bold uppercase tracking-wider text-[#86868b]">Each post, with its own numbers</p>
+        )}
 
         <div className="p-4 pt-3 flex flex-col gap-3">
           {shown.map((p) => {
@@ -166,7 +207,7 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
       </div>
 
       {board.shareFirst.length > 0 && (
-        <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+        <div id="share-first" className="scroll-mt-24 rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] inline-flex items-center gap-1.5"><Share2 size={14} className="text-[#7C3AED]" /> Share these first</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">Not shared from MVP yet, and the ones a share helps most: closest to page one, then the newest. A share is not a ranking signal by itself. It brings first readers, and every reader is a chance of a link from another site.</p>
@@ -187,6 +228,98 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
       )}
 
       <BacklinkCard verdict={verdict} canBrandRecap={canBrandRecap} />
+    </div>
+  )
+}
+
+const MOVE_ICON: Record<PlanMove['kind'], typeof Link2> = {
+  sitemap: MapIcon, link_all: Link2, request_today: Search, share: Share2, improve: Wrench, titles: Type, brand: Megaphone, pace: Gauge,
+}
+
+/** The plan for the whole stage: what is going on, then the moves in order,
+ *  each done for the stage at once where it can be. */
+function PlanCard({ plan, posts, requested, property, links, bulk, onBulkLinks, onGoToGetFound, onReload }: {
+  plan: LanePlan
+  posts: (DoctorPost & { dx: Diagnosis })[]
+  requested: Record<string, string>
+  property: string | null
+  links: LinkState
+  bulk: { running: boolean; done: number; of: number; added: number; already: number; failed: string[] } | null
+  onBulkLinks: () => void
+  onGoToGetFound: () => void
+  onReload?: () => void
+}) {
+  const [showQueue, setShowQueue] = useState(false)
+  const nextPairs = bulkLinkPairs(posts, new Set(Object.keys(links)))
+  const today = requestedToday(requested)
+  const queue = requestQueue(posts, requested)
+  const btn = 'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold'
+  const primary = `${btn} text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50`
+  const quiet = `${btn} border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/60`
+
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/[0.04] p-3">
+      <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] inline-flex items-center gap-1.5"><ListChecks size={15} className="text-[#7C3AED]" /> {plan.headline}</p>
+      <p className="mt-1 text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7]">{plan.why}</p>
+      <ol className="mt-3 flex flex-col gap-3">
+        {plan.moves.map((m, i) => {
+          const Icon = MOVE_ICON[m.kind]
+          const done = m.count === 0 && m.kind !== 'pace'
+          return (
+            <li key={m.kind} className="flex items-start gap-2.5">
+              <span className={`w-5 h-5 mt-0.5 rounded-full text-[11px] font-semibold flex items-center justify-center flex-shrink-0 tabular-nums ${done ? 'bg-[#34c759]/15 text-[#34c759]' : 'bg-[#7C3AED]/10 text-[#7C3AED]'}`}>{done ? <Check size={11} /> : i + 1}</span>
+              <div className="flex-1 min-w-0 text-[12px]">
+                <p className={done ? 'text-[#6e6e73] dark:text-[#a1a1a6]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}><Icon size={12} className="inline -mt-0.5 mr-1 text-[#7C3AED]" />{m.text}</p>
+                {!done && m.kind === 'sitemap' && <button onClick={onGoToGetFound} className={`${quiet} mt-1.5`}><MapIcon size={12} /> Go to Get my blog found</button>}
+                {m.kind === 'link_all' && m.count > 0 && (
+                  <div className="mt-1.5 flex flex-col gap-1 items-start">
+                    {bulk?.running ? (
+                      <span className="inline-flex items-center gap-1.5 text-[#7C3AED] font-medium"><Loader2 size={12} className="animate-spin" /> Adding links: {bulk.done} of {bulk.of}. Each post is republished on WordPress, so keep this page open.</span>
+                    ) : nextPairs.length > 0 ? (
+                      <button onClick={onBulkLinks} className={primary}><Link2 size={12} /> Add {nextPairs.length === 1 ? 'the link' : `the next ${nextPairs.length} links`}</button>
+                    ) : (
+                      <span className="text-[#6e6e73] dark:text-[#a1a1a6]">Every link MVP could add here was tried. Reload the board to see the new counts.</span>
+                    )}
+                    {!bulk?.running && nextPairs.length > 0 && <span className="text-[11px] text-[#86868b]">Up to {BULK_LINKS} per press, never more than 2 new links from any one post. Each link is a card at the end of a post Google already shows.</span>}
+                    {bulk && !bulk.running && (
+                      <span className={`text-[12px] ${bulk.failed.length ? 'text-[#ff9500]' : 'text-[#34c759]'} font-medium`}>
+                        {bulk.added} link{bulk.added === 1 ? '' : 's'} added{bulk.already ? `, ${bulk.already} already there` : ''}{bulk.failed.length ? `, ${bulk.failed.length} not added` : ''}.
+                        {onReload && bulk.added > 0 && <button onClick={onReload} className="ml-2 inline-flex items-center gap-1 text-[#7C3AED] hover:underline"><RotateCcw size={11} /> Reload the board</button>}
+                      </span>
+                    )}
+                    {bulk && !bulk.running && bulk.failed.length > 0 && (
+                      <ul className="text-[11px] text-[#ff3b30] list-disc pl-4">{bulk.failed.slice(0, 5).map((f, j) => <li key={j}>{f}</li>)}</ul>
+                    )}
+                  </div>
+                )}
+                {m.kind === 'request_today' && (
+                  <div className="mt-1.5">
+                    <button onClick={() => setShowQueue((v) => !v)} className={queue.length ? primary : quiet}>
+                      <Search size={12} /> {queue.length ? `Today's ${queue.length}` : 'Done for today'} <ChevronDown size={12} className={showQueue ? 'rotate-180' : ''} />
+                    </button>
+                    <span className="ml-2 text-[11px] text-[#86868b]">{today} of about {REQUESTS_PER_DAY} opened today in this browser.</span>
+                    {showQueue && (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {queue.length === 0 && <p className="text-[11px] text-[#86868b]">{today >= REQUESTS_PER_DAY ? `That is about ${REQUESTS_PER_DAY} today. Come back tomorrow for the next ones.` : 'Every post here was asked about in the last week. Asking again does not speed Google up.'}</p>}
+                        {queue.map((p) => (
+                          <div key={p.postId} className="flex items-center gap-2 flex-wrap">
+                            {p.url && <RequestIndexingButton url={p.url} property={property} small />}
+                            <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] truncate max-w-[24rem]">{p.title}</span>
+                          </div>
+                        ))}
+                        {queue.length > 0 && <p className="text-[11px] text-[#86868b]">Each one opens Search Console on that page: press Request indexing there. MVP remembers what you opened, and tomorrow lists the next ones.</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!done && m.kind === 'share' && <button onClick={() => document.getElementById('share-first')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`${quiet} mt-1.5`}><Share2 size={12} /> See which to share first</button>}
+                {m.kind === 'titles' && <Link href="/tools/title-audit" className={`${quiet} mt-1.5`}><Type size={12} /> Open Title Check</Link>}
+                {m.kind === 'brand' && <button onClick={() => document.getElementById('backlinks')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`${quiet} mt-1.5`}><Megaphone size={12} /> Where real links come from</button>}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 }
@@ -271,7 +404,7 @@ function BacklinkCard({ verdict, canBrandRecap }: { verdict: ReturnType<typeof b
   const [open, setOpen] = useState(false)
   const tone = verdict.need === 'yes' ? '#7C3AED' : verdict.need === 'not_yet' ? '#ff9500' : '#34c759'
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+    <div id="backlinks" className="scroll-mt-24 rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
       <button onClick={() => setOpen((v) => !v)} className="w-full text-left px-4 py-3 flex items-start gap-3">
         <Link2 size={16} className="mt-0.5 flex-shrink-0" style={{ color: tone }} />
         <span className="flex-1 min-w-0">

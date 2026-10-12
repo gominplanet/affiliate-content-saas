@@ -778,6 +778,7 @@ export default function SeoPage() {
             }}
             onGoToGetFound={() => document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
             onRefreshUrls={() => void resyncUrls()}
+            onReload={() => void load()}
           />
 
           {/* Revenue-opportunity worklist (Phase 2). Self-contained — fetches
