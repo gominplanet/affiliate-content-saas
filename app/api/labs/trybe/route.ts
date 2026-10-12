@@ -22,6 +22,7 @@
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
+import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -456,10 +457,16 @@ export async function POST(request: Request) {
     // ONE BODY, MANY HOOKS (Cole: "the middle of the video is pretty much the
     // same"). The brand's real products and, read fresh, what is on sale on
     // its own store right now, so a sale call to action is only ever true.
-    const { data: row } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
-    if (!row) return NextResponse.json({ error: 'That brand is not on your list.' }, { status: 404 })
+    // A brand the creator joined straight on TRYBE (My brands) is planned from
+    // MVP's shared copy of TRYBE, and said as not kept: there is no row to keep it on.
+    const { data: own } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
+    const { data: dir } = own ? { data: null } : await admin.from('trybe_directory').select('brand_id, name, website, categories, about, pay_text, site_summary, site_products').eq('brand_id', brandId).maybeSingle()
+    const row = own || dir
+    if (!row) return NextResponse.json({ error: 'MVP does not know this brand yet. Collect the TRYBE brand list in Find brands first.' }, { status: 404 })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
+    // COPY WHAT WINS: the words of the brand's own best videos on TRYBE.
+    const winners = winnersForPlan(body.winners)
     const site = await researchBrandSite(row.website).catch(() => null)
     const products = site?.products?.length ? site.products : (Array.isArray(row.site_products) ? row.site_products : [])
     const onSale = site?.onSale || []
@@ -470,18 +477,20 @@ export async function POST(request: Request) {
       const msg = await createAnthropicClient().messages.create({
         model: MODEL, max_tokens: 2200,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${product ? `\n\nPlan the videos about this product: ${product}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${product ? `\n\nPlan the videos about this product: ${product}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
       if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
       const plan = honestCtas(parsed, onSale)
-      let saved = true
-      try {
-        const { error: upErr } = await admin.from('trybe_brands').update({ video_plan: { ...plan, onSale, products: products.slice(0, 15) }, video_plan_at: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
-        if (upErr) saved = false
-      } catch { saved = false }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved })
+      let saved = !!own
+      if (own) {
+        try {
+          const { error: upErr } = await admin.from('trybe_brands').update({ video_plan: { ...plan, onSale, products: products.slice(0, 15) }, video_plan_at: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
+          if (upErr) saved = false
+        } catch { saved = false }
+      }
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved, onList: !!own, fromWinners: winners.length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }

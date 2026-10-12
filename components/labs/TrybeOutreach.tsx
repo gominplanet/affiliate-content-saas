@@ -29,10 +29,11 @@ import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/co
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { readAdLibraryCount, META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
+import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -80,7 +81,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'find' | 'queue' | 'sent' | 'inbox'
+type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -366,6 +367,11 @@ export default function TrybeOutreach() {
   useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
   const canInbox = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
+  // 1.46.0: My brands, and each brand's best videos next to its video ideas.
+  const canMyBrands = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)
+  const myBrandsUpdate = access === 'granted' && scoutVersion && !canMyBrands
+    ? `Your SCOUT is ${scoutVersion}. My brands needs SCOUT ${SCOUT_TRYBE_MYBRANDS_MIN_VERSION} or newer: update it from the Chrome Web Store (or remove it and add it again), then reload this page.`
+    : null
   const loadInbox = useCallback(async () => {
     const r = await fetchTrybeInbox().catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
     if (r.ok) { setInbox({ convos: r.convos, me: r.me, myName: r.myName }); setInboxError(null) } else setInboxError(r.error)
@@ -443,7 +449,7 @@ export default function TrybeOutreach() {
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { if (new URLSearchParams(window.location.search).get('tab') === 'inbox') setTab('inbox') } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -1054,7 +1060,7 @@ export default function TrybeOutreach() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border p-1 w-fit max-w-full" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} role="tablist">
-        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
+        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread], ['brands', 'My brands', 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold"
             style={tab === id ? { background: PURPLE, color: '#fff' } : { color: 'var(--text)' }}>
@@ -1509,6 +1515,11 @@ export default function TrybeOutreach() {
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
         brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? { id: b.brand_id, name: b.name } : null }} scoutOpens={scoutOpens} />}
 
+      {tab === 'brands' && (
+        <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
+          isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} />
+      )}
+
       {tab === 'sent' && (
         <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -1635,6 +1646,7 @@ export default function TrybeOutreach() {
                       don't film for a brand nobody answers for, then video ideas. */}
                   {c && inbox && reply === 'replied' && (
                     <TrybeAfterAccept b={b} chatId={c.id} lastAt={c.at} me={inbox.me} myName={inbox.myName} canSend={canInbox}
+                      canReadWinners={canMyBrands} isAdmin={isAdmin}
                       onPatch={p => patch(b.brand_id, p as Partial<Brand>)} onState={onAfterState} />
                   )}
                 </div>

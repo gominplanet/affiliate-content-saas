@@ -84,7 +84,9 @@ check('a fit score counts only for the search it was judged for', /m\.fit_prefs 
 check('Best fit puts the AI\'s "not a fit" for this search last, below brands not scored', /judgedNo\(id\) \? -2 : fitScore\(id\) \?\? -1/.test(route))
 check('an old verdict is said as one, never as this search\'s', /AI said not a fit for an earlier search/.test(read('components/labs/TrybeOutreach.tsx')))
 const after = read('components/labs/TrybeAfterAccept.tsx')
-check('a first message counts as sent only once it shows in the chat', /SENT MEANS SEEN/.test(after) && /seenBefore/.test(after) && /action: 'kickoff_sent'/.test(after))
+// The send itself is shared with the stuck-video nudge (My brands, 2026-10-12).
+const chatSend = read('components/labs/trybe-chat-send.ts')
+check('a first message counts as sent only once it shows in the chat', /SENT MEANS SEEN|Sent means SEEN/.test(chatSend) && /seenBefore/.test(chatSend) && /sendInTrybeChat\(/.test(after) && /if \(!r\.sent\)/.test(after) && /action: 'kickoff_sent'/.test(after))
 const page = read('components/labs/TrybeOutreach.tsx')
 check('the page offers Best bets and the after-a-yes panel', /id: 'picks', label: 'Best bets'/.test(page) && /<TrybeAfterAccept/.test(page))
 const mig = read('supabase/migrations/425_trybe_playbook.sql')
@@ -103,7 +105,7 @@ check('only an admin replaces the shared Top 100, and a read matching nothing ch
 check('Best bets ranks a wider pool than the keyword search keeps', /sort === 'picks' \|\| sort === 'creators' \? 1200 : 400/.test(route))
 check('SCOUT\'s Meta check stops on a deadline, keeps alive, and reopens a closed tab', /notReached\.push/.test(bg) && /const ka = startKeepAlive\(\)[\s\S]{0,200}for \(let i = 0; i < list\.length/.test(bg) && /catch \(e\) \{ tab = null \}/.test(bg))
 const afterUi = read('components/labs/TrybeAfterAccept.tsx')
-check('a message already in the chat is not sent twice, and a lost answer is checked before "Not sent"', /already in your TRYBE chat, so it was not sent again/.test(afterUi) && /const maybeSent = !r\.ok && !r\.status/.test(afterUi))
+check('a message already in the chat is not sent twice, and a lost answer is checked before "Not sent"', /already in your TRYBE chat, so it was not sent again/.test(afterUi) && /const maybeSent = !r\.ok && !r\.status/.test(chatSend) && /sent: true, already: true/.test(chatSend))
 
 if (failed) { console.error(`\n${failed} TRYBE playbook check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

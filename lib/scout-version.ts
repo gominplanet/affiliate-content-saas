@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.45.1'
+export const SCOUT_LATEST_VERSION = '1.46.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -89,6 +89,9 @@ export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'
 /** 1.45.0 (Cole's playbook): TRYBE's Top 100 and a brand's details, read
  *  only, and the Meta Ad Library count per brand. */
 export const SCOUT_TRYBE_PLAYBOOK_MIN_VERSION = '1.45.0'
+/** 1.46.0 (My brands): the creator's totals per brand, each brand's
+ *  submissions and the words of a brand's best videos, read only. */
+export const SCOUT_TRYBE_MYBRANDS_MIN_VERSION = '1.46.0'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */

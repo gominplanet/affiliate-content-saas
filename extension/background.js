@@ -14405,6 +14405,12 @@ const TRYBE_API_ALLOW = [
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/top-creatives(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/(details|top-formats|leaderboard)(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/discovery\/creators\/me\/(requests|sent-requests|invites|inbox)(\?[\w=&%.-]*)?$/ },
+  // 1.46.0 (My brands): the creator's own totals per brand, each brand's
+  // submissions (to find videos stuck in review) and earnings, and the words
+  // of a brand's best videos. Read only.
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/stats(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/(submissions|earnings)(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/submissions\/[A-Za-z0-9-]{6,80}\/script$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never

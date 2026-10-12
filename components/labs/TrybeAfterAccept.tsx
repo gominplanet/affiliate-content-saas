@@ -9,17 +9,20 @@
 //   - the first message (thanks, video ideas, a 10 minute call, their monthly
 //     ad spend) and the follow up, written by MVP, edited and sent by the
 //     creator into the brand's own TRYBE chat through SCOUT;
-//   - video ideas: one body and call to action, ten hooks, each a script to copy.
+//   - video ideas: one body and call to action, ten hooks, each a script to
+//     copy, next to the brand's own best videos on TRYBE (TrybeVideoIdeas).
 //
 // A message counts as sent only when it shows up in the conversation after,
 // the same rule as the Inbox. Every failure says what happened.
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Send, Sparkles, Copy, Check, AlertTriangle, Clapperboard, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+import { Loader2, Send, Sparkles, AlertTriangle, RotateCcw } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { listOf, readMessage } from '@/components/labs/TrybeInbox'
-import { afterAccept, readChat, scriptFor, HOOK_STYLE_WORDS, type VideoPlan, type ChatRead, type AfterState } from '@/lib/trybe-playbook'
+import { afterAccept, readChat, type VideoPlan, type ChatRead, type AfterState } from '@/lib/trybe-playbook'
+import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
+import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -42,8 +45,6 @@ async function api(body: Record<string, unknown>) {
   if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
   return d
 }
-
-const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
 
 // ONE CHAT AT A TIME through SCOUT, kept two minutes per version of the
 // chat (its latest message time), so a Sent tab of thirty brands does not
@@ -76,7 +77,7 @@ function readChatQueued(chatId: string, version: number, me: string[], myName: s
   return job
 }
 
-export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSend, onPatch, onState }: {
+export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSend, canReadWinners = false, isAdmin = false, onPatch, onState }: {
   b: AfterBrand
   chatId: string
   /** The conversation's latest message time: a new message means read again. */
@@ -85,6 +86,9 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
   myName: string
   /** SCOUT can read and post into the TRYBE conversation. */
   canSend: boolean
+  /** SCOUT 1.46.0+: the brand's best videos on TRYBE can be read. */
+  canReadWinners?: boolean
+  isAdmin?: boolean
   onPatch: (p: Partial<AfterBrand>) => void
   /** The stage, told to the page so its counts match the panels. */
   onState?: (brandId: string, state: AfterState) => void
@@ -95,13 +99,6 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
   const [writing, setWriting] = useState(false)
   const [sending, setSending] = useState(false)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
-  const [plan, setPlan] = useState<AfterBrand['video_plan']>(b.video_plan || null)
-  const [planOpen, setPlanOpen] = useState(false)
-  const [planning, setPlanning] = useState(false)
-  const [planNote, setPlanNote] = useState<string | null>(null)
-  const [copied, setCopied] = useState<number | null>(null)
-
-  useEffect(() => { setPlan(b.video_plan || null) }, [b.video_plan])
 
   // EVERY STAGE FROM THE CHAT ITSELF (review 2026-10-12): TRYBE's list often
   // does not say who wrote last, and telling it from the list told a brand
@@ -140,54 +137,17 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
     if (!text) return
     setSending(true); setNote(null)
     try {
-      const read = async () => {
-        const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(chatId)}/messages?page=1&limit=50`)
-        return r.ok ? listOf(r.json).map((m) => readMessage(m, me, myName)).filter(Boolean) as Array<{ id: string; text: string }> : null
-      }
-      const before = await read()
-      // ALREADY THERE (another tab, or a send that went before an error): not
-      // posted a second time.
-      if (before && before.some((m) => flat(m.text) === flat(text))) {
-        setComposer(null)
-        setNote({ tone: 'ok', text: 'This message is already in your TRYBE chat, so it was not sent again.' })
-        return
-      }
-      const seenBefore = new Set((before || []).map((m) => m.id))
-      const r = await requestTrybeApi('POST', `/backend/api/channels/${encodeURIComponent(chatId)}/messages`, { content: text })
-      // Only an answer FROM TRYBE says it was refused. No status (SCOUT lost
-      // the page, the tab closed, a timeout) may still have sent it, so the
-      // chat is read before anything says "Not sent".
-      const maybeSent = !r.ok && !r.status
-      if (!r.ok && !maybeSent) { setNote({ tone: 'bad', text: `Not sent: TRYBE answered ${r.status}.` }); return }
-      // SENT MEANS SEEN in the conversation, never "the request went".
-      const after = await read()
-      const seen = !!after && after.some((m) => !seenBefore.has(m.id) && flat(m.text) === flat(text))
-      if (!seen) { setNote({ tone: 'warn', text: maybeSent ? `SCOUT lost touch with TRYBE (${r.error || 'no answer'}) and the message does not show in the chat yet. Check it on TRYBE before sending again.` : 'TRYBE did not show the message in the conversation yet. Check it on TRYBE before sending again.' }); return }
+      const r = await sendInTrybeChat(chatId, text, me, myName)
+      if (!r.sent) { setNote({ tone: r.tone, text: r.text }); return }
       chatCache.clear()
       const kind = composer.kind
       setComposer(null)
+      if (r.already) { setNote({ tone: 'ok', text: 'This message is already in your TRYBE chat, so it was not sent again.' }); return }
       setNote({ tone: 'ok', text: kind === 'kickoff' ? 'Sent. It shows in your TRYBE chat. Wait for a person to answer before you film.' : 'Follow up sent. It shows in your TRYBE chat.' })
       const at = new Date().toISOString()
       onPatch(kind === 'kickoff' ? { kickoff_sent_at: at } : { followup_sent_at: at })
       await api({ action: 'kickoff_sent', brandId: b.brand_id, kind }).catch((e) => setNote({ tone: 'warn', text: `Sent, but MVP could not save when it went: ${e instanceof Error ? e.message : 'error'}` }))
     } finally { setSending(false) }
-  }
-
-  async function makePlan() {
-    setPlanning(true); setPlanNote(null)
-    try {
-      const d = await api({ action: 'video_plan', brandId: b.brand_id })
-      const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
-      setPlan(p); setPlanOpen(true)
-      onPatch({ video_plan: p, video_plan_at: new Date().toISOString() })
-      if (!d.saved) setPlanNote('These ideas are shown but could not be saved, so they will be gone next visit. Copy what you want to keep.')
-    } catch (e) { setPlanNote(e instanceof Error ? e.message : 'MVP could not plan the videos.') }
-    finally { setPlanning(false) }
-  }
-
-  const copy = async (i: number) => {
-    if (!plan) return
-    try { await navigator.clipboard.writeText(scriptFor(plan, i)); setCopied(i); setTimeout(() => setCopied(null), 2000) } catch { toast.error('Could not copy. Select the text instead.') }
   }
 
   const soft = { color: 'var(--text-soft)' }
@@ -199,19 +159,14 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
         <span className="font-semibold" style={{ color: tone }}>{!canSend ? 'SCOUT cannot read this chat right now' : st.label}</span>
         <span style={soft}>{!canSend ? 'Allow SCOUT on TRYBE and be signed in to TRYBE, then reload this page.' : st.says}</span>
       </div>
-      <div className="flex flex-wrap items-center gap-2 mt-2">
-        {(st.state === 'send_first' || st.state === 'no_answer') && !composer && (
+      {(st.state === 'send_first' || st.state === 'no_answer') && !composer && (
+        <div className="flex flex-wrap items-center gap-2 mt-2">
           <button onClick={() => void write(st.state === 'send_first' ? 'kickoff' : 'followup')} disabled={writing || !canSend} className={btn} style={{ background: PURPLE, color: '#fff' }}
             title={canSend ? undefined : 'SCOUT on TRYBE is needed to send it from here.'}>
             {writing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {st.state === 'send_first' ? 'Write the first message' : 'Write a follow up'}
           </button>
-        )}
-        <button onClick={() => (plan ? setPlanOpen((v) => !v) : void makePlan())} disabled={planning} className={btn}
-          style={st.state === 'answered' ? { background: PURPLE, color: '#fff' } : { border: `1px solid ${PURPLE}`, color: PURPLE }}>
-          {planning ? <Loader2 size={12} className="animate-spin" /> : <Clapperboard size={12} />} {plan ? (planOpen ? 'Hide video ideas' : 'Video ideas') : 'Plan videos'}
-          {plan && (planOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-        </button>
-      </div>
+        </div>
+      )}
 
       {composer && (
         <div className="mt-2">
@@ -230,53 +185,10 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
         </div>
       )}
       {note && <p className="mt-1.5 inline-flex items-start gap-1" style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.tone !== 'ok' && <AlertTriangle size={12} className="mt-0.5 shrink-0" />}{note.text}</p>}
-      {planNote && <p className="mt-1.5" style={{ color: AMBER }}>{planNote}</p>}
-
-      {plan && planOpen && (
-        <div className="mt-3 space-y-3">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One body, many hooks{plan.product ? `: ${plan.product}` : ''}</p>
-            <p className="mt-1 text-[13px]">{plan.body}</p>
-            {plan.onSale && plan.onSale.length > 0
-              ? <p className="mt-1" style={{ color: GREEN }}>On sale on their store now: {plan.onSale.slice(0, 3).join(', ')}</p>
-              : <p className="mt-1" style={soft}>Nothing marked down on their store right now, so no sale line is offered.</p>}
-          </div>
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Hooks: film the body once, swap the first 2 seconds</p>
-            <ol className="mt-1 space-y-1.5">
-              {plan.hooks.map((h, i) => (
-                <li key={i} className="flex items-start gap-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                  <span className="shrink-0 text-[10px] font-bold rounded-full px-1.5 py-0.5 mt-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[h.style]}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] font-semibold">{h.line}</span>
-                    {h.shot && <span className="block" style={soft}>{h.shot}</span>}
-                  </span>
-                  <button onClick={() => void copy(i)} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title="Copy hook, body and call to action as one script">
-                    {copied === i ? <Check size={12} /> : <Copy size={12} />} {copied === i ? 'Copied' : 'Script'}
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </div>
-          {plan.ctas.length > 0 && (
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Calls to action</p>
-              <ul className="mt-1 space-y-0.5">{plan.ctas.map((c, i) => <li key={i}>{c.line}</li>)}</ul>
-            </div>
-          )}
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One video per stage</p>
-            <ul className="mt-1 space-y-0.5">
-              {plan.funnel.top && <li><b>New to the problem:</b> {plan.funnel.top}</li>}
-              {plan.funnel.middle && <li><b>Comparing:</b> {plan.funnel.middle}</li>}
-              {plan.funnel.bottom && <li><b>Ready to buy:</b> {plan.funnel.bottom}</li>}
-            </ul>
-          </div>
-          <button onClick={() => void makePlan()} disabled={planning} className={btn} style={{ border: '1px solid var(--border)' }}>
-            {planning ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} New ideas
-          </button>
-        </div>
-      )}
+      <div className="mt-2">
+        <TrybeVideoIdeas brandId={b.brand_id} name={b.name} plan={b.video_plan || null} canRead={canReadWinners} isAdmin={isAdmin}
+          emphasize={st.state === 'answered'} onPlan={(p) => onPatch({ video_plan: p, video_plan_at: new Date().toISOString() })} />
+      </div>
     </div>
   )
 }
