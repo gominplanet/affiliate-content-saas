@@ -320,7 +320,7 @@ check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandI
   check('the brand opener runs alone in the page', !/trybeRun|chrome\.|_sleep/.test(OPEN))
 }
 
-check('a brand conversation links to the brand on TRYBE', /brandLink=\{name => \{ const b = brands\.find\(x => convoFor\(x\.name/.test(UI) && /label="Brand page on TRYBE"/.test(INBOX))
+check('a brand conversation links to the brand on TRYBE', /directory=\{inboxDirectory\}/.test(UI) && /<TrybeBrandCard key=\{openConvo\.id\}/.test(INBOX))
 
 check('Tick Fit 80+ ticks only strong fits still free to message, and the score explains itself', /const FIT_STRONG = 80/.test(UI) && /!TAKEN\.includes\(b\.status as Brand\['status'\]\) && b\.status !== 'not_fit' && \(b\.fit_score \?\? 0\) >= FIT_STRONG/.test(UI) && /Fit \$\{b\.fit_score\} of 100: MVP's AI check/.test(UI))
 

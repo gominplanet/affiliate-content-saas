@@ -20,9 +20,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import TrybeLink from '@/components/labs/TrybeLink'
+import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
 import { replyBlanks } from '@/lib/trybe-outreach'
-import { SCOUT_TRYBE_INBOX_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 const RED = '#DC2626'
@@ -182,7 +182,7 @@ const SAY: Record<string, string> = {
 const errWords = (r: { error?: string; status?: number }) =>
   r.error ? (SAY[r.error] || r.error) : r.status === 401 || r.status === 403 ? `TRYBE refused it (${r.status}): open jointrybe.com, sign in, and try again.` : `TRYBE answered ${r.status ?? 'nothing'}.`
 
-export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpened, onConvos, brandLink, scoutOpens = false }: {
+export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpened, onConvos, directory = [] }: {
   scoutVersion: string | null; allowed: boolean
   /** A conversation the page asked to open (Sent's "Open chat"). */
   openRequest?: { id: string; n: number } | null
@@ -191,11 +191,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   onOpened?: () => void
   /** Every fresh conversation list, so the page's unread count follows. */
   onConvos?: (convos: Conversation[]) => void
-  /** The brand's own TRYBE page for a conversation, when it is a brand on
-   *  the creator's list. */
-  brandLink?: (conversationName: string) => { id: string; name: string } | null
-  /** SCOUT can open the brand's own popup (1.41.8). */
-  scoutOpens?: boolean
+  /** MVP's TRYBE brand list (id, name, website), to tell which brand a chat
+   *  is with when the chat itself does not say. */
+  directory?: Array<{ id: string; name: string; website?: string | null }>
 }) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
   const [listNote, setListNote] = useState<string | null>(null)
@@ -410,8 +408,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
           {openConvo && (<>
             <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
               <span className="text-[13px] font-semibold">{openConvo.name}</span>
-              {(() => { const b = brandLink?.(openConvo.name); return b ? (
-                <span className="ml-auto"><TrybeLink brandId={b.id} name={b.name} scout={scoutOpens} label="Brand page on TRYBE" /></span>) : null })()}
+              {/* THE BRAND'S OWN PAGE, WEBSITE AND BRIEF, from the chat. */}
+              <TrybeBrandCard key={openConvo.id} chatName={openConvo.name} chatRaw={openConvo.raw} directory={directory}
+                canStats={scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)} canDetails={scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} />
             </div>
             <div ref={threadRef} className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}

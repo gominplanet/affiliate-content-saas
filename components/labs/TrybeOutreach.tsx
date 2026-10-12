@@ -262,6 +262,8 @@ function opensWords(at: string | null): string {
 
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
+  // The brand list the Inbox matches chats against (id, name, website).
+  const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('find')
   const [core, setCore] = useState('')
@@ -1538,7 +1540,7 @@ export default function TrybeOutreach() {
       )}
 
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
-        brandLink={name => { const b = brands.find(x => convoFor(x.name, [{ id: '', name, last: '', at: 0, unread: 0, raw: {} }])); return b ? { id: b.brand_id, name: b.name } : null }} scoutOpens={scoutOpens} />}
+        directory={inboxDirectory} />}
 
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
