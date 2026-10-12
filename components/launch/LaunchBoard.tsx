@@ -960,8 +960,8 @@ export default function LaunchBoard() {
     } finally { setBusy(null) }
   }
 
-  async function patchBatch(body: Record<string, unknown>) {
-    if (!batchId) return
+  async function patchBatch(body: Record<string, unknown>): Promise<{ rebuilt?: number; thumbsKept?: number } | null> {
+    if (!batchId) return null
     setBusy('batch')
     try {
       const r = await fetch(`/api/launch/batches/${batchId}`, {
@@ -969,7 +969,7 @@ export default function LaunchBoard() {
         body: JSON.stringify(body),
       })
       const j = await r.json().catch(() => ({}))
-      if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
+      if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return null }
       // WHAT WAS REFUSED, SAID OUT LOUD. The save succeeds with the bad field
       // dropped, so without this a creator picks a look, sees a green tick, and
       // gets ten thumbnails that never used it.
@@ -979,7 +979,24 @@ export default function LaunchBoard() {
       // NOT autoOpened = false. Saving is not navigating: resetting it here is
       // what folded the countries step shut on the first country ticked.
       await load(batchId)
+      return j
     } finally { setBusy(null) }
+  }
+
+  // THUMBNAILS ALREADY BUILT ARE KEPT when a look is saved (Seb, 2026-10-12),
+  // and this offers to rebuild them in the new look. Nothing is rebuilt
+  // unless the creator asks.
+  const [thumbsKept, setThumbsKept] = useState(0)
+  async function saveLook(preset: unknown) {
+    const j = await patchBatch({ thumbnail: preset, thumbnailChosen: true })
+    setThumbsKept(j?.thumbsKept ?? 0)
+  }
+  async function rebuildThumbs() {
+    const j = await patchBatch({ rebuildThumbnails: true })
+    if (j) {
+      setThumbsKept(0)
+      toast.success(j.rebuilt ? `Rebuilding ${j.rebuilt} thumbnail${j.rebuilt === 1 ? '' : 's'} in the new look.` : 'Nothing to rebuild: none of these has a thumbnail MVP built yet.')
+    }
   }
 
   /** One Studio step on or off, saved with the batch. */
@@ -1805,8 +1822,24 @@ export default function LaunchBoard() {
           value={batch.thumbnail}
           chosen={!!batch.thumbnail_chosen}
           saving={busy === 'batch'}
-          onSave={(preset) => void patchBatch({ thumbnail: preset, thumbnailChosen: true })}
+          onSave={(preset) => void saveLook(preset)}
         />
+        {thumbsKept > 0 && (
+          <div className="mt-3 rounded-lg border px-3 py-2.5 text-[12.5px] flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
+            <p style={text}>
+              {thumbsKept} thumbnail{thumbsKept === 1 ? ' was' : 's were'} already built while your videos were prepared, and MVP kept {thumbsKept === 1 ? 'it' : 'them'}. Videos still waiting for a thumbnail get the look you just saved.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => void rebuildThumbs()} disabled={busy === 'batch'} className="rounded-lg px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-50" style={{ background: '#7C3AED', color: '#fff' }}>
+                Rebuild {thumbsKept === 1 ? 'it' : `all ${thumbsKept}`} in this look
+              </button>
+              <button onClick={() => setThumbsKept(0)} className="rounded-lg px-3 py-1.5 text-[12.5px] font-semibold border" style={{ borderColor: 'var(--border)' }}>
+                Keep {thumbsKept === 1 ? 'it' : 'them'}
+              </button>
+            </div>
+            <p className="text-[11.5px]" style={muted}>A rebuild makes new images, so it counts toward your thumbnails this month.</p>
+          </div>
+        )}
       </StepCard>
 
       {/* ── 4. countries (not in Liftoff part 1: Amazon is part 2) ───────── */}

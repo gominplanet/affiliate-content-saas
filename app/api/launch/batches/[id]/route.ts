@@ -223,6 +223,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // `null` is a real answer here too: the house look on all of them.
     thumbnail?: Record<string, unknown> | null
     thumbnailChosen?: boolean
+    /** Build the thumbnails already made again, in the batch's current look.
+     *  Only on request: a thumbnail MVP already built is kept otherwise. */
+    rebuildThumbnails?: boolean
     markets?: string[]
     dailySlots?: string[]
     startOn?: string | null
@@ -376,12 +379,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // on all of them". Now every video not yet handed to the uploader is sent
   // back to be built again with the new one. Videos queued or on YouTube are
   // left alone, and the answer says how many were rebuilt.
+  //
+  // A NEW LOOK KEEPS THE THUMBNAILS ALREADY BUILT, unless asked (Seb,
+  // 2026-10-12: thumbnails were built while the files were prepared, then
+  // saving the look "started creating all of the thumbnails from scratch
+  // again ... only if the user wants a different thumbnail should it be
+  // re-created"). Saving a look now counts the thumbnails kept, the screen
+  // offers to rebuild them, and only rebuildThumbnails rebuilds them.
   let rebuilt = 0
-  if (before && before.state !== 'launching' && before.state !== 'launched') {
+  let thumbsKept = 0
+  const rebuildLook = body.rebuildThumbnails === true
+  const { data: beforeNow } = rebuildLook && !before
+    ? await sb.from('launch_batches').select('cta,thumbnail,state').eq('id', id).eq('user_id', user.id).maybeSingle()
+    : { data: before }
+  if (beforeNow && beforeNow.state !== 'launching' && beforeNow.state !== 'launched') {
     const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
-    const ctaChanged = patch.cta !== undefined && !same(before.cta, patch.cta)
-    const lookChanged = patch.thumbnail !== undefined && !same(before.thumbnail, patch.thumbnail)
-    if (ctaChanged || lookChanged) {
+    const ctaChanged = patch.cta !== undefined && !same(beforeNow.cta, patch.cta)
+    const lookAsked = patch.thumbnail !== undefined && !same(beforeNow.thumbnail, patch.thumbnail)
+    const lookChanged = rebuildLook
+    if (ctaChanged || lookChanged || lookAsked) {
       const { data: built } = await sb.from('launch_items')
         .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url,thumbnail_source')
         .eq('batch_id', id).eq('user_id', user.id)
@@ -393,6 +409,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       for (const it of (built ?? []) as Array<{ id: string; state?: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null; thumbnail_source?: string | null }>) {
         // A new look never builds over a thumbnail the creator brought.
         const own = it.thumbnail_source === 'creator'
+        // Kept, and counted, so the screen can offer to rebuild them.
+        if (lookAsked && !rebuildLook && !own && (it.thumbnail_url || it.thumbnail_clean_url)) thumbsKept++
         if (own && !ctaChanged) continue
         const redo: Record<string, unknown> = { reason: null, updated_at: new Date().toISOString() }
         if (ctaChanged && (it.rendered_url || it.state === 'rendering')) {
@@ -406,7 +424,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
     }
   }
-  return NextResponse.json({ ok: true, rejected: thumbnailRejected, rebuilt })
+  return NextResponse.json({ ok: true, rejected: thumbnailRejected, rebuilt, thumbsKept })
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

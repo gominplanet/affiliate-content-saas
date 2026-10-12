@@ -2335,6 +2335,22 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the page renews the token rather than reusing the cached one', /getAccessToken: \(force\) => freshAccessToken\(supabase, force\)/.test(BOARD) && /freshAccessToken\(supabase, attempt > 1\)/.test(BOARD))
 }
 
+
+// ── a new look keeps the thumbnails already built (Seb, 2026-10-12) ─────────
+{
+  const R = read('app/api/launch/batches/[id]/route.ts')
+  const B = read('components/launch/LaunchBoard.tsx')
+  check('saving a look does not rebuild thumbnails already built, it counts them',
+    /const lookChanged = rebuildLook/.test(R) && /if \(lookAsked && !rebuildLook && !own && \(it\.thumbnail_url \|\| it\.thumbnail_clean_url\)\) thumbsKept\+\+/.test(R) && /thumbsKept \}\)/.test(R),
+    'a look saved after the thumbnails were made rebuilt every one of them')
+  check('a rebuild happens only when the creator asks, and never over their own',
+    /const rebuildLook = body\.rebuildThumbnails === true/.test(R) && /rebuildThumbnails: true/.test(B) && /A new look never builds over a thumbnail the creator brought/.test(R),
+    'thumbnails rebuilt without being asked')
+  check('the screen says how many were kept and offers both choices',
+    /already built while your videos were prepared, and MVP kept/.test(B) && /in this look/.test(B) && /Keep \{thumbsKept === 1/.test(B),
+    'kept thumbnails with no way to ask for the new look')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
