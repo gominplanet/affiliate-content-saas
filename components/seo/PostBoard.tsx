@@ -14,9 +14,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, Loader2, Check, Link2, Share2, Wrench, Type, Megaphone, Map as MapIcon, ChevronDown, AlertTriangle, ListChecks, Search, Gauge, RotateCcw } from 'lucide-react'
-import { buildBoard, backlinkVerdict, laneInfo, sharedLinks, lanePlan, bulkLinkPairs, requestQueue, requestedToday, PLATFORM_LABEL, REQUESTS_PER_DAY, BULK_LINKS, type DoctorPost, type Diagnosis, type Lane, type Step, type LaneInfo, type LanePlan, type PlanMove } from '@/lib/post-doctor'
+import { buildBoard, backlinkVerdict, laneInfo, LANES, sharedLinks, lanePlan, bulkLinkPairs, requestQueue, requestedToday, PLATFORM_LABEL, REQUESTS_PER_DAY, BULK_LINKS, type DoctorPost, type Diagnosis, type Lane, type Step, type LaneInfo, type LanePlan, type PlanMove } from '@/lib/post-doctor'
 import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
 import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
+import { InfoTip } from '@/components/seo/SeoExplain'
 
 const TONE: Record<LaneInfo['tone'], string> = {
   red: '#ff3b30', amber: '#ff9500', violet: '#7C3AED', blue: '#0a84ff', green: '#34c759', grey: '#8e8e93',
@@ -45,6 +46,7 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
   const board = useMemo(() => buildBoard(posts), [posts])
   const [lane, setLane] = useState<Lane | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [stagesHelp, setStagesHelp] = useState(false)
   const [links, setLinks] = useState<LinkState>({})
   const [requested, setRequested] = useState<Record<string, string>>({})
   const titleOf = useMemo(() => new Map(posts.map((p) => [p.postId, p.title])), [posts])
@@ -117,11 +119,24 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
     <div className="flex flex-col gap-4">
       <div id="post-board" className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden scroll-mt-24">
         <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
-          <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What each post needs</p>
+          <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your posts, by the stage they are stuck at</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">
-            Every post sits in one stage, with the next steps in order. Work from the left.
+            Each post sits in one stage. The stages are in the order to work on them, left first: a post Google has not read cannot rank, and a post that does not rank cannot be clicked. Press a stage to see its plan and its posts.
             {!connected && ' Connect Search Console so MVP can tell which posts Google has; until then this shows links and shares only.'}
           </p>
+          <button onClick={() => setStagesHelp((v) => !v)} aria-expanded={stagesHelp} className="mt-1.5 text-[12px] font-semibold text-[#7C3AED] hover:underline inline-flex items-center gap-1">
+            What every stage means <ChevronDown size={12} className={stagesHelp ? 'rotate-180' : ''} />
+          </button>
+          {stagesHelp && (
+            <ul className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {LANES.map((l) => (
+                <li key={l.id} className="flex items-start gap-2 text-[12px] leading-snug">
+                  <span className="mt-1 w-2 h-2 rounded-full flex-shrink-0" style={{ background: TONE[l.tone] }} />
+                  <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{l.title}.</span> <span className="text-[#4b4b4f] dark:text-[#b0b0b5]">{l.blurb}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Stages */}
@@ -164,15 +179,15 @@ export default function PostBoard({ posts, connected, property, linksCounted, ca
                     </div>
                     {/* The facts behind the stage, so it is never just a label. */}
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]">
-                      {connected && <span>{p.indexed === true ? 'In Google' : p.indexed === false ? 'Not in Google' : 'Google not checked yet'}</span>}
-                      {connected && p.indexed === true && <span className="tabular-nums">28 days: {p.impressions} views · {p.clicks} clicks{p.position ? ` · position ${Math.round(p.position * 10) / 10}` : ''}</span>}
+                      {connected && <span className="inline-flex items-center gap-1">{p.indexed === true ? 'In Google' : p.indexed === false ? 'Not in Google' : 'Google not checked yet'} <InfoTip id="indexed" /></span>}
+                      {connected && p.indexed === true && <span className="tabular-nums inline-flex items-center gap-1">28 days: {p.impressions} views in Google · {p.clicks} clicks{p.position ? ` · position ${Math.round(p.position * 10) / 10}` : ''} <InfoTip id={p.position ? 'position' : 'impressions'} /></span>}
                       {linksCounted && linkedN !== null && (
-                        <span className={linkedN === 0 ? 'text-[#ff3b30] font-medium' : ''}>{linkedN === 0 ? 'No other post links here' : `Linked from ${linkedN} of your posts`}</span>
+                        <span className={`inline-flex items-center gap-1 ${linkedN === 0 ? 'text-[#ff3b30] font-medium' : ''}`}>{linkedN === 0 ? 'No other post links here' : `Linked from ${linkedN} of your posts`} <InfoTip id={linkedN === 0 ? 'orphan' : 'internal-link'} /></span>
                       )}
                       <span className={shared.length === 0 ? 'text-[#ff9500] font-medium' : ''}>
                         {shared.length === 0 ? 'Not shared from MVP yet' : `Shared on ${shared.map((s) => PLATFORM_LABEL[s] || s).join(', ')}`}
                       </span>
-                      {p.inSitemap === false && <span className="text-[#ff9500] font-medium">Not in your sitemap</span>}
+                      {p.inSitemap === false && <span className="text-[#ff9500] font-medium inline-flex items-center gap-1">Not in your sitemap <InfoTip id="sitemap" /></span>}
                       {recentReq && <span className="text-[#34c759] font-medium">Opened in Search Console {ago(recentReq)}</span>}
                     </div>
                     <p className="mt-1.5 text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7]">{p.dx.why}</p>

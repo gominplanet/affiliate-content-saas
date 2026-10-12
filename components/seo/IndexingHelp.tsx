@@ -4,9 +4,8 @@
 // GET YOUR POSTS INTO GOOGLE (Seb, 2026-10-11). Three things, each something
 // the creator can act on from here:
 //   1. Your sitemap: submitted or not, read back from Search Console.
-//   2. Today's Request indexing list: the best not-indexed posts, each one
-//      click from Search Console's Request indexing button (Google gives no
-//      API for it), remembered for a week so the list moves on.
+//   2. Where today's Request indexing list is: the board's stage plans
+//      (one list on the page, 2026-10-12).
 //   3. Every reason Google gives for a post, with what it means and what to do,
 //      and a decoder for Search Console's "Validation failed" reports.
 
@@ -14,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, Check, AlertTriangle, Copy, Loader2, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
-import { reasonGuide, requestQueue, REPORT_GUIDE, REQUESTS_PER_DAY, type Severity } from '@/lib/indexing-help'
+import { reasonGuide, REPORT_GUIDE, REQUESTS_PER_DAY, type Severity } from '@/lib/indexing-help'
 import { gscSitemapsUrl } from '@/lib/gsc-links'
 import { readRequested, REQUESTED_EVENT } from '@/lib/gsc-request-client'
 import RequestIndexingButton from '@/components/seo/RequestIndexingButton'
@@ -55,7 +54,6 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
       .catch(() => setSm({ sitemaps: [], error: 'MVP could not ask Search Console about your sitemap just now.' }))
   }, [])
 
-  const queue = useMemo(() => requestQueue(posts, requested), [posts, requested])
   // Google's own link (a hand-built inspect link opened Google's 404); the
   // shared helper opens it and remembers the request for a week.
   const requestedToday = Object.values(requested).filter((t) => Date.now() - Date.parse(t) < 86_400_000).length
@@ -82,7 +80,7 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
     <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Get your posts into Google</p>
-        <p className="text-xs text-[#86868b] mt-0.5">Three steps, in order. Google decides what it indexes; these are the things that move it.</p>
+        <p className="text-xs text-[#86868b] mt-0.5">What Google itself says about your posts, read from Search Console. Google decides what it keeps; these three things are what move it.</p>
       </div>
 
       {/* 1. Sitemap */}
@@ -120,23 +118,13 @@ export default function IndexingHelp({ property, posts, blogUrl }: { property: s
         )}
       </div>
 
-      {/* 2. Request indexing */}
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10 flex flex-col gap-2">
-        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">2. Request indexing for today&apos;s {queue.length || ''} best posts</p>
-        <p className="text-xs text-[#86868b]">Google lets you ask about {REQUESTS_PER_DAY} pages a day, by hand: there is no way for MVP to press it for you. Press a post's button and MVP fetches Google's own link for it; open that link, wait for Google's check, then press <b>Request indexing</b>. MVP remembers what you asked for and shows new posts next time.{requestedToday > 0 ? ` You have opened ${requestedToday} today.` : ''}</p>
-        {queue.length === 0 ? (
-          <p className="text-xs text-[#34c759]">Nothing to request right now: every post that needs it was asked about this week, or is waiting on a fix below first.</p>
-        ) : (
-          <div className="flex flex-col divide-y divide-gray-100 dark:divide-white/5">
-            {queue.map((p) => (
-              <div key={p.url!} className="flex items-center flex-wrap gap-x-3 gap-y-1 py-1.5">
-                <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 min-w-0 truncate" title={p.title}>{p.title}</span>
-                <span className="text-[10px] text-[#86868b] hidden sm:inline">{reasonGuide(p.coverageState).label}</span>
-                <RequestIndexingButton url={p.url!} property={property} small />
-              </div>
-            ))}
-          </div>
-        )}
+      {/* 2. Request indexing: one list on the page (2026-10-12). It used to
+          be here AND in each stage of the board, two lists picking differently.
+          It lives in the board's stage plans now; this says where. */}
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10 flex flex-col gap-1.5">
+        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">2. Ask Google to read your posts</p>
+        <p className="text-xs text-[#4b4b4f] dark:text-[#b0b0b5]">Google lets you ask about {REQUESTS_PER_DAY} pages a day, by hand in Search Console: no tool can press it for you. Today&apos;s list is in <b>What each post needs</b>, inside the plan for each stage, with the posts that have a path in first.{requestedToday > 0 ? ` You have opened ${requestedToday} in the last day.` : ''}</p>
+        <button onClick={() => document.getElementById('seo-board')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="self-start text-[12px] font-semibold text-[#7C3AED] hover:underline">Go to today&apos;s list</button>
       </div>
 
       {/* 3. Why each post is not in Google */}

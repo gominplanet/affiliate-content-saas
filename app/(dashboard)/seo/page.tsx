@@ -29,6 +29,7 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import IndexingHelp from '@/components/seo/IndexingHelp'
 import PostBoard from '@/components/seo/PostBoard'
 import { canUsePreview } from '@/lib/labs-preview'
+import { SeoIntro, SeoSection, InfoTip } from '@/components/seo/SeoExplain'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -638,128 +639,114 @@ export default function SeoPage() {
 
       <SeoHubTabs />
 
-      {/* The plan, before any of the diagnostics.
-          Someone who does not already know SEO opened this page to eight crawler
-          names ticked green and a score of 80 with nothing to compare it to, and
-          the one button that helps was three cards down. This says what to do,
-          biggest first, and everything below it is the detail behind it. */}
-      {/* Is this blog working. Above the plan, because a creator whose traffic
-          stopped four days ago needs to know that before they read a list of
-          improvements. */}
-      <BlogHealthCard />
-      <ConsolidationCard />
+      {/* HOW THIS PAGE WORKS (Seb, 2026-10-12: "cleaned up for ease of use..
+          explain to users what each thing does and what it means to them").
+          The page is seven numbered sections, each saying what it is and what
+          it means for the creator (lib/seo-glossary), each folding away. */}
+      <SeoIntro />
 
-      <StartHere
-        summary={data?.summary ?? null}
-        connected={!!data?.connected}
-        onGoToGetFound={() => {
-          document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }}
-        onRefreshUrls={() => void resyncUrls()}
-      />
-
-      {/* Super dummy-proof hero: explains it in plain words, one button does the
-          whole get-found loop, and a drop zone fixes 404s straight from a Search
-          Console export. Sits directly under the plan, because most of the plan
-          points at it. */}
-
-      <div id="get-found" className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4 sm:p-5 mb-5 scroll-mt-24">
-        <div className="flex items-center gap-2 mb-1">
-          <Zap size={18} className="text-[#34c759]" />
-          <h2 className="text-[16px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Get found on Google, Bing &amp; AI</h2>
+      {/* Page-level results (Fix all posts, prices, sitemap) stay above the
+          sections, where the Tools buttons that start them are. */}
+      {fixMsg && !fixMsg.postId && (
+        <div className={`flex items-start justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
+          <span className="whitespace-pre-line">{fixMsg.text}</span>
+          <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0 mt-0.5"><X size={14} /></button>
         </div>
-        <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-4 max-w-2xl">
-          Google, Bing and AI models can only show pages they&apos;ve crawled. This does the whole job for you, no SEO knowledge needed. Run step 1 anytime; do step 2 once to win back rankings from old broken links.
-        </p>
+      )}
 
-        {/* Step 1 — one button does everything */}
-        <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5 mb-3">
-          {!getFound ? (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click: we handle the rest</p>
-                <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes the sitemap Google reads, sends every post to Bing and Copilot, heals changed links, and auto-fixes SEO issues on every post. Google cannot be pinged; it reads your sitemap on its own schedule.</p>
+      <SeoSection id="seo-health" index={1}>
+        <BlogHealthCard />
+        {data && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <SummaryCard label="Average SEO score" tip="seo-score" value={`${data.summary.avgScore}/100`} accent={scoreColor(data.summary.avgScore)}
+              sub="On-page basics only. Not a ranking." />
+            {data.connected ? (
+              <>
+                <SummaryCard
+                  label="In Google"
+                  tip="indexed"
+                  value={`${data.summary.indexed} of ${data.summary.total}`}
+                  accent="#34c759"
+                  sub={[
+                    data.summary.notIndexed ? `${data.summary.notIndexed} not in Google yet` : null,
+                    data.summary.unknown ? `${data.summary.unknown} still checking` : null,
+                  ].filter(Boolean).join(' · ') || 'Every post checked is in Google'}
+                />
+                <SummaryCard label="Clicks, 28 days" tip="clicks" value={data.summary.totalClicks.toLocaleString()} accent="#7C3AED" sub="Visits from Google search" />
+                <SummaryCard label="Views in Google, 28 days" tip="impressions" value={data.summary.totalImpressions.toLocaleString()} accent="#5856d6"
+                  sub={data.summary.totalImpressions > 0 ? `${Math.round((data.summary.totalClicks / data.summary.totalImpressions) * 1000) / 10}% clicked` : 'Times a post showed in a search'} />
+              </>
+            ) : (
+              <SummaryCard label="Posts" value={String(data.summary.total)} accent="#7C3AED" sub="Connect Search Console to see what Google does with them" />
+            )}
+          </div>
+        )}
+      </SeoSection>
+
+      <SeoSection id="seo-next" index={2}>
+        <StartHere
+          summary={data?.summary ?? null}
+          connected={!!data?.connected}
+          onGoToGetFound={() => {
+            document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+          onRefreshUrls={() => void resyncUrls()}
+        />
+        {/* Needs attention: every warning in one strip (connect Search
+            Console, posts that dropped out of Google, missing from the
+            sitemap, missing thumbnails) so banners never stack into a wall. */}
+        {data && (() => {
+          const F = 'font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]'
+          const actBtn = 'shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-md text-white transition-opacity hover:opacity-90 disabled:opacity-60'
+          const rows: Array<{ key: string; icon: React.ReactNode; text: React.ReactNode; action?: React.ReactNode }> = []
+          if (!data.connected) rows.push({
+            key: 'gsc', icon: <Gauge size={15} className="text-[#4285F4] flex-shrink-0" />,
+            text: <><span className={F}>Connect Search Console</span> <InfoTip id="search-console" /> so MVP can see which posts Google has, how often they show and how many people click. Without it, this page can only check your posts, not what Google does with them.</>,
+            action: <a href="/api/auth/gsc?returnTo=/seo" className={`${actBtn} bg-[#4285F4]`}>Connect</a>,
+          })
+          if (data.connected && data.summary.recentlyDropped > 0) rows.push({
+            key: 'dropped', icon: <AlertCircle size={15} className="text-[#ff3b30] flex-shrink-0" />,
+            text: <><span className={F}>{data.summary.recentlyDropped} post{data.summary.recentlyDropped !== 1 ? 's' : ''} dropped out of Google</span> in the last 7 days. It was in Google and is not any more, so it gets no visitors. Usually something on the post changed: its address moved, the page broke, or it was hidden from Google by mistake.</>,
+            action: <button onClick={() => { setFilterNotIndexed(true); document.getElementById('seo-posts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className={`${actBtn} bg-[#ff3b30]`}>Show them</button>,
+          })
+          if (data.summary.sitemapFound && data.summary.notInSitemap > 0) rows.push({
+            key: 'sitemap', icon: <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0" />,
+            text: <><span className={F}>{data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap</span> <InfoTip id="sitemap" />, the list Google reads to find your posts. Get my blog found refreshes it.</>,
+            action: <button onClick={() => document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`${actBtn} bg-[#34c759]`}>Take me there</button>,
+          })
+          if (data.summary.thumbnailBlocked > 0) rows.push({
+            key: 'thumb', icon: <ImageOff size={15} className="text-[#ff9500] flex-shrink-0" />,
+            text: <><span className={F}>{data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a picture at the top</span>. Usually your web host blocked the image upload. A post without one looks unfinished in Google and on social. Re-attach is safe to run again.</>,
+            action: <button onClick={reattachThumbnails} disabled={reattaching} className={`${actBtn} bg-[#ff9500]`}>{reattaching ? 'Fixing…' : 'Re-attach'}</button>,
+          })
+          if (rows.length === 0) return null
+          return (
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+              <div className="px-4 py-2 border-b border-gray-100 dark:border-white/10">
+                <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Needs attention</p>
               </div>
-              <button onClick={runGetFound} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold text-white bg-[#34c759] hover:bg-[#2fb350] transition-colors shadow-sm">
-                <Zap size={18} /> Get my blog found
-              </button>
-            </div>
-          ) : (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                {getFound.done ? <CheckCircle2 size={18} className="text-[#34c759]" /> : <Loader2 size={18} className="animate-spin text-[#34c759]" />}
-                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done: your blog is set up to be found' : 'Getting your blog found…'}</p>
-              </div>
-              <div className="space-y-1.5">
-                {['Refreshing your sitemap and sending your posts to Bing and Copilot', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
-                  const st = getFound.step > i ? 'done' : getFound.step === i ? 'active' : 'todo'
-                  return (
-                    <div key={i} className="flex items-center gap-2 text-[13px]">
-                      {st === 'done' ? <CheckCircle2 size={15} className="text-[#34c759]" />
-                        : st === 'active' ? <Loader2 size={15} className="animate-spin text-[#34c759]" />
-                        : <span className="w-[15px] h-[15px] rounded-full border border-black/15 dark:border-white/20 inline-block" />}
-                      <span className={st === 'todo' ? 'text-[#86868b]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}>{label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-              {getFound.done && (() => {
-                const r = getFound.results
-                const parts = [
-                  r.purged ? 'refreshed your sitemap' : 'could not refresh your sitemap (update the MVP plugin)',
-                  r.pinged ? `sent ${r.pinged} posts to Bing and Copilot` : `did not send your posts to Bing: ${r.pingError || 'no reason given'}`,
-                  r.links ? `healed ${r.links} link${r.links === 1 ? '' : 's'}` : null,
-                  r.posts ? `improved ${r.posts} post${r.posts === 1 ? '' : 's'}` : null,
-                ].filter(Boolean)
-                const summary = parts.length ? parts.join(' · ') : 'Everything was already in good shape'
-                return (
-                  <div className="mt-3 pt-3 border-t border-[#34c759]/20">
-                    <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
-                      {summary.charAt(0).toUpperCase() + summary.slice(1)}. Google and Bing re-crawl over the next few days.
-                    </p>
-                    <button onClick={() => setGetFound(null)} className="mt-2 text-[13px] font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">Run again</button>
+              <div className="divide-y divide-gray-100 dark:divide-white/5">
+                {rows.map(r => (
+                  <div key={r.key} className="flex items-center gap-2.5 px-4 py-2.5">
+                    {r.icon}
+                    <span className="text-[13px] text-[#4b4b4f] dark:text-[#d2d2d7] flex-1 min-w-0">{r.text}</span>
+                    {r.action}
                   </div>
-                )
-              })()}
+                ))}
+              </div>
             </div>
-          )}
-        </div>
+          )
+        })()}
+      </SeoSection>
 
-        {/* Step 2 — fix 404s from a Search Console export (drop the file, we do the rest) */}
-        <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5">
-          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">2.</span> Win back rankings from broken links <span className="font-normal text-[#86868b]">: one-time, worth it</span></p>
-          <ol className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1.5 mb-2.5 space-y-1 list-none pl-0">
-            <li>
-              <strong>a.</strong>{' '}
-              {data?.connected ? (
-                <a href={data.property ? `https://search.google.com/search-console/index?resource_id=${encodeURIComponent(data.property)}` : 'https://search.google.com/search-console'} target="_blank" rel="noreferrer" className="font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1">Open your Pages report in Search Console <ExternalLink size={11} /></a>
-              ) : (
-                <a href="/api/auth/gsc" className="font-medium text-[#7C3AED] hover:underline">Connect Google Search Console first</a>
-              )}
-              , then click the <strong>Not found (404)</strong> row.
-            </li>
-            <li><strong>b.</strong> Hit <strong>Export</strong> (top-right) and download the file (.zip or .csv).</li>
-            <li><strong>c.</strong> Drop it below. We match each dead URL to the right live post and 301-redirect it, recovering the rankings Google already found.</li>
-          </ol>
-          <GetFound404Upload onDone={load} />
-        </div>
-      </div>
-
-      {/* Detail, under the plan rather than above it. The crawler card collapses
-          to a single line when nothing is blocked, because eight green ticks
-          against names nobody recognises is a wall that teaches people to skim
-          past the one time it turns amber. */}
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
-          <Loader2 size={16} className="animate-spin" /> Scoring your posts…
+          <Loader2 size={16} className="animate-spin" /> Reading your posts and what Google says about them…
         </div>
       ) : error ? (
-        <div className="card p-5 border border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">{error}</div>
-      ) : !data ? null : (
-        <div className="flex flex-col gap-4">
-          {/* WHAT EACH POST NEEDS (2026-10-11): every post in one stage, with
-              its next steps and the buttons that do them. First, because it is
-              the answer to "which post do I touch, and how". */}
+        <div className="card p-5 mb-6 border border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">{error}</div>
+      ) : data ? (
+        <SeoSection id="seo-board" index={3}>
           <PostBoard
             posts={data.posts.map(p => ({
               postId: p.postId, title: p.title, url: p.url, publishedAt: p.publishedAt,
@@ -780,113 +767,110 @@ export default function SeoPage() {
             onRefreshUrls={() => void resyncUrls()}
             onReload={() => void load()}
           />
+        </SeoSection>
+      ) : null}
 
-          {/* Revenue-opportunity worklist (Phase 2). Self-contained — fetches
-              /api/seo/opportunities and ranks every post by its single highest-
-              leverage fix. Only shown when GSC is connected (the page already
-              renders a prominent connect prompt below when it isn't). */}
-          {data.connected && <OpportunitiesPanel />}
-          {/* Post-scoped fix results render INLINE under that post's button (so a
-              user scrolled down to a row actually sees the outcome). Only page-
-              level messages — bulk fix-all, sitemap, indexing — show up here. */}
-          {fixMsg && !fixMsg.postId && (
-            <div className={`flex items-start justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
-              <span className="whitespace-pre-line">{fixMsg.text}</span>
-              <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0 mt-0.5"><X size={14} /></button>
-            </div>
-          )}
-          {/* Needs attention — every actionable warning folded into ONE compact
-              strip (connect GSC, de-indexed drops, missing from sitemap, missing
-              thumbnails) so five possible banners never stack into a wall. */}
-          {(() => {
-            const F = 'font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]'
-            const actBtn = 'shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-md text-white transition-opacity hover:opacity-90 disabled:opacity-60'
-            const rows: Array<{ key: string; icon: React.ReactNode; text: React.ReactNode; action?: React.ReactNode }> = []
-            if (!data.connected) rows.push({
-              key: 'gsc', icon: <Gauge size={15} className="text-[#4285F4] flex-shrink-0" />,
-              text: <><span className={F}>Connect Search Console</span> to see indexing, rankings and traffic (scores work without it).</>,
-              action: <a href="/api/auth/gsc?returnTo=/seo" className={`${actBtn} bg-[#4285F4]`}>Connect</a>,
-            })
-            if (data.connected && data.summary.recentlyDropped > 0) rows.push({
-              key: 'dropped', icon: <AlertCircle size={15} className="text-[#ff3b30] flex-shrink-0" />,
-              text: <><span className={F}>{data.summary.recentlyDropped} post{data.summary.recentlyDropped !== 1 ? 's' : ''} dropped from Google&apos;s index</span> in the last 7 days (broken canonical, a 404, or accidental noindex).</>,
-              action: <button onClick={() => setFilterNotIndexed(true)} className={`${actBtn} bg-[#ff3b30]`}>Show</button>,
-            })
-            if (data.summary.sitemapFound && data.summary.notInSitemap > 0) rows.push({
-              key: 'sitemap', icon: <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0" />,
-              text: <><span className={F}>{data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap.</span> The green <span className="font-semibold text-[#34c759]">Get my blog found</span> button up top fixes this.</>,
-            })
-            if (data.summary.thumbnailBlocked > 0) rows.push({
-              key: 'thumb', icon: <ImageOff size={15} className="text-[#ff9500] flex-shrink-0" />,
-              text: <><span className={F}>{data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail</span>: usually your host blocking image uploads via the API. Safe to re-run.</>,
-              action: <button onClick={reattachThumbnails} disabled={reattaching} className={`${actBtn} bg-[#ff9500]`}>{reattaching ? 'Fixing…' : 'Re-attach'}</button>,
-            })
-            if (rows.length === 0) return null
-            return (
-              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
-                <div className="px-4 py-2 border-b border-gray-100 dark:border-white/10">
-                  <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Needs attention</p>
+      <SeoSection id="get-found" index={4}>
+        <div className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4 sm:p-5">
+          <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-4 max-w-2xl inline-flex items-start gap-2">
+            <Zap size={16} className="text-[#34c759] mt-0.5 flex-shrink-0" />
+            <span>Search engines can only show a page after they read it <InfoTip id="crawl" />. Step 1 makes sure nothing on your blog stops them: run it any time, it is safe to repeat. Step 2 is once: it sends old, broken addresses to the right post so they keep their rankings <InfoTip id="not-found" />.</span>
+          </p>
+
+          {/* Step 1 — one button does everything */}
+          <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5 mb-3">
+            {!getFound ? (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click: we handle the rest</p>
+                  <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes the sitemap Google reads, sends every post to Bing and Copilot, heals changed links, and auto-fixes SEO issues on every post. Google cannot be pinged; it reads your sitemap on its own schedule.</p>
                 </div>
-                <div className="divide-y divide-gray-100 dark:divide-white/5">
-                  {rows.map(r => (
-                    <div key={r.key} className="flex items-center gap-2.5 px-4 py-2.5">
-                      {r.icon}
-                      <span className="text-[13px] text-[#4b4b4f] dark:text-[#d2d2d7] flex-1 min-w-0">{r.text}</span>
-                      {r.action}
-                    </div>
-                  ))}
-                </div>
+                <button onClick={runGetFound} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold text-white bg-[#34c759] hover:bg-[#2fb350] transition-colors shadow-sm">
+                  <Zap size={18} /> Get my blog found
+                </button>
               </div>
-            )
-          })()}
-
-          <DuplicateThumbnails />
-
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <SummaryCard label="Avg SEO score" value={`${data.summary.avgScore}/100`} accent={scoreColor(data.summary.avgScore)} />
-            {data.connected ? (
-              <>
-                <SummaryCard
-                  label="Indexed by Google"
-                  value={String(data.summary.indexed)}
-                  accent="#34c759"
-                  sub={[
-                    data.summary.notIndexed ? `${data.summary.notIndexed} not indexed` : null,
-                    data.summary.unknown ? `${data.summary.unknown} still checking` : null,
-                  ].filter(Boolean).join(' · ') || undefined}
-                />
-                <SummaryCard label="Clicks (28d)" value={data.summary.totalClicks.toLocaleString()} accent="#7C3AED" />
-                <SummaryCard label="Impressions (28d)" value={data.summary.totalImpressions.toLocaleString()} accent="#5856d6" />
-              </>
             ) : (
-              <SummaryCard label="Posts" value={String(data.summary.total)} accent="#7C3AED" />
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  {getFound.done ? <CheckCircle2 size={18} className="text-[#34c759]" /> : <Loader2 size={18} className="animate-spin text-[#34c759]" />}
+                  <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done: your blog is set up to be found' : 'Getting your blog found…'}</p>
+                </div>
+                <div className="space-y-1.5">
+                  {['Refreshing your sitemap and sending your posts to Bing and Copilot', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
+                    const st = getFound.step > i ? 'done' : getFound.step === i ? 'active' : 'todo'
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-[13px]">
+                        {st === 'done' ? <CheckCircle2 size={15} className="text-[#34c759]" />
+                          : st === 'active' ? <Loader2 size={15} className="animate-spin text-[#34c759]" />
+                          : <span className="w-[15px] h-[15px] rounded-full border border-black/15 dark:border-white/20 inline-block" />}
+                        <span className={st === 'todo' ? 'text-[#86868b]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}>{label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {getFound.done && (() => {
+                  const r = getFound.results
+                  const parts = [
+                    r.purged ? 'refreshed your sitemap' : 'could not refresh your sitemap (update the MVP plugin)',
+                    r.pinged ? `sent ${r.pinged} posts to Bing and Copilot` : `did not send your posts to Bing: ${r.pingError || 'no reason given'}`,
+                    r.links ? `healed ${r.links} link${r.links === 1 ? '' : 's'}` : null,
+                    r.posts ? `improved ${r.posts} post${r.posts === 1 ? '' : 's'}` : null,
+                  ].filter(Boolean)
+                  const summary = parts.length ? parts.join(' · ') : 'Everything was already in good shape'
+                  return (
+                    <div className="mt-3 pt-3 border-t border-[#34c759]/20">
+                      <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
+                        {summary.charAt(0).toUpperCase() + summary.slice(1)}. Google and Bing re-crawl over the next few days.
+                      </p>
+                      <button onClick={() => setGetFound(null)} className="mt-2 text-[13px] font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">Run again</button>
+                    </div>
+                  )
+                })()}
+              </div>
             )}
           </div>
 
-          {/* GET POSTS INTO GOOGLE (2026-10-11): sitemap status, today's Request
-              indexing list, and what to do about each of Google's reasons. */}
-          {data.connected && (
+          {/* Step 2 — fix 404s from a Search Console export (drop the file, we do the rest) */}
+          <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5">
+            <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">2.</span> Win back rankings from broken links <span className="font-normal text-[#86868b]">: one-time, worth it</span></p>
+            <ol className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1.5 mb-2.5 space-y-1 list-none pl-0">
+              <li>
+                <strong>a.</strong>{' '}
+                {data?.connected ? (
+                  <a href={data.property ? `https://search.google.com/search-console/index?resource_id=${encodeURIComponent(data.property)}` : 'https://search.google.com/search-console'} target="_blank" rel="noreferrer" className="font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1">Open your Pages report in Search Console <ExternalLink size={11} /></a>
+                ) : (
+                  <a href="/api/auth/gsc" className="font-medium text-[#7C3AED] hover:underline">Connect Google Search Console first</a>
+                )}
+                , then click the <strong>Not found (404)</strong> row.
+              </li>
+              <li><strong>b.</strong> Hit <strong>Export</strong> (top-right) and download the file (.zip or .csv).</li>
+              <li><strong>c.</strong> Drop it below. We match each dead URL to the right live post and 301-redirect it, recovering the rankings Google already found.</li>
+            </ol>
+            <GetFound404Upload onDone={load} />
+          </div>
+        </div>
+        {data?.connected && (
             <IndexingHelp
               property={data.property}
               posts={data.posts.map(p => ({ postId: p.postId, title: p.title, url: p.url, indexed: p.indexed, coverageState: p.coverageState }))}
               blogUrl={(() => { const u = data.posts.find(p => p.url)?.url; try { return u ? new URL(u).origin : null } catch { return null } })()}
             />
-          )}
+        )}
+      </SeoSection>
 
-          {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
-              impressions for with no post squarely targeting them. */}
-          {data.connected && <QueryGapsCard />}
+      <SeoSection id="seo-grow" index={5}>
+        {data?.connected && <OpportunitiesPanel />}
+        {data?.connected && <QueryGapsCard />}
+        <ConsolidationCard />
+      </SeoSection>
 
-          {/* AI search: which AI crawlers can read the blog, and how ready the
-              posts are to be quoted in AI answers. */}
-          <AiVisibilityCard />
-          <AioReadinessCard />
+      <SeoSection id="seo-ai" index={6} defaultOpen={false}>
+        <AiVisibilityCard />
+        <AioReadinessCard />
+      </SeoSection>
 
-          {/* One-time "sync bodies from WordPress" prompt. Legacy/imported posts
-              are live on WP but have no body stored in MVP, so they score near-
-              zero (the overview scores the STORED body). One click pulls the real
-              bodies in → scores read true + they become auto-fixable in place. */}
+      {data && (
+        <SeoSection id="seo-posts" index={7}>
           {(() => {
             const missingBodies = (data.posts || []).filter(p => p.hasBody === false).length
             if (missingBodies === 0) return null
@@ -912,10 +896,16 @@ export default function SeoPage() {
             )
           })()}
 
+          <DuplicateThumbnails />
+
+          {/* HOW TO READ THIS LIST (2026-10-12): every mark and button on a
+              row, in plain words, folded so it is there when needed. */}
+          <ListKey connected={data.connected} canRebuild={canRebuild} />
+
           {/* Sort controls */}
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-[#86868b]">Sort by:</span>
-            {([['score', 'Lowest score'], ['clicks', 'Most clicks'], ['impressions', 'Most impressions']] as const).map(([k, lbl]) => (
+            {([['score', 'Lowest score first'], ['clicks', 'Most clicks'], ['impressions', 'Most views in Google']] as const).map(([k, lbl]) => (
               <button
                 key={k}
                 onClick={() => setSort(k)}
@@ -929,9 +919,9 @@ export default function SeoPage() {
               <button
                 onClick={() => setFilterNotIndexed(v => !v)}
                 className={`ml-1 px-2.5 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${filterNotIndexed ? 'border-[#ff3b30] text-[#ff3b30] bg-[#ff3b30]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f]'}`}
-                title="Show only posts Google hasn't indexed yet: your Request Indexing worklist"
+                title="Show only the posts Google has not kept yet"
               >
-                {filterNotIndexed ? <X size={11} /> : <AlertCircle size={11} />} Not indexed ({data.summary.notIndexed})
+                {filterNotIndexed ? <X size={11} /> : <AlertCircle size={11} />} Only posts not in Google ({data.summary.notIndexed})
               </button>
             )}
           </div>
@@ -940,8 +930,8 @@ export default function SeoPage() {
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
             {/* What this list is, and the one bulk action that belongs here. */}
             <div className="px-3 py-2 text-[11px] text-[#86868b] dark:text-[#8e8e93] flex items-center gap-2 bg-gray-50/50 dark:bg-white/[0.02]">
-              <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] text-[12px]">Every post: score and on-page checks</span>
-              <span className="hidden sm:inline">Open a post to see each check, with a Fix button where MVP can fix it.</span>
+              <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] text-[12px]">{posts.length} post{posts.length === 1 ? '' : 's'}</span>
+              <span className="hidden sm:inline">Press a post to open its checks.</span>
               {data.connected && posts.length > 0 && (
                 <button
                   onClick={() => checkVisible(posts)}
@@ -977,8 +967,8 @@ export default function SeoPage() {
                       <span className="block text-[11px] text-[#86868b] truncate">{failing.length === 0
                         ? 'All checks pass'
                         : autoFixable > 0
-                          ? `${failing.length} to improve · ${autoFixable} auto-fixable`
-                          : `${failing.length} to improve: manual edits`}</span>
+                          ? `${failing.length} to improve, ${autoFixable} MVP can fix`
+                          : `${failing.length} to improve by hand`}</span>
                     </span>
                     {p.inSitemap === false && (
                       <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap. Google may not discover it">
@@ -1158,7 +1148,7 @@ export default function SeoPage() {
               )
             })}
           </div>
-        </div>
+        </SeoSection>
       )}
 
       {/* Rebuild-from-video modal — turn a low-score legacy post into a
@@ -1335,12 +1325,48 @@ function QueryGapsCard() {
   )
 }
 
-function SummaryCard({ label, value, accent, sub }: { label: string; value: string; accent: string; sub?: string }) {
+function SummaryCard({ label, value, accent, sub, tip }: { label: string; value: string; accent: string; sub?: string; tip?: string }) {
   return (
     <div className="card p-4">
-      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1">{label}</p>
-      <p className="text-2xl font-bold" style={{ color: accent }}>{value}</p>
-      {sub && <p className="text-[11px] text-[#ff9500] mt-0.5">{sub}</p>}
+      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1 inline-flex items-center gap-1">{label}{tip && <InfoTip id={tip} label={label} />}</p>
+      <p className="text-2xl font-bold tabular-nums" style={{ color: accent }}>{value}</p>
+      {sub && <p className="text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+/** Every mark and button on a post row, explained. Folded by default. */
+function ListKey({ connected, canRebuild }: { connected: boolean; canRebuild: boolean }) {
+  const [open, setOpen] = useState(false)
+  const row = 'flex items-start gap-2 text-[12px] leading-snug text-[#4b4b4f] dark:text-[#b0b0b5]'
+  const b = 'font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]'
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-white/10">
+      <button onClick={() => setOpen(v => !v)} aria-expanded={open} className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
+        <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex-1">How to read this list, and what each button does</span>
+        <ChevronDown size={14} className={`text-[#86868b] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#86868b]">The marks</p>
+            <p className={row}><span className="w-7 h-7 rounded-full grid place-items-center text-[10px] font-bold flex-shrink-0" style={{ color: '#34c759', background: '#34c7591a' }}>85</span><span><span className={b}>The circle is the SEO score</span> <InfoTip id="seo-score" />. Green is 80 or more, amber 60 to 79, red under 60. It checks the basics on the page, not whether Google ranks it.</span></p>
+            <p className={row}><span className={`${b} flex-shrink-0`}>&ldquo;3 to improve, 2 MVP can fix&rdquo;</span><span>How many checks fail, and how many MVP can fix for you with one button.</span></p>
+            {connected && <p className={row}><CheckCircle2 size={13} className="text-[#34c759] mt-0.5 flex-shrink-0" /><span><span className={b}>Indexed / Not indexed / Not checked yet</span> <InfoTip id="indexed" />: whether Google has kept the post. MVP asks Google about every post overnight.</span></p>}
+            {connected && <p className={row}><span className={`${b} flex-shrink-0`}>Clicks and position</span><span>Visits from Google in 28 days, and where the post sits in results <InfoTip id="position" />. With no position yet, the views in Google are shown instead.</span></p>}
+            <p className={row}><AlertCircle size={13} className="text-[#ff9500] mt-0.5 flex-shrink-0" /><span><span className={b}>No sitemap</span>: the post is missing from the list Google reads. <span className={b}>Dropped</span>: it was in Google and fell out this week.</span></p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#86868b]">The buttons</p>
+            <p className={row}><Wand2 size={13} className="text-[#7C3AED] mt-0.5 flex-shrink-0" /><span><span className={b}>Fix</span> changes the post on your WordPress for you and scores it again. <span className={b}>Fix all</span> does every fix on that post at once. Nothing else in the post is touched.</span></p>
+            {connected && <p className={row}><RefreshCw size={13} className="text-[#86868b] mt-0.5 flex-shrink-0" /><span><span className={b}>Check</span> asks Google about this post right now, instead of waiting for the overnight check.</span></p>}
+            <p className={row}><Youtube size={13} className="text-[#5856d6] mt-0.5 flex-shrink-0" /><span><span className={b}>Rebuild</span> rewrites a weak post from its YouTube video, at the same address, so it keeps its history with Google.{canRebuild ? '' : ' Part of Pro.'}</span></p>
+            <p className={row}><Pencil size={13} className="text-[#5856d6] mt-0.5 flex-shrink-0" /><span><span className={b}>Edit title manually</span> saves the exact title you type to WordPress. Aim for 30 to 65 characters.</span></p>
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-[#86868b]">The Tools menu, top of the page</p>
+            <p className={row}><span><span className={b}>Fix all posts</span> shows a preview of every fix MVP can make across the blog, then applies them when you confirm. <span className={b}>Remove prices from posts</span> takes Amazon prices out of your product boxes: Amazon only allows a price shown with the time it was checked. <span className={b}>Refresh post URLs</span> re-reads each post&apos;s real address from WordPress, for when posts moved.</span></p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

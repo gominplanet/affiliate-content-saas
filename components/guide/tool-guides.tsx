@@ -382,22 +382,21 @@ export function SeoGuide() {
   return (
     <ToolGuide
       guideKey="seo"
-      version={2}
+      version={3}
       accent="#C084FC"
       icon={<TrendingUp size={20} />}
       title="Your guide to SEO & Indexing"
-      subtitle="See what Google does with your posts, and get them found faster."
+      subtitle="Where each of your posts is stuck on its way to readers, and what to do about it."
       sections={[
-        { icon: <BarChart3 size={18} />, title: 'Start at the top', body: <><strong>How your blog is doing</strong> shows whether your posts are being shown and clicked. <strong>Start here</strong> lists what to do next, biggest win first, and everything further down is the detail behind it.</> },
-        { icon: <Zap size={18} />, title: 'Get my blog found', body: <>One click refreshes your sitemap, pings search engines and AI crawlers, heals changed links so nothing 404s, and auto-fixes SEO issues on every post. Run it any time; Google and Bing re-crawl over the following days.</> },
-        { icon: <Signpost size={18} />, title: 'Win back rankings from broken links', body: <>In Search Console, open the <strong>Not found (404)</strong> report, press <strong>Export</strong> and drop the file here. MVP matches each dead URL to the right live post and redirects it (a 301), so the old ranking history carries over.</> },
-        { icon: <Gauge size={18} />, title: 'Connect Search Console', body: <>Once Search Console is connected, you see which posts are indexed, their clicks and impressions over 28 days, why the rest are not indexed, and any post that dropped out of Google in the last week. Statuses refresh overnight, and <strong>Check</strong> re-checks one post straight away.</> },
-        { icon: <Send size={18} />, title: 'Nudge Google with Index', body: <>On Pro, the <strong>Index</strong> button on an unindexed post sends Google a direct request through its Indexing API, up to 2 a day. It speeds things up but guarantees nothing. Bing, Yandex and Copilot are already told about every new post through IndexNow.</> },
-        { icon: <Wand2 size={18} />, title: 'Fix every post', body: <>Each post gets an SEO score, worst first. Open a row to see what is missing, then press <strong>Fix</strong> on an issue or fix them all at once. <strong>Rebuild</strong> rewrites a post from its YouTube transcript at the same URL, and <strong>Tools</strong> holds Fix all posts, Refresh prices and Refresh post URLs.</> },
-        { icon: <Bot size={18} />, title: 'Ready for AI answers', body: <><strong>AI search visibility</strong> checks that AI crawlers are allowed to read your site. <strong>AI-answer readiness</strong> scores how likely ChatGPT, Perplexity and Google AI Overviews are to quote each post, and shows which to fix first.</> },
-        { icon: <Lightbulb size={18} />, title: 'Find what to write next', body: <><strong>Search demand you&rsquo;re missing</strong> lists searches you already appear for but no post targets, one click from a Buying Guide. <strong>Posts that are not earning their place</strong> is a read-only list of weak posts worth merging or improving; it never changes anything on its own.</> },
+        { icon: <Lightbulb size={18} />, title: 'The four steps', body: <>Every post goes through four steps before Google sends readers: Google <strong>finds</strong> it, <strong>keeps</strong> it (indexed), <strong>shows</strong> it in searches, and people <strong>click</strong> it. The page is built around those steps, and every <strong>?</strong> explains a word.</> },
+        { icon: <BarChart3 size={18} />, title: '1 and 2: how it is going, what to do', body: <><strong>Is your blog growing?</strong> shows Google views and clicks day by day. <strong>What to do next</strong> lists the few things worth your time, biggest first, and flags anything that broke.</> },
+        { icon: <ListChecks size={18} />, title: '3: what each post needs', body: <>Every post sits in the stage it is stuck at. Each stage opens with a plan for all its posts: links added ten at a time from posts Google already shows, today&rsquo;s 10 requests to Google, and what to share.</> },
+        { icon: <Zap size={18} />, title: '4: get found', body: <><strong>Get my blog found</strong> refreshes your sitemap, sends every post to Bing and Copilot, heals changed links and fixes what it can. Drop your Search Console 404 export there once to send broken addresses to the right post.</> },
+        { icon: <Gauge size={18} />, title: 'Connect Search Console', body: <>Search Console is Google&rsquo;s own dashboard for your blog. Once connected, MVP reads it every night: which posts are in Google, their views and clicks, and why the rest are left out.</> },
+        { icon: <TrendingUp size={18} />, title: '5 and 6: grow, and AI search', body: <><strong>Grow your traffic</strong> lists posts close to paying off and searches you already show up for without a post. <strong>AI search</strong> checks that ChatGPT, Perplexity and Google&rsquo;s AI can read and quote your posts.</> },
+        { icon: <Wand2 size={18} />, title: "7: every post's checks", body: <>Each post&rsquo;s on-page basics, worst first. Press <strong>Fix</strong> where MVP can fix it, or <strong>Rebuild</strong> to rewrite a weak post from its video at the same address. A high score means the basics are done, not that the post ranks.</> },
       ]}
-      footerNote={<>More tools live in the tabs at the top: <strong className="text-foreground">Title Check, Clean Links, Duplicates, Fix 404s, Fix Formatting and Logo Check</strong>.</>}
+      footerNote={<>Each section folds away with <strong className="text-foreground">Hide</strong>, and MVP remembers it. More tools live in the tabs at the top: <strong className="text-foreground">Title Check, Clean Links, Duplicates, Fix 404s, Fix Formatting and Logo Check</strong>.</>}
     />
   )
 }
