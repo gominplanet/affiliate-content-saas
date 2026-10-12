@@ -79,6 +79,9 @@ export interface VideoInput {
   /** Pre-built affiliate URL paired with asinOverride. Caller should
    *  wrap with Geniuslink / Associates tag before passing. */
   affiliateUrlOverride?: string | null
+  /** The store the link goes to when it is not Amazon ('Walmart'), so the
+   *  buttons name it. Set by the caller from the creator's own link. */
+  retailerLabelOverride?: string | null
   /** Factual product brief scraped from the website linked in the
    *  description (Pro tier). Treated like an Amazon spec sheet — gives
    *  the writer real product facts. The transcript still drives voice. */
@@ -2188,9 +2191,12 @@ ${t}`,
     // products via Geniuslink, which is an Amazon redirector — the old
     // narrow regex only matched `amazon.{tld}/` and mis-tagged every
     // Geniuslink as "non-Amazon", producing the wrong CTA variant.
-    const ctaIsAmazon =
+    // A store named by the caller (the creator's description leads with a
+    // Walmart link) is never Amazon, whatever ASIN the title carries.
+    const ctaRetailer = video.retailerLabelOverride?.trim() || null
+    const ctaIsAmazon = !ctaRetailer && (
       !!asin ||
-      /amazon\.[a-z.]+\b|\bamzn\.to\b|\bgeni\.us\b|\ba\.co\b/i.test(affiliateUrl)
+      /amazon\.[a-z.]+\b|\bamzn\.to\b|\bgeni\.us\b|\ba\.co\b/i.test(affiliateUrl))
     // Per-niche scaffold (Sprint 3). Resolve the best-fit niche from the
     // strongest available product signal — the YouTube title (usually names
     // the product/category) plus the first line of the scraped product brief
@@ -2252,7 +2258,7 @@ ${t}`,
       console.log('[blog/generate] signals withheld', signalBrief.dropped)
     }
 
-    const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, ctaIsAmazon, nicheScaffold)
+    const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, ctaIsAmazon, nicheScaffold, ctaRetailer)
     const voiceBlock = buildVoiceBlock(voiceProfile || undefined)
 
     const feedbackBlock = rewriteFeedback?.trim()

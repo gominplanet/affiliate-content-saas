@@ -37,6 +37,8 @@ export interface PriceStripOptions {
    *      clashing with their design.
    */
   ctaStyle?: 'button' | 'link'
+  /** A non-Amazon store the link goes to ('Walmart'): the button names it. */
+  retailerLabel?: string | null
 }
 
 /**
@@ -54,17 +56,24 @@ export function renderPriceStrip(opts: PriceStripOptions): string {
   // wording). Same logic as the .gr-cta-btn change at 576d9df. Existing
   // posts retain their old copy until rewritten by the WP plugin's legacy
   // CTA filter (gr-price-strip-btn case).
+  const store = !opts.isAmazon && opts.retailerLabel ? opts.retailerLabel.trim() : ''
   const buttonLabel = opts.isAmazon
     ? productName
       ? `🛒 Get the best price on Amazon for ${productName} →`
       : `🛒 Get the best price on Amazon →`
+    : store
+      ? productName
+        ? `🛒 Get the best price on ${store} for ${productName} →`
+        : `🛒 Get the best price on ${store} →`
     : productName
       ? `🔗 Get the best price today for ${productName} →`
       : `🔗 Get the best price today →`
 
   const disclaimer = opts.isAmazon
     ? 'Clicking takes you to Amazon. As an Amazon Associate we earn from qualifying purchases — pricing and availability subject to change.'
-    : 'Clicking takes you to the seller\'s website. We may earn a small commission if you purchase, at no extra cost to you.'
+    : store
+      ? `Clicking takes you to ${store}. We may earn a small commission if you purchase, at no extra cost to you.`
+      : 'Clicking takes you to the seller\'s website. We may earn a small commission if you purchase, at no extra cost to you.'
 
   // Plain themed-link variant for "bring your own theme" / content-only sites.
   // No inline background or colors on the link itself — it inherits the

@@ -40,6 +40,7 @@ import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
+import { leadingWalmartLink } from '@/lib/store-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle, cloakFallbackNote } from '@/lib/link-cloak'
@@ -128,6 +129,9 @@ function pointsToIntendedProduct(intended: string, resolved: string, isAmazon: b
     const ih = host(intended)
     const rh = host(resolved)
     if (isAmazon) return /(?:^|\.)amazon\.[a-z.]+$/.test(rh)
+    // Walmart Creator's walmrt.us short links land on walmart.com.
+    const walmart = (h: string) => /(?:^|\.)(?:walmart\.(?:com|ca)|walmrt\.us|wlmrt\.us)$/.test(h)
+    if (walmart(ih) && walmart(rh)) return true
     return rh === ih || rh.endsWith('.' + ih) || ih.endsWith('.' + rh)
   } catch {
     return false
@@ -702,7 +706,14 @@ async function handleGenerate(request: Request) {
   const descAsin = asinFromAmazonUrl(rawDescription)
   let destination: string | null = null
   let alreadyGeniuslink = false
-  if (titleAsin || descAsin) {
+  // THE STORE THE CREATOR LINKS FIRST (Jarrett, 2026-10-12). A description
+  // that leads with a Walmart link sells on Walmart: the post links there and
+  // its buttons say Walmart, even when the title carries an Amazon ASIN.
+  const walmartLead = leadingWalmartLink(rawDescription, site.wordpress_url ?? null)
+  const retailerLabel: string | null = walmartLead ? 'Walmart' : null
+  if (walmartLead) {
+    destination = walmartLead
+  } else if (titleAsin || descAsin) {
     asinOverride = titleAsin || descAsin || null
     destination = `https://www.amazon.com/dp/${asinOverride}`
   } else {
@@ -1451,6 +1462,7 @@ async function handleGenerate(request: Request) {
         transcript,
         asinOverride,
         affiliateUrlOverride,
+        retailerLabelOverride: retailerLabel,
         productResearch,
         keepaFacts,
         keepaFetchedAt,
@@ -1707,10 +1719,12 @@ async function handleGenerate(request: Request) {
       // goes to Amazon: unclear placement under Associates policy 6(w), and the
       // "As an Amazon Associate we earn from qualifying purchases" line dropped
       // off the page with it. If we resolved an ASIN, it is Amazon.
-      const stripIsAmazon = !!effectiveAsin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl)
+      // A post that sells on Walmart says Walmart, whatever ASIN the title has.
+      const stripIsAmazon = !retailerLabel && (!!effectiveAsin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl))
       content = injectPriceStrip(content, {
         affiliateUrl: productUrl,
         isAmazon: stripIsAmazon,
+        retailerLabel,
         productName: (generated as { productName?: string | null }).productName || null,
         // Per-site CTA style: content-only "bring your own theme" sites can opt
         // for a plain themed text link instead of MVP's gradient button.
