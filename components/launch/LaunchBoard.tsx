@@ -42,6 +42,7 @@ import StepCard from './StepCard'
 import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
+import AmazonProgress from './AmazonProgress'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal, sizeWords } from '@/lib/clip-source-limits'
@@ -398,6 +399,9 @@ export default function LaunchBoard() {
   const [amazonBusy, setAmazonBusy] = useState(false)
   const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
   const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
+  // The live bar: when this page's Amazon run started and how many listings
+  // SCOUT was handed (known only once the queue and sign-in checks are done).
+  const [amazonRun, setAmazonRun] = useState<{ startedAt: number; listings: number | null } | null>(null)
   const [amazonStarting, setAmazonStarting] = useState(false)
   // ── AND THE STUDIO STEPS, BY THEMSELVES, FIRST ─────────────────────────
   // Paid promotion, AI use, the notify box, monetization: YouTube's API sets
@@ -891,6 +895,7 @@ export default function LaunchBoard() {
     }
     amazonRunning.current = true
     setAmazonBusy(true)
+    setAmazonRun({ startedAt: Date.now(), listings: null })
     try {
       // SCOPED TO THIS BATCH. Unscoped, this delivers the creator's whole
       // account queue: the first real run picked the US and Germany and
@@ -909,6 +914,7 @@ export default function LaunchBoard() {
         // slow upload or a sign-in done since, never a listing Amazon refused.
         retryFailed: !auto,
         retryDue: auto,
+        onSending: (n) => setAmazonRun((r) => (r ? { ...r, listings: n } : r)),
       })
       const lines = deliverySummary(out)
       // SWITCHED BATCH WHILE IT RAN: this answer belongs to the other one,
@@ -933,7 +939,7 @@ export default function LaunchBoard() {
       toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
       setAmazonNote({ at: new Date(), lines: ['Could not reach SCOUT. Is the extension installed?'], error: true })
       return { ok: false, error: 'scout', handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
-    } finally { amazonRunning.current = false; setAmazonBusy(false) }
+    } finally { amazonRunning.current = false; setAmazonBusy(false); setAmazonRun(null) }
   }
 
   async function moveItem(id: string, direction: 'up' | 'down') {
@@ -2339,6 +2345,12 @@ export default function LaunchBoard() {
                 ?? `${batch.markets.map((m) => m.country).join(', ')}. SCOUT uses your own signed-in Creator account, so keep this tab open while it runs.`}
             </span>
           </div>}
+          {/* THE AMAZON UPLOAD, LIVE. "Sending to Amazon…" alone sat there for
+              many minutes and could not be told from stuck. */}
+          {amazonOn && scoutReady === true && (
+            <AmazonProgress running={amazonBusy} startedAt={amazonRun?.startedAt ?? null} listings={amazonRun?.listings ?? null}
+              watch={batch.state === 'launched' || batch.state === 'launching'} />
+          )}
           {/* ── KEEP GOING WHEN THIS PAGE IS CLOSED ─────────────────────────── */}
           {scoutReady && (
             <div className="mt-3 flex items-start justify-between gap-3 rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>

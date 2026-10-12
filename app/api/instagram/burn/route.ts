@@ -14,6 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
+import { burnErrorMessage } from '@/lib/burn-error'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { getCtaSticker, ctaStickerUrl } from '@/lib/cta-stickers'
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
       ? { position, placement, stickerUrl: stickerOverlayUrl, stickerWidthPct: clientWidthPct ?? (customOk ? 0.55 : sticker?.widthPct), stickerDurationSec }
       : { position, style, stickerDurationSec })
     if (!burned?.url) {
-      return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })
+      return NextResponse.json({ error: burnErrorMessage(getLastOverlayError()), detail: getLastOverlayError() }, { status: 500 })
     }
     recordUsage({ userId: user.id, tier, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
 

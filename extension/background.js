@@ -11325,7 +11325,12 @@ async function deliverOneDomain(domain, jobs) {
     })
   })
   const signinAt = tabId ? await signedOutWhere() : null
+  // WHICH VIDEO OF HOW MANY (1.46.1), so the page can say "video 2 of 5"
+  // instead of one step name that looks the same for half an hour.
+  let jobNo = 0
   for (const job of jobs) {
+    jobNo++
+    setSfProgress(domain, { total: jobs.length, done: jobNo - 1, current: jobNo, title: String(job.title || '').slice(0, 80) })
     if (!tabId) { out.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
     if (signinAt) {
       out.push({ targetId: job.targetId, ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${signinAt.slice(0, 80)}). Sign in there, then send again.` })
@@ -11343,7 +11348,7 @@ async function deliverOneDomain(domain, jobs) {
         r = await sendJob(job)
       }
       out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
-      setSfProgress(domain, { step: r.ok ? 'Published' : (r.duplicate ? 'Already there' : 'Failed'), pct: r.ok ? 100 : null })
+      setSfProgress(domain, { step: r.ok ? 'Published' : (r.duplicate ? 'Already there' : 'Failed'), pct: r.ok ? 100 : null, done: jobNo })
     } catch (e) {
       out.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
     }
@@ -11357,7 +11362,7 @@ async function deliverStorefronts(items) {
   // Fresh run: never reuse an S3 key uploaded for a previous video.
   _sfUploadedKeys = {}
   _sfProgress = {}
-  for (const it of items) setSfProgress(it.domain || 'amazon.com', { step: 'Waiting', pct: null })
+  for (const it of items) setSfProgress(it.domain || 'amazon.com', { step: 'Waiting', pct: null, done: 0, total: items.filter((x) => (x.domain || 'amazon.com') === (it.domain || 'amazon.com')).length })
   // Group by domain so we reuse one create tab per marketplace.
   const byDomain = {}
   for (const it of items) (byDomain[it.domain || 'amazon.com'] ||= []).push(it)

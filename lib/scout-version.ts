@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.46.0'
+export const SCOUT_LATEST_VERSION = '1.46.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: the Meta ad check answers in time with what it read, reopens a closed tab, and says when Facebook is not in English.'
+  'Bulk Amazon upload: each store says which video of how many SCOUT is uploading, with its live progress.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -92,6 +92,10 @@ export const SCOUT_TRYBE_PLAYBOOK_MIN_VERSION = '1.45.0'
 /** 1.46.0 (My brands): the creator's totals per brand, each brand's
  *  submissions and the words of a brand's best videos, read only. */
 export const SCOUT_TRYBE_MYBRANDS_MIN_VERSION = '1.46.0'
+/** 1.46.1: an Amazon upload says which video of how many each store is on,
+ *  for the live bar on Bulk Amazon upload. Older SCOUT shows the step and
+ *  percentage without the count. */
+export const SCOUT_AMAZON_COUNT_MIN_VERSION = '1.46.1'
 
 export const SCOUT_FB_ACCESS_MIN_VERSION = '1.39.0'
 /** SCOUT attaches a Clip Factory clip's video to a Group post. */

@@ -8,6 +8,7 @@
  * this can never break a publish.
  */
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { cloudErrorText } from '@/lib/burn-error'
 import { v2 as cloudinary } from 'cloudinary'
 import type { CaptionChunk, SubtitleStyle } from '@/lib/shorts-types'
 
@@ -47,7 +48,7 @@ export async function cloudinaryPing(): Promise<{ ok: boolean; cloudName?: strin
     await cloudinary.api.ping()
     return { ok: true, cloudName: (cloudinary.config().cloud_name as string) || undefined }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    return { ok: false, error: cloudErrorText(e) }
   }
 }
 
@@ -179,7 +180,7 @@ export async function renderStoryImage(
     lastOverlayError = 'Cloudinary did not return a valid story image'
     return null
   } catch (e) {
-    lastOverlayError = e instanceof Error ? e.message : String(e)
+    lastOverlayError = cloudErrorText(e)
     return null
   }
 }
@@ -260,7 +261,7 @@ export async function renderDealCard(
     lastOverlayError = 'Cloudinary did not return a valid deal card'
     return null
   } catch (e) {
-    lastOverlayError = e instanceof Error ? e.message : String(e)
+    lastOverlayError = cloudErrorText(e)
     return null
   }
 }
@@ -341,7 +342,7 @@ async function waitForVideo(url: string, timeoutMs: number): Promise<{ ready: bo
         if (res.status >= 400 && res.status < 500) return { ready: false, detail: last } // invalid transform — stop
       }
     } catch (e) {
-      last = `fetch error: ${e instanceof Error ? e.message : String(e)}`
+      last = `fetch error: ${cloudErrorText(e)}`
     }
     await new Promise(r => setTimeout(r, 3000))
   }
@@ -386,9 +387,14 @@ export async function overlayCaptionOnVideo(
     const safeCaption = (caption.replace(/[^\x20-\x7E]/g, '').replace(/\s{2,}/g, ' ').trim()) || 'LINK IN BIO'
 
     // 1. Upload the source video (no transform yet).
+    //    A long clip is a big file: the SDK's own 60s limit cut a 3:41 clip
+    //    off mid-upload, so give it longer and spend what is left of the
+    //    route's time on waiting for the render below.
+    const started = Date.now()
     const up = await cloudinary.uploader.upload(sourceVideoUrl, {
       resource_type: 'video',
       folder: 'ig-overlays',
+      timeout: 150_000,
     })
     const publicId = up.public_id
 
@@ -442,7 +448,7 @@ export async function overlayCaptionOnVideo(
     // 3. Cloudinary renders video derivations lazily and returns 423 while
     //    processing. Poll until it actually serves bytes so we never hand back
     //    a not-ready (0-byte) URL to the user or Instagram.
-    const { ready, detail } = await waitForVideo(url, 120_000)
+    const { ready, detail } = await waitForVideo(url, Math.max(45_000, 220_000 - (Date.now() - started)))
     if (!ready) {
       lastOverlayError = detail
       console.warn('[cloudinary] derived video not ready:', detail, '| url:', url)
@@ -450,7 +456,7 @@ export async function overlayCaptionOnVideo(
     }
     return { url, publicId }
   } catch (e) {
-    lastOverlayError = e instanceof Error ? e.message : String(e)
+    lastOverlayError = cloudErrorText(e)
     console.warn('[cloudinary] video overlay failed:', lastOverlayError)
     return null
   }

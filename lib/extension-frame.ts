@@ -238,7 +238,12 @@ export async function requestEarningsStatus(): Promise<EarningsSyncStatus | null
 /** Where one marketplace has got to in a storefront run. `pct` is real byte
  *  progress during a transfer and null for the steps that aren't measurable. */
 export interface StorefrontProgress {
-  [domain: string]: { step?: string; pct?: number | null; at?: number }
+  [domain: string]: {
+    step?: string; pct?: number | null; at?: number
+    /** SCOUT 1.46.1 and later: videos finished in this store, how many it
+     *  was given, which one it is on, and that one's title. */
+    done?: number; total?: number; current?: number; title?: string
+  }
 }
 
 /**

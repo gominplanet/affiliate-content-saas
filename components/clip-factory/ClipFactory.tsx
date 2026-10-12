@@ -762,7 +762,10 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           stickerDurationSec: burnDuration,
         }),
       })
-      const data = await res.json()
+      // A route that ran out of time answers with a page, not JSON.
+      const data = await res.json().catch(() => ({ error: res.status === 504
+        ? 'The overlay burner ran out of time on this video. Long clips take the longest. Use a shorter clip, or press "Skip and publish as is".'
+        : `The overlay burner did not answer properly (${res.status}). Try again, or press "Skip and publish as is".` }))
       if (!res.ok || !data.ok) {
         if (data.limitReached) dispatchCapReached(data.error || 'Enhancing is a Pro feature.', { cap: data.cap || 'instagram_burner', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Burn failed')

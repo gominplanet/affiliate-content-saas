@@ -78,6 +78,9 @@ export async function deliverPreparedStorefronts(scope?: {
    *  because the batch knows both, and either one alone still leaves a way to
    *  publish somewhere nobody chose. */
   domains?: string[]
+  /** Called once SCOUT is handed the listings, with how many, so a page can
+   *  show the live upload while it runs (the answer only comes at the end). */
+  onSending?: (listings: number) => void
 }): Promise<DeliveryOutcome> {
   const empty: DeliveryOutcome = {
     ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false,
@@ -151,6 +154,7 @@ export async function deliverPreparedStorefronts(scope?: {
     return { ...empty, needsSignIn, waitingOnDub: waiting.length, atCap, dailyRoom }
   }
 
+  try { scope?.onSending?.(sendNow.length) } catch { /* a display hook never stops the upload */ }
   const res = await requestStorefrontDelivery(sendNow)
   if (!res?.ok && !res?.results) {
     return {
