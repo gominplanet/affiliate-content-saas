@@ -62,7 +62,7 @@ export function ShortsCreatePanel({
   youtubeVideoId: string | null
   videoTitle: string
   /** Called when a clip is rendered and the creator picks it to carry forward. */
-  onUseClip: (clip: { url: string; title: string; caption: string; hashtags: string[]; durationSec?: number }) => void
+  onUseClip: (clip: { url: string; title: string; caption: string; hashtags: string[]; durationSec?: number; shortId?: string }) => void
 }) {
   const [loading, setLoading] = useState(true)
   const [planning, setPlanning] = useState(false)
@@ -552,7 +552,7 @@ export function ShortsCreatePanel({
                   </button>
                   {clip.status === 'rendered' && clip.renderedUrl && (
                     <button
-                      onClick={() => onUseClip({ url: clip.renderedUrl!, title: clip.hook || videoTitle, caption: clip.caption || '', hashtags: clip.hashtags || [], durationSec: clip.endSec - clip.startSec })}
+                      onClick={() => onUseClip({ url: clip.renderedUrl!, title: clip.hook || videoTitle, caption: clip.caption || '', hashtags: clip.hashtags || [], durationSec: clip.endSec - clip.startSec, shortId: clip.id })}
                       className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
                       style={{ backgroundColor: '#34c759' }}
                     >

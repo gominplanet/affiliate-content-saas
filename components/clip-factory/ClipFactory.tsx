@@ -27,11 +27,12 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
-  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown, Facebook,
+  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown, Facebook, Film,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
 import { ShortsQuotaBadge } from '@/components/vertical/ShortsQuotaBadge'
+import ClipLibrary from '@/components/clip-factory/ClipLibrary'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -92,7 +93,9 @@ const DURATIONS = [
 type Stage = 'create' | 'enhance' | 'publish'
 // sourceVideoId: the youtube_videos row the clip came from, when MVP knows it.
 // The Facebook Reel description reads its blog post and product from there.
-interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number; sourceVideoId?: string }
+// shortId: the rendered clip (youtube_shorts) this is, so a post is stamped on
+// it and My clips knows where it went.
+interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string; durationSec?: number; sourceVideoId?: string; shortId?: string }
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
@@ -179,7 +182,22 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   const tiktokOk = tier !== 'amazon'
 
   const [stage, setStage] = useState<Stage>('create')
+  // MY CLIPS (Seb, 2026-10-12): every clip ever rendered, ready to post.
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [clip, setClip] = useState<WorkingClip | null>(null)
+  // A post is stamped on the rendered clip it came from, so My clips can say
+  // where each clip already went. Read through a ref: the publish handlers
+  // are memoised and would otherwise stamp an earlier clip.
+  const clipRef = useRef<WorkingClip | null>(null)
+  clipRef.current = clip
+  const markPosted = (platform: 'tiktok' | 'instagram' | 'youtube') => {
+    const shortId = clipRef.current?.shortId
+    if (!shortId) return
+    void fetch('/api/youtube/shorts/mark-posted', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shortId, platform }),
+    }).catch(() => { /* the post happened; only the note in My clips is missed */ })
+  }
   // Shorts usage lives in ShortsQuotaBadge now: it fetches, and it re-fetches
   // on every render anywhere in the app. The copy that lived here refreshed on
   // mount and on "Use this clip", which is not when a slot is spent.
@@ -788,6 +806,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
         throw new Error(data.error || 'YouTube upload failed')
       }
       setPosted(p => ({ ...p, youtube: true }))
+      markPosted('youtube')
       setPanel(cur => (cur === 'youtube' ? null : cur))
       if (data.videoId) setYtVideoId(data.videoId as string)
       toast.success('Uploaded to YouTube. It may take a few minutes to process.')
@@ -935,7 +954,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           return (
             <div key={s.key} className="flex items-center gap-2">
               <button
-                onClick={() => reachable && setStage(s.key)}
+                onClick={() => { if (reachable) { setStage(s.key); setLibraryOpen(false) } }}
                 disabled={!reachable}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
                   active
@@ -953,10 +972,33 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
             </div>
           )
         })}
+        <button onClick={() => setLibraryOpen((v) => !v)} aria-pressed={libraryOpen}
+          className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${libraryOpen ? 'text-white border-transparent' : 'text-[#7C3AED] border-[#7C3AED]/50 hover:bg-[#7C3AED]/10'}`}
+          style={libraryOpen ? { backgroundColor: PURPLE } : undefined}
+          title="Every clip MVP made for you, ready to post">
+          <Film size={14} /> My clips
+        </button>
       </div>
 
+      {libraryOpen && (
+        <ClipLibrary
+          onClose={() => setLibraryOpen(false)}
+          onUse={(c) => {
+            setClipSource('created')
+            setClip({ url: c.renderedUrl as string, title: c.hook || c.videoTitle || 'Clip', hashtags: c.hashtags, caption: c.caption, durationSec: Math.max(0, c.endSec - c.startSec), sourceVideoId: c.videoId, shortId: c.id })
+            setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
+            setBurnedUrl(null)
+            // Where it already went, so the Publish buttons say so.
+            setPosted({ tiktok: !!c.postedTiktok, instagram: !!c.postedInstagram, youtube: !!c.postedYoutube })
+            setSelectedVideo(null)
+            setLibraryOpen(false)
+            setStage('enhance')
+          }}
+        />
+      )}
+
       {/* ---------------- CREATE ---------------- */}
-      {stage === 'create' && (
+      {!libraryOpen && stage === 'create' && (
         <div>
           <div className="flex flex-wrap gap-2 mb-4">
             <button onClick={() => pickTab('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
@@ -983,7 +1025,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                 reel={facebookOnly}
                 onUseClip={(c) => {
                   setClipSource('created')
-                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec, sourceVideoId: selectedVideo.id })
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption, durationSec: c.durationSec, sourceVideoId: selectedVideo.id, shortId: c.shortId })
                   // Seed the caption from the plan (retained on the clip too, so
                   // it survives an empty burn / Skip Enhance via fallbackCaption).
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
@@ -1145,7 +1187,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       )}
 
       {/* ---------------- ENHANCE ---------------- */}
-      {stage === 'enhance' && clip && (
+      {!libraryOpen && stage === 'enhance' && clip && (
         <div className="grid md:grid-cols-[1fr_240px] gap-6">
           <div className="flex flex-col gap-5">
             {/* Overlay type */}
@@ -1383,7 +1425,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       )}
 
       {/* ---------------- PUBLISH ---------------- */}
-      {stage === 'publish' && publishUrl && (
+      {!libraryOpen && stage === 'publish' && publishUrl && (
         <div className="grid md:grid-cols-[1fr_240px] gap-6">
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
@@ -1507,7 +1549,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           product={product.trim() || undefined}
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           onClose={() => setTtOpen(false)}
-          onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); setTtOpen(false); toast.success('Posted to TikTok') }}
+          onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); markPosted('tiktok'); setTtOpen(false); toast.success('Posted to TikTok') }}
         />
       )}
       {igOpen && publishUrl && (
@@ -1522,7 +1564,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           coverOffsetMs={coverOffsetMs}
           onClose={() => setIgOpen(false)}
-          onPosted={() => { setPosted(p => ({ ...p, instagram: true })); toast.success('Posted to Instagram') }}
+          onPosted={() => { setPosted(p => ({ ...p, instagram: true })); markPosted('instagram'); toast.success('Posted to Instagram') }}
         />
       )}
 
