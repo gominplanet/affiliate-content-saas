@@ -118,6 +118,11 @@ const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'flat', label: 'Flat fee' },
   { id: 'percent', label: '% of sales' },
 ]
+const PAY_SAYS: Record<LivePay, string> = {
+  any: 'Every brand, whatever it pays.',
+  flat: 'Brands that pay a set amount per video first.',
+  percent: 'Brands that pay a commission on what your videos sell first.',
+}
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
@@ -306,6 +311,7 @@ export default function TrybeOutreach() {
   // the order covers every match and not just the 60 on screen.
   const [sortBy, setSortBy] = useState<LiveSort>('match')
   const [payType, setPayType] = useState<LivePay>('any')
+  const [picksHelp, setPicksHelp] = useState(false)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [livePick, setLivePick] = useState<Set<string>>(new Set())
@@ -1223,7 +1229,7 @@ export default function TrybeOutreach() {
               <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by pay type">
                 <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Pay</span>
                 {PAYS.map(p => (
-                  <button key={p.id} onClick={() => setPayType(p.id)} aria-pressed={payType === p.id}
+                  <button key={p.id} onClick={() => setPayType(p.id)} aria-pressed={payType === p.id} title={PAY_SAYS[p.id]}
                     className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
                     style={payType === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border)' }}>{p.label}</button>
                 ))}
@@ -1236,9 +1242,23 @@ export default function TrybeOutreach() {
               const metaRead = shown.filter(b => b.meta_ads_checked_at).length
               const topAt = directory?.top100?.at
               const todoMeta = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25).length
+              if (!picksHelp) {
+                return (
+                  <p className="text-[12px] mb-3" style={soft}>
+                    Best bets ranks brands the way top TRYBE creators pick them: few creators, real ad spend, not on TikTok Shop. Each brand says why it ranks where it does.{' '}
+                    <button onClick={() => setPicksHelp(true)} className="font-semibold underline" style={{ color: PURPLE }}>What it reads</button>
+                    {canPlaybook && todoMeta > 0 && (
+                      <>{' '}<button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
+                        {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : `Check ${todoMeta} brands for Meta ads`}
+                      </button></>
+                    )}
+                    {signalNote && <span className="block mt-1" style={{ color: signalNote.tone === 'ok' ? GREEN : signalNote.tone === 'warn' ? AMBER : RED }}>{signalNote.text}</span>}
+                  </p>
+                )
+              }
               return (
                 <div className="rounded-xl border px-3 py-2.5 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)' }}>
-                  <p className="font-semibold">What Best bets reads</p>
+                  <p className="font-semibold flex items-center gap-2">What Best bets reads <button onClick={() => setPicksHelp(false)} className="ml-auto text-[11px] font-semibold underline" style={{ color: PURPLE }}>Hide</button></p>
                   <p><b>Creators per brand</b>, from TRYBE: fewer means more of the budget for you.</p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span><b>TRYBE&rsquo;s Top 100</b>: {topAt ? `read ${new Date(topAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${directory?.top100?.matched != null ? `, ${directory.top100.matched} brands in it` : ''}` : 'not read yet'}. A brand in it is spending on ads.</span>
@@ -1246,7 +1266,7 @@ export default function TrybeOutreach() {
                     {topAt && Date.now() - Date.parse(topAt) > 30 * 3600_000 && <span style={{ color: AMBER }}>This copy is more than a day old.</span>}
                   </p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span><b>Meta ads running</b>: read for {metaRead} of the {shown.length} shown.</span>
+                    <span><b>Meta ads running</b>: proof a brand spends on ads. {shown.length ? `Checked for ${metaRead} of the ${shown.length} brands below.` : 'Checked once brands are listed below.'}</span>
                     {canPlaybook && todoMeta > 0 && (
                       <button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
                         {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : `Check ${todoMeta} in Meta's Ad Library`}
@@ -1300,7 +1320,11 @@ export default function TrybeOutreach() {
             )}
             {liveError && <p className="text-[12px] mb-3" style={{ color: RED }}>{liveError}</p>}
             {live && !live.brands.length && !liveLoading && (
-              <p className="text-[13px]" style={soft}>{hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'Search a keyword or pick a niche to see the brands that match.'}</p>
+              <p className="text-[13px]" style={soft}>
+                {payType !== 'any' && (live.payOther ?? 0) > 0
+                  ? <>No brand here pays {payType === 'flat' ? 'a flat fee' : 'a % of sales'} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
+                  : hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'No TRYBE brands to show yet. Press Refresh from TRYBE to collect the list.'}
+              </p>
             )}
             <div className="space-y-2">
               {(live?.brands || []).map(b => {
@@ -1369,12 +1393,13 @@ export default function TrybeOutreach() {
                   : <>{live.hiddenMine} brand{live.hiddenMine === 1 ? '' : 's'} you already messaged, wrote to or removed {live.hiddenMine === 1 ? 'is' : 'are'} hidden. <button onClick={() => setShowMine(true)} className="font-semibold underline" style={{ color: PURPLE }}>Show them</button></>}
               </p>
             ) : null}
-            {/* What the pay filter left out, counted so the list is never quietly short. */}
+            {/* What the pay filter did, counted so the list is never quietly
+                short: brands known to pay the other way are hidden; brands
+                TRYBE's list gives no pay for stay, after the ones that match. */}
             {live && payType !== 'any' && ((live.payUnknown ?? 0) + (live.payOther ?? 0)) > 0 && (
               <p className="text-[12px] mt-3" style={soft}>
-                Pay filter: {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying ${payType === 'flat' ? '% of sales only' : 'a flat fee only'}` : ''}
-                {live.payOther && live.payUnknown ? ' and ' : ''}
-                {live.payUnknown ? `${live.payUnknown.toLocaleString()} that list no pay amount` : ''} {(live.payOther ?? 0) + (live.payUnknown ?? 0) === 1 ? 'is' : 'are'} hidden.{' '}
+                {live.payUnknown ? `TRYBE's brand list does not say what ${live.payUnknown.toLocaleString()} of these brands pay, so they are listed after the ones that do. Open a brand on TRYBE to see its pay. ` : ''}
+                {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying only ${payType === 'flat' ? 'a % of sales' : 'a flat fee'} ${live.payOther === 1 ? 'is' : 'are'} hidden. ` : ''}
                 <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button>
               </p>
             )}

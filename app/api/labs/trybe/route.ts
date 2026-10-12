@@ -554,11 +554,15 @@ export async function POST(request: Request) {
     const matched = rows
       .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text), pick: pickOf(r) }))
       .filter(x => !terms.length || x.match > 0)
-    // PAY TYPE FILTER. A brand whose pay line has no number cannot be placed,
-    // so it is left out and counted, never silently dropped.
+    // PAY TYPE FILTER. A brand known to pay the other way is left out and
+    // counted. A brand whose pay TRYBE's list does not give stays, after the
+    // ones that match (Seb, 2026-10-12, "this is confusing": TRYBE's list
+    // gives no pay for most brands, so "% of sales" hid all 1,000 and the
+    // page asked for a keyword).
     const payUnknown = payType === 'any' ? 0 : matched.filter(x => x.pay.kind == null).length
     const payOther = payType === 'any' ? 0 : matched.filter(x => x.pay.kind != null && !payPasses(x.pay, payType)).length
-    const ranked = matched.filter(x => payPasses(x.pay, payType))
+    const ranked = matched.filter(x => payPasses(x.pay, payType) || (payType !== 'any' && x.pay.kind == null))
+    const payKnownFirst = (a: typeof ranked[number], b: typeof ranked[number]) => payType === 'any' ? 0 : Number(a.pay.kind == null) - Number(b.pay.kind == null)
     // DONE BRANDS LEAVE THE LIST (Seb, 2026-10-07: "these should be gone, no?
     // I changed keywords ... and i'm still seeing these"). A brand already
     // messaged, written, or removed is left out unless asked for, and the
@@ -587,13 +591,13 @@ export async function POST(request: Request) {
     // Best fit: fits for this search by score, then brands not scored for it,
     // then the ones the AI said do not fit it.
     const fit = (id: string) => judgedNo(id) ? -2 : fitScore(id) ?? -1
-    ranked.sort((a, b) =>
-      sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
+    ranked.sort((a, b) => payKnownFirst(a, b) ||
+      (sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? b.pick.score - a.pick.score || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
-              : byMatch(a, b))
+              : byMatch(a, b)))
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed']
     const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
     const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length

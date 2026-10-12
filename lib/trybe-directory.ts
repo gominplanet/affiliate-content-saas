@@ -91,7 +91,12 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
   if (!brandId || !/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return null
   const name = text(pick(raw, ['brandName', 'brand_name', 'name', 'companyName', 'company_name', 'displayName', 'title']), 120)
   if (!name) return null
-  const payRaw = pick(raw, ['payText', 'pay', 'payout', 'rate', 'pricePerVideo', 'price_per_video', 'compensation', 'budgetPerCreator', 'paymentPerVideo', 'amount'])
+  // TRYBE's own pay lines ("15% of GMV", "$50 per video") live under
+  // commissionRules, or commissionRate and perSubmission (its brand page code).
+  const rules = [raw.commissionRules, brandObj?.commissionRules].find(Array.isArray) as unknown[] | undefined
+  const ruleText = (rules || []).map((r) => (typeof r === 'string' ? r : isObj(r) ? text(r.text ?? r.label ?? r.description, 80) : '')).filter(Boolean).join(' · ')
+  const commission = [raw.commissionRate, raw.perSubmission].map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean).join(' · ')
+  const payRaw = ruleText || commission || pick(raw, ['payText', 'pay', 'payout', 'rate', 'pricePerVideo', 'price_per_video', 'compensation', 'budgetPerCreator', 'paymentPerVideo', 'amount'])
   const payNum = num(payRaw)
   return {
     brandId,

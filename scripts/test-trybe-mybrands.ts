@@ -8,6 +8,8 @@
 // A count MVP could not read is never shown as zero, and SCOUT only reads.
 
 import { readFileSync } from 'node:fs'
+import { readDirectoryItem } from '../lib/trybe-directory'
+import { readPay } from '../lib/trybe-outreach'
 import { join } from 'node:path'
 import { readBrandStats, readSubmissions, subStatus, withSubmissions, approvalRate, judgeBrands, stuckOf, nudgeText, readTopVideos, readScript,
   winnersForPlan, winnersBlock, keysOf, STUCK_DAYS, FOCUS_COUNT, type MyBrand } from '../lib/trybe-mybrands'
@@ -116,6 +118,19 @@ check('the video plan gets the winners\' words', /action: 'video_plan', brandId,
 check('no top videos and a failed read are said differently', /TRYBE shows no top videos for this brand yet/.test(ideas) && /could not read this brand's best videos/.test(ideas))
 const route = read('app/api/labs/trybe/route.ts')
 check('the plan route uses the winners and says when a plan is not kept', /winnersForPlan\(body\.winners\)/.test(route) && /onList: !!own/.test(route))
+
+
+// The pay filter never empties the list on brands TRYBE gives no pay for
+// (Seb, 2026-10-12: "% of sales" hid all 1,000 and the page asked for a keyword).
+{
+  const withRules = readDirectoryItem({ brandId: 'abc12345', brandName: 'Glow', commissionRules: ['15% of GMV', '$50 per video'] })
+  check('TRYBE\'s own pay lines are read when the list carries them', !!withRules && /15% of GMV/.test(withRules.payText || '') && readPay(withRules.payText).kind === 'both')
+  check('a commission rate alone is read too', readPay(readDirectoryItem({ brandId: 'abc12346', brandName: 'Rate', commissionRate: '20% commission' })?.payText).kind === 'percent')
+  const R = read('app/api/labs/trybe/route.ts')
+  check('brands with no pay given stay in the list, after the ones that match', /payPasses\(x\.pay, payType\) \|\| \(payType !== 'any' && x\.pay\.kind == null\)/.test(R) && /ranked\.sort\(\(a, b\) => payKnownFirst\(a, b\) \|\|/.test(R))
+  const U = read('components/labs/TrybeOutreach.tsx')
+  check('the page says what the pay filter did, and an empty list says why', /does not say what .* of these brands pay, so they are listed after the ones that do/.test(U) && /as far as TRYBE&rsquo;s list says/.test(U) && !/Search a keyword or pick a niche to see the brands that match/.test(U))
+}
 
 if (failed) { console.error(`\n${failed} My brands check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
