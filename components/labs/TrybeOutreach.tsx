@@ -89,6 +89,8 @@ interface LiveBrand {
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
+  /** Its fit was judged for an earlier search, not the one shown. */
+  fit_stale?: boolean
   /** Cole's picks (lib/trybe-pick): the score, why, and how many signals were read. */
   pick?: number; pick_reasons?: PickReason[]; pick_read?: number
   meta_ads?: number | null; meta_ads_checked_at?: string | null
@@ -107,7 +109,7 @@ const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'picks', label: 'Best bets', says: 'Best bets first: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), and not on TikTok Shop. How the top TRYBE creators pick brands.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: flat fees by amount, then % of sales.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
-  { id: 'fit', label: 'Best fit', says: 'Highest AI fit score first. Brands not scored yet come after.' },
+  { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
 ]
 const PAYS: Array<{ id: LivePay; label: string }> = [
@@ -1247,7 +1249,7 @@ export default function TrybeOutreach() {
               {(live?.brands || []).map(b => {
                 const taken = TAKEN.includes(b.status as Brand['status'])
                 const on = livePick.has(b.brand_id)
-                const where = b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? 'AI said not a fit' : null
+                const where = b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? (b.fit_stale ? 'AI said not a fit for an earlier search' : 'AI said not a fit') : null
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
                   <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.04)' : undefined }}>

@@ -60,7 +60,8 @@ export function pickScore(p: PickInput): Pick {
   const c = p.totalCreators
   if (typeof c === 'number' && Number.isFinite(c)) {
     read++
-    if (c <= 5) { score += 35; reasons.push({ text: `Only ${c} creator${c === 1 ? '' : 's'}: you share the budget with almost nobody`, tone: 'good' }) }
+    if (c === 0) { score += 35; reasons.push({ text: 'No creators yet: the whole budget is open', tone: 'good' }) }
+    else if (c <= 5) { score += 35; reasons.push({ text: `Only ${c} creator${c === 1 ? '' : 's'}: you share the budget with almost nobody`, tone: 'good' }) }
     else if (c <= 20) { score += 25; reasons.push({ text: `${c} creators: little competition`, tone: 'good' }) }
     else if (c <= 60) { score += 12; reasons.push({ text: `${c} creators`, tone: 'info' }) }
     else if (c >= 500) { score -= 20; reasons.push({ text: `${c.toLocaleString()} creators: crowded, the budget is split many ways`, tone: 'bad' }) }

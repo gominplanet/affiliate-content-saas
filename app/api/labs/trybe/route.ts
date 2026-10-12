@@ -524,7 +524,7 @@ export async function POST(request: Request) {
     const mineBy = new Map<string, Record<string, any>>() // eslint-disable-line @typescript-eslint/no-explicit-any
     const rankedIds = ranked.map(x => x.r.brand_id)
     for (let i = 0; i < rankedIds.length; i += 200) {
-      const { data: mineRows } = await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason').eq('user_id', ownerId).in('brand_id', rankedIds.slice(i, i + 200))
+      const { data: mineRows } = await admin.from('trybe_brands').select('brand_id, status, fit_score, fit_reason, fit_prefs').eq('user_id', ownerId).in('brand_id', rankedIds.slice(i, i + 200))
       for (const m of (mineRows || []) as Array<Record<string, any>>) mineBy.set(m.brand_id, m) // eslint-disable-line @typescript-eslint/no-explicit-any
     }
     // SORT (Seb, 2026-10-08 upgrade 3). Fit is the creator's own AI rating,
@@ -533,7 +533,18 @@ export async function POST(request: Request) {
     const byMatch = (a: typeof ranked[number], b: typeof ranked[number]) => b.match - a.match || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0)
     const time = (v: unknown) => { const t = Date.parse(String(v || '')); return Number.isFinite(t) ? t : 0 }
     const creators = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : Infinity
-    const fit = (id: string) => { const f = mineBy.get(id)?.fit_score; return typeof f === 'number' ? f : -1 }
+    // A FIT SCORE BELONGS TO THE SEARCH IT WAS JUDGED FOR (Seb, 2026-10-12:
+    // "these filters are not working properly"). A brand judged against
+    // "solar" was listed first under Best fit while the page showed Tech &
+    // Gadgets, with a reason about solar. A score or "not a fit" from another
+    // search is not used here: the brand reads as not scored for this one.
+    const pageKey = prefsKey(cats, kws)
+    const current = (id: string) => { const m = mineBy.get(id); return !!m && m.fit_prefs === pageKey }
+    const fitScore = (id: string): number | null => { const f = mineBy.get(id)?.fit_score; return current(id) && typeof f === 'number' ? f : null }
+    const judgedNo = (id: string) => current(id) && mineBy.get(id)?.status === 'not_fit'
+    // Best fit: fits for this search by score, then brands not scored for it,
+    // then the ones the AI said do not fit it.
+    const fit = (id: string) => judgedNo(id) ? -2 : fitScore(id) ?? -1
     ranked.sort((a, b) =>
       sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
@@ -562,7 +573,10 @@ export async function POST(request: Request) {
           pay_text: r.pay_text, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
-          status: m?.status ?? null, fit_score: m?.fit_score ?? null, fit_reason: m?.fit_reason ?? null,
+          status: m?.status ?? null,
+          fit_score: fitScore(r.brand_id), fit_reason: current(r.brand_id) ? (m?.fit_reason ?? null) : null,
+          // Judged for an earlier search: said so, never shown as this one's verdict.
+          fit_stale: !!m && m.fit_prefs != null && !current(r.brand_id) && (m.status === 'not_fit' || m.fit_score != null),
           pick: pick.score, pick_reasons: pick.reasons, pick_read: pick.read,
           meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
         }
