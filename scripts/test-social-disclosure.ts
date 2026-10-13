@@ -129,7 +129,7 @@ const SERVICES: Array<[string, string, number]> = [
   ['services/threads/index.ts', "discloseSocialPost(text, 'threads')", 1],
   ['services/linkedin/index.ts', "discloseSocialPost(opts.text, 'linkedin')", 2],
   ['services/facebook/index.ts', "'facebook')", 3],
-  ['lib/facebook-reels.ts', "discloseSocialPost(opts.description, 'facebook')", 1],
+  ['lib/facebook-reels.ts', "discloseSocialPost(opts.description, 'facebook')", 2],
   ['services/telegram.ts', "'telegram')", 2],
   ['services/instagram.ts', "discloseSocialPost(opts.caption, 'instagram')", 2],
   ['services/pinterest/index.ts', "discloseSocialPost(opts.description, 'pinterest')", 3],
