@@ -41,7 +41,7 @@ const apiWords = (e: string | undefined, status?: number) =>
     : status === 401 || status === 403 ? 'TRYBE says you are signed out. Sign in to TRYBE in this browser, then press Read again.'
       : `${e || 'SCOUT did not answer.'}${status ? ` (TRYBE answered ${status})` : ''}`
 
-async function readBrandSubs(brandId: string): Promise<SubRead> {
+export async function readBrandSubs(brandId: string): Promise<SubRead> {
   const subs: Submission[] = []
   for (let page = 1; page <= SUB_PAGES; page++) {
     const r = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/submissions?period=all&page=${page}&limit=${SUB_LIMIT}`)

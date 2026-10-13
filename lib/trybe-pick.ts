@@ -31,6 +31,26 @@ export interface PickInput {
   tiktokHandle?: string | null
   /** TRYBE's own words for what creators earn with the brand. */
   earningsBucket?: string | null
+  /** The % of sales it pays, when its pay is a percent (Lukas Pakter, TRYBE's
+   *  co-founder, 2026-07: good brands pay 10% or more). */
+  commissionPct?: number | null
+  /** What its TRYBE page and website say about how it treats creators. */
+  program?: CreatorProgram | null
+}
+
+/** How a brand invests in its creators, from its own words (Lukas: the brands
+ *  worth the volume pay retainers, run calls and a Discord, and some only take
+ *  creators through their Discord). */
+export interface CreatorProgram { retainer: boolean; coaching: boolean; discord: boolean }
+
+/** Reads it from a brand's TRYBE description and website text. Pure. */
+export function creatorProgramOf(text: string | null | undefined): CreatorProgram {
+  const t = String(text || '').toLowerCase()
+  return {
+    retainer: /\bretainers?\b|monthly (?:creator )?(?:pay|stipend)|base pay|guaranteed pay/.test(t),
+    coaching: /\b(weekly|creator|group|coaching|1:1|one[- ]on[- ]one|training) calls?\b|\bcreator coaching\b|\bwe (?:train|coach)\b|\bcreative briefs?\b|\bcreator (?:community|program)\b/.test(t),
+    discord: /\bdiscord\b/.test(t),
+  }
 }
 
 export interface Pick { score: number; reasons: PickReason[]; read: number }
@@ -86,6 +106,18 @@ export function pickScore(p: PickInput): Pick {
     read++
     if (earned >= 10_000) { score += 12; reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'good' }) }
     else if (earned >= 1_000) { score += 5; reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'info' }) }
+  }
+  const pct = p.commissionPct
+  if (typeof pct === 'number' && pct > 0) {
+    read++
+    if (pct >= 10) { score += 12; reasons.push({ text: `Pays ${pct}% of sales: enough to make the volume worth it`, tone: 'good' }) }
+    else if (pct < 5) { score -= 8; reasons.push({ text: `Pays ${pct}% of sales: low for the 30 or more videos a month it takes`, tone: 'bad' }) }
+    else reasons.push({ text: `Pays ${pct}% of sales`, tone: 'info' })
+  }
+  if (p.program) {
+    if (p.program.retainer) { score += 10; reasons.push({ text: 'Mentions retainers for creators', tone: 'good' }) }
+    if (p.program.coaching) { score += 6; reasons.push({ text: 'Trains its creators (calls, briefs or a creator program)', tone: 'good' }) }
+    if (p.program.discord) reasons.push({ text: 'Has a Discord: brands like this often pick creators there, so join it too', tone: 'info' })
   }
   if (p.tiktokShop === true) { read++; score -= 10; reasons.push({ text: 'Sells on TikTok Shop too: more creators competing', tone: 'bad' }) }
   else if (p.tiktokShop === false) {

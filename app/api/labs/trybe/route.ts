@@ -20,10 +20,11 @@
 // reloaded, or open twice, cannot send more than the cap allows.
 
 import { outreachNiche } from '@/lib/outreach-niche'
-import { pickScore, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
+import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
+import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -740,6 +741,8 @@ export async function POST(request: Request) {
       tiktokShop: r.socials_checked_at ? (r.tiktok_shop === true ? true : r.tiktok_shop === false || r.tiktok_handle ? false : null) : null,
       tiktokHandle: r.tiktok_handle ?? null,
       earningsBucket: r.earnings_bucket ?? null,
+      commissionPct: readPay(r.pay_text).percent,
+      program: creatorProgramOf(`${r.about || ''} ${r.site_text || ''}`),
     })
     const matched = rows
       .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text), pick: pickOf(r) }))
@@ -1081,6 +1084,31 @@ export async function POST(request: Request) {
       }
     }))
     return NextResponse.json({ ok: true, results })
+  }
+
+  if (action === 'hook_fix') {
+    // Three new opening lines for a pasted script (lib/trybe-hook). Each one
+    // is checked by the same rules the page shows, and one that still fails
+    // them is left out rather than offered.
+    const script = typeof body.script === 'string' ? body.script.replace(/\s+/g, ' ').trim().slice(0, 3000) : ''
+    if (script.length < 12) return NextResponse.json({ error: 'Paste the words of your video first.' }, { status: 400 })
+    const brandName = typeof body.brandName === 'string' ? body.brandName.slice(0, 120) : ''
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    try {
+      const msg = await createAnthropicClient().messages.create({
+        model: FIT_MODEL, max_tokens: 300, system: HOOK_FIX_SYSTEM(BANNED_RULE),
+        messages: [{ role: 'user', content: `SCRIPT:\n${script}` }],
+      })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_hook_fix', model: FIT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      const raw = scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
+      const lines = raw.split('\n').map(l => l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^["“]|["”]$/g, '').replace(/\s*[–—]\s*/g, ', ').trim()).filter(Boolean).slice(0, 3)
+      const kept = lines.filter(l => !checkHook(l, brandName).notes.some(n => n.tone === 'bad'))
+      if (!kept.length) return NextResponse.json({ error: 'The new openings did not pass the check. Try again.' }, { status: 502 })
+      return NextResponse.json({ ok: true, lines: kept, dropped: lines.length - kept.length })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not rewrite it: ${e.message}` : 'MVP could not rewrite it.' }, { status: 502 })
+    }
   }
 
   if (action === 'suggest_reply') {

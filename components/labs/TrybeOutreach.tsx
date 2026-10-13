@@ -37,6 +37,7 @@ import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
 import TrybeWorking from '@/components/labs/TrybeWorking'
+import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -265,7 +266,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; says: string }> = 
   { id: 'inbox', label: 'Inbox', icon: Inbox, says: 'Your TRYBE chats, each with a suggested reply.' },
   { id: 'brands', label: 'My brands', icon: Star, says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
   { id: 'week', label: 'This week', icon: CalendarDays, says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
-  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, says: 'How the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
+  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
 ]
 
 
@@ -1177,6 +1178,7 @@ export default function TrybeOutreach() {
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} />
         : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
+      {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (
         <TrybeWorking canRead={canMyBrands} isAdmin={isAdmin}
           newToTop={changes ? Array.from(new Map(changes.changes.filter((c) => c.kind === 'top100').map((c) => [c.brand_id, { id: c.brand_id, name: c.name || 'A brand' }])).values()) : null} />
@@ -1462,7 +1464,7 @@ export default function TrybeOutreach() {
                         <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <span className="text-[11px] font-bold rounded-md px-2 py-0.5" style={{ background: (b.pick ?? 0) >= 40 ? 'rgba(22,163,74,0.14)' : 'rgba(124,58,237,0.08)', color: (b.pick ?? 0) >= 40 ? GREEN : PURPLE }}
                             title="How good a bet this brand is by the top TRYBE creators' rules: few creators, real ad spend, not on TikTok Shop. Only what MVP has read counts.">Best bet {b.pick ?? 0}</span>
-                          {(b.pick_reasons || []).slice(0, 4).map(r => (
+                          {(b.pick_reasons || []).slice(0, 6).map(r => (
                             <span key={r.text} className="text-[11px] rounded-md px-2 py-0.5" style={r.tone === 'good' ? { background: 'rgba(22,163,74,0.10)', color: GREEN } : r.tone === 'bad' ? { background: 'rgba(220,38,38,0.08)', color: RED } : { background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{r.text}</span>
                           ))}
                           {(b.pick_read ?? 0) < 2 && <span className="text-[11px]" style={soft}>Little read about it yet</span>}

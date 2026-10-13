@@ -12,14 +12,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import TrybeVideoIdeas, { type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
-import { planWeek, brandsOf, stageOf, weekText, STAGE_WORDS, CHASE_DAYS, type Sample, type Stage } from '@/lib/trybe-week'
+import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, STAGE_WORDS, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace } from '@/lib/trybe-week'
+import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats } from '@/lib/trybe-mybrands'
+import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const PER_DAY_KEY = 'mvp.trybe.week.perDay'
+const FOCUS_KEY = 'mvp.trybe.week.focus'
+const TARGET_KEY = 'mvp.trybe.week.target'
 
 type Row = Omit<Sample, 'has_ideas'> & { ideas: SavedPlan; ideas_at: string | null }
 
@@ -45,7 +48,13 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
 }) {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [joined, setJoined] = useState<Array<{ id: string; name: string }> | null>(null)
+  const [joined, setJoined] = useState<MyBrand[] | null>(null)
+  // YOUR MONTH (Lukas Pakter, TRYBE's co-founder): a video target per focus
+  // brand, and how many went this month, read from TRYBE through SCOUT.
+  const [focus, setFocus] = useState<string[] | null>(null)
+  const [target, setTarget] = useState(MONTHLY_TARGET)
+  const [sentThisMonth, setSentThisMonth] = useState<Record<string, { n: number | null; error: string | null }>>({})
+  const [monthReading, setMonthReading] = useState(false)
   const [brand, setBrand] = useState('')
   const [product, setProduct] = useState('')
   const [count, setCount] = useState(3)
@@ -71,9 +80,57 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   useEffect(() => {
     if (!canRead || joined) return
     void requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').then((r) => {
-      setJoined(r.ok ? readBrandStats(r.json).map((b) => ({ id: b.id, name: b.name })) : [])
+      setJoined(r.ok ? readBrandStats(r.json) : [])
     }).catch(() => setJoined([]))
   }, [canRead, joined])
+
+  useEffect(() => {
+    try {
+      const f = JSON.parse(localStorage.getItem(FOCUS_KEY) || 'null')
+      if (Array.isArray(f)) setFocus(f.filter((x) => typeof x === 'string'))
+      const t = Number(localStorage.getItem(TARGET_KEY))
+      if ([15, 30, 45, 60, 90].includes(t)) setTarget(t)
+    } catch { /* defaults */ }
+  }, [])
+  // Focus brands: chosen by the creator, else the 2 that paid most (on TRYBE
+  // the top creators make about 90% of their money from 1 or 2 brands).
+  const focusIds = useMemo(() => {
+    if (focus) return focus
+    return (joined || []).filter((b) => (b.earnings ?? 0) > 0).slice(0, 2).map((b) => b.id)
+  }, [focus, joined])
+  const toggleFocus = (id: string) => {
+    const next = focusIds.includes(id) ? focusIds.filter((x) => x !== id) : [...focusIds, id].slice(0, 5)
+    setFocus(next)
+    try { localStorage.setItem(FOCUS_KEY, JSON.stringify(next)) } catch { /* kept for this visit */ }
+  }
+  const chooseTarget = (v: number) => { setTarget(v); try { localStorage.setItem(TARGET_KEY, String(v)) } catch { /* kept for this visit */ } }
+
+  // This month's videos sent per focus brand, one brand at a time.
+  const focusKey = focusIds.join(',')
+  useEffect(() => {
+    if (!canRead || !focusIds.length) return
+    let stop = false
+    void (async () => {
+      setMonthReading(true)
+      const d = new Date()
+      const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+      for (const id of focusIds) {
+        if (stop) return
+        const r = await readBrandSubs(id).catch((e) => ({ subs: [], error: e instanceof Error ? e.message : 'SCOUT did not answer.', complete: false }))
+        const n = r.error ? null : r.subs.filter((x) => (x.at ?? 0) >= start).length
+        if (!stop) setSentThisMonth((m) => ({ ...m, [id]: { n, error: r.error } }))
+      }
+      if (!stop) setMonthReading(false)
+    })()
+    return () => { stop = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canRead, focusKey])
+
+  const pace: Pace[] = useMemo(() => focusIds.map((id) => {
+    const b = (joined || []).find((x) => x.id === id)
+    const s = sentThisMonth[id]
+    return b && s && s.n != null ? { brand: b.name, sent: s.n, target } : null
+  }).filter((x): x is Pace => !!x), [focusIds, joined, sentThisMonth, target])
 
   const suggestions = useMemo(() => {
     const seen = new Set<string>()
@@ -85,7 +142,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   }, [joined, knownBrands])
 
   const samples: Sample[] = useMemo(() => (rows || []).map((r) => ({ ...r, has_ideas: !!r.ideas })), [rows])
-  const days = useMemo(() => planWeek(samples, { perDay }), [samples, perDay])
+  const days = useMemo(() => planWeek(samples, { perDay, pace }), [samples, perDay, pace])
   const brands = useMemo(() => brandsOf(samples), [samples])
   const byStage = (st: Stage) => (rows || []).filter((r) => stageOf(r) === st)
 
@@ -194,6 +251,66 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
 
   return (
     <div className="space-y-4">
+      {/* YOUR MONTH: the video target per focus brand. */}
+      <div className={card} style={cardStyle}>
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <p className="text-[15px] font-semibold">Your month</p>
+          <label className="ml-auto text-[12px] inline-flex items-center gap-1.5" style={soft}>
+            Videos a month per focus brand
+            <select value={target} onChange={(e) => chooseTarget(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+              {[15, 30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="text-[12.5px] mb-3 max-w-[75ch]" style={soft}>About 1 ad in 25 becomes a winner (Meta&rsquo;s figure, as TRYBE&rsquo;s co-founder quotes it), so around 30 videos a month gives you a fair shot at one. Your first 2 or 3 with a new brand only test whether it answers; after that, this is the pace. Most top creators earned little for their first months: the ones who kept the volume up are the ones earning now.</p>
+        {!canRead ? (
+          <p className="text-[13px]" style={soft}>Allow SCOUT on TRYBE and MVP counts the videos you sent each brand this month.</p>
+        ) : joined === null ? (
+          <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading the brands you work with on TRYBE...</p>
+        ) : joined.length === 0 ? (
+          <p className="text-[13px]" style={soft}>No brand has accepted you on TRYBE yet. Once one does, set your monthly target here.</p>
+        ) : (<>
+          {focusIds.length === 0 && <p className="text-[13px] mb-2" style={soft}>Pick the 1 or 2 brands you are building with. On TRYBE the top creators make about 90% of their money from 1 or 2 brands.</p>}
+          <ul className="space-y-2.5">
+            {focusIds.map((id) => {
+              const b = joined.find((x) => x.id === id)
+              if (!b) return null
+              const st = sentThisMonth[id]
+              const n = st?.n
+              const share = n != null ? Math.min(1, n / target) : 0
+              const need = n != null ? perDayNeeded({ brand: b.name, sent: n, target }) : null
+              return (
+                <li key={id}>
+                  <div className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
+                    <b>{b.name}</b>
+                    <span className="tabular-nums" style={n != null && n >= target ? { color: GREEN } : soft}>
+                      {st == null ? 'reading...' : n == null ? `could not read: ${st.error}` : `${n} of ${target} sent this month`}
+                    </span>
+                    {need != null && need > 0 && <span className="ml-auto text-[12.5px]" style={soft}>{need} a day to get there</span>}
+                    {n != null && n >= target && <span className="ml-auto text-[12.5px] font-semibold" style={{ color: GREEN }}>Target reached</span>}
+                  </div>
+                  <span className="block mt-1 h-2 rounded-full" style={{ background: 'var(--border)' }}>
+                    <span className="block h-2 rounded-full" style={{ width: `${Math.max(2, Math.round(share * 100))}%`, background: n != null && n >= target ? GREEN : PURPLE }} />
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {joined.slice(0, 12).map((b) => {
+              const on = focusIds.includes(b.id)
+              return (
+                <button key={b.id} onClick={() => toggleFocus(b.id)} aria-pressed={on} className="rounded-full border px-2.5 py-1 text-[12px] font-semibold"
+                  style={on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  {on ? '\u2713 ' : '+ '}{b.name}
+                </button>
+              )
+            })}
+          </div>
+          {monthReading && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Counting this month&rsquo;s videos on TRYBE...</p>}
+        </>)}
+      </div>
+
       {/* The next seven days. */}
       <div className={card} style={cardStyle}>
         <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -218,8 +335,8 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
                     <ul className="mt-1 space-y-1">
                       {d.tasks.map((t, i) => (
                         <li key={i} className="text-[13px] flex items-start gap-1.5" style={t.late ? { color: AMBER } : undefined}>
-                          <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' ? 'rgba(124,58,237,0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' ? PURPLE : 'var(--text-soft)' }}>
-                            {t.kind === 'film' ? 'Film' : t.kind === 'submit' ? 'Submit' : t.kind === 'ideas' ? 'Plan' : 'Ask'}
+                          <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' || t.kind === 'volume' ? 'rgba(124,58,237,0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' || t.kind === 'volume' ? PURPLE : 'var(--text-soft)' }}>
+                            {t.kind === 'film' || t.kind === 'volume' ? 'Film' : t.kind === 'submit' ? 'Submit' : t.kind === 'ideas' ? 'Plan' : 'Ask'}
                           </span>
                           <span>{t.text}</span>
                         </li>
