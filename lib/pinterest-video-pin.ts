@@ -13,7 +13,7 @@ export type VideoPinResult =
 export async function postVideoPin(body: Record<string, unknown>, onWait?: (seconds: number) => void): Promise<VideoPinResult> {
   const began = Date.now()
   const ask = async (b: Record<string, unknown>) => {
-    const res = await fetch('/api/pinterest/video-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+    const res = await fetch('/api/pinterest/video-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(310_000) })
     const j = await res.json().catch(() => ({ error: res.status === 504
       ? 'MVP ran out of time sending the video to Pinterest. Check your Pinterest board before trying again.'
       : `Pinterest did not answer properly (${res.status}).` }))
