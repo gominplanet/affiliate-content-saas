@@ -31,6 +31,20 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
   const [pageLoading, setPageLoading] = useState(false)
   const [typed, setTyped] = useState('')
   const [product, setProduct] = useState<string | null>(null)
+  const [onHand, setOnHand] = useState<'idle' | 'saving' | 'done'>('idle')
+  const [onHandErr, setOnHandErr] = useState<string | null>(null)
+  useEffect(() => { setOnHand('idle'); setOnHandErr(null) }, [product, brand])
+
+  async function markOnHand() {
+    if (!brand || !product) return
+    setOnHand('saving'); setOnHandErr(null)
+    try {
+      const r = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', brandName: brand.name, brandId: brand.id, product, received: true }), signal: AbortSignal.timeout(30_000) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || `Not saved (${r.status})`)
+      setOnHand('done')
+    } catch (e) { setOnHand('idle'); setOnHandErr(e instanceof Error ? e.message : 'Not saved.') }
+  }
 
   useEffect(() => {
     if (!canRead || brands) return
@@ -164,7 +178,16 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
       {step === 3 && brand && product && (
         <section className={card} style={cardStyle}>
           <button onClick={() => setProduct(null)} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another product</button>
-          <h2 className="text-[20px] font-bold">Your shooting scripts: {product}</h2>
+          <div className="flex flex-wrap items-start gap-3">
+            <h2 className="text-[20px] font-bold flex-1 min-w-[14rem]">Your shooting scripts: {product}</h2>
+            {/* ON HAND: the one tick the weekly planner reads (Received on the
+                This week samples list), added from here in one press. */}
+            <button onClick={() => void markOnHand()} disabled={onHand !== 'idle'} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold disabled:opacity-70"
+              style={onHand === 'done' ? { background: 'rgba(22,163,74,0.10)', color: GREEN } : { border: `1px solid ${GREEN}`, color: GREEN }}>
+              {onHand === 'saving' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {onHand === 'done' ? 'On hand: in your weekly planner' : 'I have this product'}
+            </button>
+          </div>
+          {onHandErr && <p className="text-[12.5px] mt-1" style={{ color: AMBER }}>{onHandErr}</p>}
           <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos, each with its hook, the first 2 seconds, the beats and the close. Copy one, or print them all and start shooting.</p>
           <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize />
         </section>

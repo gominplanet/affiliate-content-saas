@@ -60,6 +60,7 @@ void (async () => {
   // Wiring
   const wk = read('components/labs/TrybeWeek.tsx')
   check('This week downloads the planner, the Excel export is gone', /Download my weekly planner/.test(wk) && /renderPlannerPdf\(/.test(wk) && !/Export to spreadsheet/.test(wk) && !/buildXlsx/.test(wk))
+  check('Make videos has the one-press I have this, ticked Received on the samples list', /I have this product/.test(read('components/labs/TrybeCreate.tsx')) && /action: 'add', brandName: brand\.name, brandId: brand\.id, product, received: true/.test(read('components/labs/TrybeCreate.tsx')))
   check('only products ticked Received get pages', /stageOf\(s\) === 'to_film' \|\| stageOf\(s\) === 'to_submit'/.test(wk))
   if (failures.length) { console.error('❌ trybe planner guard failed:\n  - ' + failures.join('\n  - ')); process.exit(1) }
   console.log(`✓ trybe planner guard passed (${pages} pages)`)
