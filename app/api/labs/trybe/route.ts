@@ -209,6 +209,16 @@ async function directoryStats(admin: Db) {
     // How many of them TRYBE still lists (the last whole collection saw them).
     const since = await listedSince(admin)
     const listed = since ? await admin.from('trybe_directory').select('brand_id', head).gte('last_seen_at', since) : null
+    // NEW ON TRYBE SINCE MVP'S FIRST COUNT (Seb, 2026-10-13: "how many brands
+    // joined trybe since the first time we did our count"). Every brand MVP
+    // keeps carries the time it was first seen; the first count is the day of
+    // the oldest one, so a brand first seen a day or more after that joined
+    // TRYBE since (or was missing from that first read).
+    const first = await admin.from('trybe_directory').select('first_seen_at').order('first_seen_at', { ascending: true }).limit(1).maybeSingle()
+    const firstAt = first.data?.first_seen_at ? String(first.data.first_seen_at) : null
+    const newSinceCut = firstAt ? new Date(Date.parse(firstAt) + 24 * 3600_000).toISOString() : null
+    const joined = newSinceCut ? await admin.from('trybe_directory').select('brand_id', head).gte('first_seen_at', newSinceCut) : null
+    const joinedListed = newSinceCut && since ? await admin.from('trybe_directory').select('brand_id', head).gte('first_seen_at', newSinceCut).gte('last_seen_at', since) : null
     // ONLY A WHOLE COLLECTION COUNTS as collected: one that stopped partway
     // leaves this empty, so the next Find brands collects again instead of
     // waiting a day on half a list.
@@ -217,6 +227,10 @@ async function directoryStats(admin: Db) {
       brands: all.count ?? 0,
       /** Still on TRYBE's list; null when no whole collection is known. */
       listed: listed && !listed.error ? listed.count ?? 0 : null,
+      /** First count, and the brands first seen a day or more after it. */
+      firstCountAt: firstAt,
+      joinedSinceFirst: joined && !joined.error ? joined.count ?? 0 : null,
+      joinedStillListed: joinedListed && !joinedListed.error ? joinedListed.count ?? 0 : null,
       withWebsite: withSite.count ?? 0,
       websitesRead: read.count ?? 0,
       lastCollectedAt: c.complete && c.at ? c.at : null,

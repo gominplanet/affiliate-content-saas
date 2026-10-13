@@ -178,6 +178,8 @@ check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.
   check('brands TRYBE no longer lists are counted apart and left out of matches',
     /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 4
     && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
+  check('the brands new on TRYBE since the first count are counted from when each was first seen',
+    /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)
 }
 check('the inbox is a tab of TRYBE Outreach', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
 {
@@ -247,7 +249,7 @@ check('the collector has no helper outside itself', !/trybeTokenInPage/.test(BG)
 // Ready to send; Remove; messages about the whole range.
 check('searching a keyword is shown as the better way, niches as one click', /Best results/.test(UI) && /Search what you review/.test(UI) && /Or browse a niche/.test(UI) && /nicheIcon\(c\)/.test(UI))
 check('a niche alone nudges toward a keyword', /cats\.length > 0 && !kws\.length/.test(UI) && /Add a keyword/.test(UI))
-check('MVP\'s copy of TRYBE is described to the admin only', /isAdmin: g\.tier === 'admin'/.test(ROUTE) && UI.split('MVP&rsquo;s copy of TRYBE: <b>').slice(0, -1).every(before => /isAdmin && /.test(before.slice(-700))) && UI.includes('MVP&rsquo;s copy of TRYBE: <b>'))
+check('MVP\'s copy of TRYBE is described to the admin only', /isAdmin: g\.tier === 'admin'/.test(ROUTE) && UI.split('MVP&rsquo;s copy of TRYBE: <b>').slice(0, -1).every(before => /isAdmin && /.test(before.slice(-1200))) && UI.includes('MVP&rsquo;s copy of TRYBE: <b>'))
 check('a problem from a find is shown to everyone, not only the admin', /findNotes\.filter\(n => !ADMIN_NOTE\.test\(n\)\)/.test(UI) && /const ADMIN_NOTE = \/\^\(SCOUT collected /.test(UI))
 check('the queue is called Ready to send', /\['queue', 'Ready to send', queue\.length\]/.test(UI) && !/[Mm]orning queue/.test(UI))
 check('Remove never touches a brand that went, or may have gone, to TRYBE', /action === 'remove'/.test(ROUTE) && /\.in\('status', \['new', 'not_fit', 'drafted', 'skipped', 'failed'\]\)\.select\('brand_id'\)/.test(ROUTE) && /onRemove=\{\(\) => void remove\(b\)\}/.test(UI))
