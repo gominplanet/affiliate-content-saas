@@ -23,7 +23,7 @@ const lib = read('components/clip-factory/ClipLibrary.tsx')
 check('My clips shows not-posted first, says where posted, and gone files apart', /useState<Filter>\('unposted'\)/.test(lib) && /Posted on \{on\.join/.test(lib) && /can no longer be posted: the file is not stored any more/.test(lib))
 const cf = read('components/clip-factory/ClipFactory.tsx')
 check('Clip Factory has the My clips tab, and a picked clip goes to Enhance', /<ClipLibrary/.test(cf) && /My clips/.test(cf) && /shortId: c\.id \}\)/.test(cf))
-check('a post from Clip Factory is stamped on its clip', (cf.match(/markPosted\('(tiktok|instagram|youtube)'\)/g) || []).length === 3 && /\/api\/youtube\/shorts\/mark-posted/.test(cf))
+check('a post from Clip Factory is stamped on its clip', ['tiktok', 'instagram', 'youtube'].every((p) => cf.includes(`markPosted('${p}')`)) && /\/api\/youtube\/shorts\/mark-posted/.test(cf))
 check('a clip just made carries its id into Publish', /shortId: clip\.id \}\)/.test(read('components/vertical/ShortsCreatePanel.tsx')) && /shortId: c\.shortId \}\)/.test(cf))
 
 if (failed) { console.error(`\n${failed} clip library check(s) failed`); process.exit(1) }
