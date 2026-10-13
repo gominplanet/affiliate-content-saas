@@ -496,9 +496,25 @@ export async function POST(request: Request) {
     // its own store right now, so a sale call to action is only ever true.
     // A brand the creator joined straight on TRYBE (My brands) is planned from
     // MVP's shared copy of TRYBE, and said as not kept: there is no row to keep it on.
-    const { data: own } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
-    const { data: dir } = own ? { data: null } : await admin.from('trybe_directory').select('brand_id, name, website, categories, about, pay_text, site_summary, site_products').eq('brand_id', brandId).maybeSingle()
-    const row = own || dir
+    // A SAMPLE'S OWN IDEAS (the week plan, migration 427): planned about that
+    // product and kept on the sample, not over the brand's plan.
+    const sampleId = typeof body.sampleId === 'string' ? body.sampleId.slice(0, 60) : ''
+    let sample: Record<string, unknown> | null = null
+    if (sampleId) {
+      const { data: sm, error: smErr } = await admin.from('trybe_samples').select('*').eq('user_id', ownerId).eq('id', sampleId).maybeSingle()
+      if (smErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(smErr.message) ? setupWords(tier, 'Samples need migration 427 in Supabase first.') : smErr.message }, { status: 500 })
+      if (!sm) return NextResponse.json({ error: 'That sample is not on your list.' }, { status: 404 })
+      sample = sm
+    }
+    const lookupId = brandId || (sample?.brand_id ? String(sample.brand_id) : '')
+    const { data: own } = lookupId ? await admin.from('trybe_brands').select('*').eq('user_id', ownerId).eq('brand_id', lookupId).maybeSingle() : { data: null }
+    const DIR_COLS = 'brand_id, name, website, categories, about, pay_text, site_summary, site_products'
+    const { data: dir } = own ? { data: null }
+      : lookupId ? await admin.from('trybe_directory').select(DIR_COLS).eq('brand_id', lookupId).maybeSingle()
+      : sample ? await admin.from('trybe_directory').select(DIR_COLS).ilike('name', String(sample.brand_name).replace(/[%_]/g, '')).limit(1).maybeSingle()
+      : { data: null }
+    // A sample from a brand MVP has never seen is planned from its product.
+    const row = own || dir || (sample ? { name: String(sample.brand_name), website: null, categories: [], about: null, pay_text: null, site_summary: null, site_products: [String(sample.product)] } : null)
     if (!row) return NextResponse.json({ error: 'MVP does not know this brand yet. Collect the TRYBE brand list in Find brands first.' }, { status: 404 })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
@@ -509,7 +525,7 @@ export async function POST(request: Request) {
     const onSale = site?.onSale || []
     const summary = site?.summary || row.site_summary || ''
     if (!products.length && !summary && !row.about) return NextResponse.json({ error: 'MVP could not read what this brand sells (its website did not answer), so it cannot plan videos for it yet.' }, { status: 422 })
-    const product = typeof body.product === 'string' ? body.product.slice(0, 140) : ''
+    const product = sample ? String(sample.product).slice(0, 140) : typeof body.product === 'string' ? body.product.slice(0, 140) : ''
     // THE BRAND'S CREATIVE BRIEF, read on TRYBE through SCOUT by the page.
     // What the page could not read is said, never guessed.
     const briefText = typeof body.brief === 'string' ? body.brief.replace(/\s+\n/g, '\n').trim().slice(0, 4000) : ''
@@ -524,6 +540,14 @@ export async function POST(request: Request) {
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
       if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
       const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}) }
+      if (sample) {
+        let kept = true
+        try {
+          const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
+          if (smUp) kept = false
+        } catch { kept = false }
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length })
+      }
       let saved = !!own
       if (own) {
         try {

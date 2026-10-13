@@ -99,8 +99,11 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan }: {
+export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId }: {
+  /** Empty for a sample from a brand MVP has no TRYBE id for. */
   brandId: string
+  /** The week plan: ideas about this sample's product, kept on the sample. */
+  sampleId?: string
   name: string
   plan: SavedPlan
   /** SCOUT 1.46.0+ on TRYBE: the brand's best videos can be read. */
@@ -138,9 +141,9 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
     try {
       // The brief first: what the brand asked creators for.
       setStep('Reading the brand\'s creative brief on TRYBE')
-      const b = canRead ? await loadBrief(brandId) : { brief: null, state: 'unread' as const }
+      const b = canRead && brandId ? await loadBrief(brandId) : { brief: null, state: 'unread' as const }
       setStep(`Writing ${VIDEO_IDEAS} video ideas from ${b.brief ? 'the brief, ' : ''}the brand and its website. This takes about a minute.`)
-      const d = await api({ action: 'video_plan', brandId, winners: winnerWords, ...(b.brief ? { brief: b.brief } : b.state !== 'unread' ? { briefState: b.state } : {}) })
+      const d = await api({ action: 'video_plan', brandId, ...(sampleId ? { sampleId } : {}), winners: winnerWords, ...(b.brief ? { brief: b.brief } : b.state !== 'unread' ? { briefState: b.state } : {}) })
       const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
       setPlan(p); setPlanOpen(true)
       onPlan?.(p)
@@ -148,6 +151,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const briefSaid = b.state === 'text' ? 'Planned from their creative brief.'
         : b.state === 'link_only' ? 'Their brief is a document MVP cannot open: check these ideas against it.'
         : b.state === 'none' ? 'TRYBE shows no brief for this brand, so these come from the brand and its website.'
+        : !brandId ? 'MVP has no TRYBE page for this brand, so these come from the product and what MVP knows of the brand.'
         : canRead ? 'MVP could not read their brief on TRYBE, so these come from the brand and its website.' : 'Update SCOUT to 1.46.0 or newer and MVP also plans from the brand\'s brief.'
       const from = [briefSaid, fromWin].filter(Boolean).join(' ')
       if (d.onList === false) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}${name} is not on your MVP list, so these ideas are shown but not kept. Copy what you want.` })
@@ -177,11 +181,11 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           {planning ? <Loader2 size={12} className="animate-spin" /> : <Clapperboard size={12} />} {plan ? (planOpen ? 'Hide video ideas' : 'Video ideas') : winnerWords.length ? 'Plan videos like their winners' : 'Plan videos'}
           {plan && (planOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
         </button>
-        <button onClick={() => void showWinners()} disabled={!canRead || winLoading} className={btn} style={{ border: '1px solid var(--border)' }}
+        {brandId && <button onClick={() => void showWinners()} disabled={!canRead || winLoading} className={btn} style={{ border: '1px solid var(--border)' }}
           title={canRead ? 'The videos that already sell best for this brand on TRYBE' : 'Needs SCOUT 1.46.0 or newer, allowed on TRYBE.'}>
           {winLoading ? <Loader2 size={12} className="animate-spin" /> : <Trophy size={12} />} Their best videos
           {winners && (winOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-        </button>
+        </button>}
       </div>
 
       {winOpen && (

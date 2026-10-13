@@ -34,6 +34,7 @@ import { readAdLibraryCount, META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
+import TrybeWeek from '@/components/labs/TrybeWeek'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -81,7 +82,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands'
+type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -457,7 +458,7 @@ export default function TrybeOutreach() {
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands') setTab(t) } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -1068,7 +1069,7 @@ export default function TrybeOutreach() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border p-1 w-fit max-w-full" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} role="tablist">
-        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread], ['brands', 'My brands', 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
+        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread], ['brands', 'My brands', 0], ['week', 'This week', 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold"
             style={tab === id ? { background: PURPLE, color: '#fff' } : { color: 'var(--text)' }}>
@@ -1545,6 +1546,12 @@ export default function TrybeOutreach() {
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
           isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} />
+      )}
+
+      {tab === 'week' && (
+        // Accepted brands first, for the brand box (Seb, 2026-10-13).
+        <TrybeWeek canRead={canMyBrands} isAdmin={isAdmin}
+          knownBrands={[...sentRows.filter(r => r.rq?.state === 'accepted'), ...sentRows.filter(r => r.rq?.state !== 'accepted')].map(r => ({ id: r.b.brand_id, name: r.b.name }))} />
       )}
 
       {tab === 'sent' && (
