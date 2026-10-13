@@ -64,6 +64,8 @@ export function TikTokDirectModal({
   productTitle,
   onClose,
   onPosted,
+  prepareYouTube,
+  onYouTubePosted,
 }: {
   videoId?: string
   /** Shop Burner mode: a burned Cloudinary video URL to post directly (no
@@ -83,9 +85,16 @@ export function TikTokDirectModal({
    *  (The non-burned path resolves this from video-meta instead.) */
   sourceYoutubeVideoId?: string | null
   onClose: () => void
-  /** Fires once when the publish status flips to "published". The Vertical
-   *  Videos row uses this to update its TikTok pill state. */
-  onPosted?: () => void
+  /** Fires once TikTok is live AND every "also post to" has finished, so a
+   *  parent that closes this window never hides how Pinterest, Instagram or
+   *  YouTube went. `crossFailed` is true when one of them failed: the window
+   *  should stay open so the red line is read. */
+  onPosted?: (o?: { crossFailed: boolean }) => void
+  /** The YouTube Short's own title and description, with the product link
+   *  (Clip Factory). Without it the Short gets the TikTok caption, which has
+   *  no link because TikTok shows none. An `error` stops the Short. */
+  prepareYouTube?: () => Promise<{ title: string; description: string; tags?: string[]; note?: string } | { error: string }>
+  onYouTubePosted?: (videoId: string | null) => void
 }) {
   const isBurned = !!burnedVideoUrl
   const [loading, setLoading] = useState(true)
@@ -132,6 +141,12 @@ export function TikTokDirectModal({
   const [alsoPin, setAlsoPin] = useState(false)
   const [pinResult, setPinResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [pinErr, setPinErr] = useState<string | null>(null)
+  const [pinWait, setPinWait] = useState(0)
+  const [pinBoard, setPinBoard] = useState<string | null>(null)
+  // TikTok is live (published, or sent to the app inbox). onPosted waits for
+  // the other platforms too; see its note.
+  const [ttLive, setTtLive] = useState(false)
+  const postedSent = useRef(false)
   // …and a YouTube Short (publishes the same vertical render TO the creator's
   // own channel). Gated behind the youtube.upload scope flag — invisible until
   // Google verifies the app and the flag is flipped on. Admin tier sees it early
@@ -141,6 +156,7 @@ export function TikTokDirectModal({
   const [ytResult, setYtResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [ytErr, setYtErr] = useState<string | null>(null)
   const [ytUrl, setYtUrl] = useState<string | null>(null)
+  const [ytNote, setYtNote] = useState<string | null>(null)
   // Schedule-for-later (only for real video targets — a URL-only burned clip has
   // no DB row to schedule against).
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -231,12 +247,12 @@ export function TikTokDirectModal({
           settled = true
           setPublishStatus('published')
           setShareUrl(json.shareUrl ?? null)
-          if (onPosted) onPosted()
+          setTtLive(true)
         } else if (json.status === 'inbox') {
           settled = true
           setPublishStatus('inbox')
           setPublishError(json.errorMessage || 'TikTok routed it to your app inbox. Open the TikTok app to publish.')
-          if (onPosted) onPosted()
+          setTtLive(true)
         } else if (json.status === 'failed') {
           settled = true
           setPublishStatus('failed')
@@ -263,7 +279,16 @@ export function TikTokDirectModal({
     const id = setInterval(tick, 5000)
     void tick()
     return () => clearInterval(id)
-  }, [publishId, publishStatus, videoId, isBurned, onPosted])
+  }, [publishId, publishStatus, videoId, isBurned])
+
+  // Told once, after the "also post to" platforms have all finished.
+  useEffect(() => {
+    if (!ttLive || postedSent.current || posting) return
+    const results = [igResult, pinResult, ytResult]
+    if (results.includes('posting')) return
+    postedSent.current = true
+    onPosted?.({ crossFailed: results.includes('failed') })
+  }, [ttLive, posting, igResult, pinResult, ytResult, onPosted])
 
   // Commercial-content rules (TikTok Content Sharing Guidelines):
   //  - if the commercial toggle is ON, at least one of Your Brand / Branded
@@ -354,31 +379,28 @@ export function TikTokDirectModal({
       // defaults to the creator's blog (route-side) — never an affiliate redirect.
       if (alsoPin && pinResult !== 'done') {
         const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
-        if (vUrl) {
-          setPinResult('posting'); setPinErr(null)
-          try {
-            // Destination: link the pin to the ACTUAL YouTube video this clip
-            // came from (not the blog homepage). The route still resolves a blog
-            // post for that video when one exists, else uses this watch URL, else
-            // the blog homepage. NEVER an affiliate redirect (Pinterest ToS).
-            const ytForLink = youtubeId || sourceYoutubeVideoId || null
-            const pr = await fetch('/api/pinterest/video-pin', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                videoUrl: vUrl,
-                coverImageUrl: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : undefined,
-                youtubeVideoId: ytForLink || undefined,
-                link: ytForLink ? `https://www.youtube.com/watch?v=${ytForLink}` : undefined,
-                title: (caption || '').split('\n')[0].slice(0, 100),
-                description: caption,
-              }),
-            })
-            const pj = await pr.json().catch(() => ({}))
-            if (pr.ok) setPinResult('done')
-            else { setPinResult('failed'); setPinErr((pj.error as string) || 'Pinterest pin failed.') }
-          } catch (e) {
-            setPinResult('failed'); setPinErr(e instanceof Error ? e.message : 'Pinterest pin failed.')
-          }
+        if (!vUrl) {
+          // Said, never skipped in silence.
+          setPinResult('failed'); setPinErr('MVP has no video file for this clip to send to Pinterest.')
+        } else {
+          setPinResult('posting'); setPinErr(null); setPinWait(0); setPinBoard(null)
+          // Destination: link the pin to the ACTUAL YouTube video this clip
+          // came from (not the blog homepage). The route still resolves a blog
+          // post for that video when one exists, else uses this watch URL, else
+          // the blog homepage. NEVER an affiliate redirect (Pinterest ToS).
+          // Pinterest processes a video for minutes: postVideoPin waits for it.
+          const ytForLink = youtubeId || sourceYoutubeVideoId || null
+          const { postVideoPin } = await import('@/lib/pinterest-video-pin')
+          const r = await postVideoPin({
+            videoUrl: vUrl,
+            coverImageUrl: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : undefined,
+            youtubeVideoId: ytForLink || undefined,
+            link: ytForLink ? `https://www.youtube.com/watch?v=${ytForLink}` : undefined,
+            title: (caption || '').split('\n')[0].slice(0, 100),
+            description: caption,
+          }, (sec) => setPinWait(sec))
+          if (r.ok) { setPinResult('done'); setPinBoard(r.board) }
+          else { setPinResult('failed'); setPinErr(r.error) }
         }
       }
 
@@ -387,21 +409,29 @@ export function TikTokDirectModal({
       // unlisted). Reported separately so a YouTube failure never masks TikTok.
       if (ytEnabled && alsoYt && ytResult !== 'done') {
         const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
-        if (vUrl) {
+        if (!vUrl) {
+          setYtResult('failed'); setYtErr('MVP has no video file for this clip to send to YouTube.')
+        } else {
           setYtResult('posting'); setYtErr(null); setYtUrl(null)
           const privacyStatus = privacy === 'PUBLIC_TO_EVERYONE' ? 'public' : privacy === 'SELF_ONLY' ? 'private' : 'unlisted'
           try {
+            // YouTube takes links in a description, so the Short gets its own
+            // text with the product link, not TikTok's "link in bio" caption.
+            const own = prepareYouTube ? await prepareYouTube() : null
+            if (own && 'error' in own) throw new Error(own.error)
+            setYtNote(own?.note ?? null)
             const yr = await fetch('/api/youtube/upload-short', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 videoUrl: vUrl,
-                title: (caption || meta?.title || '').split('\n')[0].slice(0, 100) || 'New Short',
-                description: caption,
+                title: own?.title || (caption || meta?.title || '').split('\n')[0].slice(0, 100) || 'New Short',
+                description: own?.description ?? caption,
+                ...(own?.tags?.length ? { tags: own.tags } : {}),
                 privacyStatus,
               }),
             })
             const yj = await yr.json().catch(() => ({}))
-            if (yr.ok) { setYtResult('done'); setYtUrl((yj.url as string) || null) }
+            if (yr.ok) { setYtResult('done'); setYtUrl((yj.url as string) || null); onYouTubePosted?.((yj.videoId as string) || null) }
             else { setYtResult('failed'); setYtErr((yj.error as string) || 'YouTube upload failed.') }
           } catch (e) {
             setYtResult('failed'); setYtErr(e instanceof Error ? e.message : 'YouTube upload failed.')
@@ -413,7 +443,7 @@ export function TikTokDirectModal({
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, product, productTitle, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, product, productTitle, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult, sourceYoutubeVideoId, prepareYouTube, onYouTubePosted])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -786,7 +816,7 @@ export function TikTokDirectModal({
             {ytEnabled && (
               <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
                 <input type="checkbox" checked={alsoYt} onChange={e => setAlsoYt(e.target.checked)} className="h-4 w-4 accent-[#FF0000]" />
-                <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1"><Youtube size={13} className="text-[#FF0000]" /> Also post to YouTube as a Short <span className="text-[#86868b]">(to your channel)</span></span>
+                <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1"><Youtube size={13} className="text-[#FF0000]" /> Also post to YouTube as a Short <span className="text-[#86868b]">({prepareYouTube ? 'to your channel, with your product link in the description' : 'to your channel'})</span></span>
               </label>
             )}
           </div>
@@ -794,11 +824,11 @@ export function TikTokDirectModal({
         {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
         {igResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>}
         {igResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igErr || 'failed'} (TikTok was unaffected.)</p>}
-        {pinResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E60023] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also pinning to Pinterest (processing the video)…</p>}
-        {pinResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Pinned to Pinterest too.</p>}
+        {pinResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E60023] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> {pinWait > 0 ? `Pinterest is still processing the video (${Math.floor(pinWait / 60)}:${String(pinWait % 60).padStart(2, '0')}). Keep this window open; it can take a few minutes.` : 'Sending the video to Pinterest…'}</p>}
+        {pinResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Pinned to Pinterest{pinBoard ? ` on your "${pinBoard}" board` : ''}.</p>}
         {pinResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Pinterest: {pinErr || 'failed'} (TikTok was unaffected.)</p>}
         {ytResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#FF0000] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also uploading to YouTube as a Short…</p>}
-        {ytResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Posted to YouTube too.{ytUrl && <a href={ytUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5 ml-1">Open <ExternalLink size={9} /></a>}</p>}
+        {ytResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Posted to YouTube too{ytNote ? `, ${ytNote}` : ''}.{ytUrl && <a href={ytUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5 ml-1">Open <ExternalLink size={9} /></a>}</p>}
         {ytResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> YouTube: {ytErr || 'failed'} (TikTok was unaffected.)</p>}
 
         {/* Schedule for later (real video targets only, before posting) */}

@@ -89,18 +89,16 @@ export function PinterestPreviewModal({
     // link = the blog post). Distinct route from the still-image onPublish path.
     if (asVideo && data.videoUrl) {
       try {
-        const res = await fetch('/api/pinterest/video-pin', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoUrl: data.videoUrl,
-            coverImageUrl: data.fallbackImageUrl || undefined,
-            link: destLink,
-            title: title.trim() || data.title,
-            description: composed,
-          }),
+        // Pinterest can process a video for minutes: this waits for the pin.
+        const { postVideoPin } = await import('@/lib/pinterest-video-pin')
+        const r = await postVideoPin({
+          videoUrl: data.videoUrl,
+          coverImageUrl: data.fallbackImageUrl || undefined,
+          link: destLink,
+          title: title.trim() || data.title,
+          description: composed,
         })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok) { setPubError((j.error as string) || 'Video pin failed. Try again.'); setPublishing(false); return }
+        if (!r.ok) { setPubError(r.error || 'Video pin failed. Try again.'); setPublishing(false); return }
         onClose()
       } catch (e) {
         setPubError(e instanceof Error ? e.message : 'Video pin failed.'); setPublishing(false)

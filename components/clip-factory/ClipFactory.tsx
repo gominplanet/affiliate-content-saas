@@ -18,7 +18,7 @@
 
 import PublishPanel, { type PublishKit, type PublishChoice } from '@/components/clip-factory/PublishPanel'
 import { ReelPagePicker, ShareReelToGroups, ReelGroupFirst, pageReelCaption, type ReelPage, type ReelGroup } from '@/components/clip-factory/ReelDestinations'
-import type { ClipPlatform } from '@/lib/clip-description'
+import { CLIP_PLATFORM_RULES, composeClipDescription, type ClipPlatform } from '@/lib/clip-description'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipFactoryGuide } from '@/components/guide/tool-guides'
 import dynamic from 'next/dynamic'
@@ -843,6 +843,41 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       setKitErrors(er => ({ ...er, [p]: errText(e) }))
     }
   }, [kits, clip, product, productName, publishCaption, panelHashtags])
+  // THE SHORT FROM THE TIKTOK WINDOW gets YouTube's own text: the product
+  // link, the full review and the disclosure, exactly as the YouTube button
+  // writes it. It used to get the TikTok caption, which has no link because
+  // TikTok shows none (Seb, 2026-10-13).
+  const prepareYouTubeFromTikTok = useCallback(async (): Promise<{ title: string; description: string; tags?: string[]; note?: string } | { error: string }> => {
+    try {
+      let kit = kits.youtube
+      if (!kit) {
+        const res = await fetch('/api/clip-factory/publish-kit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: 'youtube', sourceVideoId: clip?.sourceVideoId, product: product.trim() || undefined, productName: productName.trim() || undefined,
+            title: clip?.title, hashtags: panelHashtags, writeUp: publishCaption,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) return { error: `MVP could not find this clip's links (${data.error || res.status}), so the Short was not posted. Post it from the YouTube button.` }
+        kit = data as PublishKit
+        setKits(k => ({ ...k, youtube: kit }))
+      }
+      if (!kit.disclosure) return { error: 'MVP could not write the disclosure for the Short, so it was not posted. Post it from the YouTube button.' }
+      const description = composeClipDescription({
+        platform: 'youtube', writeUp: publishCaption, include: CLIP_PLATFORM_RULES.youtube.defaults,
+        productLink: kit.productLink, amazon: kit.amazon, videoUrl: kit.videoUrl, blogUrl: kit.blogUrl,
+        linkHub: kit.linkHub, hashtags: panelHashtags, disclosure: kit.disclosure,
+      })
+      return {
+        title: kit.youtube?.title || buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []),
+        description,
+        tags: kit.youtube?.tags ?? buildYouTubeTags(clip?.hashtags || [], clip?.title || ''),
+        ...(kit.productLink ? {} : { note: 'without a product link (MVP found none for this clip; add one in the Enhance step)' }),
+      }
+    } catch (e) { return { error: errText(e) } }
+  }, [kits, clip, product, productName, panelHashtags, publishCaption])
+
   // A different clip or product means different links.
   useEffect(() => { kitEpoch.current++; setKits({}); setKitErrors({}); setPanel(null); setFbFlowStart(null) }, [clip, product, productName])
 
@@ -1559,7 +1594,11 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           product={product.trim() || undefined}
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           onClose={() => setTtOpen(false)}
-          onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); markPosted('tiktok'); setTtOpen(false); toast.success('Posted to TikTok') }}
+          // Stays open when Pinterest, Instagram or YouTube failed, so the
+          // red line saying why is read, not closed away.
+          onPosted={(o) => { setPosted(p => ({ ...p, tiktok: true })); markPosted('tiktok'); if (!o?.crossFailed) setTtOpen(false); toast.success('Posted to TikTok') }}
+          prepareYouTube={prepareYouTubeFromTikTok}
+          onYouTubePosted={(id) => { setPosted(p => ({ ...p, youtube: true })); markPosted('youtube'); if (id) setYtVideoId(id) }}
         />
       )}
       {igOpen && publishUrl && (

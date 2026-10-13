@@ -8,6 +8,12 @@
  *                    affiliate redirect (Pinterest + Amazon Associates ToS)
  *
  * Resolves the board (named fallback → "Reviews", auto-created). Studio+ feature.
+ *
+ * PINTEREST PROCESSES A VIDEO ON ITS OWN CLOCK, often past this route's time
+ * limit (Seb, 2026-10-13: a clip pin from the TikTok window never appeared).
+ * So the route waits about 90 seconds; if Pinterest is still processing, it
+ * answers 202 { pending, finish } and the page sends `finish` back until the
+ * pin is made (lib/pinterest-video-pin.ts). Nothing is lost to a timeout.
  */
 import { isBlockedPinLink } from '@/lib/pinterest-destination'
 import { NextResponse } from 'next/server'
@@ -33,8 +39,9 @@ export async function POST(request: Request) {
   if ('error' in pub) return pub.error
   const { supabase, user } = pub
 
-  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string; youtubeVideoId?: string; linkTarget?: string }
+  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string; youtubeVideoId?: string; linkTarget?: string; finish?: PinFinish }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+  if (body.finish) return finishPin(supabase, user.id, body.finish)
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
   // SSRF guard: the render bytes get fetched server-side below. Legit renders
@@ -135,14 +142,55 @@ export async function POST(request: Request) {
     const pinterest = new PinterestService(ig.pinterest_access_token)
     const fbName = (ig.pinterest_fallback_board || '').trim() || ig.pinterest_board_name || 'Reviews'
     const board = await pinterest.findOrCreateBoard(fbName)
-    const { id } = await pinterest.createVideoPin({
-      boardId: board.id, title, description, link, videoBytes: bytes, contentType: 'video/mp4', coverImageUrl,
-    })
+    const mediaId = await pinterest.startVideoMedia(bytes, 'video/mp4')
+    const finish: PinFinish = { mediaId, boardId: board.id, boardName: fbName, title, description, link, coverImageUrl }
+    let status = 'registered'
+    const waitUntil = Date.now() + 90_000
+    while (status !== 'succeeded' && Date.now() < waitUntil) {
+      await new Promise(r => setTimeout(r, 3000))
+      status = await pinterest.videoMediaStatus(mediaId, status)
+      if (status === 'failed') throw new Error('Pinterest could not process the video.')
+    }
+    if (status !== 'succeeded') return NextResponse.json({ ok: false, pending: true, status, finish }, { status: 202 })
+    const { id } = await pinterest.pinFromVideoMedia({ boardId: board.id, title, description, link, mediaId, coverImageUrl })
     recordUsage({ userId: user.id, tier, feature: 'pinterest_video_pin', model: 'pinterest-api', images: 1 })
-    return NextResponse.json({ ok: true, pinId: id })
+    return NextResponse.json({ ok: true, pinId: id, board: fbName })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Pinterest video pin failed.'
     console.warn('[pinterest/video-pin] failed for', user.id, '—', msg, '| cover:', coverImageUrl.slice(0, 80), '| video:', videoUrl.slice(0, 80))
     return NextResponse.json({ error: msg }, { status: 502 })
+  }
+}
+
+/** What the page sends back to finish a pin Pinterest was still processing. */
+type PinFinish = { mediaId: string; boardId: string; boardName?: string; title: string; description: string; link?: string; coverImageUrl: string }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function finishPin(supabase: any, userId: string, f: PinFinish) {
+  const mediaId = String(f?.mediaId || '')
+  const boardId = String(f?.boardId || '')
+  const cover = String(f?.coverImageUrl || '')
+  const link = f?.link ? String(f.link) : undefined
+  // The same rules as the first send: Pinterest's own ids, a real cover, and
+  // never a short or redirect link.
+  if (!/^\d{3,30}$/.test(mediaId) || !/^\d{3,30}$/.test(boardId) || !/^https:\/\//i.test(cover)) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+  if (link && (!/^https?:\/\//i.test(link) || isBlockedPinLink(link))) return NextResponse.json({ error: 'Pinterest blocks short and redirect links, so this pin was not published.' }, { status: 400 })
+  const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', userId).single()
+  const ig = decryptIntegrationRow(intRaw)
+  const tier = (ig?.tier as Tier) ?? 'trial'
+  if (!tierAllowsSocial(tier, 'pinterest')) return NextResponse.json({ error: 'Pinterest is on the Amazon and Pro plans.' }, { status: 403 })
+  if (!ig?.pinterest_access_token) return NextResponse.json({ error: "Pinterest isn't connected. Connect it in Integrations first.", reconnectRequired: true }, { status: 412 })
+  try {
+    const pinterest = new PinterestService(ig.pinterest_access_token)
+    const status = await pinterest.videoMediaStatus(mediaId, 'processing')
+    if (status === 'failed') return NextResponse.json({ error: 'Pinterest could not process the video.' }, { status: 502 })
+    if (status !== 'succeeded') return NextResponse.json({ ok: false, pending: true, status, finish: f }, { status: 202 })
+    const title = (scrubTitle(String(f.title || '')) || 'New video').slice(0, 100)
+    const description = scrubBanned(String(f.description || '')).slice(0, 500)
+    const { id } = await pinterest.pinFromVideoMedia({ boardId, title, description, link, mediaId, coverImageUrl: cover })
+    recordUsage({ userId, tier, feature: 'pinterest_video_pin', model: 'pinterest-api', images: 1 })
+    return NextResponse.json({ ok: true, pinId: id, board: f.boardName || null })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest video pin failed.' }, { status: 502 })
   }
 }

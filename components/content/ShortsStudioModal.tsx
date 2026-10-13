@@ -701,7 +701,7 @@ export function ShortsStudioModal({
           initialCaption={ttPost.caption}
           tier={tier}
           onClose={() => setTtPost(null)}
-          onPosted={() => { void markPosted(ttPost.id, 'tiktok'); setTtPost(null); toast.success('Posted to TikTok') }}
+          onPosted={(o) => { void markPosted(ttPost.id, 'tiktok'); if (!o?.crossFailed) setTtPost(null); toast.success('Posted to TikTok') }}
         />
       </div>
     )}

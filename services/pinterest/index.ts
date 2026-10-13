@@ -170,9 +170,22 @@ export class PinterestService {
     contentType?: string
     coverImageUrl: string
   }): Promise<{ id: string }> {
-    const auth = { Authorization: `Bearer ${this.accessToken}` }
+    const mediaId = await this.startVideoMedia(opts.videoBytes, opts.contentType)
+    // Pinterest's async video ingest routinely takes 1-3 min.
+    let status = 'registered'
+    for (let i = 0; i < 60 && status !== 'succeeded'; i++) {
+      await new Promise(r => setTimeout(r, 2500))
+      status = await this.videoMediaStatus(mediaId, status)
+      if (status === 'failed') throw new Error('Pinterest could not process the video.')
+    }
+    if (status !== 'succeeded') throw new Error('Pinterest is still processing the video — try again shortly.')
+    return this.pinFromVideoMedia({ ...opts, mediaId })
+  }
 
-    // 1. Register the media upload.
+  /** Steps 1 and 2 of a video pin: register the upload and send the bytes.
+   *  Answers Pinterest's media id, which it then processes on its own. */
+  async startVideoMedia(videoBytes: Uint8Array, contentType?: string): Promise<string> {
+    const auth = { Authorization: `Bearer ${this.accessToken}` }
     const reg = await fetch(`${BASE}/media`, {
       method: 'POST',
       headers: { ...auth, 'Content-Type': 'application/json' },
@@ -184,36 +197,33 @@ export class PinterestService {
       throw new Error(err.message || `Pinterest media register error: ${reg.status}`)
     }
     const media = await reg.json() as { media_id: string; upload_url: string; upload_parameters: Record<string, string> }
-
-    // 2. Upload the bytes to the (S3) bucket — fields first, file LAST.
+    // The (S3) bucket takes the fields first, the file LAST.
     const form = new FormData()
     for (const [k, v] of Object.entries(media.upload_parameters || {})) form.append(k, String(v))
-    form.append('file', new Blob([opts.videoBytes as unknown as BlobPart], { type: opts.contentType || 'video/mp4' }))
+    form.append('file', new Blob([videoBytes as unknown as BlobPart], { type: contentType || 'video/mp4' }))
     const up = await fetch(media.upload_url, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) })
     if (!up.ok && up.status !== 204) {
       throw new Error(`Pinterest media upload failed: ${up.status}`)
     }
+    return String(media.media_id)
+  }
 
-    // 3. Poll until the video finishes processing. Pinterest's async video
-    //    ingest routinely takes 1-3 min, so wait up to ~150s (60 × 2.5s) — the
-    //    route's maxDuration is 300s, so there's ample headroom. A shorter
-    //    window made pins time out ("still processing") even though TikTok/etc
-    //    went live in the same push.
-    let status = 'registered'
-    for (let i = 0; i < 60 && status !== 'succeeded'; i++) {
-      await new Promise(r => setTimeout(r, 2500))
-      const st = await fetchWithTimeout(`${BASE}/media/${media.media_id}`, { headers: auth })
-      if (!st.ok) continue
+  /** Where Pinterest is with an uploaded video: registered, processing,
+   *  succeeded or failed. A read that fails answers `fallback`. */
+  async videoMediaStatus(mediaId: string, fallback = 'processing'): Promise<string> {
+    try {
+      const st = await fetchWithTimeout(`${BASE}/media/${encodeURIComponent(mediaId)}`, { headers: { Authorization: `Bearer ${this.accessToken}` } })
+      if (!st.ok) return fallback
       const j = await st.json() as { status?: string }
-      status = j.status || status
-      if (status === 'failed') throw new Error('Pinterest could not process the video.')
-    }
-    if (status !== 'succeeded') throw new Error('Pinterest is still processing the video — try again shortly.')
+      return j.status || fallback
+    } catch { return fallback }
+  }
 
-    // 4. Create the pin from the processed media + a cover image.
+  /** Step 4: the pin, from a processed video and a cover image. */
+  async pinFromVideoMedia(opts: { boardId: string; title: string; description: string; link?: string; mediaId: string; coverImageUrl: string }): Promise<{ id: string }> {
     const res = await fetch(`${BASE}/pins`, {
       method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         board_id: opts.boardId,
         title: opts.title,
@@ -223,7 +233,7 @@ export class PinterestService {
         ...(opts.link ? { link: opts.link } : {}),
         media_source: {
           source_type: 'video_id',
-          media_id: media.media_id,
+          media_id: opts.mediaId,
           cover_image_url: opts.coverImageUrl,
         },
       }),
