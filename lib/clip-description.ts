@@ -103,9 +103,28 @@ export function composeClipDescription(opts: {
   const writeUp = opts.platform === 'facebook'
     ? raw.replace(/\b(l)ink\s+in\s+(?:my\s+)?bio\b/gi, (_m, l: string) => `${l === 'L' ? 'L' : 'l'}ink above`)
     : raw
+  const d = String(opts.disclosure || '').trim()
+  const productLine = opts.include.productLink && opts.productLink ? productCtaLine(opts.productLink, opts.amazon) : null
+  // FACEBOOK, LINK FIRST (Seb, 2026-10-13): the affiliate link on the first
+  // line with the disclosure right under it, then the write-up, then the full
+  // review, then hashtags. Facebook cuts a long post to its first lines behind
+  // "See more", so the link and its disclosure are what everyone sees.
+  if (opts.platform === 'facebook' && productLine) {
+    const out: string[] = [d ? `${productLine}\n${d}` : productLine]
+    if (writeUp) out.push(writeUp)
+    const after: string[] = []
+    if (opts.include.review) {
+      if (opts.videoUrl) after.push(`🎬 Watch the full review 👉 ${opts.videoUrl}`)
+      else if (opts.blogUrl) after.push(`🔗 Read the full review: ${opts.blogUrl}`)
+    }
+    if (opts.include.bioCta) after.push(opts.linkHub && rules.linksClickable ? `🔗 All my links: ${opts.linkHub}` : rules.bioLine)
+    if (after.length) out.push(after.join('\n'))
+    if (opts.include.hashtags) { const h = hashtagLine(opts.hashtags); if (h) out.push(h) }
+    return out.join('\n\n').trim()
+  }
   if (writeUp) lines.push(writeUp)
   const links: string[] = []
-  if (opts.include.productLink && opts.productLink) links.push(productCtaLine(opts.productLink, opts.amazon))
+  if (productLine) links.push(productLine)
   if (opts.include.bioCta) links.push(opts.linkHub && rules.linksClickable ? `🔗 All my links: ${opts.linkHub}` : rules.bioLine)
   if (opts.include.review) {
     if (opts.videoUrl) links.push(`🎬 Watch the full review 👉 ${opts.videoUrl}`)
@@ -113,7 +132,6 @@ export function composeClipDescription(opts: {
   }
   if (links.length) lines.push(links.join('\n'))
   if (opts.include.hashtags) { const h = hashtagLine(opts.hashtags); if (h) lines.push(h) }
-  const d = String(opts.disclosure || '').trim()
   if (d) lines.push(d)
   return lines.join('\n\n').trim()
 }

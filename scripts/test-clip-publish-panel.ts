@@ -27,10 +27,21 @@ check('Facebook: the product link, named as Amazon (policy 6(w)), and the full r
 const yt = composeClipDescription({ ...base, platform: 'youtube', include: CLIP_PLATFORM_RULES.youtube.defaults })
 check('YouTube: product link and full review by default, and the note says links are not clickable on a Short',
   /mvpl\.ink/.test(yt) && /youtube\.com\/watch/.test(yt) && /plain text, not clickable/.test(CLIP_PLATFORM_RULES.youtube.linkNote))
-for (const [name, text] of [['TikTok', tt], ['Facebook', fb], ['YouTube', yt]] as const) {
+for (const [name, text] of [['TikTok', tt], ['YouTube', yt]] as const) {
   check(`${name}: the disclosure is always there, last`, text.trim().endsWith(base.disclosure))
+}
+for (const [name, text] of [['TikTok', tt], ['Facebook', fb], ['YouTube', yt]] as const) {
   check(`${name}: each hashtag once`, (text.match(/#gadgets/gi) ?? []).length === 1 && (text.match(/#wallettracker/gi) ?? []).length === 1)
 }
+// Seb 2026-10-13: Facebook goes link, disclosure, write-up, full review.
+const fbLines = fb.split('\n')
+check('Facebook: the affiliate link is the first line and the disclosure the second',
+  /^🛒 Grab it on Amazon 👉 https:\/\/mvpl\.ink\/abc$/.test(fbLines[0]) && fbLines[1] === base.disclosure)
+check('Facebook: then the write-up, then the full review, then hashtags',
+  fb.indexOf('This wallet tracker saved me twice.') > fb.indexOf(base.disclosure)
+  && fb.indexOf('🎬 Watch the full review 👉 https://www.youtube.com/watch?v=abcdefghijk') > fb.indexOf('This wallet tracker saved me twice.')
+  && fb.indexOf('#wallettracker') > fb.indexOf('Watch the full review'))
+check('Facebook: the disclosure appears once', fb.split(base.disclosure).length === 2)
 const none = composeClipDescription({ ...base, platform: 'facebook', include: { productLink: false, bioCta: false, review: false, hashtags: false } })
 check('everything off leaves the write-up and the disclosure', none === `This wallet tracker saved me twice.\n\n${base.disclosure}`)
 check('hashtags are taken out of the write-up and placed by choice', stripHashtags('Nice #a #b') === 'Nice')
