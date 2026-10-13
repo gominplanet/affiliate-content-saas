@@ -48,10 +48,20 @@ check('clock reads minutes and seconds', clock(245) === '4:05' && clock(3725) ==
 const bgjs = read('extension/background.js')
 check('SCOUT says which video of how many per store', /setSfProgress\(domain, \{ total: jobs\.length, done: jobNo - 1, current: jobNo/.test(bgjs) && /pct: r\.ok \? 100 : null, done: jobNo \}/.test(bgjs))
 const manifest = JSON.parse(read('extension/manifest.json'))
-check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.46\.1'/.test(read('lib/scout-version.ts')) && manifest.version === '1.46.1')
+check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.46\.2'/.test(read('lib/scout-version.ts')) && manifest.version === '1.46.2')
 const lb = read('components/launch/LaunchBoard.tsx')
 check('Bulk Amazon upload shows the live bar', /<AmazonProgress running=\{amazonBusy\}/.test(lb) && /onSending: \(n\) => setAmazonRun/.test(lb))
 check('the listing count is passed out before SCOUT starts', /scope\?\.onSending\?\.\(sendNow\.length\)[^\n]*\n\s*const res = await requestStorefrontDelivery\(sendNow\)/.test(read('lib/storefront-delivery.ts')))
+
+// Seb 2026-10-13: "keeps going to 100% and back to 0%", 5 or 6 times.
+const retry = readAmazonProgress({ 'amazon.com': { step: 'Trying again', pct: null, at: now - 1_000, done: 0, total: 3, current: 1, attempt: 2, attempts: 3, lastError: '[upload-video] S3 PUT stalled: no bytes moved for 3 minutes' } }, { since: start, now, running: true })
+check('a restart says which try and why the last one stopped', retry.rows[0].attempt === 2 && /stalled/.test(retry.rows[0].lastError || ''))
+check('a first try carries no old reason', readAmazonProgress({ 'amazon.com': { step: 'Uploading', at: now - 1_000, attempt: 1, lastError: 'old' } }, { since: start, now, running: true }).rows[0].lastError === null)
+const ui = read('components/launch/AmazonProgress.tsx')
+check('the bar shows the try and the reason', /try \$\{r\.attempt\} of/.test(ui) && /The last try stopped:/.test(ui))
+check('SCOUT stops a transfer only when it stalls, not on a clock', /xhr\.timeout = 0/.test(bgjs) && /no bytes moved for 3 minutes/.test(bgjs) && /did not confirm it within 5 minutes/.test(bgjs) && /download stalled: no data for 3 minutes/.test(bgjs) && !/AbortSignal\.timeout\(300000\)/.test(bgjs) && !/xhr\.timeout = 900000/.test(bgjs))
+check('SCOUT says the try and the reason when it starts again', /attempt: extra \+ 2, attempts: 3, lastError:/.test(bgjs))
+check('a stall is tried again later, never written off', /stalled\|did not confirm/.test(read('lib/amazon-upload-errors.ts')) && /stalled\|did not confirm\|503/.test(bgjs))
 
 if (failed) { console.error(`\n${failed} Amazon progress check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

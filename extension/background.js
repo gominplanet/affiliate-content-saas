@@ -11313,11 +11313,11 @@ async function deliverOneDomain(domain, jobs) {
   const worthAnotherGo = (r) => !!r && !r.ok && !r.duplicate && (
     r._unreachable ||
     /creator session token|ctx:dom:csrf|slatetoken/i.test(String(r.error || '')) ||
-    /timed out|timeout|s3 put|503|502|504|network/i.test(String(r.error || ''))
+    /timed out|timeout|s3 put|stalled|did not confirm|503|502|504|network/i.test(String(r.error || ''))
   )
   if (tabId) await inject()
   const sendJob = (job) => new Promise((resolve) => {
-    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 1500000)
+    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 3 * 3600000 + 600000)
     chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
       clearTimeout(to)
       if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
@@ -11330,7 +11330,7 @@ async function deliverOneDomain(domain, jobs) {
   let jobNo = 0
   for (const job of jobs) {
     jobNo++
-    setSfProgress(domain, { total: jobs.length, done: jobNo - 1, current: jobNo, title: String(job.title || '').slice(0, 80) })
+    setSfProgress(domain, { total: jobs.length, done: jobNo - 1, current: jobNo, title: String(job.title || '').slice(0, 80), attempt: 1, attempts: 3, lastError: null })
     if (!tabId) { out.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
     if (signinAt) {
       out.push({ targetId: job.targetId, ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${signinAt.slice(0, 80)}). Sign in there, then send again.` })
@@ -11341,7 +11341,8 @@ async function deliverOneDomain(domain, jobs) {
       // Up to two more goes, each on a freshly loaded page, for the failures
       // that pass. Amazon's own refusals are not retried here.
       for (let extra = 0; extra < 2 && worthAnotherGo(r); extra++) {
-        setSfProgress(domain, { step: 'Trying again', pct: null })
+        // Said with the reason (1.46.2), so a restart from 0% is never silent.
+        setSfProgress(domain, { step: 'Trying again', pct: null, attempt: extra + 2, attempts: 3, lastError: String((r && r.error) || 'it did not finish').slice(0, 200) })
         await reloadTab()
         const nowAt = await signedOutWhere()
         if (nowAt) { r = { ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${nowAt.slice(0, 80)}). Sign in there, then send again.` }; break }
@@ -11486,9 +11487,18 @@ function mainWorldS3Put(params) {
       try { const c = window.__mvpS3Cache; if (c && c.url === srcUrl && c.bytes) bytes = c.bytes } catch (e) {}
       if (!bytes) {
         log('download start', String(srcUrl).slice(0, 80))
+        // STOPPED ONLY WHEN IT STALLS (1.46.2). A five minute limit on the whole
+        // download cut a big video off while it was still coming, and the
+        // retry started it again from zero. Now it stops only after
+        // STALL_MS with no new bytes.
+        const STALL_MS = 180000
+        const dl = new AbortController()
+        let lastByteAt = Date.now()
+        const dlWatch = setInterval(() => { if (Date.now() - lastByteAt > STALL_MS) dl.abort() }, 10000)
         let src
-        try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(300000) }) }
-        catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
+        try { src = await fetch(srcUrl, { signal: dl.signal }) }
+        catch (e) { clearInterval(dlWatch); return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'stalled: no data for 3 minutes' : 'failed: ' + (e && e.message || e)}` } }
+        if (!src.ok) clearInterval(dlWatch)
         if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
         // Read it as a stream rather than one arrayBuffer() call, so the creator
         // sees the first half of the wait move instead of a frozen spinner.
@@ -11498,8 +11508,11 @@ function mainWorldS3Put(params) {
           const chunks = []
           let got = 0, lastPct = -1
           for (;;) {
-            const r = await reader.read()
+            let r
+            try { r = await reader.read() }
+            catch (e) { clearInterval(dlWatch); return { ok: false, error: 'download stalled: no data for 3 minutes' } }
             if (r.done) break
+            lastByteAt = Date.now()
             chunks.push(r.value); got += r.value.length
             if (total > 0) {
               const pct = Math.floor((got / total) * 100)
@@ -11512,6 +11525,7 @@ function mainWorldS3Put(params) {
         } else {
           bytes = new Uint8Array(await src.arrayBuffer())
         }
+        clearInterval(dlWatch)
         try { window.__mvpS3Cache = { url: srcUrl, bytes } } catch (e) {}
       } else {
         log('reusing cached bytes for', String(srcUrl).slice(0, 80))
@@ -11548,17 +11562,31 @@ function mainWorldS3Put(params) {
         try {
           xhr.open('PUT', url, true)
           for (const k in headers) xhr.setRequestHeader(k, headers[k])
-          xhr.timeout = 900000
+          // STOPPED ONLY WHEN IT STALLS (1.46.2). A fifteen minute limit on the
+          // whole upload cut a big video off while bytes were still going out.
+          // Now: no bytes moving for 3 minutes, or every byte sent and no
+          // answer from Amazon for 5, and the reason says which.
+          xhr.timeout = 0
           let lastPct = -1
+          let lastMoveAt = Date.now()
+          let sentAllAt = 0
+          let why = ''
+          const watch = setInterval(() => {
+            const now = Date.now()
+            if (!sentAllAt && now - lastMoveAt > 180000) { why = 'stalled: no bytes moved for 3 minutes'; try { xhr.abort() } catch (e) {} }
+            else if (sentAllAt && now - sentAllAt > 300000) { why = 'sent, but Amazon did not confirm it within 5 minutes'; try { xhr.abort() } catch (e) {} }
+          }, 10000)
           xhr.upload.onprogress = (ev) => {
             if (!ev || !ev.lengthComputable) return
+            lastMoveAt = Date.now()
             const pct = Math.floor((ev.loaded / ev.total) * 100)
             if (pct !== lastPct) { lastPct = pct; post('upload', pct, ev.loaded, ev.total) }
+            if (ev.loaded >= ev.total && !sentAllAt) { sentAllAt = Date.now(); post('confirm', 100, ev.loaded, ev.total) }
           }
-          xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText || '' })
-          xhr.onerror = () => resolve({ status: 0, error: 'network error' })
-          xhr.ontimeout = () => resolve({ status: 0, error: 'timed out' })
-          xhr.onabort = () => resolve({ status: 0, error: 'aborted' })
+          xhr.onload = () => { clearInterval(watch); resolve({ status: xhr.status, text: xhr.responseText || '' }) }
+          xhr.onerror = () => { clearInterval(watch); resolve({ status: 0, error: 'network error' }) }
+          xhr.ontimeout = () => { clearInterval(watch); resolve({ status: 0, error: 'timed out' }) }
+          xhr.onabort = () => { clearInterval(watch); resolve({ status: 0, error: why || 'aborted' }) }
           xhr.send(bytes)
         } catch (e) { resolve({ status: 0, error: String((e && e.message) || e) }) }
       })
@@ -11664,7 +11692,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     let done = false
     const finish = (resp) => { if (done) return; done = true; clearInterval(keepAlive); clearTimeout(guard); sendResponse(resp) }
     // Never leave the content script hanging past its own 260s budget.
-    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 1260000)
+    // The transfer stops itself when it stalls (mainWorldS3Put); this is only
+    // a last stop for a tab that never answers at all.
+    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 3 * 3600000)
     chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
       args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType, label: msg.label || 'video' }],

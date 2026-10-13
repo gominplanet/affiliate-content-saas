@@ -30,6 +30,14 @@ export function explainAmazonUpload(raw: string | null | undefined, domain: stri
   if (/creator session token|ctx:dom:csrf|slatetoken/i.test(s)) {
     return `Signed in to ${store}, but Amazon did not open your Creator tools there. Open ${store}/create/post while signed in: if it asks you to join or finish setting up as a creator for ${country}, do that, then send again.`
   }
+  if (/stalled: no (bytes moved|data)/i.test(s)) {
+    return /download/i.test(s)
+      ? `The video stopped coming from MVP's storage for 3 minutes, so SCOUT stopped this try. That is usually the connection: sending again starts it fresh.`
+      : `The upload to Amazon ${country} stopped moving for 3 minutes, so SCOUT stopped this try. That is usually the connection: sending again starts it fresh.`
+  }
+  if (/did not confirm it within/i.test(s)) {
+    return `The whole video reached Amazon ${country}, but Amazon did not confirm it within 5 minutes. Nothing is listed yet; sending again starts it fresh.`
+  }
   if (/s3 put timed out|upload-video\].*timed out/i.test(s)) {
     return `The video took too long to reach Amazon ${country} and was stopped part way. Nothing is listed there yet; sending again starts it fresh.`
   }
@@ -58,7 +66,7 @@ export function uploadFailureKind(raw: string | null | undefined): UploadFailure
   // Lost the page part way: tried again soon, like a slow upload.
   if (/receiving end does not exist|could not establish connection/i.test(s)) return 'transient'
   if (/creator session token|ctx:dom:csrf|slatetoken|not enrolled|not-enrolled/i.test(s)) return 'creator'
-  if (/time[ds]? ?out|timed out|abort|network|failed to fetch|no response|did not report|503|502|500|504|429|throttl|temporar|try again|could not open the amazon creator hub tab|s3 put|still uploading/i.test(s)) return 'transient'
+  if (/time[ds]? ?out|timed out|abort|network|failed to fetch|no response|did not report|503|502|500|504|429|throttl|temporar|try again|could not open the amazon creator hub tab|s3 put|still uploading|stalled|did not confirm/i.test(s)) return 'transient'
   return 'refused'
 }
 

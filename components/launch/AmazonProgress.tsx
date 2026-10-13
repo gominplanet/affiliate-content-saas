@@ -11,6 +11,7 @@ import { Loader2, AlertTriangle } from 'lucide-react'
 import { requestStorefrontProgress, type StorefrontProgress } from '@/lib/extension-frame'
 import { readAmazonProgress, clock, STALL_SECONDS } from '@/lib/amazon-progress'
 import { marketByDomain } from '@/lib/markets'
+import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
 
 const TEAL = '#0EA5A4'
 
@@ -75,7 +76,9 @@ export default function AmazonProgress({ running, startedAt, listings, watch }: 
       )}
       {view.rows.map((r) => {
         const country = marketByDomain(r.domain)?.country ?? r.domain
-        const which = r.total != null && r.current != null && !r.finished ? `video ${Math.min(r.current, r.total)} of ${r.total}` : null
+        const which = r.total != null && r.current != null && !r.finished
+          ? `video ${Math.min(r.current, r.total)} of ${r.total}${r.attempt && r.attempt > 1 ? `, try ${r.attempt} of ${r.attempts ?? 3}` : ''}`
+          : null
         return (
           <div key={r.domain} className="mt-2">
             <div className="flex items-baseline gap-2 text-[11.5px]">
@@ -86,6 +89,13 @@ export default function AmazonProgress({ running, startedAt, listings, watch }: 
               {!r.finished && r.pct != null && <span className="ml-auto tabular-nums" style={{ color: 'var(--text-2)' }}>{r.pct}%</span>}
             </div>
             {!r.finished && r.title && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-2)' }} title={r.title}>{r.title}</p>}
+            {/* A RESTART FROM 0% SAYS WHY (Seb, 2026-10-13: "keeps going to 100%
+                and back to 0%"). */}
+            {!r.finished && r.lastError && (
+              <p className="text-[11px] mt-0.5" style={{ color: '#d97706' }}>
+                Starting this video again. The last try stopped: {explainAmazonUpload(r.lastError, r.domain) || r.lastError}
+              </p>
+            )}
             {!r.finished && (
               <div className="mt-1 h-1.5 w-full rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                 {/* A real number while the file moves; a sliding stripe for a

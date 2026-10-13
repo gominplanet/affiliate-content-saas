@@ -100,7 +100,9 @@
       // Longer than the worker's own step timeouts (download 120s + PUT 120s) so
       // its specific error surfaces instead of this blanket one; still under the
       // 300s per-job budget in deliverStorefronts.
-      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 1300000)
+      // The transfer stops itself when it stalls (1.46.2); this only catches a
+      // worker that never answers at all.
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 3 * 3600000 + 300000)
       chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType, label }, (resp) => {
         if (settled) return
         settled = true; clearTimeout(to)
@@ -499,7 +501,7 @@
       const d = ev.data
       if (!d || d.__mvpS3 !== 1) return
       const what = d.label === 'thumbnail' ? 'thumbnail' : 'video'
-      reportStep(d.phase === 'download' ? `Preparing the ${what}` : `Uploading the ${what}`, d.pct)
+      reportStep(d.phase === 'download' ? `Downloading the ${what} from MVP` : d.phase === 'confirm' ? `Sent, waiting for Amazon to confirm the ${what}` : `Uploading the ${what} to Amazon`, d.pct)
     })
   } catch (e) { /* ignore */ }
 

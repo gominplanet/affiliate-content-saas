@@ -15,6 +15,9 @@
 export interface StoreProgressIn {
   step?: string; pct?: number | null; at?: number
   done?: number; total?: number; current?: number; title?: string
+  /** SCOUT 1.46.2: which try at this video, of how many, and why the last
+   *  try stopped, so a restart from 0% is never silent. */
+  attempt?: number; attempts?: number; lastError?: string | null
 }
 
 export interface StoreRow {
@@ -28,6 +31,11 @@ export interface StoreRow {
   title: string | null
   at: number
   finished: boolean
+  /** The try at this video (2 of 3 and so on), when SCOUT says. */
+  attempt: number | null
+  attempts: number | null
+  /** Why the last try stopped, in SCOUT's words; null on a first try. */
+  lastError: string | null
 }
 
 export interface AmazonProgressView {
@@ -69,6 +77,8 @@ export function readAmazonProgress(
       pct: typeof p.pct === 'number' ? Math.max(0, Math.min(100, Math.round(p.pct))) : null,
       done, total, current: num(p.current), title: p.title ? String(p.title) : null,
       at: p.at, finished,
+      attempt: num(p.attempt), attempts: num(p.attempts),
+      lastError: num(p.attempt) != null && (num(p.attempt) as number) > 1 && p.lastError ? String(p.lastError) : null,
     })
   }
   rows.sort((a, b) => Number(a.finished) - Number(b.finished) || a.domain.localeCompare(b.domain))
