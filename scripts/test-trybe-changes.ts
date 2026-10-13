@@ -105,6 +105,9 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   const r = read('app/api/labs/trybe/route.ts')
   check('MVP opens a brief link with every redirect checked', /action === 'brief_read'/.test(r) && /redirect: 'manual'/.test(r) && /assertPublicHttpUrl\(next\)/.test(r))
   check('the plan is about the product on hand', /THE PRODUCT ON HAND: \$\{product\}/.test(r))
+  // Seb 2026-10-13: Audien's brief is a PDF, and MVP said it could not read it.
+  check('a PDF or picture brief is read by Claude and kept per brand for a week', /head\.startsWith\('%PDF'\)/.test(r) && /type: 'document', source/.test(r) && /cacheKey = brandId \? `brief:\$\{brandId\}`/.test(r) && /7 \* 86_400_000\) return NextResponse\.json\(\{ ok: true, text: v\.text/.test(r))
+  check('the page asks for the brief by brand, so it is read once', /action: 'brief_read', url: c\.briefUrl, brandId/.test(read('components/labs/TrybeVideoIdeas.tsx')))
   const vi = read('components/labs/TrybeVideoIdeas.tsx')
   check('planning starts by picking the product you have, with the brief to read and open', /Which product do you have on hand\?/.test(vi) && /Open the brief document/.test(vi) && /Creative Brief is on that page/.test(vi) && /makePlan\(\(other\.trim\(\) \|\| chosen\)/.test(vi))
   const ui = read('components/labs/TrybeOutreach.tsx')

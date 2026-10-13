@@ -95,7 +95,7 @@ async function loadBrandPage(brandId: string): Promise<BrandPage> {
     if (!c.briefUrl) return { brief: null, briefUrl: null, briefWhy: null, state: 'none', products, keys }
     let text: string | null = null
     let why: string | null = null
-    try { const r = await api({ action: 'brief_read', url: c.briefUrl }); text = r.text || null; why = r.why || null } catch (e) { why = e instanceof Error ? e.message : 'MVP could not open the brief link.' }
+    try { const r = await api({ action: 'brief_read', url: c.briefUrl, brandId }); text = r.text || null; why = r.why || null } catch (e) { why = e instanceof Error ? e.message : 'MVP could not open the brief link.' }
     return { brief: text, briefUrl: c.briefUrl, briefWhy: why, state: text ? 'text' : 'link_only', products, keys }
   } catch { return empty }
 }
