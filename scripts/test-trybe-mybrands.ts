@@ -114,7 +114,7 @@ check('a count not read shows as "not read", never 0', /const NA = 'not read'/.t
 check('a failed read is not retried on its own in a loop', /tried\.current = true/.test(mine))
 check('the nudge goes through the shared safe send (seen in the chat, never twice)', /sendInTrybeChat\(chat\.id/.test(mine) && /already in your TRYBE chat, so it was not sent again/.test(mine))
 const ideas = read('components/labs/TrybeVideoIdeas.tsx')
-check('the video plan gets the winners\' words', /action: 'video_plan', brandId, winners: winnerWords/.test(ideas))
+check('the video plan gets the winners\' words', /action: 'video_plan', brandId, [^\n]*winners: winnerWords/.test(ideas))
 check('no top videos and a failed read are said differently', /TRYBE shows no top videos for this brand yet/.test(ideas) && /could not read this brand's best videos/.test(ideas))
 const route = read('app/api/labs/trybe/route.ts')
 check('the plan route uses the winners and says when a plan is not kept', /winnersForPlan\(body\.winners\)/.test(route) && /onList: !!own/.test(route))
