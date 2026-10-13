@@ -10,14 +10,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileSpreadsheet } from 'lucide-react'
-import TrybeVideoIdeas, { type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
+import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileDown } from 'lucide-react'
+import TrybeVideoIdeas, { loadBrandPage, type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
 import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, STAGE_WORDS, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace } from '@/lib/trybe-week'
 import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, withSubmissions, judgeBrands, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
-import { trybeWorkbook, readMonthlyEarnings, type MonthMoney, type ExportPlan } from '@/lib/trybe-export'
-import { buildXlsx } from '@/lib/xlsx-lite'
+import { readBrandStats, withSubmissions, judgeBrands, readTopVideos, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
+import { buildPlanner, readMonthlyEarnings, type MonthMoney, type PlannerProduct } from '@/lib/trybe-planner'
+import { brandPageUrl } from '@/lib/trybe-brand-page'
+import type { VideoPlan } from '@/lib/trybe-playbook'
 import type { Pooled } from '@/lib/trybe-changes'
 
 const PURPLE = '#7C3AED'
@@ -180,60 +181,91 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     finally { setBusy(null) }
   }
 
-  // THE SPREADSHEET (Seb, 2026-10-13): everything on this page and in your
-  // TRYBE, as a real Excel file that also opens in Google Sheets and Numbers.
-  // Read fresh at the press; what could not be read is said in the sheet.
+  // THE WEEKLY PLANNER (Seb, 2026-10-13: "a downloadable pdf that is designed
+  // properly and cleanly", in place of the Excel export). Read fresh at the
+  // press: your TRYBE numbers through SCOUT, a page per product you have on
+  // hand (a sample ticked Received), each with 5 video guidelines and the
+  // brand's 5 best videos on TRYBE. What could not be read is said in it.
   const [exporting, setExporting] = useState<string | null>(null)
-  async function exportSheet() {
+  async function makePlanner() {
     setExporting('Getting ready...')
     try {
-      const post = async (b: Record<string, unknown>) => {
-        const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(60_000) })
+      const post = async (b: Record<string, unknown>, ms = 60_000) => {
+        const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(ms) })
         const d = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
         return d
       }
       const list = joined || []
       const subs: Record<string, { subs: Submission[]; error: string | null }> = {}
-      const money: Record<string, MonthMoney[] | null> = {}
+      const months: Record<string, MonthMoney[] | null> = {}
       if (canRead) {
         for (let i = 0; i < list.length; i++) {
           setExporting(`Reading ${list[i].name} from TRYBE (${i + 1} of ${list.length})`)
           const r = await readBrandSubs(list[i].id).catch((e) => ({ subs: [], error: e instanceof Error ? e.message : 'SCOUT did not answer.', complete: false }))
           subs[list[i].id] = { subs: r.subs, error: r.error }
           const e = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(list[i].id)}/earnings?period=all`).catch(() => null)
-          money[list[i].id] = e && e.ok ? readMonthlyEarnings(e.json) : null
+          months[list[i].id] = e && e.ok ? readMonthlyEarnings(e.json) : null
         }
       }
-      setExporting('Adding your video ideas and members\' numbers')
       const filled = list.map((b) => (subs[b.id] && !subs[b.id].error ? withSubmissions(b, subs[b.id].subs) : b))
       const verdicts: Record<string, string> = {}
       for (const j of judgeBrands(filled)) verdicts[j.brand.id] = j.verdict === 'focus' ? 'Focus' : j.verdict === 'drop' ? 'Drop' : j.verdict === 'early' ? 'Too early' : 'Keep'
-      const data = await post({ action: 'export_data', brandIds: list.map((b) => b.id) }).catch(() => ({ plans: [], pay: {} }))
-      const pooled = await post({ action: 'pooled', brandIds: list.map((b) => b.id) }).then((d) => (d.pooled || {}) as Record<string, Pooled>).catch(() => ({} as Record<string, Pooled>))
-      const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
-      const month = focusIds.map((id) => {
-        const b = list.find((x) => x.id === id)
-        const r = subs[id]
-        return b && r && !r.error ? { brand: b.name, sent: r.subs.filter((x) => (x.at ?? 0) >= start).length, target } : null
-      }).filter((x): x is { brand: string; sent: number; target: number } => !!x)
-      const sheets = trybeWorkbook({
-        now: Date.now(), samples: rows || [], brands: filled, subs, pooled, pay: data.pay || {}, verdicts,
-        plans: (data.plans || []) as ExportPlan[], month, money,
-      })
-      setExporting('Making the file')
-      const JSZip = (await import('jszip')).default
-      const zip = new JSZip()
-      for (const [path, xml] of Object.entries(buildXlsx(sheets))) zip.file(path, xml)
-      const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const pooled = await post({ action: 'pooled', brandIds: list.map((b) => b.id) }).then((d) => d.pooled || {}).catch(() => ({}))
+
+      // A page per product on hand: received, not yet submitted.
+      const onHand = (rows || []).filter((s) => stageOf(s) === 'to_film' || stageOf(s) === 'to_submit')
+      const products: PlannerProduct[] = []
+      const images: Record<string, string> = {}
+      for (let i = 0; i < onHand.length; i++) {
+        const s = onHand[i]
+        const brandId = s.brand_id || list.find((b) => b.name.trim().toLowerCase() === s.brand_name.trim().toLowerCase())?.id || ''
+        setExporting(`Planning ${s.product} (${i + 1} of ${onHand.length})`)
+        let plan = (s.ideas as VideoPlan | null) || null
+        let ideasNote: string | null = null
+        if (!plan?.videos?.length) {
+          setExporting(`Writing video guidelines for ${s.product} (${i + 1} of ${onHand.length}). About a minute.`)
+          try { const d = await post({ action: 'video_plan', brandId, sampleId: s.id }, 240_000); plan = d.plan as VideoPlan; setRows((xs) => (xs || []).map((x) => (x.id === s.id ? { ...x, ideas: d.plan } : x))) }
+          catch (e) { ideasNote = `MVP could not write the guidelines: ${e instanceof Error ? e.message : 'error'}. Plan them in Make videos.` }
+        }
+        const page = brandId && canRead ? await loadBrandPage(brandId).catch(() => null) : null
+        const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+        const match = page?.products.find((p) => key(p.name) === key(s.product)) || page?.products.find((p) => key(p.name).includes(key(s.product)) || key(s.product).includes(key(p.name)))
+        let viral: PlannerProduct['viral'] = []
+        let viralNote: string | null = null
+        if (brandId && canRead) {
+          const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`).catch(() => null)
+          let top = d && d.ok ? readTopVideos(d.json) : []
+          if (!top.length) { const f = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/top-formats`).catch(() => null); top = f && f.ok ? readTopVideos(f.json) : [] }
+          viral = top.filter((v) => v.video || v.thumbnail).slice(0, 5).map((v) => ({ url: (v.video || v.thumbnail) as string, thumb: v.thumbnail, caption: v.caption }))
+          viralNote = viral.length ? `${s.brand_name}'s best videos on TRYBE, not always for this exact product.` : `TRYBE showed no top videos for ${s.brand_name} yet.`
+        } else viralNote = brandId ? 'Allow SCOUT on TRYBE to add the brand\'s best videos.' : `MVP has no TRYBE page for ${s.brand_name}.`
+        const image = match?.image || null
+        if (image && !images[image]) { const data = await imageData(image); if (data) images[image] = data }
+        products.push({
+          brand: s.brand_name, product: s.product, price: match?.price || null, image, productUrl: match?.url || null,
+          brandPage: brandId ? brandPageUrl(brandId) : null,
+          wants: plan?.wants || [], avoid: plan?.avoid || [],
+          briefNote: plan?.brief === 'link_only' ? 'MVP could not read this brand\'s brief: check these against it.' : plan?.brief === 'none' ? 'TRYBE shows no brief for this brand.' : null,
+          ideas: (plan?.videos || []).slice(0, 5), ideasNote, viral, viralNote,
+        })
+      }
+
+      setExporting('Drawing your planner')
+      const model = buildPlanner({ now: Date.now(), samples, brands: filled, subs, verdicts, pooled, months, focusIds, target, perDay, products })
+      const QR = (await import('qrcode')).default
+      const qrs: Record<string, string> = {}
+      for (const p of products) for (const v of p.viral) if (!qrs[v.url]) qrs[v.url] = await QR.toDataURL(v.url, { margin: 0, width: 160 })
+      const { renderPlannerPdf } = await import('@/lib/trybe-planner-pdf')
+      const blob = new Blob([renderPlannerPdf(model, { images, qrs })], { type: 'application/pdf' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = `MVP TRYBE ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.xlsx`
+      a.download = `MVP TRYBE planner ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.pdf`
       document.body.appendChild(a); a.click(); a.remove()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
       const missed = Object.values(subs).filter((x) => x.error).length
-      toast.success(missed ? `Spreadsheet saved. ${missed} brand${missed === 1 ? '' : 's'} could not be read from TRYBE; the Videos tab says which.` : canRead ? 'Spreadsheet saved.' : 'Spreadsheet saved, without your TRYBE videos and earnings: allow SCOUT on TRYBE to add them.')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'The spreadsheet could not be made.') }
+      toast.success(missed ? `Planner saved. ${missed} brand${missed === 1 ? '' : 's'} could not be read from TRYBE, so their numbers are missing.` : !onHand.length ? 'Planner saved. Tick a sample Received to get its filming page.' : 'Planner saved.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'The planner could not be made.') }
     finally { setExporting(null) }
   }
 
@@ -311,11 +343,11 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <FileSpreadsheet size={18} style={{ color: GREEN }} />
-        <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your TRYBE business in a spreadsheet.</b> <span style={soft}>Samples, every video you sent, your shooting list, brands, your month and your money, in one Excel file (opens in Google Sheets and Numbers too).</span></p>
-        <button onClick={() => void exportSheet()} disabled={!!exporting} className={btn} style={{ background: GREEN, color: '#fff' }}>
-          {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Export to spreadsheet
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+        <FileDown size={18} style={{ color: PURPLE }} />
+        <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your weekly planner, ready to print.</b> <span style={soft}>This week&rsquo;s three jobs, a 7 day calendar, a page per product you have on hand with 5 video guidelines and the brand&rsquo;s best videos (QR codes), samples on the way, and your money as charts.</span></p>
+        <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+          {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download my weekly planner (PDF)
         </button>
         {exporting && <p className="w-full text-[12px] inline-flex items-center gap-1" style={soft}>{exporting}</p>}
       </div>
@@ -492,4 +524,29 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       </div>
     </div>
   )
+}
+
+/** A product photo as a square JPEG data URL, fitted on white, for the PDF.
+ *  Null when the store does not allow it to be read (the page keeps its box). */
+function imageData(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    const t = setTimeout(() => resolve(null), 8000)
+    img.onload = () => {
+      try {
+        const S = 400
+        const c = document.createElement('canvas'); c.width = S; c.height = S
+        const ctx = c.getContext('2d')
+        if (!ctx) { clearTimeout(t); resolve(null); return }
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S, S)
+        const k = Math.min(S / img.width, S / img.height)
+        const w = img.width * k, h = img.height * k
+        ctx.drawImage(img, (S - w) / 2, (S - h) / 2, w, h)
+        clearTimeout(t); resolve(c.toDataURL('image/jpeg', 0.85))
+      } catch { clearTimeout(t); resolve(null) }
+    }
+    img.onerror = () => { clearTimeout(t); resolve(null) }
+    img.src = url
+  })
 }

@@ -1110,32 +1110,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, plans })
   }
 
-  if (action === 'export_data') {
-    // What the spreadsheet needs from MVP (the rest is read from TRYBE by
-    // the page): every kept plan, newest per brand and product, and what
-    // MVP's copy of TRYBE says each brand pays.
-    const brandIds = (Array.isArray(body.brandIds) ? body.brandIds : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 80)).slice(0, 300)
-    const { data: ide } = await admin.from('trybe_ideas').select('brand_id, brand_name, product, plan, created_at').eq('user_id', ownerId).order('created_at', { ascending: false }).limit(400)
-    const { data: own } = await admin.from('trybe_brands').select('brand_id, name, video_plan, video_plan_at').eq('user_id', ownerId).not('video_plan', 'is', null).limit(400)
-    const { data: sam } = await admin.from('trybe_samples').select('brand_id, brand_name, product, ideas, ideas_at').eq('user_id', ownerId).not('ideas', 'is', null).limit(400)
-    const seen = new Set<string>()
-    const plans: Array<{ brandId: string | null; brand: string; product: string | null; at: string | null; plan: unknown }> = []
-    const add = (brandId: string | null, brand: string, product: string | null, at: string | null, plan: unknown) => {
-      const k = `${(brandId || brand).toLowerCase()}|${String(product || '').toLowerCase()}`
-      if (seen.has(k) || !plan) return
-      seen.add(k); plans.push({ brandId, brand, product, at, plan })
-    }
-    for (const r of (ide || []) as Array<Record<string, any>>) add(r.brand_id, r.brand_name || r.brand_id, r.product, r.created_at, r.plan) // eslint-disable-line @typescript-eslint/no-explicit-any
-    for (const r of (sam || []) as Array<Record<string, any>>) add(r.brand_id, r.brand_name, r.product, r.ideas_at, r.ideas) // eslint-disable-line @typescript-eslint/no-explicit-any
-    for (const r of (own || []) as Array<Record<string, any>>) add(r.brand_id, r.name, (r.video_plan as { product?: string } | null)?.product || null, r.video_plan_at, r.video_plan) // eslint-disable-line @typescript-eslint/no-explicit-any
-    const pay: Record<string, string> = {}
-    if (brandIds.length) {
-      const { data: dir } = await admin.from('trybe_directory').select('brand_id, pay_text').in('brand_id', brandIds)
-      for (const r of (dir || []) as Array<{ brand_id: string; pay_text: string | null }>) if (r.pay_text) pay[r.brand_id] = r.pay_text
-    }
-    return NextResponse.json({ ok: true, plans, pay })
-  }
-
   if (action === 'brand_products') {
     // The brand's own store catalog, with pictures and prices, the way
     // TrybeDaily shows it (Seb, 2026-10-13). Shared and kept a day per brand.
