@@ -13,6 +13,7 @@ import { pickNicheGroup } from '@/lib/facebook-niche'
 export { pageReelCaption }
 import { Loader2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
+import type { FacebookGroupPostStatus } from '@/lib/extension-frame'
 
 export type ReelPage = { id: string; name: string; isDefault: boolean }
 export type ReelGroup = { name: string; url: string; niche?: string | null; keywords?: string | null }
@@ -134,6 +135,11 @@ export function ReelGroupFirst(p: {
   // ONE PAGE POST. The creator can go on by hand while SCOUT still watches;
   // whichever comes first posts, and the watch stops.
   const pageStarted = useRef(false)
+  // WHAT FACEBOOK SENT (SCOUT 1.46.4+): the watch's request log, for support.
+  const [watchId, setWatchId] = useState<string | null>(null)
+  const [watchSeen, setWatchSeen] = useState<FacebookGroupPostStatus | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
+  const [copyFallback, setCopyFallback] = useState<string | null>(null)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useEffect(() => { if (!caption && p.defaultCaption) setCaption(p.defaultCaption) }, [p.defaultCaption, caption])
 
@@ -210,6 +216,7 @@ export function ReelGroupFirst(p: {
   async function run(text: string) {
     if (!group || !p.clipUrl) return
     setLines([]); setManual(null); setRetry(null); pageStarted.current = false
+    setWatchId(null); setWatchSeen(null); setCopied(null); setCopyFallback(null)
     try { await navigator.clipboard.writeText(text) } catch { /* the lines below say what to do */ }
     say({ tone: 'wait', text: `SCOUT is opening ${group.name || 'your Group'} and attaching the clip…` })
     p.onBusy(true)
@@ -227,12 +234,14 @@ export function ReelGroupFirst(p: {
     // The way on by hand, from the start, so a watch that misses the post
     // never leaves the creator stuck (Seb, 2026-10-13).
     setManual({ link: '' })
+    setWatchId(res.watchId)
     // Facebook can process a video post for many minutes; SCOUT watches for 30.
     const end = Date.now() + 32 * 60 * 1000
     while (mounted.current && Date.now() < end && !pageStarted.current) {
       await new Promise((r) => setTimeout(r, 3000))
       if (pageStarted.current) return
       const st = await getFacebookGroupPostStatus(res.watchId)
+      if (mounted.current && st.state !== 'unknown') setWatchSeen(st)
       if (st.state === 'watching') continue
       // The Group post's own address, or, for a video, the Reel address its
       // timestamp opens (the video with the post's text and links).
@@ -258,6 +267,28 @@ export function ReelGroupFirst(p: {
     void run(p.start.text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.start])
+
+  // Read fresh from SCOUT on every copy: the watch goes on after the creator
+  // moves on by hand. Says which it copied, so an old answer is not passed off
+  // as a fresh one.
+  async function copyLog() {
+    if (!watchId) return
+    const { getFacebookGroupPostStatus, getScoutStatus, facebookLogText } = await import('@/lib/extension-frame')
+    const [fresh, scout] = await Promise.all([getFacebookGroupPostStatus(watchId), getScoutStatus().catch(() => ({ version: null }))])
+    const st = fresh.state !== 'unknown' ? fresh : watchSeen
+    if (fresh.state !== 'unknown' && mounted.current) setWatchSeen(fresh)
+    const text = facebookLogText(st, scout.version)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyFallback(null)
+      setCopied(fresh.state !== 'unknown' ? 'Copied. Paste it to MVP support.' : 'SCOUT did not answer just now, so this is the last copy MVP had. Copied.')
+    } catch {
+      setCopied('Your browser blocked the copy. Select the text below and copy it yourself.')
+      setCopyFallback(text)
+    }
+    if (mounted.current) setWatchSeen((x) => x ?? st)
+  }
+  const logRows = watchSeen?.log?.length ?? null
 
   const tone = (t: FlowLine['tone']) => t === 'ok' ? 'text-[#10B981]' : t === 'bad' ? 'text-[#ff3b30]' : t === 'warn' ? 'text-[#ff9500]' : 'text-[#6e6e73] dark:text-[#b0b0b5]'
 
@@ -310,6 +341,24 @@ export function ReelGroupFirst(p: {
       )}
       {retry && (
         <button onClick={() => void postReel(retry, isFacebookGroupPostLink(retry) ? 'post' : 'group', true)} className="self-start rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2]">Try the Reel again</button>
+      )}
+      {watchId && (
+        <details className="rounded-lg border border-black/10 dark:border-white/15 px-2.5 py-1.5 text-[11.5px] text-[#6e6e73] dark:text-[#b0b0b5]">
+          <summary className="cursor-pointer select-none font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+            What Facebook sent (for support){logRows === null ? '' : logRows === 0 ? ': nothing yet' : `: ${logRows} requests`}
+          </summary>
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            <p>While SCOUT watches for your Group post it notes the name of each request Facebook&apos;s page makes, and any post number in the answer. Never what you typed, your password or your login. Copy it and paste it to support so SCOUT can learn to find your post faster.</p>
+            {watchSeen && !Array.isArray(watchSeen.log) && (
+              <p className="text-[#ff9500]">Your SCOUT does not record this yet. It needs SCOUT 1.46.4 or later.</p>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => void copyLog()} className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11.5px] font-semibold border border-[#1877F2]/40 text-[#1877F2]"><Copy size={11} /> Copy</button>
+              {copied && <span>{copied}</span>}
+            </div>
+            {copyFallback && <textarea readOnly value={copyFallback} rows={6} onFocus={(e) => e.currentTarget.select()} className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[11px] font-mono" />}
+          </div>
+        </details>
       )}
     </div>
   )

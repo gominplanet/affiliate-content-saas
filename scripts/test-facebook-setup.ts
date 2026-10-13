@@ -7,6 +7,7 @@
 
 import { execSync } from 'child_process'
 import { readFileSync } from 'node:fs'
+import * as vm from 'node:vm'
 import { pageReelCaption } from '../lib/reel-group-caption'
 import { productLinkFromDescription } from '../lib/description-product-link'
 import { outsideLinks, allowanceFor, planEnforces, linkLimitRefusal, cleanPlan, linkWindow } from '../lib/facebook-link-budget'
@@ -242,8 +243,60 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('Meta Hub shows it', /<UnfinishedGroupPosts items=\{hub\.unfinished \?\? \[\]\}/.test(page))
 }
 
-if (failures.length) {
-  console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))
-  process.exit(1)
-}
-console.log('✓ facebook setup guard passed')
+// ── What Facebook sent: a diagnostic log, names and post numbers only ──────
+// Seb 2026-10-13: a video Group post took minutes to reach the feed. SCOUT
+// 1.46.4 notes which of Facebook's requests carries the new post's number, so
+// it can read it the moment Post is pressed. It must never keep a request's
+// contents (Facebook sends the login token in every one).
+const logChecks = (async () => {
+  const bg = read('extension/background.js')
+  const a = bg.indexOf('function installGroupPostHook(')
+  const b = bg.indexOf('\n}\n', a) + 3
+  const c = bg.indexOf('function readGroupPostState(')
+  const d = bg.indexOf('\n}\n', c) + 3
+  const answers: Record<string, (body: string) => string> = {
+    '/api/graphql/': (body) => body.includes('ComposerStoryCreateMutation')
+      ? '{"data":{"story_create":{"story":{"legacy_story_hideable_id":"1234567890123","url":"https:\\/\\/www.facebook.com\\/groups\\/kitchen\\/posts\\/1234567890123\\/"}}}}'
+      : '{"data":{}}',
+    'https://rupload.facebook.com/fb_video/abc?sig=SECRETSIG': () => '{"video_id":"99887766554433"}',
+  }
+  const XHR = function () {} as unknown as { prototype: Record<string, unknown> }
+  XHR.prototype.open = function () {}
+  XHR.prototype.send = function () {}
+  const sandbox: Record<string, unknown> = {
+    location: { href: 'https://www.facebook.com/groups/kitchen/', pathname: '/groups/kitchen/' },
+    document: { querySelectorAll: () => [], body: { innerText: '' } },
+    XMLHttpRequest: XHR, FormData, URLSearchParams, URL, MouseEvent: class {}, FocusEvent: class {},
+    fetch: async (input: string, init?: { body?: string }) => ({ clone: () => ({ text: async () => answers[input](String(init?.body ?? '')) }) }),
+  }
+  sandbox.window = sandbox
+  vm.createContext(sandbox)
+  vm.runInContext(bg.slice(a, b) + bg.slice(c, d) + '; this.install = installGroupPostHook; this.readState = readGroupPostState', sandbox)
+  ;(sandbox.install as (m: boolean) => string)(true)
+  const f = sandbox.fetch as (i: string, init: { body: string }) => Promise<unknown>
+  for (let i = 0; i < 3; i++) await f('/api/graphql/', { body: 'fb_dtsg=SECRETTOKEN&fb_api_req_friendly_name=GroupsCometFeedRegularStoriesPaginationQuery&variables=%7B%7D' })
+  await f('https://rupload.facebook.com/fb_video/abc?sig=SECRETSIG', { body: 'videobytes' })
+  await f('/api/graphql/', { body: 'fb_dtsg=SECRETTOKEN&fb_api_req_friendly_name=ComposerStoryCreateMutation&variables=%7B%22message%22%3A%22my%20words%22%7D' })
+  await new Promise((r) => setTimeout(r, 30))
+  const st = (sandbox.readState as (s: string, k: string) => { log: Array<{ name: string; ids: string[]; urls: string[]; n?: number; hit?: boolean }>; net: { url: string } | null })('', '')
+  const all = JSON.stringify(st)
+  check('the request log never keeps the login token, an upload address\'s query or what was typed', !/SECRETTOKEN|SECRETSIG|my words|videobytes/.test(all))
+  check('the log names each request, counts repeats, and keeps the post numbers in the answers',
+    st.log.length === 3 && st.log[0].name === 'GroupsCometFeedRegularStoriesPaginationQuery' && st.log[0].n === 3
+    && st.log[1].name === 'rupload.facebook.com/fb_video' && st.log[1].ids.includes('video_id=99887766554433')
+    && st.log[2].hit === true && st.log[2].ids.includes('legacy_story_hideable_id=1234567890123') && st.log[2].urls[0] === 'https://www.facebook.com/groups/kitchen/posts/1234567890123')
+  check('the post address is still read from the answer as before', st.net?.url === 'https://www.facebook.com/groups/kitchen/posts/1234567890123/')
+  check('a tab an older SCOUT hooked gets the logging hook', /if \(window\.__scoutGroupHook === 2\) return 'ready'/.test(bg))
+  check('every watch answer carries the log', /const save = \(st\) => saveGroupWatch\(id, log \? \{ \.\.\.st, log \} : st\)/.test(bg) && /if \(Array\.isArray\(r\.log\)\) log = r\.log/.test(bg))
+  const ef = read('lib/extension-frame.ts')
+  check('a missing or empty log says so in the copied text', /No request log: this SCOUT does not record one/.test(ef) && /Request log is empty/.test(ef))
+  check('Clip Factory offers the copy, read fresh from SCOUT, and says when it was not', /What Facebook sent \(for support\)/.test(reel) && /getFacebookGroupPostStatus\(watchId\)/.test(reel) && /SCOUT did not answer just now, so this is the last copy MVP had/.test(reel))
+})()
+
+void logChecks.catch((e) => { failures.push(`the request log test could not run: ${e instanceof Error ? e.message : e}`) }).then(() => {
+  if (failures.length) {
+    console.error('❌ facebook setup guard failed:\n  - ' + failures.join('\n  - '))
+    process.exit(1)
+  }
+  console.log('✓ facebook setup guard passed')
+})

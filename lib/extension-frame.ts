@@ -1140,6 +1140,45 @@ export interface FacebookGroupPostStatus {
   state: 'watching' | 'posted' | 'posted_no_link' | 'not_seen' | 'closed' | 'timeout' | 'lost' | 'unknown'
   url?: string
   via?: string
+  /** SCOUT 1.46.4+: what Facebook's own page sent while SCOUT watched. Only
+   *  each request's name and any post numbers or post addresses in its answer,
+   *  never its contents. Copied by the creator for support. */
+  log?: FacebookRequestNote[]
+}
+
+export interface FacebookRequestNote {
+  /** Seconds since SCOUT filled the post; t2 is the last repeat's. */
+  t: number
+  t2?: number
+  /** Facebook's own name for the request, or the upload place. */
+  name: string
+  len: number
+  ids: string[]
+  urls: string[]
+  /** One of the names SCOUT already reads a new post from. */
+  hit?: boolean
+  /** Times it came, when it came again with nothing in it. */
+  n?: number
+}
+
+/** The "What Facebook sent" text the creator copies for support. An empty or
+ *  missing log says so in words, so it never reads like a clean run. */
+export function facebookLogText(st: FacebookGroupPostStatus | null, scoutVersion?: string | null): string {
+  const head = [
+    `SCOUT ${scoutVersion || 'version unknown'}`,
+    `Watch: ${st ? st.state : 'no answer from SCOUT'}${st?.url ? ` ${st.url}` : ''}${st?.via ? ` (found by ${st.via})` : ''}`,
+  ]
+  if (!st || !Array.isArray(st.log)) return [...head, 'No request log: this SCOUT does not record one (it needs 1.46.4 or later).'].join('\n')
+  if (!st.log.length) return [...head, 'Request log is empty: Facebook\'s page sent nothing SCOUT could see.'].join('\n')
+  const rows = st.log.map((e) => {
+    const when = `+${e.t.toFixed(1)}s${e.n && e.n > 1 ? ` (x${e.n} to +${(e.t2 ?? e.t).toFixed(1)}s)` : ''}`
+    const bits = [when, e.name, `${e.len}b`]
+    if (e.hit) bits.push('[watched]')
+    if (e.ids.length) bits.push(`ids: ${e.ids.join(', ')}`)
+    if (e.urls.length) bits.push(`urls: ${e.urls.join(' ')}`)
+    return bits.join('  ')
+  })
+  return [...head, `${st.log.length} requests:`, ...rows].join('\n')
 }
 
 export async function getFacebookGroupPostStatus(watchId: string): Promise<FacebookGroupPostStatus> {

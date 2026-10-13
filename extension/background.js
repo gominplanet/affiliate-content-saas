@@ -13642,10 +13642,13 @@ function installGroupPostHook(markOld) {
   if (markOld) {
     window.__scoutGroupPost = null
     window.__scoutGroupCreated = false
+    window.__scoutGroupLog = []
+    window.__scoutGroupLogStart = Date.now()
     try { document.querySelectorAll('[role="article"], [aria-posinset]').forEach((a) => a.setAttribute('data-scout-old', '1')) } catch (e) {}
   }
-  if (window.__scoutGroupHook) return 'ready'
-  window.__scoutGroupHook = true
+  // 2 = with the request log (1.46.4). A tab an older SCOUT hooked gets this one.
+  if (window.__scoutGroupHook === 2) return 'ready'
+  window.__scoutGroupHook = 2
   const RE = /https:\/\/(?:www|web|m)\.facebook\.com\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
   const NAME = /StoryCreate|ComposerStory|CreatePost|GroupPost/i
   const describe = (body) => {
@@ -13653,6 +13656,54 @@ function installGroupPostHook(markOld) {
       if (typeof body === 'string') return body
       if (body instanceof URLSearchParams) return body.toString()
       if (body instanceof FormData) return String(body.get('fb_api_req_friendly_name') || '')
+    } catch (e) {}
+    return ''
+  }
+  // WHAT FACEBOOK SENT (diagnostic, SCOUT 1.46.4). While SCOUT watches, it
+  // notes each request Facebook's own page makes: its NAME only, and any post
+  // numbers or post addresses in the answer. Never the request's contents, so
+  // no passwords, tokens or messages. The creator copies it from Clip Factory
+  // for support, so SCOUT can learn which answer carries a video post's number.
+  if (!window.__scoutGroupLog) window.__scoutGroupLog = []
+  if (!window.__scoutGroupLogStart) window.__scoutGroupLogStart = Date.now()
+  const nameOf = (body) => {
+    try {
+      if (body instanceof FormData) return String(body.get('fb_api_req_friendly_name') || '')
+      const str = body instanceof URLSearchParams ? body.toString() : (typeof body === 'string' ? body : '')
+      const m = str.match(/(?:^|&)fb_api_req_friendly_name=([^&]{1,120})/)
+      return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : ''
+    } catch (e) { return '' }
+  }
+  const ID_KEYS = /"(post_id|top_level_post_id|legacy_story_hideable_id|story_fbid|mf_story_key|video_id|post_fbid|share_fbid|reel_id|story_id)"\s*:\s*"?([\w=:-]{6,80})"?/g
+  const URL_RE = /https:\/\/(?:www|web|m)\.facebook\.com\/(?:groups\/[\w.-]+\/(?:posts|permalink)\/\d+|reel\/\d+|watch\/?\?v=\d+|[\w.-]+\/videos\/\d+)/g
+  const note = (where, body, txt) => {
+    try {
+      const log = window.__scoutGroupLog
+      if (!log) return
+      const flat = String(txt || '').slice(0, 2000000).replace(/\\\//g, '/').replace(/\\u002F/gi, '/')
+      const ids = []
+      let m
+      ID_KEYS.lastIndex = 0
+      while ((m = ID_KEYS.exec(flat)) && ids.length < 6) { const v = m[1] + '=' + m[2]; if (ids.indexOf(v) < 0) ids.push(v) }
+      const urls = []
+      for (const u of (flat.match(URL_RE) || [])) { if (urls.indexOf(u) < 0 && urls.length < 3) urls.push(u) }
+      const name = where === 'graphql' ? (nameOf(body) || '(no name)') : where
+      const t = Math.round((Date.now() - window.__scoutGroupLogStart) / 100) / 10
+      const last = log[log.length - 1]
+      // The same request again with nothing in it: counted, not listed twice.
+      if (last && last.name === name && !ids.length && !urls.length && !last.ids.length && !last.urls.length) { last.n = (last.n || 1) + 1; last.t2 = t; return }
+      log.push({ t, name, len: flat.length, ids, urls, hit: NAME.test(name) })
+      // Kept short: the requests that carry a number are kept over the ones
+      // that do not.
+      if (log.length > 80) { const i = log.findIndex((e) => !e.ids.length && !e.urls.length); log.splice(i >= 0 ? i : 0, 1) }
+    } catch (e) {}
+  }
+  const where = (url) => {
+    try {
+      const u = new URL(String(url || ''), location.href)
+      if (/\/api\/graphql\/?$/.test(u.pathname)) return 'graphql'
+      // Uploads (the video itself) by place only: never the address's query.
+      if (/upload/i.test(u.hostname + u.pathname)) return u.hostname + u.pathname.split('/').slice(0, 2).join('/')
     } catch (e) {}
     return ''
   }
@@ -13673,8 +13724,17 @@ function installGroupPostHook(markOld) {
   try {
     const X = XMLHttpRequest.prototype
     const send = X.send
+    const open = X.open
+    X.open = function (method, url) {
+      try { this.__scoutWhere = where(url) } catch (e) {}
+      return open.apply(this, arguments)
+    }
     X.send = function (body) {
       try { if (NAME.test(describe(body))) this.addEventListener('load', () => { try { look(body, this.responseText) } catch (e) {} }) } catch (e) {}
+      try {
+        const w = this.__scoutWhere
+        if (w) this.addEventListener('load', () => { let txt = ''; try { txt = (this.responseType === '' || this.responseType === 'text') ? this.responseText : '' } catch (e) {} note(w, body, txt) })
+      } catch (e) {}
       return send.apply(this, arguments)
     }
   } catch (e) {}
@@ -13685,6 +13745,8 @@ function installGroupPostHook(markOld) {
       try {
         const b = init && init.body
         if (NAME.test(describe(b))) p.then((r) => r.clone().text()).then((t) => look(b, t)).catch(() => {})
+        const w = where(typeof input === 'string' ? input : (input && input.url))
+        if (w) p.then((r) => r.clone().text()).then((t) => note(w, b, t)).catch(() => {})
       } catch (e) {}
       return p
     }
@@ -13699,6 +13761,7 @@ function readGroupPostState(snippet, linkKey) {
     hook: !!window.__scoutGroupHook,
     net: window.__scoutGroupPost || null,
     created: !!window.__scoutGroupCreated,
+    log: Array.isArray(window.__scoutGroupLog) ? window.__scoutGroupLog.slice(-80) : null,
     dialog: Array.from(document.querySelectorAll('[role="dialog"] [contenteditable="true"]')).some(visible),
     seen: false,
     feedUrl: null,
@@ -13783,28 +13846,33 @@ function watchGroupPost(tabId, snippet, linkKey) {
     const started = Date.now()
     let dialogGoneAt = 0
     let seenAt = 0
+    // What Facebook sent, as last read (see installGroupPostHook). Kept in
+    // every answer so the creator can copy it whatever the outcome.
+    let log = null
+    const save = (st) => saveGroupWatch(id, log ? { ...st, log } : st)
     try {
       await saveGroupWatch(id, { state: 'watching' })
       while (Date.now() - started < 30 * 60 * 1000) {
         await sleep(2000)
         let tab = null
         try { tab = await chrome.tabs.get(tabId) } catch (e) {}
-        if (!tab) return await saveGroupWatch(id, { state: 'closed' })
+        if (!tab) return await save({ state: 'closed' })
         const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
-        if (onPost) return await saveGroupWatch(id, { state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
+        if (onPost) return await save({ state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
         const onReel = String(tab.url || '').match(/^https:\/\/(?:www|web|m)\.facebook\.com\/reel\/(\d{6,})/)
-        if (onReel) return await saveGroupWatch(id, { state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
+        if (onReel) return await save({ state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
         let r = null
         try {
           const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet, linkKey || ''] })
           r = res && res[0] && res[0].result
         } catch (e) {}
         if (!r) continue
+        if (Array.isArray(r.log)) log = r.log
         // The page reloaded and took the listener with it: put it back, but
         // without marking posts old, since the new one may already be there.
         if (!r.hook) { try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [false] }) } catch (e) {} }
         const url = (r.net && r.net.url) || r.feedUrl
-        if (url) return await saveGroupWatch(id, { state: 'posted', url, via: r.net ? r.net.via : 'feed' })
+        if (url) return await save({ state: 'posted', url, via: r.net ? r.net.via : 'feed' })
         if (r.seen || r.created) {
           if (!seenAt) seenAt = Date.now()
           // Give the timestamp link time to fill in before giving up on it. A
@@ -13815,19 +13883,19 @@ function watchGroupPost(tabId, snippet, linkKey) {
           // is still coming: no clock runs while it shows.
           if (r.processing && !r.seen) seenAt = Date.now()
           const patience = r.seen ? 45000 : 6 * 60 * 1000
-          if (Date.now() - seenAt > patience) return await saveGroupWatch(id, { state: 'posted_no_link' })
+          if (Date.now() - seenAt > patience) return await save({ state: 'posted_no_link' })
         }
         if (!r.dialog) {
           if (!dialogGoneAt) dialogGoneAt = Date.now()
-          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await saveGroupWatch(id, { state: 'not_seen' })
+          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await save({ state: 'not_seen' })
         } else {
           dialogGoneAt = 0
         }
-        await saveGroupWatch(id, { state: 'watching' })
+        await save({ state: 'watching' })
       }
-      await saveGroupWatch(id, { state: 'timeout' })
+      await save({ state: 'timeout' })
     } catch (e) {
-      await saveGroupWatch(id, { state: 'lost' })
+      await save({ state: 'lost' })
     } finally {
       stopKeepAlive(ka)
     }

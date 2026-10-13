@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.46.3'
+export const SCOUT_LATEST_VERSION = '1.46.4'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Facebook: a Group post that leads with its product link is found again, so the Page Reel follows it.'
+  'Facebook: SCOUT notes which of Facebook\'s requests carries a new Group post\'s number (names only), for one support test.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
