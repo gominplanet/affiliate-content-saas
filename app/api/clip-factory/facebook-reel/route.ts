@@ -21,7 +21,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
-import { publishPageReel } from '@/lib/facebook-reels'
+import { publishPageReel, publishPageVideo, reelState, REEL_MAX_SEC } from '@/lib/facebook-reels'
 import { buildReelCaption } from '@/lib/reel-caption'
 
 export const runtime = 'nodejs'
@@ -66,9 +66,16 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     videoUrl?: string; description?: string; socialAccountId?: string
     dryRun?: boolean; sourceVideoId?: string; product?: string; productName?: string
+    /** false: answer once Meta accepts it; the page then reads its state. */
+    wait?: boolean
+    /** The clip's length: over REEL_MAX_SEC it posts as a Page video. */
+    clipSeconds?: number
+    /** Read where an earlier post stands, by its video id. */
+    checkVideoId?: string
   }
   const videoUrl = String(body.videoUrl || '').trim()
-  if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'The clip has no web address to hand Facebook.' }, { status: 400 })
+  const checkId = String(body.checkVideoId || '').trim()
+  if (!checkId && !/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'The clip has no web address to hand Facebook.' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any).from('integrations')
@@ -89,6 +96,13 @@ export async function POST(req: Request) {
   })
   if (!page) return NextResponse.json({ error: 'No Facebook Page is connected. Connect one under Social Accounts.' }, { status: 400 })
 
+  // WHERE IT STANDS NOW: one read of Meta's status, for the page's watch.
+  if (checkId) {
+    if (!/^\d{5,30}$/.test(checkId)) return NextResponse.json({ error: 'Which video?' }, { status: 400 })
+    const st = await reelState(checkId, page.accessToken)
+    return NextResponse.json({ ok: true, ...st })
+  }
+
   if (body.dryRun === true) {
     const built = await buildReelCaption(supabase, user.id, {
       writeUp: String(body.description || ''), sourceVideoId: body.sourceVideoId,
@@ -101,7 +115,12 @@ export async function POST(req: Request) {
   const description = String(body.description || '').trim()
   if (!description) return NextResponse.json({ error: 'The Reel has no description. Add one before posting.' }, { status: 400 })
 
-  const r = await publishPageReel({ pageId: page.externalId, token: page.accessToken, videoUrl, description })
+  // Longer than a Reel can be: an ordinary Page video, said as one.
+  const secs = Number(body.clipSeconds)
+  const asVideo = Number.isFinite(secs) && secs > REEL_MAX_SEC
+  const r = asVideo
+    ? await publishPageVideo({ pageId: page.externalId, token: page.accessToken, videoUrl, description })
+    : await publishPageReel({ pageId: page.externalId, token: page.accessToken, videoUrl, description, wait: body.wait !== false })
   if (!r.ok) {
     // A permission Meta has not granted this connection reads as one.
     const perm = /permission|\(#200\)|\(#10\)|not authorized/i.test(r.error)
@@ -110,5 +129,5 @@ export async function POST(req: Request) {
       error: perm ? `Facebook refused: ${r.error} Reconnect Facebook under Social Accounts so the Page grants Reels publishing, then try again.` : `Facebook did not post the Reel: ${r.error}`,
     }, { status: 502 })
   }
-  return NextResponse.json({ ok: true, page: page.displayName, state: r.state, url: r.url, videoId: r.videoId, description })
+  return NextResponse.json({ ok: true, page: page.displayName, state: r.state, url: r.url, videoId: r.videoId, description, kind: asVideo ? 'video' : 'reel' })
 }

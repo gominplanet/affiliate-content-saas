@@ -15,6 +15,18 @@ const LABS = readFileSync('lib/labs-preview.ts', 'utf8')
 check('start, upload by URL, then finish as published, in that order',
   LIB.indexOf("upload_phase: 'start'") < LIB.indexOf('rupload.facebook.com') && LIB.indexOf('rupload.facebook.com') < LIB.indexOf("upload_phase: 'finish'")
   && /file_url: opts\.videoUrl/.test(LIB) && /video_state: 'PUBLISHED'/.test(LIB))
+// Seb 2026-10-13: "the reel posted on my group just never reached the page".
+{
+  const RD = readFileSync('components/clip-factory/ReelDestinations.tsx', 'utf8')
+  const RT = readFileSync('app/api/clip-factory/facebook-reel/route.ts', 'utf8')
+  check('the Page post answers once Facebook takes it, and the page watches it with a running clock',
+    /if \(opts\.wait === false\) return \{ ok: true, videoId, state: 'processing', url \}/.test(LIB) && /wait: false, clipSeconds/.test(RD)
+    && /checkVideoId: data\.videoId/.test(RD) && /sayLive\(/.test(RD) && /reelState\(checkId, page\.accessToken\)/.test(RT))
+  check('a clip over 90 seconds goes on the Page as a video, and says so',
+    /export const REEL_MAX_SEC = 90/.test(LIB) && /publishPageVideo\(/.test(RT) && /secs > REEL_MAX_SEC/.test(RT) && /Facebook only takes Page Reels up to 1:30/.test(RD)
+    && /clipSeconds=\{clip\?\.durationSec \?\? null\}/.test(readFileSync('components/clip-factory/ClipFactory.tsx', 'utf8')))
+  check('Facebook failing, or too slow, is said with what to check', /Your Group post is up, but the \$\{what\} did not go out/.test(RD) && /it may still appear/.test(RD))
+}
 check('the status is read back, and "still processing" is never called live',
   /fields=status/.test(LIB) && /state: 'processing'/.test(LIB) && /step: 'processing'/.test(LIB))
 // A 200 CAN STILL BE A REFUSAL: an `error` object in the body is a failure at

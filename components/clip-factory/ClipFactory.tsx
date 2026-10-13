@@ -1487,6 +1487,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                 start={fbFlowStart}
                 sourceVideoId={clip?.sourceVideoId ?? null}
                 clipTitle={clip?.title ?? null}
+                clipSeconds={clip?.durationSec ?? null}
                 onBusy={setPublishingFb}
                 onReelPosted={(url, description) => {
                   setPosted(pp => ({ ...pp, facebook: true }))

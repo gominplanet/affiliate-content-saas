@@ -118,6 +118,9 @@ export function ReelGroupFirst(p: {
   /** For the Facebook hub's record: the clip's source video and title. */
   sourceVideoId?: string | null
   clipTitle?: string | null
+  /** The clip's length: over 90 seconds Facebook takes no Reel, so it goes on
+   *  the Page as a video post instead. */
+  clipSeconds?: number | null
 }) {
   // THE MATCHING NICHE GROUP first: the kitchen clip goes to the Kitchen
   // Group, by the words saved with each Group. Changeable below.
@@ -133,6 +136,11 @@ export function ReelGroupFirst(p: {
 
   const group = p.groups[Math.min(groupIdx, p.groups.length - 1)]
   const say = (l: FlowLine) => { if (mounted.current) setLines((xs) => [...xs, l]) }
+  // One line that keeps moving (a running clock and Facebook's own step), so
+  // a slow Facebook never looks like a frozen page.
+  const sayLive = (l: FlowLine) => { if (mounted.current) setLines((xs) => (xs.length && (xs[xs.length - 1] as FlowLine & { live?: boolean }).live ? [...xs.slice(0, -1), { ...l, live: true } as FlowLine] : [...xs, { ...l, live: true } as FlowLine])) }
+  const clock = (ms: number) => { const t = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}` }
+  const longClip = (p.clipSeconds ?? 0) > 90
 
   // The Facebook hub's record of what went where. Best effort.
   function record(groupPostUrl: string, pagePostUrl: string | null) {
@@ -146,23 +154,49 @@ export function ReelGroupFirst(p: {
     setRetry(null)
     setManual(null)
     const description = [`Get it here 👉 ${link}`, caption.trim()].filter(Boolean).join('\n\n')
-    say({ tone: 'wait', text: `Posting the Reel on ${p.pageName || 'your Page'}, linking to ${how === 'post' ? 'your Group post' : 'your Group'}…` })
+    const what = longClip ? 'video' : 'Reel'
+    const where = how === 'post' ? 'your Group post' : 'your Group'
+    if (longClip) say({ tone: 'warn', text: `This clip is ${clock((p.clipSeconds ?? 0) * 1000)} long. Facebook only takes Page Reels up to 1:30, so it goes on ${p.pageName || 'your Page'} as a video post, with the same first line.` })
+    say({ tone: 'wait', text: `Sending the ${what} to ${p.pageName || 'your Page'}, linking to ${where}…` })
     p.onBusy(true)
+    const began = Date.now()
     try {
       const res = await fetch('/api/clip-factory/facebook-reel', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: p.clipUrl, description, ...(p.pageId ? { socialAccountId: p.pageId } : {}) }),
+        // Answer as soon as Facebook takes it; this page watches the rest.
+        body: JSON.stringify({ videoUrl: p.clipUrl, description, wait: false, clipSeconds: p.clipSeconds ?? undefined, ...(p.pageId ? { socialAccountId: p.pageId } : {}) }),
+        signal: AbortSignal.timeout(290_000),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Facebook did not post the Reel.')
-      say({ tone: 'ok', text: data.state === 'published'
-        ? `Done. The Reel is live on ${data.page || 'your Page'}, and its first line links to ${how === 'post' ? 'your Group post' : 'your Group'}.`
-        : `Done. Facebook accepted the Reel and is still processing it; it appears on ${data.page || 'your Page'} shortly, linking to ${how === 'post' ? 'your Group post' : 'your Group'}.` })
+      const data = await res.json().catch(() => ({ error: res.status === 504 ? `Facebook took too long to take the ${what}. Check ${p.pageName || 'your Page'} before trying again, it may still appear.` : `MVP did not get an answer (${res.status}).` }))
+      if (!res.ok || !data.ok) throw new Error(data.error || `Facebook did not post the ${what}.`)
+      // WATCHED UNTIL IT IS LIVE, or Facebook says why not, or ten minutes.
+      let state: string = data.state
+      let failed: string | null = null
+      while (state === 'processing' && data.videoId && mounted.current && Date.now() - began < 10 * 60_000) {
+        sayLive({ tone: 'wait', text: `Facebook has the ${what} and is working on it (${clock(Date.now() - began)}).` })
+        await new Promise((r) => setTimeout(r, 5000))
+        try {
+          const c = await fetch('/api/clip-factory/facebook-reel', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ checkVideoId: data.videoId, ...(p.pageId ? { socialAccountId: p.pageId } : {}) }),
+            signal: AbortSignal.timeout(30_000),
+          })
+          const cj = await c.json().catch(() => ({}))
+          if (cj.state === 'published') state = 'published'
+          else if (cj.state === 'failed') { state = 'failed'; failed = cj.error || 'Facebook could not process it.' }
+          else if (cj.phase) sayLive({ tone: 'wait', text: `Facebook is ${cj.phase} (${clock(Date.now() - began)}).` })
+        } catch { /* read again */ }
+      }
+      if (failed) throw new Error(failed)
+      say({ tone: 'ok', text: state === 'published'
+        ? `Done. The ${what} is live on ${data.page || 'your Page'}, and its first line links to ${where}.`
+        : `Facebook took the ${what} and is still processing it after ${clock(Date.now() - began)}. It appears on ${data.page || 'your Page'} once done, linking to ${where}.` })
       p.onReelPosted(data.url || null, String(data.description || description))
       record(link, data.url || null)
     } catch (e) {
       // THE GROUP POST IS UP, THE REEL IS NOT: said as exactly that.
-      say({ tone: 'bad', text: `Your Group post is up, but the Reel did not go out: ${e instanceof Error ? e.message : 'Facebook refused it.'}` })
+      const msg = e instanceof Error ? (/timed? ?out|abort/i.test(e.message) ? `Facebook took too long to answer. Check ${p.pageName || 'your Page'} before trying again: it may still appear.` : e.message) : 'Facebook refused it.'
+      say({ tone: 'bad', text: `Your Group post is up, but the ${what} did not go out: ${msg}` })
       setRetry(link)
       record(link, null)
     } finally { p.onBusy(false) }
