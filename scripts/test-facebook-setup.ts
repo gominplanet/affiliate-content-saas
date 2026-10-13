@@ -106,7 +106,7 @@ const reel = read('components/clip-factory/ReelDestinations.tsx')
 check('SCOUT attaches the clip itself to the Group post', /\{ kind: 'clip', url: p\.clipUrl \}/.test(reel) && /hero\.kind === 'clip'/.test(read('extension/background.js')))
 check('the Reel\'s first line links to the exact Group post', /`Get it here 👉 \$\{link\}`/.test(reel) && /isFacebookReelLink\(st\.url\)\)\) \{ await postReel\(st\.url, 'post'\)/.test(reel))
 check('without the post\'s own link, the Reel waits for it or links to the Group only when asked', /Link to my Group instead/.test(reel) && !/postReel\(group\.url, 'group'\); return/.test(reel))
-check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the Reel did not go out/.test(reel))
+check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the \$\{what\} did not go out/.test(reel) && reel.includes("const what = longClip ? 'video' : 'Reel'"))
 check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
 check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('components/clip-factory/ClipFactory.tsx')) && /Set up your deals Group first\./.test(read('components/clip-factory/ClipFactory.tsx')))
 
