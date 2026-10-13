@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -35,6 +35,8 @@ import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeWeek from '@/components/labs/TrybeWeek'
+import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
+import TrybeWorking from '@/components/labs/TrybeWorking'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -82,7 +84,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week'
+type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -240,15 +242,31 @@ function replyConvo(b: Brand, convos: Conversation[]): Conversation | null {
 }
 
 /** One number tile. */
-function Stat({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) {
-  return (
-    <div className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>{label}</p>
-      <p className="text-[24px] font-bold leading-tight mt-0.5 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
-      {hint && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</p>}
-    </div>
-  )
+/** A glance card: what it is, one big number, what the number means. The
+ *  colour on top says which card it is at a glance; the number takes it only
+ *  when it needs attention. */
+function Stat({ label, value, hint, tone, accent = '#7C3AED', onClick }: { label: string; value: string; hint?: string; tone?: string; accent?: string; onClick?: () => void }) {
+  const body = (<>
+    <p className="text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>{label}</p>
+    <p className="text-[28px] font-bold leading-tight mt-1 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
+    {hint && <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</p>}
+  </>)
+  const cls = 'text-left rounded-2xl border px-5 py-4'
+  const style = { borderColor: 'var(--border)', background: 'var(--surface)', borderTop: `4px solid ${accent}` }
+  return onClick ? <button onClick={onClick} className={`${cls} hover:shadow-sm transition-shadow`} style={style}>{body}</button> : <div className={cls} style={style}>{body}</div>
 }
+
+/** The tabs, in the order a creator works, each said in one line. */
+const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; says: string }> = [
+  { id: 'changes', label: 'What changed', icon: Bell, says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
+  { id: 'find', label: 'Find brands', icon: Search, says: 'Brands that fit your channel, and a first message to each, in your words.' },
+  { id: 'queue', label: 'Ready to send', icon: Send, says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
+  { id: 'sent', label: 'Sent', icon: Check, says: 'Who you asked, who answered, and what to do next with each brand.' },
+  { id: 'inbox', label: 'Inbox', icon: Inbox, says: 'Your TRYBE chats, each with a suggested reply.' },
+  { id: 'brands', label: 'My brands', icon: Star, says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
+  { id: 'week', label: 'This week', icon: CalendarDays, says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
+  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, says: 'How the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
+]
 
 
 /** When the next send opens up, in the creator's own clock. */
@@ -263,6 +281,13 @@ function opensWords(at: string | null): string {
 
 export default function TrybeOutreach() {
   const [brands, setBrands] = useState<Brand[]>([])
+  // "Include my results in members' combined numbers" (migration 428).
+  const [poolOptOut, setPoolOptOut] = useState(false)
+  // What changed on TRYBE this week (migration 428), read once for the
+  // "Your week" line and the What changed tab.
+  const [changes, setChanges] = useState<ChangesRead | null>(null)
+  const [changesError, setChangesError] = useState<string | null>(null)
+  useEffect(() => { fetchChanges(7).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [])
   // The brand list the Inbox matches chats against (id, name, website).
   const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
@@ -355,6 +380,7 @@ export default function TrybeOutreach() {
       const c = d.settings?.categories || [], k = d.settings?.keywords || []
       setSavedKey(prefsKey(c, k))
       setDailyFind(d.settings?.dailyFind !== false)
+      setPoolOptOut(d.settings?.poolOptOut === true)
       setLastFindAt(d.settings?.lastFindAt ?? null)
       setDirectory(d.directory ?? null)
       setIsAdmin(d.isAdmin === true)
@@ -458,7 +484,7 @@ export default function TrybeOutreach() {
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week') setTab(t) } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -1027,36 +1053,97 @@ export default function TrybeOutreach() {
   const repliedWeek = sentRows.filter(r => r.reply === 'replied' && (r.b.replied_at ? Date.parse(r.b.replied_at) >= weekAgo : true)).length
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-5" style={{ color: 'var(--text)' }}>
-      {/* Header: what this is, whether SCOUT can work, where to join. */}
-      <div className="flex flex-wrap items-start gap-3">
-        <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
-        <div className="flex-1 min-w-[14rem]">
-          <h1 className="text-[22px] font-bold leading-tight flex items-center gap-2">TRYBE Outreach</h1>
-          <p className="text-[13px] mt-0.5" style={soft}>Find brands that fit your channel, send each a first message in your words, and answer them here.</p>
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
+      {/* Header: what this is, in one line, and where to join. */}
+      <header className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[16rem]">
+          <h1 className="text-[34px] font-bold tracking-tight leading-none flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
+            TRYBE
+          </h1>
+          <p className="text-[14.5px] mt-2 max-w-[60ch]" style={soft}>Find brands that fit your channel, send each a first message in your words, answer them, and plan the videos they pay for.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {access === 'granted' && !inboxError && <span className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full px-2.5 py-1" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}><Check size={13} /> SCOUT is ready</span>}
-          {access === 'granted' && inboxError && <span className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full px-2.5 py-1" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }} title={inboxError}><AlertTriangle size={13} /> SCOUT is ready, TRYBE did not answer. Are you signed in to TRYBE?</span>}
-          {access === 'checking' && <span className="text-[12px]" style={soft}>Checking SCOUT...</span>}
-          {access === 'no-scout' && <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className={btn} style={{ background: PURPLE, color: '#fff' }}>SCOUT is not in this Chrome: install it <ExternalLink size={12} /></a>}
-          {access === 'old' && <span className="text-[12px] font-semibold" style={{ color: RED }} title="Chrome updates SCOUT by itself within a day. To update now: open chrome://extensions, turn on Developer mode, press Update.">SCOUT needs its latest version for TRYBE. Chrome updates it within a day; to do it now, press Update in chrome://extensions</span>}
-          {access === 'not-granted' && <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button>}
-          {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
-              MVP's referral link, and it says so. */}
-          <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
-            className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full border px-2.5 py-1" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
-            New to TRYBE? Join free <ExternalLink size={11} />
-          </a>
-        </div>
-      </div>
+        {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
+            MVP's referral link, and it says so. */}
+        <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
+          className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
+          New to TRYBE? Join free <ExternalLink size={11} />
+        </a>
+      </header>
+
+      {/* YOUR WEEK, in one line: each part opens its tab. */}
+      {(() => {
+        const parts: Array<{ text: string; to: Tab }> = []
+        const sum = changesSummary(changes)
+        if (sum) parts.push({ text: sum, to: 'changes' })
+        if (inbox && unread) parts.push({ text: `${unread} unread repl${unread === 1 ? 'y' : 'ies'}`, to: 'inbox' })
+        if (queue.length) parts.push({ text: `${queue.length} message${queue.length === 1 ? '' : 's'} ready to send`, to: 'queue' })
+        if (!parts.length) return null
+        return (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-5 py-2.5" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+            <span className="inline-flex items-center gap-2 text-[14px] font-bold" style={{ color: PURPLE }}><span className="w-2 h-2 rounded-full" style={{ background: PURPLE }} aria-hidden /> Your week</span>
+            {parts.map((x, i) => (
+              <button key={i} onClick={() => setTab(x.to)} className="text-[14px] font-semibold hover:underline" style={{ color: 'var(--text)' }}>
+                {i > 0 && <span className="mr-3" style={soft} aria-hidden>&middot;</span>}{x.text}
+              </button>
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* SETUP CHECK: shown until everything is ready, with the next step. */}
+      {(() => {
+        if (access === 'checking') return null
+        const steps: Array<{ done: boolean; title: string; ok: string; todo: string; action?: React.ReactNode }> = [
+          { done: access !== 'no-scout', title: 'SCOUT in this Chrome', ok: 'Installed.', todo: 'SCOUT is MVP\u2019s Chrome extension. It works in your own TRYBE, in your browser.',
+            action: <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className={btn} style={{ background: PURPLE, color: '#fff' }}>Install SCOUT <ExternalLink size={12} /></a> },
+          { done: access !== 'no-scout' && access !== 'old', title: 'SCOUT up to date', ok: scoutVersion ? `Version ${scoutVersion}.` : 'Up to date.', todo: 'Chrome updates SCOUT by itself within a day. To do it now, open chrome://extensions, turn on Developer mode and press Update.' },
+          { done: access === 'granted', title: 'SCOUT allowed on TRYBE', ok: 'Allowed.', todo: 'Chrome asks you once to let SCOUT read and act on jointrybe.com.',
+            action: access === 'not-granted' ? <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button> : undefined },
+          // Counted as signed in until a read of TRYBE fails, so the card does not
+          // flash while the inbox is still being read.
+          { done: access === 'granted' && !inboxError, title: 'Signed in to TRYBE', ok: 'MVP can read your TRYBE.', todo: inboxError ? `TRYBE did not answer: ${inboxError}. Open jointrybe.com in this Chrome and sign in.` : 'Open jointrybe.com in this Chrome and sign in.',
+            action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className={btn} style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
+          { done: !!saved?.core.trim(), title: 'Your core message', ok: 'Written.', todo: 'What every brand reads, in your words. Write it once in Find brands.',
+            action: <button onClick={() => { setTab('find'); setEditingCore(true) }} className={btn} style={{ border: '1px solid var(--border)' }}>Write it</button> },
+          { done: cats.length > 0 || kws.length > 0, title: 'Your niche', ok: [...cats, ...kws].slice(0, 4).join(', ') || 'Set.', todo: 'Pick your categories or keywords in Find brands, so MVP finds brands that fit.',
+            action: <button onClick={() => setTab('find')} className={btn} style={{ border: '1px solid var(--border)' }}>Pick my niche</button> },
+        ]
+        const next = steps.findIndex((x) => !x.done)
+        if (next < 0) return null
+        return (
+          <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div className="flex flex-wrap items-baseline gap-2 mb-2">
+              <h2 className="text-[18px] font-bold">Setup check</h2>
+              <span className="ml-auto text-[13px] font-semibold" style={{ color: PURPLE }}>Next: {steps[next].title}</span>
+            </div>
+            <ol className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {steps.map((x, i) => (
+                <li key={x.title} className="flex items-start gap-3 py-2.5" style={{ borderColor: 'var(--border)' }}>
+                  <span className="mt-0.5 w-6 h-6 shrink-0 rounded-full inline-flex items-center justify-center text-[12px] font-bold"
+                    style={x.done ? { background: GREEN, color: '#fff' } : i === next ? { background: PURPLE, color: '#fff' } : { border: '1px solid var(--border)', color: 'var(--text-soft)' }}>
+                    {x.done ? <Check size={14} /> : i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14.5px] font-semibold flex flex-wrap items-center gap-2" style={!x.done && i !== next ? soft : undefined}>
+                      {x.title}{i === next && <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Next</span>}
+                    </p>
+                    <p className="text-[13px]" style={soft}>{x.done ? x.ok : x.todo}</p>
+                    {i === next && x.action && <div className="mt-2">{x.action}</div>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )
+      })()}
 
       {/* The numbers that matter today. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <Stat label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} />
-        <Stat label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} />
-        <Stat label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} />
-        <Stat label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat accent={PURPLE} label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} onClick={() => setTab('sent')} />
+        <Stat accent="#0E7490" label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} onClick={() => setTab('queue')} />
+        <Stat accent={GREEN} label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} onClick={() => setTab('sent')} />
+        <Stat accent="#DB2777" label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} onClick={() => setTab('inbox')} />
       </div>
       {/* The menu count and Today depend on this save: a failure is said here. */}
       {alertsError && <p className="text-[12px] -mt-2 mb-3 inline-flex items-center gap-1" style={{ color: AMBER }}><AlertTriangle size={12} /> The inbox was read, but the reply alert for the menu and Today could not be saved: {alertsError}</p>}
@@ -1067,17 +1154,33 @@ export default function TrybeOutreach() {
         </p>
       )}
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border p-1 w-fit max-w-full" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} role="tablist">
-        {([['find', 'Find brands', 0], ['queue', 'Ready to send', queue.length], ['sent', 'Sent', history.length], ['inbox', 'Inbox', unread], ['brands', 'My brands', 0], ['week', 'This week', 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold"
-            style={tab === id ? { background: PURPLE, color: '#fff' } : { color: 'var(--text)' }}>
-            {label}
-            {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[1.25rem] text-center tabular-nums" style={tab === id ? { background: 'rgba(255,255,255,0.25)' } : id === 'inbox' ? { background: PURPLE, color: '#fff' } : { background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{n}</span>}
-          </button>
-        ))}
-      </div>
+      {/* Tabs: one row, the active one underlined, and what it is for. */}
+      <nav className="border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }} role="tablist" aria-label="TRYBE">
+        <div className="flex gap-1 min-w-max">
+          {TABS.map(({ id, label, icon: Icon }) => {
+            const n = id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
+            const on = tab === id
+            return (
+              <button key={id} role="tab" aria-selected={on} onClick={() => setTab(id)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-[14px] font-semibold border-b-2 -mb-px whitespace-nowrap"
+                style={on ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'transparent', color: 'var(--text)' }}>
+                <Icon size={15} /> {label}
+                {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[1.25rem] text-center tabular-nums" style={id === 'inbox' ? { background: PURPLE, color: '#fff' } : { background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{n}</span>}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+      <p className="text-[14px] -mt-2" style={soft}>{TABS.find((t) => t.id === tab)?.says}</p>
+
+      {tab === 'changes' && (changesError && !changes
+        ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} />
+        : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
+
+      {tab === 'working' && (
+        <TrybeWorking canRead={canMyBrands} isAdmin={isAdmin}
+          newToTop={changes ? Array.from(new Map(changes.changes.filter((c) => c.kind === 'top100').map((c) => [c.brand_id, { id: c.brand_id, name: c.name || 'A brand' }])).values()) : null} />
+      )}
 
       {tab === 'find' && (<>
         {/* 1. Core message: a short preview once written, the box while editing. */}
@@ -1545,7 +1648,7 @@ export default function TrybeOutreach() {
 
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
-          isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} />
+          isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} poolOptOut={poolOptOut} onPoolOptOut={setPoolOptOut} />
       )}
 
       {tab === 'week' && (

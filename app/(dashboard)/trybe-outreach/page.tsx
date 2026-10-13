@@ -18,7 +18,7 @@ export default function TrybeOutreachPage() {
 
   if (tier !== null && canUsePreview('trybe_outreach', tier)) return <TrybeOutreach />
   // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="TRYBE Outreach" body="TRYBE Outreach finds brands on TRYBE that fit your channel, writes each one a first message in your words, and SCOUT sends your requests to join. It is part of the Pro plan." />
+  if (tier !== null) return <ProUpgradePanel feature="TRYBE" body="TRYBE in MVP finds brands on TRYBE that fit your channel, writes each one a first message in your words, and SCOUT sends your requests to join. It is part of the Pro plan." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

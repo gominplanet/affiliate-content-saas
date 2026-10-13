@@ -23,6 +23,7 @@ import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
+import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -63,7 +64,7 @@ type Db = any
 /** A database update Seb has not run yet: named for an admin, who can run
  *  it; said plainly to a creator, who cannot. */
 function setupWords(tier: string | null | undefined, adminText: string): string {
-  return tier === 'admin' ? adminText : 'TRYBE Outreach is finishing an update on MVP. Try again in a few minutes.'
+  return tier === 'admin' ? adminText : 'TRYBE is finishing an update on MVP. Try again in a few minutes.'
 }
 
 async function gate() {
@@ -74,7 +75,7 @@ async function gate() {
   const admin = createAdminClient() as Db
   const { data: intg } = await admin.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('trybe_outreach', intg?.tier)) {
-    return { error: NextResponse.json({ error: 'TRYBE Outreach is part of the Pro plan.' }, { status: 403 }) }
+    return { error: NextResponse.json({ error: 'TRYBE is part of the Pro plan.' }, { status: 403 }) }
   }
   return { userId: user.id, ownerId, tier: normalizeTier(intg?.tier), admin, supabase }
 }
@@ -90,6 +91,8 @@ async function readSettings(admin: Db, ownerId: string) {
     keywords: cleanTerms(data?.keywords),
     dailyFind: data?.daily_find !== false,
     lastFindAt: (data?.last_find_at as string | null) ?? null,
+    // Members' combined numbers (migration 428): on unless turned off.
+    poolOptOut: data?.pool_opt_out === true,
   }
 }
 
@@ -161,6 +164,15 @@ function searchWords(terms: string[]): string[] {
 }
 
 /** A database refusal in words, naming the migration when a column is missing. */
+/** The day's changes on MVP's copy of TRYBE (migration 428). Best effort:
+ *  a database without the table still saves the copy itself. */
+async function logChanges(admin: Db, list: Change[]) {
+  if (!list.length) return
+  try {
+    for (let i = 0; i < list.length; i += 500) await admin.from('trybe_directory_changes').insert(list.slice(i, i + 500).map(c => ({ brand_id: c.brand_id, kind: c.kind, before: c.before?.slice(0, 200) ?? null, after: c.after?.slice(0, 200) ?? null })))
+  } catch { /* the copy is saved either way */ }
+}
+
 function dbWords(message: string): string {
   return /column .* does not exist|schema cache/i.test(message) ? 'The TRYBE niche settings need migration 416 in Supabase first.' : message
 }
@@ -313,9 +325,11 @@ export async function POST(request: Request) {
     // WHAT WAS KNOWN STAYS KNOWN: an entry that arrives emptier than the one
     // saved before (another offer by the same brand, tomorrow's collection)
     // never blanks a website, description or categories already kept.
-    const { data: had, error: hadErr } = await admin.from('trybe_directory')
-      .select('brand_id, name, website, about, categories, pay_text, trybe_score, total_creators, rating, raw')
-      .in('brand_id', list.map(b => b.brandId))
+    const HAD_COLS = 'brand_id, name, website, about, categories, pay_text, trybe_score, total_creators, rating, raw'
+    let { data: had, error: hadErr } = await admin.from('trybe_directory').select(`${HAD_COLS}, left_at`).in('brand_id', list.map(b => b.brandId))
+    // Without migration 428 there is no left_at: read without it.
+    const hasLeft = !hadErr
+    if (hadErr && /left_at|does not exist|schema cache/i.test(hadErr.message)) ({ data: had, error: hadErr } = await admin.from('trybe_directory').select(HAD_COLS).in('brand_id', list.map(b => b.brandId)))
     // A read that failed is not "nothing kept": taken as one, empty entries
     // would be written over what every member's search reads.
     if (hadErr) return NextResponse.json({ error: dbWords(hadErr.message) }, { status: 500 })
@@ -344,8 +358,13 @@ export async function POST(request: Request) {
         total_creators: pick(b.totalCreators == null ? null : Math.round(b.totalCreators), p.total_creators),
         rating: pick(b.rating, p.rating),
         raw: trusted || !p.raw ? b.raw : p.raw, search_text: directorySearchText(merged), last_seen_at: now,
+        ...(hasLeft ? { left_at: null } : {}),
       }
     })
+    // WHAT CHANGED (migration 428): new brands, ones back on the list, pay.
+    // Nothing is "new" while MVP's copy is first being filled.
+    const { data: collectedBefore } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
+    const changes: Change[] = directoryChanges(rows, prev, !collectedBefore)
     const { error } = await admin.from('trybe_directory').upsert(rows, { onConflict: 'brand_id' })
     if (error) {
       const missing = /does not exist|schema cache/i.test(error.message)
@@ -362,6 +381,10 @@ export async function POST(request: Request) {
         const had = new Map(((haveB || []) as Array<{ brand_id: string; earnings_bucket: string | null }>).map(r => [r.brand_id, r.earnings_bucket]))
         const buckets = withBucket.filter(b => trusted || !had.get(b.brandId))
           .map(b => ({ brand_id: b.brandId, name: rows.find(r => r.brand_id === b.brandId)?.name || b.name, earnings_bucket: b.earningsBucket }))
+        for (const b of buckets) {
+          const was = had.get(b.brand_id)
+          if (was && b.earnings_bucket && was !== b.earnings_bucket) changes.push({ brand_id: b.brand_id, kind: 'tier', before: was, after: b.earnings_bucket })
+        }
         if (buckets.length) await admin.from('trybe_directory').upsert(buckets, { onConflict: 'brand_id' })
       }
     }
@@ -371,11 +394,92 @@ export async function POST(request: Request) {
     if (body.collected && typeof body.collected === 'object' && (tier === 'admin' || ((body.collected as { complete?: unknown }).complete === true && Number((body.collected as { pages?: unknown }).pages) >= 40))) {
       const c = body.collected as { complete?: unknown; pages?: unknown; totalPages?: unknown }
       await admin.from('trybe_directory_meta').upsert({ key: 'collected', value: { at: now, complete: c.complete === true, pages: Number(c.pages) || null, totalPages: Number(c.totalPages) || null }, updated_at: now })
+      // LEFT THE LIST: a WHOLE collection that did not see a brand in 12
+      // hours means TRYBE no longer lists it. Marked once; it comes back as
+      // "back" when a collection sees it again.
+      if (c.complete === true && hasLeft) {
+        const cutoff = new Date(Date.now() - 12 * 3600_000).toISOString()
+        const { data: gone } = await admin.from('trybe_directory').update({ left_at: now }).lt('last_seen_at', cutoff).is('left_at', null).select('brand_id')
+        for (const g of (gone || []) as Array<{ brand_id: string }>) changes.push({ brand_id: g.brand_id, kind: 'left', before: null, after: null })
+      }
     }
+    await logChanges(admin, changes)
     return NextResponse.json({
       ok: true, saved: rows.length, withWebsite: rows.filter(r => r.website).length, received: items.length,
       keys: items[0] && typeof items[0] === 'object' ? Object.keys(items[0] as object).slice(0, 30) : [],
     })
+  }
+
+  // ── WHAT CHANGED, AND MEMBERS TOGETHER (Seb, 2026-10-13) ──────────────────
+
+  if (action === 'changes') {
+    // The changes MVP saw on its copy of TRYBE in the last few days, newest
+    // first, each with the brand's name and whether it is one of yours.
+    const days = Math.max(1, Math.min(14, Number(body.days) || 7))
+    const since = new Date(Date.now() - days * 86_400_000).toISOString()
+    const { data: ch, error: chErr } = await admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).limit(3000)
+    if (chErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(chErr.message) ? setupWords(tier, 'What changed needs migration 428 in Supabase first.') : chErr.message, needsMigration: /does not exist|schema cache/i.test(chErr.message) }, { status: 500 })
+    const list = (ch || []) as Array<{ brand_id: string; kind: string; before: string | null; after: string | null; at: string }>
+    const ids = Array.from(new Set(list.map(c => c.brand_id)))
+    const names = new Map<string, { name: string; website: string | null; pay_text: string | null; categories: string[] | null }>()
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data: d } = await admin.from('trybe_directory').select('brand_id, name, website, pay_text, categories').in('brand_id', ids.slice(i, i + 500))
+      for (const r of (d || []) as Array<{ brand_id: string; name: string; website: string | null; pay_text: string | null; categories: string[] | null }>) names.set(r.brand_id, r)
+    }
+    // Yours: on your MVP list, or a sample you logged.
+    const { data: mine } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).in('brand_id', ids.length ? ids.slice(0, 1000) : ['-'])
+    const { data: sam } = await admin.from('trybe_samples').select('brand_id').eq('user_id', ownerId).not('brand_id', 'is', null)
+    const yours = new Set([...((mine || []) as Array<{ brand_id: string }>), ...((sam || []) as Array<{ brand_id: string }>)].map(r => r.brand_id))
+    const { data: col } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
+    return NextResponse.json({
+      ok: true, days,
+      lastCollectedAt: (col?.value as { at?: string; complete?: boolean } | undefined)?.complete ? (col!.value as { at: string }).at : null,
+      changes: list.map(c => ({ ...c, name: names.get(c.brand_id)?.name || null, website: names.get(c.brand_id)?.website || null, pay: names.get(c.brand_id)?.pay_text || null, categories: names.get(c.brand_id)?.categories || [], yours: yours.has(c.brand_id) })),
+    })
+  }
+
+  if (action === 'my_stats') {
+    // A member's own numbers per brand, as SCOUT read them from their TRYBE
+    // (My brands). Kept only to combine with other members' (never shown one
+    // member at a time), and not kept at all when they turned it off.
+    const settings = await readSettings(admin, ownerId)
+    if (settings.poolOptOut) return NextResponse.json({ ok: true, kept: 0, optedOut: true })
+    const n = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : null)
+    const list = (Array.isArray(body.brands) ? body.brands : []).slice(0, 300) as Array<Record<string, unknown>>
+    const rowsIn = list.map(b => ({
+      user_id: ownerId, brand_id: typeof b.id === 'string' ? b.id.slice(0, 80) : '',
+      brand_name: typeof b.name === 'string' ? b.name.slice(0, 120) : null,
+      submitted: n(b.submitted, 100000), approved: n(b.approved, 100000), rejected: n(b.rejected, 100000), earnings: n(b.earnings, 10_000_000),
+      updated_at: now,
+    })).filter(r => r.brand_id && (r.approved != null || r.rejected != null || r.earnings != null))
+    if (!rowsIn.length) return NextResponse.json({ ok: true, kept: 0 })
+    const { error: msErr } = await admin.from('trybe_member_stats').upsert(rowsIn, { onConflict: 'user_id,brand_id' })
+    if (msErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(msErr.message) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : msErr.message }, { status: 500 })
+    return NextResponse.json({ ok: true, kept: rowsIn.length })
+  }
+
+  if (action === 'pooled') {
+    // Members' combined numbers for these brands (lib/trybe-changes poolBrands:
+    // 5 members at least, no one member more than half).
+    const ids = (Array.isArray(body.brandIds) ? body.brandIds : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 80)).slice(0, 500)
+    if (!ids.length) return NextResponse.json({ ok: true, pooled: {} })
+    const { data: pr, error: prErr } = await admin.from('trybe_member_stats').select('user_id, brand_id, approved, rejected, earnings').in('brand_id', ids)
+    if (prErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(prErr.message) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : prErr.message }, { status: 500 })
+    const pooled = poolBrands(((pr || []) as Array<Record<string, unknown>>).map(r => ({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: r.approved == null ? null : Number(r.approved), rejected: r.rejected == null ? null : Number(r.rejected), earnings: r.earnings == null ? null : Number(r.earnings) })) as MemberRow[])
+    return NextResponse.json({ ok: true, pooled: Object.fromEntries(pooled) })
+  }
+
+  if (action === 'pool_setting') {
+    // "Include my results in members' combined numbers". Off deletes what
+    // was kept, at once.
+    const optOut = body.optOut === true
+    const { error: psErr } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, pool_opt_out: optOut, updated_at: now })
+    if (psErr) return NextResponse.json({ error: /does not exist|schema cache|pool_opt_out/i.test(psErr.message) ? setupWords(tier, 'This setting needs migration 428 in Supabase first.') : psErr.message }, { status: 500 })
+    if (optOut) {
+      const { error: delErr } = await admin.from('trybe_member_stats').delete().eq('user_id', ownerId)
+      if (delErr && !/does not exist|schema cache/i.test(delErr.message)) return NextResponse.json({ error: `The setting is saved, but your kept results could not be deleted: ${delErr.message}` }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, poolOptOut: optOut })
   }
 
   // ── COLE'S PLAYBOOK (Seb, 2026-10-12) ─────────────────────────────────────
@@ -416,13 +520,23 @@ export async function POST(request: Request) {
       const { data: known } = ids.length ? await admin.from('trybe_directory').select('brand_id').in('brand_id', ids) : { data: [] }
       if (!(known || []).length) return NextResponse.json({ ok: true, read: entries.length, matched: 0, sample })
     }
+    // Who was in it before this read, for "entered the Top 100". Nothing is
+    // "entered" on the first read ever.
+    const { data: wasIn } = await admin.from('trybe_directory').select('brand_id').gt('top100_hits', 0)
+    const before100 = new Set(((wasIn || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
+    const firstTop = !last
     const { error: clearErr } = await admin.from('trybe_directory').update({ top100_hits: 0, top100_best_rank: null, top100_checked_at: now }).gt('top100_hits', 0)
     if (clearErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(clearErr.message) ? setupWords(tier, 'The Top 100 needs migration 425 in Supabase first.') : clearErr.message }, { status: 500 })
     let matched = 0
+    const entered: Change[] = []
     for (const [id, t] of hits) {
       const { data: up } = await admin.from('trybe_directory').update({ top100_hits: t.hits, top100_best_rank: t.best, top100_checked_at: now }).eq('brand_id', id).select('brand_id')
-      if ((up || []).length) matched++
+      if ((up || []).length) {
+        matched++
+        if (!firstTop && !before100.has(id)) entered.push({ brand_id: id, kind: 'top100', before: null, after: t.best != null ? String(t.best) : null })
+      }
     }
+    await logChanges(admin, entered)
     // Every brand is now "read": one not in the Top 100 counts 0, not unknown.
     await admin.from('trybe_directory').update({ top100_checked_at: now }).is('top100_checked_at', null)
     await admin.from('trybe_directory_meta').upsert({ key: 'top100', value: { at: now, entries: entries.length, brands: hits.size, matched }, updated_at: now })
@@ -440,12 +554,18 @@ export async function POST(request: Request) {
       const n = typeof x.count === 'number' && Number.isFinite(x.count) && x.count >= 0 && x.count <= 1_000_000 ? Math.round(x.count) : null
       if (!id || n == null) continue
       const stale = new Date(Date.now() - 6 * 86_400_000).toISOString()
+      const { data: before } = await admin.from('trybe_directory').select('meta_ads, meta_ads_checked_at').eq('brand_id', id).maybeSingle()
       // A member fills a count nobody read this week; an admin may correct one.
       let q = admin.from('trybe_directory').update({ meta_ads: n, meta_ads_checked_at: now }).eq('brand_id', id)
       if (tier !== 'admin') q = q.or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${stale}`)
       const { data: up, error: upErr } = await q.select('brand_id')
       if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? setupWords(tier, 'Meta ad counts need migration 425 in Supabase first.') : upErr.message }, { status: 500 })
-      if ((up || []).length) saved++
+      if ((up || []).length) {
+        saved++
+        // Only against a count read before: a first read is not "more ads".
+        const was = before?.meta_ads_checked_at ? (before.meta_ads as number | null) : undefined
+        if (was !== undefined && adsChange(was, n)) await logChanges(admin, [{ brand_id: id, kind: 'ads', before: String(was ?? 0), after: String(n) }])
+      }
     }
     return NextResponse.json({ ok: true, saved })
   }

@@ -97,7 +97,7 @@ check('a markdown link goes out as its address', tidyDraft('See [www.gominreview
 check('a draft can be written again from the core message', /onRewrite=\{\(\) => void rewrite\(\[b\]\)\}/.test(UI) && /Rewrite all/.test(UI))
 check('the route judges fit and never drafts a brand that does not fit', /action === 'match'/.test(ROUTE) && /r\.status === 'not_fit'\) return \{ brandId: r\.brand_id, ok: false/.test(ROUTE))
 check('a brand that does not fit is never sent', !/'not_fit'/.test(ROUTE.slice(ROUTE.indexOf("action === 'claim'"), ROUTE.indexOf("action === 'result'"))) && /\['drafted', 'failed'\]\.includes\(row\.status\)/.test(ROUTE))
-check('Ready to send is its own tab', /\['queue', 'Ready to send', queue\.length\]/.test(UI) && /tab === 'queue' &&/.test(UI))
+check('Ready to send is its own tab', /\{ id: 'queue', label: 'Ready to send'/.test(UI) && /id === 'queue' \? queue\.length/.test(UI) && /tab === 'queue' &&/.test(UI))
 check('a send that cannot start says why in the run log', /Not started: \$\{c\.error/.test(UI) && /Run log/.test(UI))
 check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /savedKey === prefsKey\(\[\], \[\]\)\) return/.test(UI))
 check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
@@ -181,7 +181,7 @@ check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.
   check('the brands new on TRYBE since the first count are counted from when each was first seen',
     /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)
 }
-check('the inbox is a tab of TRYBE Outreach', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
+check('the inbox is a tab of TRYBE', /\{ id: 'inbox', label: 'Inbox'/.test(UI) && /id === 'inbox' \? unread/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
 {
   // Seb, 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND PRODUCTS".
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
@@ -251,7 +251,7 @@ check('searching a keyword is shown as the better way, niches as one click', /Be
 check('a niche alone nudges toward a keyword', /cats\.length > 0 && !kws\.length/.test(UI) && /Add a keyword/.test(UI))
 check('MVP\'s copy of TRYBE is described to the admin only', /isAdmin: g\.tier === 'admin'/.test(ROUTE) && UI.split('MVP&rsquo;s copy of TRYBE: <b>').slice(0, -1).every(before => /isAdmin && /.test(before.slice(-1200))) && UI.includes('MVP&rsquo;s copy of TRYBE: <b>'))
 check('a problem from a find is shown to everyone, not only the admin', /findNotes\.filter\(n => !ADMIN_NOTE\.test\(n\)\)/.test(UI) && /const ADMIN_NOTE = \/\^\(SCOUT collected /.test(UI))
-check('the queue is called Ready to send', /\['queue', 'Ready to send', queue\.length\]/.test(UI) && !/[Mm]orning queue/.test(UI))
+check('the queue is called Ready to send', /\{ id: 'queue', label: 'Ready to send'/.test(UI) && !/[Mm]orning queue/.test(UI))
 check('Remove never touches a brand that went, or may have gone, to TRYBE', /action === 'remove'/.test(ROUTE) && /\.in\('status', \['new', 'not_fit', 'drafted', 'skipped', 'failed'\]\)\.select\('brand_id'\)/.test(ROUTE) && /onRemove=\{\(\) => void remove\(b\)\}/.test(UI))
 check('a removed brand stays out of the daily find but can be picked by hand', /\['not_fit', 'skipped', 'removed'\]/.test(ROUTE) && /'removed'/.test(LIB))
 check('a message never singles out one product', /never single out one product/.test(LIB) && !/a product by name from its website/.test(LIB))
@@ -302,9 +302,9 @@ check('a reply sent from MVP teaches who you are, and the list shows it after', 
 
 // The redesign (Seb, 2026-10-07): numbers up top, who replied, one-click
 // Message, compact cards with Send now.
-check('the page shows sent, ready, replied and unread', /<Stat label="Sent, last 24 hours" value=\{`\$\{used\} of \$\{savedCap\}`\}/.test(UI) && /<Stat label="Ready to send"/.test(UI) && /<Stat label="Replied this week"/.test(UI) && /<Stat label="Unread"/.test(UI))
+check('the page shows sent, ready, replied and unread', /<Stat [^>]*label="Sent, last 24 hours" value=\{`\$\{used\} of \$\{savedCap\}`\}/.test(UI) && /<Stat [^>]*label="Ready to send"/.test(UI) && /<Stat [^>]*label="Replied this week"/.test(UI) && /<Stat [^>]*label="Unread"/.test(UI))
 check('a request that went, with a TRYBE conversation newer than it, counts as replied, and a stamped reply stays one', /function replyConvo\(b: Brand, convos: Conversation\[\]\): Conversation \| null \{\s*if \(!WENT\.includes\(b\.status\)\) return null/.test(UI) && /c\.at < sentAt \? null : c/.test(UI) && /action: 'replied', replies:/.test(UI) && /action === 'replied'/.test(ROUTE) && /\.is\('replied_at', null\)/.test(ROUTE))
-check('the Replied tile counts this week, with the all-time count under it', /<Stat label="Replied this week"/.test(UI) && /sent have replied/.test(UI) && /add column if not exists replied_at timestamptz/.test(readFileSync('supabase/migrations/419_trybe_replied.sql', 'utf8')))
+check('the Replied tile counts this week, with the all-time count under it', /<Stat [^>]*label="Replied this week"/.test(UI) && /sent have replied/.test(UI) && /add column if not exists replied_at timestamptz/.test(readFileSync('supabase/migrations/419_trybe_replied.sql', 'utf8')))
 check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ id: c\.id, n: \(o\?\.n \?\? 0\) \+ 1 \}\)\); setTab\('inbox'\)/.test(UI) && /openRequest=\{openChat\}/.test(UI) && /handled\.current === openRequest\.n/.test(INBOX))
 check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
 check('Send now waits for the save and never sends after a failed one', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(ok => \{ if \(ok\) void sendOne\(\{ \.\.\.b, draft: t \}\) \}\)\}/.test(UI) && /const inFlight = pendingSave\.current\.get\(b\.brand_id\)/.test(UI))

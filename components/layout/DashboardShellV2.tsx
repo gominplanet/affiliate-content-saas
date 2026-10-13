@@ -529,7 +529,7 @@ export default function DashboardShellV2({
         // in the creator's words, SCOUT sends them. Open to Pro (Seb,
         // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
         // PRODUCTS").
-        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE Outreach', gate: canUsePreview('trybe_outreach', effectiveTier), badge: trybeUnread > 0 ? trybeUnread : 'New' },
+        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE', gate: canUsePreview('trybe_outreach', effectiveTier), badge: trybeUnread > 0 ? trybeUnread : 'New' },
       ],
     },
     {

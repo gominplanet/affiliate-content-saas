@@ -55,7 +55,7 @@ check('a sample\'s ideas are planned about its product and kept on the sample', 
 const ui = read('components/labs/TrybeWeek.tsx')
 check('the page reads the list and says when it could not', /setLoadError/.test(ui) && /Try again/.test(ui))
 check('the rows are not a component made inside the page (that closed ideas mid-plan)', !/const SampleRow = /.test(ui) && /sampleRow\(r\)/.test(ui))
-check('the TRYBE page has the This week tab', /\['week', 'This week', 0\]/.test(read('components/labs/TrybeOutreach.tsx')))
+check('the TRYBE page has the This week tab', /\{ id: 'week', label: 'This week'/.test(read('components/labs/TrybeOutreach.tsx')))
 const mig = read('supabase/migrations/427_trybe_samples.sql')
 check('migration 427 is safe to run twice', /create table if not exists public\.trybe_samples/.test(mig) && /drop policy if exists/.test(mig) && /create index if not exists/.test(mig))
 

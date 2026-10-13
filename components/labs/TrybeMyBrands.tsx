@@ -20,6 +20,7 @@ import { type Conversation } from '@/components/labs/TrybeInbox'
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { type Pooled, POOL_MIN } from '@/lib/trybe-changes'
 import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, STUCK_DAYS, FOCUS_COUNT,
   type MyBrand, type Submission, type Verdict } from '@/lib/trybe-mybrands'
 
@@ -81,7 +82,10 @@ function chatFor(brand: string, convos: Conversation[]): Conversation | null {
   return convos.filter(c => !/\(group\)/i.test(c.name) && n(c.name) === b).sort((x, y) => y.at - x.at)[0] || null
 }
 
-export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, isAdmin, scoutOpens, needsUpdate }: {
+export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, isAdmin, scoutOpens, needsUpdate, poolOptOut = false, onPoolOptOut }: {
+  /** The member turned off "Include my results in members' combined numbers". */
+  poolOptOut?: boolean
+  onPoolOptOut?: (v: boolean) => void
   /** SCOUT 1.46.0+ allowed on TRYBE. */
   canRead: boolean
   /** SCOUT can post into a TRYBE chat (the Inbox works). */
@@ -103,6 +107,12 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
   const [readAt, setReadAt] = useState<number | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [nudged, setNudged] = useState<Record<string, string>>({})
+  // MEMBERS' COMBINED NUMBERS (migration 428): this member's numbers go in
+  // once each read is whole (unless they turned it off), and every brand's
+  // combined figure comes back. Not read is said, never shown as nothing.
+  const [pooled, setPooled] = useState<Record<string, Pooled> | null>(null)
+  const [poolNote, setPoolNote] = useState<string | null>(null)
+  const sentFor = useRef<number | null>(null)
 
   useEffect(() => { setNudged(readNudged()) }, [])
 
@@ -149,6 +159,37 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
     return b
   }), [brands, subs])
   const judged = useMemo(() => judgeBrands(filled), [filled])
+
+  useEffect(() => {
+    if (!readAt || loading || !filled.length || sentFor.current === readAt) return
+    if (subProgress && subProgress.done < subProgress.of) return
+    sentFor.current = readAt
+    void (async () => {
+      const post = async (b: Record<string, unknown>) => {
+        const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(30_000) })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
+        return d
+      }
+      if (!poolOptOut) try { await post({ action: 'my_stats', brands: filled.map(b => ({ id: b.id, name: b.name, submitted: b.submitted, approved: b.approved, rejected: b.rejected, earnings: b.earnings })) }) }
+      catch { /* the combined numbers below still read */ }
+      try { const d = await post({ action: 'pooled', brandIds: filled.map(b => b.id) }); setPooled(d.pooled || {}); setPoolNote(null) }
+      catch (e) { setPoolNote(e instanceof Error ? e.message : 'MVP could not read members\' combined numbers.') }
+    })()
+  }, [readAt, loading, filled, subProgress, poolOptOut])
+
+  const [poolSaving, setPoolSaving] = useState(false)
+  async function setPool(include: boolean) {
+    setPoolSaving(true)
+    try {
+      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'pool_setting', optOut: !include }), signal: AbortSignal.timeout(30_000) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || `Not saved (${r.status})`)
+      onPoolOptOut?.(!include)
+      toast.success(include ? 'Your results are included in members\' combined numbers.' : 'Your results are left out, and what was kept is deleted.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Not saved.') }
+    finally { setPoolSaving(false) }
+  }
   const stuck = useMemo(() => (brands || []).map(b => ({ b, list: stuckOf(subs[b.id]?.subs || []) })).filter(x => x.list.length > 0), [brands, subs])
   const subErrors = Object.entries(subs).filter(([, s]) => s.error)
 
@@ -259,6 +300,7 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
                   <Num label="Rejected" value={count(b.rejected)} why={b.rejected == null ? 'Not read yet' : undefined} />
                   <Num label="Approval" value={pct(j.rate)} why={j.rate != null && !j.exactRate ? 'Approved out of all sent, videos in review included' : undefined} />
                 </dl>
+                <MembersLine p={pooled ? pooled[b.id] ?? null : undefined} note={poolNote} mine={j.rate} />
                 <button onClick={() => setOpen(isOpen ? null : b.id)} className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>
                   {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {isOpen ? 'Hide' : 'Their best videos and video ideas'}
                 </button>
@@ -272,10 +314,32 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
           })}
         </section>
         <p className="text-[11px]" style={soft}>
+          <label className="flex items-start gap-2 mb-2 cursor-pointer">
+            <input type="checkbox" checked={!poolOptOut} disabled={poolSaving} onChange={(e) => void setPool(e.target.checked)} className="h-4 w-4 mt-0.5" style={{ accentColor: PURPLE }} />
+            <span><b style={{ color: 'var(--text)' }}>Include my results in members&rsquo; combined numbers.</b> MVP shows a brand&rsquo;s approval rate and pay per approved video from members&rsquo; results only when at least {POOL_MIN} members have results for it and no one member is more than half. No member&rsquo;s own numbers are ever shown. Turning this off deletes what was kept.</span>
+          </label>
           Focus means one of your top {FOCUS_COUNT} by what it paid you. Drop means it approves fewer than 1 in 3 of your videos, or 30 days and 5 videos went by with nothing approved. Too early means fewer than 3 videos decided. Approval counts videos the brand decided on, not ones still in review.
         </p>
       </>)}
     </div>
+  )
+}
+
+/** What MVP members see together for this brand, next to your own. */
+function MembersLine({ p, note, mine }: { p: Pooled | null | undefined; note: string | null; mine: number | null }) {
+  const soft = { color: 'var(--text-soft)' }
+  if (p === undefined) return note ? <p className="mt-2 text-[12px]" style={{ color: AMBER }}>MVP members: {note}</p> : null
+  if (!p || (p.approvalRate == null && p.payPerApproved == null)) {
+    return <p className="mt-2 text-[12px]" style={soft}>MVP members: {p?.why || `shown once ${POOL_MIN} MVP members have results for this brand.`}</p>
+  }
+  const diff = p.approvalRate != null && mine != null ? Math.round((mine - p.approvalRate) * 100) : null
+  return (
+    <p className="mt-2 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}>
+      <b>MVP members ({p.members}):</b>{' '}
+      {p.approvalRate != null && <>approve {Math.round(p.approvalRate * 100)}% of videos{diff != null && diff !== 0 ? <span style={{ color: diff > 0 ? GREEN : AMBER }}> (you: {diff > 0 ? `${diff} points above` : `${-diff} points below`})</span> : null}</>}
+      {p.approvalRate != null && p.payPerApproved != null && ' · '}
+      {p.payPerApproved != null && <>about {money(p.payPerApproved)} per approved video</>}
+    </p>
   )
 }
 
