@@ -90,7 +90,7 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
   const r = read('app/api/labs/trybe/route.ts')
   check('the route plans from the brief the page read, and keeps where it came from', /BRIEF \(the brand's own creative brief on TRYBE\)/.test(r) && /brief: briefState/.test(r))
   const ui = read('components/labs/TrybeVideoIdeas.tsx')
-  check('the page reads the brief through SCOUT and says which kind it found', /loadBrief\(brandId\)/.test(ui) && /TRYBE shows no brief for this brand/.test(ui) && /MVP could not read their brief on TRYBE/.test(ui))
+  check('the page reads the brief through SCOUT and says which kind it found', /loadBrandPage\(brandId\)/.test(ui) && /TRYBE shows no brief for this brand/.test(ui) && /MVP could not read their brief on TRYBE/.test(ui))
   check('the ideas can be copied whole and printed', /planText\(plan, name\)/.test(ui) && /Print or save as PDF/.test(ui))
 }
 check('a broken answer gives no plan rather than an empty one', parseVideoPlan('sorry') === null && parseVideoPlan('{"body":"x","hooks":[]}') === null)

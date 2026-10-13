@@ -1156,8 +1156,10 @@ export default function TrybeOutreach() {
       )}
 
       {/* Tabs: one row, the active one underlined, and what it is for. */}
-      <nav className="border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }} role="tablist" aria-label="TRYBE">
-        <div className="flex gap-1 min-w-max">
+      {/* Every tab in sight, wrapping to a second line on a narrow screen:
+          never a sideways scroll (Seb, 2026-10-13). */}
+      <nav className="border-b" style={{ borderColor: 'var(--border)' }} role="tablist" aria-label="TRYBE">
+        <div className="flex flex-wrap gap-x-1">
           {TABS.map(({ id, label, icon: Icon }) => {
             const n = id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
             const on = tab === id

@@ -137,3 +137,87 @@ export function readBrandCard(json: unknown): BrandCard {
     briefUrl: looksUrl(urlRaw) ? urlRaw : looksUrl(briefText.trim()) ? briefText.trim() : null,
   }
 }
+
+// ── The products a brand asks creators to promote ────────────────────────────
+
+/** One item from a brand's "Promote These" on TRYBE. */
+export interface PromotedProduct { id: string | null; name: string; image: string | null; url: string | null; price: string | null }
+
+const PRODUCT_LIST_KEYS = ['promoteThese', 'promote_these', 'promotedProducts', 'promoted_products', 'promoteProducts', 'products', 'campaignProducts', 'campaign_products', 'brandProducts', 'productList', 'skus', 'offers']
+
+/** The products in GET creator/v2/brands/{id}/details (Seb, 2026-10-13: the
+ *  creator picks the one they have on hand, MVP plans the videos for it).
+ *  Found under any of the names it is likely to have, one level deep too.
+ *  Pure. */
+export function readPromotedProducts(json: unknown): PromotedProduct[] {
+  const root = isObj(json) && isObj(json.data) ? json.data : json
+  const o: Obj = isObj(root) ? (isObj(root.brand) ? { ...(root.brand as Obj), ...root } : root) : {}
+  let list: unknown[] | null = null
+  for (const k of PRODUCT_LIST_KEYS) if (Array.isArray(o[k]) && (o[k] as unknown[]).length) { list = o[k] as unknown[]; break }
+  if (!list) {
+    for (const v of Object.values(o)) {
+      if (!isObj(v)) continue
+      for (const k of PRODUCT_LIST_KEYS) if (Array.isArray(v[k]) && (v[k] as unknown[]).length) { list = v[k] as unknown[]; break }
+      if (list) break
+    }
+  }
+  const url = (v: unknown) => { const s = str(v); return /^https:\/\//i.test(s) ? s : null }
+  const out: PromotedProduct[] = []
+  const seen = new Set<string>()
+  for (const raw of list || []) {
+    if (typeof raw === 'string') { const n = raw.trim(); if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); out.push({ id: null, name: n.slice(0, 140), image: null, url: null, price: null }) } continue }
+    if (!isObj(raw)) continue
+    const p = isObj(raw.product) ? { ...(raw.product as Obj), ...raw } : raw
+    const name = str(p.name ?? p.title ?? p.productName ?? p.product_name ?? p.displayName)
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    const images = Array.isArray(p.images) ? p.images : []
+    const firstImage = images.length ? (isObj(images[0]) ? (images[0] as Obj).url ?? (images[0] as Obj).src : images[0]) : undefined
+    const price = p.price ?? p.retailPrice ?? p.retail_price
+    out.push({
+      id: str(p.id ?? p.productId ?? p.product_id) || null,
+      name: name.slice(0, 140),
+      image: url(p.image ?? p.imageUrl ?? p.image_url ?? p.thumbnail ?? p.thumbnailUrl ?? p.photo ?? firstImage),
+      url: url(p.url ?? p.productUrl ?? p.product_url ?? p.link ?? p.shopUrl),
+      price: price == null || price === '' ? null : typeof price === 'number' ? `$${price}` : str(price).slice(0, 20),
+    })
+    if (out.length >= 24) break
+  }
+  return out
+}
+
+// ── Reading a brief TRYBE keeps as a document link ───────────────────────────
+
+/** Where to read a brief's words from: a Google Doc as plain text, anything
+ *  else as it is. Pure. */
+export function briefFetchUrl(url: string): string {
+  const doc = url.match(/^https:\/\/docs\.google\.com\/document\/d\/([\w-]{20,})/)
+  if (doc) return `https://docs.google.com/document/d/${doc[1]}/export?format=txt`
+  return url
+}
+
+/** A brief's words from what its link answered, or why there are none. Pure. */
+export function briefFromBody(contentType: string, body: string): { text: string | null; why: string | null } {
+  const ct = contentType.toLowerCase()
+  if (/pdf/.test(ct)) return { text: null, why: 'The brief is a PDF. Open it to read it.' }
+  if (/image\//.test(ct)) return { text: null, why: 'The brief is an image. Open it to read it.' }
+  let t = body
+  if (/html|xml/.test(ct) || /^\s*</.test(body)) {
+    t = body
+      .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<\/(p|div|li|h[1-6]|br|tr)>|<br\s*\/?>/gi, '\n')
+      .replace(/<li[^>]*>/gi, '- ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&rsquo;/g, '’')
+  } else if (/json/.test(ct)) {
+    try {
+      const parts: string[] = []
+      const walk = (v: unknown) => { if (typeof v === 'string' && v.trim().length > 1) parts.push(v.trim()); else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.values(v).forEach(walk) }
+      walk(JSON.parse(body))
+      t = parts.join('\n')
+    } catch { /* read as text */ }
+  }
+  t = t.replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim()
+  if (t.length < 40) return { text: null, why: 'The brief link answered, but with almost no words (it may need you signed in). Open it to read it.' }
+  return { text: t.slice(0, 6000), why: null }
+}

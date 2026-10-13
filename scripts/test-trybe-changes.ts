@@ -10,6 +10,7 @@ import { checkHook } from '../lib/trybe-hook'
 import { pickScore, creatorProgramOf } from '../lib/trybe-pick'
 import { planWeek, perDayNeeded, MONTHLY_TARGET } from '../lib/trybe-week'
 import { VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
+import { readPromotedProducts, briefFetchUrl, briefFromBody } from '../lib/trybe-brand-page'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -90,6 +91,24 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   check('the hook check is on What\'s working, and Best bets shows up to 6 reasons', /tab === 'working' && <TrybeHookCheck \/>/.test(ui) && /slice\(0, 6\)\.map\(r =>/.test(ui))
   const wkUi = read('components/labs/TrybeWeek.tsx')
   check('This week shows the month per focus brand, read from TRYBE, and says when it could not', /Your month/.test(wkUi) && /readBrandSubs\(id\)/.test(wkUi) && /could not read: /.test(wkUi) && /planWeek\(samples, \{ perDay, pace \}\)/.test(wkUi))
+}
+
+// 5. The product on hand, the brief openable, every tab in sight (Seb, 2026-10-13)
+{
+  const pr = readPromotedProducts({ data: { brand: { name: 'Audien', promoteThese: [{ id: 'p1', name: 'Audien Clarity (TikTok)', imageUrl: 'https://x/c.png', price: 49 }, { product: { title: 'Atom Air' } }, 'Ion Series', { name: 'Audien Clarity (TikTok)' }] } } })
+  check('the products a brand promotes are read, with picture and price, each once', pr.length === 3 && pr[0].name === 'Audien Clarity (TikTok)' && pr[0].image === 'https://x/c.png' && pr[0].price === '$49' && pr[1].name === 'Atom Air' && pr[2].name === 'Ion Series')
+  check('no products is an empty list, not a guess', readPromotedProducts({ data: { name: 'X' } }).length === 0)
+  check('a Google Doc brief is read as plain text', briefFetchUrl('https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit') === 'https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/export?format=txt')
+  const html = briefFromBody('text/html', '<html><style>x{}</style><h2>The Story</h2><p>Everything about the Atom Air is light. The fit. The price.</p><ul><li>Audien Atom Air &amp; more</li></ul></html>')
+  check('an HTML brief becomes its words', !!html.text && /Everything about the Atom Air is light/.test(html.text) && /- Audien Atom Air & more/.test(html.text) && !/<|x\{\}/.test(html.text))
+  check('a PDF or an empty page says why, never pretends', /PDF/.test(briefFromBody('application/pdf', '').why || '') && /almost no words/.test(briefFromBody('text/html', '<div></div>').why || ''))
+  const r = read('app/api/labs/trybe/route.ts')
+  check('MVP opens a brief link with every redirect checked', /action === 'brief_read'/.test(r) && /redirect: 'manual'/.test(r) && /assertPublicHttpUrl\(next\)/.test(r))
+  check('the plan is about the product on hand', /THE PRODUCT ON HAND: \$\{product\}/.test(r))
+  const vi = read('components/labs/TrybeVideoIdeas.tsx')
+  check('planning starts by picking the product you have, with the brief to read and open', /Which product do you have on hand\?/.test(vi) && /Open the brief document/.test(vi) && /Creative Brief is on that page/.test(vi) && /makePlan\(\(other\.trim\(\) \|\| chosen\)/.test(vi))
+  const ui = read('components/labs/TrybeOutreach.tsx')
+  check('every tab is in sight: they wrap, never scroll sideways', /<div className="flex flex-wrap gap-x-1">/.test(ui) && !/min-w-max/.test(ui))
 }
 
 // Wiring

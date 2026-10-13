@@ -170,8 +170,8 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
         <section>
           <h2 className="text-[22px] font-bold tracking-tight">Video length by category</h2>
           <p className="text-[13px] mt-0.5" style={soft}>Where the middle half of the Top 100 videos land, on a 0 to 75 second scale. Not a target, just where they fall.</p>
-          <div className="mt-3 rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <table className="w-full text-[13px] min-w-[520px]">
+          <div className="mt-3 rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <table className="w-full text-[13px]">
               <tbody>
                 {byCategory.map(({ cat, mid }) => (
                   <tr key={cat} className="border-t first:border-t-0" style={{ borderColor: 'var(--border)' }}>

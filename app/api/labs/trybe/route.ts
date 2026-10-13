@@ -25,6 +25,8 @@ import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_P
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
+import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
+import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -655,7 +657,7 @@ export async function POST(request: Request) {
       const msg = await createAnthropicClient().messages.create({
         model: MODEL, max_tokens: 6000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nPlan the videos about this product: ${product}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
@@ -1084,6 +1086,35 @@ export async function POST(request: Request) {
       }
     }))
     return NextResponse.json({ ok: true, results })
+  }
+
+  if (action === 'brief_read') {
+    // A creative brief TRYBE keeps as a document link: MVP opens the link
+    // and reads its words, so video ideas follow it. What it could not read
+    // is said (a PDF, an image, a page that needs signing in).
+    const url = typeof body.url === 'string' ? body.url.trim().slice(0, 1000) : ''
+    try { assertPublicHttpUrl(url) } catch { return NextResponse.json({ error: 'That brief link cannot be opened by MVP.' }, { status: 400 }) }
+    try {
+      // Redirects followed by hand, each hop checked: a public link may not
+      // bounce MVP's server onto a private address.
+      let next = briefFetchUrl(url)
+      let res: Response | null = null
+      for (let hop = 0; hop < 4; hop++) {
+        assertPublicHttpUrl(next)
+        res = await fetch(next, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'Mozilla/5.0 (MVP Affiliate brief reader)' } })
+        const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null
+        if (!loc) break
+        next = new URL(loc, next).toString()
+      }
+      if (!res) throw new Error('no answer')
+      if (!res.ok) return NextResponse.json({ ok: true, text: null, why: `The brief link answered ${res.status}. Open it to read it.` })
+      const ct = res.headers.get('content-type') || ''
+      if (/pdf|image\//i.test(ct)) return NextResponse.json({ ok: true, ...briefFromBody(ct, '') })
+      const raw = (await res.text()).slice(0, 400_000)
+      return NextResponse.json({ ok: true, ...briefFromBody(ct, raw) })
+    } catch (e) {
+      return NextResponse.json({ ok: true, text: null, why: `MVP could not open the brief link (${e instanceof Error ? e.message : 'error'}). Open it to read it.` })
+    }
   }
 
   if (action === 'hook_fix') {
