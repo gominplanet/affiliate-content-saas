@@ -8,6 +8,7 @@
  * Auth: Vercel cron requests carry `Authorization: Bearer ${CRON_SECRET}`.
  * Concurrency: an atomic UPDATE claims pending+due rows to 'processing' first.
  */
+import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -115,8 +116,11 @@ export async function GET(request: Request) {
           imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
           productTitle: row.product_title ?? undefined, caption: row.description ?? undefined,
           ...showcaseOpts(row),
+          queueSource: 'amazon_scheduled',
         })
-        externalId = out.id; externalUrl = out.url; note = out.note
+        // Waiting in the Facebook queue: no post, no address, and said so.
+        if (out.queued) { externalId = ''; externalUrl = null; note = [QUEUED_NOTE, out.note].filter(Boolean).join(' ') }
+        else { externalId = out.id; externalUrl = out.url; note = out.note }
       } else {
         if (!intRow.pinterest_access_token) throw new Error('Pinterest not connected at post time.')
         const out = await publishAmazonPin({

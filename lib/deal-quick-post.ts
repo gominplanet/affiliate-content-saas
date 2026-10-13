@@ -67,7 +67,7 @@ export interface DealQuickPostInput {
 }
 
 export interface DealQuickPostOutput {
-  results: Array<{ platform: string; ok: boolean; url?: string; error?: string }>
+  results: Array<{ platform: string; ok: boolean; url?: string; error?: string; note?: string; queued?: boolean }>
   caption: string | null
   geniuslinkNote: string | null
   // Set only when requireLiveDeal blocked the whole post because the deal ended.
@@ -245,6 +245,8 @@ Return ONLY the caption text.` }],
       // Passport on → each platform's own MVP-<CHANNEL> geo link; off → the
       // per-platform Geniuslink map (or the shared tagged fallback via `link`).
       link, links: platformLinks, baseCaption: cap, disclaimer, platforms,
+      // A scheduled deal post is one nobody is there for.
+      queueSource: requireLiveDeal ? 'deal_scheduled' : 'deal',
     })
     results.push(...textResults)
   }

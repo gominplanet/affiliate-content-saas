@@ -12,6 +12,10 @@
 //   4. Make Reels         Clip Factory, right here, Facebook only
 //   5. Share reviews      a review becomes a Group post plus a Page post
 //
+// Then the posts waiting for the Group: what MVP made while nobody was there
+// to press Post (scheduled reviews, deal posts, Amazon designs), each sent
+// Group first from here (components/meta/FacebookQueue).
+//
 // Each step ticks itself once it is done and can be opened again. Then what
 // went out, and who does what, for people opening a Page for the first time.
 //
@@ -32,6 +36,7 @@ import ClipFactory from '@/components/clip-factory/ClipFactory'
 import LaunchKit from '@/components/launch-kit/LaunchKit'
 import UnfinishedGroupPosts, { type UnfinishedPost } from '@/components/meta/UnfinishedGroupPosts'
 import WhyGroupFirst from '@/components/meta/WhyGroupFirst'
+import FacebookQueue from '@/components/meta/FacebookQueue'
 import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
@@ -513,6 +518,10 @@ function MetaHub() {
         ))}
         {!groupDone && hub && <p className="text-[12px]" style={{ color: WARN }}>Save a Group in step 2 first: every review puts its link in a Group.</p>}
       </Step>
+
+      {/* WAITING FOR YOUR GROUP: scheduled reviews, deal posts and Amazon
+          designs MVP made while nobody was there to press Post in a Group. */}
+      <FacebookQueue groups={s.groups} onChanged={() => { void loadHub() }} />
 
       {/* IN THE GROUP, NOT ON THE PAGE YET: finish each in one press. */}
       {hub && hub.recorded && (

@@ -66,6 +66,7 @@ function outcome(r: ScheduledRow): { label: string; color: string; icon: React.R
     case 'cancelled': return { label: 'Cancelled', color, icon: <X size={14} /> }
     case 'sent-note': return { label: 'Posted, with a change', color, icon: <AlertCircle size={14} /> }
     case 'sent': return { label: 'Posted', color, icon: <Check size={14} /> }
+    case 'queued': return { label: 'In your Facebook queue', color: '#1877F2', icon: <CalendarClock size={14} /> }
     case 'sending': return { label: 'Going out now', color, icon: <Loader2 size={14} className="animate-spin" /> }
     default: return { label: `Waiting for ${when(r.scheduledAt)}`, color, icon: <CalendarClock size={14} /> }
   }

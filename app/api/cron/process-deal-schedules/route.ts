@@ -12,6 +12,7 @@
  * Auth: Vercel cron requests carry `Authorization: Bearer ${CRON_SECRET}`.
  * Concurrency: an atomic UPDATE claims pending+due rows to 'processing' first.
  */
+import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -174,7 +175,10 @@ export async function GET(request: Request) {
       await (admin as any).from("deal_scheduled_posts").update({
         status: anyOk ? 'completed' : 'failed',
         results: out.results,
-        error_message: anyOk ? null : (out.results.find((r) => !r.ok)?.error || 'All platforms failed').slice(0, 500),
+        // A Facebook post handed to the Group queue is said on the row.
+        error_message: anyOk
+          ? (out.results.some((r) => r.queued) ? QUEUED_NOTE : null)
+          : (out.results.find((r) => !r.ok)?.error || 'All platforms failed').slice(0, 500),
         updated_at: new Date().toISOString(),
       }).eq('id', row.id)
       return { id: row.id, status: anyOk ? ('completed' as const) : ('failed' as const) }

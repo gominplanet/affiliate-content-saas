@@ -57,7 +57,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [scheduleAt, setScheduleAt] = useState('')
   const [pubBusy, setPubBusy] = useState(false)
   const [pubError, setPubError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ postUrl?: string; scheduledAt?: string; note: string | null } | null>(null)
+  const [result, setResult] = useState<{ postUrl?: string; scheduledAt?: string; note: string | null; queued?: string } | null>(null)
 
   // ── The image this creator already approved for this product ──────────────
   // Offered, never imposed. Pre-fills the preview so posting the same ASIN to
@@ -188,6 +188,8 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       if (data.caption && !caption) setCaption(data.caption)
       setResult({
         postUrl: data.postUrl as string | undefined, scheduledAt: data.scheduledAt as string | undefined,
+        // Waiting in the Facebook queue (lib/facebook-queue): not posted.
+        queued: data.queued === true ? String(data.queuedNote || 'Waiting in your Facebook queue.') : undefined,
         // destinationNote is set on the scheduled path, geniuslinkNote on the
         // immediate one. Either can say the showcase was asked for and not used.
         note: (data.geniuslinkNote as string) || (data.destinationNote as string) || null,
@@ -358,7 +360,14 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
                 rendered as 11px grey inside a green box, which is the same thing
                 as not rendering it. Amber, full size, and the tick becomes a
                 warning: the box reports the post, not the plan. */}
-            {result && (
+            {result?.queued && (
+              <div className="flex flex-col gap-1.5 rounded-lg border p-3 border-[#1877F2]/40 bg-[#1877F2]/5">
+                <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#1877F2' }}><CalendarClock size={15} /> In your Facebook queue, not posted yet</span>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.queued} <a href="/meta" className="font-semibold underline" style={{ color: '#1877F2' }}>Open Meta Hub</a></p>
+                {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
+              </div>
+            )}
+            {result && !result.queued && (
               <div className={`flex flex-col gap-1.5 rounded-lg border p-3 ${result.note ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-[#34c759]/30 bg-[#34c759]/5'}`}>
                 {result.scheduledAt ? (
                   <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}><CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}</span>

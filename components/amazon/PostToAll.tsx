@@ -32,6 +32,8 @@ interface NetState {
   status: 'idle' | 'designing' | 'posting' | 'done' | 'error'
   url?: string
   error?: string
+  /** Facebook: waiting in the Facebook queue, not posted (lib/facebook-queue). */
+  queued?: boolean
   /** The publish route's note: it went out, and the affiliate link or the
    *  Link-in-Bio tile is not what the creator configured.
    *
@@ -176,6 +178,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
         if (!pubRes.ok) throw new Error((pubData.error as string) || 'Post failed')
         setNet(n.key, {
           status: 'done',
+          queued: pubData.queued === true,
           url: (pubData.pinUrl || pubData.postUrl) as string | undefined,
           // Carry the sentence through. The routes return it as geniuslinkNote
           // for wire-compatibility, but it covers Passport substitutions and
@@ -285,6 +288,9 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
               {!st.connected ? <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>not connected</span>
                 : st.status === 'designing' ? <span className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Loader2 size={11} className="animate-spin" /> designing</span>
                 : st.status === 'posting' ? <span className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Loader2 size={11} className="animate-spin" /> posting</span>
+                : st.status === 'done' && st.queued ? (
+                    <a href="/meta" className="text-[11px] font-semibold inline-flex items-center gap-0.5" style={{ color: '#1877F2' }} title="Waiting in your Facebook queue: send it Group first from Meta Hub">in your Facebook queue</a>
+                  )
                 : st.status === 'done' ? (
                     // Amber when there is a note: it went out, and something
                     // about it is not what they set up. A green tick over a

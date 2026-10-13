@@ -24,6 +24,9 @@ import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { postToXWithOneRetry, xPostKey, xFailedAttempts, xDroppedMessage, X_ATTEMPTS_PER_POST } from '@/lib/x-retry'
 import { createFacebookService } from '@/services/facebook'
+import { queueForGroup } from '@/lib/facebook-queue'
+import { QUEUED_NOTE, queuedWords, type QueueSource } from '@/lib/facebook-queue-words'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { ThreadsService } from '@/services/threads'
 import { createLinkedInService } from '@/services/linkedin'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
@@ -46,6 +49,9 @@ export interface PlatformResult {
    *  post never went out, because folding the two together would either hide a
    *  missing image or report a live post as a failure. */
   note?: string
+  /** Facebook only: not posted, waiting in the creator's Facebook queue to go
+   *  Group first (lib/facebook-queue). Never shown as posted. */
+  queued?: boolean
 }
 
 interface PublishOpts {
@@ -66,6 +72,8 @@ interface PublishOpts {
   platforms: QuickPostPlatform[]
   /** Retailer named in the "Grab it on X" CTA. Defaults to Amazon. */
   retailerLabel?: string
+  /** What a Facebook post waiting for the Group is called in the queue. */
+  queueSource?: QueueSource
 }
 
 /** Compose the final text for a platform: the affiliate link leads (a shopper
@@ -174,6 +182,14 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         })
         if (!acct) throw new Error('Facebook Page is not connected.')
         const caption = composeText(baseCaption, 'facebook', link, disclaimer, retailer)
+        // GROUP FIRST (lib/facebook-queue): with a Group saved, the post waits
+        // in the creator's Facebook queue instead of going on the Page with
+        // the link. Not posted, and said so.
+        const q = await queueForGroup(createAdminClient(), {
+          userId, tier: ig.tier, source: opts.queueSource || 'deal', sourceId: null,
+          title: deal.title, body: caption, link, imageUrl: img,
+        })
+        if (q.queued) return { platform, ok: true, queued: true, note: queuedWords(QUEUED_NOTE) }
         // A deal post always carries its Amazon link: the first thing Meta's
         // monthly link limit stops. Past it, not posted, and said why.
         const linkCheck = await checkPageLinkPost({ userId, pageId: acct.externalId, pageName: acct.displayName, text: caption, link: img ? null : link })

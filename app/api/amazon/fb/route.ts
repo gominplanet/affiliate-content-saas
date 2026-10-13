@@ -5,6 +5,7 @@
 // caption.
 //
 // Body: { imageUrl, productUrl?, asin?, productTitle?, caption?, scheduledAt? }
+import { QUEUED_NOTE, queuedWords } from '@/lib/facebook-queue-words'
 import { recordProductPostLinks } from '@/lib/product-post-links'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -102,6 +103,11 @@ export async function POST(request: Request) {
       imageUrl: body.imageUrl, asin: body.asin, productUrl: body.productUrl, productTitle: body.productTitle, caption: body.caption,
       useShowcase: destination.kind === 'showcase', showcaseUrl: destination.url,
     })
+    // Waiting in the Facebook queue (lib/facebook-queue): not posted, no address.
+    if (res.queued) {
+      return NextResponse.json({ ok: true, queued: true, queuedNote: queuedWords(QUEUED_NOTE), caption: res.caption, linkUrl: res.linkUrl,
+        geniuslinkNote: [destination.note, res.note].filter(Boolean).join(' ') || null })
+    }
     // Kept for Brand recap (migration 379). Best effort.
     await recordProductPostLinks(user.id, body.asin, [{ platform: 'facebook', url: res.url }], 'amazon_push')
     return NextResponse.json({ ok: true, postUrl: res.url, id: res.id, caption: res.caption, linkUrl: res.linkUrl,

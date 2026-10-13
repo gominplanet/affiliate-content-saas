@@ -3,6 +3,7 @@
 // entry after a new client component entered its import graph (a stale build
 // cache dropped content/page.tsx#default from the manifest → RSC render error).
 
+import { isQueuedNote, queuedWords } from '@/lib/facebook-queue-words'
 import { canUsePreview } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
 import { toast } from 'sonner'
@@ -2328,7 +2329,10 @@ function ScheduledList({
           ? { label: 'WordPress', color: '#21759b' }
           : (PLATFORM_META[item.platform ?? 'linkedin']
               ?? { label: item.platform ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1) : 'Social', color: '#7C3AED' })
-        const pill = STATUS_PILL[item.status]
+        // Handed to the Facebook queue (lib/facebook-queue): not published, not
+        // failed, waiting for the creator to send it Group first.
+        const queued = item.status === 'completed' && isQueuedNote(item.error_message)
+        const pill = queued ? { label: 'In your Facebook queue', bg: 'bg-[#1877F2]/10', fg: 'text-[#1877F2]' } : STATUS_PILL[item.status]
         const dt = formatScheduleTime(item.scheduled_at)
         return (
           <div
@@ -2419,7 +2423,12 @@ function ScheduledList({
                   image could not attach). Red would say the post failed, which
                   would send the creator to re-publish a post that is already
                   live. Amber, and a different lead-in word. */}
-              {item.error_message && (
+              {item.error_message && queued && (
+                <p className="text-[11px] mt-2" style={{ color: '#1877F2' }}>
+                  {queuedWords(item.error_message)} <a href="/meta" className="font-semibold underline">Open Meta Hub</a>
+                </p>
+              )}
+              {item.error_message && !queued && (
                 <p
                   className="text-[11px] mt-2 break-all"
                   style={{ color: item.status === 'completed' ? '#d97706' : '#ff3b30' }}

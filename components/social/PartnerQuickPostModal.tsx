@@ -11,12 +11,12 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Send, Check, AlertCircle, X as CloseIcon, Loader2 } from 'lucide-react'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
 import PlatformPicker from '@/components/social/PlatformPicker'
 
-interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
+interface PostResult { platform: string; ok: boolean; url?: string; error?: string; note?: string; queued?: boolean }
 
 const QUICK_PLATFORMS: { key: string; label: string }[] = [
   { key: 'twitter', label: 'X' },
@@ -71,7 +71,8 @@ export default function PartnerQuickPostModal({
       setResults(posted)
       const note = typeof data.geniuslinkNote === 'string' ? data.geniuslinkNote : null
       setLinkNote(note)
-      const okCount = posted.filter((r) => r.ok).length
+      // Queued for the Group is not posted, so it is not counted as posted.
+      const okCount = posted.filter((r) => r.ok && !r.queued).length
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
       if (data.caption && !caption) setCaption(data.caption)
       if (okCount > 0 && okCount === posted.length && !note) setTimeout(onClose, 900)
@@ -113,9 +114,11 @@ export default function PartnerQuickPostModal({
             <div className="space-y-1.5">
               {results.map((r) => (
                 <div key={r.platform} className="flex items-center gap-2 text-sm">
-                  {r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
+                  {r.queued ? <Clock size={15} style={{ color: '#1877F2' }} /> : r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
                   <span className="capitalize font-medium">{QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform}</span>
-                  {r.ok
+                  {r.queued
+                    ? <span className="text-xs" style={{ color: '#1877F2' }}>{r.note} <a href="/meta" className="font-semibold underline">Open Meta Hub</a></span>
+                    : r.ok
                     ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a> : <span className="text-xs text-muted-foreground">posted</span>)
                     : <span className="text-xs text-red-600">{r.error}</span>}
                 </div>

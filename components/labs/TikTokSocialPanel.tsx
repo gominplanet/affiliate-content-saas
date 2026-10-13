@@ -48,7 +48,7 @@ export default function TikTokSocialPanel({ product, onClose }: { product: Panel
   // what happened, and a toast is gone before they have finished reacting.
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const [posted, setPosted] = useState<{ url?: string; scheduledAt?: string } | null>(null)
+  const [posted, setPosted] = useState<{ url?: string; scheduledAt?: string; queued?: boolean } | null>(null)
   const [scheduleAt, setScheduleAt] = useState('')
 
   const muted = { color: 'var(--text-2)' } as const
@@ -117,8 +117,9 @@ export default function TikTokSocialPanel({ product, onClose }: { product: Panel
       // is a successful post pointing somewhere the creator did not choose.
       const n = (d.geniuslinkNote as string) || (d.destinationNote as string) || null
       if (n) setNote(n)
-      setPosted({ url: d.postUrl as string | undefined, scheduledAt: d.scheduledAt as string | undefined })
-      toast.success(d.scheduledAt ? `Scheduled for ${cfg.label}.` : `Posted to ${cfg.label}.`)
+      setPosted({ url: d.postUrl as string | undefined, scheduledAt: d.scheduledAt as string | undefined, queued: d.queued === true })
+      // Waiting in the Facebook queue (lib/facebook-queue) is not posted.
+      toast.success(d.queued ? 'Waiting in your Facebook queue: send it from Meta Hub.' : d.scheduledAt ? `Scheduled for ${cfg.label}.` : `Posted to ${cfg.label}.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The post failed. Try again.')
     } finally { setBusy(null) }
@@ -195,7 +196,9 @@ export default function TikTokSocialPanel({ product, onClose }: { product: Panel
       )}
       {posted && (
         <p className="text-[11px]" style={{ color: '#10B981' }}>
-          {posted.scheduledAt
+          {posted.queued
+            ? <>Waiting in your Facebook queue, not posted yet. <a href="/meta" className="underline">Open Meta Hub</a></>
+            : posted.scheduledAt
             ? `Scheduled for ${new Date(posted.scheduledAt).toLocaleString()}.`
             : 'Posted.'}
           {posted.url && <> <a href={posted.url} target="_blank" rel="noreferrer" className="underline">View it</a></>}

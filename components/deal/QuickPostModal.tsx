@@ -11,7 +11,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
-import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info, Store } from 'lucide-react'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info, Store, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
 import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
@@ -39,6 +39,8 @@ interface PostResult {
    *  image could not be attached. Separate from `error`, which means nothing
    *  was posted at all. */
   note?: string
+  /** Facebook: waiting in the Facebook queue, not posted (lib/facebook-queue). */
+  queued?: boolean
   /** Pinterest only, and not really a failure: the pin was refused because
    *  there is no page of the creator's to point at yet (Pinterest does not
    *  accept affiliate redirect links). One setup step from working, so it is
@@ -232,7 +234,8 @@ export default function QuickPostModal({
       if (data.destinationKind === 'showcase') {
         toast.success('Links point at your TikTok showcase on this post.')
       }
-      const okCount = posted.filter((r) => r.ok).length
+      // Queued for the Group is not posted, so it is not counted as posted.
+      const okCount = posted.filter((r) => r.ok && !r.queued).length
       const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
       if (okCount > 0) onDone?.()
@@ -355,13 +358,21 @@ export default function QuickPostModal({
                 const setup = !r.ok && r.needsLinkPage
                 return (
                   <div key={r.platform} className="flex items-start gap-2 text-sm">
-                    {r.ok && !r.note
+                    {r.queued
+                      ? <Clock size={15} className="mt-0.5 shrink-0" style={{ color: '#1877F2' }} />
+                      : r.ok && !r.note
                       ? <Check size={15} className="text-emerald-600 mt-0.5" />
                       : r.ok
                       ? <AlertCircle size={15} className="text-amber-600 mt-0.5 shrink-0" />
                       : <AlertCircle size={15} className={`mt-0.5 shrink-0 ${setup ? 'text-amber-600' : 'text-red-600'}`} />}
                     <span className="capitalize font-medium shrink-0">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
-                    {r.ok
+                    {r.queued
+                      ? (
+                        <span className="text-xs min-w-0" style={{ color: '#1877F2' }}>
+                          {r.note} <a href="/meta" className="font-semibold underline">Open Meta Hub</a>
+                        </span>
+                      )
+                      : r.ok
                       ? (
                         <span className="min-w-0">
                           {r.url

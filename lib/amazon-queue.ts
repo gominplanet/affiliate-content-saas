@@ -21,6 +21,8 @@
 // Kept out of the component so it is decided once and can be asserted, rather
 // than being three ternaries in JSX that nobody can test.
 
+import { isQueuedNote, queuedWords } from '@/lib/facebook-queue-words'
+
 export type QueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 export type QueuePlatform = 'pinterest' | 'instagram' | 'facebook'
 
@@ -48,7 +50,7 @@ export interface ScheduledRow {
   /** Set on a FAILED row: why it did not publish. */
   error: string | null
 }
-export type QueueOutcome = 'waiting' | 'sending' | 'sent' | 'sent-note' | 'failed' | 'cancelled'
+export type QueueOutcome = 'waiting' | 'sending' | 'sent' | 'sent-note' | 'queued' | 'failed' | 'cancelled'
 
 /** 'good' gets the green treatment. 'warn' must NOT: a substituted link inside a
  *  green box is the same as not mentioning it. */
@@ -67,7 +69,8 @@ export function queueOutcome(r: QueueRowLike): QueueOutcome {
     case 'failed': return 'failed'
     case 'cancelled': return 'cancelled'
     case 'processing': return 'sending'
-    case 'completed': return r.note ? 'sent-note' : 'sent'
+    // Handed to the Facebook queue (lib/facebook-queue): not posted.
+    case 'completed': return isQueuedNote(r.note) ? 'queued' : r.note ? 'sent-note' : 'sent'
     default: return 'waiting'
   }
 }
@@ -100,6 +103,6 @@ export function queueCancellable(r: QueueRowLike): boolean {
  */
 export function queueDetail(r: QueueRowLike): { text: string; kind: 'error' | 'note' } | null {
   if (r.status === 'failed' && r.error) return { text: r.error, kind: 'error' }
-  if (r.status === 'completed' && r.note) return { text: r.note, kind: 'note' }
+  if (r.status === 'completed' && r.note) return { text: queuedWords(r.note), kind: 'note' }
   return null
 }

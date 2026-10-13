@@ -18,6 +18,8 @@
  */
 
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
+import { queueForGroup } from '@/lib/facebook-queue'
+import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { blogPinLink } from '@/lib/pin-product-link'
 import { NextResponse } from 'next/server'
@@ -865,6 +867,21 @@ async function publishOne(
         amazonDestination: schedAmazonDestination,
       })
       const fbFallbackLink = primaryCardUrl(fbPref, schedAffiliateLink, url, schedVideoUrl) ?? url
+      // GROUP FIRST, EVEN WHEN NOBODY IS HERE (lib/facebook-queue). With a
+      // Group saved, the post waits in the creator's Facebook queue instead of
+      // going on the Page with the link: only they can press Post in a Group.
+      // Said on the row as waiting, never as published or failed.
+      {
+        const { data: tierRow } = await admin.from('integrations').select('tier').eq('user_id', row.user_id).maybeSingle()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const title = String((post as any).title || '').slice(0, 300) || null
+        const q = await queueForGroup(admin, {
+          userId: row.user_id, tier: tierRow?.tier, source: 'scheduled', sourceId: row.blog_post_id ?? row.id, title,
+          body: caption, link: fbFallbackLink, imageUrl: imageUrl || null,
+        })
+        if (q.queued) return { note: QUEUED_NOTE }
+        if (q.why === 'no-table') console.warn('[cron/process-scheduled] facebook_queue missing (migration 426): posting on the Page as before')
+      }
       // META'S MONTHLY LIMIT ON OUTSIDE LINKS (lib/facebook-link-budget): past
       // it, held back with the reason on the row, never posted with a dead
       // link. The prefix keeps it out of the "Facebook is failing" streak.

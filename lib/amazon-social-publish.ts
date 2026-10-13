@@ -9,6 +9,9 @@
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { publishMedia, getMediaPermalink } from '@/services/instagram'
 import { createFacebookService } from '@/services/facebook'
+import { queueForGroup } from '@/lib/facebook-queue'
+import type { QueueSource } from '@/lib/facebook-queue-words'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { tileImageFor } from '@/lib/tile-image'
 import { resolveAffiliateLink, finalizeSocialCaption, type PinIntegration } from '@/lib/amazon-pin-publish'
 import { fetchAmazonProduct } from '@/services/amazon'
@@ -186,7 +189,9 @@ export async function publishToFacebook(opts: {
    *  Resolved by the caller; see lib/post-destination. */
   useShowcase?: boolean
   showcaseUrl?: string | null
-}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
+  /** What a post waiting for the Group is called in the Facebook queue. */
+  queueSource?: QueueSource
+}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase'; queued?: boolean }> {
   const { intRow } = opts
   if (!intRow.facebook_page_id || !intRow.facebook_page_access_token) throw new Error('Facebook Page is not connected.')
 
@@ -198,6 +203,15 @@ export async function publishToFacebook(opts: {
   const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
   // Facebook: lead with the affiliate link + disclosure, then the rest.
   const caption = facebookCaptionOrder(body, linkUrl)
+
+  // GROUP FIRST (lib/facebook-queue): with a Group saved, the design waits in
+  // the creator's Facebook queue instead of going on the Page with the link.
+  // Not posted: no id, no address, and queued says so.
+  const q = await queueForGroup(createAdminClient(), {
+    userId: opts.userId, tier: opts.tier, source: opts.queueSource || 'amazon_design', sourceId: null,
+    title: opts.productTitle || null, body: caption, link: linkUrl, imageUrl: opts.imageUrl,
+  })
+  if (q.queued) return { id: '', url: '', caption, linkUrl, note, queued: true }
 
   // The caption leads with the affiliate link: counted against Meta's monthly
   // limit on outside links, and stopped past it (lib/facebook-link-budget).
