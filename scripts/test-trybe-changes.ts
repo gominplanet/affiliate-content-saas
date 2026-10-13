@@ -10,7 +10,7 @@ import { checkHook } from '../lib/trybe-hook'
 import { pickScore, creatorProgramOf } from '../lib/trybe-pick'
 import { planWeek, perDayNeeded, MONTHLY_TARGET } from '../lib/trybe-week'
 import { VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
-import { readPromotedProducts, briefFetchUrl, briefFromBody } from '../lib/trybe-brand-page'
+import { readPromotedProducts, briefFetchUrl, briefFromBody, readStoreProducts, mergeProducts } from '../lib/trybe-brand-page'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -109,6 +109,18 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   check('a PDF or picture brief is read by Claude and kept per brand for a week', /head\.startsWith\('%PDF'\)/.test(r) && /type: 'document', source/.test(r) && /cacheKey = brandId \? `brief:\$\{brandId\}`/.test(r) && /7 \* 86_400_000\) return NextResponse\.json\(\{ ok: true, text: v\.text/.test(r))
   // Seb 2026-10-13: "pick a brand, then the product, then the copy to start shooting... streamlined".
   const cr = read('components/labs/TrybeCreate.tsx')
+  // Seb 2026-10-13: "present products from user's brand ... like trybedaily" (Audien: 8 there, 1 in Promote These).
+  const store = readStoreProducts({ products: [
+    { id: 1, title: 'USBC + Charging Adapter (CUBE)', handle: 'cube', images: [{ src: 'https://cdn/a.png' }], variants: [{ price: '18.00', available: true }] },
+    { id: 2, title: 'Atom X OTC Hearing Aid', handle: 'atom-x', images: [{ src: '//cdn/x.png' }], variants: [{ price: '389.00', available: true }] },
+    { id: 3, title: 'Gift Card', handle: 'gift', images: [], variants: [{ price: '25' }] },
+    { id: 4, title: 'Trade In Credit: Used EV1 to Atom Air', handle: 't', images: [], variants: [{ price: '22.35' }] },
+    { id: 5, title: 'Audien Clarity', handle: 'clarity', images: [{ src: 'https://cdn/c.png' }], variants: [{ price: '49.00' }] },
+  ] }, 'https://www.audienhearing.com')
+  check('a brand\'s store catalog is read with picture, price and link, products before parts, no gift cards or credits', store.length === 3 && store[0].name === 'Atom X OTC Hearing Aid' && store[0].image === 'https://cdn/x.png' && store[0].price === '$389' && store[0].url === 'https://www.audienhearing.com/products/atom-x' && store[2].name === 'USBC + Charging Adapter (CUBE)')
+  const merged = mergeProducts([{ id: null, name: 'Audien Clarity (TikTok)', image: null, url: null, price: null }], store)
+  check('TRYBE\'s promoted products come first, matched to the store\'s picture and price, each once', merged[0].promoted && merged[0].price === '$49' && merged[0].image === 'https://cdn/c.png' && merged.filter((p) => /Clarity/.test(p.name)).length === 1)
+  check('the brand\'s products are read on the server and kept a day', /action === 'brand_products'/.test(r) && /`products:\$\{brandId\}`/.test(r) && /TRYBE asks for this/.test(read('components/labs/TrybeCreate.tsx')))
   check('Make videos is three steps: brand, product, scripts', /Which brand are you making videos for\?/.test(cr) && /Which \{brand\.name\} product do you have\?/.test(cr) && /Your shooting scripts: \{product\}/.test(cr))
   check('the scripts are written for the picked product at once, or its saved ones shown', /product=\{product\} page=\{page\} auto/.test(cr) && /else if \(auto\) void makePlan\(fixedProduct\)/.test(read('components/labs/TrybeVideoIdeas.tsx')))
   check('Make videos is the first tab and where the page opens', /\{ id: 'create', label: 'Make videos'/.test(read('components/labs/TrybeOutreach.tsx')) && /useState<Tab>\('create'\)/.test(read('components/labs/TrybeOutreach.tsx')))

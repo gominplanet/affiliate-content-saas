@@ -146,3 +146,19 @@ export async function researchBrandSite(rawUrl: string | null | undefined): Prom
   if (!summary && products.length) error = null
   return { summary, products, error, socials, onSale }
 }
+
+/** A brand's store catalog with pictures and prices (lib/trybe-brand-page
+ *  readStoreProducts). Empty when the store is not Shopify or hides it. */
+export async function storeProducts(rawUrl: string | null | undefined): Promise<{ products: import('@/lib/trybe-brand-page').PromotedProduct[]; error: string | null }> {
+  const url = normalizeSite(rawUrl)
+  if (!url) return { products: [], error: 'TRYBE listed no website for this brand.' }
+  try {
+    const origin = new URL(url).origin
+    const res = await getText(`${origin}/products.json?limit=100`, 'application/json')
+    if (!res.ok || !/json/i.test(res.finalType)) return { products: [], error: 'Its store does not share a product list.' }
+    const { readStoreProducts } = await import('@/lib/trybe-brand-page')
+    return { products: readStoreProducts(JSON.parse(res.text), origin), error: null }
+  } catch (e) {
+    return { products: [], error: `Its store could not be read (${e instanceof Error ? e.message : 'error'}).` }
+  }
+}

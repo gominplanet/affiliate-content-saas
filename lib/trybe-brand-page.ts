@@ -221,3 +221,50 @@ export function briefFromBody(contentType: string, body: string): { text: string
   if (t.length < 40) return { text: null, why: 'The brief link answered, but with almost no words (it may need you signed in). Open it to read it.' }
   return { text: t.slice(0, 6000), why: null }
 }
+
+/** A brand's own store catalog (Shopify's public /products.json), the way
+ *  TrybeDaily shows a brand's products (Seb, 2026-10-13). Gift cards, samples
+ *  and add-ons left out; in-stock first. Pure. */
+export function readStoreProducts(json: unknown, origin: string): PromotedProduct[] {
+  const list = isObj(json) && Array.isArray(json.products) ? json.products : []
+  const out: Array<PromotedProduct & { inStock: boolean }> = []
+  const seen = new Set<string>()
+  for (const raw of list) {
+    if (!isObj(raw)) continue
+    const name = str(raw.title).replace(/\s+/g, ' ')
+    const type = str(raw.product_type)
+    if (!name || name.length > 140 || seen.has(name.toLowerCase())) continue
+    if (/gift ?card|e-?gift|shipping protection|route package|insurance|warranty|^sample\b|free gift|trade[- ]?in|store credit|\bcredit\b|deposit|membership/i.test(`${name} ${type}`)) continue
+    seen.add(name.toLowerCase())
+    const images = Array.isArray(raw.images) ? raw.images : []
+    const img = images.length && isObj(images[0]) ? str((images[0] as Obj).src) : ''
+    const variants = Array.isArray(raw.variants) ? raw.variants.filter(isObj) : []
+    const prices = variants.map((v) => Number(v.price)).filter((n) => Number.isFinite(n) && n > 0)
+    const handle = str(raw.handle)
+    out.push({
+      id: str(raw.id) || null,
+      name,
+      image: /^https:\/\//i.test(img) ? img : img.startsWith('//') ? `https:${img}` : null,
+      url: handle ? `${origin.replace(/\/$/, '')}/products/${handle}` : null,
+      price: prices.length ? `$${Math.min(...prices).toFixed(2).replace(/\.00$/, '')}` : null,
+      inStock: variants.length ? variants.some((v) => v.available !== false) : true,
+    })
+  }
+  // The products a video is made about first; parts and add-ons (a charger,
+  // wax tips, a case) after them, in stock first.
+  const part = (n: string) => /\b(adapters?|chargers?|charging|cables?|cases?|tips?|wax|guards?|\w*guard|add[ -]?on|kits?|replacements?|batter(y|ies)|filters?|refills?|straps?|covers?|protection|accessor(y|ies)|parts?|spare)\b/i.test(n) ? 1 : 0
+  return out.sort((a, b) => part(a.name) - part(b.name) || Number(!a.image) - Number(!b.image) || Number(b.inStock) - Number(a.inStock)).slice(0, 30).map(({ inStock: _i, ...p }) => p)
+}
+
+/** TRYBE's promoted products first (marked), then the store's, each once. */
+export function mergeProducts(promoted: PromotedProduct[], store: PromotedProduct[]): Array<PromotedProduct & { promoted: boolean }> {
+  const key = (n: string) => n.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
+  const out = promoted.map((p) => ({ ...p, promoted: true }))
+  for (const s of store) {
+    const k = key(s.name)
+    const twin = out.find((p) => { const pk = key(p.name); return pk === k || (pk.length > 4 && (pk.includes(k) || k.includes(pk))) })
+    if (twin) { if (!twin.image && s.image) twin.image = s.image; if (!twin.price && s.price) twin.price = s.price; if (!twin.url && s.url) twin.url = s.url; continue }
+    out.push({ ...s, promoted: false })
+  }
+  return out
+}

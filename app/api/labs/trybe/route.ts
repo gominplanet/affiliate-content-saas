@@ -1136,6 +1136,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, plans, pay })
   }
 
+  if (action === 'brand_products') {
+    // The brand's own store catalog, with pictures and prices, the way
+    // TrybeDaily shows it (Seb, 2026-10-13). Shared and kept a day per brand.
+    if (!brandId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const cacheKey = `products:${brandId}`
+    const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', cacheKey).maybeSingle()
+    if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 86_400_000) return NextResponse.json({ ok: true, ...(hit.value as object), kept: true })
+    let site = typeof body.website === 'string' ? body.website.slice(0, 300) : ''
+    if (!site) { const { data: d } = await admin.from('trybe_directory').select('website').eq('brand_id', brandId).maybeSingle(); site = d?.website || '' }
+    const { storeProducts } = await import('@/lib/trybe-research')
+    const r = await storeProducts(site)
+    try { await admin.from('trybe_directory_meta').upsert({ key: cacheKey, value: r, updated_at: now }) } catch { /* read again next time */ }
+    return NextResponse.json({ ok: true, ...r })
+  }
+
   if (action === 'brief_read') {
     // A creative brief TRYBE keeps as a document link: MVP opens the link
     // and reads its words, so video ideas follow it. What it could not read

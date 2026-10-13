@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, type VideoPlan } from '@/lib/trybe-playbook'
-import { readBrandCard, readPromotedProducts, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
+import { readBrandCard, readPromotedProducts, mergeProducts, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
@@ -75,7 +75,11 @@ export interface BrandPage {
   /** Why the document link gave no words, when it did not. */
   briefWhy: string | null
   state: 'text' | 'link_only' | 'none' | 'unread'
-  products: PromotedProduct[]
+  /** TRYBE's "Promote These" first (promoted), then the brand's own store
+   *  catalog, the way TrybeDaily shows it. */
+  products: Array<PromotedProduct & { promoted?: boolean }>
+  /** Why the store catalog is missing, when it is. */
+  storeWhy?: string | null
   keys: string
 }
 
@@ -85,18 +89,23 @@ export interface BrandPage {
  *  openable"). */
 export async function loadBrandPage(brandId: string): Promise<BrandPage> {
   const empty: BrandPage = { brief: null, briefUrl: null, briefWhy: null, state: 'unread', products: [], keys: '' }
+  const store = async (website: string | null) => {
+    try { const r = await api({ action: 'brand_products', brandId, ...(website ? { website } : {}) }); return { list: (r.products || []) as PromotedProduct[], why: (r.error as string) || null } }
+    catch (e) { return { list: [] as PromotedProduct[], why: e instanceof Error ? e.message : 'not read' } }
+  }
   try {
     const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`)
-    if (!d.ok) return empty
+    if (!d.ok) { const st = await store(null); return { ...empty, products: mergeProducts([], st.list), storeWhy: st.why } }
     const c = readBrandCard(d.json)
-    const products = readPromotedProducts(d.json)
+    const st = await store(c.website)
+    const products = mergeProducts(readPromotedProducts(d.json), st.list)
     const keys = keysOf(d.json)
-    if (c.brief) return { brief: c.brief, briefUrl: c.briefUrl, briefWhy: null, state: 'text', products, keys }
-    if (!c.briefUrl) return { brief: null, briefUrl: null, briefWhy: null, state: 'none', products, keys }
+    if (c.brief) return { brief: c.brief, briefUrl: c.briefUrl, briefWhy: null, state: 'text', products, storeWhy: st.why, keys }
+    if (!c.briefUrl) return { brief: null, briefUrl: null, briefWhy: null, state: 'none', products, storeWhy: st.why, keys }
     let text: string | null = null
     let why: string | null = null
     try { const r = await api({ action: 'brief_read', url: c.briefUrl, brandId }); text = r.text || null; why = r.why || null } catch (e) { why = e instanceof Error ? e.message : 'MVP could not open the brief link.' }
-    return { brief: text, briefUrl: c.briefUrl, briefWhy: why, state: text ? 'text' : 'link_only', products, keys }
+    return { brief: text, briefUrl: c.briefUrl, briefWhy: why, state: text ? 'text' : 'link_only', products, storeWhy: st.why, keys }
   } catch { return empty }
 }
 
