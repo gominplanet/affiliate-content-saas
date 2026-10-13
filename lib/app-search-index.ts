@@ -40,7 +40,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Brand campaigns', href: '/cc-campaigns', group: 'Find products', keywords: 'cc campaigns creator connections campaigns bounty commission spots left full brand pays out payout reliability trust est per sale affiliate plus research find campaigns' },
   { label: 'Joined campaigns', href: '/joined-campaigns', group: 'Brand campaigns', keywords: 'joined campaigns accepted my campaigns creator connections' },
   { label: 'Saved campaigns', href: '/saved-campaigns', group: 'Brand campaigns', keywords: 'saved campaigns bookmarked creator connections' },
-  { label: 'Best paying campaigns', href: '/epc-library', group: 'Brand campaigns', keywords: 'epc library earnings per click best paying top commission' },
+  { label: "Amazon's EPC", href: '/epc-library', group: 'Brand campaigns', keywords: 'amazon epc library earnings per click best paying campaigns top commission sponsored products' },
   { label: 'Partner programs', href: '/levanta', group: 'Find products', keywords: 'mvp x levanta partnerboost wayward ltk networks beyond amazon' },
   { label: 'Levanta', href: '/levanta', group: 'Partner programs', keywords: 'mvp x levanta amazon creator network commissionable links brands' },
   { label: 'PartnerBoost and Walmart', href: '/partnerboost', group: 'Partner programs', keywords: 'mvp x partnerboost walmart deals offers catalog amazon dtc brands commission deep link' },

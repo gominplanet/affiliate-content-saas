@@ -510,7 +510,7 @@ export default function DashboardShellV2({
             { href: '/cc-campaigns', icon: null, label: 'All campaigns' },
             { href: '/joined-campaigns', icon: null, label: 'Joined' },
             { href: '/saved-campaigns', icon: null, label: 'Saved' },
-            { href: '/epc-library', icon: null, label: 'Best paying' },
+            { href: '/epc-library', icon: null, label: "Amazon's EPC" },
           ],
         },
         // The networks beyond Amazon. Each page is still gated by the member's

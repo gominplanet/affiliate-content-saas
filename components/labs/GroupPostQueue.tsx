@@ -298,7 +298,7 @@ export default function GroupPostQueue() {
         {listError && <p className="text-[12.5px] text-[#ff3b30]">{listError}</p>}
         {list === null && <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}><Loader2 size={13} className="inline animate-spin" /> Loading…</p>}
         {source === 'epc' && epc && epc.length === 0 && !listError && (
-          <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>Nothing matches. Scan your Sponsored Products into the <Link href="/epc-library" className="underline">EPC Library</Link> first, or loosen the filters.</p>
+          <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>Nothing matches. Scan your Sponsored Products into <Link href="/epc-library" className="underline">Amazon&rsquo;s EPC</Link> first, or loosen the filters.</p>
         )}
         {source === 'videos' && videos && videos.length === 0 && !listError && (
           <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>No published Amazon videos found. MVP reads them with SCOUT from your Amazon video library.</p>

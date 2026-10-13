@@ -428,7 +428,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               <Radar size={14} className="text-[#7C3AED]" />
             </span>
             <div className="flex-1 min-w-[220px]">
-              <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>EPC library <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
+              <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Amazon&rsquo;s EPC <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
                 {isAdmin
                   ? 'Open your Sponsored Products on Amazon, accept your campaigns, then scan them into this searchable library.'

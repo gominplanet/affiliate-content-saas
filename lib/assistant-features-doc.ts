@@ -513,7 +513,7 @@ fresh. Filters: category, "Real deals" only, "Has video", minimum discount.
 ## CC CAMPAIGNS BROWSER (sidebar name: Brand campaigns)
 
 URL: /cc-campaigns · Sidebar: Find products → Brand campaigns → All campaigns tab
-(the Joined, Saved and Best paying tabs sit next to it; Best paying is /epc-library)
+(the Joined, Saved and Amazon's EPC tabs sit next to it; Amazon's EPC, formerly Best paying, is /epc-library)
 
 The research surface for Amazon Creator Connections. Every live campaign shows
 decision data right on the card: commission %, estimated $/sale, spots left
