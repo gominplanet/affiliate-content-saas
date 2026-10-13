@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pickScore, siteSocials, readTopCreatives, tallyTop, readAdLibraryCount, bucketDollars, adLibraryUrl } from '../lib/trybe-pick'
-import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
+import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, ideaText, planText, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -66,7 +66,33 @@ check('an unknown hook style is filed, not dropped', plan?.hooks[3].style === 'r
 check('dashes are rewritten out of the script', !!plan && !/[–—]/.test(plan.body))
 check('nothing on sale: no sale line is offered', !!plan && !honestCtas(plan, []).ctas.some(c => c.kind === 'sale') && honestCtas(plan, ['Weight Vest']).ctas.some(c => c.kind === 'sale'))
 check('one script = hook + body + call to action', !!plan && /HOOK: Boomer vs Gen Z workout[\s\S]*BODY:[\s\S]*CTA:/.test(scriptFor(plan, 0)))
-check('the plan asks for ten hooks across Cole\'s styles and never invents a sale', /Write 10 hooks/.test(VIDEO_PLAN_SYSTEM('')) && /ONLY when BRAND lists something on sale/.test(VIDEO_PLAN_SYSTEM('')))
+check('the plan asks for ten videos across Cole\'s styles and never invents a sale', /Write exactly 10 videos with 10 clearly different angles/.test(VIDEO_PLAN_SYSTEM('')) && /ONLY when BRAND lists something on sale/.test(VIDEO_PLAN_SYSTEM('')))
+
+// 4b. Ten whole videos, from the brief (Seb 2026-10-13, after Alejandro).
+{
+  const v = (i: number, cta = 'Grab yours today') => ({ angle: `Angle ${i}`, style: i === 0 ? 'versus' : 'pov', hook: `Hook ${i}`, shot: 'slide it in', beats: ['show it', 'use it'], cta, forBrief: 'show the fit' })
+  const p10 = parseVideoPlan(JSON.stringify({
+    product: 'Weight Vest', body: 'The vest I wear on walks.', wants: ['Show the fit on a walk', 'Say it is adjustable'], avoid: ['No gym footage'],
+    videos: [v(0, 'Get it while the sale lasts'), ...Array.from({ length: 9 }, (_, i) => v(i + 1))],
+    ctas: [{ kind: 'sale', line: 'On sale now' }, { kind: 'urgency', line: 'Try it this week' }],
+    funnel: { top: '1', middle: '2', bottom: '3' },
+  }))
+  check('ten videos are read, each with angle, hook, beats and close', p10?.videos?.length === 10 && p10.videos[3].beats.length === 2 && p10.videos[3].angle === 'Angle 3')
+  check('the hook-swap list comes from the videos when no separate hooks are sent', p10?.hooks.length === 10 && p10.hooks[0].line === 'Hook 0')
+  check('what the brief asks for and rules out is kept', p10?.wants?.length === 2 && p10.avoid?.[0] === 'No gym footage')
+  const honest = p10 && honestCtas(p10, [])
+  check('nothing on sale: a video that closes on a sale gets an honest close', !!honest && honest.videos?.[0].cta === 'Try it this week' && honest.videos?.[1].cta === 'Grab yours today')
+  const txt = p10 ? planText({ ...p10, brief: 'text' }, 'Oink') : ''
+  check('the printed plan carries the brief and all ten videos', /THE BRIEF ASKS FOR:\n- Show the fit/.test(txt) && /THE BRIEF RULES OUT:/.test(txt) && /10\. Angle 9/.test(txt))
+  check('a brief MVP could not open is said on the page', p10 ? /document MVP could not read/.test(planText({ ...p10, brief: 'link_only' }, 'Oink')) : false)
+  check('one idea copies as a script', p10 ? /HOOK: Hook 1\nFIRST 2 SECONDS: slide it in\n1\) show it/.test(ideaText(p10.videos![1], 2)) : false)
+  check('the brief comes first in the prompt', /THE BRIEF COMES FIRST/.test(VIDEO_PLAN_SYSTEM('')))
+  const r = read('app/api/labs/trybe/route.ts')
+  check('the route plans from the brief the page read, and keeps where it came from', /BRIEF \(the brand's own creative brief on TRYBE\)/.test(r) && /brief: briefState/.test(r))
+  const ui = read('components/labs/TrybeVideoIdeas.tsx')
+  check('the page reads the brief through SCOUT and says which kind it found', /loadBrief\(brandId\)/.test(ui) && /TRYBE shows no brief for this brand/.test(ui) && /MVP could not read their brief on TRYBE/.test(ui))
+  check('the ideas can be copied whole and printed', /planText\(plan, name\)/.test(ui) && /Print or save as PDF/.test(ui))
+}
 check('a broken answer gives no plan rather than an empty one', parseVideoPlan('sorry') === null && parseVideoPlan('{"body":"x","hooks":[]}') === null)
 
 // Wiring

@@ -13,9 +13,10 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle } from 'lucide-react'
+import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { scriptFor, HOOK_STYLE_WORDS, type VideoPlan } from '@/lib/trybe-playbook'
+import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, type VideoPlan } from '@/lib/trybe-playbook'
+import { readBrandCard } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
@@ -65,8 +66,34 @@ async function loadWinners(brandId: string, isAdmin: boolean): Promise<Winners> 
   return w
 }
 
+/** The brand's creative brief on TRYBE, read through SCOUT. Which of the
+ *  three it is (words, a document only, none) is kept and said. */
+async function loadBrief(brandId: string): Promise<{ brief: string | null; state: 'text' | 'link_only' | 'none' | 'unread' }> {
+  try {
+    const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`)
+    if (!d.ok) return { brief: null, state: 'unread' }
+    const c = readBrandCard(d.json)
+    if (c.brief) return { brief: c.brief, state: 'text' }
+    return { brief: null, state: c.briefUrl ? 'link_only' : 'none' }
+  } catch { return { brief: null, state: 'unread' } }
+}
+
+const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** A clean page to print or save as PDF, opened from the press itself. */
+function printPlan(plan: VideoPlan, brand: string): boolean {
+  const w = window.open('', '_blank', 'width=820,height=900')
+  if (!w) return false
+  const blocks = planText(plan, brand).split('\n\n').map((b, i) => i === 0 ? `<h1>${esc(b)}</h1>` : `<section>${esc(b).replace(/\n/g, '<br>')}</section>`).join('')
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(brand)} video ideas</title><style>body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:720px;margin:32px auto;padding:0 16px}h1{font-size:18px}section{border-top:1px solid #ddd;padding:12px 0;break-inside:avoid}</style></head><body>${blocks}</body></html>`)
+  w.document.close()
+  w.focus()
+  setTimeout(() => { try { w.print() } catch { /* the page stays open to print by hand */ } }, 300)
+  return true
+}
+
 async function api(body: Record<string, unknown>) {
-  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(90_000) })
+  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240_000) })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
   return d
@@ -91,6 +118,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   const [winners, setWinners] = useState<Winners | null>(null)
   const [winOpen, setWinOpen] = useState(false)
   const [winLoading, setWinLoading] = useState(false)
+  const [step, setStep] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   useEffect(() => { setPlan(initial) }, [initial])
 
@@ -107,16 +136,29 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   async function makePlan() {
     setPlanning(true); setPlanNote(null)
     try {
-      const d = await api({ action: 'video_plan', brandId, winners: winnerWords })
+      // The brief first: what the brand asked creators for.
+      setStep('Reading the brand\'s creative brief on TRYBE')
+      const b = canRead ? await loadBrief(brandId) : { brief: null, state: 'unread' as const }
+      setStep(`Writing ${VIDEO_IDEAS} video ideas from ${b.brief ? 'the brief, ' : ''}the brand and its website. This takes about a minute.`)
+      const d = await api({ action: 'video_plan', brandId, winners: winnerWords, ...(b.brief ? { brief: b.brief } : b.state !== 'unread' ? { briefState: b.state } : {}) })
       const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
       setPlan(p); setPlanOpen(true)
       onPlan?.(p)
-      const from = d.fromWinners ? `Planned from the words of ${d.fromWinners} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
+      const fromWin = d.fromWinners ? `Planned from the words of ${d.fromWinners} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
+      const briefSaid = b.state === 'text' ? 'Planned from their creative brief.'
+        : b.state === 'link_only' ? 'Their brief is a document MVP cannot open: check these ideas against it.'
+        : b.state === 'none' ? 'TRYBE shows no brief for this brand, so these come from the brand and its website.'
+        : canRead ? 'MVP could not read their brief on TRYBE, so these come from the brand and its website.' : 'Update SCOUT to 1.46.0 or newer and MVP also plans from the brand\'s brief.'
+      const from = [briefSaid, fromWin].filter(Boolean).join(' ')
       if (d.onList === false) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}${name} is not on your MVP list, so these ideas are shown but not kept. Copy what you want.` })
       else if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These ideas are shown but could not be saved, so they will be gone next visit. Copy what you want to keep.` })
       else if (from) setPlanNote({ tone: 'ok', text: from })
-    } catch (e) { setPlanNote({ tone: 'warn', text: e instanceof Error ? e.message : 'MVP could not plan the videos.' }) }
-    finally { setPlanning(false) }
+    } catch (e) { setPlanNote({ tone: 'warn', text: e instanceof Error ? (/abort|timed? ?out/i.test(e.message) ? 'The ideas took too long to write. Try again.' : e.message) : 'MVP could not plan the videos.' }) }
+    finally { setPlanning(false); setStep(null) }
+  }
+
+  const copyText = async (key: string, text: string) => {
+    try { await navigator.clipboard.writeText(text); setCopiedKey(key); setTimeout(() => setCopiedKey(null), 2000) } catch { toast.error('Could not copy. Select the text instead.') }
   }
 
   const copy = async (i: number) => {
@@ -173,10 +215,58 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
         </div>
       )}
 
+      {planning && step && <p className="mt-1.5 inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> {step}</p>}
       {planNote && <p className="mt-1.5" style={{ color: planNote.tone === 'ok' ? GREEN : AMBER }}>{planNote.text}</p>}
 
       {plan && planOpen && (
         <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => void copyText('all', planText(plan, name))} className={btn} style={{ border: '1px solid var(--border)' }}>
+              {copiedKey === 'all' ? <Check size={12} /> : <Copy size={12} />} {copiedKey === 'all' ? 'Copied' : 'Copy all'}
+            </button>
+            <button onClick={() => { if (!printPlan(plan, name)) toast.error('Your browser blocked the print window. Allow pop ups for MVP, or use Copy all.') }} className={btn} style={{ border: '1px solid var(--border)' }}>
+              <Printer size={12} /> Print or save as PDF
+            </button>
+          </div>
+          {((plan.wants?.length ?? 0) > 0 || (plan.avoid?.length ?? 0) > 0) && (
+            <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <p className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={soft}><FileText size={11} /> What their brief asks for</p>
+              {plan.wants && plan.wants.length > 0 && <ul className="mt-1 list-disc pl-4 space-y-0.5">{plan.wants.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+              {plan.avoid && plan.avoid.length > 0 && (<>
+                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: AMBER }}>It rules out</p>
+                <ul className="mt-0.5 list-disc pl-4 space-y-0.5">{plan.avoid.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              </>)}
+            </div>
+          )}
+          {plan.brief === 'link_only' && <p style={{ color: AMBER }}>Their brief is a document MVP cannot open. Open it from the brand page and check these ideas against it.</p>}
+          {plan.videos && plan.videos.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{plan.videos.length} videos, {plan.videos.length} angles{plan.product ? `: ${plan.product}` : ''}</p>
+              <ol className="mt-1 space-y-1.5">
+                {plan.videos.map((v, i) => (
+                  <li key={i} className="rounded-lg border px-2.5 py-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                    <div className="flex items-start gap-2">
+                      <span className="shrink-0 text-[11px] font-bold mt-0.5" style={soft}>{i + 1}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[13px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
+                          <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
+                        </span>
+                        <span className="block mt-0.5"><b>Hook:</b> {v.hook}</span>
+                        {v.shot && <span className="block" style={soft}>First 2 seconds: {v.shot}</span>}
+                        <ol className="mt-1 list-decimal pl-4 space-y-0.5">{v.beats.map((b, j) => <li key={j}>{b}</li>)}</ol>
+                        {v.cta && <span className="block mt-0.5"><b>Close:</b> {v.cta}</span>}
+                        {v.forBrief && <span className="block mt-0.5" style={{ color: GREEN }}>For the brief: {v.forBrief}</span>}
+                      </span>
+                      <button onClick={() => void copyText(`v${i}`, ideaText(v, i + 1))} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title="Copy this video's plan">
+                        {copiedKey === `v${i}` ? <Check size={12} /> : <Copy size={12} />} {copiedKey === `v${i}` ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One body, many hooks{plan.product ? `: ${plan.product}` : ''}</p>
             <p className="mt-1 text-[13px]">{plan.body}</p>
@@ -184,7 +274,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
               ? <p className="mt-1" style={{ color: GREEN }}>On sale on their store now: {plan.onSale.slice(0, 3).join(', ')}</p>
               : <p className="mt-1" style={soft}>Nothing marked down on their store right now, so no sale line is offered.</p>}
           </div>
-          <div>
+          {!plan.videos?.length && <div>
             <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Hooks: film the body once, swap the first 2 seconds</p>
             <ol className="mt-1 space-y-1.5">
               {plan.hooks.map((h, i) => (
@@ -200,7 +290,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                 </li>
               ))}
             </ol>
-          </div>
+          </div>}
           {plan.ctas.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Calls to action</p>

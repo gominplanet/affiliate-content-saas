@@ -48,7 +48,9 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120
+// 300: ten whole video ideas take the writer about a minute, after the
+// brand's website is read.
+export const maxDuration = 300
 
 const MODEL = 'claude-sonnet-4-6'
 // Judging fit is a short yes or no per brand: the small model, a few at a time.
@@ -508,16 +510,20 @@ export async function POST(request: Request) {
     const summary = site?.summary || row.site_summary || ''
     if (!products.length && !summary && !row.about) return NextResponse.json({ error: 'MVP could not read what this brand sells (its website did not answer), so it cannot plan videos for it yet.' }, { status: 422 })
     const product = typeof body.product === 'string' ? body.product.slice(0, 140) : ''
+    // THE BRAND'S CREATIVE BRIEF, read on TRYBE through SCOUT by the page.
+    // What the page could not read is said, never guessed.
+    const briefText = typeof body.brief === 'string' ? body.brief.replace(/\s+\n/g, '\n').trim().slice(0, 4000) : ''
+    const briefState: 'text' | 'link_only' | 'none' | undefined = briefText ? 'text' : body.briefState === 'link_only' ? 'link_only' : body.briefState === 'none' ? 'none' : undefined
     try {
       const msg = await createAnthropicClient().messages.create({
-        model: MODEL, max_tokens: 2200,
+        model: MODEL, max_tokens: 6000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${product ? `\n\nPlan the videos about this product: ${product}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nPlan the videos about this product: ${product}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
       if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
-      const plan = honestCtas(parsed, onSale)
+      const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}) }
       let saved = !!own
       if (own) {
         try {
