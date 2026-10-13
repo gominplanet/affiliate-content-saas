@@ -78,7 +78,7 @@ interface Brand {
 
 type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 /** MVP's copy of every TRYBE brand (shared), and how complete it is. */
-interface Directory { brands: number; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
+interface Directory { brands: number; listed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
 type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands'
@@ -1303,7 +1303,7 @@ export default function TrybeOutreach() {
                 <p className="text-[10px] font-bold uppercase tracking-wider">Admin only</p>
                 <p>Updates as you change niches and keywords, from MVP&rsquo;s copy of every TRYBE brand: nothing is fetched from TRYBE or the websites.</p>
                 {directory && (
-                  <p>MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}</p>
+                  <p>{directory.listed != null ? <>On TRYBE now: <b>{directory.listed.toLocaleString()}</b> brands{directory.brands > directory.listed ? <> (MVP also keeps {(directory.brands - directory.listed).toLocaleString()} that TRYBE no longer lists; they are left out of matches)</> : null}. </> : null}MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands ever seen, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}</p>
                 )}
                 {findNotes.filter(n => ADMIN_NOTE.test(n)).map((n, i) => <p key={i}>{n}</p>)}
               </div>
@@ -1425,7 +1425,7 @@ export default function TrybeOutreach() {
           <p className="text-[12px] mb-3" style={soft}>Be signed in to TRYBE in this browser. Best fits first; the top {DAILY_FIND} are ticked.</p>
           {isAdmin && directory && directory.brands > 0 && (
             <p className="text-[12px] mb-3" style={soft}>
-              MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
+              {directory.listed != null ? <>On TRYBE now: <b>{directory.listed.toLocaleString()}</b> brands{directory.brands > directory.listed ? <> (MVP also keeps {(directory.brands - directory.listed).toLocaleString()} that TRYBE no longer lists; they are left out of matches)</> : null}. </> : null}MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands ever seen, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}
             </p>
           )}
           {findNotes.some(n => isAdmin || !ADMIN_NOTE.test(n)) && (

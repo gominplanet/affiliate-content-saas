@@ -171,6 +171,14 @@ check('a reply counts as sent only when a NEW message with its words shows', /co
 check('nothing TRYBE says is stored on MVP', (INBOX.match(/fetch\('\/api\//g) || []).length === 1 && /fetch\('\/api\/labs\/trybe', \{ method: 'POST'[^\n]*\n\s*action: 'suggest_reply'/.test(INBOX)
   && (() => { const r = readFileSync('app/api/labs/trybe/route.ts', 'utf8'); const b = r.slice(r.indexOf("action === 'suggest_reply'"), r.indexOf("action === 'edit'")); return b.length > 100 && !/\.(insert|upsert|update|delete)\(/.test(b) })())
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
+// Seb 2026-10-13: "is this the real total of brands inside of trybe?" MVP's
+// copy (6,642 ever seen) is not TRYBE's list (6,318 now).
+{
+  const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
+  check('brands TRYBE no longer lists are counted apart and left out of matches',
+    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 4
+    && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
+}
 check('the inbox is a tab of TRYBE Outreach', /\['inbox', 'Inbox', unread\]/.test(UI) && /tab === 'inbox' && <TrybeInbox/.test(UI))
 {
   // Seb, 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND PRODUCTS".

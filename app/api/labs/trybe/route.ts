@@ -177,6 +177,22 @@ async function allRows<T>(make: () => any, max: number): Promise<{ rows: T[]; er
   return { rows, error: null }
 }
 
+/** STILL ON TRYBE (Seb, 2026-10-13: "is this the real total of brands inside
+ *  of trybe?"). MVP never deletes a brand it once saw, so its copy (6,642)
+ *  outgrew TRYBE's own list (6,318). A brand counts as listed when the last
+ *  whole collection saw it: last_seen_at from that collection's run. The run
+ *  saves page by page over some minutes and stamps the end, so a few hours
+ *  before the end covers all of it. Null when no whole collection is known. */
+async function listedSince(admin: Db): Promise<string | null> {
+  try {
+    const { data } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
+    const c = (data?.value || {}) as { at?: string; complete?: boolean }
+    if (!c.complete || !c.at) return null
+    const t = Date.parse(c.at)
+    return Number.isFinite(t) ? new Date(t - 3 * 3600_000).toISOString() : null
+  } catch { return null }
+}
+
 /** How complete MVP's copy of TRYBE is. Null before migration 417. */
 async function directoryStats(admin: Db) {
   try {
@@ -190,12 +206,17 @@ async function directoryStats(admin: Db) {
       admin.from('trybe_directory_meta').select('value').eq('key', 'top100').maybeSingle(),
     ])
     if (all.error) return null
+    // How many of them TRYBE still lists (the last whole collection saw them).
+    const since = await listedSince(admin)
+    const listed = since ? await admin.from('trybe_directory').select('brand_id', head).gte('last_seen_at', since) : null
     // ONLY A WHOLE COLLECTION COUNTS as collected: one that stopped partway
     // leaves this empty, so the next Find brands collects again instead of
     // waiting a day on half a list.
     const c = (collected.data?.value || {}) as { at?: string; complete?: boolean; pages?: number; totalPages?: number }
     return {
       brands: all.count ?? 0,
+      /** Still on TRYBE's list; null when no whole collection is known. */
+      listed: listed && !listed.error ? listed.count ?? 0 : null,
       withWebsite: withSite.count ?? 0,
       websitesRead: read.count ?? 0,
       lastCollectedAt: c.complete && c.at ? c.at : null,
@@ -523,16 +544,21 @@ export async function POST(request: Request) {
     // best bets) would never reach the list from 400.
     const pool = sort === 'picks' || sort === 'creators' ? 1200 : 400
     const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
+    // Only brands TRYBE still lists: one it dropped cannot be messaged.
+    const since = await listedSince(admin)
     if (!rpc.error) {
       const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
       for (let i = 0; i < ids.length; i += 200) {
-        const { data, error: e } = await admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 200))
+        let q = admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 200))
+        if (since) q = q.gte('last_seen_at', since)
+        const { data, error: e } = await q
         if (e) return NextResponse.json({ error: e.message }, { status: 500 })
         rows.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
       }
     } else {
       let q = admin.from('trybe_directory').select(COLS)
       if (words.length) q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+      if (since) q = q.gte('last_seen_at', since)
       const { data, error: e } = await q.order('trybe_score', { ascending: false, nullsFirst: false }).limit(800)
       if (e) {
         const missing = /does not exist|schema cache/i.test(e.message)
@@ -676,10 +702,14 @@ export async function POST(request: Request) {
     // brands not already on this creator's list come back, then they are
     // ranked finely here.
     const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: ownerId, p_limit: 300 })
+    // Only brands TRYBE still lists: one it dropped cannot be messaged.
+    const since = await listedSince(admin)
     if (!rpc.error) {
       const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
       for (let i = 0; i < ids.length && !error; i += 150) {
-        const { data, error: e } = await admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 150))
+        let q = admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 150))
+        if (since) q = q.gte('last_seen_at', since)
+        const { data, error: e } = await q
         if (e) error = e
         else cands.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
       }
@@ -692,6 +722,7 @@ export async function POST(request: Request) {
       const make = () => {
         let q = admin.from('trybe_directory').select(COLS)
         if (words.length) q = q.or(words.flatMap(w => [`search_text.ilike.%${w}%`, `site_text.ilike.%${w}%`]).join(','))
+        if (since) q = q.gte('last_seen_at', since)
         // A stable order, so paging never skips or repeats a brand.
         return q.order('trybe_score', { ascending: false, nullsFirst: false }).order('brand_id')
       }
