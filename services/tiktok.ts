@@ -1,3 +1,4 @@
+import { planChunks } from '@/lib/tiktok-chunks'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 
@@ -273,10 +274,10 @@ export async function directPostVideo(
  *     receives bytes on a one-time upload URL THEY hand us. No domain
  *     verification, no CDN pull queue, no pre-check failures.
  *
- * Single-chunk upload: TikTok requires chunk_size >= 5MB on multi-chunk
- * uploads BUT permits the final chunk to be smaller, and with
- * total_chunk_count=1 the only chunk is also the final one — so a
- * 4.8MB video uploads fine as one chunk.
+ * Chunks: a video up to 64 MB goes as one chunk; a bigger one is split
+ * into 32 MB chunks with the rest in the last (lib/tiktok-chunks). Sending
+ * every video as one chunk failed with "The chunk size is invalid" for a
+ * 3:41 clip.
  *
  * Spec: https://developers.tiktok.com/doc/content-posting-api-reference-direct-post
  */
@@ -288,7 +289,7 @@ export async function directPostVideoUpload(
   let bytes: ArrayBuffer
   let contentType = 'video/mp4'
   try {
-    const upstream = await fetch(opts.upstreamUrl, { signal: AbortSignal.timeout(60_000) })
+    const upstream = await fetch(opts.upstreamUrl, { signal: AbortSignal.timeout(120_000) })
     if (!upstream.ok) throw new Error(`Upstream returned ${upstream.status}`)
     contentType = upstream.headers.get('content-type') || 'video/mp4'
     bytes = await upstream.arrayBuffer()
@@ -299,9 +300,10 @@ export async function directPostVideoUpload(
   if (videoSize < 200_000) {
     throw new Error(`Video too small for TikTok (${videoSize} bytes; min is 200 KB).`)
   }
-  if (videoSize > 256 * 1024 * 1024) {
-    throw new Error(`Video too large for FILE_UPLOAD (${videoSize} bytes; max we support is 256 MB).`)
+  if (videoSize > 512 * 1024 * 1024) {
+    throw new Error(`This video is ${Math.round(videoSize / 1048576)} MB, more than the 512 MB MVP can send to TikTok. Use a shorter clip.`)
   }
+  const plan = planChunks(videoSize)
 
   // ── 2. Init with FILE_UPLOAD source — get back publish_id + upload_url ─
   // See note above directPostVideo() — inbox mode drops post_info and
@@ -311,8 +313,8 @@ export async function directPostVideoUpload(
         source_info: {
           source: 'FILE_UPLOAD',
           video_size: videoSize,
-          chunk_size: videoSize,
-          total_chunk_count: 1,
+          chunk_size: plan.chunkSize,
+          total_chunk_count: plan.count,
         },
       }
     : {
@@ -328,8 +330,8 @@ export async function directPostVideoUpload(
         source_info: {
           source: 'FILE_UPLOAD',
           video_size: videoSize,
-          chunk_size: videoSize,
-          total_chunk_count: 1,
+          chunk_size: plan.chunkSize,
+          total_chunk_count: plan.count,
         },
       }
   const initEndpoint = USE_INBOX_MODE
@@ -357,26 +359,31 @@ export async function directPostVideoUpload(
     throw new Error('TikTok upload-init did not return publish_id + upload_url.')
   }
 
-  // ── 3. PUT the bytes to the upload_url (single-chunk) ───────────────────
-  // TikTok requires Content-Range even for single-chunk uploads.
+  // ── 3. PUT the bytes to the upload_url, one chunk at a time, in order ─
+  // Each chunk names its own byte range; TikTok answers 206 for a part and
+  // 201 when the whole video is in.
   // eslint-disable-next-line no-console
-  console.log(`[tiktok-upload] PUT ${videoSize} bytes to upload_url (publishId=${publishId})`)
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': String(videoSize),
-      'Content-Range': `bytes 0-${videoSize - 1}/${videoSize}`,
-    },
-    body: bytes,
-    signal: AbortSignal.timeout(120_000),
-  })
-  if (!uploadRes.ok && uploadRes.status !== 201) {
-    const errText = await uploadRes.text().catch(() => '')
-    throw new Error(`TikTok upload PUT failed (${uploadRes.status}): ${errText.slice(0, 200)}`)
+  console.log(`[tiktok-upload] PUT ${videoSize} bytes in ${plan.count} chunk(s) to upload_url (publishId=${publishId})`)
+  for (let i = 0; i < plan.ranges.length; i++) {
+    const { start, end } = plan.ranges[i]
+    const part = bytes.slice(start, end + 1)
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(end - start + 1),
+        'Content-Range': `bytes ${start}-${end}/${videoSize}`,
+      },
+      body: part,
+      signal: AbortSignal.timeout(120_000),
+    })
+    if (!uploadRes.ok && uploadRes.status !== 201 && uploadRes.status !== 206) {
+      const errText = await uploadRes.text().catch(() => '')
+      throw new Error(`TikTok upload PUT failed on part ${i + 1} of ${plan.count} (${uploadRes.status}): ${errText.slice(0, 200)}`)
+    }
   }
   // eslint-disable-next-line no-console
-  console.log(`[tiktok-upload] PUT done status=${uploadRes.status} publishId=${publishId}`)
+  console.log(`[tiktok-upload] PUT done, ${plan.count} chunk(s), publishId=${publishId}`)
 
   return { publishId }
 }
