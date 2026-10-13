@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, type VideoPlan } from '@/lib/trybe-playbook'
-import { readBrandCard, readPromotedProducts, mergeProducts, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
+import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
@@ -77,7 +77,9 @@ export interface BrandPage {
   state: 'text' | 'link_only' | 'none' | 'unread'
   /** TRYBE's "Promote These" first (promoted), then the brand's own store
    *  catalog, the way TrybeDaily shows it. */
-  products: Array<PromotedProduct & { promoted?: boolean }>
+  products: Array<PromotedProduct & { promoted?: boolean; sample?: { status: string; at: string | null } }>
+  /** Your sample requests to this brand were read ('old': SCOUT before 1.46.5). */
+  samplesRead?: 'ok' | 'old' | 'failed'
   /** Why the store catalog is missing, when it is. */
   storeWhy?: string | null
   keys: string
@@ -88,6 +90,25 @@ export interface BrandPage {
  *  opened by MVP's server and read (Seb, 2026-10-13: "the brief should be
  *  openable"). */
 export async function loadBrandPage(brandId: string): Promise<BrandPage> {
+  const [page, req] = await Promise.all([loadBrandPageInner(brandId), requestTrybeApi('GET', `/backend/api/creator/sample-requests?brandId=${encodeURIComponent(brandId)}&limit=50`).catch(() => null)])
+  // YOUR SAMPLES FIRST (Seb, 2026-10-13: the brand's Product Samples list):
+  // what you asked this brand for, marked with where it stands.
+  if (!req || !req.ok) return { ...page, samplesRead: req && req.error === 'not-allowed' ? 'old' : 'failed' }
+  const key = (n: string) => n.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
+  const mine = readSampleRequests(req.json).filter((r) => sampleStage(r.status) !== 'no')
+  const products = [...page.products]
+  for (const r of mine) {
+    const k = key(r.product)
+    const twin = products.find((p) => key(p.name) === k) || products.find((p) => { const pk = key(p.name); return pk.length > 3 && (pk.includes(k) || k.includes(pk)) })
+    const sample = { status: r.status, at: r.at }
+    if (twin) twin.sample = sample
+    else products.push({ id: null, name: r.product, image: r.image, url: null, price: null, sample })
+  }
+  products.sort((a, b) => Number(!!b.sample) - Number(!!a.sample))
+  return { ...page, products, samplesRead: 'ok' }
+}
+
+async function loadBrandPageInner(brandId: string): Promise<BrandPage> {
   const empty: BrandPage = { brief: null, briefUrl: null, briefWhy: null, state: 'unread', products: [], keys: '' }
   const store = async (website: string | null) => {
     try { const r = await api({ action: 'brand_products', brandId, ...(website ? { website } : {}) }); return { list: (r.products || []) as PromotedProduct[], why: (r.error as string) || null } }

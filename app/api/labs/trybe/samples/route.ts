@@ -67,6 +67,8 @@ export async function POST(request: Request) {
       videos_planned: Number.isFinite(n) && n > 0 ? Math.max(1, Math.min(10, Math.round(n))) : 3,
       // Already here when added: the box starts ticked.
       ...(body.received === true ? { received_at: now } : {}),
+      // Brought in from TRYBE's own sample requests: when it was asked for.
+      ...(typeof body.requestedAt === 'string' && Number.isFinite(Date.parse(body.requestedAt)) ? { requested_at: new Date(Date.parse(body.requestedAt)).toISOString() } : {}),
     }
     const { data, error } = await admin.from('trybe_samples').insert(row).select(COLS).single()
     if (error) return fail(error.message, g.tier)

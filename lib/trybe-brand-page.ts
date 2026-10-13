@@ -143,7 +143,7 @@ export function readBrandCard(json: unknown): BrandCard {
 /** One item from a brand's "Promote These" on TRYBE. */
 export interface PromotedProduct { id: string | null; name: string; image: string | null; url: string | null; price: string | null }
 
-const PRODUCT_LIST_KEYS = ['promoteThese', 'promote_these', 'promotedProducts', 'promoted_products', 'promoteProducts', 'products', 'campaignProducts', 'campaign_products', 'brandProducts', 'productList', 'skus', 'offers']
+const PRODUCT_LIST_KEYS = ['encouragedProducts', 'encouraged_products', 'promoteThese', 'promote_these', 'promotedProducts', 'promoted_products', 'promoteProducts', 'products', 'campaignProducts', 'campaign_products', 'brandProducts', 'productList', 'skus', 'offers']
 
 /** The products in GET creator/v2/brands/{id}/details (Seb, 2026-10-13: the
  *  creator picks the one they have on hand, MVP plans the videos for it).
@@ -267,4 +267,73 @@ export function mergeProducts(promoted: PromotedProduct[], store: PromotedProduc
     out.push({ ...s, promoted: false })
   }
   return out
+}
+
+/** A brand's product catalog on TRYBE (GET /backend/api/public/brand/{id}/
+ *  products, public): the same list TRYBE and TrybeDaily show on the brand's
+ *  page. Featured ones are what TRYBE asks creators to promote. Pure. */
+export function readTrybeCatalog(json: unknown): Array<PromotedProduct & { promoted?: boolean; samples?: boolean }> {
+  const root = isObj(json) && (isObj(json.data) || Array.isArray(json.data)) ? json.data : json
+  const list = Array.isArray(root) ? root : isObj(root) && Array.isArray(root.products) ? root.products : []
+  const out: Array<PromotedProduct & { promoted?: boolean; samples?: boolean }> = []
+  const seen = new Set<string>()
+  for (const raw of list) {
+    if (!isObj(raw) || raw.isActive === false) continue
+    const name = str(raw.title ?? raw.name).replace(/\s+/g, ' ')
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    const meta = isObj(raw.metadata) ? raw.metadata : {}
+    const range = isObj(meta.priceRangeV2) && isObj((meta.priceRangeV2 as Obj).minVariantPrice) ? ((meta.priceRangeV2 as Obj).minVariantPrice as Obj) : null
+    const edges = isObj(meta.variants) && Array.isArray((meta.variants as Obj).edges) ? (meta.variants as Obj).edges as unknown[] : []
+    const firstVar = edges.length && isObj(edges[0]) && isObj((edges[0] as Obj).node) ? ((edges[0] as Obj).node as Obj) : null
+    const amount = Number(range?.amount ?? firstVar?.price)
+    const img = str(raw.imageUrl ?? raw.image ?? (isObj(meta.featuredImage) ? (meta.featuredImage as Obj).url : ''))
+    out.push({
+      id: str(raw.id) || null, name: name.slice(0, 140),
+      image: /^https:\/\//i.test(img) ? img : null, url: null,
+      price: Number.isFinite(amount) && amount > 0 ? `$${amount.toFixed(2).replace(/\.00$/, '')}` : null,
+      promoted: raw.isFeatured === true, samples: raw.allowSamples !== false,
+    })
+  }
+  return out
+}
+
+/** A creator's own sample requests on TRYBE (GET /backend/api/creator/
+ *  sample-requests), read through SCOUT: what they asked each brand for and
+ *  where it stands. Pure. */
+export interface SampleRequest { brandId: string | null; brand: string | null; product: string; image: string | null; status: string; at: string | null }
+export function readSampleRequests(json: unknown): SampleRequest[] {
+  const root = isObj(json) && (isObj(json.data) || Array.isArray(json.data)) ? json.data : json
+  const list = Array.isArray(root) ? root : isObj(root) ? ([root.requests, root.items, root.sampleRequests, root.data].find(Array.isArray) as unknown[] | undefined) || [] : []
+  const out: SampleRequest[] = []
+  for (const raw of list) {
+    if (!isObj(raw)) continue
+    const prod = isObj(raw.product) ? raw.product : isObj(raw.brandProduct) ? raw.brandProduct : {}
+    const variant = isObj(raw.variant) ? raw.variant : {}
+    const brand = isObj(raw.brand) ? raw.brand : {}
+    const items = Array.isArray(raw.items) ? raw.items.filter(isObj) : []
+    const names = items.length
+      ? items.map((it) => str((isObj(it.product) ? (it.product as Obj).title : undefined) ?? it.productTitle ?? it.title ?? it.name))
+      : [str(prod.title ?? prod.name ?? raw.productTitle ?? raw.productName ?? raw.title ?? variant.productTitle)]
+    for (const n of names.filter(Boolean)) {
+      const img = str(prod.imageUrl ?? prod.image ?? raw.productImage ?? raw.imageUrl)
+      out.push({
+        brandId: str(raw.brandId ?? brand.id) || null,
+        brand: str(brand.name ?? raw.brandName) || null,
+        product: n.slice(0, 160),
+        image: /^https:\/\//i.test(img) ? img : null,
+        status: str(raw.status ?? raw.state).toLowerCase() || 'requested',
+        at: str(raw.createdAt ?? raw.requestedAt ?? raw.created_at) || null,
+      })
+    }
+  }
+  return out
+}
+
+/** Where a sample request stands, in the words of the This week tab. Pure. */
+export function sampleStage(status: string): 'here' | 'coming' | 'no' {
+  const s = status.toLowerCase()
+  if (/deliver|received|complete|fulfilled/.test(s)) return 'here'
+  if (/reject|declin|cancel|expire|denied/.test(s)) return 'no'
+  return 'coming'
 }

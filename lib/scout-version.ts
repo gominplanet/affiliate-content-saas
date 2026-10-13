@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.46.4'
+export const SCOUT_LATEST_VERSION = '1.46.5'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Facebook: SCOUT notes which of Facebook\'s requests carries a new Group post\'s number (names only), for one support test.'
+  'TRYBE: reads your own sample requests, so your approved samples show first in Make videos and come into This week.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

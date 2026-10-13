@@ -1114,9 +1114,26 @@ export async function POST(request: Request) {
     // The brand's own store catalog, with pictures and prices, the way
     // TrybeDaily shows it (Seb, 2026-10-13). Shared and kept a day per brand.
     if (!brandId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
-    const cacheKey = `products:${brandId}`
+    // v2: TRYBE's own catalog first (2026-10-13); the old store-only lists are not reused.
+    const cacheKey = `products2:${brandId}`
     const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', cacheKey).maybeSingle()
     if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 86_400_000) return NextResponse.json({ ok: true, ...(hit.value as object), kept: true })
+    // TRYBE'S OWN CATALOG FIRST (public, the list TRYBE and TrybeDaily show
+    // on the brand's page); the brand's store only when TRYBE has none.
+    if (/^[A-Za-z0-9-]{6,80}$/.test(brandId)) {
+      try {
+        const res = await fetch(`https://jointrybe.com/backend/api/public/brand/${encodeURIComponent(brandId)}/products`, { signal: AbortSignal.timeout(12_000), headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (MVP Affiliate)' } })
+        if (res.ok) {
+          const { readTrybeCatalog } = await import('@/lib/trybe-brand-page')
+          const products = readTrybeCatalog(await res.json())
+          if (products.length) {
+            const v = { products, error: null, source: 'trybe' }
+            try { await admin.from('trybe_directory_meta').upsert({ key: cacheKey, value: v, updated_at: now }) } catch { /* read again next time */ }
+            return NextResponse.json({ ok: true, ...v })
+          }
+        }
+      } catch { /* the store below */ }
+    }
     let site = typeof body.website === 'string' ? body.website.slice(0, 300) : ''
     if (!site) { const { data: d } = await admin.from('trybe_directory').select('website').eq('brand_id', brandId).maybeSingle(); site = d?.website || '' }
     const { storeProducts } = await import('@/lib/trybe-research')

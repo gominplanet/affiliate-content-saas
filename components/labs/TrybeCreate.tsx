@@ -138,23 +138,37 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
           {pageLoading ? (
             <p className="mt-3 text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading {brand.name}&rsquo;s page on TRYBE: the products it promotes and its creative brief...</p>
           ) : (<>
-            {page && page.products.length > 0 ? (
-              <div className="mt-3 grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-                {page.products.map((p) => (
-                  <button key={p.id || p.name} onClick={() => setProduct(p.name)} className="rounded-2xl border p-3 flex items-center gap-3 text-left hover:shadow-sm transition-shadow" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                    {p.image
-                      // eslint-disable-next-line @next/next/no-img-element
-                      ? <img src={p.image} alt="" className="w-20 h-20 rounded-xl object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
-                      : <span className="w-20 h-20 rounded-xl shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
-                    <span className="min-w-0">
-                      <span className="block text-[14px] font-semibold leading-snug">{p.name}</span>
-                      {p.price && <span className="block text-[12.5px]" style={soft}>{p.price}</span>}
-                      {p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE asks for this</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : (
+            {page && page.products.length > 0 ? (() => {
+              const card = (p: (typeof page.products)[number]) => (
+                <button key={p.id || p.name} onClick={() => setProduct(p.name)} className="rounded-2xl border p-3 flex items-center gap-3 text-left hover:shadow-sm transition-shadow"
+                  style={{ borderColor: p.sample ? 'rgba(22,163,74,0.45)' : 'var(--border)', background: 'var(--surface)' }}>
+                  {p.image
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={p.image} alt="" className="w-20 h-20 rounded-xl object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
+                    : <span className="w-20 h-20 rounded-xl shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-semibold leading-snug">{p.name}</span>
+                    {p.price && <span className="block text-[12.5px]" style={soft}>{p.price}</span>}
+                    {p.sample && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}{p.sample.at ? `, ${new Date(p.sample.at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span>}
+                    {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE asks for this</span>}
+                  </span>
+                </button>
+              )
+              const mine = page.products.filter((p) => p.sample)
+              const rest = page.products.filter((p) => !p.sample)
+              const grid = 'mt-2 grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]'
+              return (<>
+                {mine.length > 0 && (<>
+                  <p className="mt-3 text-[12px] font-bold uppercase tracking-wider" style={{ color: GREEN }}>Your samples from {brand.name}</p>
+                  <div className={grid}>{mine.map(card)}</div>
+                </>)}
+                {rest.length > 0 && (<>
+                  <p className="mt-4 text-[12px] font-bold uppercase tracking-wider" style={soft}>{mine.length ? `More from ${brand.name}` : `${brand.name}'s products on TRYBE`}</p>
+                  <div className={grid}>{rest.map(card)}</div>
+                </>)}
+                {page.samplesRead === 'old' && <p className="mt-2 text-[12px]" style={soft}>Update SCOUT to 1.46.5 and your own sample requests show here first.</p>}
+              </>)
+            })() : (
               <p className="mt-3 text-[13.5px]" style={soft}>{page ? `TRYBE lists no products to promote for ${brand.name}${isAdmin && page.keys ? ` (TRYBE sent: ${page.keys})` : ''}.` : `MVP could not read ${brand.name}’s page on TRYBE.`} Type the product you have below.</p>
             )}
             <form onSubmit={(e) => { e.preventDefault(); if (typed.trim()) setProduct(typed.trim().slice(0, 140)) }} className="mt-3 flex flex-wrap gap-2">

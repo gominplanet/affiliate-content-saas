@@ -14533,6 +14533,9 @@ const TRYBE_API_ALLOW = [
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/stats(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/(submissions|earnings)(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/submissions\/[A-Za-z0-9-]{6,80}\/script$/ },
+  // The creator's own sample requests (1.46.5, Seb 2026-10-13): what they
+  // asked each brand for and where it stands. Read only.
+  { method: 'GET', re: /^\/backend\/api\/creator\/sample-requests(\?[\w=&%.-]*)?$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never

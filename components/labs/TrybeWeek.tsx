@@ -8,7 +8,7 @@
 // own video ideas, and the next seven days planned from those boxes
 // (lib/trybe-week.ts). A list MVP could not read says so, never "no samples".
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileDown } from 'lucide-react'
 import TrybeVideoIdeas, { loadBrandPage, type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
@@ -17,7 +17,7 @@ import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, withSubmissions, judgeBrands, readTopVideos, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
 import { buildPlanner, readMonthlyEarnings, type MonthMoney, type PlannerProduct } from '@/lib/trybe-planner'
-import { brandPageUrl } from '@/lib/trybe-brand-page'
+import { brandPageUrl, readSampleRequests, sampleStage } from '@/lib/trybe-brand-page'
 import type { VideoPlan } from '@/lib/trybe-playbook'
 import type { Pooled } from '@/lib/trybe-changes'
 
@@ -135,6 +135,43 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     const s = sentThisMonth[id]
     return b && s && s.n != null ? { brand: b.name, sent: s.n, target } : null
   }).filter((x): x is Pace => !!x), [focusIds, joined, sentThisMonth, target])
+
+  // YOUR TRYBE SAMPLE REQUESTS COME IN BY THEMSELVES (SCOUT 1.46.5, Seb
+  // 2026-10-13): each request not on this list is added, delivered ones
+  // ticked Received; one on the list TRYBE now says was delivered is ticked.
+  // Declined or cancelled ones are left out. Said in a line, never silently.
+  const [synced, setSynced] = useState<string | null>(null)
+  const syncTried = useRef(false)
+  useEffect(() => {
+    if (!canRead || !rows || joined === null || syncTried.current) return
+    syncTried.current = true
+    void (async () => {
+      const r = await requestTrybeApi('GET', '/backend/api/creator/sample-requests?limit=100').catch(() => null)
+      if (!r || !r.ok) { if (r?.error === 'not-allowed') setSynced('Update SCOUT to 1.46.5 and your TRYBE sample requests come in here by themselves.'); return }
+      const key = (b: string, p: string) => `${b.trim().toLowerCase()}|${p.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`
+      const have = new Map((rows || []).map((x) => [key(x.brand_name, x.product), x]))
+      let added = 0, ticked = 0
+      for (const q of readSampleRequests(r.json)) {
+        const stage = sampleStage(q.status)
+        if (stage === 'no') continue
+        const brandName = q.brand || (joined || []).find((b) => b.id === q.brandId)?.name
+        if (!brandName) continue
+        const cur = have.get(key(brandName, q.product))
+        try {
+          if (!cur) {
+            const res = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', brandName, brandId: q.brandId, product: q.product, received: stage === 'here', requestedAt: q.at }), signal: AbortSignal.timeout(30_000) })
+            const d = await res.json().catch(() => ({}))
+            if (res.ok && d.sample) { setRows((xs) => [d.sample as Row, ...(xs || [])]); have.set(key(brandName, q.product), d.sample as Row); added++ }
+          } else if (stage === 'here' && !cur.received_at) {
+            const res = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tick', id: cur.id, field: 'received', on: true }), signal: AbortSignal.timeout(30_000) })
+            const d = await res.json().catch(() => ({}))
+            if (res.ok && d.sample) { setRows((xs) => (xs || []).map((x) => (x.id === cur.id ? { ...x, ...(d.sample as Row) } : x))); ticked++ }
+          }
+        } catch { /* the next visit tries again */ }
+      }
+      if (added || ticked) setSynced(`From your TRYBE sample requests: ${added ? `${added} added` : ''}${added && ticked ? ', ' : ''}${ticked ? `${ticked} ticked Received (TRYBE says delivered)` : ''}.`)
+    })()
+  }, [canRead, rows, joined])
 
   const suggestions = useMemo(() => {
     const seen = new Set<string>()
@@ -477,7 +514,8 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       {/* The samples, with their boxes. */}
       <div className={card} style={cardStyle}>
         <p className="text-[15px] font-semibold inline-flex items-center gap-1.5 mb-1"><Package size={16} style={{ color: PURPLE }} /> Samples</p>
-        <p className="text-[12.5px] mb-3" style={soft}>Add each sample you ask a brand for. Tick Received when it arrives, Filmed when the videos are shot, Submitted when they are on TRYBE.</p>
+        {synced && <p className="text-[12.5px] mb-2 font-semibold" style={{ color: GREEN }}>{synced}</p>}
+        <p className="text-[12.5px] mb-3" style={soft}>Your TRYBE sample requests come in here by themselves. You can also add a sample by hand. Tick Received when it arrives, Filmed when the videos are shot, Submitted when they are on TRYBE.</p>
         <div className="flex flex-wrap items-end gap-2 mb-4">
           <label className="flex flex-col gap-1 text-[12px] min-w-[160px] flex-1" style={soft}>Brand
             <input list="trybe-week-brands" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand name" className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
