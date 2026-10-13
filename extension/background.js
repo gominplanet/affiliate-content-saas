@@ -13375,7 +13375,7 @@ async function prefillFacebookGroup({ groupUrl, text, media }) {
     try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [true] }) } catch (e) {}
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
-    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body))
+    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body), groupLinkKey(body))
     return out
   } catch (e) {
     return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
@@ -13625,6 +13625,18 @@ function groupSnippet(text) {
   return (lines[0] || '').slice(0, 40)
 }
 
+// THE PRODUCT LINK'S OWN CODE, a second way to know the post (1.46.3). Since
+// a Facebook post leads with "Grab it on Amazon 👉 <link>" and the disclosure,
+// the write-up's opening line sits behind Facebook's "See more" in the Group
+// feed, and the hook alone was never found: the Reel waited forever (Seb,
+// 2026-10-13). The link's code (mvpl.ink/6g9q9w8 gives 6g9q9w8) is on the
+// first line, always shown. Old posts with the same link are already left out
+// by the old marks and their time stamps.
+function groupLinkKey(text) {
+  const m = String(text || '').match(/https?:\/\/(?:www\.)?(?:mvpl\.ink|amzn\.to|geni\.us|bit\.ly|amazon\.[a-z.]+\/(?:dp|gp\/product))\/([A-Za-z0-9_-]{5,})/i)
+  return m ? m[1] : ''
+}
+
 // Runs in the page's MAIN world so it can see Facebook's own requests.
 function installGroupPostHook(markOld) {
   if (markOld) {
@@ -13681,7 +13693,7 @@ function installGroupPostHook(markOld) {
 }
 
 // Runs in the page's MAIN world, once every couple of seconds while watching.
-function readGroupPostState(snippet) {
+function readGroupPostState(snippet, linkKey) {
   const visible = (el) => !!el && el.getClientRects().length > 0
   const out = {
     hook: !!window.__scoutGroupHook,
@@ -13693,7 +13705,7 @@ function readGroupPostState(snippet) {
     // Facebook's notice while a video post is still being processed.
     processing: /processing video|video in your post is being processed|vidéo est en cours de traitement|se está procesando el video/i.test(document.body ? document.body.innerText : ''),
   }
-  if (out.net || !snippet) return out
+  if (out.net || (!snippet && !linkKey)) return out
   const norm = (s) => String(s || '').replace(/\s+/g, ' ')
   // ONLY A POST THAT IS NEW. Facebook redraws its feed, so the "old" marks put
   // on the posts already there can vanish; a post whose own time stamp says
@@ -13702,7 +13714,14 @@ function readGroupPostState(snippet) {
   const isOld = (a) => Array.from(a.querySelectorAll('a[role="link"], a[href*="/posts/"], a[href*="/permalink/"], a[href*="/reel/"]'))
     .some((l) => OLD_STAMP.test((l.innerText || '').trim()))
   const arts = Array.from(document.querySelectorAll('[role="article"], [aria-posinset]'))
-    .filter((a) => !a.closest('[role="dialog"]') && !a.closest('[data-scout-old]') && norm(a.innerText).indexOf(snippet) >= 0 && !isOld(a))
+    .filter((a) => {
+      if (a.closest('[role="dialog"]') || a.closest('[data-scout-old]') || isOld(a)) return false
+      const t = norm(a.innerText)
+      if (snippet && t.indexOf(snippet) >= 0) return true
+      // The product link's code, in the shown text or in a link's address.
+      if (linkKey && (t.indexOf(linkKey) >= 0 || Array.from(a.querySelectorAll('a[href]')).some((l) => { try { return decodeURIComponent(String(l.href || '')).indexOf(linkKey) >= 0 } catch (e) { return false } }))) return true
+      return false
+    })
   if (!arts.length) return out
   out.seen = true
   const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
@@ -13756,7 +13775,7 @@ async function readGroupWatch(id) {
   return st
 }
 
-function watchGroupPost(tabId, snippet) {
+function watchGroupPost(tabId, snippet, linkKey) {
   const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const ka = startKeepAlive()
@@ -13777,7 +13796,7 @@ function watchGroupPost(tabId, snippet) {
         if (onReel) return await saveGroupWatch(id, { state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
         let r = null
         try {
-          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet] })
+          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet, linkKey || ''] })
           r = res && res[0] && res[0].result
         } catch (e) {}
         if (!r) continue

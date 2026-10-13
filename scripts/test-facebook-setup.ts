@@ -106,6 +106,17 @@ const reel = read('components/clip-factory/ReelDestinations.tsx')
 check('SCOUT attaches the clip itself to the Group post', /\{ kind: 'clip', url: p\.clipUrl \}/.test(reel) && /hero\.kind === 'clip'/.test(read('extension/background.js')))
 check('the Reel\'s first line links to the exact Group post', /`Get it here 👉 \$\{link\}`/.test(reel) && /isFacebookReelLink\(st\.url\)\)\) \{ await postReel\(st\.url, 'post'\)/.test(reel))
 check('without the post\'s own link, the Reel waits for it or links to the Group only when asked', /Link to my Group instead/.test(reel) && !/postReel\(group\.url, 'group'\); return/.test(reel))
+// Seb 2026-10-13: Group post up, Page never reached. The post now leads with
+// its product link, and the hook sat behind "See more", so SCOUT never found it.
+{
+  const BG = readFileSync('extension/background.js', 'utf8')
+  check('SCOUT also finds the new Group post by its product link code',
+    /function groupLinkKey\(text\)/.test(BG) && /watchGroupPost\(tabId, groupSnippet\(body\), groupLinkKey\(body\)\)/.test(BG)
+    && /function readGroupPostState\(snippet, linkKey\)/.test(BG) && /args: \[snippet, linkKey \|\| ''\]/.test(BG))
+  check('the way on by hand shows from the start, and only one Page post ever goes',
+    /Posted and nothing is happening\?/.test(reel) && /const pageStarted = useRef\(false\)/.test(reel)
+    && /if \(pageStarted\.current && !isRetry\) return/.test(reel) && /!pageStarted\.current\) \{/.test(reel))
+}
 check('the Group post up and the Reel not is said as exactly that', /Your Group post is up, but the \$\{what\} did not go out/.test(reel) && reel.includes("const what = longClip ? 'video' : 'Reel'"))
 check('an old SCOUT stops before filling a post without its clip', /attaching a clip to a Group post needs/.test(read('lib/extension-frame.ts')))
 check('Clip Factory runs it with the Labs switch and a Group, and nudges without one', /canUsePreview\('facebook_setup', tier\) && \(fbGroups\?\.length \?\? 0\) > 0/.test(read('components/clip-factory/ClipFactory.tsx')) && /Set up your deals Group first\./.test(read('components/clip-factory/ClipFactory.tsx')))
@@ -153,7 +164,7 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   const snip = groupSnippet(post)
   check('the fingerprint is the post\'s own opening line', snip.startsWith('The insert pops right out'))
   check('the fingerprint is never the disclosure every post shares', !/affiliate|commission|Associate/i.test(snip))
-  check('a post whose time stamp says hours or a date is never taken for the new one', /const OLD_STAMP = /.test(bg) && /&& !isOld\(a\)\)/.test(bg))
+  check('a post whose time stamp says hours or a date is never taken for the new one', /const OLD_STAMP = /.test(bg) && /a\.closest\('\[data-scout-old\]'\) \|\| isOld\(a\)\) return false/.test(bg))
 }
 
 // ── No captions from YouTube: get the video and carry on, once ─────────────

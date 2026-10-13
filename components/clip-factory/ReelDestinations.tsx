@@ -131,6 +131,9 @@ export function ReelGroupFirst(p: {
   const [retry, setRetry] = useState<string | null>(null)
   const mounted = useRef(true)
   const lastStart = useRef<number | null>(null)
+  // ONE PAGE POST. The creator can go on by hand while SCOUT still watches;
+  // whichever comes first posts, and the watch stops.
+  const pageStarted = useRef(false)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useEffect(() => { if (!caption && p.defaultCaption) setCaption(p.defaultCaption) }, [p.defaultCaption, caption])
 
@@ -150,7 +153,9 @@ export function ReelGroupFirst(p: {
     }).catch(() => {})
   }
 
-  async function postReel(link: string, how: 'post' | 'group') {
+  async function postReel(link: string, how: 'post' | 'group', isRetry = false) {
+    if (pageStarted.current && !isRetry) return
+    pageStarted.current = true
     setRetry(null)
     setManual(null)
     const description = [`Get it here 👉 ${link}`, caption.trim()].filter(Boolean).join('\n\n')
@@ -204,7 +209,7 @@ export function ReelGroupFirst(p: {
 
   async function run(text: string) {
     if (!group || !p.clipUrl) return
-    setLines([]); setManual(null); setRetry(null)
+    setLines([]); setManual(null); setRetry(null); pageStarted.current = false
     try { await navigator.clipboard.writeText(text) } catch { /* the lines below say what to do */ }
     say({ tone: 'wait', text: `SCOUT is opening ${group.name || 'your Group'} and attaching the clip…` })
     p.onBusy(true)
@@ -218,11 +223,15 @@ export function ReelGroupFirst(p: {
       setManual({ link: '' })
       return
     }
-    say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open: after you post, Facebook processes the video first, which can take several minutes, and MVP carries on by itself.' })
+    say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open: after you post, Facebook processes the video first, which can take several minutes, and MVP carries on by itself. Posted and nothing is happening? Paste the post\'s link below, or post linking to your Group.' })
+    // The way on by hand, from the start, so a watch that misses the post
+    // never leaves the creator stuck (Seb, 2026-10-13).
+    setManual({ link: '' })
     // Facebook can process a video post for many minutes; SCOUT watches for 30.
     const end = Date.now() + 32 * 60 * 1000
-    while (mounted.current && Date.now() < end) {
+    while (mounted.current && Date.now() < end && !pageStarted.current) {
       await new Promise((r) => setTimeout(r, 3000))
+      if (pageStarted.current) return
       const st = await getFacebookGroupPostStatus(res.watchId)
       if (st.state === 'watching') continue
       // The Group post's own address, or, for a video, the Reel address its
@@ -300,7 +309,7 @@ export function ReelGroupFirst(p: {
         </div>
       )}
       {retry && (
-        <button onClick={() => void postReel(retry, isFacebookGroupPostLink(retry) ? 'post' : 'group')} className="self-start rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2]">Try the Reel again</button>
+        <button onClick={() => void postReel(retry, isFacebookGroupPostLink(retry) ? 'post' : 'group', true)} className="self-start rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white bg-[#1877F2]">Try the Reel again</button>
       )}
     </div>
   )
