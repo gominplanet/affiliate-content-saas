@@ -666,8 +666,13 @@ const SEARCH = read('lib/app-search-index.ts')
   check('nor its 6 (not 6E) sibling', pickByName(eero, [{ asin: 'B08ZZZZZZZ', brand: 'eero', model: null, title: 'Amazon eero Pro 6 mesh Wi-Fi 6 router' }], true) === null)
 
   // Upload failures in words.
-  check('"Receiving end does not exist" says to sign in to that store',
-    /not signed in to amazon\.ca/.test(explainAmazonUpload('Could not establish connection. Receiving end does not exist.', 'amazon.ca') || ''))
+  // Seb 2026-10-13: 13 of 16 went to the US store in one run and two of the
+  // others were called "not signed in". Chrome's sentence is a lost page.
+  check('"Receiving end does not exist" says SCOUT lost the page, not a sign-in',
+    /lost contact with Amazon Canada's upload page/.test(explainAmazonUpload('Could not establish connection. Receiving end does not exist.', 'amazon.ca') || '')
+    && !/is not signed in/.test(explainAmazonUpload('Could not establish connection. Receiving end does not exist.', 'amazon.ca') || ''))
+  check('SCOUT\'s own "not signed in" says to sign in to that store',
+    /not signed in to amazon\.ca/.test(explainAmazonUpload('not signed in: Amazon amazon.ca sent SCOUT to its sign-in page', 'amazon.ca') || ''))
   check('a missing Creator session says to finish creator setup there',
     /Creator tools there/.test(explainAmazonUpload('Could not read your Creator session token. [ctx:dom:csrf]', 'amazon.de') || ''))
   check('anything unrecognised is passed through untouched', explainAmazonUpload('Something new', 'amazon.fr') === 'Something new')
@@ -676,7 +681,7 @@ const SEARCH = read('lib/app-search-index.ts')
 // ── Amazon abroad: failures that pass are tried again, signed-out stores wait ──
 {
   check('failures are sorted into what passes and what Amazon refused',
-    uploadFailureKind('Could not establish connection. Receiving end does not exist.') === 'signin'
+    uploadFailureKind('Could not establish connection. Receiving end does not exist.') === 'transient'
     && uploadFailureKind('not signed in: Amazon amazon.ca sent SCOUT to its sign-in page') === 'signin'
     && uploadFailureKind('Could not read your Creator session token ... [ctx:dom:csrf]') === 'creator'
     && uploadFailureKind('[upload-video] S3 PUT timed out') === 'transient'

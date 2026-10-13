@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { readRenderJob, backgroundFailureWords } from '@/lib/render-job'
 import { recordUsage } from '@/lib/ai-usage'
+import { STUCK_MARK } from '@/lib/stuck-renders'
 
 export const runtime = 'nodejs'
 
@@ -32,6 +33,12 @@ export async function POST(request: Request) {
   const sb = createAdminClient() as any
   const at = new Date().toISOString()
   const url = String(body.url || '')
+  // GIVEN UP ON ALREADY (lib/stuck-renders): the sweep marked the clip failed
+  // and gave its render back. A late success takes the render again; a late
+  // failure gives nothing back twice.
+  const { data: before } = await sb.from('youtube_shorts').select('status,render_error')
+    .eq('id', job.shortId).eq('user_id', job.userId).maybeSingle()
+  const sweptAlready = before?.status === 'failed' && String(before?.render_error || '').startsWith(STUCK_MARK)
 
   if (body.ok === true && /^https:\/\//i.test(url)) {
     const { data, error } = await sb.from('youtube_shorts')
@@ -40,6 +47,7 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ ok: true, note: 'clip no longer exists' })
     recordUsage({ userId: job.userId, tier: null, feature: 'shorts_render_cost', model: 'ffmpeg-ass', images: 1 })
+    if (sweptAlready) recordUsage({ userId: job.userId, tier: null, feature: 'shorts_render', model: 'reserved', images: 0 })
     return NextResponse.json({ ok: true })
   }
 
@@ -47,7 +55,7 @@ export async function POST(request: Request) {
   await sb.from('youtube_shorts')
     .update({ status: 'failed', render_error: backgroundFailureWords(body.error), updated_at: at })
     .eq('id', job.shortId).eq('user_id', job.userId)
-  if (job.reservationId) {
+  if (job.reservationId && !sweptAlready) {
     try { await sb.from('ai_usage').delete().eq('id', job.reservationId).eq('user_id', job.userId) } catch { /* best-effort refund */ }
   }
   return NextResponse.json({ ok: true, failed: true })

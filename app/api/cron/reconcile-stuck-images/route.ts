@@ -28,6 +28,10 @@
  * cron in vercel.json failed on Vercel, and the one that put it back went
  * through. Its own try, so a problem there never stops the images reconcile.
  *
+ * ALSO: Clip Factory background renders the render server never reported
+ * back on are marked failed and their monthly render given back
+ * (lib/stuck-renders).
+ *
  * Auth: Vercel cron requests carry `Authorization: Bearer ${CRON_SECRET}`.
  */
 
@@ -36,6 +40,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { holdAndRelease } from '@/lib/video-hold'
 import { fixProvenanceLines } from '@/lib/provenance-fix'
 import { sweepPublishedPrices, sweepSchemaPrices } from '@/lib/published-price-sweep'
+import { sweepStuckRenders } from '@/lib/stuck-renders'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,6 +76,16 @@ export async function GET(request: Request) {
     .eq('images_status', 'pending')
     .or(`images_status_at.lt.${cutoff},images_status_at.is.null`)
     .select('id')
+
+  // Clip Factory renders the render server never reported back on: marked
+  // failed and their monthly render given back (lib/stuck-renders). First,
+  // and quick, so the slower sweeps below never crowd it out.
+  let stuckRenders: unknown = null
+  try {
+    stuckRenders = await sweepStuckRenders(admin)
+  } catch (e) {
+    stuckRenders = { error: (e instanceof Error ? e.message : String(e)).slice(0, 200) }
+  }
 
   // Posts waiting for their videos.
   let videoHold: unknown = null
@@ -113,11 +128,12 @@ export async function GET(request: Request) {
   }
 
   if (error) {
-    return NextResponse.json({ error: error.message, videoHold, provenance, prices, schemaPrices }, { status: 500 })
+    return NextResponse.json({ error: error.message, stuckRenders, videoHold, provenance, prices, schemaPrices }, { status: 500 })
   }
 
   return NextResponse.json({
     ok: true,
+    stuckRenders,
     videoHold,
     provenance,
     prices,

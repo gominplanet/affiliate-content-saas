@@ -4,10 +4,11 @@
 //
 // SCOUT reports Chrome's and Amazon's own sentences, and the board showed them
 // as they came: "Could not establish connection. Receiving end does not exist."
-// That is Chrome saying SCOUT's page script was not there, and in practice it
-// means the store's upload page never opened (Amazon sent the tab to its
-// sign-in page, where SCOUT has no access). Said as such, with the one thing
-// that fixes it. Anything not recognised is passed through untouched.
+// That is Chrome saying SCOUT's page script was not there. SCOUT now reads the
+// tab's address and says "not signed in" itself when Amazon sent it to the
+// sign-in page, so Chrome's sentence alone means the page went away part way.
+// Each is said as such, with what fixes it. Anything not recognised is passed
+// through untouched.
 import { marketByDomain } from '@/lib/markets'
 
 export function explainAmazonUpload(raw: string | null | undefined, domain: string): string | null {
@@ -15,8 +16,16 @@ export function explainAmazonUpload(raw: string | null | undefined, domain: stri
   if (!s) return null
   const country = marketByDomain(domain)?.country ?? domain
   const store = `amazon.${domain.replace(/^amazon\./, '')}`
-  if (/^not signed in|receiving end does not exist|could not establish connection/i.test(s)) {
-    return `SCOUT could not open Amazon ${country}'s upload page. That usually means this Chrome is not signed in to ${store} with your Creator account: open ${store}, sign in, then send again.`
+  // SCOUT SAYS "not signed in" ITSELF when Amazon sent its tab to the sign-in
+  // page: it reads the tab's address before each upload and after each reload.
+  if (/^not signed in/i.test(s)) {
+    return `SCOUT could not open Amazon ${country}'s upload page because this Chrome is not signed in to ${store} with your Creator account: open ${store}, sign in, then send again.`
+  }
+  // CHROME'S "Receiving end does not exist" is SCOUT losing the page part way
+  // (it reloaded or stopped answering), not a sign-in: Seb's run of 16 sent 13
+  // to the same store and called two of these "not signed in".
+  if (/receiving end does not exist|could not establish connection/i.test(s)) {
+    return `SCOUT lost contact with Amazon ${country}'s upload page part way (the page reloaded or stopped answering), so this video did not go. Nothing is listed there yet. If every video for ${country} fails like this, check you are still signed in to ${store}.`
   }
   if (/creator session token|ctx:dom:csrf|slatetoken/i.test(s)) {
     return `Signed in to ${store}, but Amazon did not open your Creator tools there. Open ${store}/create/post while signed in: if it asks you to join or finish setting up as a creator for ${country}, do that, then send again.`
@@ -45,7 +54,9 @@ export const MAX_UPLOAD_TRIES = 5
 
 export function uploadFailureKind(raw: string | null | undefined): UploadFailureKind {
   const s = String(raw || '')
-  if (/not signed in|not-signed-in|\/ap\/signin|receiving end does not exist|could not establish connection/i.test(s)) return 'signin'
+  if (/not signed in|not-signed-in|\/ap\/signin/i.test(s)) return 'signin'
+  // Lost the page part way: tried again soon, like a slow upload.
+  if (/receiving end does not exist|could not establish connection/i.test(s)) return 'transient'
   if (/creator session token|ctx:dom:csrf|slatetoken|not enrolled|not-enrolled/i.test(s)) return 'creator'
   if (/time[ds]? ?out|timed out|abort|network|failed to fetch|no response|did not report|503|502|500|504|429|throttl|temporar|try again|could not open the amazon creator hub tab|s3 put|still uploading/i.test(s)) return 'transient'
   return 'refused'

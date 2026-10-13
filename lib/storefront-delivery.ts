@@ -16,7 +16,7 @@
 // Amazon. The sentence is now true, which is the better of the two ways to fix
 // a screen that says something untrue.
 
-import { explainAmazonUpload } from '@/lib/amazon-upload-errors'
+import { explainAmazonUpload, uploadFailureKind } from '@/lib/amazon-upload-errors'
 import { requestStorefrontDelivery, requestStorefrontPreflight } from '@/lib/extension-frame'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
@@ -35,7 +35,7 @@ export interface DeliveryOutcome {
    *  copy. Recorded as present, which it is. */
   duplicates: number
   /** Listings SCOUT tried and could not upload, each with its own reason. */
-  failed: Array<{ domain: string; country: string; error: string }>
+  failed: Array<{ domain: string; country: string; error: string; retries?: boolean }>
   /** Uploaded to a non-English store with the English-text thumbnail, because
    *  the text-free one was never made. Said, never silent. */
   englishThumb?: string[]
@@ -185,7 +185,12 @@ export async function deliverPreparedStorefronts(scope?: {
     const it = byTarget.get(String(r.targetId))
     if (r.ok) uploaded++
     else if (dup) duplicates++
-    else failed.push({ domain: String(it?.domain || ''), country: String(it?.country || it?.domain || ''), error: explainAmazonUpload(String(r.error || ''), String(it?.domain || '')) || 'no reason given' })
+    else failed.push({
+      domain: String(it?.domain || ''), country: String(it?.country || it?.domain || ''),
+      error: explainAmazonUpload(String(r.error || ''), String(it?.domain || '')) || 'no reason given',
+      // Tried again by itself later unless Amazon refused it (result route).
+      retries: uploadFailureKind(String(r.error || '')) !== 'refused',
+    })
     // THE RECORD IS CHECKED. A refused write used to be ignored, so a listing
     // counted "uploaded" was never marked delivered and was offered again.
     let recorded = false
@@ -239,6 +244,21 @@ export async function deliverPreparedStorefronts(scope?: {
  * carries, and the held-back cases are named rather than folded into a number
  * that looks like a success.
  */
+/** The failures, one sentence each, the same reason for the same store said
+ *  once with its count: "3 did not upload. United States (2): ...". */
+export function failedLine(failed: DeliveryOutcome['failed']): string {
+  const groups: Array<{ country: string; error: string; n: number }> = []
+  for (const f of failed) {
+    const g = groups.find((x) => x.country === f.country && x.error === f.error)
+    if (g) g.n++
+    else groups.push({ country: f.country, error: f.error, n: 1 })
+  }
+  const end = (t: string) => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`)
+  const shown = groups.slice(0, 4).map((g) => end(`${g.country}${g.n > 1 ? ` (${g.n})` : ''}: ${g.error}`))
+  const more = groups.slice(4).reduce((a, g) => a + g.n, 0)
+  return `${failed.length} did not upload. ${shown.join(' ')}${more ? ` And ${more} more.` : ''}`
+}
+
 export function deliverySummary(o: DeliveryOutcome): string[] {
   const out: string[] = []
   if (o.error) { out.push(o.error); return out }
@@ -251,7 +271,11 @@ export function deliverySummary(o: DeliveryOutcome): string[] {
     if (o.handedOver > 0) out.push(`${o.handedOver} uploaded to Amazon.`)
     if (o.duplicates > 0) out.push(`${o.duplicates} already on that storefront, so not uploaded again.`)
     if (o.failed.length > 0) {
-      out.push(`${o.failed.length} did not upload: ${o.failed.slice(0, 4).map((f) => `${f.country}: ${f.error}`).join('; ')}${o.failed.length > 4 ? `; and ${o.failed.length - 4} more` : ''}.`)
+      out.push(failedLine(o.failed))
+      const again = o.failed.filter((f) => f.retries).length
+      if (again > 0) out.push(again === o.failed.length
+        ? `MVP tries ${again === 1 ? 'it' : 'them'} again by itself, the first time in about 10 minutes. Or press Send to Amazon now.`
+        : `MVP tries ${again} of them again by itself, the first time in about 10 minutes. The rest were refused by Amazon and are not tried again.`)
     }
     if (o.waitingOnDub > 0) {
       out.push(`${o.waitingOnDub} held back until their translated audio is ready.`)

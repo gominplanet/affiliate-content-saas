@@ -88,6 +88,20 @@ const base = { ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub
 const mixed = deliverySummary({ ...base, handedOver: 3, failed: [{ domain: 'amazon.fr', country: 'France', error: 'moderation' }] })
 check('a mix names the failure and its reason', mixed.some((l) => /France: moderation/.test(l)) && mixed.some((l) => /^3 uploaded/.test(l)))
 check('no sentence claims a hand-over', !mixed.join(' ').includes('handed to Amazon'))
+// Seb 2026-10-13: three failures read ".;" and "..", the same reason twice,
+// and nothing said MVP would try them again by itself.
+const lost = 'SCOUT lost contact with Amazon United States\'s upload page part way (the page reloaded or stopped answering), so this video did not go.'
+const three = deliverySummary({ ...base, handedOver: 13, failed: [
+  { domain: 'amazon.com', country: 'United States', error: 'The video took too long to reach Amazon United States and was stopped part way.', retries: true },
+  { domain: 'amazon.com', country: 'United States', error: lost, retries: true },
+  { domain: 'amazon.com', country: 'United States', error: lost, retries: true },
+] })
+const text3 = three.join(' ')
+check('the same reason for the same store is said once with its count', /United States \(2\): SCOUT lost contact/.test(text3) && (text3.match(/lost contact/g) || []).length === 1)
+check('no ".;" or ".." in the summary', !/\.;|\.\./.test(text3))
+check('failures MVP tries again say so', /MVP tries them again by itself/.test(text3))
+const refused = deliverySummary({ ...base, failed: [{ domain: 'amazon.fr', country: 'France', error: 'moderation', retries: false }] })
+check('a refusal is not promised a retry', !/tries .* again/.test(refused.join(' ')))
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
