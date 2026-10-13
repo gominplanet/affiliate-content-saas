@@ -10,12 +10,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileSpreadsheet } from 'lucide-react'
 import TrybeVideoIdeas, { type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
 import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, STAGE_WORDS, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace } from '@/lib/trybe-week'
 import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
+import { readBrandStats, withSubmissions, judgeBrands, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
+import { trybeWorkbook, readMonthlyEarnings, type MonthMoney, type ExportPlan } from '@/lib/trybe-export'
+import { buildXlsx } from '@/lib/xlsx-lite'
+import type { Pooled } from '@/lib/trybe-changes'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -177,6 +180,63 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     finally { setBusy(null) }
   }
 
+  // THE SPREADSHEET (Seb, 2026-10-13): everything on this page and in your
+  // TRYBE, as a real Excel file that also opens in Google Sheets and Numbers.
+  // Read fresh at the press; what could not be read is said in the sheet.
+  const [exporting, setExporting] = useState<string | null>(null)
+  async function exportSheet() {
+    setExporting('Getting ready...')
+    try {
+      const post = async (b: Record<string, unknown>) => {
+        const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b), signal: AbortSignal.timeout(60_000) })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
+        return d
+      }
+      const list = joined || []
+      const subs: Record<string, { subs: Submission[]; error: string | null }> = {}
+      const money: Record<string, MonthMoney[] | null> = {}
+      if (canRead) {
+        for (let i = 0; i < list.length; i++) {
+          setExporting(`Reading ${list[i].name} from TRYBE (${i + 1} of ${list.length})`)
+          const r = await readBrandSubs(list[i].id).catch((e) => ({ subs: [], error: e instanceof Error ? e.message : 'SCOUT did not answer.', complete: false }))
+          subs[list[i].id] = { subs: r.subs, error: r.error }
+          const e = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(list[i].id)}/earnings?period=all`).catch(() => null)
+          money[list[i].id] = e && e.ok ? readMonthlyEarnings(e.json) : null
+        }
+      }
+      setExporting('Adding your video ideas and members\' numbers')
+      const filled = list.map((b) => (subs[b.id] && !subs[b.id].error ? withSubmissions(b, subs[b.id].subs) : b))
+      const verdicts: Record<string, string> = {}
+      for (const j of judgeBrands(filled)) verdicts[j.brand.id] = j.verdict === 'focus' ? 'Focus' : j.verdict === 'drop' ? 'Drop' : j.verdict === 'early' ? 'Too early' : 'Keep'
+      const data = await post({ action: 'export_data', brandIds: list.map((b) => b.id) }).catch(() => ({ plans: [], pay: {} }))
+      const pooled = await post({ action: 'pooled', brandIds: list.map((b) => b.id) }).then((d) => (d.pooled || {}) as Record<string, Pooled>).catch(() => ({} as Record<string, Pooled>))
+      const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
+      const month = focusIds.map((id) => {
+        const b = list.find((x) => x.id === id)
+        const r = subs[id]
+        return b && r && !r.error ? { brand: b.name, sent: r.subs.filter((x) => (x.at ?? 0) >= start).length, target } : null
+      }).filter((x): x is { brand: string; sent: number; target: number } => !!x)
+      const sheets = trybeWorkbook({
+        now: Date.now(), samples: rows || [], brands: filled, subs, pooled, pay: data.pay || {}, verdicts,
+        plans: (data.plans || []) as ExportPlan[], month, money,
+      })
+      setExporting('Making the file')
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      for (const [path, xml] of Object.entries(buildXlsx(sheets))) zip.file(path, xml)
+      const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `MVP TRYBE ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.xlsx`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+      const missed = Object.values(subs).filter((x) => x.error).length
+      toast.success(missed ? `Spreadsheet saved. ${missed} brand${missed === 1 ? '' : 's'} could not be read from TRYBE; the Videos tab says which.` : canRead ? 'Spreadsheet saved.' : 'Spreadsheet saved, without your TRYBE videos and earnings: allow SCOUT on TRYBE to add them.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'The spreadsheet could not be made.') }
+    finally { setExporting(null) }
+  }
+
   const copyWeek = async () => {
     try { await navigator.clipboard.writeText(weekText(days)); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { toast.error('Could not copy.') }
   }
@@ -251,6 +311,15 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <FileSpreadsheet size={18} style={{ color: GREEN }} />
+        <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your TRYBE business in a spreadsheet.</b> <span style={soft}>Samples, every video you sent, your shooting list, brands, your month and your money, in one Excel file (opens in Google Sheets and Numbers too).</span></p>
+        <button onClick={() => void exportSheet()} disabled={!!exporting} className={btn} style={{ background: GREEN, color: '#fff' }}>
+          {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Export to spreadsheet
+        </button>
+        {exporting && <p className="w-full text-[12px] inline-flex items-center gap-1" style={soft}>{exporting}</p>}
+      </div>
+
       {/* YOUR MONTH: the video target per focus brand. */}
       <div className={card} style={cardStyle}>
         <div className="flex flex-wrap items-center gap-2 mb-1">

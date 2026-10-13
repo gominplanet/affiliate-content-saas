@@ -671,14 +671,22 @@ export async function POST(request: Request) {
         } catch { kept = false }
         return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length })
       }
+      // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
+      // has no row on the MVP list, and its ideas used to be lost.
+      const keptPlan = { ...plan, onSale, products: products.slice(0, 15) }
+      let ideasKept = false
+      try {
+        const { error: idErr } = await admin.from('trybe_ideas').insert({ user_id: ownerId, brand_id: brandId, brand_name: row.name || null, product: product || plan.product || null, plan: keptPlan })
+        ideasKept = !idErr
+      } catch { /* said below */ }
       let saved = !!own
       if (own) {
         try {
-          const { error: upErr } = await admin.from('trybe_brands').update({ video_plan: { ...plan, onSale, products: products.slice(0, 15) }, video_plan_at: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
+          const { error: upErr } = await admin.from('trybe_brands').update({ video_plan: keptPlan, video_plan_at: now, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId)
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved, onList: !!own, fromWinners: winners.length })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }
@@ -1086,6 +1094,46 @@ export async function POST(request: Request) {
       }
     }))
     return NextResponse.json({ ok: true, results })
+  }
+
+  if (action === 'ideas') {
+    // The video ideas kept for one brand, newest plan per product first.
+    if (!brandId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const { data: ide, error: ideErr } = await admin.from('trybe_ideas').select('id, product, plan, created_at').eq('user_id', ownerId).eq('brand_id', brandId).order('created_at', { ascending: false }).limit(40)
+    if (ideErr) return NextResponse.json({ ok: true, plans: [], why: /does not exist|schema cache/i.test(ideErr.message) ? setupWords(tier, 'Saved ideas need migration 429 in Supabase first.') : ideErr.message })
+    const seen = new Set<string>()
+    const plans = ((ide || []) as Array<{ id: string; product: string | null; plan: unknown; created_at: string }>).filter(r => {
+      const k = String(r.product || '').toLowerCase()
+      if (seen.has(k)) return false
+      seen.add(k); return true
+    }).slice(0, 10)
+    return NextResponse.json({ ok: true, plans })
+  }
+
+  if (action === 'export_data') {
+    // What the spreadsheet needs from MVP (the rest is read from TRYBE by
+    // the page): every kept plan, newest per brand and product, and what
+    // MVP's copy of TRYBE says each brand pays.
+    const brandIds = (Array.isArray(body.brandIds) ? body.brandIds : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 80)).slice(0, 300)
+    const { data: ide } = await admin.from('trybe_ideas').select('brand_id, brand_name, product, plan, created_at').eq('user_id', ownerId).order('created_at', { ascending: false }).limit(400)
+    const { data: own } = await admin.from('trybe_brands').select('brand_id, name, video_plan, video_plan_at').eq('user_id', ownerId).not('video_plan', 'is', null).limit(400)
+    const { data: sam } = await admin.from('trybe_samples').select('brand_id, brand_name, product, ideas, ideas_at').eq('user_id', ownerId).not('ideas', 'is', null).limit(400)
+    const seen = new Set<string>()
+    const plans: Array<{ brandId: string | null; brand: string; product: string | null; at: string | null; plan: unknown }> = []
+    const add = (brandId: string | null, brand: string, product: string | null, at: string | null, plan: unknown) => {
+      const k = `${(brandId || brand).toLowerCase()}|${String(product || '').toLowerCase()}`
+      if (seen.has(k) || !plan) return
+      seen.add(k); plans.push({ brandId, brand, product, at, plan })
+    }
+    for (const r of (ide || []) as Array<Record<string, any>>) add(r.brand_id, r.brand_name || r.brand_id, r.product, r.created_at, r.plan) // eslint-disable-line @typescript-eslint/no-explicit-any
+    for (const r of (sam || []) as Array<Record<string, any>>) add(r.brand_id, r.brand_name, r.product, r.ideas_at, r.ideas) // eslint-disable-line @typescript-eslint/no-explicit-any
+    for (const r of (own || []) as Array<Record<string, any>>) add(r.brand_id, r.name, (r.video_plan as { product?: string } | null)?.product || null, r.video_plan_at, r.video_plan) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const pay: Record<string, string> = {}
+    if (brandIds.length) {
+      const { data: dir } = await admin.from('trybe_directory').select('brand_id, pay_text').in('brand_id', brandIds)
+      for (const r of (dir || []) as Array<{ brand_id: string; pay_text: string | null }>) if (r.pay_text) pay[r.brand_id] = r.pay_text
+    }
+    return NextResponse.json({ ok: true, plans, pay })
   }
 
   if (action === 'brief_read') {

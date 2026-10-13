@@ -148,6 +148,22 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
 
   useEffect(() => { setPlan(initial) }, [initial])
 
+  // IDEAS KEPT FOR EVERY BRAND (migration 429): the newest plan per product,
+  // read when this brand opens, so ideas made for a brand joined on TRYBE
+  // directly are there next visit.
+  const [kept, setKept] = useState<Array<{ id: string; product: string | null; plan: SavedPlan; created_at: string }> | null>(null)
+  useEffect(() => {
+    if (initial || !brandId || sampleId) return
+    let stop = false
+    api({ action: 'ideas', brandId }).then((d) => {
+      if (stop) return
+      const list = (d.plans || []) as Array<{ id: string; product: string | null; plan: SavedPlan; created_at: string }>
+      setKept(list)
+      if (list.length) setPlan((cur) => cur || list[0].plan)
+    }).catch(() => { if (!stop) setKept([]) })
+    return () => { stop = true }
+  }, [initial, brandId, sampleId])
+
   async function showWinners() {
     if (winners) { setWinOpen((v) => !v); return }
     setWinOpen(true); setWinLoading(true)
@@ -192,6 +208,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
       setPlan(p); setPlanOpen(true)
       onPlan?.(p)
+      if (!sampleId && d.saved) setKept((ks) => [{ id: `new-${Date.now()}`, product: product || p.product || null, plan: p, created_at: new Date().toISOString() }, ...(ks || []).filter((k) => (k.product || '').toLowerCase() !== (product || p.product || '').toLowerCase())])
       const fromWin = d.fromWinners ? `Planned from the words of ${d.fromWinners} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
       const briefSaid = b0.state === 'text' ? 'Planned from their creative brief.'
         : b0.state === 'link_only' ? `MVP could not read their brief${b?.briefWhy ? ` (${b.briefWhy.replace(/\.$/, '')})` : ''}: check these ideas against it.`
@@ -335,6 +352,20 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       )}
 
       {planning && step && <p className="mt-1.5 inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> {step}</p>}
+      {kept && kept.length > 1 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Saved ideas</span>
+          {kept.map((k) => {
+            const on = plan === k.plan
+            return (
+              <button key={k.id} onClick={() => { setPlan(k.plan); setPlanOpen(true) }} aria-pressed={on} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
+                style={on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)' }}>
+                {k.product || 'The whole brand'} <span className="font-normal" style={soft}>{new Date(k.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
       {planNote && <p className="mt-1.5" style={{ color: planNote.tone === 'ok' ? GREEN : AMBER }}>{planNote.text}</p>}
 
       {plan && planOpen && (
