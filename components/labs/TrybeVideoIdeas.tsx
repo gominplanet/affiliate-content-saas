@@ -11,7 +11,7 @@
 // Used on the Sent tab (after a brand accepts) and on My brands. Every empty
 // or failed read says which it is.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
@@ -68,7 +68,7 @@ async function loadWinners(brandId: string, isAdmin: boolean): Promise<Winners> 
 
 /** The brand's creative brief on TRYBE, read through SCOUT. Which of the
  *  three it is (words, a document only, none) is kept and said. */
-interface BrandPage {
+export interface BrandPage {
   /** The brief's words: TRYBE's own, or read by MVP from its document link. */
   brief: string | null
   briefUrl: string | null
@@ -83,7 +83,7 @@ interface BrandPage {
  *  products it asks creators to promote. A brief kept as a document link is
  *  opened by MVP's server and read (Seb, 2026-10-13: "the brief should be
  *  openable"). */
-async function loadBrandPage(brandId: string): Promise<BrandPage> {
+export async function loadBrandPage(brandId: string): Promise<BrandPage> {
   const empty: BrandPage = { brief: null, briefUrl: null, briefWhy: null, state: 'unread', products: [], keys: '' }
   try {
     const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`)
@@ -121,7 +121,13 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId }: {
+export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId, product: fixedProduct, page: givenPage, auto = false }: {
+  /** Make videos (TrybeCreate): the product the creator picked. The ideas
+   *  are about it; its saved ideas show, else MVP writes them at once. */
+  product?: string
+  /** The brand's page, already read by the step before. */
+  page?: BrandPage | null
+  auto?: boolean
   /** Empty for a sample from a brand MVP has no TRYBE id for. */
   brandId: string
   /** The week plan: ideas about this sample's product, kept on the sample. */
@@ -159,7 +165,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       if (stop) return
       const list = (d.plans || []) as Array<{ id: string; product: string | null; plan: SavedPlan; created_at: string }>
       setKept(list)
-      if (list.length) setPlan((cur) => cur || list[0].plan)
+      // Make videos picks its own product's plan (below), never another's.
+      if (list.length && !fixedProduct) setPlan((cur) => cur || list[0].plan)
     }).catch(() => { if (!stop) setKept([]) })
     return () => { stop = true }
   }, [initial, brandId, sampleId])
@@ -179,13 +186,26 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   // select the actual product they have on hand. mvp will plan the video
   // based on that").
   const [picking, setPicking] = useState(false)
-  const [page, setPage] = useState<BrandPage | null>(null)
+  const [page, setPage] = useState<BrandPage | null>(givenPage ?? null)
   const [pageLoading, setPageLoading] = useState(false)
   const [chosen, setChosen] = useState<string>('')
   const [other, setOther] = useState('')
   const [briefOpen, setBriefOpen] = useState(false)
 
+  // MAKE VIDEOS: the product is already picked. Its saved ideas show when
+  // there are some; otherwise MVP writes them straight away.
+  const autoDone = useRef(false)
+  useEffect(() => {
+    if (!fixedProduct || autoDone.current || kept === null) return
+    autoDone.current = true
+    const match = kept.find((k) => (k.product || '').toLowerCase() === fixedProduct.toLowerCase())
+    if (match) { setPlan(match.plan); setPlanOpen(true); setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New ideas for a fresh set.` }) }
+    else if (auto) void makePlan(fixedProduct)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kept, fixedProduct, auto])
+
   async function startPick() {
+    if (fixedProduct) { void makePlan(fixedProduct); return }
     setPicking(true); setPlanOpen(false); setPlanNote(null)
     if (page || !canRead || !brandId) return
     setPageLoading(true)

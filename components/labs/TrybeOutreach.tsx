@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, type TrybeScanPass } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -38,6 +38,7 @@ import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
+import TrybeCreate from '@/components/labs/TrybeCreate'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -85,7 +86,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
+type Tab = 'create' | 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -259,6 +260,7 @@ function Stat({ label, value, hint, tone, accent = '#7C3AED', onClick }: { label
 
 /** The tabs, in the order a creator works, each said in one line. */
 const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; says: string }> = [
+  { id: 'create', label: 'Make videos', icon: Clapperboard, says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'changes', label: 'What changed', icon: Bell, says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
   { id: 'find', label: 'Find brands', icon: Search, says: 'Brands that fit your channel, and a first message to each, in your words.' },
   { id: 'queue', label: 'Ready to send', icon: Send, says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
@@ -292,7 +294,8 @@ export default function TrybeOutreach() {
   // The brand list the Inbox matches chats against (id, name, website).
   const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('find')
+  // Make videos first (Seb, 2026-10-13: brand, product, scripts, streamlined).
+  const [tab, setTab] = useState<Tab>('create')
   const [core, setCore] = useState('')
   const [cap, setCap] = useState(20)
   // The cap the server holds, for the tile and Send all; `cap` is the input.
@@ -485,7 +488,7 @@ export default function TrybeOutreach() {
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working') setTab(t) } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -1179,6 +1182,8 @@ export default function TrybeOutreach() {
       {tab === 'changes' && (changesError && !changes
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} />
         : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
+
+      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
       {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (
