@@ -61,11 +61,15 @@ interface Message { id: string; text: string; who: string; whoId: string; whoIds
  *  yes/no flag; else the time it was last read against its latest message. */
 function unreadOf(raw: Obj, at: number): number {
   const n = pick(raw, ['unreadCount', 'unread_count', 'unreadMessages', 'unread_messages', 'unreadMessageCount', 'newMessages', 'unread'])
-  if (typeof n === 'number' && n > 0) return n
-  if (typeof n === 'string' && Number(n) > 0) return Number(n)
+  // TRYBE'S OWN COUNT WINS, 0 included (Seb, 2026-10-13: a group chat read on
+  // TRYBE stayed unread here). A 0 used to fall through to the time check.
+  if (typeof n === 'number' && Number.isFinite(n)) return Math.max(0, n)
+  if (typeof n === 'string' && n.trim() !== '' && Number.isFinite(Number(n))) return Math.max(0, Number(n))
   if (n === true) return 1
+  if (n === false) return 0
   const flag = pick(raw, ['hasUnread', 'has_unread', 'isUnread', 'is_unread', 'unseen', 'isNew'])
   if (flag === true) return 1
+  if (flag === false) return 0
   const readRaw = pick(raw, ['lastReadAt', 'last_read_at', 'readAt', 'read_at', 'lastSeenAt', 'last_seen_at', 'lastViewedAt'])
   const readAt = Date.parse(str(readRaw))
   if (at > 0 && readRaw !== undefined && (!Number.isFinite(readAt) || at > readAt + 1000)) return 1
@@ -79,7 +83,12 @@ export function readConversation(raw: unknown): Conversation | null {
   const lastObj = (isObj(raw.lastMessage) ? raw.lastMessage : isObj(raw.last_message) ? raw.last_message : null) as Obj | null
   const last = str(lastObj ? pick(lastObj, ['content', 'text', 'body', 'message']) : pick(raw, ['lastMessageText', 'last_message_text', 'preview']))
   const name = str(pick(raw, ['name', 'title', 'channelName', 'displayName', 'brandName', 'brand_name'])) || 'Conversation'
-  const atRaw = pick(raw, ['lastMessageAt', 'last_message_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at']) ?? (lastObj ? pick(lastObj, ['createdAt', 'created_at']) : undefined)
+  // THE LAST MESSAGE'S TIME, not the chat's (Seb, 2026-10-13: a 918 member
+  // group chat said Oct 12 here and Oct 8 on TRYBE, and stayed unread). A
+  // group chat's updatedAt moves with every reaction and member, so it read as
+  // newer than the last time the chat was read. It is only the last resort.
+  const lastAt = lastObj ? pick(lastObj, ['createdAt', 'created_at', 'sentAt', 'sent_at', 'timestamp']) : undefined
+  const atRaw = lastAt ?? raw.lastMessageAt ?? raw.last_message_at ?? pick(raw, ['lastMessageAt', 'last_message_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at'])
   const at = Date.parse(str(atRaw)) || 0
   return { id, name, last, at, unread: unreadOf(raw, at), raw }
 }

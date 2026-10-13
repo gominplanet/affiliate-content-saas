@@ -348,6 +348,9 @@ check('a late answer for another conversation is dropped', /const current = open
   const at = Date.parse('2026-10-08T15:00:00Z')
   check('unread is read as a count, a flag, a nested count, or last-read time', u({ unreadCount: 2 }, at) === 2 && u({ hasUnread: true }, at) === 1 && u({ membership: { unread_count: 3 } }, at) === 3
     && u({ lastReadAt: '2026-10-08T14:00:00Z' }, at) === 1 && u({ lastReadAt: '2026-10-08T15:00:00Z' }, at) === 0 && u({ unreadCount: 0 }, at) === 0 && u({}, at) === 0)
+  // Seb 2026-10-13: read on TRYBE, unread here. TRYBE's own 0 wins over a time.
+  check('a chat\'s time is its last message, not when the chat last changed', /const lastAt = lastObj \? pick\(lastObj, \['createdAt'/.test(INBOX) && /const atRaw = lastAt \?\? raw\.lastMessageAt/.test(INBOX))
+  check('TRYBE\'s own count of 0 wins over a last-read time', u({ unreadCount: 0, lastReadAt: '2026-10-01T00:00:00Z' }, at) === 0 && u({ hasUnread: false, lastReadAt: '2026-10-01T00:00:00Z' }, at) === 0)
   check('the inbox and the tiles re-read TRYBE every two minutes while in view', /setInterval\(\(\) => \{ if \(document\.visibilityState === 'visible'\) void loadList\(\) \}, 120_000\)/.test(INBOX) && /const t = setInterval\(tick, 120_000\)/.test(UI))
 }
 
