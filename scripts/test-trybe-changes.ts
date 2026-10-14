@@ -128,7 +128,14 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   const vi = read('components/labs/TrybeVideoIdeas.tsx')
   check('planning starts by picking the product you have, with the brief to read and open', /Which product do you have on hand\?/.test(vi) && /Open the brief document/.test(vi) && /Creative Brief is on that page/.test(vi) && /makePlan\(\(other\.trim\(\) \|\| chosen\)/.test(vi))
   const ui = read('components/labs/TrybeOutreach.tsx')
-  check('every tab is in sight: they wrap, never scroll sideways', /<div className="flex flex-wrap gap-x-1">/.test(ui) && !/min-w-max/.test(ui))
+  check('every tab is in sight: never a sideways scroll', !/min-w-max/.test(ui) && !/overflow-x-auto[^"]*"[^>]*aria-label="TRYBE"/.test(ui) && /<nav aria-label="TRYBE" className="[^"]*grid/.test(ui))
+  // The menu in three groups (Seb, 2026-10-14: "logical, visible and modern").
+  const tabsSrc = ui.slice(ui.indexOf('const TABS:'), ui.indexOf(']', ui.indexOf('const TABS:') + 20))
+  const groupIds = Array.from(ui.slice(ui.indexOf('const TAB_GROUPS'), ui.indexOf('const TABS:')).matchAll(/\{ id: '(\w+)', label: '([^']+)'/g)).map((m) => m[1])
+  const tabGroups = Array.from(tabsSrc.matchAll(/group: '(\w+)'/g)).map((m) => m[1])
+  check('the menu has three groups, and every tab sits in one of them', groupIds.join() === 'create,brands,track' && (tabsSrc.match(/\{ id: '/g) || []).length === 9 && tabGroups.length === 9 && tabGroups.every((g) => groupIds.includes(g)))
+  check('the tab you are on says so to a screen reader, with its name and purpose shown under the menu', /aria-current=\{on \? 'page' : undefined\}/.test(ui) && /<h2 className="text-\[20px\] font-bold leading-tight">\{t\.label\}<\/h2>/.test(ui))
+  check('a tab name is never cut short on a phone', !/truncate">\{label\}/.test(ui))
 }
 
 // Wiring

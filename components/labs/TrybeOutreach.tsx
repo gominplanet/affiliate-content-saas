@@ -258,17 +258,25 @@ function Stat({ label, value, hint, tone, accent = '#7C3AED', onClick }: { label
   return onClick ? <button onClick={onClick} className={`${cls} hover:shadow-sm transition-shadow`} style={style}>{body}</button> : <div className={cls} style={style}>{body}</div>
 }
 
-/** The tabs, in the order a creator works, each said in one line. */
-const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; says: string }> = [
-  { id: 'create', label: 'Make videos', icon: Clapperboard, says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
-  { id: 'changes', label: 'What changed', icon: Bell, says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
-  { id: 'find', label: 'Find brands', icon: Search, says: 'Brands that fit your channel, and a first message to each, in your words.' },
-  { id: 'queue', label: 'Ready to send', icon: Send, says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
-  { id: 'sent', label: 'Sent', icon: Check, says: 'Who you asked, who answered, and what to do next with each brand.' },
-  { id: 'inbox', label: 'Inbox', icon: Inbox, says: 'Your TRYBE chats, each with a suggested reply.' },
-  { id: 'brands', label: 'My brands', icon: Star, says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
-  { id: 'week', label: 'This week', icon: CalendarDays, says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
-  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
+/** The menu, in three groups in the order a creator works (Seb, 2026-10-14:
+ *  "logical, visible and modern looking"): make the videos, get the brands,
+ *  keep track. Every tab in sight, none behind a scroll. */
+type TabGroup = 'create' | 'brands' | 'track'
+const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string }> = [
+  { id: 'create', label: 'Create', says: 'Plan and film' },
+  { id: 'brands', label: 'Get brands', says: 'Reach out and reply' },
+  { id: 'track', label: 'Track', says: 'Pay and news' },
+]
+const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
+  { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
+  { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
+  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
+  { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
+  { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
+  { id: 'sent', label: 'Sent', icon: Check, group: 'brands', says: 'Who you asked, who answered, and what to do next with each brand.' },
+  { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', says: 'Your TRYBE chats, each with a suggested reply.' },
+  { id: 'brands', label: 'My brands', icon: Star, group: 'track', says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
+  { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
 ]
 
 
@@ -1158,26 +1166,56 @@ export default function TrybeOutreach() {
         </p>
       )}
 
-      {/* Tabs: one row, the active one underlined, and what it is for. */}
-      {/* Every tab in sight, wrapping to a second line on a narrow screen:
-          never a sideways scroll (Seb, 2026-10-13). */}
-      <nav className="border-b" style={{ borderColor: 'var(--border)' }} role="tablist" aria-label="TRYBE">
-        <div className="flex flex-wrap gap-x-1">
-          {TABS.map(({ id, label, icon: Icon }) => {
-            const n = id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
-            const on = tab === id
-            return (
-              <button key={id} role="tab" aria-selected={on} onClick={() => setTab(id)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-[14px] font-semibold border-b-2 -mb-px whitespace-nowrap"
-                style={on ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'transparent', color: 'var(--text)' }}>
-                <Icon size={15} /> {label}
-                {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[1.25rem] text-center tabular-nums" style={id === 'inbox' ? { background: PURPLE, color: '#fff' } : { background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{n}</span>}
-              </button>
-            )
-          })}
-        </div>
+      {/* THE MENU: three groups side by side, each tab a full row with its
+          count; on a phone the groups stack and their tabs sit two by two.
+          Every tab in sight, never a sideways scroll (Seb, 2026-10-13/14).
+          On a phone the icons step aside and a long name wraps, never cut. */}
+      <nav aria-label="TRYBE" className="rounded-2xl border p-2 grid gap-1 md:grid-cols-3 md:gap-0 md:divide-x" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+        {TAB_GROUPS.map((g) => (
+          <div key={g.id} className="px-1.5 py-1.5 md:px-2" style={{ borderColor: 'var(--border-2)' }}>
+            <p className="px-2 pb-1.5 flex items-baseline gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: PURPLE }}>{g.label}</span>
+              <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{g.says}</span>
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-1 gap-1">
+              {TABS.filter((t) => t.group === g.id).map(({ id, label, icon: Icon }) => {
+                const n = id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
+                const on = tab === id
+                // Something waiting on you is filled; a running total is quiet.
+                const waiting = id === 'inbox' || id === 'queue'
+                return (
+                  <button key={id} aria-current={on ? 'page' : undefined} onClick={() => setTab(id)}
+                    className="group w-full flex items-center gap-2.5 rounded-xl px-2.5 sm:px-2 py-2 sm:py-1.5 text-left text-[13.5px] sm:text-[14px] font-semibold transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]"
+                    style={on ? { background: 'rgba(124,58,237,0.12)', color: PURPLE } : { color: 'var(--text)' }}>
+                    <span className="hidden sm:inline-flex w-7 h-7 shrink-0 rounded-lg items-center justify-center transition-colors"
+                      style={on ? { background: PURPLE, color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                      <Icon size={15} />
+                    </span>
+                    <span className="flex-1 min-w-0 leading-tight">{label}</span>
+                    {n > 0 && <span className="text-[11.5px] font-bold rounded-full px-2 py-0.5 min-w-[1.5rem] text-center tabular-nums"
+                      style={waiting ? { background: PURPLE, color: '#fff' } : { color: on ? PURPLE : 'var(--text-3)' }}>{n}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
-      <p className="text-[14px] -mt-2" style={soft}>{TABS.find((t) => t.id === tab)?.says}</p>
+      {/* Where you are, and what it is for. */}
+      {(() => {
+        const t = TABS.find((x) => x.id === tab)
+        if (!t) return null
+        const Icon = t.icon
+        return (
+          <div className="flex items-start gap-3 -mt-1">
+            <span className="mt-0.5 w-9 h-9 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Icon size={18} /></span>
+            <div className="min-w-0">
+              <h2 className="text-[20px] font-bold leading-tight">{t.label}</h2>
+              <p className="text-[14px]" style={{ color: 'var(--text-3)' }}>{t.says}</p>
+            </div>
+          </div>
+        )
+      })()}
 
       {tab === 'changes' && (changesError && !changes
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} />
