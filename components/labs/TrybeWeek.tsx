@@ -20,6 +20,8 @@ import { buildPlanner, readMonthlyEarnings, type MonthMoney, type PlannerProduct
 import { brandPageUrl, readSampleRequests, sampleStage } from '@/lib/trybe-brand-page'
 import type { VideoPlan } from '@/lib/trybe-playbook'
 import type { Pooled } from '@/lib/trybe-changes'
+import { ProductAmazon } from '@/components/labs/TrybeFinderControls'
+import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -51,6 +53,10 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   isAdmin?: boolean
 }) {
   const [rows, setRows] = useState<Row[] | null>(null)
+  // THE AMAZON MATCH for each sample (Seb, 2026-10-14): a product you
+  // already filmed on Amazon says so, with the video.
+  const amzProducts = useMemo(() => (rows || []).map((r) => ({ brand: r.brand_name, name: r.product })), [rows])
+  const amz = useTrybeAmazon([], amzProducts, amzProducts.length > 0)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [joined, setJoined] = useState<MyBrand[] | null>(null)
   // YOUR MONTH (Lukas Pakter, TRYBE's co-founder): a video target per focus
@@ -285,6 +291,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
           wants: plan?.wants || [], avoid: plan?.avoid || [],
           briefNote: plan?.brief === 'link_only' ? 'MVP could not read this brand\'s brief: check these against it.' : plan?.brief === 'none' ? 'TRYBE shows no brief for this brand.' : null,
           ideas: (plan?.videos || []).slice(0, 5), ideasNote, viral, viralNote,
+          amazonVideo: amz.product(s.brand_name, s.product)?.videoLinks[0] ?? null,
         })
       }
 
@@ -355,6 +362,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
           <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-semibold">{r.product}</p>
             <p className="text-[12px]" style={late ? { color: AMBER } : soft}>{r.brand_name} · {r.videos_planned} video{r.videos_planned === 1 ? '' : 's'} · {when}</p>
+            <ProductAmazon match={amz.product(r.brand_name, r.product)} />
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
             {box('received', 'Received', !!r.received_at)}

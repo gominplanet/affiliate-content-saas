@@ -530,7 +530,7 @@ export default function DashboardShellV2({
         // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
         // PRODUCTS").
         // The Amazon plan sees it too, as a preview: Find brands to browse.
-        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE', gate: trybeAccess(effectiveTier) !== 'none', badge: trybeUnread > 0 ? trybeUnread : trybeAccess(effectiveTier) === 'preview' ? 'Preview' : 'New' },
+        { href: '/trybe', icon: <Handshake size={15} />, label: 'TRYBE', gate: trybeAccess(effectiveTier) !== 'none', badge: trybeUnread > 0 ? trybeUnread : trybeAccess(effectiveTier) === 'preview' ? 'Preview' : 'New' },
       ],
     },
     {

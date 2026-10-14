@@ -218,7 +218,7 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
       const names = Array.isArray(r.data?.inbox_unread_names) ? (r.data.inbox_unread_names as string[]) : []
       items.push(item('trybe_replies', 'money', n, `${plural(n, 'unread TRYBE message', 'unread TRYBE messages')}`,
         `${names.length ? `From ${whoWrote(names)}. ` : ''}Checked ${checkedAgo(at, now.getTime())}. Suggest a reply writes the answer for you.`,
-        '/trybe-outreach?tab=inbox', 'Open inbox'))
+        '/trybe?tab=inbox', 'Open inbox'))
     }),
 
     canUsePreview('post_refresh', tier) && read('posts due an update', async () => {

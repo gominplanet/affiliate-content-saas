@@ -63,6 +63,8 @@ export interface PlannerProduct {
   ideasNote: string | null
   viral: ViralVideo[]
   viralNote: string | null
+  /** Your Amazon video of this product, when you already filmed it there. */
+  amazonVideo?: string | null
 }
 
 export interface PlannerInput {

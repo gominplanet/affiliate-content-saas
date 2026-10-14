@@ -21,7 +21,7 @@
 
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, type AmazonVideoProduct, type CcCampaign, type FilterId } from '@/lib/trybe-finder'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId } from '@/lib/trybe-finder'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
@@ -41,6 +41,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { getWorkedWithBrands } from '@/lib/creator-brands'
 import { brandKey } from '@/lib/brand-normalize'
+const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText } from '@/lib/trybe-directory'
 import {
@@ -284,6 +285,35 @@ async function writerFacts(admin: Db, ownerId: string): Promise<string[]> {
     s(op, 'storefrontUrl') && `Amazon storefront: ${s(op, 'storefrontUrl')}`,
     s(op, 'signoff') && `Sign-off: ${s(op, 'signoff')}`,
   ].filter(Boolean) as string[]
+}
+
+/** What MVP knows of the creator on Amazon, for matching TRYBE brands and
+ *  products: their Amazon videos and the products in them, their storefront
+ *  brands, and the Creator Connections campaigns under these brand names.
+ *  Each read that fails is named in `notes`, never taken as "not on Amazon". */
+async function amazonContext(admin: Db, ownerId: string, names: string[]): Promise<{ videos: AmazonVideoProduct[]; storefront: Map<string, number>; campaigns: CcCampaign[]; notes: string[] }> {
+  const notes: string[] = []
+  let videos: AmazonVideoProduct[] = []
+  {
+    const { data, error: e } = await admin.from('amazon_video_products').select('aci, asin, title').eq('user_id', ownerId).limit(20000)
+    if (e) notes.push('Your Amazon videos could not be read just now.')
+    else videos = (data || []) as AmazonVideoProduct[]
+  }
+  const storefront = new Map<string, number>()
+  try { for (const [k, v] of await getWorkedWithBrands(admin as Db, ownerId)) if (v.amazon > 0) storefront.set(k, v.amazon) } catch { notes.push('Your Amazon storefront could not be read just now.') }
+  const campaigns: CcCampaign[] = []
+  const variants = Array.from(new Set(names.flatMap(n => nameVariants(n))))
+  for (let i = 0; i < variants.length; i += 400) {
+    const { data, error: e } = await admin.from('cc_campaign_catalog').select('brand_name, asins, commission_pct, ends_at').in('brand_name', variants.slice(i, i + 400)).limit(5000)
+    if (e) { notes.push('Amazon\u2019s Creator Connections list could not be read just now.'); break }
+    campaigns.push(...((data || []) as CcCampaign[]))
+  }
+  return { videos, storefront, campaigns, notes }
+}
+
+/** A brand's Amazon match as the page shows it, with links. */
+function amazonLive(a: AmazonOf) {
+  return { ...a, videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[], productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null }
 }
 
 export async function POST(request: Request) {
@@ -774,28 +804,10 @@ export async function POST(request: Request) {
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
-    // THE BRAND ON AMAZON: the creator's own Amazon videos and storefront,
-    // and Creator Connections campaigns under the brand's name. Each read
-    // fails into "not read", said on the page, never into "not on Amazon".
+    // THE BRAND ON AMAZON (amazonContext): said as not read when a read
+    // fails, never as "not on Amazon".
     const today = now.slice(0, 10)
-    const amazonNotes: string[] = []
-    let videos: AmazonVideoProduct[] = []
-    {
-      const { data, error: e } = await admin.from('amazon_video_products').select('aci, asin, title').eq('user_id', ownerId).limit(20000)
-      if (e) amazonNotes.push('Your Amazon videos could not be read just now.')
-      else videos = (data || []) as AmazonVideoProduct[]
-    }
-    const storefront = new Map<string, number>()
-    try { for (const [k, v] of await getWorkedWithBrands(admin as Db, ownerId)) if (v.amazon > 0) storefront.set(k, v.amazon) } catch { amazonNotes.push('Your Amazon storefront could not be read just now.') }
-    const campaigns: CcCampaign[] = []
-    {
-      const variants = Array.from(new Set(rows.flatMap(r => nameVariants(String(r.name || '')))))
-      for (let i = 0; i < variants.length; i += 400) {
-        const { data, error: e } = await admin.from('cc_campaign_catalog').select('brand_name, asins, commission_pct, ends_at').in('brand_name', variants.slice(i, i + 400)).limit(5000)
-        if (e) { amazonNotes.push('Amazon\u2019s Creator Connections list could not be read just now.'); break }
-        campaigns.push(...((data || []) as CcCampaign[]))
-      }
-    }
+    const { videos, storefront, campaigns, notes: amazonNotes } = await amazonContext(admin, ownerId, rows.map(r => String(r.name || '')))
     const amazonBy = new Map(rows.map(r => [r.brand_id as string, amazonOf(String(r.name || ''), { videos, storefront, campaigns, today })]))
     const statsBy = new Map(rows.map(r => [r.brand_id as string, readDirStats(r.raw)]))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
@@ -913,11 +925,7 @@ export async function POST(request: Request) {
           pick: weighScore(pick, priorities), pick_reasons: pick.reasons, pick_read: pick.read,
           stats: statsBy.get(r.brand_id) ?? null,
           starred: starredIds.has(r.brand_id),
-          amazon: (() => {
-            const a = amazonBy.get(r.brand_id)
-            if (!a) return null
-            return { ...a, videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean), productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null }
-          })(),
+          amazon: (() => { const a = amazonBy.get(r.brand_id); return a ? amazonLive(a) : null })(),
           meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
         }
       }),
@@ -925,6 +933,31 @@ export async function POST(request: Request) {
   }
 
   // ── FINDER: stars, priorities, pass (migration 430 for the first two) ────
+
+  if (action === 'amazon_match') {
+    // THE AMAZON MATCH WHEREVER A TRYBE BRAND OR PRODUCT SHOWS (Seb,
+    // 2026-10-14: "add the amazon match to most places"). Brands by id and
+    // name; products by brand and name, matched only to the creator's own
+    // Amazon videos. Read only: no AI, nothing written.
+    const brands = (Array.isArray(body.brands) ? body.brands : []).slice(0, 300)
+      .map((b: unknown) => b && typeof b === 'object' ? { id: String((b as Record<string, unknown>).id || '').slice(0, 80), name: String((b as Record<string, unknown>).name || '').slice(0, 120) } : null)
+      .filter((b: { id: string; name: string } | null): b is { id: string; name: string } => !!b && !!b.id && !!b.name.trim())
+    const products = (Array.isArray(body.products) ? body.products : []).slice(0, 300)
+      .map((p: unknown) => p && typeof p === 'object' ? { brand: String((p as Record<string, unknown>).brand || '').slice(0, 120), name: String((p as Record<string, unknown>).name || '').slice(0, 160) } : null)
+      .filter((p: { brand: string; name: string } | null): p is { brand: string; name: string } => !!p && !!p.brand.trim() && !!p.name.trim())
+    const ctx = await amazonContext(admin, ownerId, [...brands.map((b: { name: string }) => b.name), ...products.map((p: { brand: string }) => p.brand)])
+    const today = now.slice(0, 10)
+    const out: Record<string, ReturnType<typeof amazonLive>> = {}
+    for (const b of brands) out[b.id] = amazonLive(amazonOf(b.name, { ...ctx, today }))
+    const prods: Record<string, { yourVideos: number; videoLinks: string[] }> = {}
+    for (const p of products) {
+      const key = brandKeyOf(p.brand)
+      const asins = new Set(ctx.campaigns.filter(c => brandKeyOf(c.brand_name) === key).flatMap(c => c.asins || []))
+      const acis = productOnAmazon(p.name, p.brand, ctx.videos, asins)
+      prods[`${p.brand}|${p.name}`] = { yourVideos: acis.length, videoLinks: acis.slice(0, 3).map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[] }
+    }
+    return NextResponse.json({ ok: true, brands: out, products: prods, notes: ctx.notes, amazonVideos: ctx.videos.length })
+  }
 
   if (action === 'star') {
     if (!/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return NextResponse.json({ error: 'No brand given' }, { status: 400 })

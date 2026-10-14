@@ -20,6 +20,8 @@ import { type Conversation } from '@/components/labs/TrybeInbox'
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { AmazonLine } from '@/components/labs/TrybeFinderControls'
+import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { type Pooled, POOL_MIN } from '@/lib/trybe-changes'
 import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, STUCK_DAYS, FOCUS_COUNT,
   type MyBrand, type Submission, type Verdict } from '@/lib/trybe-mybrands'
@@ -159,6 +161,9 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
     return b
   }), [brands, subs])
   const judged = useMemo(() => judgeBrands(filled), [filled])
+  // THE AMAZON MATCH for each brand you work with (Seb, 2026-10-14).
+  const amzBrands = useMemo(() => judged.map((j) => ({ id: j.brand.id, name: j.brand.name })), [judged])
+  const amz = useTrybeAmazon(amzBrands, [], amzBrands.length > 0)
 
   useEffect(() => {
     if (!readAt || loading || !filled.length || sentFor.current === readAt) return
@@ -292,6 +297,7 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
                   </div>
                   <TrybeLink brandId={b.id} name={b.name} scout={scoutOpens} />
                 </div>
+                <AmazonLine amazon={amz.brand(b.id)} className="mt-1.5 sm:ml-12" />
                 <dl className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-x-3 gap-y-1 text-[12px] tabular-nums">
                   <Num label="Earned" value={money(b.earnings)} />
                   <Num label="Sent" value={count(b.submitted)} />

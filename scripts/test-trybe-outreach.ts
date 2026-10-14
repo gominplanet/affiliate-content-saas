@@ -187,7 +187,7 @@ check('the inbox is a tab of TRYBE', /\{ id: 'inbox', label: 'Inbox'/.test(UI) &
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
   const find = SHELL.slice(SHELL.indexOf("label: 'Find products'"), SHELL.indexOf("label: 'Make videos'"))
   const labs = SHELL.slice(SHELL.indexOf("label: 'Labs',"))
-  check('all of TRYBE is open to Pro (the Amazon plan gets the Find brands preview), in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test((() => { const lp = readFileSync('lib/labs-preview.ts', 'utf8'); const at = lp.indexOf('const ALSO_AMAZON'); return lp.slice(at, lp.indexOf('])', at)) })()) && /href: '\/trybe-outreach'.*gate: (canUsePreview\('trybe_outreach', effectiveTier\)|trybeAccess\(effectiveTier\) !== 'none')/.test(find) && !/trybe-outreach/.test(labs))
+  check('all of TRYBE is open to Pro (the Amazon plan gets the Find brands preview), in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test((() => { const lp = readFileSync('lib/labs-preview.ts', 'utf8'); const at = lp.indexOf('const ALSO_AMAZON'); return lp.slice(at, lp.indexOf('])', at)) })()) && /href: '\/trybe'.*gate: (canUsePreview\('trybe_outreach', effectiveTier\)|trybeAccess\(effectiveTier\) !== 'none')/.test(find) && !/trybe-outreach/.test(labs))
 }
 
 const collectorRun = (async () => {
@@ -400,8 +400,8 @@ check('a late answer for another conversation is dropped', /const current = open
   check('the Today line names who wrote and when MVP looked', whoWrote(['A']) === 'A' && whoWrote(['A', 'B']) === 'A and B' && whoWrote(['A', 'B', 'C', 'D']) === 'A, B and 2 more' && checkedAgo('2026-10-08T11:40:00Z', t0) === '20 minutes ago' && checkedAgo('2026-10-08T09:00:00Z', t0) === '3 hours ago')
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8'), HOOK = readFileSync('components/layout/useTrybeAlerts.ts', 'utf8'), TODAY = readFileSync('lib/today-list.ts', 'utf8'), UI4 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('the menu item shows the unread count', /badge: trybeUnread > 0 \? trybeUnread : /.test(SHELL) && /useTrybeAlerts\(canUsePreview\('trybe_outreach', effectiveTier\), pathname\)/.test(SHELL))
-  check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe-outreach'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
-  check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe-outreach\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
+  check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
+  check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
   check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /void reportTrybeInbox\(inbox\.convos\)\.then\(r => \{ if \(!r\.ok\) setAlertsError\(r\.error\)/.test(UI4) && /reply alert for the menu and Today could not be saved/.test(UI4) && /get\('tab'\);[^\n]*(if|else if) \(t === 'inbox'/.test(UI4))
 }
 

@@ -44,7 +44,7 @@ export function useTrybeAlerts(enabled: boolean, pathname: string): number {
     const tick = async () => {
       if (busy || document.visibilityState !== 'visible') return
       // The TRYBE page reads the inbox itself every two minutes.
-      if (pathname.startsWith('/trybe-outreach')) return
+      if (pathname.startsWith('/trybe')) return
       let on = false, last = 0
       try { on = localStorage.getItem(TRYBE_INBOX_ON_KEY) === '1'; last = Number(localStorage.getItem(TRYBE_LAST_CHECK_KEY)) || 0 } catch { return }
       if (!on || Date.now() - last < TRYBE_SHELL_CHECK_MS) return

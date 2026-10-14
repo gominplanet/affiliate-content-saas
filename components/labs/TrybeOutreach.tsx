@@ -40,7 +40,8 @@ import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, NO_FILTERS, filtersOn, type LiveAmazon } from '@/components/labs/TrybeFinderControls'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, AmazonLine, NO_FILTERS, filtersOn, type LiveAmazon } from '@/components/labs/TrybeFinderControls'
+import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
 import { type FinderFilters, type FilterId, type DirStats } from '@/lib/trybe-finder'
 
@@ -568,6 +569,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const unjudged = useMemo(() => brands.filter(b => (b.status === 'new' || b.status === 'not_fit') && b.fit_prefs !== savedKey), [brands, savedKey])
   const history = useMemo(() => brands.filter(b => ['sent', 'sending', 'failed', 'already'].includes(b.status))
     .sort((a, b) => Date.parse(b.send_started_at || b.sent_at || '0') - Date.parse(a.send_started_at || a.sent_at || '0')), [brands])
+  // THE AMAZON MATCH on Ready to send, Sent and the found list (Seb,
+  // 2026-10-14: "add the amazon match to most places"). Read for the tab open.
+  const amzList = useMemo(() => (tab === 'queue' ? queue : tab === 'sent' ? history : tab === 'find' ? found : []).slice(0, 300).map(b => ({ id: b.brand_id, name: b.name })), [tab, queue, history, found])
+  const amz = useTrybeAmazon(amzList, [], !preview && amzList.length > 0)
+  // "You already promote them" (storefront or TikTok) only when the Amazon
+  // line does not already say it.
+  const promotes = (b: Brand) => b.worked_with && !(amz.brand(b.brand_id)?.yourVideos || amz.brand(b.brand_id)?.storefront)
   const remaining = Math.max(0, savedCap - used)
 
   // Categories offered: the usual ones, the ones TRYBE showed on brands found,
@@ -1709,11 +1717,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                   <span className="flex flex-wrap items-center gap-2 text-[13px]">
                     <span className="font-semibold">{b.name}</span>
                     {b.fit_score != null && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Fit {b.fit_score}</span>}
-                    {b.worked_with && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
+                    {promotes(b) && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
                     {b.pay_text && <span className="text-[12px]" style={{ color: PURPLE }}>{b.pay_text}</span>}
                     {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Star size={11} /> Score {b.trybe_score}</span>}
                     {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                   </span>
+                  <AmazonLine amazon={amz.brand(b.brand_id)} className="mt-1" />
                   {b.fit_reason && <span className="block text-[12px] mt-0.5">{b.fit_reason}</span>}
                   {b.categories && b.categories.length > 0 && <span className="block text-[11px] mt-0.5" style={soft}>{b.categories.join(' • ')}</span>}
                 </span>
@@ -1784,7 +1793,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. <button onClick={() => setTab('find')} className="font-semibold underline" style={{ color: PURPLE }}>Pick brands in Find brands</button> and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} amazon={amz.brand(b.brand_id)} promotes={promotes(b)} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -1920,6 +1929,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     {reply === 'none' && (b.status === 'sent' || b.status === 'already') && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>No reply yet</span>}
                     {c && c.unread > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 text-white" style={{ background: PURPLE }}>{c.unread} new</span>}
                   </div>
+                  <AmazonLine amazon={amz.brand(b.brand_id)} className="mt-1" />
                   <div className="text-[12px] mt-1">
                     {b.status === 'sent' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={12} /> Request sent {b.sent_at ? new Date(b.sent_at).toLocaleString() : ''}</span>}
                     {b.status === 'already' && <span style={soft}>Already requested on TRYBE</span>}
@@ -1964,7 +1974,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend, sendReason, scoutOpens }: {
+function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend, sendReason, scoutOpens, amazon, promotes }: {
+  /** The brand on Amazon, and whether to say "You already promote them". */
+  amazon?: LiveAmazon | null; promotes?: boolean
   b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean; scoutOpens: boolean
   /** Why Send now is off, when it is. */
   sendReason?: string | null
@@ -1985,12 +1997,13 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[14px] font-semibold">{b.name}</span>
-            {b.worked_with && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
+            {promotes && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
             <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
             {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
             {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
           </div>
+          <AmazonLine amazon={amazon} className="mt-1" />
           <p className="text-[11px] mt-0.5" style={{ color: researched ? GREEN : AMBER }}>
             {researched ? 'Written knowing their website' : `Website not read${b.site_error ? `: ${b.site_error}` : ''}`}
           </p>

@@ -133,34 +133,62 @@ export function FinderPriorities({ priorities, onChange, note }: {
   )
 }
 
+// The long Amazon lines flow as text, so on a phone they wrap as a sentence.
+const LINE = 'text-[11px] font-semibold rounded-md px-2 py-0.5 leading-snug max-w-full'
+const ICON = 'inline align-[-2px] mr-1'
+const LINK = 'ml-1 underline whitespace-nowrap'
+
+/** A brand on Amazon, as pills: your Amazon videos of its products (or its
+ *  products in your storefront), and its Creator Connections campaigns.
+ *  `links` off inside a button, where a link cannot go. Nothing shows when
+ *  MVP found nothing. */
+export function amazonPills(amazon: LiveAmazon | null | undefined, links = true): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  if (!amazon) return parts
+  if (amazon.yourVideos) {
+    parts.push(
+      <span key="v" className={LINE} style={{ background: 'rgba(22,163,74,0.14)', color: GREEN }}>
+        <PlayCircle size={11} className={ICON} />You have {amazon.yourVideos} Amazon video{amazon.yourVideos === 1 ? '' : 's'} of its products
+        {links && amazon.videoLinks[0] && <a href={amazon.videoLinks[0]} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={LINK}>watch <ExternalLink size={9} className="inline align-[-1px]" /></a>}
+      </span>,
+    )
+  } else if (amazon.storefront) {
+    parts.push(<span key="s" className={LINE} style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}><ShoppingBag size={11} className={ICON} />{amazon.storefront} of its products in your storefront</span>)
+  }
+  if (amazon.ccCampaigns) {
+    parts.push(
+      <span key="cc" className={LINE} style={{ background: 'rgba(14,116,144,0.10)', color: '#0E7490' }} title="It runs Creator Connections campaigns on Amazon under the same brand name.">
+        <ShoppingBag size={11} className={ICON} />On Amazon: Creator Connections{amazon.ccBestPct ? ` up to ${amazon.ccBestPct}%` : ''}
+        {links && amazon.productUrl && <a href={amazon.productUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={LINK}>see it <ExternalLink size={9} className="inline align-[-1px]" /></a>}
+      </span>,
+    )
+  }
+  return parts
+}
+
+/** The brand's Amazon pills on their own line, for any list of TRYBE brands. */
+export function AmazonLine({ amazon, links = true, className = 'mt-1.5' }: { amazon: LiveAmazon | null | undefined; links?: boolean; className?: string }) {
+  const parts = amazonPills(amazon, links)
+  return parts.length ? <span className={`flex flex-wrap items-center gap-1.5 ${className}`}>{parts}</span> : null
+}
+
+/** One TRYBE product you already filmed on Amazon. */
+export function ProductAmazon({ match, links = true }: { match: { yourVideos: number; videoLinks: string[] } | null | undefined; links?: boolean }) {
+  if (!match?.yourVideos) return null
+  return (
+    <span className={`${LINE} inline-block mt-1`} style={{ background: 'rgba(22,163,74,0.14)', color: GREEN }}>
+      <PlayCircle size={11} className={ICON} />You filmed this on Amazon{match.yourVideos > 1 ? ` (${match.yourVideos} videos)` : ''}
+      {links && match.videoLinks[0] && <a href={match.videoLinks[0]} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={LINK}>watch <ExternalLink size={9} className="inline align-[-1px]" /></a>}
+    </span>
+  )
+}
+
 /** A brand on Amazon, and TRYBE's own numbers for it, on its card. Only what
  *  is known shows; nothing is shown as zero for want of a number. */
 export function BrandExtras({ amazon, stats }: { amazon?: LiveAmazon | null; stats?: DirStats | null }) {
   const pill = 'text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1'
-  // The long Amazon lines flow as text, so on a phone they wrap as a sentence.
-  const line = 'text-[11px] font-semibold rounded-md px-2 py-0.5 leading-snug max-w-full'
-  const icon = 'inline align-[-2px] mr-1'
-  const link = 'ml-1 underline whitespace-nowrap'
   const days = stats?.joinedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(stats.joinedAt)) / 86_400_000)) : null
-  const parts: React.ReactNode[] = []
-  if (amazon?.yourVideos) {
-    parts.push(
-      <span key="v" className={line} style={{ background: 'rgba(22,163,74,0.14)', color: GREEN }}>
-        <PlayCircle size={11} className={icon} />You have {amazon.yourVideos} Amazon video{amazon.yourVideos === 1 ? '' : 's'} of its products
-        {amazon.videoLinks[0] && <a href={amazon.videoLinks[0]} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={link}>watch <ExternalLink size={9} className="inline align-[-1px]" /></a>}
-      </span>,
-    )
-  } else if (amazon?.storefront) {
-    parts.push(<span key="s" className={line} style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}><ShoppingBag size={11} className={icon} />{amazon.storefront} of its products in your storefront</span>)
-  }
-  if (amazon?.ccCampaigns) {
-    parts.push(
-      <span key="cc" className={line} style={{ background: 'rgba(14,116,144,0.10)', color: '#0E7490' }} title="It runs Creator Connections campaigns on Amazon under the same brand name.">
-        <ShoppingBag size={11} className={icon} />On Amazon: Creator Connections{amazon.ccBestPct ? ` up to ${amazon.ccBestPct}%` : ''}
-        {amazon.productUrl && <a href={amazon.productUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={link}>see it <ExternalLink size={9} className="inline align-[-1px]" /></a>}
-      </span>,
-    )
-  }
+  const parts: React.ReactNode[] = amazonPills(amazon)
   const quiet = { background: 'var(--surface-2)', color: 'var(--text-2)' }
   if (stats?.videosApproved != null) parts.push(<span key="va" className={pill} style={quiet}>{stats.videosApproved.toLocaleString()} video{stats.videosApproved === 1 ? '' : 's'} approved</span>)
   if (stats?.paidOut != null && stats.paidOut > 0) parts.push(<span key="po" className={pill} style={quiet}>Paid creators ${Math.round(stats.paidOut).toLocaleString()}</span>)

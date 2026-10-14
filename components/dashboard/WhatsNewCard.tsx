@@ -30,55 +30,55 @@ interface Update {
 
 const UPDATES: Update[] = [
   // TRYBE (Seb, 2026-10-14). TRYBE is open to the Pro plan, so every item
-  // says so; each links to its own tab (?tab= on /trybe-outreach).
+  // says so; each links to its own tab (?tab= on /trybe).
   {
     badge: 'NEW',
     tone: '#7C3AED',
     title: 'TRYBE: your whole TRYBE business in one place',
     desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome. On the Amazon plan, Find brands is open to browse.',
-    href: '/trybe-outreach',
+    href: '/trybe',
   },
   {
     badge: 'NEW',
     tone: '#E4572E',
     title: 'Make videos: pick a brand, pick your product, get ten scripts',
     desc: 'MVP lists the brand\u2019s own products from its TRYBE profile, with your samples first. Pick the one you have on hand and get ten shooting scripts that follow the brand\u2019s brief, each with a hook written for the viewer. Every idea is kept for that brand.',
-    href: '/trybe-outreach?tab=create',
+    href: '/trybe?tab=create',
   },
   {
     badge: 'NEW',
     tone: '#16A34A',
     title: 'Find brands: see who you already filmed on Amazon',
     desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand. Open on the Amazon plan too; messaging brands is on Pro.',
-    href: '/trybe-outreach?tab=find',
+    href: '/trybe?tab=find',
   },
   {
     badge: 'NEW',
     tone: '#0E7490',
     title: 'Your stage: volume first, then double down',
     desc: 'At first, ask many brands and film for every one that says yes. Once your own numbers show which brands pay and approve you, MVP names them as your winners and tells you to put most of your videos into them, while you keep testing new brands.',
-    href: '/trybe-outreach?tab=find',
+    href: '/trybe?tab=find',
   },
   {
     badge: 'NEW',
     tone: '#C2410C',
     title: 'This week: samples, a 7 day plan and a planner PDF',
     desc: 'Your TRYBE sample requests come in by themselves and tick off as they arrive. MVP plans your next seven days from what you have on hand and your monthly target, and makes a clean weekly planner PDF with scripts, top videos to watch and your earnings as charts.',
-    href: '/trybe-outreach?tab=week',
+    href: '/trybe?tab=week',
   },
   {
     badge: 'NEW',
     tone: '#BE185D',
     title: 'My brands, What changed and What\u2019s working',
     desc: 'See what each brand paid you and approved, which ones to focus on, and videos stuck in review. Every day MVP notes new brands, pay changes and new Meta ads, your brands first. Check your own hook before you film, and see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.',
-    href: '/trybe-outreach?tab=brands',
+    href: '/trybe?tab=brands',
   },
   {
     badge: 'IMPROVED',
     tone: '#6d28d9',
     title: 'Inbox with a suggested reply',
     desc: 'Your TRYBE chats inside MVP, each with a reply suggested in your voice. Unread replies show in the menu and on your Today list.',
-    href: '/trybe-outreach?tab=inbox',
+    href: '/trybe?tab=inbox',
   },
 ]
 

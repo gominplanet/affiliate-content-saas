@@ -156,6 +156,34 @@ export function amazonOf(name: string, input: { videos: AmazonVideoProduct[]; st
   }
 }
 
+/** Words too common in product names to tell two products apart. */
+const PRODUCT_STOP = new Set(['the', 'and', 'for', 'with', 'new', 'pack', 'set', 'kit', 'pro', 'max', 'mini', 'plus', 'one', 'two', 'men', 'women', 'mens', 'womens', 'unisex', 'size', 'color', 'black', 'white', 'edition', 'version', 'original', 'premium', 'official'])
+
+/** A TRYBE product's own words: lowercased, the brand's words and common
+ *  words left out, 3 letters or more. Pure. */
+export function productWords(product: string, brand: string): string[] {
+  const brandW = new Set(String(brand).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
+  return Array.from(new Set(String(product).toLowerCase().split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !brandW.has(w) && !PRODUCT_STOP.has(w) && !/^\d+$/.test(w))))
+}
+
+/** The creator's Amazon videos of ONE TRYBE product: a video product of the
+ *  same brand (one of its campaign ASINs, or a title starting with its name)
+ *  whose title has every one of the product's own words. A product with no
+ *  words of its own ("Kings Loot") is never matched this way: that would be
+ *  the brand, not the product. Pure. */
+export function productOnAmazon(product: string, brand: string, videos: AmazonVideoProduct[], brandAsins: Set<string>): string[] {
+  const words = productWords(product, brand)
+  if (!words.length) return []
+  const acis = new Set<string>()
+  for (const v of videos) {
+    if (!(brandAsins.has(v.asin) || titleIsBrand(v.title, brand))) continue
+    const t = String(v.title || '').toLowerCase()
+    if (words.every((w) => new RegExp(`\\b${w}`).test(t))) acis.add(v.aci)
+  }
+  return Array.from(acis)
+}
+
 export const onAmazon = (a: AmazonOf | null | undefined) => !!a && (a.yourVideos > 0 || a.storefront > 0 || a.ccCampaigns > 0)
 
 // ── 3. FILTERS ──────────────────────────────────────────────────────────────

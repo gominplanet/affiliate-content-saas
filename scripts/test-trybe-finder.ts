@@ -11,6 +11,7 @@ import { pickScore, weighScore, readPriorities, DEFAULT_PRIORITIES, FACTORS } fr
 import { payPasses, readPay } from '../lib/trybe-outreach'
 import type { Judged, MyBrand } from '../lib/trybe-mybrands'
 import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '../lib/labs-preview'
+import { productOnAmazon, productWords } from '../lib/trybe-finder'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -82,8 +83,8 @@ check('stage words have no dashes and no year', [vol, dbl, many, stageOf([])].ev
 // ── Wired in ──
 const api = read('app/api/labs/trybe/route.ts')
 const browse = api.slice(api.indexOf("action === 'browse'"), api.indexOf("action === 'adopt'"))
-check('the brand search reads Amazon, TRYBE\'s numbers, the filters and the priorities', /amazonOf\(/.test(browse) && /readDirStats\(/.test(browse) && /filterCheck\(/.test(browse) && /weighScore\(/.test(browse) && /cc_campaign_catalog/.test(browse) && /amazon_video_products/.test(browse))
-check('a read of Amazon that failed is said, not taken as "not on Amazon"', /amazonNotes\.push/.test(browse) && /amazonNotes/.test(read('components/labs/TrybeOutreach.tsx')))
+check('the brand search reads Amazon, TRYBE\'s numbers, the filters and the priorities', /amazonOf\(/.test(browse) && /readDirStats\(/.test(browse) && /filterCheck\(/.test(browse) && /weighScore\(/.test(browse) && /amazonContext\(admin, ownerId/.test(browse) && /cc_campaign_catalog/.test(api.slice(api.indexOf('async function amazonContext('))) && /amazon_video_products/.test(api.slice(api.indexOf('async function amazonContext('))))
+check('a read of Amazon that failed is said, not taken as "not on Amazon"', /notes\.push\('Your Amazon videos could not be read/.test(api) && /notes: amazonNotes/.test(browse) && /amazonNotes/.test(read('components/labs/TrybeOutreach.tsx')))
 check('filters count what they hid and what they could not check', /hiddenBy\[f\]/.test(browse) && /unknownBy\[f\]/.test(browse) && /knownFirst\(a, b\)/.test(browse))
 check('a passed brand leaves the list until undone', /'removed', 'skipped'\]/.test(browse))
 check('star, priorities and pass are saved on the server', /action === 'star'/.test(api) && /action === 'priorities'/.test(api) && /action === 'pass'/.test(api))
@@ -102,12 +103,32 @@ check('Pro and admin get all of TRYBE, the Amazon plan the preview, a trial none
 const AI_OR_SEND = ['draft', 'video_plan', 'kickoff', 'followup', 'hook_fix', 'suggest_reply', 'brief_read', 'match', 'claim', 'result', 'directory', 'meta_ads', 'top100', 'adopt', 'settings', 'ideas', 'brand_products', 'import', 'shortlist']
 check('the preview may browse, star, pass and rank, and nothing that calls AI, sends or writes the shared copy', ['browse', 'star', 'pass', 'unskip', 'priorities'].every(a => TRYBE_PREVIEW_ACTIONS.has(a)) && AI_OR_SEND.every(a => !TRYBE_PREVIEW_ACTIONS.has(a)))
 check('the server refuses every other action on the preview, before any work', /if \(g\.access === 'preview' && !TRYBE_PREVIEW_ACTIONS\.has\(action\)\)/.test(api) && api.indexOf("g.access === 'preview'") < api.indexOf("action === 'settings'"))
-const page = read('app/(dashboard)/trybe-outreach/page.tsx')
+const page = read('app/(dashboard)/trybe/page.tsx')
 check('the Amazon plan opens the page as a preview, and the menu shows it to them', /access === 'preview'\) return <TrybeOutreach preview \/>/.test(page) && /trybeAccess\(effectiveTier\) !== 'none'/.test(read('components/layout/DashboardShellV2.tsx')))
 check('the preview never runs the daily find, reads the inbox or checks Meta ads', /if \(preview \|\| loading \|\| autoRan\.current/.test(ui) && /const canInbox = !preview &&/.test(ui) && /const canPlaybook = !preview &&/.test(ui))
 check('a Pro tab opened on the preview says it is Pro, with the way there', /is on the Pro plan<\/p>/.test(ui) && /if \(preview && t !== 'find'\) \{ setLockedTab\(t\); return \}/.test(ui) && /Message brands on Pro/.test(ui))
 
 check('the Setup check has no niche step: the search changes with every search', !/title: 'Your niche'/.test(ui) && !/Pick my niche/.test(ui))
+
+// ── The Amazon match wherever a TRYBE brand or product shows (Seb, 2026-10-14) ──
+check('a product\'s own words leave out the brand and common words', productWords('Kings Loot Passport Wallet', 'Kings Loot').join() === 'passport,wallet' && productWords('Kings Loot', 'Kings Loot').length === 0)
+const kl = [{ aci: 'a1', asin: 'B01', title: 'Kings Loot Passport Wallet RFID Travel' }, { aci: 'a2', asin: 'B02', title: 'Kings Loot Minimalist Wallet for Men' }, { aci: 'a3', asin: 'B03', title: 'Other Brand Passport Wallet' }]
+check('a product you filmed on Amazon is found by its own words, same brand only', productOnAmazon('Passport Wallet', 'Kings Loot', kl, new Set()).join() === 'a1' && productOnAmazon('Kings Loot Wallet', 'Kings Loot', kl, new Set()).sort().join() === 'a1,a2')
+check('a product named only by its brand is never matched as a product', productOnAmazon('Kings Loot', 'Kings Loot', kl, new Set()).length === 0)
+check('the server answers the Amazon match for any brands and products, read only', /action === 'amazon_match'/.test(api) && /productOnAmazon\(/.test(api) && /async function amazonContext\(/.test(api))
+const placed: Array<[string, RegExp]> = [
+  ['Ready to send', /<AmazonLine amazon=\{amazon\} className="mt-1" \/>/],
+  ['Sent', /<AmazonLine amazon=\{amz\.brand\(b\.brand_id\)\} className="mt-1" \/>/],
+]
+for (const [where, re] of placed) check(`${where} shows the Amazon match`, re.test(ui))
+check('Make videos shows it on each brand and each product (no link inside a button)', /<AmazonLine amazon=\{amz\.brand\(b\.id\)\} links=\{false\}/.test(read('components/labs/TrybeCreate.tsx')) && /<ProductAmazon match=\{amz\.product\(brand\.name, p\.name\)\} links=\{false\} \/>/.test(read('components/labs/TrybeCreate.tsx')))
+check('My brands, This week, the Inbox brand card and the planner PDF show it', /<AmazonLine amazon=\{amz\.brand\(b\.id\)\}/.test(read('components/labs/TrybeMyBrands.tsx')) && /<ProductAmazon match=\{amz\.product\(r\.brand_name, r\.product\)\}/.test(read('components/labs/TrybeWeek.tsx')) && /<AmazonLine amazon=\{amz\.brand\(brand\.id\)\}/.test(read('components/labs/TrybeBrandCard.tsx')) && /Your Amazon video/.test(read('lib/trybe-planner-pdf.ts')))
+check('a failed Amazon read is kept as an error, never as "not on Amazon"', /setError\(`The Amazon match could not be read/.test(read('components/labs/useTrybeAmazon.ts')))
+
+// ── The address is /trybe (Seb, 2026-10-14: "not have the link say trybe outreach") ──
+const moved = read('app/(dashboard)/trybe-outreach/page.tsx')
+check('the old address sends you to /trybe on the same tab', /redirect\(`\/trybe\$\{qs \? `\?\$\{qs\}` : ''\}`\)/.test(moved) && !/TrybeOutreach \/>/.test(moved))
+check('no link in MVP points at the old address', ['components/layout/DashboardShellV2.tsx', 'components/dashboard/WhatsNewCard.tsx', 'lib/today-list.ts', 'components/layout/useTrybeAlerts.ts'].every(f => !/\/trybe-outreach/.test(read(f))))
 
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

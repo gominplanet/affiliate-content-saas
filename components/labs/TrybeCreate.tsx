@@ -17,6 +17,8 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
+import { AmazonLine, ProductAmazon } from '@/components/labs/TrybeFinderControls'
+import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -33,6 +35,11 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
   const [product, setProduct] = useState<string | null>(null)
   const [onHand, setOnHand] = useState<'idle' | 'saving' | 'done'>('idle')
   const [onHandErr, setOnHandErr] = useState<string | null>(null)
+  // THE AMAZON MATCH (Seb, 2026-10-14): each brand you work with, and each
+  // of its products you already filmed on Amazon.
+  const amzBrands = useMemo(() => (brands || []).map((b) => ({ id: b.id, name: b.name })), [brands])
+  const amzProducts = useMemo(() => (brand && page ? page.products.map((p) => ({ brand: brand.name, name: p.name })) : []), [brand, page])
+  const amz = useTrybeAmazon(amzBrands, amzProducts, amzBrands.length > 0)
   useEffect(() => { setOnHand('idle'); setOnHandErr(null) }, [product, brand])
 
   async function markOnHand() {
@@ -122,6 +129,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
                       : <span className="w-16 h-16 rounded-xl inline-flex items-center justify-center text-[22px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{b.name.slice(0, 1).toUpperCase()}</span>}
                     <span className="text-[14px] font-semibold leading-tight">{b.name}</span>
                     {b.earnings != null && b.earnings > 0 && <span className="text-[12px]" style={{ color: GREEN }}>${b.earnings.toLocaleString()} earned</span>}
+                    <AmazonLine amazon={amz.brand(b.id)} links={false} className="justify-center" />
                   </button>
                 ))}
               </div>
@@ -134,6 +142,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
         <section className={card} style={cardStyle}>
           <button onClick={() => setBrand(null)} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another brand</button>
           <h2 className="text-[20px] font-bold">Which {brand.name} product do you have?</h2>
+          <AmazonLine amazon={amz.brand(brand.id)} />
           <p className="text-[13.5px] mt-0.5" style={soft}>Every script is about the product you pick, so pick the one in your hands.</p>
           {pageLoading ? (
             <p className="mt-3 text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading {brand.name}&rsquo;s page on TRYBE: the products it promotes and its creative brief...</p>
@@ -151,6 +160,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
                     {p.price && <span className="block text-[12.5px]" style={soft}>{p.price}</span>}
                     {p.sample && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}{p.sample.at ? `, ${new Date(p.sample.at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span>}
                     {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE asks for this</span>}
+                    <ProductAmazon match={amz.product(brand.name, p.name)} links={false} />
                   </span>
                 </button>
               )

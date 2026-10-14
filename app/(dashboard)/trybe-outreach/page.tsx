@@ -1,31 +1,15 @@
-/**
- * /trybe-outreach — TRYBE Outreach (Pro, in Find products). SCOUT
- * reads TRYBE's Discover Brands, MVP studies each brand's website and drafts a
- * first message from the creator's core message, the creator skims the
- * Ready to send list and presses Send all, and SCOUT requests to join each brand
- * slowly, under a daily cap.
- */
-'use client'
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// The old address of TRYBE (Seb, 2026-10-14: "let's also not have the link
+// say trybe outreach.. just Trybe"). Links already out there (the Today list,
+// What's new, bookmarks) land on /trybe, on the same tab.
 
-import { Loader2 } from 'lucide-react'
-import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
-import { trybeAccess } from '@/lib/labs-preview'
-import TrybeOutreach from '@/components/labs/TrybeOutreach'
+import { redirect } from 'next/navigation'
 
-export default function TrybeOutreachPage() {
-  const tier = useEffectiveTier()
-
-  const access = tier !== null ? trybeAccess(tier) : null
-  if (access === 'full') return <TrybeOutreach />
-  // The Amazon plan: Find brands to browse, the rest shown as Pro (Seb, 2026-10-14).
-  if (access === 'preview') return <TrybeOutreach preview />
-  // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="TRYBE" body="TRYBE in MVP finds brands on TRYBE that fit your channel, writes each one a first message in your words, and SCOUT sends your requests to join. It is part of the Pro plan." />
-
-  return (
-    <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">
-      <Loader2 size={16} className="animate-spin" />
-    </div>
-  )
+export default async function TrybeOutreachMoved({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sp = await searchParams
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(sp)) for (const one of Array.isArray(v) ? v : v != null ? [v] : []) q.append(k, one)
+  const qs = q.toString()
+  redirect(`/trybe${qs ? `?${qs}` : ''}`)
 }

@@ -174,7 +174,9 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
     if (p.price) { font(11); color(SOFT); doc.text(pdfSafe(p.price), tx, ty + 12); ty += 18 }
     let lx = tx
     if (p.productUrl) { link('Product page', lx, ty + 12, p.productUrl); lx += doc.getTextWidth('Product page') + 16 }
-    if (p.brandPage) link('Brand on TRYBE', lx, ty + 12, p.brandPage)
+    if (p.brandPage) { link('Brand on TRYBE', lx, ty + 12, p.brandPage); lx += doc.getTextWidth('Brand on TRYBE') + 16 }
+    // You already filmed it on Amazon: the video, to reuse for TRYBE.
+    if (p.amazonVideo) link('Your Amazon video', lx, ty + 12, p.amazonVideo)
     y += ph + 18
 
     // What the brief asks.
