@@ -319,3 +319,18 @@ export function readAdLibraryCount(text: string): number | null {
   const n = parseFloat(m[1].replace(/,/g, '')) * (/k/i.test(m[2] || '') ? 1_000 : /m/i.test(m[2] || '') ? 1_000_000 : 1)
   return Number.isFinite(n) ? Math.round(n) : null
 }
+
+// ── THE VERDICT (Huntr's strong pick / worth a look / skip; Seb 2026-10-14) ──
+
+export type Verdict = 'strong' | 'look' | 'skip' | 'unknown'
+export const VERDICT_WORDS: Record<Verdict, string> = { strong: 'Strong pick', look: 'Worth a look', skip: 'Skip', unknown: 'Too little read' }
+
+/** One word for the Best bet score, weighed by your priorities. With fewer
+ *  than two signals read it says so instead of judging: a brand MVP knows
+ *  little about is not a "skip". Pure. */
+export function verdictOf(score: number, read: number): Verdict {
+  if (read < 2) return 'unknown'
+  if (score >= 40) return 'strong'
+  if (score >= 12) return 'look'
+  return 'skip'
+}

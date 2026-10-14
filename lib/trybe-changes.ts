@@ -77,7 +77,13 @@ export const POOL_MIN = 5
 /** The most of a figure one member may be. */
 export const POOL_MAX_SHARE = 0.5
 
-export interface MemberRow { user_id: string; brand_id: string; approved: number | null; rejected: number | null; earnings: number | null }
+export interface MemberRow {
+  user_id: string; brand_id: string; approved: number | null; rejected: number | null; earnings: number | null
+  /** How fast the brand decides this member's videos (migration 431):
+   *  the median days, how many videos that is from, and of the videos sent
+   *  7 to 60 days ago, how many still wait past 7 days. */
+  review_days?: number | null; review_n?: number | null; slow?: number | null; recent?: number | null
+}
 
 export interface Pooled {
   /** Members with decided videos for this brand. */
@@ -86,9 +92,16 @@ export interface Pooled {
   approvalRate: number | null
   /** Dollars per approved video; null when it may not show. */
   payPerApproved: number | null
+  /** Days the brand takes to decide a video (the middle member's middle
+   *  video), and the share of videos still waiting past 7 days; null when
+   *  they may not show. */
+  reviewDays?: number | null
+  slowShare?: number | null
   /** Why a figure is not shown, in words. */
   why: string | null
 }
+
+const middle = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2 }
 
 /** Combines members' rows for each brand. A figure shows only with at least
  *  POOL_MIN members in it and no one member more than POOL_MAX_SHARE of it.
@@ -106,7 +119,16 @@ export function poolBrands(rows: MemberRow[]): Map<string, Pooled> {
     const totalA = paid.reduce((n, r) => n + (r.approved as number), 0)
     const payOk = paid.length >= POOL_MIN && totalE > 0 && totalA > 0
       && paid.every((r) => (r.earnings as number) / totalE <= POOL_MAX_SHARE && (r.approved as number) / totalA <= POOL_MAX_SHARE)
+    // REVIEW SPEED (Huntr's "review speed", Seb 2026-10-14): each member's
+    // own middle figure counts once, so no one member sets it.
+    const timed = list.filter((r) => r.review_days != null && r.review_days >= 0 && (r.review_n ?? 0) >= 2)
+    const reviewOk = timed.length >= POOL_MIN
+    const waited = list.filter((r) => (r.recent ?? 0) > 0 && r.slow != null)
+    const totalR = waited.reduce((n, r) => n + (r.recent as number), 0)
+    const slowOk = waited.length >= POOL_MIN && totalR > 0 && waited.every((r) => (r.recent as number) / totalR <= POOL_MAX_SHARE)
     out.set(id, {
+      reviewDays: reviewOk ? Math.round(middle(timed.map((r) => r.review_days as number)) * 10) / 10 : null,
+      slowShare: slowOk ? waited.reduce((n, r) => n + Math.min(r.slow as number, r.recent as number), 0) / totalR : null,
       members: decided.length,
       approvalRate: rateOk ? decided.reduce((n, x) => n + x.a, 0) / totalD : null,
       payPerApproved: payOk ? totalE / totalA : null,

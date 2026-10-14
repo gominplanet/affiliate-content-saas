@@ -41,7 +41,8 @@ import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, NewChip, StaticsChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { readScript } from '@/lib/trybe-mybrands'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, NewChip, StaticsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
@@ -111,6 +112,8 @@ interface LiveBrand {
   amazon?: LiveAmazon | null; stats?: DirStats | null; starred?: boolean
   /** What a video pays (lib/trybe-pay), how crowded, new, and statics. */
   pay_est?: LivePayEst | null; crowd?: CrowdRead | null; is_new?: boolean; statics?: boolean | null
+  /** How fast it decides videos, from MVP members' results. */
+  review?: { reviewDays: number | null; slowShare: number | null } | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -374,7 +377,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
-    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null } | null>(null)
+    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -387,6 +390,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // SORT AND PAY FILTER (Seb, 2026-10-08 upgrade 3), done on the server so
   // the order covers every match and not just the 60 on screen.
   const [sortBy, setSortBy] = useState<LiveSort>('match')
+  // What changed's "See all new": Find brands on the New this week list.
+  const seeNew = useCallback(() => { setFilters({ ...NO_FILTERS, newOnly: true }); setSortBy('picks'); go('find') }, [go])
   const [payType, setPayType] = useState<LivePay>('any')
   const [picksHelp, setPicksHelp] = useState(false)
   const [liveLoading, setLiveLoading] = useState(false)
@@ -928,6 +933,19 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       if (d.notSaved) { if (!quiet) setSignalNote({ tone: 'warn', text: d.notSaved }) }
       else if (!d.read || !d.matched) setSignalNote({ tone: 'bad', text: `MVP read TRYBE's Top 100 but could not match its videos to brands${isAdmin && d.sample ? ` (TRYBE sent: ${d.sample})` : ''}. Nothing was changed.` })
       else if (!quiet) setSignalNote({ tone: 'ok', text: `TRYBE's Top 100 read: ${d.matched} brand${d.matched === 1 ? ' has' : 's have'} videos in it right now.` })
+      // HOOKS WINNING ON TRYBE: when the Top 100 carries no words, the MVP
+      // team's SCOUT reads each video's script (the same read as a brand's
+      // best videos) and MVP keeps their opening lines for every member.
+      if (isAdmin && Array.isArray(d.needScripts) && d.needScripts.length) {
+        const got: Array<Record<string, unknown>> = []
+        for (const v of d.needScripts as Array<{ submissionId: string; brandId: string | null; brandName: string | null; rank: number | null }>) {
+          const sr = await requestTrybeApi('GET', `/backend/api/creator/v2/submissions/${encodeURIComponent(v.submissionId)}/script`).catch(() => null)
+          const text = sr && sr.ok ? readScript(sr.json) : null
+          if (text) got.push({ ...v, text })
+        }
+        const h = await api({ action: 'top100_hooks', hooks: got }).catch(() => null)
+        if (!quiet) setSignalNote({ tone: h?.saved ? 'ok' : 'warn', text: h?.saved ? `Hooks winning on TRYBE: kept the opening lines of ${h.saved} Top 100 videos for Make videos.` : `Hooks winning on TRYBE: ${h?.why || `TRYBE shared the words of ${got.length} of ${d.needScripts.length} Top 100 videos, too few to keep.`}` })
+      }
       setLiveNonce(n => n + 1)
       void load()
     } catch (e) {
@@ -1313,8 +1331,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       })()}
 
       {tab === 'changes' && (changesError && !changes
-        ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} />
-        : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
+        ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} />
+        : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
@@ -1502,6 +1520,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 ))}
               </div>
             </div>
+            {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
+            <FinderPresets filters={filters} sort={sortBy} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
             <FinderFilterBar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ} />
             <FinderPriorities priorities={priorities} onChange={changePriorities}
               note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
@@ -1626,8 +1646,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <NewChip on={b.is_new} />
+                        {sortBy !== 'picks' && <VerdictChip score={b.pick} read={b.pick_read} />}
                         <CrowdChip crowd={b.crowd} windowDays={live?.crowdDays} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
+                        <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />
                         {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE."><Star size={10} /> TRYBE score {b.trybe_score}</span>}
                         {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={b.fit_score >= FIT_STRONG ? { background: 'rgba(22,163,74,0.14)', color: GREEN } : { background: 'rgba(180,83,9,0.10)', color: AMBER }}
@@ -1638,12 +1660,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                       <BrandExtras amazon={b.amazon} stats={b.stats} />
                       {sortBy === 'picks' && (
                         <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          <span className="text-[11px] font-bold rounded-md px-2 py-0.5" style={{ background: (b.pick ?? 0) >= 40 ? 'rgba(22,163,74,0.14)' : 'rgba(124,58,237,0.08)', color: (b.pick ?? 0) >= 40 ? GREEN : PURPLE }}
-                            title="How good a bet this brand is by the top TRYBE creators' rules: few creators, real ad spend, not on TikTok Shop. Only what MVP has read counts.">Best bet {b.pick ?? 0}</span>
+                          <VerdictChip score={b.pick ?? 0} read={b.pick_read} />
                           {(b.pick_reasons || []).slice(0, 6).map(r => (
                             <span key={r.text} className="text-[11px] rounded-md px-2 py-0.5" style={r.tone === 'good' ? { background: 'rgba(22,163,74,0.10)', color: GREEN } : r.tone === 'bad' ? { background: 'rgba(220,38,38,0.08)', color: RED } : { background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{r.text}</span>
                           ))}
-                          {(b.pick_read ?? 0) < 2 && <span className="text-[11px]" style={soft}>Little read about it yet</span>}
                         </span>
                       )}
                       {b.fit_reason && <span className="block text-[12px] mt-1.5">{b.fit_reason}</span>}

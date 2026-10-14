@@ -21,8 +21,9 @@
 
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
+import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
@@ -332,6 +333,13 @@ async function crowdBaseline(admin: Db, today: string): Promise<{ snap: Snapshot
   return base
 }
 
+/** The hooks winning on TRYBE, as last kept (lib/trybe-hooks). */
+async function readTopHookList(admin: Db): Promise<{ at: string; hooks: TopHook[] } | null> {
+  const { data } = await admin.from('trybe_directory_meta').select('value').eq('key', 'top100_hooks').maybeSingle()
+  const v = data?.value as { at?: string; hooks?: TopHook[] } | null
+  return v?.at && Array.isArray(v.hooks) ? { at: v.at, hooks: v.hooks } : null
+}
+
 /** When MVP first collected TRYBE's list (the oldest first sighting). */
 let firstEverCache: string | null | undefined
 async function firstCollected(admin: Db): Promise<string | null> {
@@ -345,19 +353,37 @@ async function firstCollected(admin: Db): Promise<string | null> {
 /** For each brand: what members earn per approved video with it (pooled, 5
  *  members at least), and what this member earned. Empty, never wrong, when
  *  members' numbers are not set up (migration 428). */
-async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ members: Map<string, number>; yours: Map<string, { earnings: number; approved: number }> }> {
+async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ members: Map<string, number>; yours: Map<string, { earnings: number; approved: number }>; review: Map<string, { reviewDays: number | null; slowShare: number | null }> }> {
   const members = new Map<string, number>(), yours = new Map<string, { earnings: number; approved: number }>()
+  const review = new Map<string, { reviewDays: number | null; slowShare: number | null }>()
+  const { rows, error: e } = await memberRows(admin, ids)
+  if (e) return { members, yours, review }
+  for (const [id, p] of poolBrands(rows)) {
+    if (p.payPerApproved != null) members.set(id, p.payPerApproved)
+    if (p.reviewDays != null || p.slowShare != null) review.set(id, { reviewDays: p.reviewDays ?? null, slowShare: p.slowShare ?? null })
+  }
+  for (const r of rows) if (r.user_id === ownerId && (r.approved ?? 0) > 0 && (r.earnings ?? 0) > 0) yours.set(r.brand_id, { earnings: r.earnings as number, approved: r.approved as number })
+  return { members, yours, review }
+}
+
+/** Members' rows for these brands, with review speed when migration 431 is
+ *  in (read without it otherwise, so nothing else stops working). */
+async function memberRows(admin: Db, ids: string[]): Promise<{ rows: MemberRow[]; error: string | null }> {
   const rows: MemberRow[] = []
+  let cols = 'user_id, brand_id, approved, rejected, earnings, review_days, review_n, slow, recent'
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error: e } = await admin.from('trybe_member_stats').select('user_id, brand_id, approved, rejected, earnings').in('brand_id', ids.slice(i, i + 200))
-    if (e) return { members, yours }
-    for (const r of (data || []) as Array<Record<string, unknown>>) {
-      rows.push({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: r.approved == null ? null : Number(r.approved), rejected: r.rejected == null ? null : Number(r.rejected), earnings: r.earnings == null ? null : Number(r.earnings) } as MemberRow)
+    let { data, error: e } = await admin.from('trybe_member_stats').select(cols).in('brand_id', ids.slice(i, i + 200))
+    if (e && /review_days|review_n|slow|recent/.test(e.message)) {
+      cols = 'user_id, brand_id, approved, rejected, earnings'
+      ;({ data, error: e } = await admin.from('trybe_member_stats').select(cols).in('brand_id', ids.slice(i, i + 200)))
+    }
+    if (e) return { rows, error: e.message }
+    const num = (v: unknown) => (v == null ? null : Number(v))
+    for (const r of (data || []) as unknown as Array<Record<string, unknown>>) {
+      rows.push({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: num(r.approved), rejected: num(r.rejected), earnings: num(r.earnings), review_days: num(r.review_days), review_n: num(r.review_n), slow: num(r.slow), recent: num(r.recent) })
     }
   }
-  for (const [id, p] of poolBrands(rows)) if (p.payPerApproved != null) members.set(id, p.payPerApproved)
-  for (const r of rows) if (r.user_id === ownerId && (r.approved ?? 0) > 0 && (r.earnings ?? 0) > 0) yours.set(r.brand_id, { earnings: r.earnings as number, approved: r.approved as number })
-  return { members, yours }
+  return { rows, error: null }
 }
 
 /** A brand's Amazon match as the page shows it, with links. */
@@ -563,7 +589,18 @@ export async function POST(request: Request) {
     if (!rowsIn.length) return NextResponse.json({ ok: true, kept: 0 })
     const { error: msErr } = await admin.from('trybe_member_stats').upsert(rowsIn, { onConflict: 'user_id,brand_id' })
     if (msErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(msErr.message) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : msErr.message }, { status: 500 })
-    return NextResponse.json({ ok: true, kept: rowsIn.length })
+    // REVIEW SPEED (migration 431), written on its own so a database without
+    // the columns still keeps the rest. Said, not hidden, when it is missing.
+    const speed = list.map(b => ({
+      user_id: ownerId, brand_id: typeof b.id === 'string' ? b.id.slice(0, 80) : '',
+      review_days: n(b.review_days, 400), review_n: n(b.review_n, 100000), slow: n(b.slow, 100000), recent: n(b.recent, 100000),
+    })).filter(r => r.brand_id && (r.review_days != null || r.recent != null) && rowsIn.some(x => x.brand_id === r.brand_id))
+    let reviewSaved: boolean | null = null
+    if (speed.length) {
+      const { error: rvErr } = await admin.from('trybe_member_stats').upsert(speed, { onConflict: 'user_id,brand_id' })
+      reviewSaved = !rvErr
+    }
+    return NextResponse.json({ ok: true, kept: rowsIn.length, reviewSaved, ...(reviewSaved === false && tier === 'admin' ? { note: 'Review speed needs migration 431 in Supabase.' } : {}) })
   }
 
   if (action === 'pooled') {
@@ -571,9 +608,9 @@ export async function POST(request: Request) {
     // 5 members at least, no one member more than half).
     const ids = (Array.isArray(body.brandIds) ? body.brandIds : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 80)).slice(0, 500)
     if (!ids.length) return NextResponse.json({ ok: true, pooled: {} })
-    const { data: pr, error: prErr } = await admin.from('trybe_member_stats').select('user_id, brand_id, approved, rejected, earnings').in('brand_id', ids)
-    if (prErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(prErr.message) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : prErr.message }, { status: 500 })
-    const pooled = poolBrands(((pr || []) as Array<Record<string, unknown>>).map(r => ({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: r.approved == null ? null : Number(r.approved), rejected: r.rejected == null ? null : Number(r.rejected), earnings: r.earnings == null ? null : Number(r.earnings) })) as MemberRow[])
+    const { rows: pr, error: prErr } = await memberRows(admin, ids)
+    if (prErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(prErr) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : prErr }, { status: 500 })
+    const pooled = poolBrands(pr)
     return NextResponse.json({ ok: true, pooled: Object.fromEntries(pooled) })
   }
 
@@ -648,7 +685,31 @@ export async function POST(request: Request) {
     // Every brand is now "read": one not in the Top 100 counts 0, not unknown.
     await admin.from('trybe_directory').update({ top100_checked_at: now }).is('top100_checked_at', null)
     await admin.from('trybe_directory_meta').upsert({ key: 'top100', value: { at: now, entries: entries.length, brands: hits.size, matched }, updated_at: now })
-    return NextResponse.json({ ok: true, read: entries.length, brands: hits.size, matched })
+    // HOOKS WINNING ON TRYBE (lib/trybe-hooks): the Top 100's own words when
+    // it carries them; else the page reads each video's script through SCOUT
+    // (needScripts) and sends them to 'top100_hooks'.
+    const words = readTopWords(raw)
+    const listed = keepHooks(words.filter(w => w.text).map(w => ({ submissionId: w.submissionId, brandId: w.brandId, brandName: w.brandName, rank: w.rank, hook: firstHook(w.text) || '' })).filter(h => h.hook))
+    if (listed.length >= 3) await admin.from('trybe_directory_meta').upsert({ key: 'top100_hooks', value: { at: now, hooks: listed, from: 'list' }, updated_at: now })
+    const needScripts = listed.length >= 3 ? [] : words.filter(w => w.submissionId).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999)).slice(0, 25)
+      .map(w => ({ submissionId: w.submissionId, brandId: w.brandId, brandName: w.brandName, rank: w.rank }))
+    return NextResponse.json({ ok: true, read: entries.length, brands: hits.size, matched, hooks: listed.length, needScripts })
+  }
+
+  if (action === 'top100_hooks') {
+    // The opening lines of the Top 100's videos, read from each one's script
+    // by the MVP team's SCOUT. Shared, so an admin's read only, as the Top 100.
+    if (tier !== 'admin') return NextResponse.json({ ok: true, saved: 0, kept: true })
+    const hooks = keepHooks(readHooksBody(body.hooks))
+    if (hooks.length < 3) return NextResponse.json({ ok: true, saved: 0, why: `TRYBE shared the words of ${hooks.length} of these videos, too few to keep.` })
+    const { error: hkErr } = await admin.from('trybe_directory_meta').upsert({ key: 'top100_hooks', value: { at: now, hooks, from: 'scripts' }, updated_at: now })
+    if (hkErr) return NextResponse.json({ error: hkErr.message }, { status: 500 })
+    return NextResponse.json({ ok: true, saved: hooks.length })
+  }
+
+  if (action === 'top_hooks') {
+    const hooks = await readTopHookList(admin)
+    return NextResponse.json({ ok: true, hooks: hooks?.hooks.slice(0, 20) ?? [], at: hooks?.at ?? null })
   }
 
   if (action === 'meta_ads') {
@@ -760,11 +821,14 @@ export async function POST(request: Request) {
     // What the page could not read is said, never guessed.
     const briefText = typeof body.brief === 'string' ? body.brief.replace(/\s+\n/g, '\n').trim().slice(0, 4000) : ''
     const briefState: 'text' | 'link_only' | 'none' | undefined = briefText ? 'text' : body.briefState === 'link_only' ? 'link_only' : body.briefState === 'none' ? 'none' : undefined
+    // HOOKS WINNING ON TRYBE THIS WEEK, when MVP read them in the last 10 days.
+    const topHooks = await readTopHookList(admin).catch(() => null)
+    const hooksText = topHooks && Date.now() - Date.parse(topHooks.at) < 10 * 86_400_000 ? hooksBlock(topHooks.hooks, String(row.name || '')) : ''
     try {
       const msg = await createAnthropicClient().messages.create({
         model: MODEL, max_tokens: 6000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
@@ -867,6 +931,16 @@ export async function POST(request: Request) {
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
+    // NEW ONLY: the brands MVP first saw in the last 14 days are added
+    // directly, so a new brand outside the search's best matches is not
+    // missed (TRYBE's own join date is checked on each one below).
+    if (filters.newOnly) {
+      let q = admin.from('trybe_directory').select(COLS).gte('first_seen_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+      if (since) q = q.gte('last_seen_at', since)
+      const { data: fresh } = await q.limit(600)
+      const have = new Set(rows.map(r => r.brand_id))
+      for (const r of (fresh || []) as Array<Record<string, any>>) if (!have.has(r.brand_id)) rows.push(r) // eslint-disable-line @typescript-eslint/no-explicit-any
+    }
     // THE BRAND ON AMAZON (amazonContext): said as not read when a read
     // fails, never as "not on Amazon".
     const today = now.slice(0, 10)
@@ -883,6 +957,15 @@ export async function POST(request: Request) {
     const base = await crowdBaseline(admin, now)
     // NEW: TRYBE's join date, or MVP's first sighting after its first collection.
     const firstEver = await firstCollected(admin)
+    const newBy = new Map(rows.map(r => [r.brand_id as string, isNewBrand({ joinedAt: statsBy.get(r.brand_id)?.joinedAt, firstSeen: r.first_seen_at, firstEver, now: Date.now() })]))
+    // SPENDING ON ADS: Meta ads running, or videos in TRYBE's Top 100. Not
+    // read for a brand (no Meta count, Top 100 never read) is not known.
+    const spendingOf = (r: Record<string, any>): boolean | null => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const ads = typeof r.meta_ads === 'number' && r.meta_ads_checked_at ? r.meta_ads : null
+      const top = r.top100_checked_at ? (r.top100_hits ?? 0) : null
+      if ((ads ?? 0) > 0 || (top ?? 0) > 0) return true
+      return ads == null && top == null ? null : false
+    }
     const crowdBy = new Map(rows.map(r => {
       const st = statsBy.get(r.brand_id)
       return [r.brand_id as string, crowdOf({
@@ -923,7 +1006,8 @@ export async function POST(request: Request) {
     const unknownBy: Partial<Record<FilterId, number>> = {}
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
-      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null }, filters)
+      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
+        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       if (!c.pass) return false
       for (const f of c.unknown) unknownBy[f] = (unknownBy[f] ?? 0) + 1
@@ -996,6 +1080,11 @@ export async function POST(request: Request) {
       capped: !direct && rows.length >= (rpc.error ? 800 : pool),
       hiddenBy, unknownBy, amazonNotes,
       amazonVideos: videos.length,
+      // YOUR MIX: the brands you asked, by size (lib/trybe-finder mixOf).
+      mix: await (async () => {
+        const { data: asked } = await admin.from('trybe_brands').select('total_creators').eq('user_id', ownerId).in('status', ['sent', 'sending', 'already', 'drafted']).limit(5000)
+        return asked ? mixOf((asked as Array<{ total_creators: number | null }>).map(a => a.total_creators)) : null
+      })(),
       // Days of MVP's own snapshots the crowd words compare with (null: under a week so far).
       crowdDays: base?.days ?? null,
       priorities, prioritiesSaved: settings.priorities != null, starsSaved: settings.starred != null,
@@ -1008,7 +1097,8 @@ export async function POST(request: Request) {
           pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
-          is_new: isNewBrand({ joinedAt: statsBy.get(r.brand_id)?.joinedAt, firstSeen: r.first_seen_at, firstEver, now: Date.now() }),
+          is_new: newBy.get(r.brand_id) ?? false,
+          review: results.review.get(r.brand_id) ?? null,
           statics: staticsOf(r.raw, r.about),
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
@@ -1199,7 +1289,9 @@ export async function POST(request: Request) {
       .map(r => ({ r, score: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, settings.categories, settings.keywords) : (r.trybe_score ?? 0) }))
       .filter(x => !terms.length || x.score > 0)
       .sort((a, b) => b.score - a.score || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0))
-    const pick = scored.slice(0, want)
+    // A MIX (Keighly Hart's $15K month): small brands keep at least 40% of
+    // the places and big ones 20%, when there are that many; the rest by rank.
+    const pick = mixPick(scored, want, x => (typeof x.r.total_creators === 'number' ? x.r.total_creators : null))
     let added = 0
     if (pick.length) {
       const { data: ins, error: insErr } = await admin.from('trybe_brands').upsert(pick.map(({ r }) => ({

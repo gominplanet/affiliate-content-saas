@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle } from 'lucide-react'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
-import { paceOf, adBrands, adWinners, bestVideos, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
+import { paceOf, adBrands, adWinners, bestVideos, notRunning, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -47,6 +47,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const brands = full && read ? adBrands(read.videos) : []
   const winners = full ? adWinners(brands, days) : []
   const best = full && read ? bestVideos(read.videos) : []
+  const stalled = full && read ? notRunning(read.videos, days) : []
   const nothingRead = full && t && Object.values(t).every((v) => v == null)
 
   return (
@@ -118,6 +119,15 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
             ))}
           </ul>
           {onPlan && <button onClick={onPlan} className="text-[12px] font-semibold underline mt-1" style={{ color: PURPLE }}>Plan more videos for them in This week</button>}
+        </div>
+      )}
+
+      {stalled.length > 0 && (
+        <div className="mt-3 rounded-lg px-2.5 py-2" style={{ background: 'rgba(180,83,9,0.08)' }}>
+          <p className="text-[12px] font-bold mb-1" style={{ color: AMBER }}>Didn&rsquo;t run? Move on</p>
+          <ul className="space-y-0.5">
+            {stalled.slice(0, 4).map((x) => <li key={x.brand} className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>{x.says}</li>)}
+          </ul>
         </div>
       )}
 

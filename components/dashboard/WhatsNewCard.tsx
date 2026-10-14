@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-14-3'
+const RELEASE_ID = '2026-10-14-4'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,36 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // TRYBE, the fourth release of the day (Seb, 2026-10-14: Huntr's five and
+  // Keighly Hart's four). Newest first.
+  {
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'TRYBE: ready made lists and how fast brands decide',
+    desc: 'Find brands has one tap lists: Untapped, New this week, Big spenders, Fast deciders and Pays $25+ a video. Each brand now shows a verdict (Strong pick, Worth a look, Skip) and how fast it approves or rejects videos, from MVP members\u2019 own results.',
+    href: '/trybe?tab=find',
+  },
+  {
+    badge: 'NEW',
+    tone: '#EA580C',
+    title: 'The best new brands, and the hooks winning on TRYBE',
+    desc: 'What changed opens with the best new brands on TRYBE, ranked for you, and the Today list tells you when new ones land. Make videos shows the opening lines of this week\u2019s Top 100 videos, and every video plan learns from them.',
+    href: '/trybe?tab=changes',
+  },
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Road to 500 and your monthly video goal',
+    desc: 'Your stage now shows how many videos you have sent on the road to 500. This week has a monthly goal (250 to start, change it any time) with the weekly pace that reaches it.',
+    href: '/trybe?tab=week',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#B45309',
+    title: 'Move on when a video does not run, and keep a mix',
+    desc: 'Your ads, live now points out brands whose videos got no ad results, so you move to a new angle or the next brand. MVP keeps a mix of small and big brands in every batch it finds, and Find brands shows your mix.',
+    href: '/trybe?tab=brands',
+  },
   // TRYBE, the third release of the day (Seb, 2026-10-14, after Rob's Oink
   // Suite video: "build all 4"). Newest first.
   {

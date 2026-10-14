@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, TrendingUp, Layers, Rocket, RotateCcw } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, judgeBrands } from '@/lib/trybe-mybrands'
-import { stageOf, type StageRead } from '@/lib/trybe-finder'
+import { stageOf, roadWords, ROAD_GOAL, type StageRead } from '@/lib/trybe-finder'
 import { readAdWinners } from '@/components/labs/useTrybeAds'
 
 const PURPLE = '#7C3AED'
@@ -73,6 +73,17 @@ export default function TrybeStage({ canRead, onGo }: { canRead: boolean; onGo: 
         <div className="min-w-0">
           <p className="text-[14.5px] font-bold">{read.title}</p>
           <p className="text-[13px]" style={{ color: 'var(--text-2)' }}>{read.says}</p>
+          {read.sent != null && (
+            <div className="mt-2" aria-label="Road to 500">
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                <span>Road to {ROAD_GOAL}</span><span className="tabular-nums">{Math.min(read.sent, ROAD_GOAL)} / {ROAD_GOAL}</span>
+              </div>
+              <div className="h-2 rounded-full mt-1 overflow-hidden" style={{ background: 'var(--surface-2)' }} role="progressbar" aria-valuemin={0} aria-valuemax={ROAD_GOAL} aria-valuenow={Math.min(read.sent, ROAD_GOAL)}>
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (read.sent / ROAD_GOAL) * 100)}%`, background: read.sent >= ROAD_GOAL ? GREEN : PURPLE }} />
+              </div>
+              <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>{roadWords(read.sent)}</p>
+            </div>
+          )}
           {read.adWins.length > 0 && (
             <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>
               <span className="font-semibold" style={{ color: GREEN }}>Winning on ads:</span> {read.adWins.slice(0, 3).map((a) => `${a.brand} (${a.why})`).join('; ')}

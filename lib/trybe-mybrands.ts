@@ -106,6 +106,8 @@ export interface Submission {
   rawStatus: string
   /** When it was submitted (ms); null when TRYBE did not say. */
   at: number | null
+  /** When the brand approved or rejected it (ms), when TRYBE says. */
+  decidedAt?: number | null
   product: string | null
   thumbnail: string | null
 }
@@ -148,6 +150,11 @@ export function readSubmissions(json: unknown): Submission[] {
       status: subStatus(rawStatus),
       rawStatus,
       at: dateOf(pick(raw, ['submittedAt', 'submitted_at', 'createdAt', 'created_at', 'uploadedAt'])),
+      // A decision's own time first; updatedAt only as a last resort (it can
+      // move later for a payout), so the speed reads slow, never fast.
+      decidedAt: subStatus(rawStatus) === 'approved' || subStatus(rawStatus) === 'rejected'
+        ? dateOf(pick(raw, ['reviewedAt', 'reviewed_at', 'approvedAt', 'approved_at', 'rejectedAt', 'rejected_at', 'decidedAt', 'statusChangedAt', 'statusUpdatedAt', 'resolvedAt', 'updatedAt', 'updated_at']))
+        : null,
       product: str(product?.title ?? product?.name ?? raw.productName ?? raw.product_name ?? raw.productTitle) || null,
       thumbnail: str(raw.thumbnailUrl ?? raw.thumbnail_url ?? meta?.thumbnailUrl ?? raw.thumbnail) || null,
     })
@@ -234,6 +241,33 @@ export function judgeBrands(list: MyBrand[], now = Date.now()): Judged[] {
 export function stuckOf(subs: Submission[], now = Date.now()): Submission[] {
   const cut = now - STUCK_DAYS * 86_400_000
   return subs.filter((s) => s.status === 'pending' && s.at != null && s.at < cut).sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+}
+
+export interface ReviewRead { days: number | null; n: number; slow: number; recent: number }
+
+/** How fast a brand decides YOUR videos: the middle number of days from
+ *  sending to approved or rejected, and of the videos sent 7 to 60 days ago,
+ *  how many still wait. Pure. */
+export function reviewOf(subs: Submission[], now = Date.now()): ReviewRead {
+  const D = 86_400_000
+  const spans = subs.filter((s) => s.at != null && s.decidedAt != null && (s.decidedAt as number) >= (s.at as number))
+    .map((s) => ((s.decidedAt as number) - (s.at as number)) / D).sort((a, b) => a - b)
+  const days = spans.length ? Math.round((spans.length % 2 ? spans[(spans.length - 1) / 2] : (spans[spans.length / 2 - 1] + spans[spans.length / 2]) / 2) * 10) / 10 : null
+  const window = subs.filter((s) => s.at != null && now - (s.at as number) >= 7 * D && now - (s.at as number) <= 60 * D)
+  return { days, n: spans.length, slow: window.filter((s) => s.status === 'pending').length, recent: window.length }
+}
+
+/** A brand's review speed in words, for a chip. Pure. */
+export function reviewWords(p: { reviewDays?: number | null; slowShare?: number | null } | null | undefined): { text: string; tone: 'good' | 'info' | 'bad' } | null {
+  if (!p) return null
+  const d = p.reviewDays, s = p.slowShare
+  if (d == null && s == null) return null
+  const slowPart = s != null && s >= 0.25 ? `, ${Math.round(s * 100)}% wait over a week` : ''
+  if (d != null) {
+    const days = d < 1 ? 'under a day' : `about ${Math.round(d)} day${Math.round(d) === 1 ? '' : 's'}`
+    return { text: `Decides in ${days}${slowPart}`, tone: d <= 3 && !(s != null && s >= 0.25) ? 'good' : d >= 10 || (s != null && s >= 0.4) ? 'bad' : 'info' }
+  }
+  return { text: `${Math.round((s as number) * 100)}% of videos wait over a week`, tone: (s as number) >= 0.4 ? 'bad' : (s as number) <= 0.1 ? 'good' : 'info' }
 }
 
 export const daysAgo = (at: number, now = Date.now()) => Math.max(0, Math.floor((now - at) / 86_400_000))

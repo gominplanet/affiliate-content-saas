@@ -23,7 +23,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { AmazonLine } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { type Pooled, POOL_MIN } from '@/lib/trybe-changes'
-import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, STUCK_DAYS, FOCUS_COUNT,
+import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, reviewOf, reviewWords, STUCK_DAYS, FOCUS_COUNT,
   type MyBrand, type Submission, type Verdict } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
@@ -176,12 +176,15 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
         if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
         return d
       }
-      if (!poolOptOut) try { await post({ action: 'my_stats', brands: filled.map(b => ({ id: b.id, name: b.name, submitted: b.submitted, approved: b.approved, rejected: b.rejected, earnings: b.earnings })) }) }
+      // How fast each brand decides your videos (reviewOf), from submissions
+      // read in full only: a part read would make a brand look faster.
+      const reviewFor = (id: string) => { const s = subs[id]; if (!s || !s.complete || s.error) return {}; const r = reviewOf(s.subs); return { review_days: r.days, review_n: r.n, slow: r.slow, recent: r.recent } }
+      if (!poolOptOut) try { await post({ action: 'my_stats', brands: filled.map(b => ({ id: b.id, name: b.name, submitted: b.submitted, approved: b.approved, rejected: b.rejected, earnings: b.earnings, ...reviewFor(b.id) })) }) }
       catch { /* the combined numbers below still read */ }
       try { const d = await post({ action: 'pooled', brandIds: filled.map(b => b.id) }); setPooled(d.pooled || {}); setPoolNote(null) }
       catch (e) { setPoolNote(e instanceof Error ? e.message : 'MVP could not read members\' combined numbers.') }
     })()
-  }, [readAt, loading, filled, subProgress, poolOptOut])
+  }, [readAt, loading, filled, subProgress, poolOptOut, subs])
 
   const [poolSaving, setPoolSaving] = useState(false)
   async function setPool(include: boolean) {
@@ -335,7 +338,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
 function MembersLine({ p, note, mine }: { p: Pooled | null | undefined; note: string | null; mine: number | null }) {
   const soft = { color: 'var(--text-soft)' }
   if (p === undefined) return note ? <p className="mt-2 text-[12px]" style={{ color: AMBER }}>MVP members: {note}</p> : null
-  if (!p || (p.approvalRate == null && p.payPerApproved == null)) {
+  const rw = reviewWords(p)
+  if (!p || (p.approvalRate == null && p.payPerApproved == null && !rw)) {
     return <p className="mt-2 text-[12px]" style={soft}>MVP members: {p?.why || `shown once ${POOL_MIN} MVP members have results for this brand.`}</p>
   }
   const diff = p.approvalRate != null && mine != null ? Math.round((mine - p.approvalRate) * 100) : null
@@ -345,6 +349,8 @@ function MembersLine({ p, note, mine }: { p: Pooled | null | undefined; note: st
       {p.approvalRate != null && <>approve {Math.round(p.approvalRate * 100)}% of videos{diff != null && diff !== 0 ? <span style={{ color: diff > 0 ? GREEN : AMBER }}> (you: {diff > 0 ? `${diff} points above` : `${-diff} points below`})</span> : null}</>}
       {p.approvalRate != null && p.payPerApproved != null && ' · '}
       {p.payPerApproved != null && <>about {money(p.payPerApproved)} per approved video</>}
+      {rw && (p.approvalRate != null || p.payPerApproved != null) && ' · '}
+      {rw && <span style={{ color: rw.tone === 'good' ? GREEN : rw.tone === 'bad' ? AMBER : undefined }}>{rw.text.charAt(0).toLowerCase() + rw.text.slice(1)}</span>}
     </p>
   )
 }

@@ -215,3 +215,33 @@ export function adWinners(brands: AdBrand[], days: number): AdWinner[] {
       why: `${money(b.earned)} from your ads in ${days} days${b.hookRate != null ? `, hook rate ${b.hookRate.toFixed(1)}%` : ''}${b.live ? `, ${b.live} live now` : ''}`,
     }))
 }
+
+// ── DIDN'T RUN? MOVE ON (Keighly Hart's $15K month, Seb 2026-10-14). Her
+// member never got attached to a video a brand did not run: she moved to the
+// next brand or the next angle. Videos TRYBE lists with no ad results at all
+// in the window, by brand. Only videos TRYBE sent impressions for count, so
+// "no numbers" is never read as "did not run". Pure.
+
+export interface NotRun { brand: string; brandId: string | null; videos: number; says: string }
+
+export function notRunning(videos: AdVideo[], days: number): NotRun[] {
+  const by = new Map<string, AdVideo[]>()
+  for (const v of videos) {
+    if (v.impressions !== 0 || v.live === true || (v.earned ?? 0) > 0) continue
+    const k = (v.brandId || v.brand || '').toLowerCase()
+    if (!k) continue
+    by.set(k, [...(by.get(k) || []), v])
+  }
+  const ranWith = new Set(videos.filter((v) => (v.impressions ?? 0) > 0).map((v) => (v.brandId || v.brand || '').toLowerCase()))
+  return Array.from(by.values()).map((list) => {
+    const brand = list[0].brand || 'A brand'
+    const k = (list[0].brandId || list[0].brand || '').toLowerCase()
+    const n = list.length
+    return {
+      brand, brandId: list[0].brandId, videos: n,
+      says: ranWith.has(k)
+        ? `${n} of your videos for ${brand} got no ad results in ${days} days while others did: try a new hook or angle from its brief for the next ones.`
+        : `None of your ${n} video${n === 1 ? '' : 's'} for ${brand} ran as an ad in ${days} days. Do not wait on it: move your next videos to a brand that runs ads.`,
+    }
+  }).sort((a, b) => b.videos - a.videos)
+}

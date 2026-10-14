@@ -280,7 +280,15 @@ export interface FinderFilters {
   starred?: boolean
   /** OPEN brands only (crowdOf). */
   openOnly?: boolean
+  /** Spending on ads: Meta ads running or videos in TRYBE's Top 100. */
+  spending?: boolean
+  /** NEW on TRYBE only (isNewBrand). */
+  newOnly?: boolean
+  /** Decides videos within FAST_REVIEW_DAYS (members' review speed). */
+  fastReview?: boolean
 }
+/** "Decides fast": members' middle figure at or under this many days. */
+export const FAST_REVIEW_DAYS = 5
 
 /** A filter body from the page, read safely. Pure. */
 export function readFilters(v: unknown): FinderFilters {
@@ -289,7 +297,7 @@ export function readFilters(v: unknown): FinderFilters {
   return {
     minPerVideo: pos(o.minPerVideo), maxCreators: pos(o.maxCreators), maxVideos: pos(o.maxVideos),
     paidCreators: o.paidCreators === true, samples: o.samples === true, onAmazon: o.onAmazon === true, starred: o.starred === true,
-    openOnly: o.openOnly === true,
+    openOnly: o.openOnly === true, spending: o.spending === true, newOnly: o.newOnly === true, fastReview: o.fastReview === true,
   }
 }
 
@@ -301,8 +309,12 @@ export interface FilterRow {
   amazon: AmazonOf | null
   starred: boolean
   crowd?: Crowd | null
+  /** Meta ads or Top 100 read: true spending, false not, null not read. */
+  spending?: boolean | null
+  isNew?: boolean
+  reviewDays?: number | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure. */
@@ -319,13 +331,17 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   if (f.onAmazon) judge('onAmazon', onAmazon(r.amazon))
   if (f.starred) judge('starred', r.starred)
   if (f.openOnly) judge('openOnly', r.crowd == null ? null : r.crowd === 'open')
+  if (f.spending) judge('spending', r.spending ?? null)
+  // NEW is known for every brand (TRYBE's join date or MVP's first sighting).
+  if (f.newOnly) judge('newOnly', !!r.isNew)
+  if (f.fastReview) judge('fastReview', r.reviewDays == null ? null : r.reviewDays <= FAST_REVIEW_DAYS)
   return { pass: !failed.length, unknown, failed }
 }
 
 export const FILTER_WORDS: Record<FilterId, string> = {
   minPerVideo: 'pay per video', maxCreators: 'creator count', maxVideos: 'videos approved',
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
-  openOnly: 'how crowded',
+  openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────
@@ -341,6 +357,27 @@ export interface StageRead {
   /** Brands joined, and videos decided across them: how much has been learned. */
   joined: number
   decided: number
+  /** ROAD TO 500: videos sent to TRYBE in all; null when TRYBE gave no count. */
+  sent: number | null
+}
+
+/** Seb, 2026-10-14: "road to 500 is better". Keighly Hart: one of TRYBE's
+ *  founders sees creators take off around 300 videos; her member made $15K
+ *  in a month at 400+. */
+export const ROAD_GOAL = 500
+
+/** Videos sent across every brand, when TRYBE says for any. Pure. */
+export function sentOf(judged: Judged[]): number | null {
+  const known = judged.map((j) => j.brand.submitted).filter((n): n is number => typeof n === 'number')
+  return known.length ? known.reduce((a, b) => a + b, 0) : null
+}
+
+/** The road in words. Pure. */
+export function roadWords(sent: number | null): string | null {
+  if (sent == null) return null
+  if (sent >= ROAD_GOAL) return `${sent.toLocaleString('en-US')} videos sent: past ${ROAD_GOAL}. Now it is about doubling down on what works.`
+  const left = ROAD_GOAL - sent
+  return `${sent.toLocaleString('en-US')} of ${ROAD_GOAL} videos sent, ${left.toLocaleString('en-US')} to go. Creators who keep going past a few hundred are the ones who take off.`
 }
 
 /** Seb's way: ask many brands and film for each that says yes until MVP sees
@@ -357,13 +394,13 @@ export function stageOf(judged: Judged[], ads?: Array<{ brand: string; why: stri
   const adWins = (ads || []).filter((a) => a.brand)
   const winners = [...focus, ...adWins.map((a) => a.brand).filter((b) => !focus.some((f) => f.toLowerCase() === b.toLowerCase()))]
   if (!joined) {
-    return { stage: 'start', title: 'Start with volume', says: 'Ask many brands that fit your channel. Each one that says yes teaches you how brands approve and pay. MVP finds your winners from your own numbers as they come in.', winners, adWins, joined, decided }
+    return { stage: 'start', title: 'Start with volume', says: 'Ask many brands that fit your channel. Each one that says yes teaches you how brands approve and pay. MVP finds your winners from your own numbers as they come in.', winners, adWins, joined, decided, sent: sentOf(judged) }
   }
   if (!winners.length) {
     return {
       stage: 'volume', title: 'Volume: learn what pays',
       says: `You are in ${joined} brand${joined === 1 ? '' : 's'}${decided ? `, ${decided} video${decided === 1 ? '' : 's'} decided` : ''}. Keep asking new brands and film for every one that says yes. Once a brand pays you and approves your videos, MVP marks it a winner here.`,
-      winners, adWins, joined, decided,
+      winners, adWins, joined, decided, sent: sentOf(judged),
     }
   }
   const few = winners.length < 3
@@ -372,7 +409,7 @@ export function stageOf(judged: Judged[], ads?: Array<{ brand: string; why: stri
     says: few
       ? `${winners.join(' and ')} ${winners.length === 1 ? 'pays' : 'pay'} you. Put most of your videos into ${winners.length === 1 ? 'it' : 'them'} (This week plans 30 a month each), and keep asking new brands to find your next winner.`
       : `${winners.slice(0, 5).join(', ')} pay you. Put most of your videos into them: This week plans 30 a month each. Ask new brands at a slower pace, to replace any that slow down.`,
-    winners, adWins, joined, decided,
+    winners, adWins, joined, decided, sent: sentOf(judged),
   }
 }
 
@@ -390,4 +427,51 @@ export function isNewBrand(input: { joinedAt: string | null | undefined; firstSe
   const e = input.firstEver ? Date.parse(input.firstEver) : NaN
   if (!Number.isFinite(f) || !Number.isFinite(e)) return false
   return f - e > 2 * DAY && input.now - f <= 14 * DAY
+}
+
+// ── A MIX OF BIG AND SMALL (Keighly Hart's $15K month, Seb 2026-10-14: "a
+// mix is a great idea"). Big brands have a proven product and ad spend, but
+// are crowded and slow; small and new brands are where you become a top
+// creator. Every batch MVP finds keeps both, and Find brands shows your mix.
+
+export type BrandSize = 'small' | 'mid' | 'big' | 'unknown'
+export const SMALL_MAX = 40
+export const BIG_MIN = 150
+/** At least this share of a batch is small brands, and this share big, when there are enough of each. */
+export const MIX_SMALL = 0.4
+export const MIX_BIG = 0.2
+
+export const sizeOf = (creators: number | null | undefined): BrandSize =>
+  typeof creators !== 'number' || !Number.isFinite(creators) ? 'unknown' : creators < SMALL_MAX ? 'small' : creators >= BIG_MIN ? 'big' : 'mid'
+
+/** The best `want` of a ranked list, keeping a mix: small brands get at
+ *  least MIX_SMALL of the places and big ones MIX_BIG, when there are that
+ *  many; the rest go by rank. Rank order is kept in the result. Pure. */
+export function mixPick<T>(ranked: T[], want: number, creatorsOf: (x: T) => number | null | undefined): T[] {
+  if (ranked.length <= want) return ranked.slice()
+  const chosen = new Set<number>()
+  const take = (size: BrandSize, n: number) => {
+    for (let i = 0; i < ranked.length && n > 0; i++) if (!chosen.has(i) && sizeOf(creatorsOf(ranked[i])) === size) { chosen.add(i); n-- }
+  }
+  take('small', Math.ceil(want * MIX_SMALL))
+  take('big', Math.floor(want * MIX_BIG))
+  for (let i = 0; i < ranked.length && chosen.size < want; i++) chosen.add(i)
+  return ranked.filter((_, i) => chosen.has(i))
+}
+
+export interface MixRead { small: number; mid: number; big: number; unknown: number; says: string | null }
+
+/** Your asks so far, by size, and what to do about it. Pure. */
+export function mixOf(creators: Array<number | null | undefined>): MixRead {
+  const m = { small: 0, mid: 0, big: 0, unknown: 0 }
+  for (const c of creators) m[sizeOf(c)]++
+  const known = m.small + m.mid + m.big
+  let says: string | null = null
+  if (known >= 10) {
+    const small = m.small / known, big = m.big / known
+    if (small < 0.25) says = `Only ${Math.round(small * 100)}% of the brands you asked are small. Ask more small and new brands: that is where you become a top creator. Try the New this week and Untapped lists.`
+    else if (big < 0.1 && m.big + m.mid > 0) says = `Almost all the brands you asked are small. Add a few big ones too: a proven product and real ad spend.`
+    else says = `A good mix: ${Math.round(small * 100)}% small brands, ${Math.round(big * 100)}% big.`
+  }
+  return { ...m, says }
 }

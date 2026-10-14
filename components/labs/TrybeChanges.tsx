@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, RotateCcw, Sparkles } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
+import TrybeBestNew from '@/components/labs/TrybeBestNew'
 import { changeLine, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
 
 const PURPLE = '#7C3AED'
@@ -39,7 +40,7 @@ export function changesSummary(c: ChangesRead | null): string | null {
   return [yours ? `${yours} of your brands changed` : null, fresh ? `${fresh} new on TRYBE` : null, pay ? `${pay} pay change${pay === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || null
 }
 
-export default function TrybeChanges({ scoutOpens, initial, onRead }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void }) {
+export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void; onSeeNew?: () => void }) {
   const [data, setData] = useState<ChangesRead | null>(initial ?? null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -88,6 +89,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead }: { scoutOpe
 
   return (
     <div className="space-y-4">
+      <TrybeBestNew scoutOpens={scoutOpens} onSeeAll={onSeeNew} />
       {/* At a glance: one tile per kind of change, a press filters the list. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {CHANGE_ORDER.filter((k) => k !== 'back').map((k) => {

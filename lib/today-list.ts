@@ -25,7 +25,7 @@ export type TodayKind =
   | 'reconnect' | 'liftoff_blocked' | 'liftoff_held' | 'liftoff_launch' | 'liftoff_amazon'
   | 'failed_posts' | 'held_posts' | 'encore' | 'pin_comments' | 'failed_comments'
   | 'cc_matches' | 'price_alerts' | 'ended_deals' | 'refresh_due' | 'trybe_replies'
-  | 'cc_upload'
+  | 'cc_upload' | 'trybe_new'
 
 export type TodayItem = {
   kind: TodayKind
@@ -54,6 +54,8 @@ const RANK: Record<TodayKind, number> = {
   cc_upload: 76,
   // A brand waiting on an answer is money on the table, and it goes cold.
   trybe_replies: 74,
+  // New brands are the easiest to get into: worth a look the day they land.
+  trybe_new: 62,
   encore: 70,
   cc_matches: 66,
   pin_comments: 60,
@@ -219,6 +221,24 @@ export async function gatherToday(sb: Sb, ownerId: string, tier: unknown, now: D
       items.push(item('trybe_replies', 'money', n, `${plural(n, 'unread TRYBE message', 'unread TRYBE messages')}`,
         `${names.length ? `From ${whoWrote(names)}. ` : ''}Checked ${checkedAgo(at, now.getTime())}. Suggest a reply writes the answer for you.`,
         '/trybe?tab=inbox', 'Open inbox'))
+    }),
+
+    // NEW BRANDS ON TRYBE (Huntr's "Today's Hunt", Seb 2026-10-14): new on
+    // MVP's copy of TRYBE in the last two days. The best of them, ranked by
+    // your priorities, are at the top of What changed.
+    canUsePreview('trybe_outreach', tier) && read('new TRYBE brands', async () => {
+      const since = new Date(now.getTime() - 2 * DAY).toISOString()
+      const r = await sb.from('trybe_directory_changes').select('brand_id', { count: 'exact', head: true }).eq('kind', 'new').gte('at', since)
+      if (r.error) {
+        // Not set up (migration 428) is not a failure of the Today list.
+        if (/does not exist|schema cache/i.test(r.error.message)) return
+        throw new Error(r.error.message)
+      }
+      const n = r.count ?? 0
+      if (!n) return
+      items.push(item('trybe_new', 'money', n, `${plural(n, 'new brand', 'new brands')} on TRYBE`,
+        'Since yesterday. New brands have few creators: getting in early is how you become their top creator. MVP ranks the best ones for you.',
+        '/trybe?tab=changes', 'See the best new brands'))
     }),
 
     canUsePreview('post_refresh', tier) && read('posts due an update', async () => {

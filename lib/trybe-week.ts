@@ -128,3 +128,28 @@ export function brandsOf(samples: Sample[]): Array<{ name: string; brandId: stri
 export function weekText(days: Day[]): string {
   return ['YOUR TRYBE WEEK', ...days.map((d) => `${d.label.toUpperCase()} (${d.date})\n${d.tasks.length ? d.tasks.map((t) => `[ ] ${t.text}`).join('\n') : 'Nothing planned'}`)].join('\n\n')
 }
+
+// ── YOUR MONTHLY VIDEO GOAL (Keighly Hart's $15K month, Seb 2026-10-14:
+// "monthly video goal should be 250 per month"). A goal for the month, not a
+// daily habit: many brands approve on a couple of days a week, so filming in
+// batches works. Pure, so it is tested.
+
+export const MONTHLY_GOAL = 250
+export const GOAL_CHOICES = [100, 150, 200, 250, 300, 400]
+
+export interface GoalRead { goal: number; sent: number; left: number; perWeek: number; perDay: number; perBatch: number; pct: number; says: string }
+
+/** Your last 30 days against your monthly goal, and the pace that reaches
+ *  it: a week, a day, and a batch (three filming days a week). Pure. */
+export function goalOf(sent: number, goal = MONTHLY_GOAL): GoalRead {
+  const g = Math.max(1, Math.round(goal))
+  const left = Math.max(0, g - sent)
+  const perWeek = Math.ceil(g / (30 / 7))
+  const perDay = Math.ceil(g / 30)
+  const perBatch = Math.ceil(perWeek / 3)
+  const pct = Math.min(100, Math.round((sent / g) * 100))
+  const says = sent >= g
+    ? `${sent} videos in the last 30 days: goal met. Keep the pace and put the extra into your winners.`
+    : `${sent} of ${g} in the last 30 days, ${left} short. The pace: about ${perWeek} a week, or 3 filming days of about ${perBatch}.`
+  return { goal: g, sent, left, perWeek, perDay, perBatch, pct, says }
+}

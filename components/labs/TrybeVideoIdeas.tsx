@@ -11,6 +11,7 @@
 // Used on the Sent tab (after a brand accepts) and on My brands. Every empty
 // or failed read says which it is.
 
+import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
@@ -299,6 +300,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           {winners && (winOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
         </button>}
       </div>
+
+      <TrybeTopHooks />
 
       {winOpen && (
         <div className="mt-2 rounded-lg border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>

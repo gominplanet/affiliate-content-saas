@@ -8,8 +8,9 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Image as ImageIcon } from 'lucide-react'
-import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
+import { Star, Search, X, ExternalLink, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, Image as ImageIcon } from 'lucide-react'
+import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
+import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 
@@ -24,8 +25,8 @@ export interface LiveAmazon {
   videoLinks: string[]; productUrl: string | null
 }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -36,7 +37,7 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
   name: string
   onName: (n: string) => void
 }) {
-  const toggle = (k: 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly', label: string, icon?: React.ReactNode, title?: string) => (
+  const toggle = (k: 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview', label: string, icon?: React.ReactNode, title?: string) => (
     <button onClick={() => onFilters({ ...filters, [k]: !filters[k] })} aria-pressed={!!filters[k]} title={title}
       className={chip} style={filters[k] ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>
       {icon}{label}
@@ -63,6 +64,9 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {toggle('starred', 'Starred', <Star size={12} />)}
       {toggle('onAmazon', 'On Amazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
       {toggle('openOnly', 'Open only', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
+      {toggle('newOnly', 'New', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
+      {toggle('spending', 'Spending on ads', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
+      {toggle('fastReview', 'Decides fast', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
       {toggle('paidCreators', 'Has paid creators', undefined, 'TRYBE says it has paid creators.')}
       {toggle('samples', 'Sends samples')}
       {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A % of sales alone has no dollar figure, so it is listed after.')}
@@ -304,4 +308,58 @@ export function NewChip({ on }: { on: boolean | undefined }) {
 export function StaticsChip({ on }: { on: boolean | null | undefined }) {
   if (!on) return null
   return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }} title="Its own words say it takes photo (static) ads too."><ImageIcon size={11} />Takes statics</span>
+}
+
+// ── HUNTR'S IDEAS (Seb, 2026-10-14: "do 1,2,3,4,5") ─────────────────────────
+
+/** One tap lists: each sets the filters and the sort in one go. */
+export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays'
+export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' }> = [
+  { id: 'untapped', label: 'Untapped', says: 'Spending on ads (Meta ads or TRYBE’s Top 100) with 30 creators or fewer: the budget is there and few creators share it.', filters: { ...NO_FILTERS, spending: true, maxCreators: 30 }, sort: 'picks' },
+  { id: 'new', label: 'New this week', says: 'New on TRYBE, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
+  { id: 'spenders', label: 'Big spenders', says: 'Every brand spending on ads now, best bets first.', filters: { ...NO_FILTERS, spending: true }, sort: 'picks' },
+  { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
+  { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
+]
+const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
+export const presetOf = (f: FinderFilters, sort: string): PresetId | null => PRESETS.find((p) => p.sort === sort && sameFilters(p.filters, f))?.id ?? null
+
+export function FinderPresets({ filters, sort, onPick }: { filters: FinderFilters; sort: string; onPick: (p: (typeof PRESETS)[number] | null) => void }) {
+  const on = presetOf(filters, sort)
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mb-2" role="group" aria-label="Ready made lists">
+      <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Lists</span>
+      {PRESETS.map((p) => (
+        <button key={p.id} onClick={() => onPick(on === p.id ? null : p)} aria-pressed={on === p.id} title={p.says}
+          className={chip} style={on === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{p.label}</button>
+      ))}
+    </div>
+  )
+}
+
+const VERDICT_STYLE = {
+  strong: { background: 'rgba(22,163,74,0.14)', color: GREEN },
+  look: { background: 'rgba(124,58,237,0.10)', color: PURPLE },
+  skip: { background: 'var(--surface-2)', color: 'var(--text-3)' },
+  unknown: { background: 'var(--surface-2)', color: 'var(--text-3)' },
+} as const
+
+/** Strong pick, Worth a look, Skip, or Too little read: the Best bet score in a word. */
+export function VerdictChip({ score, read }: { score: number | undefined; read: number | undefined }) {
+  if (score == null) return null
+  const v = verdictOf(score, read ?? 0)
+  return (
+    <span className="text-[11px] font-bold rounded-md px-2 py-0.5 cursor-help" style={VERDICT_STYLE[v]}
+      title={v === 'unknown' ? 'MVP has read fewer than two signals for this brand, so it does not judge it yet.' : `Best bet ${score}, weighed by Your priorities. 40 and up is a strong pick, under 12 a skip.`}>
+      {VERDICT_WORDS[v]}{v !== 'unknown' ? ` · ${score}` : ''}
+    </span>
+  )
+}
+
+/** How fast the brand decides videos, from MVP members' results. */
+export function ReviewChip({ review }: { review: { reviewDays?: number | null; slowShare?: number | null } | null | undefined }) {
+  const w = reviewWords(review)
+  if (!w) return null
+  const style = w.tone === 'good' ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : w.tone === 'bad' ? { background: 'rgba(180,83,9,0.12)', color: AMBER } : { background: 'var(--surface-2)', color: 'var(--text-2)' }
+  return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={style} title="From MVP members' own videos with this brand: how long it takes to approve or reject one (the middle member), and how many wait over a week. Shown once 5 members have results."><Clock size={11} />{w.text}</span>
 }
