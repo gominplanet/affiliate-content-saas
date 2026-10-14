@@ -300,8 +300,10 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       const QR = (await import('qrcode')).default
       const qrs: Record<string, string> = {}
       for (const p of products) for (const v of p.viral) if (!qrs[v.url]) qrs[v.url] = await QR.toDataURL(v.url, { margin: 0, width: 160 })
-      const { renderPlannerPdf } = await import('@/lib/trybe-planner-pdf')
-      const blob = new Blob([renderPlannerPdf(model, { images, qrs })], { type: 'application/pdf' })
+      const [{ renderPlannerPdf }, { loadBrandAssets }] = await Promise.all([import('@/lib/trybe-planner-pdf'), import('@/lib/mvp-pdf')])
+      // MVP's logo and font (the template); the planner still draws without them.
+      const brand = await loadBrandAssets().catch(() => ({}))
+      const blob = new Blob([renderPlannerPdf(model, { images, qrs, brand })], { type: 'application/pdf' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `MVP TRYBE planner ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.pdf`
@@ -311,6 +313,37 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       toast.success(missed ? `Planner saved. ${missed} brand${missed === 1 ? '' : 's'} could not be read from TRYBE, so their numbers are missing.` : !onHand.length ? 'Planner saved. Tick a sample Received to get its filming page.' : 'Planner saved.')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'The planner could not be made.') }
     finally { setExporting(null) }
+  }
+
+  // YOUR SAMPLES AS A PDF (Alejandro, via Seb, 2026-10-14: "a file with the
+  // samples ourselves"; Seb: "i rather PDF"). Every sample, by brand with the
+  // brand's own logo, in MVP's template. Nothing is read from TRYBE or AI:
+  // the list on this page, the logos MVP already has, the Amazon match.
+  const [samplesBusy, setSamplesBusy] = useState(false)
+  async function makeSamplesPdf() {
+    if (!rows?.length) { toast.message('No samples yet. Add one, or let your TRYBE sample requests come in.'); return }
+    setSamplesBusy(true)
+    try {
+      const logos: Record<string, string | null> = {}
+      for (const r of rows) {
+        if (r.brand_name in logos) continue
+        const b = (joined || []).find((x) => (r.brand_id && x.id === r.brand_id) || x.name.trim().toLowerCase() === r.brand_name.trim().toLowerCase())
+        logos[r.brand_name] = b?.logo ? await imageData(b.logo) : null
+      }
+      const amazon: Record<string, string | null> = {}
+      for (const r of rows) amazon[`${r.brand_name}|${r.product}`] = amz.product(r.brand_name, r.product)?.videoLinks[0] ?? null
+      const [{ buildSamplesReport, renderSamplesPdf }, { loadBrandAssets }] = await Promise.all([import('@/lib/trybe-samples-pdf'), import('@/lib/mvp-pdf')])
+      const brand = await loadBrandAssets().catch(() => ({}))
+      const report = buildSamplesReport(rows, { now: Date.now(), logos, amazon, brandPage: brandPageUrl })
+      const blob = new Blob([renderSamplesPdf(report, brand)], { type: 'application/pdf' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `MVP TRYBE samples ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.pdf`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+      toast.success(`Samples saved: ${rows.length} sample${rows.length === 1 ? '' : 's'} with ${report.groups.length} brand${report.groups.length === 1 ? '' : 's'}.`)
+    } catch (e) { toast.error(e instanceof Error ? `Your samples PDF could not be made: ${e.message}` : 'Your samples PDF could not be made.') }
+    finally { setSamplesBusy(false) }
   }
 
   const copyWeek = async () => {
@@ -393,6 +426,10 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your weekly planner, ready to print.</b> <span style={soft}>This week&rsquo;s three jobs, a 7 day calendar, a page per product you have on hand with 5 video guidelines and the brand&rsquo;s best videos (QR codes), samples on the way, and your money as charts.</span></p>
         <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
           {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download my weekly planner (PDF)
+        </button>
+        <button onClick={() => void makeSamplesPdf()} disabled={samplesBusy || !rows?.length} className={btn} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
+          title={rows?.length ? 'Every sample, by brand, with where each one stands' : 'No samples yet'}>
+          {samplesBusy ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />} Download my samples (PDF)
         </button>
         {exporting && <p className="w-full text-[12px] inline-flex items-center gap-1" style={soft}>{exporting}</p>}
       </div>

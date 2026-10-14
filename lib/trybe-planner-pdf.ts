@@ -10,46 +10,46 @@
 import { jsPDF } from 'jspdf'
 import { pdfSafe, type PlannerModel, type PlannerProduct } from '@/lib/trybe-planner'
 import { HOOK_STYLE_WORDS } from '@/lib/trybe-playbook'
+// MVP's PDF template (Seb, 2026-10-14): the logo, colors, font, cover,
+// header and footer every MVP PDF shares.
+import { brandKit, drawCover, drawHeader, drawFooters, tile, BRAND, PAGE, type BrandAssets, type RGB } from '@/lib/mvp-pdf'
 
-type RGB = [number, number, number]
-const PURPLE: RGB = [124, 58, 237]
-const TINT: RGB = [245, 241, 255]
-const INK: RGB = [24, 24, 27]
-const SOFT: RGB = [107, 107, 118]
-const LINE: RGB = [226, 226, 234]
-const GREEN: RGB = [22, 163, 74]
-const AMBER: RGB = [180, 83, 9]
-const RED: RGB = [220, 38, 38]
+const PURPLE: RGB = BRAND.indigo
+const TINT: RGB = BRAND.tint
+const INK: RGB = BRAND.ink
+const SOFT: RGB = BRAND.soft
+const LINE: RGB = BRAND.line
+const GREEN: RGB = BRAND.green
+const AMBER: RGB = BRAND.amber
+const RED: RGB = BRAND.red
 
-const W = 612
-const H = 792
-const M = 44
-const BOTTOM = H - 48
+const W = PAGE.W
+const M = PAGE.M
+const BOTTOM = PAGE.BOTTOM
 
 export interface PlannerAssets {
   /** Product photos as data URLs (JPEG or PNG), by the product's image URL. */
   images: Record<string, string>
   /** QR codes as PNG data URLs, by the link they open. */
   qrs: Record<string, string>
+  /** MVP's logo and font (lib/mvp-pdf loadBrandAssets); plain without. */
+  brand?: BrandAssets
 }
 
 export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): ArrayBuffer {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+  const kit = brandKit(doc, assets.brand || {})
   let y = M
 
-  const color = (c: RGB) => doc.setTextColor(c[0], c[1], c[2])
-  const fill = (c: RGB) => doc.setFillColor(c[0], c[1], c[2])
-  const stroke = (c: RGB) => doc.setDrawColor(c[0], c[1], c[2])
-  const font = (size: number, bold = false) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size) }
-  const lines = (t: string, width: number): string[] => doc.splitTextToSize(pdfSafe(t), width) as string[]
-  const lh = (size: number) => size * 1.32
+  const color = kit.color
+  const fill = kit.fill
+  const stroke = kit.stroke
+  const font = (size: number, bold = false) => kit.font(size, bold ? 'bold' : 'normal')
+  const lines = (t: string, width: number): string[] => kit.lines(pdfSafe(t), width)
+  const lh = kit.lh
 
-  const header = () => {
-    font(8.5, true); color(PURPLE); doc.text('MVP  |  TRYBE WEEKLY PLANNER', M, 28)
-    font(8.5); color(SOFT); doc.text(pdfSafe(model.weekLabel), W - M, 28, { align: 'right' })
-    stroke(LINE); doc.setLineWidth(0.6); doc.line(M, 34, W - M, 34)
-  }
-  const newPage = () => { doc.addPage(); header(); y = 56 }
+  const header = () => drawHeader(kit, 'TRYBE weekly planner', pdfSafe(model.weekLabel))
+  const newPage = () => { doc.addPage(); header(); y = 60 }
   const ensure = (h: number) => { if (y + h > BOTTOM) newPage() }
 
   /** Wrapped text at x, moving y. */
@@ -59,7 +59,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   }
   const title = (t: string, sub?: string) => {
     ensure(60)
-    font(20, true); color(INK); doc.text(pdfSafe(t), M, y + 20); y += 30
+    kit.font(20, 'heavy'); color(BRAND.navy); doc.text(kit.safe(t), M, y + 20); y += 30
     if (sub) { para(sub, M, W - 2 * M, 10.5, SOFT); y += 4 }
     y += 6
   }
@@ -70,10 +70,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   }
 
   // ── Cover ──────────────────────────────────────────────────────────────────
-  header()
-  y = 70
-  font(32, true); color(INK); doc.text('Your TRYBE week', M, y + 30); y += 44
-  font(13); color(SOFT); doc.text(pdfSafe(model.weekLabel), M, y + 12); y += 34
+  y = drawCover(kit, { eyebrow: 'TRYBE  |  Weekly planner', title: 'Your TRYBE week', subtitle: 'Your three jobs, your next 7 days, a page per product on hand, the samples on the way and your money.', meta: pdfSafe(model.weekLabel) })
 
   // Three tiles: on hand, on the way, earned.
   const tiles: Array<[string, string, RGB]> = [
@@ -82,14 +79,8 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
     [`$${Math.round(model.money.total).toLocaleString('en-US')}`, 'earned on TRYBE', GREEN],
   ]
   const tw = (W - 2 * M - 24) / 3
-  tiles.forEach(([big, small, c], i) => {
-    const x = M + i * (tw + 12)
-    fill([250, 250, 252]); stroke(LINE); doc.setLineWidth(0.8); doc.roundedRect(x, y, tw, 70, 10, 10, 'FD')
-    fill(c); doc.rect(x + 10, y, tw - 20, 3, 'F')
-    font(24, true); color(c); doc.text(pdfSafe(big), x + 14, y + 36)
-    font(9.5); color(SOFT); doc.text(pdfSafe(small), x + 14, y + 54)
-  })
-  y += 96
+  tiles.forEach(([big, small, c], i) => tile(kit, M + i * (tw + 12), y, tw, big, small, c))
+  y += 98
 
   label("This week's three jobs", PURPLE)
   model.jobs.forEach((j, i) => {
@@ -341,8 +332,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
     y += ls.length * lh(11.5) + 12
   }
 
-  // Page numbers.
-  const pages = doc.getNumberOfPages()
-  for (let i = 1; i <= pages; i++) { doc.setPage(i); font(8.5); color(SOFT); doc.text(`${i} of ${pages}`, W / 2, H - 22, { align: 'center' }) }
+  // Who made it, and page n of N, on every page after the cover.
+  drawFooters(kit)
   return doc.output('arraybuffer')
 }
