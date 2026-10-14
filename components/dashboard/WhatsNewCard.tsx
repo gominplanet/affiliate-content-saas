@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-14'
+const RELEASE_ID = '2026-10-14-2'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,36 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // TRYBE, the second release of the day (Seb, 2026-10-14: "update the
+  // what's new"). Newest first; the first release's items follow.
+  {
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'TRYBE: see what you already filmed on Amazon, everywhere',
+    desc: 'Every TRYBE brand and product now says when you already have Amazon videos of it: in Make videos (each product you filmed says so), Ready to send, Sent, My brands, the Inbox and This week. When a brand says yes, MVP tells you to submit those Amazon videos on TRYBE first: paid videos with no new filming. On the Pro plan.',
+    href: '/trybe?tab=create',
+  },
+  {
+    badge: 'NEW',
+    tone: '#4F46E5',
+    title: 'Your TRYBE samples as a PDF',
+    desc: 'On This week, Download my samples (PDF) gives you every sample by brand, with the brand\u2019s logo, where each one stands, the dates, the ones to chase, and the Amazon videos you already have of them. On the Pro plan.',
+    href: '/trybe?tab=week',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#0B1B38',
+    title: 'Your weekly planner, in MVP\u2019s design',
+    desc: 'The TRYBE weekly planner PDF now has MVP\u2019s logo, colors and type, a cover, and page numbers on every page.',
+    href: '/trybe?tab=week',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#6d28d9',
+    title: 'Replies that fit TRYBE',
+    desc: 'Suggested replies to TRYBE brands never ask about rates or terms: on TRYBE the brand sets the pay. They answer the brand, show you fit and move to the next step: the sample, the brief, the videos.',
+    href: '/trybe?tab=inbox',
+  },
   // TRYBE (Seb, 2026-10-14). TRYBE is open to the Pro plan, so every item
   // says so; each links to its own tab (?tab= on /trybe).
   {
