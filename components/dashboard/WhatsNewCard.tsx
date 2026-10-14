@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-09-25'
+const RELEASE_ID = '2026-10-14'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,66 +29,56 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
-  {
-    badge: 'NEW',
-    tone: '#E4572E',
-    title: 'Bulk Amazon upload: launch up to ten videos at once',
-    desc: 'One press sends up to ten videos to YouTube and to your US Amazon storefront. Each video gets its own date and time, its own thumbnail with the right face ("Who is in this video?"), its own Amazon title, and your CTA exactly where you placed it. MVP checks the YouTube channel before anything uploads, and with SCOUT it keeps going even after you close the page. On the Pro plan, at the top of Create.',
-    href: '/liftoff',
-  },
-  {
-    badge: 'NEW',
-    tone: '#E4572E',
-    title: 'On sale comments: timely sale comments on your videos',
-    desc: 'When a product you already reviewed goes on sale, MVP writes a comment for that video in your voice, with your link and the Amazon disclosure, posts it and pins it with SCOUT. When the sale ends it edits the comment so it no longer mentions a sale. Each promo also comes with a Short script, a Community post and a social post. On the Pro plan, under Create.',
-    href: '/encore',
-  },
+  // TRYBE (Seb, 2026-10-14). TRYBE is open to the Pro plan, so every item
+  // says so; each links to its own tab (?tab= on /trybe-outreach).
   {
     badge: 'NEW',
     tone: '#7C3AED',
-    title: 'Comparison videos in Co-Pilot',
-    desc: 'Comparing two, three or four products in one video? Tick This video compares products before you generate. The titles are written as a comparison, the description gets its own link for every product, and the thumbnail shows each product from its own Amazon photo. On the Pro plan.',
-    href: '/co-pilot',
+    title: 'TRYBE: your whole TRYBE business in one place',
+    desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome.',
+    href: '/trybe-outreach',
+  },
+  {
+    badge: 'NEW',
+    tone: '#E4572E',
+    title: 'Make videos: pick a brand, pick your product, get ten scripts',
+    desc: 'MVP lists the brand\u2019s own products from its TRYBE profile, with your samples first. Pick the one you have on hand and get ten shooting scripts that follow the brand\u2019s brief, each with a hook written for the viewer. Every idea is kept for that brand.',
+    href: '/trybe-outreach?tab=create',
+  },
+  {
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'Find brands: see who you already filmed on Amazon',
+    desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand.',
+    href: '/trybe-outreach?tab=find',
+  },
+  {
+    badge: 'NEW',
+    tone: '#0E7490',
+    title: 'Your stage: volume first, then double down',
+    desc: 'At first, ask many brands and film for every one that says yes. Once your own numbers show which brands pay and approve you, MVP names them as your winners and tells you to put most of your videos into them, while you keep testing new brands.',
+    href: '/trybe-outreach?tab=find',
+  },
+  {
+    badge: 'NEW',
+    tone: '#C2410C',
+    title: 'This week: samples, a 7 day plan and a planner PDF',
+    desc: 'Your TRYBE sample requests come in by themselves and tick off as they arrive. MVP plans your next seven days from what you have on hand and your monthly target, and makes a clean weekly planner PDF with scripts, top videos to watch and your earnings as charts.',
+    href: '/trybe-outreach?tab=week',
   },
   {
     badge: 'NEW',
     tone: '#BE185D',
-    title: 'My features: pin what you use most',
-    desc: 'Hover any feature in the sidebar and tap its star to pin it to My features at the top. Tap the star again to take it out. Your list follows you to every device.',
-  },
-  {
-    badge: 'NEW',
-    tone: '#7C3AED',
-    title: 'See every limit on your plan',
-    desc: 'Your usage, under Account, shows each limit on your plan in plain words: what it counts, how much you have used, how much is left and when it resets. Anything used up or nearly used up is at the top.',
-    href: '/usage',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#C2410C',
-    title: 'Co-Pilot finishes the job in YouTube Studio',
-    desc: 'With SCOUT, Co-Pilot now sets monetization and the paid promotion disclosure in Studio the way you would by hand, and tells you what Studio kept. Notify subscribers is a real switch, off by default. Videos that already went live leave the Needs metadata list.',
-    href: '/co-pilot',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#0a84ff',
-    title: 'Set the product on any video',
-    desc: 'Every video in Co-Pilot has a Set the product link, even when its title has no ASIN, and a thumbnail you already made for that product can be reused instead of made again.',
-    href: '/co-pilot',
+    title: 'My brands, What changed and What\u2019s working',
+    desc: 'See what each brand paid you and approved, which ones to focus on, and videos stuck in review. Every day MVP notes new brands, pay changes and new Meta ads, your brands first. Check your own hook before you film, and see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.',
+    href: '/trybe-outreach?tab=brands',
   },
   {
     badge: 'IMPROVED',
     tone: '#6d28d9',
-    title: 'Every Full guide rewritten',
-    desc: 'The Full guide on each page now explains what that page does today, including a new one for Bulk Amazon upload. New tutorial videos are being recorded for the latest features.',
-  },
-  {
-    badge: 'NEW',
-    tone: '#34c759',
-    title: 'More in the free Amazon guide',
-    desc: 'The free guide now has a full Amazon Live module, what to do when Amazon sends a warning email, tracking IDs per platform, a troubleshooting section, and a search box.',
-    href: '/freeguide',
+    title: 'Inbox with a suggested reply',
+    desc: 'Your TRYBE chats inside MVP, each with a reply suggested in your voice. Unread replies show in the menu and on your Today list.',
+    href: '/trybe-outreach?tab=inbox',
   },
 ]
 
