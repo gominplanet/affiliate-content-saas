@@ -36,6 +36,53 @@ export interface PickInput {
   commissionPct?: number | null
   /** What its TRYBE page and website say about how it treats creators. */
   program?: CreatorProgram | null
+  /** A flat fee per video, in dollars, when its pay says one. */
+  perVideo?: number | null
+  /** Whether it sends samples, when TRYBE says. */
+  samples?: boolean | null
+  /** Days since it joined TRYBE, when TRYBE says. */
+  daysOnTrybe?: number | null
+  /** What TRYBE says it has paid creators in all, in dollars. */
+  paidOut?: number | null
+  /** The brand on Amazon (lib/trybe-finder amazonOf): videos the creator
+   *  already made of its products, and its Creator Connections campaigns. */
+  amazon?: { yourVideos: number; ccCampaigns: number; ccBestPct: number | null; storefront: number } | null
+}
+
+/** What a creator can say matters to them (Seb, 2026-10-14, after Rob's Oink
+ *  Blue video: "build all 4"). Each part of the score belongs to one. */
+export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program'
+export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
+  { id: 'competition', label: 'Few creators', says: 'Fewer creators means more of the budget for you. Not on TikTok Shop counts here too.' },
+  { id: 'adSpend', label: 'Spends on ads', says: 'Meta ads running now and videos in TRYBE\u2019s Top 100.' },
+  { id: 'perVideo', label: 'Pay per video', says: 'A flat fee for each approved video.' },
+  { id: 'percent', label: '% of sales', says: 'A share of every sale your videos make.' },
+  { id: 'paysCreators', label: 'Has paid creators', says: 'What TRYBE says creators have earned with it.' },
+  { id: 'samples', label: 'Sends samples', says: 'So you do not buy the product to film it.' },
+  { id: 'newBrand', label: 'New on TRYBE', says: 'Joined in the last month: few creators have found it yet.' },
+  { id: 'amazon', label: 'On Amazon too', says: 'Videos you already made of its products, and its Creator Connections campaigns.' },
+  { id: 'program', label: 'Looks after creators', says: 'Retainers, calls and briefs, from its own words.' },
+]
+/** 0: does not matter, 1: normal, 2: matters a lot. */
+export type Weight = 0 | 1 | 2
+export type Priorities = Record<Factor, Weight>
+export const DEFAULT_PRIORITIES: Priorities = { competition: 1, adSpend: 1, perVideo: 1, percent: 1, paysCreators: 1, samples: 1, newBrand: 1, amazon: 1, program: 1 }
+
+/** A saved priorities object, read safely: anything missing or odd is normal. Pure. */
+export function readPriorities(v: unknown): Priorities {
+  const out: Priorities = { ...DEFAULT_PRIORITIES }
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const f of FACTORS) { const w = (v as Record<string, unknown>)[f.id]; if (w === 0 || w === 1 || w === 2) out[f.id] = w }
+  }
+  return out
+}
+
+/** The pick score with the creator's own priorities: each part times its
+ *  weight. All normal gives the plain score. Pure. */
+export function weighScore(p: Pick, pr: Priorities): number {
+  let n = 0
+  for (const [f, v] of Object.entries(p.parts) as Array<[Factor, number]>) n += v * (pr[f] ?? 1)
+  return n
 }
 
 /** How a brand invests in its creators, from its own words (Lukas: the brands
@@ -53,7 +100,7 @@ export function creatorProgramOf(text: string | null | undefined): CreatorProgra
   }
 }
 
-export interface Pick { score: number; reasons: PickReason[]; read: number }
+export interface Pick { score: number; reasons: PickReason[]; read: number; parts: Partial<Record<Factor, number>> }
 
 /** Meta ads are read again after a week. */
 export const META_ADS_FRESH_MS = 7 * 86_400_000
@@ -72,60 +119,87 @@ export function bucketDollars(raw: string | null | undefined): number | null {
 
 const fmt = (n: number) => n >= 1_000_000 ? `$${Math.round(n / 100_000) / 10}M` : n >= 1_000 ? `$${Math.round(n / 100) / 10}K` : `$${n}`
 
-/** The pick score: higher is a better bet, by Cole's rules. Pure. */
+/** The pick score: higher is a better bet, by Cole's rules. Each point is
+ *  booked to the factor it comes from, so a creator's priorities can weigh
+ *  it (weighScore). Pure. */
 export function pickScore(p: PickInput): Pick {
-  let score = 0
   let read = 0
   const reasons: PickReason[] = []
+  const parts: Partial<Record<Factor, number>> = {}
+  const add = (f: Factor, n: number) => { parts[f] = (parts[f] ?? 0) + n }
   const c = p.totalCreators
   if (typeof c === 'number' && Number.isFinite(c)) {
     read++
-    if (c === 0) { score += 35; reasons.push({ text: 'No creators yet: the whole budget is open', tone: 'good' }) }
-    else if (c <= 5) { score += 35; reasons.push({ text: `Only ${c} creator${c === 1 ? '' : 's'}: you share the budget with almost nobody`, tone: 'good' }) }
-    else if (c <= 20) { score += 25; reasons.push({ text: `${c} creators: little competition`, tone: 'good' }) }
-    else if (c <= 60) { score += 12; reasons.push({ text: `${c} creators`, tone: 'info' }) }
-    else if (c >= 500) { score -= 20; reasons.push({ text: `${c.toLocaleString()} creators: crowded, the budget is split many ways`, tone: 'bad' }) }
-    else if (c >= 200) { score -= 8; reasons.push({ text: `${c} creators: busy`, tone: 'info' }) }
+    if (c === 0) { add('competition', 35); reasons.push({ text: 'No creators yet: the whole budget is open', tone: 'good' }) }
+    else if (c <= 5) { add('competition', 35); reasons.push({ text: `Only ${c} creator${c === 1 ? '' : 's'}: you share the budget with almost nobody`, tone: 'good' }) }
+    else if (c <= 20) { add('competition', 25); reasons.push({ text: `${c} creators: little competition`, tone: 'good' }) }
+    else if (c <= 60) { add('competition', 12); reasons.push({ text: `${c} creators`, tone: 'info' }) }
+    else if (c >= 500) { add('competition', -20); reasons.push({ text: `${c.toLocaleString()} creators: crowded, the budget is split many ways`, tone: 'bad' }) }
+    else if (c >= 200) { add('competition', -8); reasons.push({ text: `${c} creators: busy`, tone: 'info' }) }
   }
   if (typeof p.metaAds === 'number') {
     read++
     const n = p.metaAds
-    if (n >= 50) { score += 30; reasons.push({ text: `${n.toLocaleString()} Meta ads running now: real ad spend`, tone: 'good' }) }
-    else if (n >= 10) { score += 20; reasons.push({ text: `${n} Meta ads running now`, tone: 'good' }) }
-    else if (n >= 1) { score += 8; reasons.push({ text: `${n} Meta ad${n === 1 ? '' : 's'} running now`, tone: 'info' }) }
-    else { score -= 15; reasons.push({ text: 'No Meta ads running now', tone: 'bad' }) }
+    if (n >= 50) { add('adSpend', 30); reasons.push({ text: `${n.toLocaleString()} Meta ads running now: real ad spend`, tone: 'good' }) }
+    else if (n >= 10) { add('adSpend', 20); reasons.push({ text: `${n} Meta ads running now`, tone: 'good' }) }
+    else if (n >= 1) { add('adSpend', 8); reasons.push({ text: `${n} Meta ad${n === 1 ? '' : 's'} running now`, tone: 'info' }) }
+    else { add('adSpend', -15); reasons.push({ text: 'No Meta ads running now', tone: 'bad' }) }
   }
   if (typeof p.top100Hits === 'number') {
     read++
     const h = p.top100Hits
-    if (h >= 3) { score += 25; reasons.push({ text: `${h} videos in TRYBE's Top 100 now: it is spending`, tone: 'good' }) }
-    else if (h >= 1) { score += 15; reasons.push({ text: `In TRYBE's Top 100 now${p.top100BestRank ? ` (#${p.top100BestRank})` : ''}`, tone: 'good' }) }
+    if (h >= 3) { add('adSpend', 25); reasons.push({ text: `${h} videos in TRYBE's Top 100 now: it is spending`, tone: 'good' }) }
+    else if (h >= 1) { add('adSpend', 15); reasons.push({ text: `In TRYBE's Top 100 now${p.top100BestRank ? ` (#${p.top100BestRank})` : ''}`, tone: 'good' }) }
   }
   const earned = bucketDollars(p.earningsBucket)
   if (earned != null) {
     read++
-    if (earned >= 10_000) { score += 12; reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'good' }) }
-    else if (earned >= 1_000) { score += 5; reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'info' }) }
+    if (earned >= 10_000) { add('paysCreators', 12); reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'good' }) }
+    else if (earned >= 1_000) { add('paysCreators', 5); reasons.push({ text: `Creators have earned ${fmt(earned)}+ with it`, tone: 'info' }) }
+  } else if (typeof p.paidOut === 'number' && p.paidOut > 0) {
+    read++
+    add('paysCreators', p.paidOut >= 10_000 ? 12 : p.paidOut >= 1_000 ? 5 : 2)
+    reasons.push({ text: `Has paid creators ${fmt(Math.round(p.paidOut))} on TRYBE`, tone: p.paidOut >= 1_000 ? 'good' : 'info' })
   }
   const pct = p.commissionPct
   if (typeof pct === 'number' && pct > 0) {
     read++
-    if (pct >= 10) { score += 12; reasons.push({ text: `Pays ${pct}% of sales: enough to make the volume worth it`, tone: 'good' }) }
-    else if (pct < 5) { score -= 8; reasons.push({ text: `Pays ${pct}% of sales: low for the 30 or more videos a month it takes`, tone: 'bad' }) }
-    else reasons.push({ text: `Pays ${pct}% of sales`, tone: 'info' })
+    if (pct >= 10) { add('percent', 12); reasons.push({ text: `Pays ${pct}% of sales: enough to make the volume worth it`, tone: 'good' }) }
+    else if (pct < 5) { add('percent', -8); reasons.push({ text: `Pays ${pct}% of sales: low for the 30 or more videos a month it takes`, tone: 'bad' }) }
+    else { add('percent', 0); reasons.push({ text: `Pays ${pct}% of sales`, tone: 'info' }) }
+  }
+  const fee = p.perVideo
+  if (typeof fee === 'number' && fee > 0) {
+    read++
+    if (fee >= 50) { add('perVideo', 15); reasons.push({ text: `$${fee} per video`, tone: 'good' }) }
+    else if (fee >= 20) { add('perVideo', 8); reasons.push({ text: `$${fee} per video`, tone: 'good' }) }
+    else { add('perVideo', 3); reasons.push({ text: `$${fee} per video`, tone: 'info' }) }
+  }
+  if (p.samples === true) { add('samples', 6); reasons.push({ text: 'Sends samples', tone: 'good' }) }
+  else if (p.samples === false) { add('samples', -4); reasons.push({ text: 'No samples: you buy the product to film it', tone: 'info' }) }
+  if (typeof p.daysOnTrybe === 'number' && p.daysOnTrybe >= 0) {
+    if (p.daysOnTrybe <= 30) { add('newBrand', 8); reasons.push({ text: `New on TRYBE: ${p.daysOnTrybe} day${p.daysOnTrybe === 1 ? '' : 's'}`, tone: 'good' }) }
+    else add('newBrand', 0)
+  }
+  const amz = p.amazon
+  if (amz) {
+    if (amz.yourVideos > 0) { add('amazon', 20); reasons.push({ text: `You already have ${amz.yourVideos} Amazon video${amz.yourVideos === 1 ? '' : 's'} of its products`, tone: 'good' }) }
+    else if (amz.storefront > 0) { add('amazon', 10); reasons.push({ text: `${amz.storefront} of its products in your Amazon storefront`, tone: 'good' }) }
+    if (amz.ccCampaigns > 0) { add('amazon', 6); reasons.push({ text: `Pays Amazon creators too (Creator Connections${amz.ccBestPct ? `, up to ${amz.ccBestPct}%` : ''})`, tone: 'good' }) }
   }
   if (p.program) {
-    if (p.program.retainer) { score += 10; reasons.push({ text: 'Mentions retainers for creators', tone: 'good' }) }
-    if (p.program.coaching) { score += 6; reasons.push({ text: 'Trains its creators (calls, briefs or a creator program)', tone: 'good' }) }
+    if (p.program.retainer) { add('program', 10); reasons.push({ text: 'Mentions retainers for creators', tone: 'good' }) }
+    if (p.program.coaching) { add('program', 6); reasons.push({ text: 'Trains its creators (calls, briefs or a creator program)', tone: 'good' }) }
     if (p.program.discord) reasons.push({ text: 'Has a Discord: brands like this often pick creators there, so join it too', tone: 'info' })
   }
-  if (p.tiktokShop === true) { read++; score -= 10; reasons.push({ text: 'Sells on TikTok Shop too: more creators competing', tone: 'bad' }) }
+  if (p.tiktokShop === true) { read++; add('competition', -10); reasons.push({ text: 'Sells on TikTok Shop too: more creators competing', tone: 'bad' }) }
   else if (p.tiktokShop === false) {
     read++
     if (p.tiktokHandle) reasons.push({ text: 'On TikTok, no TikTok Shop found on its website', tone: 'info' })
-    else { score += 8; reasons.push({ text: 'Not on TikTok (from its website): less competition', tone: 'good' }) }
+    else { add('competition', 8); reasons.push({ text: 'Not on TikTok (from its website): less competition', tone: 'good' }) }
   }
-  return { score, reasons, read }
+  const score = Object.values(parts).reduce((n: number, v) => n + (v ?? 0), 0)
+  return { score, reasons, read, parts }
 }
 
 // ── Reading the signals ──────────────────────────────────────────────────────

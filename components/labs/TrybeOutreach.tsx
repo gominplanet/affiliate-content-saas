@@ -39,6 +39,10 @@ import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
+import TrybeStage from '@/components/labs/TrybeStage'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, NO_FILTERS, filtersOn, type LiveAmazon } from '@/components/labs/TrybeFinderControls'
+import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
+import { type FinderFilters, type FilterId, type DirStats } from '@/lib/trybe-finder'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -100,6 +104,8 @@ interface LiveBrand {
   /** Cole's picks (lib/trybe-pick): the score, why, and how many signals were read. */
   pick?: number; pick_reasons?: PickReason[]; pick_read?: number
   meta_ads?: number | null; meta_ads_checked_at?: string | null
+  /** The brand on Amazon, TRYBE's own numbers, and the creator's star. */
+  amazon?: LiveAmazon | null; stats?: DirStats | null; starred?: boolean
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -109,10 +115,10 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
 type LiveSort = 'match' | 'picks' | 'pay' | 'creators' | 'fit' | 'newest'
-type LivePay = 'any' | 'flat' | 'percent'
+type LivePay = 'any' | 'flat' | 'percent' | 'both'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
-  { id: 'picks', label: 'Best bets', says: 'Best bets first: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), and not on TikTok Shop. How the top TRYBE creators pick brands.' },
+  { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: flat fees by amount, then % of sales.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
@@ -122,11 +128,13 @@ const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'any', label: 'Any pay' },
   { id: 'flat', label: 'Flat fee' },
   { id: 'percent', label: '% of sales' },
+  { id: 'both', label: '% plus a fee' },
 ]
 const PAY_SAYS: Record<LivePay, string> = {
   any: 'Every brand, whatever it pays.',
   flat: 'Brands that pay a set amount per video first.',
   percent: 'Brands that pay a commission on what your videos sell first.',
+  both: 'Brands that pay a flat fee per video and a % of sales together.',
 }
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
@@ -345,7 +353,16 @@ export default function TrybeOutreach() {
   const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting' | 'accepted' | 'declined'>('all')
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
-  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number } | null>(null)
+  const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
+    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean } | null>(null)
+  // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
+  // filters, a brand's name, and the creator's priorities for Best bets.
+  const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
+  const [nameQ, setNameQ] = useState('')
+  const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES)
+  const [prioritiesEdited, setPrioritiesEdited] = useState(false)
+  const [prioritiesNote, setPrioritiesNote] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null)
+  const prioritiesSave = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showMine, setShowMine] = useState(false)
   // SORT AND PAY FILTER (Seb, 2026-10-08 upgrade 3), done on the server so
   // the order covers every match and not just the 60 on screen.
@@ -783,9 +800,12 @@ export default function TrybeOutreach() {
     setLiveLoading(true)
     const t = setTimeout(async () => {
       try {
-        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType })
+        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}) })
         if (id !== liveReq.current) return // a newer search has started
-        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0 })
+        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
+          hiddenBy: d.hiddenBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved })
+        // The saved priorities, until the creator changes them on this visit.
+        if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
         // Ticks stay only on brands still listed and still free to draft.
         setLivePick(p => new Set(Array.from(p).filter(x => (d.brands || []).some((b: LiveBrand) => b.brand_id === x && !TAKEN.includes(b.status as Brand['status'])))))
@@ -796,7 +816,40 @@ export default function TrybeOutreach() {
       }
     }, 350)
     return () => clearTimeout(t)
-  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '']) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** A priority changed: Best bets ranks by it at once, and it is saved a
+   *  moment later. A save that failed is said; the ranking still uses it. */
+  function changePriorities(p: Priorities) {
+    setPriorities(p); setPrioritiesEdited(true); setSortBy('picks')
+    if (prioritiesSave.current) clearTimeout(prioritiesSave.current)
+    prioritiesSave.current = setTimeout(() => {
+      api({ action: 'priorities', priorities: p })
+        .then(() => setPrioritiesNote({ text: 'Saved. Best bets ranks by these.', tone: 'ok' }))
+        .catch((e) => setPrioritiesNote({ text: `Used for this visit, not saved: ${e instanceof Error ? e.message : 'the save failed'}`, tone: 'warn' }))
+    }, 700)
+  }
+
+  /** Star a brand, or unstar it. */
+  async function star(b: LiveBrand) {
+    const on = !b.starred
+    setLive(l => l && { ...l, brands: l.brands.map(x => x.brand_id === b.brand_id ? { ...x, starred: on } : x) })
+    try { await api({ action: 'star', brandId: b.brand_id, on }) } catch (e) {
+      setLive(l => l && { ...l, brands: l.brands.map(x => x.brand_id === b.brand_id ? { ...x, starred: !on } : x) })
+      toast.error(`Not ${on ? 'starred' : 'unstarred'}: ${e instanceof Error ? e.message : 'the save failed'}`)
+    }
+  }
+
+  /** Pass on a brand from the live list (Oink's Pass), or undo it. */
+  async function pass(b: LiveBrand) {
+    const undo = b.status === 'skipped'
+    try {
+      const d = await api({ action: undo ? 'unskip' : 'pass', brandId: b.brand_id })
+      setLive(l => l && { ...l, brands: l.brands.map(x => x.brand_id === b.brand_id ? { ...x, status: d.status } : x) })
+      setLivePick(p => { const n = new Set(p); n.delete(b.brand_id); return n })
+      toast.success(undo ? `${b.name} is back on the list` : `Passed on ${b.name}. It leaves the list next time it loads.`)
+    } catch (e) { toast.error(`${undo ? 'Not brought back' : 'Not passed'}: ${e instanceof Error ? e.message : 'the save failed'}`) }
+  }
 
   /** Draft the brands ticked in the live list into Ready to send. */
   async function draftPicked(only?: string[]) {
@@ -1230,6 +1283,8 @@ export default function TrybeOutreach() {
       )}
 
       {tab === 'find' && (<>
+        {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
+        <TrybeStage canRead={canMyBrands} onGo={setTab} />
         {/* 1. Core message: a short preview once written, the box while editing. */}
         <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2">
@@ -1388,6 +1443,13 @@ export default function TrybeOutreach() {
                 ))}
               </div>
             </div>
+            <FinderFilterBar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ} />
+            <FinderPriorities priorities={priorities} onChange={changePriorities}
+              note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
+            {filters.onAmazon && live && (live.amazonVideos ?? 0) === 0 && (
+              <p className="text-[12px] mb-3" style={{ color: AMBER }}>MVP has none of your Amazon videos yet, so On Amazon only finds brands in your storefront and on Creator Connections. <a href="/earnings" className="font-semibold underline">Sync your Amazon videos</a> to see which TRYBE brands you already filmed.</p>
+            )}
+            {(live?.amazonNotes || []).map((n) => <p key={n} className="text-[12px] mb-2" style={{ color: AMBER }}>{n}</p>)}
             {/* WHAT BEST BETS READS, and how much of it is read: a signal not
                 read yet is said as not read, never scored as zero. */}
             {sortBy === 'picks' && (() => {
@@ -1457,6 +1519,8 @@ export default function TrybeOutreach() {
                   <p>{directory.listed != null ? <>On TRYBE now: <b>{directory.listed.toLocaleString()}</b> brands{directory.brands > directory.listed ? <> (MVP also keeps {(directory.brands - directory.listed).toLocaleString()} that TRYBE no longer lists; they are left out of matches)</> : null}. </> : null}{directory.joinedSinceFirst != null && directory.firstCountAt ? <>New on TRYBE since MVP&rsquo;s first count ({new Date(directory.firstCountAt).toLocaleDateString()}): <b>{directory.joinedSinceFirst.toLocaleString()}</b>{directory.joinedStillListed != null && directory.joinedStillListed !== directory.joinedSinceFirst ? <>, {directory.joinedStillListed.toLocaleString()} of them still listed</> : null}. </> : null}MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands ever seen, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}</p>
                 )}
                 {findNotes.filter(n => ADMIN_NOTE.test(n)).map((n, i) => <p key={i}>{n}</p>)}
+                {/* What TRYBE's list sends, so the new filters are read from what is there. */}
+                {live?.rawKeys && live.rawKeys.length > 0 && <p className="break-words">TRYBE&rsquo;s brand list sends: {live.rawKeys.join(', ')}</p>}
               </div>
             )}
             {findNotes.some(n => !ADMIN_NOTE.test(n)) && (
@@ -1475,7 +1539,9 @@ export default function TrybeOutreach() {
             {live && !live.brands.length && !liveLoading && (
               <p className="text-[13px]" style={soft}>
                 {payType !== 'any' && (live.payOther ?? 0) > 0
-                  ? <>No brand here pays {payType === 'flat' ? 'a flat fee' : 'a % of sales'} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
+                  ? <>No brand here pays {payType === 'flat' ? 'a flat fee' : payType === 'both' ? 'a fee and a % of sales together' : 'a % of sales'} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
+                  : filters.starred && !nameQ.trim() && !Object.values(live.hiddenBy || {}).some(n => (n ?? 0) > 0) ? 'No starred brands yet. Press the star on a brand to keep it here.'
+                  : filtersOn(filters) || nameQ.trim() ? <>No brand passes these filters. <button onClick={() => { setFilters(NO_FILTERS); setNameQ('') }} className="font-semibold underline" style={{ color: PURPLE }}>Clear filters</button></>
                   : hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'No TRYBE brands to show yet. Press Refresh from TRYBE to collect the list.'}
               </p>
             )}
@@ -1493,8 +1559,10 @@ export default function TrybeOutreach() {
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[15px] font-semibold">{b.name}</span>
+                        <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
                         <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
+                        <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1505,6 +1573,7 @@ export default function TrybeOutreach() {
                         {b.total_creators != null && (b.total_creators > 0 || sortBy === 'creators') && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creator{b.total_creators === 1 ? '' : 's'}</span>}
                         {sortBy === 'newest' && b.first_seen_at && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>First seen {new Date(b.first_seen_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
                       </span>
+                      <BrandExtras amazon={b.amazon} stats={b.stats} />
                       {sortBy === 'picks' && (
                         <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <span className="text-[11px] font-bold rounded-md px-2 py-0.5" style={{ background: (b.pick ?? 0) >= 40 ? 'rgba(22,163,74,0.14)' : 'rgba(124,58,237,0.08)', color: (b.pick ?? 0) >= 40 ? GREEN : PURPLE }}
@@ -1535,6 +1604,7 @@ export default function TrybeOutreach() {
                         <MessageCircle size={12} /> Message
                       </button>
                     )}
+                    {(!taken || b.status === 'skipped') && <PassButton passed={b.status === 'skipped'} onClick={() => void pass(b)} />}
                   </label>
                 )
               })}
@@ -1543,7 +1613,7 @@ export default function TrybeOutreach() {
               <p className="text-[12px] mt-3" style={soft}>
                 {showMine
                   ? <>Showing brands you already messaged too. <button onClick={() => setShowMine(false)} className="font-semibold underline" style={{ color: PURPLE }}>Hide them</button></>
-                  : <>{live.hiddenMine} brand{live.hiddenMine === 1 ? '' : 's'} you already messaged, wrote to or removed {live.hiddenMine === 1 ? 'is' : 'are'} hidden. <button onClick={() => setShowMine(true)} className="font-semibold underline" style={{ color: PURPLE }}>Show them</button></>}
+                  : <>{live.hiddenMine} brand{live.hiddenMine === 1 ? '' : 's'} you already messaged, wrote to, passed on or removed {live.hiddenMine === 1 ? 'is' : 'are'} hidden. <button onClick={() => setShowMine(true)} className="font-semibold underline" style={{ color: PURPLE }}>Show them</button></>}
               </p>
             ) : null}
             {/* What the pay filter did, counted so the list is never quietly
@@ -1552,10 +1622,11 @@ export default function TrybeOutreach() {
             {live && payType !== 'any' && ((live.payUnknown ?? 0) + (live.payOther ?? 0)) > 0 && (
               <p className="text-[12px] mt-3" style={soft}>
                 {live.payUnknown ? `TRYBE's brand list does not say what ${live.payUnknown.toLocaleString()} of these brands pay, so they are listed after the ones that do. Open a brand on TRYBE to see its pay. ` : ''}
-                {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying only ${payType === 'flat' ? 'a % of sales' : 'a flat fee'} ${live.payOther === 1 ? 'is' : 'are'} hidden. ` : ''}
+                {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying only ${payType === 'flat' ? 'a % of sales' : payType === 'both' ? 'one of the two' : 'a flat fee'} ${live.payOther === 1 ? 'is' : 'are'} hidden. ` : ''}
                 <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button>
               </p>
             )}
+            {live && <FinderFilterNote hiddenBy={live.hiddenBy} unknownBy={live.unknownBy} />}
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}

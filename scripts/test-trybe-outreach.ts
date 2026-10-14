@@ -148,7 +148,7 @@ check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\
 
 // THE LIVE LIST (Seb, 2026-10-07: "as users change filters, the results ...
 // should change"). MVP's copy is searched on every change, nothing fetched.
-check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType\]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
+check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType[,\]]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
 check('an older search never overwrites a newer one', /if \(id !== liveReq\.current\) return/.test(UI))
 check('browse leaves nothing out, so a brand on the list shows where it stands', /rpc\('trybe_directory_search', \{ p_words: words, p_user: null/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
 check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
@@ -176,7 +176,7 @@ check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.
 {
   const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
   check('brands TRYBE no longer lists are counted apart and left out of matches',
-    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 4
+    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 5
     && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
   check('the brands new on TRYBE since the first count are counted from when each was first seen',
     /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)
@@ -319,7 +319,7 @@ check('Send now and Send all share one runner and the daily cap', /async functio
   check('a sent brand finds its TRYBE chat by name, and not a lookalike', find('NOBL', cs)?.name === 'NOBL' && find('HiStrips', cs)?.name === 'HiStrips Team (DM)' && find('Gains In Bulk', cs)?.name === 'Gains In Bulk Team (DM)' && find('Audien', cs) === null && find('Obvi', cs) === null && find('Bread Lace', cs) === null)
 }
 
-check('brands already messaged leave the live list, and how many is said', /const DONE = \['drafted', 'sending', 'sent', 'already', 'failed', 'removed'\]/.test(ROUTE) && /hiddenMine/.test(ROUTE) && /includeMine: showMine/.test(UI) && /already messaged, wrote to or removed/.test(UI))
+check('brands already messaged leave the live list, and how many is said', /const DONE = \['drafted', 'sending', 'sent', 'already', 'failed', 'removed'(, 'skipped')?\]/.test(ROUTE) && /hiddenMine/.test(ROUTE) && /includeMine: showMine/.test(UI) && /already messaged, wrote to(, passed on)? or removed/.test(UI))
 
 check('every brand links to its own page on TRYBE', (UI.match(/<TrybeLink brandId=\{b\.brand_id\} name=\{b\.name\} scout=\{scoutOpens\} \/>/g) || []).length === 3 && /href=\{href\}/.test(readFileSync('components/labs/TrybeLink.tsx', 'utf8')) && sendUrl('abc123', null) === 'https://jointrybe.com/creator/discover?brand=abc123')
 {
@@ -373,7 +373,7 @@ check('a late answer for another conversation is dropped', /const current = open
   check('highest pay puts flat fees by amount, then percent, then unknown', payRank(big) > payRank(flat) && payRank(flat) > payRank(pct) && payRank(pct) > payRank(none))
   const ROUTE = readFileSync('app/api/labs/trybe/route.ts', 'utf8'), UI2 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('browse sorts on the server and counts what the pay filter hid', /first_seen_at/.test(ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'"))) && /payUnknown,/.test(ROUTE) && /payOther,/.test(ROUTE) && /sort === 'fit'/.test(ROUTE))
-  check('the live list sends sort and pay type and re-searches when they change', /sort: sortBy, payType \}/.test(UI2) && /showMine, sortBy, payType\]/.test(UI2) && /Show any pay/.test(UI2) && /None of these brands has a fit score yet/.test(UI2))
+  check('the live list sends sort and pay type and re-searches when they change', /sort: sortBy, payType[ ,]/.test(UI2) && /showMine, sortBy, payType[,\]]/.test(UI2) && /Show any pay/.test(UI2) && /None of these brands has a fit score yet/.test(UI2))
 }
 
 // Suggest a reply (Seb, 2026-10-08 upgrade 2)

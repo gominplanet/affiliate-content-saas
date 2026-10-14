@@ -127,7 +127,7 @@ check('the plan route uses the winners and says when a plan is not kept', /winne
   check('TRYBE\'s own pay lines are read when the list carries them', !!withRules && /15% of GMV/.test(withRules.payText || '') && readPay(withRules.payText).kind === 'both')
   check('a commission rate alone is read too', readPay(readDirectoryItem({ brandId: 'abc12346', brandName: 'Rate', commissionRate: '20% commission' })?.payText).kind === 'percent')
   const R = read('app/api/labs/trybe/route.ts')
-  check('brands with no pay given stay in the list, after the ones that match', /payPasses\(x\.pay, payType\) \|\| \(payType !== 'any' && x\.pay\.kind == null\)/.test(R) && /ranked\.sort\(\(a, b\) => payKnownFirst\(a, b\) \|\|/.test(R))
+  check('brands with no pay given stay in the list, after the ones that match', /payPasses\(x\.pay, payType\) \|\| \(payType !== 'any' && x\.pay\.kind == null\)/.test(R) && /ranked\.sort\(\(a, b\) => (knownFirst\(a, b\) \|\| )?payKnownFirst\(a, b\) \|\|/.test(R))
   const U = read('components/labs/TrybeOutreach.tsx')
   check('the page says what the pay filter did, and an empty list says why', /does not say what .* of these brands pay, so they are listed after the ones that do/.test(U) && /as far as TRYBE&rsquo;s list says/.test(U) && !/Search a keyword or pick a niche to see the brands that match/.test(U))
 }

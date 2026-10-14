@@ -1,0 +1,100 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// FIND BRANDS, THE CREATOR'S WAY (Seb, 2026-10-14, after Rob's Oink Blue
+// video: "build all 4"): the brand on Amazon, your priorities, more filters,
+// and your stage (volume first, then double down on winners).
+
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { readDirStats, rawKeys, amazonOf, titleIsBrand, nameVariants, readFilters, filterCheck, stageOf, onAmazon } from '../lib/trybe-finder'
+import { pickScore, weighScore, readPriorities, DEFAULT_PRIORITIES, FACTORS } from '../lib/trybe-pick'
+import { payPasses, readPay } from '../lib/trybe-outreach'
+import type { Judged, MyBrand } from '../lib/trybe-mybrands'
+
+let failed = 0
+function check(name: string, ok: boolean, detail = '') {
+  if (ok) console.log(`  ok  ${name}`)
+  else { failed++; console.error(`  FAIL ${name}${detail ? `: ${detail}` : ''}`) }
+}
+const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
+
+// ── TRYBE's own numbers, found by name, never made up ──
+const st = readDirStats({ brandId: 'b-123456', brand: { approvedVideos: 42, anySampleRequestsEnabled: true, createdAt: '2026-09-30T00:00:00Z' }, stats: { totalPaid: '1,250' } })
+check('videos approved, paid out, samples and join date are read from the entry or one level down', st.videosApproved === 42 && st.paidOut === 1250 && st.samples === true && st.joinedAt === '2026-09-30T00:00:00.000Z', JSON.stringify(st))
+const none = readDirStats({ brandId: 'b-123456', name: 'X' })
+check('a number TRYBE did not send is not known, never zero', none.videosApproved === null && none.paidOut === null && none.samples === null && none.joinedAt === null)
+check('the admin sees which keys TRYBE sends', rawKeys([{ a: 1, brand: { b: 2 } }]).join() === 'a,brand,brand.b')
+
+// ── 1. The brand on Amazon ──
+check('a product title starting with the brand is the brand', titleIsBrand('Audien Atom ONE Hearing Aid', 'Audien') && titleIsBrand('Jive Nutrition Protein Powder', 'Jive Nutrition'))
+check('a brand name inside another word, or a 2 letter name, never matches', !titleIsBrand('Audienne Speakers', 'Audien') && !titleIsBrand('Go Pro Mount', 'Go'))
+check('Amazon writes names in several cases: all are looked up', nameVariants('Kings Loot').includes('KINGS LOOT') && nameVariants('Kings Loot').includes('kings loot'))
+const amz = amazonOf('Audien', {
+  videos: [{ aci: 'v1', asin: 'B0AAA11111', title: 'Some hearing aid' }, { aci: 'v2', asin: 'B0ZZZ99999', title: 'Audien Atom Pro 2' }, { aci: 'v3', asin: 'B0QQQ00000', title: 'Other brand thing' }],
+  storefront: new Map([['audien', 4]]),
+  campaigns: [
+    { brand_name: 'AUDIEN', asins: ['B0AAA11111'], commission_pct: 15, ends_at: '2026-12-31' },
+    { brand_name: 'Audien', asins: ['B0OLD00000'], commission_pct: 30, ends_at: '2026-01-01' },
+    { brand_name: 'Other', asins: ['B0QQQ00000'], commission_pct: 50, ends_at: '2026-12-31' },
+  ],
+  today: '2026-10-14',
+})
+check('your Amazon videos of its products count, by campaign ASIN or by title', amz.yourVideos === 2 && amz.videoAcis.includes('v1') && amz.videoAcis.includes('v2'), JSON.stringify(amz))
+check('another brand\'s campaign never counts', !amz.videoAcis.includes('v3'))
+check('only campaigns still running count, with the best live commission', amz.ccCampaigns === 1 && amz.ccBestPct === 15)
+check('storefront products are counted, and an Amazon product is linked', amz.storefront === 4 && !!amz.asin && onAmazon(amz))
+check('a brand MVP found nothing for is not on Amazon', !onAmazon(amazonOf('Nobody', { videos: [], storefront: new Map(), campaigns: [], today: '2026-10-14' })))
+
+// ── 2. Your priorities ──
+const p = pickScore({ totalCreators: 3, metaAds: 120, top100Hits: null, tiktokShop: null, perVideo: 60, samples: true, amazon: { yourVideos: 2, storefront: 0, ccCampaigns: 1, ccBestPct: 15 } })
+check('every point is booked to a factor, and all normal is the plain score', weighScore(p, DEFAULT_PRIORITIES) === p.score && Object.keys(p.parts).length >= 5)
+check('"A lot" counts a factor twice, "Skip" leaves it out', weighScore(p, { ...DEFAULT_PRIORITIES, amazon: 2 }) === p.score + (p.parts.amazon ?? 0) && weighScore(p, { ...DEFAULT_PRIORITIES, perVideo: 0 }) === p.score - (p.parts.perVideo ?? 0))
+check('Amazon videos you already made are a reason, said in words', p.reasons.some(r => /You already have 2 Amazon videos/.test(r.text)) && p.reasons.some(r => /Creator Connections, up to 15%/.test(r.text)))
+check('saved priorities are read safely: odd values are normal', JSON.stringify(readPriorities({ amazon: 2, perVideo: 7, junk: 1 })) === JSON.stringify({ ...DEFAULT_PRIORITIES, amazon: 2 }))
+check('every factor has words for the creator', FACTORS.length === 9 && FACTORS.every(f => f.label && f.says && !/[–—]/.test(f.says)))
+const plain = pickScore({ totalCreators: 3, metaAds: null, top100Hits: null, tiktokShop: null })
+check('an older brand with no new numbers scores as before', plain.score === 35 && plain.read === 1)
+
+// ── 3. Filters ──
+const f = readFilters({ minPerVideo: '50', maxCreators: 20, samples: true, onAmazon: true, starred: 'yes' })
+check('filters are read safely', f.minPerVideo === 50 && f.maxCreators === 20 && f.samples === true && f.onAmazon === true && f.starred === false)
+const row = { perVideo: 75, creators: 10, stats: { videosApproved: null, paidOut: null, samples: null, joinedAt: null }, earningsBucket: null, amazon: amz, starred: false }
+const c1 = filterCheck(row, f)
+check('a brand passing what is known passes, and samples TRYBE did not give is not known', c1.pass && c1.unknown.join() === 'samples' && !c1.failed.length, JSON.stringify(c1))
+const c2 = filterCheck({ ...row, perVideo: 20, creators: 400 }, f)
+check('a brand that fails a filter is hidden, with each reason', !c2.pass && c2.failed.includes('minPerVideo') && c2.failed.includes('maxCreators'))
+check('On Amazon is a no when MVP found nothing, never unknown', filterCheck({ ...row, amazon: null }, { onAmazon: true }).failed.join() === 'onAmazon')
+check('"% plus a fee" passes only brands that pay both', payPasses(readPay('$50 per video + 10% of sales'), 'both') && !payPasses(readPay('$50 per video'), 'both'))
+
+// ── 4. Your stage ──
+const mk = (name: string, earnings: number | null, approved: number | null): MyBrand => ({ id: name, name, logo: null, earnings, submitted: approved, approved, pending: null, rejected: null, enrolledAt: null, programs: [] })
+const j = (b: MyBrand, verdict: Judged['verdict']): Judged => ({ brand: b, verdict, why: '', rate: null, exactRate: false, perVideo: null })
+check('no brands yet: start with volume', stageOf([]).stage === 'start')
+const vol = stageOf([j(mk('A', 0, 1), 'early'), j(mk('B', null, 0), 'early')])
+check('brands but no winner yet: volume, learn what pays', vol.stage === 'volume' && vol.joined === 2 && /winner/.test(vol.says))
+const dbl = stageOf([j(mk('Audien', 900, 20), 'focus'), j(mk('B', 0, 1), 'early')])
+check('a winner found: double down and keep testing, naming it', dbl.stage === 'double' && dbl.winners.join() === 'Audien' && /keep asking new brands/.test(dbl.says))
+const many = stageOf(['A', 'B', 'C'].map(n => j(mk(n, 500, 10), 'focus')))
+check('three winners: most videos into them, new brands at a slower pace', many.stage === 'double' && /slower pace/.test(many.says))
+check('stage words have no dashes and no year', [vol, dbl, many, stageOf([])].every(s => !/[–—]| - |20\d\d/.test(`${s.title} ${s.says}`)))
+
+// ── Wired in ──
+const api = read('app/api/labs/trybe/route.ts')
+const browse = api.slice(api.indexOf("action === 'browse'"), api.indexOf("action === 'adopt'"))
+check('the brand search reads Amazon, TRYBE\'s numbers, the filters and the priorities', /amazonOf\(/.test(browse) && /readDirStats\(/.test(browse) && /filterCheck\(/.test(browse) && /weighScore\(/.test(browse) && /cc_campaign_catalog/.test(browse) && /amazon_video_products/.test(browse))
+check('a read of Amazon that failed is said, not taken as "not on Amazon"', /amazonNotes\.push/.test(browse) && /amazonNotes/.test(read('components/labs/TrybeOutreach.tsx')))
+check('filters count what they hid and what they could not check', /hiddenBy\[f\]/.test(browse) && /unknownBy\[f\]/.test(browse) && /knownFirst\(a, b\)/.test(browse))
+check('a passed brand leaves the list until undone', /'removed', 'skipped'\]/.test(browse))
+check('star, priorities and pass are saved on the server', /action === 'star'/.test(api) && /action === 'priorities'/.test(api) && /action === 'pass'/.test(api))
+check('pass never touches a brand already written or sent', /\.in\('status', \['new', 'not_fit'\]\)/.test(api.slice(api.indexOf("action === 'pass'"))))
+check('only an admin sees what TRYBE\'s list sends', /tier === 'admin' \? \{ rawKeys/.test(browse))
+const mig = 'supabase/migrations/430_trybe_priorities_and_stars.sql'
+check('migration 430 adds the two columns and is safe to run twice', existsSync(join(process.cwd(), mig)) && (read(mig).match(/add column if not exists/g) || []).length === 2)
+const ui = read('components/labs/TrybeOutreach.tsx')
+check('Find brands shows the stage, filters, priorities, Amazon and star and pass', /<TrybeStage canRead=\{canMyBrands\}/.test(ui) && /<FinderFilterBar/.test(ui) && /<FinderPriorities/.test(ui) && /<BrandExtras amazon=\{b\.amazon\}/.test(ui) && /<StarButton/.test(ui) && /<PassButton/.test(ui) && /<FinderFilterNote/.test(ui))
+check('no Amazon videos synced is said, with where to sync them', /MVP has none of your Amazon videos yet/.test(ui) && /href="\/earnings"/.test(ui))
+const stage = read('components/labs/TrybeStage.tsx')
+check('a failed read of your numbers says the stage is not known', /your stage is not known/.test(stage))
+
+if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
+console.log('\nALL PASS')

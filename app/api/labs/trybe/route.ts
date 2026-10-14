@@ -20,7 +20,9 @@
 // reloaded, or open twice, cannot send more than the cap allows.
 
 import { outreachNiche } from '@/lib/outreach-niche'
-import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
+import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore } from '@/lib/trybe-pick'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, type AmazonVideoProduct, type CcCampaign, type FilterId } from '@/lib/trybe-finder'
+import { amazonVideoPage } from '@/lib/brand-content'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
@@ -96,6 +98,10 @@ async function readSettings(admin: Db, ownerId: string) {
     lastFindAt: (data?.last_find_at as string | null) ?? null,
     // Members' combined numbers (migration 428): on unless turned off.
     poolOptOut: data?.pool_opt_out === true,
+    // What matters to them, and their starred brands (migration 430). Null
+    // when the database does not have the columns yet, so the page can say so.
+    priorities: data && 'priorities' in data ? readPriorities(data.priorities) : null,
+    starred: data && Array.isArray(data.starred) ? (data.starred as unknown[]).map(String).slice(0, 500) : data && 'starred' in data ? [] : null,
   }
 }
 
@@ -701,7 +707,7 @@ export async function POST(request: Request) {
     const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
     const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
     const words = searchWords(terms)
-    const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at'
+    const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at, raw'
     // The pick signals (migration 425): asked for, and left out when the
     // database does not have them yet, so the list never breaks on them.
     const PICK_COLS = ', tiktok_handle, tiktok_shop, socials_checked_at, meta_ads, meta_ads_checked_at, top100_hits, top100_best_rank, top100_checked_at, earnings_bucket'
@@ -718,10 +724,29 @@ export async function POST(request: Request) {
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
     const pool = sort === 'picks' || sort === 'creators' ? 1200 : 400
-    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
+    // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
+    // priorities, stars and filters. Priorities sent by the page win, so a
+    // change ranks at once; else the saved ones.
+    const settings = await readSettings(admin, ownerId)
+    const priorities = body.priorities != null ? readPriorities(body.priorities) : (settings.priorities ?? readPriorities(null))
+    const filters = readFilters(body.filters)
+    const starredIds = new Set(settings.starred ?? [])
+    // A brand's name, or the starred brands, are looked up directly: the
+    // niche and keywords do not narrow them.
+    const nameQ = typeof body.name === 'string' ? body.name.replace(/[%,()_\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : ''
+    const direct = nameQ.length >= 2 || filters.starred
+    const rpc = direct ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
-    if (!rpc.error) {
+    if (direct) {
+      let q = admin.from('trybe_directory').select(COLS)
+      if (filters.starred) q = q.in('brand_id', Array.from(starredIds).slice(0, 500))
+      if (nameQ.length >= 2) q = q.ilike('name', `%${nameQ}%`)
+      if (since) q = q.gte('last_seen_at', since)
+      const { data, error: e } = filters.starred && !starredIds.size ? { data: [], error: null } : await q.limit(400)
+      if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+      rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+    } else if (!rpc.error) {
       const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
       for (let i = 0; i < ids.length; i += 200) {
         let q = admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 200))
@@ -741,6 +766,30 @@ export async function POST(request: Request) {
       }
       rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
     }
+    // THE BRAND ON AMAZON: the creator's own Amazon videos and storefront,
+    // and Creator Connections campaigns under the brand's name. Each read
+    // fails into "not read", said on the page, never into "not on Amazon".
+    const today = now.slice(0, 10)
+    const amazonNotes: string[] = []
+    let videos: AmazonVideoProduct[] = []
+    {
+      const { data, error: e } = await admin.from('amazon_video_products').select('aci, asin, title').eq('user_id', ownerId).limit(20000)
+      if (e) amazonNotes.push('Your Amazon videos could not be read just now.')
+      else videos = (data || []) as AmazonVideoProduct[]
+    }
+    const storefront = new Map<string, number>()
+    try { for (const [k, v] of await getWorkedWithBrands(admin as Db, ownerId)) if (v.amazon > 0) storefront.set(k, v.amazon) } catch { amazonNotes.push('Your Amazon storefront could not be read just now.') }
+    const campaigns: CcCampaign[] = []
+    {
+      const variants = Array.from(new Set(rows.flatMap(r => nameVariants(String(r.name || '')))))
+      for (let i = 0; i < variants.length; i += 400) {
+        const { data, error: e } = await admin.from('cc_campaign_catalog').select('brand_name, asins, commission_pct, ends_at').in('brand_name', variants.slice(i, i + 400)).limit(5000)
+        if (e) { amazonNotes.push('Amazon\u2019s Creator Connections list could not be read just now.'); break }
+        campaigns.push(...((data || []) as CcCampaign[]))
+      }
+    }
+    const amazonBy = new Map(rows.map(r => [r.brand_id as string, amazonOf(String(r.name || ''), { videos, storefront, campaigns, today })]))
+    const statsBy = new Map(rows.map(r => [r.brand_id as string, readDirStats(r.raw)]))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -753,10 +802,29 @@ export async function POST(request: Request) {
       earningsBucket: r.earnings_bucket ?? null,
       commissionPct: readPay(r.pay_text).percent,
       program: creatorProgramOf(`${r.about || ''} ${r.site_text || ''}`),
+      perVideo: readPay(r.pay_text).dollars,
+      samples: statsBy.get(r.brand_id)?.samples ?? null,
+      daysOnTrybe: (() => { const j = statsBy.get(r.brand_id)?.joinedAt; return j ? Math.max(0, Math.floor((Date.now() - Date.parse(j)) / 86_400_000)) : null })(),
+      paidOut: statsBy.get(r.brand_id)?.paidOut ?? null,
+      amazon: amazonBy.get(r.brand_id) ?? null,
     })
-    const matched = rows
+    const matchedAll = rows
       .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text), pick: pickOf(r) }))
-      .filter(x => !terms.length || x.match > 0)
+      .filter(x => direct || !terms.length || x.match > 0)
+    // THE FILTERS: a brand that fails one is hidden and counted; a brand
+    // TRYBE gave no number for stays, after the ones that pass, and is
+    // counted too, so the list is never quietly short or quietly wrong.
+    const hiddenBy: Partial<Record<FilterId, number>> = {}
+    const unknownBy: Partial<Record<FilterId, number>> = {}
+    const unknownOf = new Map<string, number>()
+    const matched = matchedAll.filter(x => {
+      const c = filterCheck({ perVideo: x.pay.dollars, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id) }, filters)
+      for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
+      if (!c.pass) return false
+      for (const f of c.unknown) unknownBy[f] = (unknownBy[f] ?? 0) + 1
+      unknownOf.set(x.r.brand_id, c.unknown.length)
+      return true
+    })
     // PAY TYPE FILTER. A brand known to pay the other way is left out and
     // counted. A brand whose pay TRYBE's list does not give stays, after the
     // ones that match (Seb, 2026-10-12, "this is confusing": TRYBE's list
@@ -794,14 +862,17 @@ export async function POST(request: Request) {
     // Best fit: fits for this search by score, then brands not scored for it,
     // then the ones the AI said do not fit it.
     const fit = (id: string) => judgedNo(id) ? -2 : fitScore(id) ?? -1
-    ranked.sort((a, b) => payKnownFirst(a, b) ||
+    const knownFirst = (a: typeof ranked[number], b: typeof ranked[number]) => (unknownOf.get(a.r.brand_id) ?? 0) - (unknownOf.get(b.r.brand_id) ?? 0)
+    const weighed = (x: typeof ranked[number]) => weighScore(x.pick, priorities)
+    ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
-            : sort === 'picks' ? b.pick.score - a.pick.score || byMatch(a, b)
+            : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
               : byMatch(a, b)))
-    const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed']
+    // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
+    const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
     const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
     const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
     const shown = body.includeMine === true ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
@@ -814,7 +885,12 @@ export async function POST(request: Request) {
       payOther,
       sort,
       payType,
-      capped: rows.length >= (rpc.error ? 800 : pool),
+      capped: !direct && rows.length >= (rpc.error ? 800 : pool),
+      hiddenBy, unknownBy, amazonNotes,
+      amazonVideos: videos.length,
+      priorities, prioritiesSaved: settings.priorities != null, starsSaved: settings.starred != null,
+      // What TRYBE's list sends, seen not guessed (admin only).
+      ...(tier === 'admin' ? { rawKeys: rawKeys(rows.map(r => r.raw)) } : {}),
       brands: top.map(({ r, match, pay, pick }) => {
         const m = mineBy.get(r.brand_id)
         return {
@@ -826,11 +902,62 @@ export async function POST(request: Request) {
           fit_score: fitScore(r.brand_id), fit_reason: current(r.brand_id) ? (m?.fit_reason ?? null) : null,
           // Judged for an earlier search: said so, never shown as this one's verdict.
           fit_stale: !!m && m.fit_prefs != null && !current(r.brand_id) && (m.status === 'not_fit' || m.fit_score != null),
-          pick: pick.score, pick_reasons: pick.reasons, pick_read: pick.read,
+          pick: weighScore(pick, priorities), pick_reasons: pick.reasons, pick_read: pick.read,
+          stats: statsBy.get(r.brand_id) ?? null,
+          starred: starredIds.has(r.brand_id),
+          amazon: (() => {
+            const a = amazonBy.get(r.brand_id)
+            if (!a) return null
+            return { ...a, videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean), productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null }
+          })(),
           meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
         }
       }),
     })
+  }
+
+  // ── FINDER: stars, priorities, pass (migration 430 for the first two) ────
+
+  if (action === 'star') {
+    if (!/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return NextResponse.json({ error: 'No brand given' }, { status: 400 })
+    const settings = await readSettings(admin, ownerId)
+    if (settings.starred == null) return NextResponse.json({ error: setupWords(tier, 'Stars need migration 430 in Supabase first.') }, { status: 500 })
+    const set = new Set(settings.starred)
+    if (body.on === false) set.delete(brandId); else set.add(brandId)
+    const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, starred: Array.from(set).slice(-500), updated_at: now })
+    if (error) return NextResponse.json({ error: dbWords(error.message) }, { status: 500 })
+    return NextResponse.json({ ok: true, starred: set.has(brandId) })
+  }
+
+  if (action === 'priorities') {
+    const priorities = readPriorities(body.priorities)
+    const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, priorities, updated_at: now })
+    if (error) {
+      const missing = /column .* does not exist|schema cache/i.test(error.message)
+      return NextResponse.json({ error: missing ? setupWords(tier, 'Saving your priorities needs migration 430 in Supabase first.') : dbWords(error.message) }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, priorities })
+  }
+
+  if (action === 'pass') {
+    // PASS from the live list, in one step: the brand is put on the creator's
+    // list as passed (or moved there from new or not a fit), never touching a
+    // brand already written, sent or requested. Undone with unskip.
+    if (!/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return NextResponse.json({ error: 'No brand given' }, { status: 400 })
+    const { data: dir, error: dErr } = await admin.from('trybe_directory')
+      .select('brand_id, name, website, categories, about, pay_text, rating, trybe_score, total_creators').eq('brand_id', brandId).maybeSingle()
+    if (dErr) return NextResponse.json({ error: dbWords(dErr.message) }, { status: 500 })
+    if (!dir) return NextResponse.json({ error: 'That brand is not in MVP\u2019s copy of TRYBE.' }, { status: 404 })
+    const { error: insErr } = await admin.from('trybe_brands').upsert({
+      user_id: ownerId, brand_id: dir.brand_id, name: dir.name, categories: dir.categories || [], website: dir.website, about: dir.about,
+      pay_text: dir.pay_text, rating: dir.rating, trybe_score: dir.trybe_score, total_creators: dir.total_creators,
+      status: 'skipped', fit_reason: 'Passed on by you from the live list.', updated_at: now,
+    }, { onConflict: 'user_id,brand_id', ignoreDuplicates: true })
+    if (insErr) return NextResponse.json({ error: dbWords(insErr.message) }, { status: 500 })
+    await admin.from('trybe_brands').update({ status: 'skipped', updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['new', 'not_fit'])
+    const { data: row } = await admin.from('trybe_brands').select('status').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle()
+    if (row?.status !== 'skipped') return NextResponse.json({ error: row ? `Not passed: it is ${row.status === 'drafted' ? 'in Ready to send' : row.status === 'sent' || row.status === 'sending' || row.status === 'already' ? 'already sent' : row.status}.` : 'Not passed: it could not be saved.' }, { status: 409 })
+    return NextResponse.json({ ok: true, status: 'skipped' })
   }
 
   if (action === 'adopt') {

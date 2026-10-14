@@ -180,12 +180,14 @@ export function readPay(text: string | null | undefined): PayRead {
 
 export const BROWSE_SORTS = ['match', 'picks', 'pay', 'creators', 'fit', 'newest'] as const
 export type BrowseSort = typeof BROWSE_SORTS[number]
-export const PAY_TYPES = ['any', 'flat', 'percent'] as const
+export const PAY_TYPES = ['any', 'flat', 'percent', 'both'] as const
 export type PayType = typeof PAY_TYPES[number]
 
 /** Does this pay line pass the pay-type filter? 'both' passes either. */
 export function payPasses(p: PayRead, want: PayType): boolean {
   if (want === 'any') return true
+  // Both: a flat fee and a % of sales together (Oink's "GMV plus flat").
+  if (want === 'both') return p.kind === 'both'
   return p.kind === 'both' || p.kind === want
 }
 
