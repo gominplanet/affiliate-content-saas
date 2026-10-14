@@ -23,6 +23,7 @@ import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore } from '@/lib/trybe-pick'
 import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId } from '@/lib/trybe-finder'
 import { amazonVideoPage } from '@/lib/brand-content'
+import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
@@ -629,13 +630,15 @@ export async function POST(request: Request) {
     const creator = await writerFacts(admin, ownerId)
     const f = await siteFacts(row)
     const facts = { name: row.name, categories: row.categories || [], about: row.about, siteSummary: f.summary, products: f.products, payText: row.pay_text }
+    // The creator's own messages to brands, for their voice (lib/trybe-voice).
+    const voice = readVoiceBody(body.voice)
     try {
       const msg = await createAnthropicClient().messages.create({
         model: MODEL, max_tokens: 500,
-        system: action === 'kickoff' ? KICKOFF_SYSTEM(BANNED_RULE) : FOLLOWUP_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: action === 'kickoff'
+        system: (action === 'kickoff' ? KICKOFF_SYSTEM(BANNED_RULE) : FOLLOWUP_SYSTEM(BANNED_RULE)) + (voice.length ? `\n${VOICE_RULE}` : ''),
+        messages: [{ role: 'user', content: (action === 'kickoff'
           ? kickoffUserPrompt({ coreMessage: settings.coreMessage, creator, brand: facts })
-          : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}` }],
+          : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}`) + voiceBlock(voice) }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_kickoff', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
@@ -934,6 +937,28 @@ export async function POST(request: Request) {
 
   // ── FINDER: stars, priorities, pass (migration 430 for the first two) ────
 
+  if (action === 'voice_check') {
+    // WRITING LIKE YOU (Seb, 2026-10-14: "check the history of messages
+    // written to brands (the ones not written by mvp)"). The page sends the
+    // creator's own messages from their TRYBE chats; the ones MVP wrote are
+    // left out here: its outreach messages and drafts, the core message, and
+    // anything like what the page says MVP suggested. Read only.
+    const raw = Array.isArray(body.candidates) ? (body.candidates as unknown[]).slice(0, 300) : []
+    const candidates: VoiceSample[] = raw.map(x => {
+      const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+      return { brand: String(o.brand || '').slice(0, 80), text: String(o.text || '').slice(0, 2000), at: Number(o.at) || 0 }
+    })
+    const settings = await readSettings(admin, ownerId)
+    const mine = await allRows<{ sent_message: string | null; draft: string | null; kickoff_draft?: string | null }>(() => admin.from('trybe_brands').select('*').eq('user_id', ownerId).order('brand_id'), 5000)
+    const mvpTexts = [
+      settings.coreMessage,
+      ...mine.rows.flatMap(r => [r.sent_message, r.draft, r.kickoff_draft].filter((t): t is string => typeof t === 'string' && !!t)),
+      ...(Array.isArray(body.mvpTexts) ? (body.mvpTexts as unknown[]).slice(0, 200).map(t => String(t || '').slice(0, 2000)) : []),
+    ]
+    const voice = pickVoice(candidates, mvpTexts)
+    return NextResponse.json({ ok: true, voice, read: candidates.length, mvpLeftOut: candidates.length - voice.length })
+  }
+
   if (action === 'amazon_match') {
     // THE AMAZON MATCH WHEREVER A TRYBE BRAND OR PRODUCT SHOWS (Seb,
     // 2026-10-14: "add the amazon match to most places"). Brands by id and
@@ -1225,6 +1250,8 @@ export async function POST(request: Request) {
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const creator = await writerFacts(admin, ownerId)
+    // The creator's own messages to brands, for their voice (lib/trybe-voice).
+    const draftVoice = readVoiceBody(body.voice)
     const { data: rows } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).in('brand_id', ids)
     const client = createAnthropicClient()
     const results = await Promise.all(((rows || []) as Array<Record<string, any>>).map(async (r) => { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1238,11 +1265,11 @@ export async function POST(request: Request) {
         const msg = await client.messages.create({
           model: MODEL,
           max_tokens: 500,
-          system: DRAFT_SYSTEM(BANNED_RULE),
+          system: DRAFT_SYSTEM(BANNED_RULE) + (draftVoice.length ? `\n${VOICE_RULE}` : ''),
           messages: [{ role: 'user', content: draftUserPrompt({
             coreMessage: settings.coreMessage, creator,
             brand: { name: r.name, categories: r.categories || [], about: r.about, payText: r.pay_text, website: r.website, siteSummary: summary, siteProducts: products },
-          }) }],
+          }) + voiceBlock(draftVoice) }],
         })
         try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
         const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
@@ -1416,6 +1443,8 @@ export async function POST(request: Request) {
     if (spend) return spend
     const settings = await readSettings(admin, ownerId)
     const creator = await writerFacts(admin, ownerId)
+    // The creator's own messages to brands, for their voice (lib/trybe-voice).
+    const voice = readVoiceBody(body.voice)
     try {
       // NO RATES ON TRYBE (Seb, 2026-10-14: "we should not ask for rates and
       // such when replying to trybe brands.. this is not like amazon"). The
@@ -1425,8 +1454,8 @@ export async function POST(request: Request) {
         const msg = await createAnthropicClient().messages.create({
           model: MODEL,
           max_tokens: 400,
-          system: REPLY_SYSTEM(BANNED_RULE),
-          messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) + extra }],
+          system: REPLY_SYSTEM(BANNED_RULE) + (voice.length ? `\n${VOICE_RULE}` : ''),
+          messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) + voiceBlock(voice) + extra }],
         })
         try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_reply', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
         return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)

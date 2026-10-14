@@ -24,6 +24,7 @@ import { afterAccept, readChat, type VideoPlan, type ChatRead, type AfterState }
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
+import { readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -130,8 +131,10 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
     if (kind === 'kickoff' && !fresh && b.kickoff_draft) { setComposer({ kind, text: b.kickoff_draft }); setNote(null); return }
     setWriting(true); setNote(null)
     try {
-      const d = await api({ action: kind, brandId: b.brand_id })
+      // Your own messages to brands, so it writes the way you do (useTrybeVoice).
+      const d = await api({ action: kind, brandId: b.brand_id, voice: readVoice() })
       setComposer({ kind, text: d.text })
+      rememberMvpText(d.text)
       if (kind === 'kickoff') onPatch({ kickoff_draft: d.text })
       if (!d.researched) setNote({ tone: 'warn', text: 'MVP could not read their website, so the ideas are general. Add a product of theirs before sending.' })
     } catch (e) { setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'MVP could not write it.' }) }

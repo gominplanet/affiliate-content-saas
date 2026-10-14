@@ -42,6 +42,7 @@ import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, AmazonLine, NO_FILTERS, filtersOn, type LiveAmazon } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
+import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
 import { type FinderFilters, type FilterId, type DirStats } from '@/lib/trybe-finder'
 
@@ -631,7 +632,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     for (let i = 0; i < ids.length; i += 4) {
       const chunk = ids.slice(i, i + 4)
       try {
-        const d = await api({ action: 'draft', brandIds: chunk })
+        // Your own messages to brands, so the first message writes the way you do.
+        const d = await api({ action: 'draft', brandIds: chunk, voice: readVoice() })
         for (const r of (d.results || []) as Array<{ ok: boolean }>) r.ok ? ok++ : failed++
       // The rest are counted too: a stop must not make them vanish from the total.
       } catch (e) { failed += ids.length - i; toast.error(e instanceof Error ? e.message : 'Draft failed'); break }

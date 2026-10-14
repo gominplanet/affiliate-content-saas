@@ -22,6 +22,7 @@ import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2
 import { requestTrybeApi } from '@/lib/extension-frame'
 import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
 import { replyBlanks } from '@/lib/trybe-outreach'
+import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
@@ -229,6 +230,10 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   const [beforeSuggest, setBeforeSuggest] = useState<string | null>(null)
   const [blanks, setBlanks] = useState<string[]>([])
   const ready = allowed && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
+  // WRITING LIKE YOU (Seb, 2026-10-14): your own messages to brands, read once
+  // a day, so every suggestion writes the way you do (useTrybeVoice).
+  const voice = useTrybeVoice(convos, me, myName, ready)
+  const [voiceOpen, setVoiceOpen] = useState(false)
 
   const loadList = useCallback(async (): Promise<Conversation[] | null> => {
     if (listing.current) return null
@@ -318,7 +323,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     setSuggesting(true); setSuggestNote(null)
     try {
       const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(120_000), body: JSON.stringify({
-        action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })),
+        action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })), voice: readVoice(),
       }) })
       const d = await r.json().catch(() => ({}))
       if (openRef.current !== id) return // another conversation is open now
@@ -326,6 +331,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
       // Suggest another keeps what the creator wrote themselves to go back to.
       setBeforeSuggest(b => b ?? reply)
       setReply(d.text)
+      rememberMvpText(d.text)
       setBlanks(Array.isArray(d.blanks) ? d.blanks : replyBlanks(d.text))
       setSendNote(null)
     } catch {
@@ -356,6 +362,8 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
       const mineNow = after.filter(m => !before.has(m.id) && flat(m.text) === flat(text))
       const seen = mineNow.length > 0
       if (seen) {
+        // A suggestion sent as it was is MVP's writing, never learned as yours.
+        if (beforeSuggest !== null) rememberMvpText(text)
         setReply(''); setBeforeSuggest(null); setBlanks([]); setSendNote({ tone: 'ok', text: 'Sent. It shows in the conversation on TRYBE.' })
         // A REPLY SENT HERE IS YOURS FOR CERTAIN: whatever id TRYBE gave its
         // sender is you, so every message from that id lines up as yours.
@@ -445,6 +453,23 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 </p>
               )}
               {suggestNote && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{suggestNote}</p>}
+              {/* What MVP learned your voice from, said, and how it went. */}
+              <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+                {voice.busy ? <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> {voice.busy}</span>
+                  : voice.error ? <span style={{ color: AMBER }}>{voice.error} <button onClick={() => void voice.refresh()} className="font-semibold underline">Try again</button></span>
+                  : voice.state && voice.state.voice.length ? <>
+                      Writing like you: learned from {voice.state.voice.length} of your own messages to brands.{' '}
+                      <button onClick={() => setVoiceOpen(o => !o)} className="font-semibold underline" style={{ color: PURPLE }}>{voiceOpen ? 'Hide them' : 'See them'}</button>{' '}
+                      <button onClick={() => void voice.refresh()} className="font-semibold underline" style={{ color: PURPLE }}>Read again</button>
+                    </>
+                  : voice.state ? <>MVP found none of your own messages to brands in your last {voice.state.chats} chats (it leaves out the ones MVP wrote), so suggestions use your core message. <button onClick={() => void voice.refresh()} className="font-semibold underline" style={{ color: PURPLE }}>Read again</button></>
+                  : null}
+              </div>
+              {voiceOpen && voice.state && (
+                <ul className="mt-1.5 space-y-1.5 max-h-56 overflow-y-auto rounded-lg border p-2 text-[12px]" style={{ borderColor: 'var(--border)' }}>
+                  {voice.state.voice.map((v, i) => <li key={i}><b>To {v.brand || 'a brand'}:</b> <span className="whitespace-pre-line">{v.text}</span></li>)}
+                </ul>
+              )}
               <div className="flex flex-wrap items-center gap-3 mt-2">
                 <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
