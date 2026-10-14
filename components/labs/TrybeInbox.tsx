@@ -441,7 +441,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 className="w-full rounded-lg border p-2.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
               {blanksLeft.length > 0 && (
                 <p className="text-[12px] mt-1.5 inline-flex items-start gap-1" style={{ color: AMBER }}>
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Fill in before sending: {blanksLeft.join(', ')}. MVP never guesses a rate, an address or a date for you.
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Fill in before sending: {blanksLeft.join(', ')}. MVP never guesses an address, a date or a number for you.
                 </p>
               )}
               {suggestNote && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{suggestNote}</p>}

@@ -49,7 +49,7 @@ import {
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
-  REPLY_SYSTEM, replyUserPrompt, replyBlanks,
+  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms,
   nextFreeAt, MAX_DAILY_CAP,
 } from '@/lib/trybe-outreach'
 
@@ -1417,15 +1417,24 @@ export async function POST(request: Request) {
     const settings = await readSettings(admin, ownerId)
     const creator = await writerFacts(admin, ownerId)
     try {
-      const msg = await createAnthropicClient().messages.create({
-        model: MODEL,
-        max_tokens: 400,
-        system: REPLY_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) }],
-      })
-      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_reply', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)
+      // NO RATES ON TRYBE (Seb, 2026-10-14: "we should not ask for rates and
+      // such when replying to trybe brands.. this is not like amazon"). The
+      // brand sets the pay on TRYBE; a suggestion that still talks money or
+      // terms is written again once, then refused rather than shown.
+      const ask = async (extra: string) => {
+        const msg = await createAnthropicClient().messages.create({
+          model: MODEL,
+          max_tokens: 400,
+          system: REPLY_SYSTEM(BANNED_RULE),
+          messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) + extra }],
+        })
+        try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_reply', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+        return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)
+      }
+      let text = await ask('')
+      if (text && talksTerms(text)) text = await ask('\n\n(Your last try talked about rates, pay, deliverables or terms. On TRYBE the brand sets the pay. Write it again without any of that.)')
       if (!text) return NextResponse.json({ error: 'The suggestion came back empty. Try again.' }, { status: 502 })
+      if (talksTerms(text)) return NextResponse.json({ error: 'The suggestion kept talking about rates or terms, which TRYBE brands set themselves, so it is not shown. Press Suggest another.' }, { status: 502 })
       return NextResponse.json({ ok: true, text, blanks: replyBlanks(text) })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not write a suggestion: ${e.message}` : 'MVP could not write a suggestion.' }, { status: 502 })

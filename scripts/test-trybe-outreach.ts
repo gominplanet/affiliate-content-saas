@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync, existsSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, replyUserPrompt, replyBlanks, nextFreeAt } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, talksTerms, replyUserPrompt, replyBlanks, nextFreeAt } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
@@ -384,6 +384,11 @@ check('a late answer for another conversation is dropped', /const current = open
   const pr = replyUserPrompt({ coreMessage: 'Hi', creator: [], brandName: 'Acme', messages: long })
   check('the reply prompt keeps the latest messages and drops the oldest first', pr.includes('message 39') && !pr.includes('message 0 ') && pr.length < 8000)
   check('an unknown sender is never called the creator', replyUserPrompt({ coreMessage: '', creator: [], brandName: 'A', messages: [{ mine: null, who: 'Zed', text: 'hello' }] }).includes('UNKNOWN SENDER (Zed): hello'))
+  // No rates on TRYBE (Seb, 2026-10-14: "this is not like amazon").
+  check('a TRYBE reply never talks rates: the brand sets the pay', /The BRAND sets the pay on TRYBE/.test(sys) && /NEVER mention, ask about or propose a rate/.test(sys) && !/\[your rate/.test(sys))
+  check('no TRYBE message writer talks rates: first message, after a yes, follow up', [readFileSync('lib/trybe-outreach.ts', 'utf8').slice(readFileSync('lib/trybe-outreach.ts', 'utf8').indexOf('export const DRAFT_SYSTEM'), readFileSync('lib/trybe-outreach.ts', 'utf8').indexOf('export const REPLY_SYSTEM')), readFileSync('lib/trybe-playbook.ts', 'utf8')].every((t) => /the brand sets the pay and TRYBE pays the creator/.test(t)) && (readFileSync('lib/trybe-playbook.ts', 'utf8').match(/the brand sets the pay and TRYBE pays the creator/g) || []).length === 2)
+  check('a reply about rates or terms is caught, an ordinary one is not', talksTerms('Our rate for this type of collaboration would be [your rate], and we would love to know what a partnership could look like on your end.') && talksTerms('Could you share your budget for this?') && !talksTerms('We will request the Light Up harness sample on TRYBE and start filming this week.') && !talksTerms('The sample package arrived, thank you! Budget-friendly and sturdy.'))
+  check('a suggestion that keeps talking terms is written again once, then refused, never shown', /if \(text && talksTerms\(text\)\) text = await ask\(/.test(readFileSync('app/api/labs/trybe/route.ts', 'utf8')) && /kept talking about rates or terms/.test(readFileSync('app/api/labs/trybe/route.ts', 'utf8')))
   check('blanks are found once each', JSON.stringify(replyBlanks('Our rate is [your rate]. Ship to [your address]. [your rate]')) === JSON.stringify(['[your rate]', '[your address]']) && replyBlanks('no blanks').length === 0)
   const ROUTE3 = readFileSync('app/api/labs/trybe/route.ts', 'utf8'), INBOX3 = readFileSync('components/labs/TrybeInbox.tsx', 'utf8')
   const sr = ROUTE3.slice(ROUTE3.indexOf("action === 'suggest_reply'"), ROUTE3.indexOf("action === 'edit'"))
