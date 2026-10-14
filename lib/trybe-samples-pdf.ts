@@ -95,22 +95,47 @@ export function renderSamplesPdf(r: SamplesReport, assets: BrandAssets = {}): Ar
   tiles.forEach(([n, label, c], i) => tile(k, M + i * (tw + 12), y, tw, String(n), label, c))
   y += 98
 
-  k.font(9.5, 'heavy'); k.color(r.chase.length ? BRAND.amber : BRAND.soft); doc.text(r.chase.length ? 'CHASE THESE' : 'NOTHING TO CHASE', M, y, { charSpace: 1 })
-  y += 14
-  if (!r.chase.length) {
-    k.font(10.5); k.color(BRAND.soft); doc.text(k.safe(`No sample has been on the way more than ${CHASE_DAYS} days.`), M, y + 4)
-  } else {
-    for (const c of r.chase.slice(0, 8)) {
-      k.fill(BRAND.amber); doc.circle(M + 4, y + 1, 2.4, 'F')
-      k.font(10.5, 'bold'); k.color(BRAND.ink); doc.text(k.safe(`${c.brand}, ${c.product}`), M + 14, y + 4)
-      const bw = doc.getTextWidth(k.safe(`${c.brand}, ${c.product}`)) + 6
-      k.font(10.5); k.color(BRAND.soft); doc.text(k.safe(`asked ${c.days} days ago. Ask in their TRYBE chat when it ships.`), M + 14 + bw, y + 4, { maxWidth: W - 2 * M - 20 - bw })
-      y += 18
-    }
-  }
-
   // ── One section per brand, from the cover on ──────────────────────────
   const newPage = () => { doc.addPage(); drawHeader(k, 'Your TRYBE samples', `As of ${r.asOf}`); return 60 }
+
+  // CHASE THESE, two lines each (Seb, 2026-10-14: "all messed up"): the
+  // brand and product in bold across the full width, wrapped when long, and
+  // the note under it. The note used to take only the width the name left,
+  // so a long product name pushed it into a column one letter wide.
+  // One line per brand: you chase a brand once, in its chat, not each product.
+  const byBrand = new Map<string, { brand: string; products: string[]; most: number; least: number }>()
+  for (const c of r.chase) {
+    const g = byBrand.get(c.brand) || { brand: c.brand, products: [], most: c.days, least: c.days }
+    g.products.push(c.product); g.most = Math.max(g.most, c.days); g.least = Math.min(g.least, c.days)
+    byBrand.set(c.brand, g)
+  }
+  const groups = Array.from(byBrand.values()).sort((a, b) => b.most - a.most || b.products.length - a.products.length)
+  k.font(9.5, 'heavy'); k.color(r.chase.length ? BRAND.amber : BRAND.soft)
+  doc.text(r.chase.length ? `CHASE THESE (${r.chase.length} SAMPLE${r.chase.length === 1 ? '' : 'S'}, ${groups.length} BRAND${groups.length === 1 ? '' : 'S'})` : 'NOTHING TO CHASE', M, y, { charSpace: 1 })
+  y += 16
+  const textW = W - 2 * M - 14
+  if (!r.chase.length) {
+    k.font(10.5); k.color(BRAND.soft); doc.text(k.safe(`No sample has been on the way more than ${CHASE_DAYS} days.`), M, y + 4)
+    y += 14
+  } else {
+    for (const g of groups) {
+      const n = g.products.length
+      const head = n === 1 ? `${g.brand}: ${g.products[0]}` : `${g.brand}: ${n} samples`
+      const days = g.least === g.most ? `${g.most}` : `${g.least} to ${g.most}`
+      const what = n === 1 ? '' : `${g.products.slice(0, 2).join('; ')}${n > 2 ? `; and ${n - 2} more` : ''}. `
+      const note = `${what}Asked ${days} days ago. Ask in their TRYBE chat when ${n === 1 ? 'it ships' : 'they ship'}.`
+      k.font(9.5); const noteLines = k.lines(note, textW).slice(0, 3)
+      k.font(10.5, 'bold'); const headLines = k.lines(head, textW).slice(0, 2)
+      if (y + 13 * headLines.length + 12 * noteLines.length + 10 > PAGE.BOTTOM) { y = newPage(); k.font(10.5, 'bold') }
+      k.fill(BRAND.amber); doc.circle(M + 4, y + 1, 2.4, 'F')
+      k.color(BRAND.ink)
+      headLines.forEach((l, i) => doc.text(l, M + 14, y + 4 + i * 13))
+      y += headLines.length * 13
+      k.font(9.5); k.color(BRAND.soft)
+      noteLines.forEach((l, i) => doc.text(l, M + 14, y + 3 + i * 12))
+      y += noteLines.length * 12 + 6
+    }
+  }
   y += 26
   if (y + 150 > PAGE.BOTTOM) y = newPage()
   y = sectionTitle(k, y, 'By brand', 'Brands with samples still open come first.')
