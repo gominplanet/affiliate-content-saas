@@ -176,7 +176,7 @@ check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.
 {
   const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
   check('brands TRYBE no longer lists are counted apart and left out of matches',
-    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 5
+    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 6
     && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
   check('the brands new on TRYBE since the first count are counted from when each was first seen',
     /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)
