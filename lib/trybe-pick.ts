@@ -36,8 +36,16 @@ export interface PickInput {
   commissionPct?: number | null
   /** What its TRYBE page and website say about how it treats creators. */
   program?: CreatorProgram | null
-  /** A flat fee per video, in dollars, when its pay says one. */
+  /** Dollars per approved video (lib/trybe-pay estimatePay), when known. */
   perVideo?: number | null
+  /** Where that figure comes from: your results, members', or its terms. */
+  perVideoBasis?: 'yours' | 'members' | 'terms' | 'variable' | 'unknown' | null
+  /** It pays a guaranteed retainer. */
+  guaranteed?: boolean
+  /** How crowded it is (lib/trybe-finder crowdOf). */
+  crowd?: 'open' | 'filling' | 'crowded' | null
+  /** It takes statics (photo ads), from its own words; null when it does not say. */
+  statics?: boolean | null
   /** Whether it sends samples, when TRYBE says. */
   samples?: boolean | null
   /** Days since it joined TRYBE, when TRYBE says. */
@@ -51,7 +59,7 @@ export interface PickInput {
 
 /** What a creator can say matters to them (Seb, 2026-10-14, after Rob's Oink
  *  Blue video: "build all 4"). Each part of the score belongs to one. */
-export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program'
+export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program' | 'statics'
 export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
   { id: 'competition', label: 'Few creators', says: 'Fewer creators means more of the budget for you. Not on TikTok Shop counts here too.' },
   { id: 'adSpend', label: 'Spends on ads', says: 'Meta ads running now and videos in TRYBE\u2019s Top 100.' },
@@ -62,11 +70,20 @@ export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
   { id: 'newBrand', label: 'New on TRYBE', says: 'Joined in the last month: few creators have found it yet.' },
   { id: 'amazon', label: 'On Amazon too', says: 'Videos you already made of its products, and its Creator Connections campaigns.' },
   { id: 'program', label: 'Looks after creators', says: 'Retainers, calls and briefs, from its own words.' },
+  { id: 'statics', label: 'Takes statics', says: 'Brands that also take photo (static) ads, from their own words. Set by What you make.' },
 ]
+/** What you make (Oink's Videos, Statics or Both): the weight of 'statics'. */
+export const FORMATS: Array<{ w: Weight; label: string; says: string }> = [
+  { w: 0, label: 'Videos', says: 'You film videos: statics do not count.' },
+  { w: 1, label: 'Videos and statics', says: 'Brands that also take statics rank a little higher.' },
+  { w: 2, label: 'Mostly statics', says: 'Brands that take statics rank first.' },
+]
+/** Factors set in Your priorities' grid; statics is set by What you make. */
+export const GRID_FACTORS = FACTORS.filter((f) => f.id !== 'statics')
 /** 0: does not matter, 1: normal, 2: matters a lot. */
 export type Weight = 0 | 1 | 2
 export type Priorities = Record<Factor, Weight>
-export const DEFAULT_PRIORITIES: Priorities = { competition: 1, adSpend: 1, perVideo: 1, percent: 1, paysCreators: 1, samples: 1, newBrand: 1, amazon: 1, program: 1 }
+export const DEFAULT_PRIORITIES: Priorities = { competition: 1, adSpend: 1, perVideo: 1, percent: 1, paysCreators: 1, samples: 1, newBrand: 1, amazon: 1, program: 1, statics: 0 }
 
 /** A saved priorities object, read safely: anything missing or odd is normal. Pure. */
 export function readPriorities(v: unknown): Priorities {
@@ -98,6 +115,22 @@ export function creatorProgramOf(text: string | null | undefined): CreatorProgra
     coaching: /\b(weekly|creator|group|coaching|1:1|one[- ]on[- ]one|training) calls?\b|\bcreator coaching\b|\bwe (?:train|coach)\b|\bcreative briefs?\b|\bcreator (?:community|program)\b/.test(t),
     discord: /\bdiscord\b/.test(t),
   }
+}
+
+/** Whether a brand takes statics (photo ads), from its TRYBE entry's format
+ *  fields or its own description. True or not said (null): never "no", since
+ *  a brand that does not mention them may still take them. Pure. */
+export function staticsOf(raw: unknown, about: string | null | undefined): boolean | null {
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+  const fields = ['contentTypes', 'acceptedContentTypes', 'formats', 'contentFormats', 'mediaTypes', 'assetTypes']
+  for (const k of fields) {
+    const v = o[k]
+    const list = Array.isArray(v) ? v.map((x) => String(typeof x === 'object' && x ? (x as Record<string, unknown>).name ?? (x as Record<string, unknown>).value ?? '' : x)) : typeof v === 'string' ? [v] : []
+    if (list.some((x) => /static|image|photo|carousel/i.test(x))) return true
+  }
+  const t = String(about || '').toLowerCase()
+  if (/\bstatics?\b(?! electricity)|\bstatic (?:ads?|images?|content|creatives?|posts?)\b|\bimage ads?\b|\bphoto ads?\b|\bugc photos?\b|\bproduct photos? (?:and|or|&) videos?\b|\bphotos? (?:and|or|&) videos?\b|\bvideos? (?:and|or|&) (?:photos?|images?|statics?)\b/.test(t)) return true
+  return null
 }
 
 export interface Pick { score: number; reasons: PickReason[]; read: number; parts: Partial<Record<Factor, number>> }
@@ -171,10 +204,19 @@ export function pickScore(p: PickInput): Pick {
   const fee = p.perVideo
   if (typeof fee === 'number' && fee > 0) {
     read++
-    if (fee >= 50) { add('perVideo', 15); reasons.push({ text: `$${fee} per video`, tone: 'good' }) }
-    else if (fee >= 20) { add('perVideo', 8); reasons.push({ text: `$${fee} per video`, tone: 'good' }) }
-    else { add('perVideo', 3); reasons.push({ text: `$${fee} per video`, tone: 'info' }) }
+    const d = fee % 1 ? fee.toFixed(2) : String(fee)
+    const said = p.perVideoBasis === 'yours' ? `You earn $${d} per approved video with it`
+      : p.perVideoBasis === 'members' ? `Members earn about $${d} per approved video`
+        : `$${d} per video`
+    if (fee >= 50) { add('perVideo', 15); reasons.push({ text: said, tone: 'good' }) }
+    else if (fee >= 20) { add('perVideo', 8); reasons.push({ text: said, tone: 'good' }) }
+    else { add('perVideo', 3); reasons.push({ text: said, tone: 'info' }) }
   }
+  if (p.guaranteed) { add('perVideo', 6); reasons.push({ text: 'Guaranteed pay (a retainer)', tone: 'good' }) }
+  // OPEN, FILLING, CROWDED adds to the creator count, which is already scored:
+  // only a brand filling fast or crowded by output moves it.
+  if (p.crowd === 'filling' && typeof c === 'number' && c < 40) { add('competition', -6); reasons.push({ text: 'Filling: creators are joining fast', tone: 'info' }) }
+  else if (p.crowd === 'crowded' && typeof c === 'number' && c < 150) { add('competition', -10); reasons.push({ text: 'Crowded: many videos in the last 30 days', tone: 'bad' }) }
   if (p.samples === true) { add('samples', 6); reasons.push({ text: 'Sends samples', tone: 'good' }) }
   else if (p.samples === false) { add('samples', -4); reasons.push({ text: 'No samples: you buy the product to film it', tone: 'info' }) }
   if (typeof p.daysOnTrybe === 'number' && p.daysOnTrybe >= 0) {
@@ -192,6 +234,7 @@ export function pickScore(p: PickInput): Pick {
     if (p.program.coaching) { add('program', 6); reasons.push({ text: 'Trains its creators (calls, briefs or a creator program)', tone: 'good' }) }
     if (p.program.discord) reasons.push({ text: 'Has a Discord: brands like this often pick creators there, so join it too', tone: 'info' })
   }
+  if (p.statics === true) { add('statics', 10); reasons.push({ text: 'Takes statics (photo ads)', tone: 'good' }) }
   if (p.tiktokShop === true) { read++; add('competition', -10); reasons.push({ text: 'Sells on TikTok Shop too: more creators competing', tone: 'bad' }) }
   else if (p.tiktokShop === false) {
     read++

@@ -86,7 +86,7 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   check('a clean opening says so', clean.ok && clean.notes.length === 1 && clean.notes[0].tone === 'good')
   check('a long first sentence is flagged', checkHook('This is the shirt that you will want to wear every single day of the week because it is just so very comfortable and cool.').notes.some((n) => /words\. Hooks that stop the scroll/.test(n.text)))
   const r = read('app/api/labs/trybe/route.ts')
-  check('new openings are checked by the same rules before they are offered', /action === 'hook_fix'/.test(r) && /const kept = lines\.filter\(l => !checkHook\(l, brandName\)/.test(r) && /commissionPct: readPay\(r\.pay_text\)\.percent/.test(r))
+  check('new openings are checked by the same rules before they are offered', /action === 'hook_fix'/.test(r) && /const kept = lines\.filter\(l => !checkHook\(l, brandName\)/.test(r) && /commissionPct: payBy\.get\(r\.brand_id\)\?\.percent \?\? null/.test(r))
   const ui = read('components/labs/TrybeOutreach.tsx')
   check('the hook check is on What\'s working, and Best bets shows up to 6 reasons', /tab === 'working' && <TrybeHookCheck \/>/.test(ui) && /slice\(0, 6\)\.map\(r =>/.test(ui))
   const wkUi = read('components/labs/TrybeWeek.tsx')

@@ -14536,6 +14536,12 @@ const TRYBE_API_ALLOW = [
   // The creator's own sample requests (1.46.5, Seb 2026-10-13): what they
   // asked each brand for and where it stands. Read only.
   { method: 'GET', re: /^\/backend\/api\/creator\/sample-requests(\?[\w=&%.-]*)?$/ },
+  // 1.47.0 (Your ads, live; Seb 2026-10-14): the creator's own results on
+  // TRYBE (earned, live ads, impressions, clicks, hook rate, watch time) for
+  // 7, 14 or 30 days, per video and per brand. Read only.
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/analytics(\/submissions)?(\?[\w=&%.,-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/stats(\?[\w=&%.-]*)?$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/(v2\/)?submissions\/[A-Za-z0-9-]{6,80}\/analytics(\?[\w=&%.-]*)?$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never

@@ -14,6 +14,7 @@ import { Loader2, TrendingUp, Layers, Rocket, RotateCcw } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, judgeBrands } from '@/lib/trybe-mybrands'
 import { stageOf, type StageRead } from '@/lib/trybe-finder'
+import { readAdWinners } from '@/components/labs/useTrybeAds'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -29,11 +30,13 @@ export default function TrybeStage({ canRead, onGo }: { canRead: boolean; onGo: 
     if (!canRead) return
     let gone = false
     setLoading(true); setError(null)
-    requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all')
-      .then((r) => {
+    // Your ads too (SCOUT 1.47.0): brands winning on ads count as winners.
+    // Not read (an older SCOUT) judges by approvals and pay, as before.
+    Promise.all([requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all'), readAdWinners().catch(() => null)])
+      .then(([r, ads]) => {
         if (gone) return
         if (!r.ok) { setError('MVP could not read your TRYBE numbers just now, so your stage is not known.'); return }
-        setRead(stageOf(judgeBrands(readBrandStats(r.json))))
+        setRead(stageOf(judgeBrands(readBrandStats(r.json)), ads))
       })
       .catch(() => { if (!gone) setError('MVP could not read your TRYBE numbers just now, so your stage is not known.') })
       .finally(() => { if (!gone) setLoading(false) })
@@ -70,6 +73,11 @@ export default function TrybeStage({ canRead, onGo }: { canRead: boolean; onGo: 
         <div className="min-w-0">
           <p className="text-[14.5px] font-bold">{read.title}</p>
           <p className="text-[13px]" style={{ color: 'var(--text-2)' }}>{read.says}</p>
+          {read.adWins.length > 0 && (
+            <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>
+              <span className="font-semibold" style={{ color: GREEN }}>Winning on ads:</span> {read.adWins.slice(0, 3).map((a) => `${a.brand} (${a.why})`).join('; ')}
+            </p>
+          )}
           <p className="text-[12px] mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
             <button onClick={() => onGo('brands')} className="font-semibold underline" style={{ color: PURPLE }}>See My brands</button>
             {read.stage === 'double' && <button onClick={() => onGo('week')} className="font-semibold underline" style={{ color: PURPLE }}>Plan their videos in This week</button>}

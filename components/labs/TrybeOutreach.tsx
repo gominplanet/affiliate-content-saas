@@ -40,11 +40,12 @@ import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, AmazonLine, NO_FILTERS, filtersOn, type LiveAmazon } from '@/components/labs/TrybeFinderControls'
+import TrybeAds from '@/components/labs/TrybeAds'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, NewChip, StaticsChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
-import { type FinderFilters, type FilterId, type DirStats } from '@/lib/trybe-finder'
+import { type FinderFilters, type FilterId, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
 
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
@@ -108,6 +109,8 @@ interface LiveBrand {
   meta_ads?: number | null; meta_ads_checked_at?: string | null
   /** The brand on Amazon, TRYBE's own numbers, and the creator's star. */
   amazon?: LiveAmazon | null; stats?: DirStats | null; starred?: boolean
+  /** What a video pays (lib/trybe-pay), how crowded, new, and statics. */
+  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; is_new?: boolean; statics?: boolean | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -117,11 +120,11 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
 type LiveSort = 'match' | 'picks' | 'pay' | 'creators' | 'fit' | 'newest'
-type LivePay = 'any' | 'flat' | 'percent' | 'both'
+type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
   { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
-  { id: 'pay', label: 'Highest pay', says: 'Highest pay first: flat fees by amount, then % of sales.' },
+  { id: 'pay', label: 'Highest pay', says: 'Highest pay first: what a video pays (your results, members\u2019 results, or its flat fee and retainer), then % of sales.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
@@ -131,12 +134,17 @@ const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'flat', label: 'Flat fee' },
   { id: 'percent', label: '% of sales' },
   { id: 'both', label: '% plus a fee' },
+  { id: 'adspend', label: '% of ad spend' },
+  { id: 'guaranteed', label: 'Guaranteed' },
 ]
+const PAY_WORD: Record<LivePay, string> = { any: 'anything', flat: 'a flat fee', percent: 'a % of sales', both: 'a fee and a % of sales together', adspend: 'a % of ad spend', guaranteed: 'a guaranteed retainer' }
 const PAY_SAYS: Record<LivePay, string> = {
   any: 'Every brand, whatever it pays.',
   flat: 'Brands that pay a set amount per video first.',
   percent: 'Brands that pay a commission on what your videos sell first.',
   both: 'Brands that pay a flat fee per video and a % of sales together.',
+  adspend: 'Brands that pay a % of what they spend running your videos as ads.',
+  guaranteed: 'Brands that pay a guaranteed retainer for a set number of videos.',
 }
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
@@ -366,7 +374,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
-    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean } | null>(null)
+    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1590,7 +1598,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {live && !live.brands.length && !liveLoading && (
               <p className="text-[13px]" style={soft}>
                 {payType !== 'any' && (live.payOther ?? 0) > 0
-                  ? <>No brand here pays {payType === 'flat' ? 'a flat fee' : payType === 'both' ? 'a fee and a % of sales together' : 'a % of sales'} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
+                  ? <>No brand here pays {PAY_WORD[payType]} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
                   : filters.starred && !nameQ.trim() && !Object.values(live.hiddenBy || {}).some(n => (n ?? 0) > 0) ? 'No starred brands yet. Press the star on a brand to keep it here.'
                   : filtersOn(filters) || nameQ.trim() ? <>No brand passes these filters. <button onClick={() => { setFilters(NO_FILTERS); setNameQ('') }} className="font-semibold underline" style={{ color: PURPLE }}>Clear filters</button></>
                   : hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'No TRYBE brands to show yet. Press Refresh from TRYBE to collect the list.'}
@@ -1617,7 +1625,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+                        <NewChip on={b.is_new} />
+                        <CrowdChip crowd={b.crowd} windowDays={live?.crowdDays} />
+                        <PayChip est={b.pay_est} payText={b.pay_text} />
+                        <StaticsChip on={b.statics} />
                         {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE."><Star size={10} /> TRYBE score {b.trybe_score}</span>}
                         {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={b.fit_score >= FIT_STRONG ? { background: 'rgba(22,163,74,0.14)', color: GREEN } : { background: 'rgba(180,83,9,0.10)', color: AMBER }}
                           title={`Fit ${b.fit_score} of 100: MVP's AI check of how well what this brand sells matches your niches and keywords, from its TRYBE profile and website. ${FIT_STRONG}+ is a strong fit.`}>Fit {b.fit_score}</span>}
@@ -1673,7 +1684,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {live && payType !== 'any' && ((live.payUnknown ?? 0) + (live.payOther ?? 0)) > 0 && (
               <p className="text-[12px] mt-3" style={soft}>
                 {live.payUnknown ? `TRYBE's brand list does not say what ${live.payUnknown.toLocaleString()} of these brands pay, so they are listed after the ones that do. Open a brand on TRYBE to see its pay. ` : ''}
-                {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying only ${payType === 'flat' ? 'a % of sales' : payType === 'both' ? 'one of the two' : 'a flat fee'} ${live.payOther === 1 ? 'is' : 'are'} hidden. ` : ''}
+                {live.payOther ? `${live.payOther.toLocaleString()} brand${live.payOther === 1 ? '' : 's'} paying ${payType === 'flat' ? 'only a % of sales' : payType === 'both' ? 'only one of the two' : payType === 'percent' ? 'only a flat fee' : 'another way'} ${live.payOther === 1 ? 'is' : 'are'} hidden. ` : ''}
                 <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button>
               </p>
             )}
@@ -1818,6 +1829,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
         directory={inboxDirectory} />}
 
+      {tab === 'brands' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
           isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} poolOptOut={poolOptOut} onPoolOptOut={setPoolOptOut} />

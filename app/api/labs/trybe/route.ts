@@ -20,8 +20,9 @@
 // reloaded, or open twice, cannot send more than the cap allows.
 
 import { outreachNiche } from '@/lib/outreach-niche'
-import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId } from '@/lib/trybe-finder'
+import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
@@ -312,6 +313,53 @@ async function amazonContext(admin: Db, ownerId: string, names: string[]): Promi
   return { videos, storefront, campaigns, notes }
 }
 
+/** The snapshot a month back, for OPEN, FILLING or CROWDED (lib/trybe-finder
+ *  crowdOf). Read once in a while per server, not on every search. Null while
+ *  MVP has less than a week of snapshots. */
+let baselineCache: { at: number; base: { snap: Snapshot; days: number } | null } | null = null
+async function crowdBaseline(admin: Db, today: string): Promise<{ snap: Snapshot; days: number } | null> {
+  if (baselineCache && Date.now() - baselineCache.at < 30 * 60_000) return baselineCache.base
+  let base: { snap: Snapshot; days: number } | null = null
+  try {
+    const { data: keys } = await admin.from('trybe_directory_meta').select('key').like('key', 'snap:%').limit(100)
+    const pick = pickBaseline(((keys || []) as Array<{ key: string }>).map(k => k.key), today)
+    if (pick) {
+      const { data: row } = await admin.from('trybe_directory_meta').select('value').eq('key', pick.key).maybeSingle()
+      if (row?.value && typeof row.value === 'object') base = { snap: row.value as Snapshot, days: pick.days }
+    }
+  } catch { base = null }
+  baselineCache = { at: Date.now(), base }
+  return base
+}
+
+/** When MVP first collected TRYBE's list (the oldest first sighting). */
+let firstEverCache: string | null | undefined
+async function firstCollected(admin: Db): Promise<string | null> {
+  if (firstEverCache !== undefined) return firstEverCache
+  const { data, error: e } = await admin.from('trybe_directory').select('first_seen_at').not('first_seen_at', 'is', null).order('first_seen_at', { ascending: true }).limit(1)
+  if (e) return null
+  firstEverCache = ((data || [])[0] as { first_seen_at?: string } | undefined)?.first_seen_at ?? null
+  return firstEverCache
+}
+
+/** For each brand: what members earn per approved video with it (pooled, 5
+ *  members at least), and what this member earned. Empty, never wrong, when
+ *  members' numbers are not set up (migration 428). */
+async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ members: Map<string, number>; yours: Map<string, { earnings: number; approved: number }> }> {
+  const members = new Map<string, number>(), yours = new Map<string, { earnings: number; approved: number }>()
+  const rows: MemberRow[] = []
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error: e } = await admin.from('trybe_member_stats').select('user_id, brand_id, approved, rejected, earnings').in('brand_id', ids.slice(i, i + 200))
+    if (e) return { members, yours }
+    for (const r of (data || []) as Array<Record<string, unknown>>) {
+      rows.push({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: r.approved == null ? null : Number(r.approved), rejected: r.rejected == null ? null : Number(r.rejected), earnings: r.earnings == null ? null : Number(r.earnings) } as MemberRow)
+    }
+  }
+  for (const [id, p] of poolBrands(rows)) if (p.payPerApproved != null) members.set(id, p.payPerApproved)
+  for (const r of rows) if (r.user_id === ownerId && (r.approved ?? 0) > 0 && (r.earnings ?? 0) > 0) yours.set(r.brand_id, { earnings: r.earnings as number, approved: r.approved as number })
+  return { members, yours }
+}
+
 /** A brand's Amazon match as the page shows it, with links. */
 function amazonLive(a: AmazonOf) {
   return { ...a, videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[], productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null }
@@ -418,6 +466,18 @@ export async function POST(request: Request) {
       const missing = /does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? setupWords(tier, 'The TRYBE directory needs migration 417 in Supabase first.') : error.message }, { status: 500 })
     }
+    // TODAY'S SNAPSHOT (creators and videos per brand), for OPEN, FILLING or
+    // CROWDED: the last 30 days are today against a month ago. Kept in the
+    // meta table, a row a day for SNAPSHOT_KEEP_DAYS days. A failure here
+    // never fails the collection.
+    try {
+      const key = snapshotKey(now)
+      const { data: snapRow } = await admin.from('trybe_directory_meta').select('value').eq('key', key).maybeSingle()
+      const snap = mergeSnapshot((snapRow?.value ?? null) as Snapshot | null, rows, trusted)
+      await admin.from('trybe_directory_meta').upsert({ key, value: snap, updated_at: now })
+      const old = snapshotKey(new Date(Date.now() - SNAPSHOT_KEEP_DAYS * 86_400_000).toISOString())
+      await admin.from('trybe_directory_meta').delete().like('key', 'snap:%').lt('key', old)
+    } catch { /* the snapshot is extra: the brands are saved */ }
     // What TRYBE says creators earn with each brand (migration 425), written
     // on its own so a database without the column never fails the collection.
     // Same rule as every other shared field: a member fills a missing bucket,
@@ -813,6 +873,24 @@ export async function POST(request: Request) {
     const { videos, storefront, campaigns, notes: amazonNotes } = await amazonContext(admin, ownerId, rows.map(r => String(r.name || '')))
     const amazonBy = new Map(rows.map(r => [r.brand_id as string, amazonOf(String(r.name || ''), { videos, storefront, campaigns, today })]))
     const statsBy = new Map(rows.map(r => [r.brand_id as string, readDirStats(r.raw)]))
+    // WHAT A VIDEO PAYS (lib/trybe-pay): TRYBE's own pay lines, read again
+    // from the kept entry, then your results and members' with the brand.
+    const results = await payResults(admin, ownerId, rows.map(r => r.brand_id as string))
+    const linesBy = new Map(rows.map(r => [r.brand_id as string, payLines(r.raw, r.pay_text)]))
+    const payBy = new Map(rows.map(r => [r.brand_id as string, payReadOf(linesBy.get(r.brand_id) || [])]))
+    const estBy = new Map(rows.map(r => [r.brand_id as string, estimatePay({ lines: linesBy.get(r.brand_id) || [], yours: results.yours.get(r.brand_id) ?? null, members: results.members.get(r.brand_id) ?? null })]))
+    // HOW CROWDED: today against MVP's snapshot of about a month ago.
+    const base = await crowdBaseline(admin, now)
+    // NEW: TRYBE's join date, or MVP's first sighting after its first collection.
+    const firstEver = await firstCollected(admin)
+    const crowdBy = new Map(rows.map(r => {
+      const st = statsBy.get(r.brand_id)
+      return [r.brand_id as string, crowdOf({
+        creators: typeof r.total_creators === 'number' ? r.total_creators : null,
+        recent30: st?.videos30d ?? null,
+        then: base?.snap[r.brand_id] ?? null, videosNow: st?.videosApproved ?? null, days: base?.days ?? null,
+      })]
+    }))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -823,16 +901,20 @@ export async function POST(request: Request) {
       tiktokShop: r.socials_checked_at ? (r.tiktok_shop === true ? true : r.tiktok_shop === false || r.tiktok_handle ? false : null) : null,
       tiktokHandle: r.tiktok_handle ?? null,
       earningsBucket: r.earnings_bucket ?? null,
-      commissionPct: readPay(r.pay_text).percent,
+      commissionPct: payBy.get(r.brand_id)?.percent ?? null,
       program: creatorProgramOf(`${r.about || ''} ${r.site_text || ''}`),
-      perVideo: readPay(r.pay_text).dollars,
+      perVideo: estBy.get(r.brand_id)?.dollars ?? null,
+      perVideoBasis: estBy.get(r.brand_id)?.basis ?? null,
+      guaranteed: !!payBy.get(r.brand_id)?.kinds?.includes('retainer'),
+      crowd: crowdBy.get(r.brand_id)?.level ?? null,
+      statics: staticsOf(r.raw, r.about),
       samples: statsBy.get(r.brand_id)?.samples ?? null,
       daysOnTrybe: (() => { const j = statsBy.get(r.brand_id)?.joinedAt; return j ? Math.max(0, Math.floor((Date.now() - Date.parse(j)) / 86_400_000)) : null })(),
       paidOut: statsBy.get(r.brand_id)?.paidOut ?? null,
       amazon: amazonBy.get(r.brand_id) ?? null,
     })
     const matchedAll = rows
-      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: readPay(r.pay_text), pick: pickOf(r) }))
+      .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: payBy.get(r.brand_id) ?? readPay(r.pay_text), pick: pickOf(r) }))
       .filter(x => direct || !terms.length || x.match > 0)
     // THE FILTERS: a brand that fails one is hidden and counted; a brand
     // TRYBE gave no number for stays, after the ones that pass, and is
@@ -841,7 +923,7 @@ export async function POST(request: Request) {
     const unknownBy: Partial<Record<FilterId, number>> = {}
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
-      const c = filterCheck({ perVideo: x.pay.dollars, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id) }, filters)
+      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       if (!c.pass) return false
       for (const f of c.unknown) unknownBy[f] = (unknownBy[f] ?? 0) + 1
@@ -887,8 +969,11 @@ export async function POST(request: Request) {
     const fit = (id: string) => judgedNo(id) ? -2 : fitScore(id) ?? -1
     const knownFirst = (a: typeof ranked[number], b: typeof ranked[number]) => (unknownOf.get(a.r.brand_id) ?? 0) - (unknownOf.get(b.r.brand_id) ?? 0)
     const weighed = (x: typeof ranked[number]) => weighScore(x.pick, priorities)
+    // Highest pay: the figure per approved video (yours, members', or its
+    // fixed terms) leads, then a % of sales, then brands with no pay given.
+    const payOrder = (x: typeof ranked[number]) => { const d = estBy.get(x.r.brand_id)?.dollars; return d != null ? 1_000_000 + d * 100 + (x.pay.percent ?? 0) : payRank(x.pay) }
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
-      (sort === 'pay' ? payRank(b.pay) - payRank(a.pay) || byMatch(a, b)
+      (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
@@ -911,6 +996,8 @@ export async function POST(request: Request) {
       capped: !direct && rows.length >= (rpc.error ? 800 : pool),
       hiddenBy, unknownBy, amazonNotes,
       amazonVideos: videos.length,
+      // Days of MVP's own snapshots the crowd words compare with (null: under a week so far).
+      crowdDays: base?.days ?? null,
       priorities, prioritiesSaved: settings.priorities != null, starsSaved: settings.starred != null,
       // What TRYBE's list sends, seen not guessed (admin only).
       ...(tier === 'admin' ? { rawKeys: rawKeys(rows.map(r => r.raw)) } : {}),
@@ -918,7 +1005,11 @@ export async function POST(request: Request) {
         const m = mineBy.get(r.brand_id)
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
-          pay_text: r.pay_text, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed } : null })(),
+          crowd: crowdBy.get(r.brand_id) ?? null,
+          is_new: isNewBrand({ joinedAt: statsBy.get(r.brand_id)?.joinedAt, firstSeen: r.first_seen_at, firstEver, now: Date.now() }),
+          statics: staticsOf(r.raw, r.about),
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null,

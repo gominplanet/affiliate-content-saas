@@ -53,7 +53,7 @@ check('every point is booked to a factor, and all normal is the plain score', we
 check('"A lot" counts a factor twice, "Skip" leaves it out', weighScore(p, { ...DEFAULT_PRIORITIES, amazon: 2 }) === p.score + (p.parts.amazon ?? 0) && weighScore(p, { ...DEFAULT_PRIORITIES, perVideo: 0 }) === p.score - (p.parts.perVideo ?? 0))
 check('Amazon videos you already made are a reason, said in words', p.reasons.some(r => /You already have 2 Amazon videos/.test(r.text)) && p.reasons.some(r => /Creator Connections, up to 15%/.test(r.text)))
 check('saved priorities are read safely: odd values are normal', JSON.stringify(readPriorities({ amazon: 2, perVideo: 7, junk: 1 })) === JSON.stringify({ ...DEFAULT_PRIORITIES, amazon: 2 }))
-check('every factor has words for the creator', FACTORS.length === 9 && FACTORS.every(f => f.label && f.says && !/[–—]/.test(f.says)))
+check('every factor has words for the creator', FACTORS.length === 10 && FACTORS.every(f => f.label && f.says && !/[–—]/.test(f.says)))
 const plain = pickScore({ totalCreators: 3, metaAds: null, top100Hits: null, tiktokShop: null })
 check('an older brand with no new numbers scores as before', plain.score === 35 && plain.read === 1)
 

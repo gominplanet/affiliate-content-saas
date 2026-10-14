@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-14-2'
+const RELEASE_ID = '2026-10-14-3'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,36 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // TRYBE, the third release of the day (Seb, 2026-10-14, after Rob's Oink
+  // Suite video: "build all 4"). Newest first.
+  {
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'TRYBE: what a video pays, before you ask',
+    desc: 'Every brand in Find brands now shows what an approved video pays: from your own results with it, MVP members\u2019 results, or its flat fee and guaranteed retainer. A % of sales or of ad spend is said as such, never guessed. Press how? to see the math. Two new pay filters: % of ad spend and Guaranteed.',
+    href: '/trybe?tab=find',
+  },
+  {
+    badge: 'NEW',
+    tone: '#B45309',
+    title: 'OPEN, FILLING or CROWDED',
+    desc: 'One word on each brand says whether you would be early or one of hundreds: its creators, how many joined, and its videos over the last 30 days. Open only shows the brands with room for you.',
+    href: '/trybe?tab=find',
+  },
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Your ads, live',
+    desc: 'My brands now opens with what your videos do as ads on TRYBE: earned, live ads, impressions, link clicks, hook rate, click rate and watch time, for 7, 14 or 30 days, plus your best videos. Brands winning on ads count as your winners to double down on. Needs SCOUT 1.47.0, which Chrome installs by itself. On the Pro plan.',
+    href: '/trybe?tab=brands',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#0B1B38',
+    title: 'NEW brands, and statics',
+    desc: 'Brands new on TRYBE carry a NEW badge. Your priorities now asks what you make (videos, videos and statics, or mostly statics), and brands that take statics say so.',
+    href: '/trybe?tab=find',
+  },
   // TRYBE, the second release of the day (Seb, 2026-10-14: "update the
   // what's new"). Newest first; the first release's items follow.
   {

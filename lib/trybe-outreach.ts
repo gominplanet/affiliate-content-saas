@@ -163,7 +163,12 @@ export function nextGapMs(sentThisRun: number, rand: () => number = Math.random,
 /** What a brand's TRYBE pay line offers. TRYBE writes it as free text ("$50
  *  per video", "15% commission", "$25 + 10%"), so a line with no number in it
  *  reads as unknown rather than as nothing. */
-export interface PayRead { kind: 'flat' | 'percent' | 'both' | null; dollars: number | null; percent: number | null }
+export interface PayRead {
+  kind: 'flat' | 'percent' | 'both' | null; dollars: number | null; percent: number | null
+  /** Every kind of pay the brand's terms have, when read term by term
+   *  (lib/trybe-pay payReadOf): flat, gmv, adSpend, perOrder, retainer, bonus. */
+  kinds?: string[]
+}
 
 export function readPay(text: string | null | undefined): PayRead {
   const s = String(text || '').replace(/,(?=\d{3}\b)/g, '')
@@ -180,12 +185,15 @@ export function readPay(text: string | null | undefined): PayRead {
 
 export const BROWSE_SORTS = ['match', 'picks', 'pay', 'creators', 'fit', 'newest'] as const
 export type BrowseSort = typeof BROWSE_SORTS[number]
-export const PAY_TYPES = ['any', 'flat', 'percent', 'both'] as const
+export const PAY_TYPES = ['any', 'flat', 'percent', 'both', 'adspend', 'guaranteed'] as const
 export type PayType = typeof PAY_TYPES[number]
 
 /** Does this pay line pass the pay-type filter? 'both' passes either. */
 export function payPasses(p: PayRead, want: PayType): boolean {
   if (want === 'any') return true
+  // % of ad spend, and guaranteed pay (a retainer), are read term by term.
+  if (want === 'adspend') return !!p.kinds?.includes('adSpend')
+  if (want === 'guaranteed') return !!p.kinds?.includes('retainer')
   // Both: a flat fee and a % of sales together (Oink's "GMV plus flat").
   if (want === 'both') return p.kind === 'both'
   return p.kind === 'both' || p.kind === want

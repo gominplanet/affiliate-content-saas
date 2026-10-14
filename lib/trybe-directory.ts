@@ -19,6 +19,8 @@
 // is collected once and each brand's website is read once. Each member's own
 // requests, drafts and statuses stay in trybe_brands, theirs alone.
 
+import { ruleText as rulePayText } from '@/lib/trybe-pay'
+
 export interface DirectoryBrand {
   brandId: string
   name: string
@@ -94,7 +96,9 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
   // TRYBE's own pay lines ("15% of GMV", "$50 per video") live under
   // commissionRules, or commissionRate and perSubmission (its brand page code).
   const rules = [raw.commissionRules, brandObj?.commissionRules].find(Array.isArray) as unknown[] | undefined
-  const ruleText = (rules || []).map((r) => (typeof r === 'string' ? r : isObj(r) ? text(r.text ?? r.label ?? r.description, 80) : '')).filter(Boolean).join(' · ')
+  // Each rule is displayValue + displayLabel ("15%" "of GMV") or a
+  // displayText in TRYBE's page code (lib/trybe-pay ruleText).
+  const ruleText = (rules || []).map((r) => rulePayText(r).slice(0, 80)).filter(Boolean).join(' · ')
   const commission = [raw.commissionRate, raw.perSubmission].map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean).join(' · ')
   const payRaw = ruleText || commission || pick(raw, ['payText', 'pay', 'payout', 'rate', 'pricePerVideo', 'price_per_video', 'compensation', 'budgetPerCreator', 'paymentPerVideo', 'amount'])
   const payNum = num(payRaw)
