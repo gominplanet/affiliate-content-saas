@@ -1192,8 +1192,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className={btn} style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
           { done: !!saved?.core.trim(), title: 'Your core message', ok: 'Written.', todo: 'What every brand reads, in your words. Write it once in Find brands.',
             action: <button onClick={() => { setTab('find'); setEditingCore(true) }} className={btn} style={{ border: '1px solid var(--border)' }}>Write it</button> },
-          { done: cats.length > 0 || kws.length > 0, title: 'Your niche', ok: [...cats, ...kws].slice(0, 4).join(', ') || 'Set.', todo: 'Pick your categories or keywords in Find brands, so MVP finds brands that fit.',
-            action: <button onClick={() => setTab('find')} className={btn} style={{ border: '1px solid var(--border)' }}>Pick my niche</button> },
+          // No niche step (Seb, 2026-10-14: "niche should not be in there.. since
+          // it may change depending on what users are searching for"). The
+          // search lives in Find brands, and changes with every search.
         ]
         const next = steps.findIndex((x) => !x.done)
         if (next < 0) return null

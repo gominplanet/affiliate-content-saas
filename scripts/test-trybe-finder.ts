@@ -107,5 +107,7 @@ check('the Amazon plan opens the page as a preview, and the menu shows it to the
 check('the preview never runs the daily find, reads the inbox or checks Meta ads', /if \(preview \|\| loading \|\| autoRan\.current/.test(ui) && /const canInbox = !preview &&/.test(ui) && /const canPlaybook = !preview &&/.test(ui))
 check('a Pro tab opened on the preview says it is Pro, with the way there', /is on the Pro plan<\/p>/.test(ui) && /if \(preview && t !== 'find'\) \{ setLockedTab\(t\); return \}/.test(ui) && /Message brands on Pro/.test(ui))
 
+check('the Setup check has no niche step: the search changes with every search', !/title: 'Your niche'/.test(ui) && !/Pick my niche/.test(ui))
+
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
