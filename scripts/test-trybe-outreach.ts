@@ -77,7 +77,7 @@ check('unconfirmed is shown apart from sent', UI.includes('Not confirmed') && UI
 check('a draft written without the website says so', UI.includes('Website not read'))
 const ROUTE = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
 check('the cap is enforced on the server at claim', /action === 'claim'[\s\S]*used >= settings\.dailyCap/.test(ROUTE))
-check('it is Labs only', ROUTE.includes("canUsePreview('trybe_outreach'"))
+check('only Pro, and the Amazon plan\'s preview, reach it', ROUTE.includes('trybeAccess(intg?.tier)') && /if \(access === 'none'\)/.test(ROUTE))
 const BG = readFileSync('extension/background.js', 'utf8')
 check('SCOUT only reports sent when the box closed', /if \(gone\) \{ steps\.push\('closed'\); return \{ outcome: 'sent'/.test(BG))
 check('a late SCOUT answer is unconfirmed, never failed', /MVP_TRYBE_SEND[\s\S]{0,200}outcome: 'unconfirmed'/.test(BG))
@@ -187,7 +187,7 @@ check('the inbox is a tab of TRYBE', /\{ id: 'inbox', label: 'Inbox'/.test(UI) &
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
   const find = SHELL.slice(SHELL.indexOf("label: 'Find products'"), SHELL.indexOf("label: 'Make videos'"))
   const labs = SHELL.slice(SHELL.indexOf("label: 'Labs',"))
-  check('TRYBE is open to Pro, not the Amazon plan, and sits in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test(readFileSync('lib/labs-preview.ts', 'utf8').slice(readFileSync('lib/labs-preview.ts', 'utf8').indexOf('const ALSO_AMAZON'))) && /href: '\/trybe-outreach'.*gate: canUsePreview\('trybe_outreach', effectiveTier\)/.test(find) && !/trybe-outreach/.test(labs))
+  check('all of TRYBE is open to Pro (the Amazon plan gets the Find brands preview), in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test((() => { const lp = readFileSync('lib/labs-preview.ts', 'utf8'); const at = lp.indexOf('const ALSO_AMAZON'); return lp.slice(at, lp.indexOf('])', at)) })()) && /href: '\/trybe-outreach'.*gate: (canUsePreview\('trybe_outreach', effectiveTier\)|trybeAccess\(effectiveTier\) !== 'none')/.test(find) && !/trybe-outreach/.test(labs))
 }
 
 const collectorRun = (async () => {
@@ -399,10 +399,10 @@ check('a late answer for another conversation is dropped', /const current = open
   check('an old count is never shown as current', freshUnread({ unread: 4, checkedAt: '2026-10-08T11:00:00Z' }, t0) === 4 && freshUnread({ unread: 4, checkedAt: new Date(t0 - TRYBE_ALERT_FRESH_MS - 1).toISOString() }, t0) === null && freshUnread({ unread: null, checkedAt: '2026-10-08T11:00:00Z' }, t0) === null && freshUnread({ unread: 2, checkedAt: null }, t0) === null)
   check('the Today line names who wrote and when MVP looked', whoWrote(['A']) === 'A' && whoWrote(['A', 'B']) === 'A and B' && whoWrote(['A', 'B', 'C', 'D']) === 'A, B and 2 more' && checkedAgo('2026-10-08T11:40:00Z', t0) === '20 minutes ago' && checkedAgo('2026-10-08T09:00:00Z', t0) === '3 hours ago')
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8'), HOOK = readFileSync('components/layout/useTrybeAlerts.ts', 'utf8'), TODAY = readFileSync('lib/today-list.ts', 'utf8'), UI4 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
-  check('the menu item shows the unread count', /badge: trybeUnread > 0 \? trybeUnread : 'New'/.test(SHELL) && /useTrybeAlerts\(canUsePreview\('trybe_outreach', effectiveTier\), pathname\)/.test(SHELL))
+  check('the menu item shows the unread count', /badge: trybeUnread > 0 \? trybeUnread : /.test(SHELL) && /useTrybeAlerts\(canUsePreview\('trybe_outreach', effectiveTier\), pathname\)/.test(SHELL))
   check('the dashboard asks SCOUT only for a creator who uses the inbox, at most every half hour, never on the TRYBE page', /TRYBE_INBOX_ON_KEY\) === '1'/.test(HOOK) && /Date\.now\(\) - last < TRYBE_SHELL_CHECK_MS/.test(HOOK) && /pathname\.startsWith\('\/trybe-outreach'\)\) return/.test(HOOK) && /access\.state !== 'granted'/.test(HOOK))
   check('Today lists unread TRYBE messages, and a failed read is named', /read\('TRYBE inbox'/.test(TODAY) && /'\/trybe-outreach\?tab=inbox'/.test(TODAY) && /if \(r\.error\) throw/.test(TODAY.slice(TODAY.indexOf("read('TRYBE inbox'"))))
-  check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /void reportTrybeInbox\(inbox\.convos\)\.then\(r => \{ if \(!r\.ok\) setAlertsError\(r\.error\)/.test(UI4) && /reply alert for the menu and Today could not be saved/.test(UI4) && /get\('tab'\)(; if \(t)? === 'inbox'/.test(UI4))
+  check('the TRYBE page notes every inbox read and opens on ?tab=inbox', /void reportTrybeInbox\(inbox\.convos\)\.then\(r => \{ if \(!r\.ok\) setAlertsError\(r\.error\)/.test(UI4) && /reply alert for the menu and Today could not be saved/.test(UI4) && /get\('tab'\);[^\n]*(if|else if) \(t === 'inbox'/.test(UI4))
 }
 
 // Accepted, pending, declined (Seb, 2026-10-08 upgrade 1)

@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
+import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, type TrybeScanPass } from '@/lib/extension-frame'
@@ -298,7 +298,11 @@ function opensWords(at: string | null): string {
   return `Next one can go at ${time}${sameDay ? '' : ' tomorrow'}.`
 }
 
-export default function TrybeOutreach() {
+/** `preview`: the Amazon plan's TRYBE (Seb, 2026-10-14). Find brands to
+ *  browse, with the Amazon match, filters, priorities, stars and pass; every
+ *  other tab is shown as Pro, and nothing that writes, sends or reads the
+ *  inbox runs. The server enforces the same (lib/labs-preview). */
+export default function TrybeOutreach({ preview = false }: { preview?: boolean } = {}) {
   const [brands, setBrands] = useState<Brand[]>([])
   // "Include my results in members' combined numbers" (migration 428).
   const [poolOptOut, setPoolOptOut] = useState(false)
@@ -306,12 +310,18 @@ export default function TrybeOutreach() {
   // "Your week" line and the What changed tab.
   const [changes, setChanges] = useState<ChangesRead | null>(null)
   const [changesError, setChangesError] = useState<string | null>(null)
-  useEffect(() => { fetchChanges(7).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [])
+  useEffect(() => { if (preview) return; fetchChanges(7).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The brand list the Inbox matches chats against (id, name, website).
   const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
   // Make videos first (Seb, 2026-10-13: brand, product, scripts, streamlined).
-  const [tab, setTab] = useState<Tab>('create')
+  const [tab, setTab] = useState<Tab>(preview ? 'find' : 'create')
+  // A Pro tab opened on the Amazon plan: said, with the way to Pro.
+  const [lockedTab, setLockedTab] = useState<Tab | null>(null)
+  const go = useCallback((t: Tab) => {
+    if (preview && t !== 'find') { setLockedTab(t); return }
+    setLockedTab(null); setTab(t)
+  }, [preview])
   const [core, setCore] = useState('')
   const [cap, setCap] = useState(20)
   // The cap the server holds, for the tile and Send all; `cap` is the input.
@@ -429,7 +439,7 @@ export default function TrybeOutreach() {
     })
   }, [load])
   useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
-  const canInbox = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
+  const canInbox = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.
   const canMyBrands = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)
@@ -513,7 +523,7 @@ export default function TrybeOutreach() {
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (preview) { if (t && t !== 'find') setLockedTab(t as Tab) } else if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -542,7 +552,7 @@ export default function TrybeOutreach() {
   // 1.41.2: SCOUT collects the whole TRYBE list and MVP searches its own copy.
   const canHarvest = scoutAtLeast(scoutVersion, SCOUT_TRYBE_HARVEST_MIN_VERSION)
   // 1.45.0: TRYBE's Top 100 and Meta's Ad Library (Cole's picks).
-  const canPlaybook = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)
+  const canPlaybook = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)
   // Read once a day by itself, quietly, when the page opens.
   useEffect(() => {
     if (!canPlaybook || topTried.current || !directory || !isAdmin) return
@@ -782,7 +792,7 @@ export default function TrybeOutreach() {
   // THE DAILY FIND. Once a day, when this page is opened with SCOUT allowed
   // and a niche saved, MVP and SCOUT find and draft up to 20 brands that fit.
   useEffect(() => {
-    if (loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding) return
+    if (preview || loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding) return
     if (!saved.core.trim() || savedKey === prefsKey([], [])) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
     if (Date.now() - last < RECOLLECT_MS) return
@@ -1136,8 +1146,19 @@ export default function TrybeOutreach() {
         </a>
       </header>
 
+      {/* THE AMAZON PLAN'S PREVIEW: what is open, and what Pro adds. */}
+      {preview && (
+        <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+          <div className="flex-1 min-w-[16rem]">
+            <p className="text-[15px] font-bold">TRYBE preview on the Amazon plan</p>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands is open: see which TRYBE brands you already filmed on Amazon, rank them by what matters to you, filter, star and pass. Pro writes and sends your messages, plans your videos from each brand&rsquo;s brief, reads your inbox and tracks what each brand pays you.</p>
+          </div>
+          <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
+        </section>
+      )}
+
       {/* YOUR WEEK, in one line: each part opens its tab. */}
-      {(() => {
+      {!preview && (() => {
         const parts: Array<{ text: string; to: Tab }> = []
         const sum = changesSummary(changes)
         if (sum) parts.push({ text: sum, to: 'changes' })
@@ -1157,7 +1178,7 @@ export default function TrybeOutreach() {
       })()}
 
       {/* SETUP CHECK: shown until everything is ready, with the next step. */}
-      {(() => {
+      {!preview && (() => {
         if (access === 'checking') return null
         const steps: Array<{ done: boolean; title: string; ok: string; todo: string; action?: React.ReactNode }> = [
           { done: access !== 'no-scout', title: 'SCOUT in this Chrome', ok: 'Installed.', todo: 'SCOUT is MVP\u2019s Chrome extension. It works in your own TRYBE, in your browser.',
@@ -1204,12 +1225,12 @@ export default function TrybeOutreach() {
       })()}
 
       {/* The numbers that matter today. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {!preview && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat accent={PURPLE} label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} onClick={() => setTab('sent')} />
         <Stat accent="#0E7490" label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} onClick={() => setTab('queue')} />
         <Stat accent={GREEN} label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} onClick={() => setTab('sent')} />
         <Stat accent="#DB2777" label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} onClick={() => setTab('inbox')} />
-      </div>
+      </div>}
       {/* The menu count and Today depend on this save: a failure is said here. */}
       {alertsError && <p className="text-[12px] -mt-2 mb-3 inline-flex items-center gap-1" style={{ color: AMBER }}><AlertTriangle size={12} /> The inbox was read, but the reply alert for the menu and Today could not be saved: {alertsError}</p>}
 
@@ -1232,12 +1253,13 @@ export default function TrybeOutreach() {
             </p>
             <div className="grid grid-cols-2 md:grid-cols-1 gap-1">
               {TABS.filter((t) => t.group === g.id).map(({ id, label, icon: Icon }) => {
-                const n = id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
-                const on = tab === id
+                const n = preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
+                const on = (lockedTab ?? tab) === id
+                const locked = preview && id !== 'find'
                 // Something waiting on you is filled; a running total is quiet.
                 const waiting = id === 'inbox' || id === 'queue'
                 return (
-                  <button key={id} aria-current={on ? 'page' : undefined} onClick={() => setTab(id)}
+                  <button key={id} aria-current={on ? 'page' : undefined} onClick={() => go(id)} title={locked ? 'On the Pro plan' : undefined}
                     className="group w-full flex items-center gap-2.5 rounded-xl px-2.5 sm:px-2 py-2 sm:py-1.5 text-left text-[13.5px] sm:text-[14px] font-semibold transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]"
                     style={on ? { background: 'rgba(124,58,237,0.12)', color: PURPLE } : { color: 'var(--text)' }}>
                     <span className="hidden sm:inline-flex w-7 h-7 shrink-0 rounded-lg items-center justify-center transition-colors"
@@ -1245,6 +1267,7 @@ export default function TrybeOutreach() {
                       <Icon size={15} />
                     </span>
                     <span className="flex-1 min-w-0 leading-tight">{label}</span>
+                    {locked && <span className="text-[10px] font-bold uppercase tracking-wide rounded-full px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}><Lock size={9} /> Pro</span>}
                     {n > 0 && <span className="text-[11.5px] font-bold rounded-full px-2 py-0.5 min-w-[1.5rem] text-center tabular-nums"
                       style={waiting ? { background: PURPLE, color: '#fff' } : { color: on ? PURPLE : 'var(--text-3)' }}>{n}</span>}
                   </button>
@@ -1256,7 +1279,7 @@ export default function TrybeOutreach() {
       </nav>
       {/* Where you are, and what it is for. */}
       {(() => {
-        const t = TABS.find((x) => x.id === tab)
+        const t = TABS.find((x) => x.id === (lockedTab ?? tab))
         if (!t) return null
         const Icon = t.icon
         return (
@@ -1282,11 +1305,23 @@ export default function TrybeOutreach() {
           newToTop={changes ? Array.from(new Map(changes.changes.filter((c) => c.kind === 'top100').map((c) => [c.brand_id, { id: c.brand_id, name: c.name || 'A brand' }])).values()) : null} />
       )}
 
-      {tab === 'find' && (<>
+      {/* A Pro tab opened on the Amazon plan. */}
+      {lockedTab && (
+        <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+          <p className="text-[15px] font-bold inline-flex items-center gap-2"><Lock size={15} style={{ color: PURPLE }} /> {TABS.find((x) => x.id === lockedTab)?.label} is on the Pro plan</p>
+          <p className="text-[13px] mt-1 max-w-[62ch]" style={{ color: 'var(--text-2)' }}>{TABS.find((x) => x.id === lockedTab)?.says} On your Amazon plan, Find brands is open: see which TRYBE brands you already filmed on Amazon, and rank, filter and star them.</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
+            <button onClick={() => go('find')} className="rounded-lg px-4 py-2 text-[13px] font-semibold border" style={{ borderColor: 'var(--border-2)' }}>Back to Find brands</button>
+          </div>
+        </section>
+      )}
+
+      {tab === 'find' && !lockedTab && (<>
         {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
-        <TrybeStage canRead={canMyBrands} onGo={setTab} />
+        <TrybeStage canRead={canMyBrands} onGo={go} />
         {/* 1. Core message: a short preview once written, the box while editing. */}
-        <div className={card} style={cardStyle}>
+        {!preview && <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[14px] font-semibold">1. Your core message</p>
             {!editingCore && core.trim() && (
@@ -1307,13 +1342,13 @@ export default function TrybeOutreach() {
               {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
             </div>
           </>)}
-        </div>
+        </div>}
 
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
             brands, but make it very visible that searching a keyword is the
             better way, because a keyword matches what each brand sells. */}
         <div className={card} style={cardStyle}>
-          <p className="text-[14px] font-semibold">2. Find brands for your channel</p>
+          <p className="text-[14px] font-semibold">{preview ? '' : '2. '}Find brands for your channel</p>
 
           <div className="mt-3 rounded-2xl border-2 p-4" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.05)' }}>
             <div className="flex flex-wrap items-center gap-2">
@@ -1374,10 +1409,10 @@ export default function TrybeOutreach() {
             )}
           </div>
 
-          {!canHarvest && access === 'granted' && (
+          {!preview && !canHarvest && access === 'granted' && (
             <p className="text-[12px] mt-3" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
           )}
-          <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+          {!preview && <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <label className="text-[13px] flex items-center gap-2">Daily cap
               <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
               <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (TRYBE allows up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
@@ -1388,16 +1423,21 @@ export default function TrybeOutreach() {
             </label>
             <button onClick={() => void saveSettings()} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
             {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
-          </div>
+          </div>}
         </div>
 
         {/* 3. The live list, from MVP's copy of TRYBE */}
         {hasDirectory ? (
           <div className={card} style={cardStyle}>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <p className="text-[14px] font-semibold">3. Brands that match ({live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''})</p>
+              <p className="text-[14px] font-semibold">{preview ? '' : '3. '}Brands that match ({live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''})</p>
               {liveLoading && <Loader2 size={13} className="animate-spin" style={{ color: PURPLE }} />}
-              <div className="ml-auto flex flex-wrap gap-2">
+              {preview && (
+                <a href="/billing" className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }} title="Pro writes each brand a first message in your words and SCOUT sends it">
+                  <Lock size={12} /> Message brands on Pro
+                </a>
+              )}
+              {!preview && <div className="ml-auto flex flex-wrap gap-2">
                 <button onClick={() => void refreshFromTrybe()} disabled={busy || access !== 'granted' || !canHarvest} className={btn} style={{ border: '1px solid var(--border)' }}
                   title={access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page).' : !canHarvest ? 'Your SCOUT is too old to collect TRYBE\u2019s list. Chrome updates it within a day.' : busy ? `Busy: ${finding?.stage || 'sending'}. This unlocks when it finishes.` : "SCOUT collects TRYBE's list again now. It does this by itself once a day."}>
                   {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Refresh from TRYBE
@@ -1422,13 +1462,13 @@ export default function TrybeOutreach() {
                   title={running ? 'Send all is running. This unlocks when it finishes.' : finding ? `Busy: ${finding.stage}. This unlocks when it finishes.` : !livePick.size ? 'Tick the brands to write to first.' : undefined}>
                   <Sparkles size={13} /> Write {livePick.size} message{livePick.size === 1 ? '' : 's'}
                 </button>
-              </div>
+              </div>}
             </div>
-            <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} Tick the brands you want and MVP writes each one a message from your core message.</p>
+            <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} {preview ? 'Star the ones you like and pass on the rest.' : 'Tick the brands you want and MVP writes each one a message from your core message.'}</p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
               <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Sort brands">
                 <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Sort</span>
-                {SORTS.map(s => (
+                {SORTS.filter(s => !preview || s.id !== 'fit').map(s => (
                   <button key={s.id} onClick={() => setSortBy(s.id)} aria-pressed={sortBy === s.id}
                     className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
                     style={sortBy === s.id ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>{s.label}</button>
@@ -1553,8 +1593,8 @@ export default function TrybeOutreach() {
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
                   <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.04)' : undefined }}>
-                    <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
-                      onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
+                    {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
+                      onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -1597,7 +1637,7 @@ export default function TrybeOutreach() {
                       {b.categories.length > 0 && <span className="block text-[11px] mt-1.5" style={soft}>{b.categories.join(' • ')}</span>}
                     </span>
                     {/* One brand, one click: written straight into Ready to send. */}
-                    {!taken && (
+                    {!taken && !preview && (
                       <button onClick={e => { e.preventDefault(); e.stopPropagation(); void draftPicked([b.brand_id]) }} disabled={busy}
                         className="self-start shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50"
                         style={{ border: `1px solid ${PURPLE}`, color: PURPLE }} title={busy ? `Busy: ${finding?.stage || 'sending'}. This unlocks when it finishes.` : 'Write this brand a message now'}>
@@ -1631,6 +1671,8 @@ export default function TrybeOutreach() {
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}
           </div>
+        ) : preview ? (
+          <p className="text-[13px]" style={soft}>MVP&rsquo;s copy of TRYBE&rsquo;s brands is not ready yet. Check back soon.</p>
         ) : (
         <div className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2 mb-1">

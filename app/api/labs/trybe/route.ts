@@ -33,7 +33,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { canUsePreview } from '@/lib/labs-preview'
+import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -79,10 +79,13 @@ async function gate() {
   const { user, ownerId } = auth as { user: { id: string }; ownerId: string }
   const admin = createAdminClient() as Db
   const { data: intg } = await admin.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('trybe_outreach', intg?.tier)) {
+  // Pro: everything. Amazon plan: the Find brands preview, checked per
+  // action in POST (lib/labs-preview TRYBE_PREVIEW_ACTIONS).
+  const access = trybeAccess(intg?.tier)
+  if (access === 'none') {
     return { error: NextResponse.json({ error: 'TRYBE is part of the Pro plan.' }, { status: 403 }) }
   }
-  return { userId: user.id, ownerId, tier: normalizeTier(intg?.tier), admin, supabase }
+  return { userId: user.id, ownerId, tier: normalizeTier(intg?.tier), admin, supabase, access }
 }
 
 async function readSettings(admin: Db, ownerId: string) {
@@ -289,6 +292,11 @@ export async function POST(request: Request) {
   const { admin, ownerId, userId, tier } = g
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const action = String(body.action || '')
+  // THE AMAZON PLAN'S PREVIEW: browsing only. Writing, sending, AI and
+  // anything SCOUT feeds into the shared copy of TRYBE are Pro.
+  if (g.access === 'preview' && !TRYBE_PREVIEW_ACTIONS.has(action)) {
+    return NextResponse.json({ error: 'This part of TRYBE is on the Pro plan.', pro: true }, { status: 403 })
+  }
   const brandId = typeof body.brandId === 'string' ? body.brandId.slice(0, 80) : ''
   const now = new Date().toISOString()
 

@@ -10,6 +10,7 @@ import { readDirStats, rawKeys, amazonOf, titleIsBrand, nameVariants, readFilter
 import { pickScore, weighScore, readPriorities, DEFAULT_PRIORITIES, FACTORS } from '../lib/trybe-pick'
 import { payPasses, readPay } from '../lib/trybe-outreach'
 import type { Judged, MyBrand } from '../lib/trybe-mybrands'
+import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '../lib/labs-preview'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -95,6 +96,16 @@ check('Find brands shows the stage, filters, priorities, Amazon and star and pas
 check('no Amazon videos synced is said, with where to sync them', /MVP has none of your Amazon videos yet/.test(ui) && /href="\/earnings"/.test(ui))
 const stage = read('components/labs/TrybeStage.tsx')
 check('a failed read of your numbers says the stage is not known', /your stage is not known/.test(stage))
+
+// ── The Amazon plan's preview (Seb, 2026-10-14: "build the amazon plan preview") ──
+check('Pro and admin get all of TRYBE, the Amazon plan the preview, a trial none', trybeAccess('pro') === 'full' && trybeAccess('admin') === 'full' && trybeAccess('amazon') === 'preview' && trybeAccess('trial') === 'none' && trybeAccess(null) === 'none')
+const AI_OR_SEND = ['draft', 'video_plan', 'kickoff', 'followup', 'hook_fix', 'suggest_reply', 'brief_read', 'match', 'claim', 'result', 'directory', 'meta_ads', 'top100', 'adopt', 'settings', 'ideas', 'brand_products', 'import', 'shortlist']
+check('the preview may browse, star, pass and rank, and nothing that calls AI, sends or writes the shared copy', ['browse', 'star', 'pass', 'unskip', 'priorities'].every(a => TRYBE_PREVIEW_ACTIONS.has(a)) && AI_OR_SEND.every(a => !TRYBE_PREVIEW_ACTIONS.has(a)))
+check('the server refuses every other action on the preview, before any work', /if \(g\.access === 'preview' && !TRYBE_PREVIEW_ACTIONS\.has\(action\)\)/.test(api) && api.indexOf("g.access === 'preview'") < api.indexOf("action === 'settings'"))
+const page = read('app/(dashboard)/trybe-outreach/page.tsx')
+check('the Amazon plan opens the page as a preview, and the menu shows it to them', /access === 'preview'\) return <TrybeOutreach preview \/>/.test(page) && /trybeAccess\(effectiveTier\) !== 'none'/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the preview never runs the daily find, reads the inbox or checks Meta ads', /if \(preview \|\| loading \|\| autoRan\.current/.test(ui) && /const canInbox = !preview &&/.test(ui) && /const canPlaybook = !preview &&/.test(ui))
+check('a Pro tab opened on the preview says it is Pro, with the way there', /is on the Pro plan<\/p>/.test(ui) && /if \(preview && t !== 'find'\) \{ setLockedTab\(t\); return \}/.test(ui) && /Message brands on Pro/.test(ui))
 
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

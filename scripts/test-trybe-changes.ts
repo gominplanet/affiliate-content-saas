@@ -123,7 +123,7 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   check('the brand\'s products are read on the server and kept a day', /action === 'brand_products'/.test(r) && /`products2:\$\{brandId\}`/.test(r) && /TRYBE asks for this/.test(read('components/labs/TrybeCreate.tsx')))
   check('Make videos is three steps: brand, product, scripts', /Which brand are you making videos for\?/.test(cr) && /Which \{brand\.name\} product do you have\?/.test(cr) && /Your shooting scripts: \{product\}/.test(cr))
   check('the scripts are written for the picked product at once, or its saved ones shown', /product=\{product\} page=\{page\} auto/.test(cr) && /else if \(auto\) void makePlan\(fixedProduct\)/.test(read('components/labs/TrybeVideoIdeas.tsx')))
-  check('Make videos is the first tab and where the page opens', /\{ id: 'create', label: 'Make videos'/.test(read('components/labs/TrybeOutreach.tsx')) && /useState<Tab>\('create'\)/.test(read('components/labs/TrybeOutreach.tsx')))
+  check('Make videos is the first tab and where the page opens', /\{ id: 'create', label: 'Make videos'/.test(read('components/labs/TrybeOutreach.tsx')) && /useState<Tab>\((preview \? 'find' : )?'create'\)/.test(read('components/labs/TrybeOutreach.tsx')))
   check('the page asks for the brief by brand, so it is read once', /action: 'brief_read', url: c\.briefUrl, brandId/.test(read('components/labs/TrybeVideoIdeas.tsx')))
   const vi = read('components/labs/TrybeVideoIdeas.tsx')
   check('planning starts by picking the product you have, with the brief to read and open', /Which product do you have on hand\?/.test(vi) && /Open the brief document/.test(vi) && /Creative Brief is on that page/.test(vi) && /makePlan\(\(other\.trim\(\) \|\| chosen\)/.test(vi))
@@ -149,7 +149,7 @@ check('My brands sends its numbers only when included, and shows members togethe
 const page = read('components/labs/TrybeOutreach.tsx')
 check('the page is called TRYBE, with What changed and What\'s working tabs', />\s*TRYBE\s*<\/h1>/.test(page) && /\{ id: 'changes', label: 'What changed'/.test(page) && /\{ id: 'working', label: 'What\\u2019s working'/.test(page))
 check('the page has the Your week line and the setup check', /Your week/.test(page) && /Setup check/.test(page))
-check('the menu says TRYBE', /label: 'TRYBE', gate: canUsePreview\('trybe_outreach'/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the menu says TRYBE', /label: 'TRYBE', gate: (canUsePreview\('trybe_outreach'|trybeAccess\(effectiveTier\))/.test(read('components/layout/DashboardShellV2.tsx')))
 const mig = read('supabase/migrations/428_trybe_changes_and_pool.sql')
 check('migration 428 is safe to run twice', !/create table (?!if not exists)/i.test(mig) && !/add column (?!if not exists)/i.test(mig) && /create index if not exists/.test(mig))
 

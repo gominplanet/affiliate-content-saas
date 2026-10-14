@@ -98,3 +98,21 @@ export function previewOpenToAmazon(feature: PreviewFeature): boolean {
 export function previewOpenToPro(feature: PreviewFeature): boolean {
   return OPEN_TO[feature] === 'labs'
 }
+
+// ── TRYBE ON THE AMAZON PLAN (Seb, 2026-10-14: "build the amazon plan
+// preview") ─────────────────────────────────────────────────────────────────
+// Pro gets all of TRYBE. The Amazon plan gets Find brands to browse: the
+// Amazon match, filters, priorities, stars and pass. Nothing that calls AI
+// (messages, scripts, briefs, replies, fit checks) and nothing SCOUT sends or
+// writes to the shared copy of TRYBE. Enforced on the server by action.
+
+export type TrybeAccess = 'full' | 'preview' | 'none'
+
+export function trybeAccess(rawTier: unknown): TrybeAccess {
+  if (canUsePreview('trybe_outreach', rawTier)) return 'full'
+  return normalizeTier(rawTier) === 'amazon' ? 'preview' : 'none'
+}
+
+/** The server actions the Amazon plan's preview may call (POST); the GET
+ *  that loads the page is allowed too. Everything else is Pro. */
+export const TRYBE_PREVIEW_ACTIONS: ReadonlySet<string> = new Set(['browse', 'star', 'pass', 'unskip', 'priorities'])

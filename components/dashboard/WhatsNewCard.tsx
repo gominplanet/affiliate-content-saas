@@ -35,7 +35,7 @@ const UPDATES: Update[] = [
     badge: 'NEW',
     tone: '#7C3AED',
     title: 'TRYBE: your whole TRYBE business in one place',
-    desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome.',
+    desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome. On the Amazon plan, Find brands is open to browse.',
     href: '/trybe-outreach',
   },
   {
@@ -49,7 +49,7 @@ const UPDATES: Update[] = [
     badge: 'NEW',
     tone: '#16A34A',
     title: 'Find brands: see who you already filmed on Amazon',
-    desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand.',
+    desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand. Open on the Amazon plan too; messaging brands is on Pro.',
     href: '/trybe-outreach?tab=find',
   },
   {

@@ -10,13 +10,16 @@
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
-import { canUsePreview } from '@/lib/labs-preview'
+import { trybeAccess } from '@/lib/labs-preview'
 import TrybeOutreach from '@/components/labs/TrybeOutreach'
 
 export default function TrybeOutreachPage() {
   const tier = useEffectiveTier()
 
-  if (tier !== null && canUsePreview('trybe_outreach', tier)) return <TrybeOutreach />
+  const access = tier !== null ? trybeAccess(tier) : null
+  if (access === 'full') return <TrybeOutreach />
+  // The Amazon plan: Find brands to browse, the rest shown as Pro (Seb, 2026-10-14).
+  if (access === 'preview') return <TrybeOutreach preview />
   // Not on this plan: say so, never a silent bounce.
   if (tier !== null) return <ProUpgradePanel feature="TRYBE" body="TRYBE in MVP finds brands on TRYBE that fit your channel, writes each one a first message in your words, and SCOUT sends your requests to join. It is part of the Pro plan." />
 

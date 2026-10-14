@@ -23,7 +23,7 @@
 'use client'
 
 import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
-import { previewOpenToPro, canUsePreview } from '@/lib/labs-preview'
+import { previewOpenToPro, canUsePreview, trybeAccess } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { useState, useEffect, useCallback, Fragment } from 'react'
@@ -529,7 +529,8 @@ export default function DashboardShellV2({
         // in the creator's words, SCOUT sends them. Open to Pro (Seb,
         // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
         // PRODUCTS").
-        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE', gate: canUsePreview('trybe_outreach', effectiveTier), badge: trybeUnread > 0 ? trybeUnread : 'New' },
+        // The Amazon plan sees it too, as a preview: Find brands to browse.
+        { href: '/trybe-outreach', icon: <Handshake size={15} />, label: 'TRYBE', gate: trybeAccess(effectiveTier) !== 'none', badge: trybeUnread > 0 ? trybeUnread : trybeAccess(effectiveTier) === 'preview' ? 'Preview' : 'New' },
       ],
     },
     {
