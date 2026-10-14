@@ -130,5 +130,7 @@ const moved = read('app/(dashboard)/trybe-outreach/page.tsx')
 check('the old address sends you to /trybe on the same tab', /redirect\(`\/trybe\$\{qs \? `\?\$\{qs\}` : ''\}`\)/.test(moved) && !/TrybeOutreach \/>/.test(moved))
 check('no link in MVP points at the old address', ['components/layout/DashboardShellV2.tsx', 'components/dashboard/WhatsNewCard.tsx', 'lib/today-list.ts', 'components/layout/useTrybeAlerts.ts'].every(f => !/\/trybe-outreach/.test(read(f))))
 
+check('after a yes, the Amazon videos you already have are offered to submit first', /Submit \{onAmz\.yourVideos === 1 \? 'it' : 'them'\} on TRYBE first/.test(read('components/labs/TrybeAfterAccept.tsx')))
+
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

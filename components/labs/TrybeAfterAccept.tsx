@@ -15,14 +15,15 @@
 // A message counts as sent only when it shows up in the conversation after,
 // the same rule as the Inbox. Every failure says what happened.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Send, Sparkles, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Loader2, Send, Sparkles, AlertTriangle, RotateCcw, PlayCircle, ExternalLink } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { listOf, readMessage } from '@/components/labs/TrybeInbox'
 import { afterAccept, readChat, type VideoPlan, type ChatRead, type AfterState } from '@/lib/trybe-playbook'
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
+import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -93,6 +94,12 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
   /** The stage, told to the page so its counts match the panels. */
   onState?: (brandId: string, state: AfterState) => void
 }) {
+  // AFTER A YES, THE AMAZON VIDEOS YOU ALREADY HAVE (Seb, 2026-10-14):
+  // the brand's products you filmed on Amazon are TRYBE videos with no new
+  // filming. Read from the same cache as the Sent row above it.
+  const amzBrands = useMemo(() => [{ id: b.brand_id, name: b.name }], [b.brand_id, b.name])
+  const amz = useTrybeAmazon(amzBrands)
+  const onAmz = amz.brand(b.brand_id)
   // The chat, read message by message (null while reading).
   const [chat, setChat] = useState<ChatRead | null>(null)
   const [composer, setComposer] = useState<{ kind: 'kickoff' | 'followup'; text: string } | null>(null)
@@ -159,6 +166,17 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
         <span className="font-semibold" style={{ color: tone }}>{!canSend ? 'SCOUT cannot read this chat right now' : st.label}</span>
         <span style={soft}>{!canSend ? 'Allow SCOUT on TRYBE and be signed in to TRYBE, then reload this page.' : st.says}</span>
       </div>
+      {onAmz && onAmz.yourVideos > 0 && (
+        <div className="mt-2 rounded-md px-2.5 py-2" style={{ background: 'rgba(22,163,74,0.10)', color: '#15803d' }}>
+          <p className="font-semibold inline-flex items-center gap-1"><PlayCircle size={12} /> You already have {onAmz.yourVideos} Amazon video{onAmz.yourVideos === 1 ? '' : 's'} of {b.name}&rsquo;s products</p>
+          <p className="mt-0.5" style={{ color: 'var(--text-2)' }}>Submit {onAmz.yourVideos === 1 ? 'it' : 'them'} on TRYBE first: paid videos with no new filming. Check each one still fits {b.name}&rsquo;s brief.</p>
+          {onAmz.videoLinks.length > 0 && (
+            <p className="mt-1 flex flex-wrap gap-x-3">
+              {onAmz.videoLinks.map((u, i) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-semibold underline inline-flex items-center gap-0.5">Video {i + 1} <ExternalLink size={10} /></a>)}
+            </p>
+          )}
+        </div>
+      )}
       {(st.state === 'send_first' || st.state === 'no_answer') && !composer && (
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <button onClick={() => void write(st.state === 'send_first' ? 'kickoff' : 'followup')} disabled={writing || !canSend} className={btn} style={{ background: PURPLE, color: '#fff' }}
