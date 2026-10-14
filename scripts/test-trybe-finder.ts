@@ -132,5 +132,7 @@ check('no link in MVP points at the old address', ['components/layout/DashboardS
 
 check('after a yes, the Amazon videos you already have are offered to submit first', /Submit \{onAmz\.yourVideos === 1 \? 'it' : 'them'\} on TRYBE first/.test(read('components/labs/TrybeAfterAccept.tsx')))
 
+check('Make videos step 3 says when you already filmed the product on Amazon', /amz\.product\(brand\.name, product\)/.test(read('components/labs/TrybeCreate.tsx')) && /The scripts below are for new videos/.test(read('components/labs/TrybeCreate.tsx')))
+
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

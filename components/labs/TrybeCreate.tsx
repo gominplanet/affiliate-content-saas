@@ -38,7 +38,12 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
   // THE AMAZON MATCH (Seb, 2026-10-14): each brand you work with, and each
   // of its products you already filmed on Amazon.
   const amzBrands = useMemo(() => (brands || []).map((b) => ({ id: b.id, name: b.name })), [brands])
-  const amzProducts = useMemo(() => (brand && page ? page.products.map((p) => ({ brand: brand.name, name: p.name })) : []), [brand, page])
+  // The product picked in step 3 is read too, typed or not on TRYBE's list.
+  const amzProducts = useMemo(() => {
+    if (!brand) return []
+    const names = Array.from(new Set([...(page ? page.products.map((p) => p.name) : []), ...(product ? [product] : [])]))
+    return names.map((name) => ({ brand: brand.name, name }))
+  }, [brand, page, product])
   const amz = useTrybeAmazon(amzBrands, amzProducts, amzBrands.length > 0)
   useEffect(() => { setOnHand('idle'); setOnHandErr(null) }, [product, brand])
 
@@ -212,6 +217,18 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
             </button>
           </div>
           {onHandErr && <p className="text-[12.5px] mt-1" style={{ color: AMBER }}>{onHandErr}</p>}
+          {/* THE AMAZON MATCH, step 3 (Seb, 2026-10-14): this product already
+              filmed on Amazon is a TRYBE video too; else the brand's line. */}
+          {(() => {
+            const m = amz.product(brand.name, product)
+            if (!m?.yourVideos) return <AmazonLine amazon={amz.brand(brand.id)} />
+            return (
+              <div className="mt-2 rounded-xl px-3 py-2" style={{ background: 'rgba(22,163,74,0.08)' }}>
+                <ProductAmazon match={m} />
+                <p className="text-[12.5px] mt-1" style={soft}>You can submit {m.yourVideos === 1 ? 'that video' : 'those videos'} on TRYBE too, if {m.yourVideos === 1 ? 'it fits' : 'they fit'} {brand.name}&rsquo;s brief. The scripts below are for new videos.</p>
+              </div>
+            )
+          })()}
           <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos, each with its hook, the first 2 seconds, the beats and the close. Copy one, or print them all and start shooting.</p>
           <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize />
         </section>
