@@ -18,6 +18,8 @@
 // looked for under the names it is likely to have, and a count MVP could not
 // read is null, never zero. Pure, so it is tested (scripts/test-trybe-mybrands).
 
+import { payReadOf } from '@/lib/trybe-pay'
+
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
@@ -347,4 +349,33 @@ export function winnersBlock(winners: string[]): string {
     `THE BRAND'S OWN BEST VIDEOS ON TRYBE (these already sell for this brand). Copy what works in them: the angle, the order, the kind of hook, the proof they show. Never copy their sentences word for word.`,
     ...winners.map((w, i) => `Video ${i + 1}: ${w}`),
   ].join('\n')
+}
+
+// ── RATE LOCK WATCH (Austin, Whitelist Wealth; Seb 2026-10-14: "build 1, 2,
+// 3, and 4"). Brands are changing pay before Q4. A video in review when a
+// brand lowers its pay is worth a friendly nudge before the old rate runs
+// out: Austin says a submission holds its rate for 30 days (his claim, said
+// as his). The nudge never talks rates: it asks about the videos. Pure.
+
+export const RATE_LOCK_DAYS = 30
+
+export interface RateLock { pending: Submission[]; lockEnds: number | null; daysLeft: number | null; lower: boolean | null }
+
+/** Did the pay go down? True lower, false not lower, null when the two
+ *  lines cannot be compared (a fee became a percent). Pure. */
+export function payWentDown(before: string | null, after: string | null): boolean | null {
+  const a = payReadOf([String(before || '')]), b = payReadOf([String(after || '')])
+  if (a.dollars != null && b.dollars != null) return b.dollars < a.dollars
+  if (a.percent != null && b.percent != null && a.dollars == null && b.dollars == null) return b.percent < a.percent
+  if (a.kind && !b.kind) return true
+  return null
+}
+
+/** Your videos still in review at a brand that changed its pay: the ones
+ *  sent before the change, and when the earliest one's 30 days run out. Pure. */
+export function rateLockOf(subs: Submission[], change: { at: string; before: string | null; after: string | null }, now = Date.now()): RateLock {
+  const t = Date.parse(change.at)
+  const pending = subs.filter((s) => s.status === 'pending' && s.at != null && Number.isFinite(t) && (s.at as number) <= t).sort((a, b) => (a.at as number) - (b.at as number))
+  const lockEnds = pending.length ? (pending[0].at as number) + RATE_LOCK_DAYS * 86_400_000 : null
+  return { pending, lockEnds, daysLeft: lockEnds == null ? null : Math.max(0, Math.ceil((lockEnds - now) / 86_400_000)), lower: payWentDown(change.before, change.after) }
 }

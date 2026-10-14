@@ -389,6 +389,13 @@ export function talksTerms(text: string): boolean {
   return /\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|of)\b|\[your rate|\bpricing\b|\bprice list\b|\b(your|our|the) budget\b|\bbudget (for|is)\b|\bfees?\b|\binvoice|\bmedia kit\b|\bdeliverables\b|\busage rights\b|\b(content|video|creator) packages?\b|what a partnership could look like/i.test(text)
 }
 
+/** A message about money the creator raised themselves (a retainer ask:
+ *  lib/trybe-retainer), never learned as their everyday voice. Replies may
+ *  still answer a brand that offers a retainer, so this is not talksTerms. */
+export function asksMoney(text: string): boolean {
+  return talksTerms(text) || /\bretainers?\b|\$\s?\d[\d,]*\s+for\s+\d+\s+videos/i.test(text)
+}
+
 export interface ReplyFacts {
   coreMessage: string
   creator: string[]

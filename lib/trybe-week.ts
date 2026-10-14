@@ -153,3 +153,29 @@ export function goalOf(sent: number, goal = MONTHLY_GOAL): GoalRead {
     : `${sent} of ${g} in the last 30 days, ${left} short. The pace: about ${perWeek} a week, or 3 filming days of about ${perBatch}.`
   return { goal: g, sent, left, perWeek, perDay, perBatch, pct, says }
 }
+
+// ── THE SAMPLE GUARD (Seb, 2026-10-14: "build 1, 2, 3, and 4"). Austin calls
+// it sample jail: 100+ samples, 14 filmed. Open requests pile up and brands
+// see you as someone who asks and does not film. Before asking for more:
+// how many samples are here and not filmed, and how many are on the way. Pure.
+
+export const SAMPLE_GUARD_UNFILMED = 5
+export const SAMPLE_GUARD_OPEN = 10
+
+export interface SampleGuard { unfilmed: number; onTheWay: number; filmed: number; level: 'ok' | 'warn' | 'stop'; says: string | null }
+
+export function sampleGuard(samples: Array<Pick<Sample, 'received_at' | 'filmed_at' | 'submitted_at'>>): SampleGuard {
+  let unfilmed = 0, onTheWay = 0, filmed = 0
+  for (const s of samples) {
+    const st = stageOf(s)
+    if (st === 'to_film') unfilmed++
+    else if (st === 'on_the_way') onTheWay++
+    else filmed++
+  }
+  const open = unfilmed + onTheWay
+  const level: SampleGuard['level'] = unfilmed >= SAMPLE_GUARD_UNFILMED * 2 || open >= SAMPLE_GUARD_OPEN * 2 ? 'stop'
+    : unfilmed >= SAMPLE_GUARD_UNFILMED || open >= SAMPLE_GUARD_OPEN ? 'warn' : 'ok'
+  const says = level === 'ok' ? null
+    : `You have ${unfilmed} sample${unfilmed === 1 ? '' : 's'} here and not filmed${onTheWay ? `, and ${onTheWay} on the way` : ''}. ${level === 'stop' ? 'Film these before asking any brand for another one' : 'Film some of these before asking for more'}: brands see who asks and never films.`
+  return { unfilmed, onTheWay, filmed, level, says }
+}

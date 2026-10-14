@@ -245,3 +245,47 @@ export function notRunning(videos: AdVideo[], days: number): NotRun[] {
     }
   }).sort((a, b) => b.videos - a.videos)
 }
+
+// ── HOOK RATE AGAINST CLICK RATE (Colin Reich, Seb 2026-10-14: "build 1, 2,
+// 3, and 4"). Read together they say what to fix: "55% hook rate and a 0.1%
+// click through rate" is a hook that stops the wrong people; a low hook rate
+// with a good click rate is a good body behind a weak hook. Then remix: the
+// hook of your best stopper with the body of your best clicker. Pure.
+
+export type Diagnosis = 'winner' | 'wrong_people' | 'weak_hook' | 'weak' | 'early'
+export const DIAGNOSIS_WORDS: Record<Diagnosis, { label: string; fix: string }> = {
+  winner: { label: 'Winner', fix: 'Make more like it: same hook style, new angles.' },
+  wrong_people: { label: 'Hook stops the wrong people', fix: 'People stop but do not click: make the hook about the problem the product solves, not shock value.' },
+  weak_hook: { label: 'Good body, weak hook', fix: 'People who stay click: keep this body and try a stronger first 3 seconds.' },
+  weak: { label: 'Neither works yet', fix: 'Try a different angle from the brief.' },
+  early: { label: 'Too early to judge', fix: 'Fewer than 1,000 impressions: give it time.' },
+}
+/** Below this many impressions a video is not judged. */
+export const MIN_IMPRESSIONS = 1000
+
+/** One video's hook rate (percent) against its click rate (percent). Pure. */
+export function diagnose(v: Pick<AdTotals, 'hookRate' | 'ctr' | 'impressions'>): Diagnosis | null {
+  if (v.hookRate == null || v.ctr == null) return null
+  if (v.impressions != null && v.impressions < MIN_IMPRESSIONS) return 'early'
+  const hookHigh = v.hookRate >= 25, clickHigh = v.ctr >= 1
+  if (hookHigh && clickHigh) return 'winner'
+  if (v.hookRate >= 40 && v.ctr < 0.5) return 'wrong_people'
+  if (!hookHigh && clickHigh) return 'weak_hook'
+  if (hookHigh) return v.ctr < 0.5 ? 'wrong_people' : 'winner'
+  return 'weak'
+}
+
+export interface Remix { hookFrom: AdVideo; bodyFrom: AdVideo; says: string }
+
+/** The remix: the opening of your video that stops people best (among ones
+ *  with a fair click rate) with the body of the one that clicks best, when
+ *  they are two different videos. Pure. */
+export function remixOf(videos: AdVideo[]): Remix | null {
+  const judged = videos.filter((v) => v.hookRate != null && v.ctr != null && (v.impressions == null || v.impressions >= MIN_IMPRESSIONS))
+  if (judged.length < 2) return null
+  const hook = [...judged].filter((v) => (v.ctr as number) >= 0.3).sort((a, b) => (b.hookRate as number) - (a.hookRate as number))[0]
+  const body = [...judged].sort((a, b) => (b.ctr as number) - (a.ctr as number))[0]
+  if (!hook || !body || hook.id === body.id) return null
+  const name = (v: AdVideo) => `"${(v.title || 'a video').slice(0, 60)}"`
+  return { hookFrom: hook, bodyFrom: body, says: `Remix: open with the first 3 seconds of ${name(hook)} (hook rate ${(hook.hookRate as number).toFixed(1)}%), then the body of ${name(body)} (click rate ${(body.ctr as number).toFixed(2)}%).` }
+}

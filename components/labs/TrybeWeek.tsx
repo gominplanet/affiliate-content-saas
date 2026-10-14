@@ -9,6 +9,7 @@
 // (lib/trybe-week.ts). A list MVP could not read says so, never "no samples".
 
 import TrybeGoal from '@/components/labs/TrybeGoal'
+import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileDown } from 'lucide-react'
@@ -435,6 +436,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         {exporting && <p className="w-full text-[12px] inline-flex items-center gap-1" style={soft}>{exporting}</p>}
       </div>
 
+      <TrybeSampleGuard samples={rows} />
       <TrybeGoal canRead={canRead} />
 
       {/* YOUR MONTH: the video target per focus brand. */}

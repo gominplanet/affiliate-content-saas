@@ -23,7 +23,8 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { AmazonLine } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { type Pooled, POOL_MIN } from '@/lib/trybe-changes'
-import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, reviewOf, reviewWords, STUCK_DAYS, FOCUS_COUNT,
+import { fetchChanges } from '@/components/labs/TrybeChanges'
+import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, reviewOf, reviewWords, rateLockOf, RATE_LOCK_DAYS, STUCK_DAYS, FOCUS_COUNT,
   type MyBrand, type Submission, type Verdict } from '@/lib/trybe-mybrands'
 
 const PURPLE = '#7C3AED'
@@ -199,6 +200,17 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
     finally { setPoolSaving(false) }
   }
   const stuck = useMemo(() => (brands || []).map(b => ({ b, list: stuckOf(subs[b.id]?.subs || []) })).filter(x => x.list.length > 0), [brands, subs])
+  // RATE LOCK WATCH (lib/trybe-mybrands rateLockOf): a brand of yours that
+  // changed its pay in the last 14 days while your videos wait in review.
+  const [payChanges, setPayChanges] = useState<Array<{ brand_id: string; at: string; before: string | null; after: string | null }> | null>(null)
+  useEffect(() => { if (canRead) fetchChanges(14).then(c => setPayChanges(c.changes.filter(x => x.kind === 'pay'))).catch(() => setPayChanges(null)) }, [canRead])
+  const locks = useMemo(() => (brands || []).map(b => {
+    const ch = (payChanges || []).filter(c => c.brand_id === b.id).sort((x, y) => Date.parse(y.at) - Date.parse(x.at))[0]
+    const s = subs[b.id]
+    if (!ch || !s || !s.complete || s.error) return null
+    const lock = rateLockOf(s.subs, ch)
+    return lock.pending.length && lock.lower !== false ? { b, ch, lock } : null
+  }).filter((x): x is NonNullable<typeof x> => !!x), [brands, subs, payChanges])
   const subErrors = Object.entries(subs).filter(([, s]) => s.error)
 
   const totals = useMemo(() => {
@@ -254,6 +266,26 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
           <Tile label="Focus brands" value={String(totals.focus.length)} hint={totals.focusShare != null && totals.focus.length ? `${Math.round(totals.focusShare * 100)}% of what you earned` : 'none has paid yet'} tone={totals.focus.length ? GREEN : undefined} />
           <Tile label="Stuck in review" value={subProgress && subProgress.done < subProgress.of ? '…' : String(stuck.reduce((n, x) => n + x.list.length, 0))} hint={`over ${STUCK_DAYS} days`} tone={stuck.length ? AMBER : undefined} />
         </div>
+
+        {locks.length > 0 && (
+          <section className={card} style={{ ...cardStyle, borderColor: 'rgba(220,38,38,0.35)' }}>
+            <p className="text-[14px] font-semibold inline-flex items-center gap-1.5"><AlertTriangle size={15} style={{ color: RED }} /> Pay changed while your videos wait</p>
+            <p className="text-[12px] mt-0.5" style={soft}>These brands changed their pay while your videos are still in review. Some creators say a video keeps the old rate for {RATE_LOCK_DAYS} days after you send it (not confirmed by TRYBE), so a friendly nudge now is worth it. The nudge asks about the videos, never the pay.</p>
+            <div className="mt-3 space-y-3">
+              {locks.map(({ b, ch, lock }) => (
+                <div key={b.id}>
+                  <p className="text-[12.5px] mb-1">
+                    <b>{b.name}</b> changed its pay {new Date(ch.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{ch.before && ch.after ? ` (was ${ch.before}, now ${ch.after})` : ''}{lock.lower ? ': lower' : ''}.
+                    {' '}{lock.pending.length} of your videos {lock.pending.length === 1 ? 'is' : 'are'} still in review{lock.lockEnds ? `; the oldest reaches ${RATE_LOCK_DAYS} days on ${new Date(lock.lockEnds).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}${lock.daysLeft != null ? ` (${lock.daysLeft} day${lock.daysLeft === 1 ? '' : 's'} left)` : ''}` : ''}.
+                  </p>
+                  <StuckBrand b={b} list={lock.pending} chat={convos ? chatFor(b.name, convos) : null} convosRead={!!convos} canSend={canSend}
+                    me={me} myName={myName} nudgedAt={nudged[b.id] || null} scoutOpens={scoutOpens}
+                    onNudged={() => { markNudged(b.id); setNudged(readNudged()) }} />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {stuck.length > 0 && (
           <section className={card} style={{ ...cardStyle, borderColor: 'rgba(180,83,9,0.35)' }}>

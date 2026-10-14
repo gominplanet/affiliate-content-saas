@@ -12,7 +12,7 @@
 // that talk rates or terms (TRYBE brands set the pay), and hands a few to
 // every writer as examples of the creator's voice. Pure, so it is tested.
 
-import { talksTerms } from '@/lib/trybe-outreach'
+import { asksMoney } from '@/lib/trybe-outreach'
 
 export interface VoiceSample { brand: string; text: string; at: number }
 
@@ -43,7 +43,7 @@ export function pickVoice(candidates: VoiceSample[], mvpTexts: string[]): VoiceS
   for (const c of [...candidates].sort((a, b) => b.at - a.at)) {
     const text = String(c.text || '').replace(/\r/g, '').trim()
     if (text.length < 25) continue
-    if (talksTerms(text)) continue
+    if (asksMoney(text)) continue
     if (mvp.some((m) => likeness(text, m) >= LIKE_MVP)) continue
     if (kept.some((k) => likeness(text, k.text) >= 0.7)) continue
     kept.push({ brand: String(c.brand || '').slice(0, 80), text: text.slice(0, 700), at: Number(c.at) || 0 })
@@ -58,7 +58,7 @@ export function readVoiceBody(v: unknown): VoiceSample[] {
   return v.slice(0, VOICE_MAX).map((x) => {
     const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
     return { brand: String(o.brand || '').slice(0, 80), text: String(o.text || '').slice(0, 700), at: Number(o.at) || 0 }
-  }).filter((x) => x.text.trim().length >= 25 && !talksTerms(x.text))
+  }).filter((x) => x.text.trim().length >= 25 && !asksMoney(x.text))
 }
 
 /** The block every writer reads: a few of the creator's own messages, newest

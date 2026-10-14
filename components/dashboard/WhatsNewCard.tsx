@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-14-4'
+const RELEASE_ID = '2026-10-14-5'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,29 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // TRYBE, the fifth release of the day (Seb, 2026-10-14: from six TRYBE
+  // strategy videos, "build 1, 2, 3, and 4"). Newest first.
+  {
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'TRYBE retainers: when to ask, the ask, and the deal',
+    desc: 'My brands shows the brands ready for a retainer (25+ videos in 30 days, 10+ approved, and a payout), drafts the ask from your real numbers for you to send, and tracks the deal once they say yes: videos due, days left and the top up.',
+    href: '/trybe?tab=brands',
+  },
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'What each video needs: the hook or the body',
+    desc: 'Your best videos now read hook rate against click rate: a hook that stops the wrong people, a good body behind a weak hook, or a winner. Plus a remix to try: the hook of one video with the body of another.',
+    href: '/trybe?tab=brands',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#B45309',
+    title: 'Sample guard and rate lock watch',
+    desc: 'Before you ask for more samples, MVP tells you how many are waiting to be filmed. And when a brand changes its pay while your videos are in review, My brands lists them with a friendly nudge to send.',
+    href: '/trybe?tab=week',
+  },
   // TRYBE, the fourth release of the day (Seb, 2026-10-14: Huntr's five and
   // Keighly Hart's four). Newest first.
   {

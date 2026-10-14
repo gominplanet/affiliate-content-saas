@@ -41,6 +41,8 @@ import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
+import TrybeRetainers from '@/components/labs/TrybeRetainers'
+import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
 import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, NewChip, StaticsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -1520,6 +1522,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 ))}
               </div>
             </div>
+            {!preview && <TrybeSampleGuard onFilm={() => go('week')} />}
             {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
             <FinderPresets filters={filters} sort={sortBy} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
             <FinderFilterBar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ} />
@@ -1850,6 +1853,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         directory={inboxDirectory} />}
 
       {tab === 'brands' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
+      {tab === 'brands' && canMyBrands && <TrybeRetainers canRead={canMyBrands} scoutOpens={scoutOpens} />}
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}
           isAdmin={isAdmin} scoutOpens={scoutOpens} needsUpdate={myBrandsUpdate} poolOptOut={poolOptOut} onPoolOptOut={setPoolOptOut} />

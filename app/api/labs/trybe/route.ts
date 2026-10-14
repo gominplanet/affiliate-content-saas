@@ -24,6 +24,7 @@ import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH
 import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
+import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
@@ -705,6 +706,28 @@ export async function POST(request: Request) {
     const { error: hkErr } = await admin.from('trybe_directory_meta').upsert({ key: 'top100_hooks', value: { at: now, hooks, from: 'scripts' }, updated_at: now })
     if (hkErr) return NextResponse.json({ error: hkErr.message }, { status: 500 })
     return NextResponse.json({ ok: true, saved: hooks.length })
+  }
+
+  // ── RETAINERS YOU TRACK (migration 432, lib/trybe-retainer) ─────────────
+
+  if (action === 'retainers' || action === 'retainer_save' || action === 'retainer_remove') {
+    const { data: st, error: stErr } = await admin.from('trybe_outreach_settings').select('retainers').eq('user_id', ownerId).maybeSingle()
+    if (stErr) {
+      const missing = /retainers|does not exist|schema cache/i.test(stErr.message)
+      return NextResponse.json({ error: missing ? setupWords(tier, 'Tracking retainers needs migration 432 in Supabase first.') : dbWords(stErr.message), needsMigration: missing }, { status: missing ? 409 : 500 })
+    }
+    let list = readRetainers(st?.retainers)
+    if (action === 'retainers') return NextResponse.json({ ok: true, retainers: list })
+    if (action === 'retainer_save') {
+      const one = readRetainers([body.retainer])[0]
+      if (!one) return NextResponse.json({ error: 'The amount, the videos and the start date are needed.' }, { status: 400 })
+      list = [one, ...list.filter(r => r.brandId !== one.brandId)].slice(0, 20)
+    } else {
+      list = list.filter(r => r.brandId !== brandId)
+    }
+    const { error: upErr } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, retainers: list, updated_at: now })
+    if (upErr) return NextResponse.json({ error: dbWords(upErr.message) }, { status: 500 })
+    return NextResponse.json({ ok: true, retainers: list })
   }
 
   if (action === 'top_hooks') {

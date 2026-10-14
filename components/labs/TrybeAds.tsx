@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle } from 'lucide-react'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
-import { paceOf, adBrands, adWinners, bestVideos, notRunning, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
+import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -48,6 +48,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const winners = full ? adWinners(brands, days) : []
   const best = full && read ? bestVideos(read.videos) : []
   const stalled = full && read ? notRunning(read.videos, days) : []
+  const remix = full && read ? remixOf(read.videos) : null
   const nothingRead = full && t && Object.values(t).every((v) => v == null)
 
   return (
@@ -149,11 +150,24 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
                     {v.avgWatchSec != null && <span>watch {v.avgWatchSec.toFixed(1)}s</span>}
                     {v.live && <span className="font-semibold" style={{ color: GREEN }}>live</span>}
                   </p>
+                  {(() => {
+                    const dg = diagnose(v)
+                    if (!dg) return null
+                    const w = DIAGNOSIS_WORDS[dg]
+                    const tone = dg === 'winner' ? GREEN : dg === 'early' ? 'var(--text-3)' : AMBER
+                    return <p className="text-[11.5px]" title={w.fix}><span className="font-semibold" style={{ color: tone }}>{w.label}.</span> <span style={soft}>{w.fix}</span></p>
+                  })()}
                 </div>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {remix && (
+        <p className="text-[12.5px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.07)' }}>
+          <b style={{ color: PURPLE }}>Try this remix.</b> {remix.says.replace(/^Remix: /, '')}
+        </p>
       )}
 
       {read?.source === 'earnings' && read.videos.length > 0 && (
