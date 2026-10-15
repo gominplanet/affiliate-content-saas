@@ -24,6 +24,7 @@ import { afterAccept, readChat, type VideoPlan, type ChatRead, type AfterState }
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
+import { AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 
 const PURPLE = '#7C3AED'
@@ -173,11 +174,13 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
         <div className="mt-2 rounded-md px-2.5 py-2" style={{ background: 'rgba(22,163,74,0.10)', color: '#15803d' }}>
           <p className="font-semibold inline-flex items-center gap-1"><PlayCircle size={12} /> You already have {onAmz.yourVideos} Amazon video{onAmz.yourVideos === 1 ? '' : 's'} of {b.name}&rsquo;s products</p>
           <p className="mt-0.5" style={{ color: 'var(--text-2)' }}>Submit {onAmz.yourVideos === 1 ? 'it' : 'them'} on TRYBE first: paid videos with no new filming. Check each one still fits {b.name}&rsquo;s brief.</p>
-          {onAmz.videoLinks.length > 0 && (
-            <p className="mt-1 flex flex-wrap gap-x-3">
-              {onAmz.videoLinks.map((u, i) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-semibold underline inline-flex items-center gap-0.5">Video {i + 1} <ExternalLink size={10} /></a>)}
-            </p>
-          )}
+          {onAmz.products?.length
+            ? <AmazonFilmedList products={onAmz.products} title="Which ones" className="mt-1.5" />
+            : onAmz.videoLinks.length > 0 && (
+              <p className="mt-1 flex flex-wrap gap-x-3">
+                {onAmz.videoLinks.map((u, i) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-semibold underline inline-flex items-center gap-0.5">Video {i + 1} <ExternalLink size={10} /></a>)}
+              </p>
+            )}
         </div>
       )}
       {(st.state === 'send_first' || st.state === 'no_answer') && !composer && (

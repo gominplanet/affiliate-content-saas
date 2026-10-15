@@ -17,7 +17,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
-import { AmazonLine, ProductAmazon } from '@/components/labs/TrybeFinderControls'
+import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
 const PURPLE = '#7C3AED'
@@ -148,7 +148,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
           <button onClick={() => setBrand(null)} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another brand</button>
           <h2 className="text-[20px] font-bold">Which {brand.name} product do you have?</h2>
           <AmazonLine amazon={amz.brand(brand.id)} />
-          <p className="text-[13.5px] mt-0.5" style={soft}>Every script is about the product you pick, so pick the one in your hands.</p>
+          <AmazonFilmedList products={amz.brand(brand.id)?.products} title={`Your Amazon videos of ${brand.name}`} />
+          <p className="text-[13.5px] mt-1.5" style={soft}>Every script is about the product you pick, so pick the one in your hands.</p>
           {pageLoading ? (
             <p className="mt-3 text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading {brand.name}&rsquo;s page on TRYBE: the products it promotes and its creative brief...</p>
           ) : (<>
@@ -225,6 +226,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
             return (
               <div className="mt-2 rounded-xl px-3 py-2" style={{ background: 'rgba(22,163,74,0.08)' }}>
                 <ProductAmazon match={m} />
+                <AmazonFilmedList products={m.products} title="This product on Amazon" className="mt-1.5" />
                 <p className="text-[12.5px] mt-1" style={soft}>You can submit {m.yourVideos === 1 ? 'that video' : 'those videos'} on TRYBE too, if {m.yourVideos === 1 ? 'it fits' : 'they fit'} {brand.name}&rsquo;s brief. The scripts below are for new videos.</p>
               </div>
             )

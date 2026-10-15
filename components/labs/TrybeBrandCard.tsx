@@ -15,7 +15,7 @@ import { ExternalLink, Globe, Handshake, Loader2, FileText, ChevronDown, Search 
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats } from '@/lib/trybe-mybrands'
 import { brandIdFromChat, brandPageUrl, matchBrand, readBrandCard, type BrandCard, type BrandRef } from '@/lib/trybe-brand-page'
-import { AmazonLine } from '@/components/labs/TrybeFinderControls'
+import { AmazonLine, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
 const PURPLE = '#7C3AED'
@@ -122,6 +122,7 @@ export default function TrybeBrandCard({ chatName, chatRaw, directory, canStats,
         </span>
       </div>
       <AmazonLine amazon={amz.brand(brand.id)} />
+      <AmazonFilmedList products={amz.brand(brand.id)?.products} title={`Your Amazon videos of ${brand.name}`} />
       <p className="text-[11.5px] mt-1.5" style={{ color: 'var(--text-2)' }}>
         Request a sample, read the creative brief and see the commission program on the brand page.
         {brand.source !== 'chat' && <> Matched by name{brand.source === 'joined' ? ' to a brand you joined' : ' to MVP’s brand list'}; if it is the wrong brand, use the search on TRYBE.</>}

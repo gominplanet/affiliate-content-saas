@@ -190,6 +190,25 @@ export interface AmazonOf {
   ccBestPct: number | null
   /** One of its products on Amazon, for a link. */
   asin: string | null
+  /** The products of it the creator filmed, by ASIN, most videos first: the
+   *  product's name on Amazon and the creator's videos of it (aci). Seb,
+   *  2026-10-15: show the ASIN, the product and the videos, not a count. */
+  products: AmazonFilmed[]
+}
+export interface AmazonFilmed { asin: string; title: string | null; acis: string[] }
+
+/** Videos grouped by product: at most `max` products, 3 videos each, the
+ *  products with most videos first. Pure. */
+export function filmedProducts(videos: AmazonVideoProduct[], max = 6): AmazonFilmed[] {
+  const by = new Map<string, AmazonFilmed>()
+  for (const v of videos) {
+    if (!v.asin) continue
+    const p = by.get(v.asin) ?? { asin: v.asin, title: v.title, acis: [] }
+    if (!p.title && v.title) p.title = v.title
+    if (!p.acis.includes(v.aci)) p.acis.push(v.aci)
+    by.set(v.asin, p)
+  }
+  return Array.from(by.values()).sort((a, b) => b.acis.length - a.acis.length).slice(0, max).map((p) => ({ ...p, acis: p.acis.slice(0, 3) }))
 }
 
 /** Name variants an exact brand_name lookup should try (Amazon writes
@@ -223,9 +242,10 @@ export function amazonOf(name: string, input: { videos: AmazonVideoProduct[]; st
   const live = mine.filter((c) => !c.ends_at || c.ends_at >= input.today)
   const ccAsins = new Set(mine.flatMap((c) => c.asins || []))
   const acis = new Set<string>()
+  const filmed: AmazonVideoProduct[] = []
   let asin: string | null = null
   for (const v of input.videos) {
-    if (ccAsins.has(v.asin) || titleIsBrand(v.title, name)) { acis.add(v.aci); asin = asin || v.asin }
+    if (ccAsins.has(v.asin) || titleIsBrand(v.title, name)) { acis.add(v.aci); filmed.push(v); asin = asin || v.asin }
   }
   const pcts = live.map((c) => Number(c.commission_pct)).filter((n) => Number.isFinite(n) && n > 0)
   return {
@@ -235,6 +255,7 @@ export function amazonOf(name: string, input: { videos: AmazonVideoProduct[]; st
     ccCampaigns: live.length,
     ccBestPct: pcts.length ? Math.round(Math.max(...pcts) * 10) / 10 : null,
     asin: asin || (live.find((c) => c.asins?.length)?.asins[0] ?? null),
+    products: filmedProducts(filmed),
   }
 }
 

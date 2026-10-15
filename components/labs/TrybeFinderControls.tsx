@@ -8,7 +8,7 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, Image as ImageIcon } from 'lucide-react'
+import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
@@ -23,7 +23,10 @@ const chip = 'text-[12px] font-semibold rounded-full px-2.5 py-1 border inline-f
 export interface LiveAmazon {
   yourVideos: number; storefront: number; ccCampaigns: number; ccBestPct: number | null
   videoLinks: string[]; productUrl: string | null
+  /** Each product filmed: ASIN, its Amazon page, and the creator's videos of it. */
+  products?: FilmedLive[]
 }
+export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
 export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false }
 export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview)
@@ -192,6 +195,48 @@ export function amazonPills(amazon: LiveAmazon | null | undefined, links = true)
 export function AmazonLine({ amazon, links = true, className = 'mt-1.5' }: { amazon: LiveAmazon | null | undefined; links?: boolean; className?: string }) {
   const parts = amazonPills(amazon, links)
   return parts.length ? <span className={`flex flex-wrap items-center gap-1.5 ${className}`}>{parts}</span> : null
+}
+
+/** THE PRODUCTS YOU FILMED (Seb, 2026-10-15: "show the amazon asin and
+ *  product link that direct users to the amazon page or even better to the
+ *  content on amazon they already produced"). One row per product: its name
+ *  on Amazon, its ASIN (press to copy), its Amazon page and your videos of it.
+ *  Nothing shows when MVP matched none. */
+export function AmazonFilmedList({ products, title = 'Your Amazon videos of its products', className = 'mt-2' }: { products?: FilmedLive[] | null; title?: string; className?: string }) {
+  if (!products?.length) return null
+  const a = 'font-semibold underline inline-flex items-center gap-0.5 whitespace-nowrap'
+  return (
+    <div className={`${className} rounded-xl px-3 py-2.5`} style={{ background: 'rgba(22,163,74,0.07)' }}>
+      <p className="text-[12px] font-bold inline-flex items-center gap-1" style={{ color: GREEN }}><PlayCircle size={12} /> {title}</p>
+      <ul className="mt-1.5 flex flex-col gap-2">
+        {products.map((p) => (
+          <li key={p.asin} className="text-[12.5px]">
+            <span className="block leading-snug [overflow-wrap:anywhere]" style={{ color: 'var(--text)' }}>{p.title || 'Product on Amazon'}</span>
+            <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ color: GREEN }}>
+              <CopyAsin asin={p.asin} />
+              <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={a}>Amazon page <ExternalLink size={10} /></a>
+              {p.videos.map((v, i) => (
+                <a key={v} href={v} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={a}>
+                  <PlayCircle size={11} /> {p.videos.length === 1 ? 'Your video' : `Video ${i + 1}`}
+                </a>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function CopyAsin({ asin }: { asin: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button type="button" title="Copy the ASIN"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); void navigator.clipboard?.writeText(asin).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {}) }}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11.5px] font-semibold" style={{ background: 'rgba(22,163,74,0.12)' }}>
+      ASIN {asin} {copied ? <Check size={10} /> : <Copy size={10} />}
+    </button>
+  )
 }
 
 /** One TRYBE product you already filmed on Amazon. */

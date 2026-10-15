@@ -21,7 +21,7 @@
 
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -389,7 +389,16 @@ async function memberRows(admin: Db, ids: string[]): Promise<{ rows: MemberRow[]
 
 /** A brand's Amazon match as the page shows it, with links. */
 function amazonLive(a: AmazonOf) {
-  return { ...a, videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[], productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null }
+  return {
+    ...a,
+    videoLinks: a.videoAcis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[],
+    productUrl: a.asin ? `https://www.amazon.com/dp/${a.asin}` : null,
+    // Each product filmed: its ASIN, its Amazon page, and the creator's videos of it.
+    products: filmedLive(a.products),
+  }
+}
+function filmedLive(products: AmazonFilmed[]) {
+  return products.map(p => ({ asin: p.asin, title: p.title, url: `https://www.amazon.com/dp/${p.asin}`, videos: p.acis.map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[] }))
 }
 
 export async function POST(request: Request) {
@@ -1178,12 +1187,17 @@ export async function POST(request: Request) {
     const today = now.slice(0, 10)
     const out: Record<string, ReturnType<typeof amazonLive>> = {}
     for (const b of brands) out[b.id] = amazonLive(amazonOf(b.name, { ...ctx, today }))
-    const prods: Record<string, { yourVideos: number; videoLinks: string[] }> = {}
+    const prods: Record<string, { yourVideos: number; videoLinks: string[]; products: ReturnType<typeof filmedLive> }> = {}
     for (const p of products) {
       const key = brandKeyOf(p.brand)
       const asins = new Set(ctx.campaigns.filter(c => brandKeyOf(c.brand_name) === key).flatMap(c => c.asins || []))
       const acis = productOnAmazon(p.name, p.brand, ctx.videos, asins)
-      prods[`${p.brand}|${p.name}`] = { yourVideos: acis.length, videoLinks: acis.slice(0, 3).map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[] }
+      const hit = new Set(acis)
+      prods[`${p.brand}|${p.name}`] = {
+        yourVideos: acis.length,
+        videoLinks: acis.slice(0, 3).map(aci => amazonVideoPage(aci, null, null)?.url).filter(Boolean) as string[],
+        products: filmedLive(filmedProducts(ctx.videos.filter(v => hit.has(v.aci)), 3)),
+      }
     }
     return NextResponse.json({ ok: true, brands: out, products: prods, notes: ctx.notes, amazonVideos: ctx.videos.length })
   }

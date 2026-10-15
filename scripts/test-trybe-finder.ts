@@ -11,7 +11,7 @@ import { pickScore, weighScore, readPriorities, DEFAULT_PRIORITIES, FACTORS } fr
 import { payPasses, readPay } from '../lib/trybe-outreach'
 import type { Judged, MyBrand } from '../lib/trybe-mybrands'
 import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '../lib/labs-preview'
-import { productOnAmazon, productWords } from '../lib/trybe-finder'
+import { productOnAmazon, productWords, filmedProducts } from '../lib/trybe-finder'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -133,6 +133,29 @@ check('no link in MVP points at the old address', ['components/layout/DashboardS
 check('after a yes, the Amazon videos you already have are offered to submit first', /Submit \{onAmz\.yourVideos === 1 \? 'it' : 'them'\} on TRYBE first/.test(read('components/labs/TrybeAfterAccept.tsx')))
 
 check('Make videos step 3 says when you already filmed the product on Amazon', /amz\.product\(brand\.name, product\)/.test(read('components/labs/TrybeCreate.tsx')) && /The scripts below are for new videos/.test(read('components/labs/TrybeCreate.tsx')))
+
+// THE PRODUCTS YOU FILMED (Seb, 2026-10-15: show the ASIN, the product page
+// and the videos, not a count).
+{
+  const vids = [
+    { aci: 'a1', asin: 'B0AAA', title: 'NutraHarmony Magnesium Glycinate 120 Capsules' },
+    { aci: 'a2', asin: 'B0AAA', title: 'NutraHarmony Magnesium Glycinate 120 Capsules' },
+    { aci: 'a3', asin: 'B0BBB', title: 'NutraHarmony Ashwagandha Gummies' },
+    { aci: 'a4', asin: 'B0AAA', title: null },
+    { aci: 'a5', asin: 'B0CCC', title: 'Other Brand Fish Oil' },
+  ]
+  const fp = filmedProducts(vids.slice(0, 4))
+  check('filmed products: one row per ASIN, most videos first', fp.length === 2 && fp[0].asin === 'B0AAA' && fp[0].acis.length === 3 && fp[1].asin === 'B0BBB')
+  check('filmed products: a row keeps the product name when one video has none', fp[0].title === 'NutraHarmony Magnesium Glycinate 120 Capsules')
+  check('filmed products: at most 3 videos a product', filmedProducts(Array.from({ length: 9 }, (_, i) => ({ aci: `x${i}`, asin: 'B0X', title: 't' })))[0].acis.length === 3)
+  const a = amazonOf('NutraHarmony', { videos: vids, storefront: new Map(), campaigns: [], today: '2026-10-15' })
+  check('the brand match lists the products filmed, never another brand', a.products.length === 2 && !a.products.some((p) => p.asin === 'B0CCC') && a.yourVideos === 3)
+  const R = read('app/api/labs/trybe/route.ts')
+  check('each filmed product goes out with its Amazon page and video links', /url: `https:\/\/www\.amazon\.com\/dp\/\$\{p\.asin\}`/.test(R) && /products: filmedLive\(a\.products\)/.test(R) && /products: filmedLive\(filmedProducts\(/.test(R))
+  const C = read('components/labs/TrybeFinderControls.tsx')
+  check('the list shows the ASIN to copy, the Amazon page and your videos', /ASIN \{asin\}/.test(C) && /Amazon page/.test(C) && /Your video/.test(C))
+  for (const f of ['components/labs/TrybeCreate.tsx', 'components/labs/TrybeBrandCard.tsx', 'components/labs/TrybeAfterAccept.tsx']) check(`${f} shows the products you filmed`, /<AmazonFilmedList /.test(read(f)))
+}
 
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

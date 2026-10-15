@@ -8,9 +8,9 @@
 // A failed read is kept as the error, never as "not on Amazon".
 
 import { useEffect, useMemo, useState } from 'react'
-import type { LiveAmazon } from '@/components/labs/TrybeFinderControls'
+import type { LiveAmazon, FilmedLive } from '@/components/labs/TrybeFinderControls'
 
-export interface ProductAmazonMatch { yourVideos: number; videoLinks: string[] }
+export interface ProductAmazonMatch { yourVideos: number; videoLinks: string[]; products?: FilmedLive[] }
 const TTL = 10 * 60_000
 const brandCache = new Map<string, { at: number; v: LiveAmazon }>()
 const productCache = new Map<string, { at: number; v: ProductAmazonMatch }>()
