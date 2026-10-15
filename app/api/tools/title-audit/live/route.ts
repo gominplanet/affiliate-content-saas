@@ -8,6 +8,10 @@
 //       post's own address supports.
 // POST  { postId, use: 'mvp' }                   put MVP's title back on the site
 //       { postId, use: 'site', title }            keep the site's title, and record it in MVP
+//       { action: 'keep-record', keepId }         one post, two records: keep this record on the
+//                                                 post; the others are unlinked and kept as drafts
+//       { action: 'match-address', postId }       give the post an address made from its title,
+//                                                 with a 301 from the old one
 //
 // WHY. The scan beside this compares MVP's copy of a title with MVP's copy of
 // the body, so it cannot see a title that was changed on the site: a title fix
@@ -22,6 +26,8 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { listSites } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { hostOf, slugOfUrl, samePost, sameTitle, titleFitsSlug, credsForPost, checkSamePost } from '@/lib/post-site'
+import { shortSlug } from '@/lib/short-slug'
+import { applyWpRedirects } from '@/lib/wp-redirects'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,8 +66,8 @@ export async function GET() {
   const shareKey = (r: Row) => `${hostOf(r.wordpress_url)}#${r.wordpress_post_id}`
   const sharing = new Map<string, Row[]>()
   for (const r of rows) sharing.set(shareKey(r), [...(sharing.get(shareKey(r)) ?? []), r])
-  const shared = [...sharing.values()].filter((g) => g.length > 1)
-    .map((g) => ({ url: g[0].wordpress_url as string, records: g.map((r) => ({ postId: r.id, title: r.title })) }))
+  const sharedGroups = [...sharing.values()].filter((g) => g.length > 1)
+  const liveTitleOf = new Map<string, string>()
 
   const sites = await listSites(admin, o.ownerId)
   const byHost = new Map<string, Row[]>()
@@ -75,7 +81,7 @@ export async function GET() {
 
   const differs: Array<{ postId: string; url: string; mvpTitle: string; liveTitle: string; suggest: 'mvp' | 'site' | null; why: string }> = []
   const misfiled: Array<{ postId: string; url: string; mvpTitle: string; numberNowNames: string }> = []
-  const offTopic: Array<{ postId: string; url: string; title: string }> = []
+  const offTopic: Array<{ postId: string; url: string; title: string; editUrl: string }> = []
   let checked = 0, missing = 0
   const unread: string[] = []
   const started = Date.now()
@@ -90,6 +96,7 @@ export async function GET() {
       for (const r of part) {
         const w = live.get(r.wordpress_post_id as number)
         if (!w) { missing++; continue }
+        liveTitleOf.set(r.id, w.title)
         checked++
         if (!samePost(r.wordpress_url, w)) {
           misfiled.push({ postId: r.id, url: r.wordpress_url as string, mvpTitle: r.title || '', numberNowNames: w.link || w.slug })
@@ -103,7 +110,7 @@ export async function GET() {
           // a baskets review at a car-phone-holder address, linking the holder.
           const slug = slugOfUrl(r.wordpress_url) || w.slug
           if (slug.replace(/-\d+$/, '').split('-').filter((x) => x.length >= 3).length >= 2 && titleFitsSlug(w.title, slug) === 0) {
-            offTopic.push({ postId: r.id, url: r.wordpress_url as string, title: w.title })
+            offTopic.push({ postId: r.id, url: r.wordpress_url as string, title: w.title, editUrl: `${site.url.replace(/\/$/, '')}/wp-admin/post.php?post=${r.wordpress_post_id}&action=edit` })
           }
           continue
         }
@@ -119,6 +126,15 @@ export async function GET() {
       }
     }
   }
+  // Which record's title is the one on the site, so the page can say which
+  // record the post actually holds.
+  const shared = sharedGroups.map((g) => {
+    const liveTitle = g.map((r) => liveTitleOf.get(r.id)).find(Boolean) ?? null
+    return {
+      url: g[0].wordpress_url as string, liveTitle,
+      records: g.map((r) => ({ postId: r.id, title: r.title, onSite: !!(liveTitle && r.title && sameTitle(r.title, liveTitle)) })),
+    }
+  })
   // The likeliest wrong titles first.
   differs.sort((a, b) => (a.suggest === 'mvp' ? 0 : 1) - (b.suggest === 'mvp' ? 0 : 1))
   return NextResponse.json({ checked, missing, differs, misfiled, offTopic, shared, unread, unconnected })
@@ -127,13 +143,67 @@ export async function GET() {
 export async function POST(request: Request) {
   const o = await owner()
   if ('error' in o) return o.error
-  const body = await request.json().catch(() => ({})) as { postId?: string; use?: string; title?: string }
+  const body = await request.json().catch(() => ({})) as { postId?: string; use?: string; title?: string; action?: string; keepId?: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
+
+  // ONE POST, TWO RECORDS: keep this record on the post. Every other record
+  // pointing at the same post on the same site is unlinked from it and kept
+  // in MVP as a draft (its text is not lost), so no fix run from it can
+  // write into this post again. Nothing on the site changes.
+  if (body.action === 'keep-record') {
+    const { data: keep } = await admin.from('blog_posts')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id')
+      .eq('user_id', o.ownerId).eq('id', String(body.keepId || '')).maybeSingle() as { data: Row | null }
+    if (!keep?.wordpress_post_id || !keep.wordpress_url) return NextResponse.json({ error: 'That record is not linked to a post.' }, { status: 404 })
+    const { data: same } = await admin.from('blog_posts')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id')
+      .eq('user_id', o.ownerId).eq('wordpress_post_id', keep.wordpress_post_id).neq('id', keep.id) as { data: Row[] | null }
+    const others = (same ?? []).filter((r) => hostOf(r.wordpress_url) === hostOf(keep.wordpress_url))
+    if (!others.length) return NextResponse.json({ ok: true, unlinked: 0 })
+    const ids = others.map((r) => r.id)
+    const { error } = await admin.from('blog_posts')
+      .update({ wordpress_post_id: null, wordpress_url: null, status: 'draft' })
+      .eq('user_id', o.ownerId).in('id', ids)
+    if (error) return NextResponse.json({ error: `Nothing was changed: ${error.message}` }, { status: 500 })
+    // Google's answer about the post belongs to the record kept.
+    await admin.from('post_seo').delete().in('post_id', ids).then(() => {}, () => {})
+    return NextResponse.json({ ok: true, unlinked: ids.length, titles: others.map((r) => r.title || 'Untitled') })
+  }
   const { data: post } = await admin.from('blog_posts')
     .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id')
     .eq('user_id', o.ownerId).eq('id', String(body.postId || '')).maybeSingle() as { data: Row | null }
   if (!post) return NextResponse.json({ error: 'Post not found.' }, { status: 404 })
+
+  // A POST ABOUT SOMETHING OTHER THAN ITS ADDRESS: give it an address made
+  // from its title. The old address gets a 301 to the new one, so links and
+  // Google's history carry over. Checked against what the site now says.
+  if (body.action === 'match-address') {
+    if (!post.wordpress_post_id || !post.wordpress_url || !post.title) return NextResponse.json({ error: 'This post has no title or address in MVP.' }, { status: 400 })
+    const creds = await credsForPost(admin, o.ownerId, post)
+    if (!creds) return NextResponse.json({ error: 'The site this post is on is not connected, so nothing was changed.' }, { status: 400 })
+    const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token || undefined)
+    const same = await checkSamePost(wp, post.wordpress_post_id, post.wordpress_url)
+    if (!same.ok) return NextResponse.json({ error: same.error }, { status: 409 })
+    const slug = shortSlug(post.title, 60)
+    if (slug.length < 5) return NextResponse.json({ error: 'The title is too short to make an address from.' }, { status: 400 })
+    if (slug === (slugOfUrl(post.wordpress_url) || '').replace(/\/$/, '')) return NextResponse.json({ ok: true, url: post.wordpress_url, unchanged: true })
+    try {
+      await wp.updatePost(post.wordpress_post_id, { slug })
+    } catch (e) {
+      return NextResponse.json({ error: `WordPress refused the change: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 })
+    }
+    const after = await wp.getPostsBrief([post.wordpress_post_id])
+    const now = after?.get(post.wordpress_post_id)
+    if (!now?.link) return NextResponse.json({ error: 'WordPress took the change but MVP could not read the new address back. Open the post to check it.' }, { status: 502 })
+    const oldUrl = post.wordpress_url
+    if (now.link.replace(/\/$/, '') === oldUrl.replace(/\/$/, '')) return NextResponse.json({ error: 'WordPress kept the old address.' }, { status: 502 })
+    await admin.from('blog_posts').update({ wordpress_url: now.link, slug: now.slug || slug }).eq('id', post.id)
+    // WordPress itself sends an old post address to the new one; the MVP
+    // plugin's store makes it a 301 even where that is switched off.
+    const r = await applyWpRedirects(creds, [{ from: oldUrl, to: now.link }]).catch(() => ({ ok: false as const }))
+    return NextResponse.json({ ok: true, url: now.link, oldUrl, redirect: r.ok ? 'plugin' : 'wordpress' })
+  }
 
   if (body.use === 'site') {
     const t = String(body.title || '').replace(/<[^>]+>/g, '').trim().slice(0, 200)

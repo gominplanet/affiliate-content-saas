@@ -11,8 +11,8 @@ import { Loader2, Globe, ExternalLink } from 'lucide-react'
 
 interface Differs { postId: string; url: string; mvpTitle: string; liveTitle: string; suggest: 'mvp' | 'site' | null; why: string }
 interface Misfiled { postId: string; url: string; mvpTitle: string; numberNowNames: string }
-interface OffTopic { postId: string; url: string; title: string }
-interface Shared { url: string; records: Array<{ postId: string; title: string | null }> }
+interface OffTopic { postId: string; url: string; title: string; editUrl?: string }
+interface Shared { url: string; liveTitle?: string | null; records: Array<{ postId: string; title: string | null; onSite?: boolean }> }
 interface Result { checked: number; missing: number; differs: Differs[]; misfiled: Misfiled[]; offTopic?: OffTopic[]; shared?: Shared[]; unread: string[]; unconnected: string[] }
 
 export default function LiveTitleCheck() {
@@ -42,6 +42,30 @@ export default function LiveTitleCheck() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.ok) { toast.error(j.error || 'Nothing was changed.'); return }
       setDone((x) => ({ ...x, [d.postId]: use === 'mvp' ? (j.verified ? 'Title put back on your site, and your site confirms it.' : 'Sent to your site; it did not confirm, so check the post.') : 'Kept the title on your site and recorded it in MVP.' }))
+    } finally { setActing(null) }
+  }
+
+  // One post, two records: keep the chosen record on the post; the others are
+  // unlinked and kept in MVP as drafts.
+  const keepRecord = async (g: Shared, keepId: string) => {
+    setActing(g.url)
+    try {
+      const r = await fetch('/api/tools/title-audit/live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'keep-record', keepId }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { toast.error(j.error || 'Nothing was changed.'); return }
+      setDone((x) => ({ ...x, [g.url]: j.unlinked ? `Kept this record on the post. ${j.unlinked === 1 ? 'The other record was' : `The other ${j.unlinked} records were`} unlinked and kept in MVP as ${j.unlinked === 1 ? 'a draft' : 'drafts'}, so nothing is lost.` : 'Only this record points at the post now. Nothing else to change.' }))
+    } finally { setActing(null) }
+  }
+
+  // A post about something other than its address: a new address from its
+  // title, with a 301 from the old one.
+  const matchAddress = async (o: OffTopic) => {
+    setActing(o.postId)
+    try {
+      const r = await fetch('/api/tools/title-audit/live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'match-address', postId: o.postId }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { toast.error(j.error || 'Nothing was changed.'); return }
+      setDone((x) => ({ ...x, [o.postId]: j.unchanged ? 'The address already matches the title.' : `New address: ${j.url}. The old one sends visitors and Google there${j.redirect === 'plugin' ? ' (a 301 in the MVP plugin)' : ' (WordPress redirects an old post address on its own)'}.` }))
     } finally { setActing(null) }
   }
 
@@ -87,13 +111,33 @@ export default function LiveTitleCheck() {
             <div className="mt-3 rounded-lg border border-[#ff3b30]/40 p-3">
               <p className="font-semibold">{res.shared!.length} post{res.shared!.length === 1 ? ' is' : 's are'} claimed by more than one video in MVP</p>
               <p className="text-[12px] text-[#6e6e73] mt-0.5">
-                Each fix MVP runs from either record writes that record&apos;s text into the same post, so it can end up with one video&apos;s title and another video&apos;s review. Ask support to separate them, or keep one record and delete the other.
+                Each fix MVP runs from either record writes that record&apos;s text into the same post, so it can end up with one video&apos;s title and another video&apos;s review. Keep the record that belongs on this post. The others are unlinked from it and kept in MVP as drafts; nothing on your site changes.
               </p>
-              <ul className="mt-2 flex flex-col gap-1 text-[12px]">
+              <div className="mt-2 flex flex-col gap-3 text-[12px]">
                 {res.shared!.map((g) => (
-                  <li key={g.url}><a href={g.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{g.url}</a>: {g.records.length} records</li>
+                  <div key={g.url}>
+                    <a href={g.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{g.url}</a>
+                    {done[g.url]
+                      ? <p className="mt-1 text-[#1f8a3a]">{done[g.url]}</p>
+                      : (
+                        <ul className="mt-1.5 flex flex-col gap-1.5">
+                          {g.records.map((rec) => (
+                            <li key={rec.postId} className="flex flex-wrap items-center gap-2">
+                              <span className="flex-1 min-w-[12rem]">
+                                {rec.title || 'Untitled record'}
+                                {rec.onSite && <span className="ml-1.5 text-[11px] font-semibold text-[#1f8a3a]">This is the title on your site</span>}
+                              </span>
+                              <button onClick={() => keepRecord(g, rec.postId)} disabled={acting === g.url}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${rec.onSite ? 'bg-[#7C3AED] text-white' : 'border border-[var(--border,#e5e5e7)]'} disabled:opacity-60`}>
+                                {acting === g.url ? 'Working…' : 'Keep this one'}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
@@ -101,13 +145,31 @@ export default function LiveTitleCheck() {
             <div className="mt-3 rounded-lg border border-[#ff3b30]/40 p-3">
               <p className="font-semibold">{res.offTopic!.length} post{res.offTopic!.length === 1 ? ' is' : 's are'} about something other than {res.offTopic!.length === 1 ? 'its' : 'their'} address</p>
               <p className="text-[12px] text-[#6e6e73] mt-0.5">
-                The title shares no word with the post&apos;s address, which was made from its first title. Usually the video and the product link disagreed, so the post was written about one product and links another. Open each one: check the video, the product link and the text all match, and fix it in WordPress or regenerate it from the right video.
+                The title shares no word with the post&apos;s address, which was made from its first title. Open the post first. If the post is right and only the address is old, give it a matching address: the old one keeps working and sends visitors and Google to the new one. If the post is about the wrong product, fix it in WordPress instead.
               </p>
-              <ul className="mt-2 flex flex-col gap-1 text-[12px]">
+              <div className="mt-2 flex flex-col gap-3 text-[12px]">
                 {res.offTopic!.map((o) => (
-                  <li key={o.postId}><a href={o.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{o.url}</a>: titled &quot;{o.title}&quot;</li>
+                  <div key={o.postId}>
+                    <p><a href={o.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{o.url}</a>: titled &quot;{o.title}&quot;</p>
+                    {done[o.postId]
+                      ? <p className="mt-1 text-[#1f8a3a] break-all">{done[o.postId]}</p>
+                      : (
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          <button onClick={() => matchAddress(o)} disabled={acting === o.postId}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#7C3AED] text-white disabled:opacity-60">
+                            {acting === o.postId ? 'Working…' : 'Give it a matching address'}
+                          </button>
+                          {o.editUrl && (
+                            <a href={o.editUrl} target="_blank" rel="noopener noreferrer"
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[var(--border,#e5e5e7)] inline-flex items-center gap-1">
+                              Open in WordPress <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
