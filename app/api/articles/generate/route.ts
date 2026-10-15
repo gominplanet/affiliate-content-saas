@@ -21,6 +21,7 @@
 //   publish falsy → { ok, title, html }              (preview only, no WP write)
 //   publish true  → { ok, title, html, url, postId } (published to WordPress)
 
+import { shortSlug } from '@/lib/short-slug'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
@@ -860,7 +861,7 @@ ${repetitionBlock ? `\n${repetitionBlock}` : ''}`
     site.wordpress_api_token || undefined,
   )
 
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80)
+  const slug = shortSlug(title, 80)
     || `article-${Date.now()}`
 
   // Filed under an "Articles" category (nice touch — keeps informational

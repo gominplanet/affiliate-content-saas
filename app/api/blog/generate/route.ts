@@ -1,4 +1,5 @@
 import { checkNewPicture } from '@/lib/post-logo-sweep'
+import { shortSlug } from '@/lib/short-slug'
 import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
 import { uploadVideoThumbnail } from '@/lib/video-thumbnail-upload'
@@ -1816,7 +1817,7 @@ async function handleGenerate(request: Request) {
   // post it never should have had (the baskets video filed on the Jikasho
   // review) would otherwise carry that post's address into its new post, and
   // the adoption below would find the old post by it and overwrite it again.
-  const slug = (existingForLimit?.wordpress_post_id ? existingSlug : null) || generated.slug.slice(0, 60)
+  const slug = (existingForLimit?.wordpress_post_id ? existingSlug : null) || shortSlug(generated.slug, 60)
 
   // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
   // Credentials come from `site` (multi-site resolver), not the legacy `wp`

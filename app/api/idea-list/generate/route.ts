@@ -13,6 +13,7 @@
 //      add a CTA to the FULL list on Amazon, publish to WordPress.
 //
 // Paid tiers; counts against the monthly generation limit.
+import { shortSlug } from '@/lib/short-slug'
 import { containsPriceClaim } from '@/lib/product-signals-brief'
 import { NextResponse } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
@@ -221,7 +222,7 @@ ${fullListCta}`)
     const creds = await getWordPressCredentials(supabase, user.id)
     if (!creds) return NextResponse.json({ error: 'Connect your WordPress site first.' }, { status: 400 })
     const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password || '', creds.wordpress_api_token || undefined)
-    const slug = postTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70)
+    const slug = shortSlug(postTitle, 70)
 
     let featuredMedia: number | undefined
     try {
