@@ -23,6 +23,8 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
 import { publishPageReel, publishPageVideo, reelState, REEL_MAX_SEC } from '@/lib/facebook-reels'
 import { buildReelCaption } from '@/lib/reel-caption'
+import { facebookReelOrder } from '@/lib/reel-group-caption'
+import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -112,8 +114,14 @@ export async function POST(req: Request) {
   }
 
   // A Reel with no words at all is the post this route exists to stop.
-  const description = String(body.description || '').trim()
-  if (!description) return NextResponse.json({ error: 'The Reel has no description. Add one before posting.' }, { status: 400 })
+  const raw = String(body.description || '').trim()
+  if (!raw) return NextResponse.json({ error: 'The Reel has no description. Add one before posting.' }, { status: 400 })
+  // THE ORDER (Seb, 2026-10-15): the link first, the disclaimer, #ad
+  // #sponsored, the description, then the other hashtags. The creator's own
+  // disclaimer from Brand Profile when they set one.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brand } = await (supabase as any).from('brand_profiles').select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
+  const description = facebookReelOrder(raw, (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT)
 
   // Longer than a Reel can be: an ordinary Page video, said as one.
   const secs = Number(body.clipSeconds)

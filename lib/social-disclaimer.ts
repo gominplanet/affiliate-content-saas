@@ -61,10 +61,21 @@ function tidy(s: string): string {
 
 /** Both #ad and #sponsored, each exactly once, both inside the fold. Each tag
  *  is checked on its own: "#ad" present does not satisfy "#sponsored". */
-export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLine?: boolean } = {}): string {
+export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLine?: boolean; afterLinkLead?: boolean } = {}): string {
   const md = opts.markdownV2 === true
   const tag = (n: string) => (md ? `\\#${n}` : `#${n}`)
   let t = (text || '').trim()
+  // FACEBOOK (Seb, 2026-10-15): a post that opens with its link (and the
+  // disclaimer under it) carries the tags right after that opening: the fold
+  // reaches to the end of the opening plus the tags, and missing tags go
+  // there, not above the link.
+  const leadEnd = (s: string) => {
+    if (!opts.afterLinkLead) return -1
+    const p = s.indexOf('\n\n')
+    const first = p < 0 ? s : s.slice(0, p)
+    return /https?:\/\//i.test(first) ? first.length : -1
+  }
+  const fold = (s: string) => Math.max(AD_TAG_FOLD, leadEnd(s) >= 0 ? leadEnd(s) + 40 : 0)
 
   for (const name of ['ad', 'sponsored'] as const) {
     const all = [...t.matchAll(tagRe(name))]
@@ -73,7 +84,7 @@ export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLi
     // the first stays and any later copy goes, so it appears exactly once.
     const at = all[0].index ?? 0
     const nl = t.indexOf('\n')
-    const keepFirst = at < AD_TAG_FOLD && (!opts.firstLine || nl < 0 || at < nl)
+    const keepFirst = at < fold(t) && (!opts.firstLine || nl < 0 || at < nl)
     let seen = 0
     t = t.replace(tagRe(name), (m) => (keepFirst && seen++ === 0 ? m : ''))
     t = tidy(t)
@@ -90,6 +101,8 @@ export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLi
     const at = sp.index ?? 0
     return `${t.slice(0, at)}${tag('ad')} ${t.slice(at)}`
   }
+  const lead = leadEnd(t)
+  if (t && lead >= 0) return tidy(`${t.slice(0, lead)}\n\n${tag('ad')} ${tag('sponsored')}\n\n${t.slice(lead).replace(/^\s+/, '')}`)
   return t ? `${tag('ad')} ${tag('sponsored')}\n\n${t}` : `${tag('ad')} ${tag('sponsored')}`
 }
 
@@ -341,7 +354,7 @@ export function discloseSocialPost(
 ): string {
   const md = platform === 'telegram'
   let t = labelLinks(text || '', opts.known, { markdownV2: md })
-  t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform) })
+  t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook' })
   const lim = DISCLOSURE_LIMITS[platform]
   if (lim.maxHashtags) t = capHashtags(t, lim.maxHashtags)
   if (lim.maxChars) t = fitBody(t, lim.maxChars)

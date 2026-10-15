@@ -3,6 +3,8 @@
 // Facebook Reels from Clip Factory: the three Meta steps in order, the answer
 // read back rather than assumed, and the whole thing behind Labs.
 import { readFileSync } from 'node:fs'
+import { facebookReelOrder } from '../lib/reel-group-caption'
+import { discloseSocialPost } from '../lib/social-disclaimer'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -138,6 +140,19 @@ check('the Reel route lists the Pages and the saved Groups', /export async funct
 check('the picked Page is the one posted to', /socialAccountId: fbPageId/.test(PAGE))
 check('the panel names the Page before posting', /<ReelPagePicker/.test(PAGE) && /Posts as a Reel on/.test(DEST))
 check('a posted Reel can be shared to Groups, link first, and the creator presses Post', /<ShareReelToGroups/.test(PAGE) && /\[p\.reelUrl, p\.text\.trim\(\)\]/.test(DEST) && /requestFacebookGroupPrefill\(g\.url, post, null\)/.test(DEST))
+
+// THE CAPTION ORDER (Seb, 2026-10-15): the link, the disclaimer, #ad
+// #sponsored, the description, then the other hashtags.
+{
+  const raw = '#ad #sponsored\nGet it here 👉 https://www.facebook.com/groups/x/posts/123/\n\nYour feet deserve better.\n\nIt cushions your knees.\n\n#antifatiguemat #kitchenhacks'
+  const out = discloseSocialPost(facebookReelOrder(raw, 'As an Amazon Associate I earn from qualifying purchases.'), 'facebook')
+  const parts = out.split('\n\n')
+  if (!(/^Get it here on my Facebook group 👉 https:/.test(parts[0]) && /\nAs an Amazon Associate/.test(parts[0]))) failures.push(`the Reel caption opens with the link, then the disclaimer: ${parts[0]}`)
+  if (parts[1] !== '#ad #sponsored') failures.push(`#ad #sponsored come right after the link and disclaimer: ${parts[1]}`)
+  if (!/^Your feet deserve better\./.test(parts[2]) || parts[parts.length - 1] !== '#antifatiguemat #kitchenhacks') failures.push('the description comes next, and the other hashtags last')
+  if (discloseSocialPost(facebookReelOrder(out, 'x'), 'facebook') !== out) failures.push('ordering a caption twice changes nothing')
+  if (!/facebookReelOrder\(raw,/.test(ROUTE)) failures.push('every Reel the route posts is put in that order')
+}
 
 if (failures.length) {
   console.error(`\n❌ facebook-reels: ${failures.length} failure(s)\n`)
