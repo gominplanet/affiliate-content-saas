@@ -14837,7 +14837,7 @@ async function trybeHarvest({ maxPages }, callerTabId) {
 // In page: one Request to Join, start to finish.
 async function trybeSendInPage(name, message) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const norm = (s) => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
   const byText = (re, root) => Array.from((root || document).querySelectorAll('button, a, [role=button]')).find((b) => visible(b) && re.test(String(b.innerText || b.textContent || '').trim()))
   const steps = []
@@ -14863,34 +14863,42 @@ async function trybeSendInPage(name, message) {
 
   if (/log ?in|sign ?in|auth/i.test(location.pathname) || document.querySelector('input[type=password]')) return fail('not-signed-in')
 
+  // A BRAND'S ROW (1.47.1). TRYBE's list (Oct 15) shows the logo as a
+  // picture only when the brand has one, else its initials as text, and puts
+  // a bookmark button beside each row. So no picture is required, the name
+  // may be any of the row's first lines (or the logo's alt text), and the
+  // clickable row itself (role=button) is preferred.
+  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height }
+  const rowFor = () => Array.from(document.querySelectorAll('[role=button], a, li, button, div')).filter((el) => {
+    if (!visible(el) || el.closest('[role=dialog], [aria-modal=true]')) return false
+    const lines = String(el.innerText || '').split('\n').map(norm).filter(Boolean).slice(0, 4)
+    return lines.includes(want) || Array.from(el.querySelectorAll('img[alt]')).some((i) => norm(i.alt) === want)
+  }).sort((a, b) => Number(b.getAttribute('role') === 'button') - Number(a.getAttribute('role') === 'button') || area(a) - area(b))[0]
+  // What TRYBE listed, for the error when the brand is not among them.
+  const seenRows = () => Array.from(document.querySelectorAll('[role=button]')).filter(visible)
+    .map((el) => String(el.innerText || '').split('\n').map((t) => t.trim()).filter((t) => t.length > 2)[0]).filter(Boolean).slice(0, 5)
+
   // The deep link usually opens the brand's popup. If not, find its row.
   let dialog = await waitFor(popupFor, 9000)
   if (!dialog) {
-    const row = Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
-      if (!el.querySelector('img') || !visible(el)) return false
-      const first = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]
-      return norm(first) === want
-    }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0]
+    const row = rowFor()
     if (row) { row.scrollIntoView({ block: 'center' }); await sleep(300); row.click(); steps.push('row') }
     dialog = await waitFor(popupFor, 9000)
   }
   if (!dialog) {
     // Not on screen: type the name into TRYBE's own Search Brand box.
-    const search = Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(i.placeholder || ''))
+    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 6000)
     if (search) {
       const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
       search.focus(); set.call(search, name)
       search.dispatchEvent(new Event('input', { bubbles: true }))
+      search.dispatchEvent(new Event('change', { bubbles: true }))
       steps.push('searched')
-      const hit = await waitFor(() => Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
-        if (!el.querySelector('img') || !visible(el)) return false
-        const first = String(el.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]
-        return norm(first) === want
-      }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0], 8000)
-      if (hit) { hit.click(); dialog = await waitFor(popupFor, 9000) }
-    }
+      const hit = await waitFor(rowFor, 10000)
+      if (hit) { hit.scrollIntoView({ block: 'center' }); await sleep(300); hit.click(); steps.push('found'); dialog = await waitFor(popupFor, 9000) }
+    } else steps.push('no search box')
   }
-  if (!dialog) return fail('brand-not-found')
+  if (!dialog) { const seen = seenRows(); return { ...fail('brand-not-found'), seen } }
   steps.push('popup')
 
   const join = byText(/^request to join/i, dialog)
@@ -14935,7 +14943,7 @@ async function trybeSendInPage(name, message) {
 // click on the row. Nothing else is pressed.
 async function trybeOpenBrandInPage(name) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const norm = (s) => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
   const want = norm(name)
   const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
@@ -14945,20 +14953,24 @@ async function trybeOpenBrandInPage(name) {
     if (!d) return null
     return String(d.innerText || '').split('\n').map(norm).includes(want) ? d : null
   }
-  const rowFor = () => Array.from(document.querySelectorAll('div, li, a, button')).filter((el) => {
-    if (!el.querySelector('img') || !visible(el)) return false
-    const first = String(el.innerText || '').split('\n').map((t) => t.trim()).filter(Boolean)[0]
-    return norm(first) === want
-  }).sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height)[0]
+  // 1.47.1: no picture required (a brand without a logo shows its initials),
+  // the name may be any of the row's first lines, the clickable row first.
+  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height }
+  const rowFor = () => Array.from(document.querySelectorAll('[role=button], a, li, button, div')).filter((el) => {
+    if (!visible(el) || el.closest('[role=dialog], [aria-modal=true]')) return false
+    const lines = String(el.innerText || '').split('\n').map(norm).filter(Boolean).slice(0, 4)
+    return lines.includes(want) || Array.from(el.querySelectorAll('img[alt]')).some((i) => norm(i.alt) === want)
+  }).sort((a, b) => Number(b.getAttribute('role') === 'button') - Number(a.getAttribute('role') === 'button') || area(a) - area(b))[0]
   if (await waitFor(popupOpen, 2500)) return { ok: true, via: 'link' }
   let row = rowFor()
   if (!row) {
-    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(i.placeholder || '')), 8000)
+    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 8000)
     if (!search) return { ok: false, error: 'search-not-found' }
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
     search.focus(); set.call(search, name)
     search.dispatchEvent(new Event('input', { bubbles: true }))
-    row = await waitFor(rowFor, 8000)
+    search.dispatchEvent(new Event('change', { bubbles: true }))
+    row = await waitFor(rowFor, 10000)
     if (!row) return { ok: false, error: 'brand-not-found', via: 'searched' }
   }
   row.scrollIntoView({ block: 'center' }); await sleep(300); row.click()

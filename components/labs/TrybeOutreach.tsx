@@ -1095,7 +1095,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         patch(b.brand_id, { status: 'sending', send_started_at: new Date().toISOString(), error: null })
         say(b.name, 'SCOUT is opening TRYBE to send it.', 'info')
         const res = await requestTrybeSend(c.url, c.name, c.message)
-        const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps[res.steps.length - 1]})` : ''}` : null
+        // What TRYBE listed instead, when SCOUT could not find the brand (1.47.1).
+        const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
+        const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps[res.steps.length - 1]}${seen})` : ''}` : null
         const recorded = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err }).then(() => true).catch(() => false)
         patch(b.brand_id, {
           status: res.outcome === 'sent' ? 'sent' : res.outcome === 'already' ? 'already' : res.outcome === 'failed' ? 'failed' : 'sending',

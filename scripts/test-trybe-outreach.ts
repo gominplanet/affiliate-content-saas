@@ -427,6 +427,19 @@ check('a late answer for another conversation is dropped', /const current = open
   check('a brand that invited you is shown', /invited you on TRYBE/.test(UI5))
 }
 
+// TRYBE'S LIST OF OCT 15 (Lisa: "error message ... worked yesterday"). A brand
+// with no logo shows its initials, and a bookmark button sits beside each row,
+// so SCOUT finds a row by any of its first lines or the logo's alt text, with
+// no picture required, and says what TRYBE listed when a brand is not there.
+{
+  const BGX = readFileSync('extension/background.js', 'utf8')
+  const send = BGX.slice(BGX.indexOf('async function trybeSendInPage('), BGX.indexOf('// In page, alone (1.41.8)'))
+  const open = BGX.slice(BGX.indexOf('async function trybeOpenBrandInPage('), BGX.indexOf('/** Opens TRYBE in front on the brand'))
+  check('a row is found without a picture, by any of its first lines or the logo alt', [send, open].every(f => !/el\.querySelector\('img'\) \|\| !visible\(el\)/.test(f) && /\.slice\(0, 4\)/.test(f) && /img\[alt\]/.test(f) && /role'\) === 'button'/.test(f)))
+  check('"&" and "and" are the same name', [send, open].every(f => /replace\(\/&\/g, ' and '\)/.test(f)))
+  check('a brand not found says what TRYBE listed instead', /return \{ \.\.\.fail\('brand-not-found'\), seen \}/.test(send) && /TRYBE listed: \$\{res\.seen/.test(readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')))
+}
+
 void collectorRun.then(() => {
   if (failures.length) { console.error('TRYBE outreach checks failed:\n - ' + failures.join('\n - ')); process.exit(1) }
   console.log('trybe-outreach: all checks passed')

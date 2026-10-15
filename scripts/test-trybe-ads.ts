@@ -59,7 +59,7 @@ const allow = bg.slice(bg.indexOf('const TRYBE_API_ALLOW'), bg.indexOf('\n]\n', 
 const added = allow.slice(allow.indexOf('1.47.0 (Your ads, live'))
 check('SCOUT 1.47.0 reads your analytics, per video and per brand, and only reads', added.includes('analytics(\\/submissions)?') && added.includes('\\/stats(') && added.split('\n').filter(l => /method:/.test(l)).length === 3 && added.split('\n').filter(l => /method:/.test(l)).every(l => /method: 'GET'/.test(l)))
 const manifest = JSON.parse(read('extension/manifest.json'))
-check('SCOUT is 1.47.0 everywhere', manifest.version === '1.47.0' && /SCOUT_LATEST_VERSION = '1\.47\.0'/.test(read('lib/scout-version.ts')))
+check('SCOUT is 1.47.0 or newer, the same everywhere', /^1\.(4[7-9]|[5-9]\d)\./.test(manifest.version) && read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`))
 const hook = read('components/labs/useTrybeAds.ts')
 check('an older SCOUT, signed out and a failed read are each said in their own words', /error === 'not-allowed' \? \{ kind: 'old'/.test(hook) && /kind: 'signedout'/.test(hook) && /What you earned with each brand is shown instead/.test(hook))
 check('an older SCOUT still shows what you earned, from your brand totals', /brands\/stats\?period=\$\{period\}/.test(hook) && /source: 'earnings'/.test(hook))

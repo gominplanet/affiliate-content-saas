@@ -1114,7 +1114,11 @@ export async function requestTrybeHarvest(maxPages = 120): Promise<TrybeHarvestR
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
-export interface TrybeSendResult { outcome: 'sent' | 'already' | 'failed' | 'unconfirmed'; error?: string | null; steps?: string[] }
+export interface TrybeSendResult {
+  outcome: 'sent' | 'already' | 'failed' | 'unconfirmed'; error?: string | null; steps?: string[]
+  /** SCOUT 1.47.1+: the brands TRYBE listed when this one was not among them. */
+  seen?: string[]
+}
 
 /** SCOUT presses Request to Join for one brand with this message. A missing
  *  answer is 'unconfirmed', never 'failed': SCOUT may have pressed Send. */
