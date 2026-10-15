@@ -31,11 +31,13 @@ const GREEN = '#15803d'
 const RED = '#b91c1c'
 
 // ── Types mirrored from /api/storefront/analytics ────────────────────────────
-interface Totals { earnings: number; revenue: number; units: number; clicks: number; products: number; conversion: number; epc: number }
+// A null is a figure Amazon did not report (below its reporting minimum): shown
+// as not reported, never as $0 or 0.
+interface Totals { earnings: number | null; revenue: number | null; units: number | null; clicks: number | null; products: number; conversion: number | null; epc: number | null }
 interface Campaign { name: string | null; status: string | null; campaignId: string | null; detailsUrl: string | null; brand: string | null; accepted: boolean }
 interface Product {
-  asin: string; title: string; earnings: number; revenue: number; units: number; clicks: number
-  conversion: number; epc: number; commissionPct: number | null
+  asin: string; title: string; earnings: number | null; revenue: number | null; units: number | null; clicks: number | null
+  conversion: number | null; epc: number | null; commissionPct: number | null
   earningsPrev: number | null; earningsDelta: number | null; isNew: boolean; amazonUrl: string
   // Garnish (deal_radar_cache + campaigns)
   image: string | null; priceNow: number | null; monthlySold: number | null
@@ -43,7 +45,7 @@ interface Product {
   category?: string | null
   campaign: Campaign | null
 }
-interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }
+interface SeriesPoint { start: string; earnings: number | null; revenue: number | null; units: number | null; clicks: number | null; conversion: number | null; epc: number | null }
 interface Coverage { periods: number; earliestStart: string | null; latestStart: string | null }
 type Period = 'weekly' | 'monthly' | 'ytd'
 
@@ -71,9 +73,13 @@ const ACTION_META: Record<Suggestion['action'], { icon: React.ReactNode; href: (
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────────
-const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const usdShort = (n: number) => (Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}k` : usd(n))
-const int = (n: number) => n.toLocaleString('en-US')
+// A figure Amazon did not report (below its reporting minimum) reads as that,
+// never as $0.00 or 0.
+const NR = 'not reported'
+const usd = (n: number | null) => (n == null ? NR : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+const usdShort = (n: number | null) => (n == null ? NR : Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}k` : usd(n))
+const int = (n: number | null) => (n == null ? NR : n.toLocaleString('en-US'))
+const pct = (n: number | null) => (n == null ? NR : `${n}%`)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function fmtPeriod(period: Period, start?: string | null, end?: string | null): string {
   if (!start) return ''
@@ -89,14 +95,14 @@ function fmtDate(iso: string): string {
   if (!y || !m || !d) return iso
   return `${MONTHS[(m || 1) - 1]} ${d}`
 }
-function median(nums: number[]): number | null {
-  const a = nums.filter(n => Number.isFinite(n)).sort((x, y) => x - y)
+function median(nums: Array<number | null>): number | null {
+  const a = nums.filter((n): n is number => n != null && Number.isFinite(n)).sort((x, y) => x - y)
   if (!a.length) return null
   const mid = Math.floor(a.length / 2)
   return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2
 }
-function pctChange(cur: number, prev: number | null | undefined): number | null {
-  if (prev == null || prev === 0) return null
+function pctChange(cur: number | null, prev: number | null | undefined): number | null {
+  if (cur == null || prev == null || prev === 0) return null
   return Math.round(((cur - prev) / prev) * 1000) / 10
 }
 
@@ -169,7 +175,7 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
         <StatChip label="Revenue" value={usd(p.revenue)} />
         <StatChip label="Units" value={int(p.units)} />
         <StatChip label="Clicks" value={int(p.clicks)} />
-        <StatChip label="Conversion" value={`${p.conversion}%`} />
+        <StatChip label="Conversion" value={pct(p.conversion)} />
         <StatChip label="Earn/click" value={usd(p.epc)} />
         {p.priceNow != null && <StatChip label="Price" value={usd(p.priceNow)} />}
         {p.monthlySold != null && p.monthlySold > 0 && <StatChip label="Demand" value={`~${int(p.monthlySold)}/mo`} />}
@@ -235,15 +241,16 @@ function StorefrontHealth({ products }: { products: Product[] }) {
   const [open, setOpen] = useState(false)
   type Flag = { label: string; tone: string; dead: boolean }
   const flagFor = (p: Product): Flag | null => {
-    if (p.clicks >= 5 && p.earnings === 0) return { label: 'Clicks, no sales', tone: RED, dead: true }
-    if (p.earningsPrev != null && p.earningsPrev >= 5 && p.earnings <= p.earningsPrev * 0.25) return { label: 'Earnings falling', tone: '#b45309', dead: false }
-    if (p.clicks >= 25 && p.earnings > 0 && p.conversion < 1) return { label: 'Low conversion', tone: '#b45309', dead: false }
+    // Only on figures Amazon reported: a blank is "below its minimum", not "no sales".
+    if ((p.clicks ?? 0) >= 5 && p.earnings === 0) return { label: 'Clicks, no sales', tone: RED, dead: true }
+    if (p.earningsPrev != null && p.earningsPrev >= 5 && p.earnings != null && p.earnings <= p.earningsPrev * 0.25) return { label: 'Earnings falling', tone: '#b45309', dead: false }
+    if ((p.clicks ?? 0) >= 25 && p.earnings != null && p.earnings > 0 && p.conversion != null && p.conversion < 1) return { label: 'Low conversion', tone: '#b45309', dead: false }
     return null
   }
   const flagged = products
     .map(p => ({ p, f: flagFor(p) }))
     .filter((x): x is { p: Product; f: Flag } => x.f != null)
-    .sort((a, b) => Number(b.f.dead) - Number(a.f.dead) || b.p.clicks - a.p.clicks)
+    .sort((a, b) => Number(b.f.dead) - Number(a.f.dead) || (b.p.clicks ?? 0) - (a.p.clicks ?? 0))
   const replaceHref = (p: Product) => {
     const kw = (p.category || p.title || '').split(/\s+/).slice(0, 4).join(' ')
     return `/amz-finder?q=${encodeURIComponent(kw)}`
@@ -277,7 +284,7 @@ function StorefrontHealth({ products }: { products: Product[] }) {
                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-[10.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: `${f.tone}1a`, color: f.tone }}>{f.label}</span>
                   <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                    {p.clicks.toLocaleString()} clicks · {usd(p.earnings)}{p.earningsPrev != null ? ` (was ${usd(p.earningsPrev)})` : ''}
+                    {int(p.clicks)} clicks · {usd(p.earnings)}{p.earningsPrev != null ? ` (was ${usd(p.earningsPrev)})` : ''}
                   </span>
                 </div>
               </div>
@@ -461,7 +468,7 @@ export default function AmazonBrainstorm() {
 
   // Benchmark: the median product's conversion / EPC (products with clicks), so
   // the headline rate has context — "9.8% overall, your typical product is 4.2%".
-  const clicked = products.filter(p => p.clicks > 0)
+  const clicked = products.filter(p => (p.clicks ?? 0) > 0)
   const medConv = clicked.length ? median(clicked.map(p => p.conversion)) : null
   const medEpc = clicked.length ? median(clicked.map(p => p.epc)) : null
 
@@ -470,7 +477,7 @@ export default function AmazonBrainstorm() {
     { key: 'revenue', label: 'Revenue', icon: <TrendingUp size={14} />, value: usd(t.revenue), pct: pctChange(t.revenue, tp?.revenue) },
     { key: 'units', label: 'Units shipped', icon: <Package size={14} />, value: int(t.units), pct: pctChange(t.units, tp?.units) },
     { key: 'clicks', label: 'Clicks', icon: <MousePointerClick size={14} />, value: int(t.clicks), pct: pctChange(t.clicks, tp?.clicks) },
-    { key: 'conversion', label: 'Conversion', icon: <Percent size={14} />, value: `${t.conversion}%`, pct: pctChange(t.conversion, tp?.conversion), sub: medConv != null ? `typical product ${medConv}%` : null },
+    { key: 'conversion', label: 'Conversion', icon: <Percent size={14} />, value: pct(t.conversion), pct: pctChange(t.conversion, tp?.conversion), sub: medConv != null ? `typical product ${medConv}%` : null },
     { key: 'epc', label: 'Earnings / click', icon: <DollarSign size={14} />, value: usd(t.epc), pct: pctChange(t.epc, tp?.epc), sub: medEpc != null ? `typical product ${usd(medEpc)}` : null },
   ] : []
 
@@ -664,7 +671,7 @@ export default function AmazonBrainstorm() {
                 )
               })}
             </div>
-            {t && tab !== 'brands' && (
+            {t && t.earnings != null && tab !== 'brands' && (
               <span className="hidden sm:inline text-[12px] pr-1 whitespace-nowrap" style={{ color: 'var(--text-soft)' }}>
                 <b style={{ color: 'var(--text)' }}>{usd(t.earnings)}</b> earned
               </span>
@@ -862,7 +869,7 @@ export default function AmazonBrainstorm() {
                               {p.priceNow != null && <span>· {usd(p.priceNow)}</span>}
                               {p.monthlySold != null && p.monthlySold > 0 && <span>· ~{int(p.monthlySold)}/mo</span>}
                               {p.rating != null && <span className="inline-flex items-center gap-0.5">· <Star size={10} className="fill-current" style={{ color: '#f59e0b' }} />{p.rating}</span>}
-                              {p.isNew && <span>· new</span>}
+                              {p.isNew && <span title="Amazon lists a product only past a few sales, so it may be new or may have been below that.">· not in last report</span>}
                             </div>
                           </div>
                         </div>
@@ -870,7 +877,7 @@ export default function AmazonBrainstorm() {
                       <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{usdShort(p.earnings)}</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         {p.earningsDelta == null ? (
-                          <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>{p.isNew ? 'new' : '—'}</span>
+                          <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>{p.isNew ? 'not in last report' : p.earnings == null || p.earningsPrev == null ? 'not reported' : 'no change data'}</span>
                         ) : p.earningsDelta === 0 ? (
                           <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>flat</span>
                         ) : (

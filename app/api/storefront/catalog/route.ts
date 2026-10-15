@@ -64,7 +64,10 @@ export async function POST(request: Request) {
   }
 }
 
-const money = (c: number | null | undefined) => (c == null ? 0 : Math.round(c) / 100)
+// A figure Amazon did not report (below its reporting minimum) stays null,
+// never $0 or 0: sums add only what was reported.
+const money = (c: number | null | undefined) => (c == null ? null : Math.round(c) / 100)
+const addN = (a: number | null, b: number | null) => (b == null ? a : (a ?? 0) + b)
 
 export async function GET() {
   try {
@@ -89,37 +92,37 @@ export async function GET() {
       .eq('user_id', user.id)
       .eq('period_type', 'ytd')
       .limit(5000)
-    const byAsin = new Map<string, { earnings: number; revenue: number; units: number; clicks: number }>()
+    const byAsin = new Map<string, { earnings: number | null; revenue: number | null; units: number | null; clicks: number | null }>()
     for (const r of (earn ?? []) as Array<{ asin: string; units: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null }>) {
-      const cur = byAsin.get(r.asin) || { earnings: 0, revenue: 0, units: 0, clicks: 0 }
-      cur.earnings += money(r.commission_cents)
-      cur.revenue += money(r.revenue_cents)
-      cur.units += r.units ?? 0
-      cur.clicks += r.clicks ?? 0
+      const cur = byAsin.get(r.asin) || { earnings: null, revenue: null, units: null, clicks: null }
+      cur.earnings = addN(cur.earnings, money(r.commission_cents))
+      cur.revenue = addN(cur.revenue, money(r.revenue_cents))
+      cur.units = addN(cur.units, r.units)
+      cur.clicks = addN(cur.clicks, r.clicks)
       byAsin.set(r.asin, cur)
     }
 
     const products = catalog.map((c) => {
       const e = byAsin.get(c.asin)
-      const earnings = e ? Math.round(e.earnings * 100) / 100 : 0
-      const clicks = e?.clicks ?? 0
-      const units = e?.units ?? 0
+      const earnings = e?.earnings != null ? Math.round(e.earnings * 100) / 100 : null
+      const clicks = e?.clicks ?? null
+      const units = e?.units ?? null
       return {
         asin: c.asin,
         title: c.title || c.asin,
         image: c.image_url,
         listTitle: c.list_title,
         earnings,
-        revenue: e ? Math.round(e.revenue * 100) / 100 : 0,
+        revenue: e?.revenue != null ? Math.round(e.revenue * 100) / 100 : null,
         units,
         clicks,
-        conversion: clicks > 0 ? Math.round((units / clicks) * 1000) / 10 : 0,
-        epc: clicks > 0 ? Math.round((earnings / clicks) * 100) / 100 : 0,
+        conversion: clicks != null && clicks > 0 && units != null ? Math.round((units / clicks) * 1000) / 10 : null,
+        epc: clicks != null && clicks > 0 && earnings != null ? Math.round((earnings / clicks) * 100) / 100 : null,
         hasEarnings: !!e,
         hasVideo: !!c.has_video,
         amazonUrl: `https://www.amazon.com/dp/${c.asin}`,
       }
-    }).sort((a, b) => b.earnings - a.earnings || (a.title || '').localeCompare(b.title || ''))
+    }).sort((a, b) => (b.earnings ?? -1) - (a.earnings ?? -1) || (a.title || '').localeCompare(b.title || ''))
 
     const withEarnings = products.filter((p) => p.hasEarnings).length
     const withVideo = products.filter((p) => p.hasVideo).length

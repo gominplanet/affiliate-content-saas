@@ -130,12 +130,14 @@ export default function JoinedCampaignsPage() {
   const mergeEarnings = useCallback(async (lib: CampaignLibrary) => {
     try {
       const r = await fetch('/api/campaigns/library/earnings')
-      const e = await r.json() as { synced?: boolean; totals?: Record<string, { clicks: number; orders: number; cents: number }> }
+      const e = await r.json() as { synced?: boolean; totals?: Record<string, { clicks: number | null; orders: number | null; cents: number | null }> }
       if (!e?.synced) return
       const totals = e.totals || {}
       setData(buildCampaignLibrary(lib.rows.map(row => ({
         ...row,
-        earned: totals[row.asin] ?? { clicks: 0, orders: 0, cents: 0 },
+        // No row for a product: Amazon has not reported it (it lists a product
+        // only past its minimum of a few sales), which is not "earned nothing".
+        earned: totals[row.asin] ?? { clicks: null, orders: null, cents: null },
       }))))
     } catch { /* the list is already right, it is just less precise */ }
   }, [])
@@ -324,6 +326,7 @@ export default function JoinedCampaignsPage() {
                   <div>
                     <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Amazon paid on these products</p>
                     <p className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(s.earnedCents)}</p>
+                    {s.unreported > 0 && <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{s.unreported} not reported by Amazon yet</p>}
                   </div>
                 )}
               </div>

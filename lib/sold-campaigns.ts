@@ -41,8 +41,10 @@ export type SoldMatch = {
   /** The sold product's own colour or size, when known. */
   soldAttrs: string | null
   productTitle: string | null
-  orders: number
-  earningsCents: number
+  /** Null where Amazon did not report the figure (below its reporting
+   *  minimum): never shown as 0 orders or $0 earned. */
+  orders: number | null
+  earningsCents: number | null
   detailsUrl: string
 }
 
@@ -51,19 +53,24 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
   const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
   // What sold, per product, over the window.
-  const sold = new Map<string, { orders: number; earningsCents: number; title: string | null }>()
+  const sold = new Map<string, { orders: number | null; earningsCents: number | null; title: string | null }>()
   for (let from = 0; ; from += 1000) {
     const { data, error } = await sb.from('amazon_earnings_products')
       .select('asin, product_title, orders, earnings_cents')
-      .eq('user_id', ownerId).gte('period_start', since).gt('orders', 0)
+            .eq('user_id', ownerId).gte('period_start', since)
       .range(from, from + 999)
     if (error) break
     for (const r of (data ?? []) as Array<{ asin: string; product_title: string | null; orders: number | null; earnings_cents: number | null }>) {
       const a = String(r.asin || '').toUpperCase()
       if (!/^[A-Z0-9]{10}$/.test(a)) continue
-      const cur = sold.get(a) ?? { orders: 0, earningsCents: 0, title: r.product_title }
-      cur.orders += Number(r.orders) || 0
-      cur.earningsCents += Number(r.earnings_cents) || 0
+      // Sold: orders reported above 0, or orders hidden (below Amazon's
+      // reporting minimum) while Amazon still paid on it.
+      const ord = r.orders == null ? null : Number(r.orders), paid = r.earnings_cents == null ? null : Number(r.earnings_cents)
+      if (!((ord != null && ord > 0) || (ord == null && paid != null && paid > 0))) continue
+      const cur = sold.get(a) ?? { orders: null, earningsCents: null, title: r.product_title }
+      // A sum of what Amazon reported; a figure it never reported stays null.
+      if (r.orders != null) cur.orders = (cur.orders ?? 0) + Number(r.orders)
+      if (r.earnings_cents != null) cur.earningsCents = (cur.earningsCents ?? 0) + Number(r.earnings_cents)
       sold.set(a, cur)
     }
     if (!data || data.length < 1000) break
@@ -83,7 +90,7 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
   for (const r of (a2.data ?? []) as Array<{ cc_campaign_id: string }>) accepted.add(r.cc_campaign_id)
 
   // Families, best earners first so a Keepa limit falls on the least sold.
-  const asins = [...sold.keys()].sort((x, y) => sold.get(y)!.earningsCents - sold.get(x)!.earningsCents)
+  const asins = [...sold.keys()].sort((x, y) => (sold.get(y)!.earningsCents ?? 0) - (sold.get(x)!.earningsCents ?? 0))
   const { families, report } = await familiesFor(opts.familySb ?? sb, asins, { maxLookups: opts.maxLookups })
   // Every product that counts as a sold one, pointing back at the sold ASINs.
   const bySibling = new Map<string, Set<string>>()
@@ -116,7 +123,7 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
   }
 
   const found = new Map<string, SoldMatch>()
-  const best = (list: string[]) => list.sort((x, y) => sold.get(y)!.earningsCents - sold.get(x)!.earningsCents)[0]
+  const best = (list: string[]) => list.sort((x, y) => (sold.get(y)!.earningsCents ?? 0) - (sold.get(x)!.earningsCents ?? 0))[0]
   for (const c of campaigns.values()) {
     if (accepted.has(c.campaign_id)) continue
     if (c.available_slot != null && c.available_slot <= 0) continue
@@ -148,6 +155,6 @@ export async function soldCampaignMatches(sb: Sb, ownerId: string, opts: { days?
       detailsUrl: ccRequestUrl(c.campaign_id),
     })
   }
-  const matches = [...found.values()].sort((x, y) => y.earningsCents - x.earningsCents || y.commissionPct - x.commissionPct)
+  const matches = [...found.values()].sort((x, y) => (y.earningsCents ?? 0) - (x.earningsCents ?? 0) || y.commissionPct - x.commissionPct)
   return { matches, soldProducts: sold.size, synced: true, familiesKnown: [...families.values()].filter((f) => f.parentAsin || f.siblings.length).length, families: report }
 }

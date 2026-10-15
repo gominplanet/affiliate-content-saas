@@ -150,13 +150,16 @@ export async function POST(request: Request) {
         // which has no prior period. One row per (user, period_type, day); a
         // same-day re-sync overwrites it. Best-effort — never blocks the sync.
         try {
-          const byType = new Map<string, { earnings_cents: number; revenue_cents: number; units: number; clicks: number }>()
+          // A figure Amazon did not report stays null in the snapshot too, so a
+          // later trend never compares against a 0 that was really a blank.
+          const addN = (a: number | null, b: number | null | undefined) => (b == null ? a : (a ?? 0) + b)
+          const byType = new Map<string, { earnings_cents: number | null; revenue_cents: number | null; units: number | null; clicks: number | null }>()
           for (const r of trows) {
-            const cur = byType.get(r.period_type) || { earnings_cents: 0, revenue_cents: 0, units: 0, clicks: 0 }
-            cur.earnings_cents += r.earnings_cents ?? 0
-            cur.revenue_cents += r.revenue_cents ?? 0
-            cur.units += r.units ?? 0
-            cur.clicks += r.clicks ?? 0
+            const cur = byType.get(r.period_type) || { earnings_cents: null, revenue_cents: null, units: null, clicks: null }
+            cur.earnings_cents = addN(cur.earnings_cents, r.earnings_cents)
+            cur.revenue_cents = addN(cur.revenue_cents, r.revenue_cents)
+            cur.units = addN(cur.units, r.units)
+            cur.clicks = addN(cur.clicks, r.clicks)
             byType.set(r.period_type, cur)
           }
           const takenOn = new Date().toISOString().slice(0, 10)

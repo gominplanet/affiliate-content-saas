@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-15-1'
+const RELEASE_ID = '2026-10-15-2'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // Amazon's hidden figures (Seb, 2026-10-15).
+  {
+    badge: 'IMPROVED',
+    tone: '#B45309',
+    title: 'A number Amazon did not report now says so',
+    desc: 'Amazon only reports a product once it has a few sales. Your earnings, storefront, joined campaigns and blog health now show those as not reported, instead of $0, 0 orders or "no sales yet".',
+    href: '/earnings',
+  },
   // SEO (Seb, 2026-10-15: "one button that is able to completely audit
   // someone's site and then give them actionable things to do").
   {

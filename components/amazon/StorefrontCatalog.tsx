@@ -13,13 +13,14 @@ import { Loader2, Store, ExternalLink, Search, Video } from 'lucide-react'
 import { requestStorefrontCatalogScan, startCreatorHubVideosScan, getVideoScanStatus, type VideoScanStatus } from '@/lib/extension-frame'
 
 const ACCENT = '#C2410C'
-const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const int = (n: number) => n.toLocaleString('en-US')
+// A null is a figure Amazon did not report (below its reporting minimum).
+const usd = (n: number | null) => (n == null ? 'not reported' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+const int = (n: number | null) => (n == null ? 'not reported' : n.toLocaleString('en-US'))
 
 interface CatalogProduct {
   asin: string; title: string; image: string | null; listTitle: string | null
-  earnings: number; revenue: number; units: number; clicks: number
-  conversion: number; epc: number; hasEarnings: boolean; hasVideo: boolean; amazonUrl: string
+  earnings: number | null; revenue: number | null; units: number | null; clicks: number | null
+  conversion: number | null; epc: number | null; hasEarnings: boolean; hasVideo: boolean; amazonUrl: string
 }
 interface CatalogData { ok?: boolean; hasData?: boolean; total?: number; withEarnings?: number; withVideo?: number; products?: CatalogProduct[] }
 type SortKey = 'earnings' | 'clicks' | 'conversion' | 'epc'
@@ -139,7 +140,7 @@ export default function StorefrontCatalog() {
     .filter((p) => (onlyNoEarn ? !p.hasEarnings : true))
     .filter((p) => (onlyNoVideo ? !p.hasVideo : true))
     .filter((p) => (q ? (p.title || '').toLowerCase().includes(q.toLowerCase()) || p.asin.toLowerCase().includes(q.toLowerCase()) : true))
-    .sort((a, b) => (b[sort] as number) - (a[sort] as number))
+    .sort((a, b) => (b[sort] ?? -1) - (a[sort] ?? -1))
 
   return (
     <div className="rounded-2xl border mb-8 overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -231,7 +232,7 @@ export default function StorefrontCatalog() {
                 {p.hasEarnings ? (
                   <div className="hidden sm:flex items-center gap-4 text-[11.5px] flex-shrink-0" style={{ color: 'var(--text-soft)' }}>
                     <span title="Clicks">{int(p.clicks)} clk</span>
-                    <span title="Conversion">{p.conversion}%</span>
+                    <span title="Conversion">{p.conversion == null ? 'not reported' : `${p.conversion}%`}</span>
                     <span className="font-semibold" style={{ color: 'var(--text)' }} title="Earnings">{usd(p.earnings)}</span>
                   </div>
                 ) : (

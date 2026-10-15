@@ -137,7 +137,7 @@ export default function SoldCampaigns() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{m.brand || m.campaignName} · {m.commissionPct}% commission</div>
                   <div className="text-[#86868b] truncate">
-                    {m.productTitle || m.asin}: {m.orders} order{m.orders === 1 ? '' : 's'}, {money(m.earningsCents)} earned · ends {m.endsAt}{m.slotsLeft != null ? ` · ${m.slotsLeft} slot${m.slotsLeft === 1 ? '' : 's'} left` : ''}
+                    {m.productTitle || m.asin}: {m.orders != null ? `${m.orders} order${m.orders === 1 ? '' : 's'}` : 'orders below Amazon\u2019s reporting minimum'}, {m.earningsCents != null ? `${money(m.earningsCents)} earned` : 'earnings not reported by Amazon'} · ends {m.endsAt}{m.slotsLeft != null ? ` · ${m.slotsLeft} slot${m.slotsLeft === 1 ? '' : 's'} left` : ''}
                   </div>
                   {m.matchKind === 'variant' && (
                     <div className="text-[#b45309] text-[12px] mt-0.5">

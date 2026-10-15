@@ -35,7 +35,9 @@ export interface EarningsTotals {
   /** False when Amazon has never been read for this account, which is a
    *  different fact from Amazon reporting zero. */
   synced: boolean
-  totals: Record<string, { clicks: number; orders: number; cents: number }>
+  /** Null where Amazon reported nothing for the product: below its reporting
+   *  minimum is not the same fact as earning nothing. */
+  totals: Record<string, { clicks: number | null; orders: number | null; cents: number | null }>
 }
 
 export async function GET() {
@@ -83,18 +85,17 @@ export async function GET() {
     }
 
     const pages = await Promise.all(chunks.map(readChunk))
-    const totals: Record<string, { clicks: number; orders: number; cents: number }> = {}
+    const totals: EarningsTotals['totals'] = {}
     let synced = false
+    // A sum of what Amazon reported: a null adds nothing, and a figure Amazon
+    // never reported for the product stays null rather than becoming 0.
+    const add = (a: number | null, b: number | null) => (b == null ? a : (a ?? 0) + b)
     for (const rows of pages) {
       for (const e of rows) {
         synced = true
         const a = (e.asin || '').toUpperCase()
-        const prev = totals[a] ?? { clicks: 0, orders: 0, cents: 0 }
-        totals[a] = {
-          clicks: prev.clicks + (e.clicks ?? 0),
-          orders: prev.orders + (e.orders ?? 0),
-          cents: prev.cents + (e.earnings_cents ?? 0),
-        }
+        const prev = totals[a] ?? { clicks: null, orders: null, cents: null }
+        totals[a] = { clicks: add(prev.clicks, e.clicks), orders: add(prev.orders, e.orders), cents: add(prev.cents, e.earnings_cents) }
       }
     }
     if (truncated) return NextResponse.json({ synced: false, totals: {} } as EarningsTotals)

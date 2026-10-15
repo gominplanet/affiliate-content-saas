@@ -60,8 +60,12 @@ export async function GET() {
       .select('earnings_cents,store_scope')
       .eq('user_id', ownerId).eq('store_scope', 'offsite')
     const rows = (earn ?? []) as { earnings_cents: number | null }[]
-    if (rows.length) {
-      offsiteEarningsCents = rows.reduce((a, r) => a + (r.earnings_cents ?? 0), 0)
+    // Only months Amazon reported count. Months it left blank (below its
+    // reporting minimum) are not $0, so if none were reported the claim stays
+    // unmade rather than "clicking through, not buying".
+    const reported = rows.filter(r => r.earnings_cents != null)
+    if (reported.length) {
+      offsiteEarningsCents = reported.reduce((a, r) => a + (r.earnings_cents as number), 0)
     }
   } catch { /* no earnings synced, so no claim about them */ }
 

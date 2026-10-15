@@ -26,11 +26,18 @@ interface Product {
   asin: string; title: string; earnings: number; revenue: number; units: number; clicks: number
   conversion: number; epc: number; earningsDelta: number | null; category?: string | null
 }
+// What the page hands in: a null is a figure Amazon did not report (below its
+// reporting minimum). Each chart plots only the figures it needs that WERE
+// reported, so a hidden number is never drawn as a zero.
+type Nullable<T, K extends keyof T> = Omit<T, K> & { [P in K]: T[P] | null }
+type SeriesIn = Nullable<SeriesPoint, 'earnings' | 'revenue' | 'units' | 'clicks' | 'conversion' | 'epc'>
+type ProductIn = Nullable<Product, 'earnings' | 'revenue' | 'units' | 'clicks' | 'conversion' | 'epc'>
 interface Props {
   period: 'weekly' | 'monthly' | 'ytd'
-  series: SeriesPoint[]
-  products: Product[]
+  series: SeriesIn[]
+  products: ProductIn[]
 }
+const reported = <T,>(rows: T[], keys: (keyof T)[]) => rows.filter((r) => keys.every((k) => r[k] != null))
 
 // ── formatting ───────────────────────────────────────────────────────────────
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -279,8 +286,13 @@ function RevenueByCategory({ products }: { products: Product[] }) {
   return <ShareBar segs={segs} emptyMsg="No revenue to break down yet." />
 }
 
-export default function StorefrontCharts({ period, series, products }: Props) {
+export default function StorefrontCharts({ period, series: seriesIn, products: productsIn }: Props) {
   const [open, setOpen] = useState(false)
+  const series = reported(seriesIn, ['earnings']) as SeriesPoint[]
+  const earned = reported(productsIn, ['earnings']) as Product[]
+  const scatter = reported(productsIn, ['clicks', 'conversion', 'earnings']) as Product[]
+  const moved = productsIn.filter((p) => p.earningsDelta != null) as Product[]
+  const withRevenue = reported(productsIn, ['revenue']) as Product[]
   return (
     <div className="mb-8">
       <button
@@ -311,22 +323,22 @@ export default function StorefrontCharts({ period, series, products }: Props) {
             <EarningsTrend period={period} series={series} />
           </ChartCard>
           <ChartCard title="Top earners" hint="Which products carry your storefront.">
-            <TopEarners products={products} />
+            <TopEarners products={earned} />
           </ChartCard>
           <ChartCard title="Conversion vs clicks" hint="Top-left = high traffic, low conversion → re-angle it. Bubble size = earnings.">
-            <ConversionScatter products={products} />
+            <ConversionScatter products={scatter} />
           </ChartCard>
           <ChartCard title="Earnings concentration" hint="How much of your earnings ride on the top few products.">
-            <Concentration products={products} />
+            <Concentration products={earned} />
           </ChartCard>
           <ChartCard title="Biggest movers" hint="Largest earnings changes vs the prior period.">
-            <Movers products={products} />
+            <Movers products={moved} />
           </ChartCard>
           <ChartCard title="Revenue mix" hint="Where your revenue comes from, by product.">
-            <RevenueMix products={products} />
+            <RevenueMix products={withRevenue} />
           </ChartCard>
           <ChartCard title="Revenue by category" hint="Which categories drive your sales: one-category shop, or spread out?">
-            <RevenueByCategory products={products} />
+            <RevenueByCategory products={withRevenue} />
           </ChartCard>
         </div>
         </>

@@ -15,12 +15,16 @@ const UI = readFileSync('components/earnings/SoldCampaigns.tsx', 'utf8')
 const ACCEPT = readFileSync('lib/sold-accept.ts', 'utf8')
 const DAILY = readFileSync('components/earnings/SoldCampaignsDaily.tsx', 'utf8')
 
-check('sold means orders in the creator\'s own earnings', /from\('amazon_earnings_products'\)/.test(LIB) && /\.gt\('orders', 0\)/.test(LIB))
+check('sold means orders in the creator\'s own earnings', /from\('amazon_earnings_products'\)/.test(LIB) && /ord != null && ord > 0/.test(LIB))
+// Amazon hides figures below its reporting minimum: hidden orders with a
+// payout still count as sold, and a hidden figure is never summed in as 0.
+check('hidden orders with a payout still count as sold', /ord == null && paid != null && paid > 0/.test(LIB))
+check('a hidden figure stays null, never 0', /orders: number \| null/.test(LIB) && /earningsCents: number \| null/.test(LIB) && !/Number\(r\.earnings_cents\) \|\| 0/.test(LIB))
 check('only open campaigns naming a sold product', /\.overlaps\('asins', keys\.slice\(i, i \+ 150\)\)/.test(LIB) && /\.gte\('ends_at', today\)/.test(LIB))
 check('a full campaign is left out', /c\.available_slot != null && c\.available_slot <= 0/.test(LIB))
 check('already accepted is read from both places MVP records it',
   /from\('cc_accepted_campaigns'\)/.test(LIB) && /from\('campaigns'\)\.select\('cc_campaign_id'\)/.test(LIB) && /if \(accepted\.has\(c\.campaign_id\)\) continue/.test(LIB))
-check('the best earner comes first', /y\.earningsCents - x\.earningsCents/.test(LIB))
+check('the best earner comes first', /\(y\.earningsCents \?\? 0\) - \(x\.earningsCents \?\? 0\)/.test(LIB))
 check('it is Labs', /canUsePreview\('sold_campaigns'/.test(ROUTE) && /sold_campaigns: 'admin'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
 check('recorded only after Amazon took it',
   ACCEPT.indexOf("if (!res.ok) return { state: 'failed'") > 0 && ACCEPT.indexOf("if (!res.ok) return { state: 'failed'") < ACCEPT.indexOf("fetch('/api/campaigns/sold-matches', { method: 'POST'")

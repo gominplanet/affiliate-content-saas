@@ -149,6 +149,9 @@ export interface CampaignLibrary {
     routes: Record<BestRoute, number>
     /** Amazon's total across the products in this list, or null when unsynced. */
     earnedCents: number | null
+    /** Products with content published that Amazon has not reported figures
+     *  for (below its reporting minimum), so the total is what WAS reported. */
+    unreported: number
   }
   verdict: string
   doThis: string
@@ -238,8 +241,15 @@ function noteFor(row: Omit<LibraryRow, 'note'>): string {
       return `${made} published, but after the campaign window closed, so the boosted rate did not apply to it.`
     }
     const clicks = earned?.clicks ?? null
-    if (clicks != null && clicks > 0) return `${made} published. ${plural(clicks, 'click')} on this product so far, no sale yet.`
-    return `${made} published. Nothing from Amazon on this product yet.`
+    const orders = earned?.orders ?? null
+    // Amazon lists a product only past its minimum of a few sales. A product it
+    // has not reported is "not reported", never "no sale" or "earned nothing".
+    if (earned == null) return `${made} published. Nothing from Amazon on this product yet.`
+    if (orders != null && orders > 0) return `${made} published. ${plural(orders, 'order')} on this product so far; Amazon has not reported what it paid.`
+    if (clicks != null && clicks > 0 && orders === 0) return `${made} published. ${plural(clicks, 'click')} on this product so far, no sale yet.`
+    if (clicks != null && clicks > 0) return `${made} published. ${plural(clicks, 'click')} on this product so far; Amazon has not reported its sales (it only lists them past a few).`
+    if (orders === 0 && clicks === 0) return `${made} published. No clicks on this product yet.`
+    return `${made} published. Amazon has not reported this product yet: it only lists a product once it has a few sales.`
   }
   // The days left are in the runway sentence already, and it says what they are
   // good for, which is the part that decides what to make.
@@ -316,7 +326,8 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
   for (const r of rows) if (r.state === 'due') routes[r.runway.best]++
 
   const joinedByMvp = rows.filter(r => r.joinedByMvp).length
-  const summary = { joined: rows.length, made, due, missed, earning, urgent, joinedByMvp, routes, earnedCents }
+  const unreported = rows.filter(r => r.content.length > 0 && r.earned != null && r.earned.cents == null).length
+  const summary = { joined: rows.length, made, due, missed, earning, urgent, joinedByMvp, routes, earnedCents, unreported }
 
   if (!rows.length) {
     return {

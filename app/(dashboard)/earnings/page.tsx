@@ -82,7 +82,9 @@ function sumRows(rs: Row[]) {
  *  a real answer ("nothing happened here"), not a missing one, so it's hidden by
  *  default and counted rather than dropped. */
 const isQuiet = (r: Row) =>
-  !r.clicks && !r.orders && !r.earnings_cents && !r.revenue_cents
+  // Every figure a real 0. A blank (not reported: below Amazon's minimum) is
+  // not a zero, so a row of blanks stays in view.
+  [r.clicks, r.orders, r.earnings_cents, r.revenue_cents].every((v) => v === 0)
 
 // In Labs, admin only (lib/labs-preview earnings). Anyone else is sent to the
 // dashboard rather than shown a page that reads nothing.

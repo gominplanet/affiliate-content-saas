@@ -19,8 +19,20 @@ import { fetchKeepaProductCard, keepaConfigured } from '@/services/keepa'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const money = (cents: number | null | undefined) => (cents == null ? 0 : Math.round(cents) / 100)
-const ratio = (num: number, den: number) => (den > 0 ? num / den : 0)
+// A FIGURE AMAZON DID NOT REPORT STAYS BLANK (Seb, 2026-10-15). Amazon hides
+// low-volume figures (below its reporting minimum of a few sales); a blank is
+// "not reported", never $0, 0 units or 0 clicks. Sums add only what was
+// reported, and a ratio needs both of its figures.
+const money = (cents: number | null | undefined) => (cents == null ? null : Math.round(cents) / 100)
+const r2 = (n: number | null) => (n == null ? null : Math.round(n * 100) / 100)
+const ratio = (num: number | null, den: number | null) => (num == null || den == null || den <= 0 ? null : num / den)
+const pct1 = (n: number | null) => (n == null ? null : Math.round(n * 1000) / 10)
+function sumN(xs: Array<number | null | undefined>): number | null {
+  let s: number | null = null
+  for (const x of xs) if (x != null) s = (s ?? 0) + x
+  return s
+}
+const maxN = (a: number | null | undefined, b: number | null | undefined): number | null => (a == null ? (b ?? null) : b == null ? a : Math.max(a, b))
 
 interface Row {
   asin: string
@@ -35,18 +47,18 @@ interface Row {
 }
 
 function totalsFor(rows: Row[]) {
-  const revenue = rows.reduce((s, r) => s + money(r.revenue_cents), 0)
-  const earnings = rows.reduce((s, r) => s + money(r.commission_cents), 0)
-  const units = rows.reduce((s, r) => s + (r.units ?? 0), 0)
-  const clicks = rows.reduce((s, r) => s + (r.clicks ?? 0), 0)
+  const revenue = sumN(rows.map(r => money(r.revenue_cents)))
+  const earnings = sumN(rows.map(r => money(r.commission_cents)))
+  const units = sumN(rows.map(r => r.units))
+  const clicks = sumN(rows.map(r => r.clicks))
   return {
-    earnings: Math.round(earnings * 100) / 100,
-    revenue: Math.round(revenue * 100) / 100,
+    earnings: r2(earnings),
+    revenue: r2(revenue),
     units,
     clicks,
     products: rows.length,
-    conversion: Math.round(ratio(units, clicks) * 1000) / 10, // % units per click
-    epc: Math.round(ratio(earnings, clicks) * 100) / 100,     // $ earnings per click
+    conversion: pct1(ratio(units, clicks)), // % units per click
+    epc: r2(ratio(earnings, clicks)),       // $ earnings per click
   }
 }
 
@@ -91,10 +103,10 @@ export async function GET(request: NextRequest) {
         // product's whole-account figures, reported ONCE; a second source row can
         // repeat the same number, so take the MAX, never the sum, or the product
         // (and the totals summed from it) double-count.
-        cur.units = Math.max(cur.units ?? 0, r.units ?? 0)
-        cur.revenue_cents = Math.max(cur.revenue_cents ?? 0, r.revenue_cents ?? 0)
-        cur.commission_cents = (cur.commission_cents ?? 0) + (r.commission_cents ?? 0)
-        cur.clicks = Math.max(cur.clicks ?? 0, r.clicks ?? 0)
+        cur.units = maxN(cur.units, r.units)
+        cur.revenue_cents = maxN(cur.revenue_cents, r.revenue_cents)
+        cur.commission_cents = sumN([cur.commission_cents, r.commission_cents])
+        cur.clicks = maxN(cur.clicks, r.clicks)
         if (!cur.product_title && r.product_title) cur.product_title = r.product_title
       }
       return [...m.values()]
@@ -127,28 +139,28 @@ export async function GET(request: NextRequest) {
       if (tr.length) {
         // EARNINGS is the one additive metric: Commissions and Creator Connections
         // are separate income streams, so SUM them — this is Amazon's Summary total.
-        const sEarn = tr.reduce((s, r) => s + money(r.earnings_cents), 0)
+        const sEarn = sumN(tr.map(r => money(r.earnings_cents)))
         // CLICKS / REVENUE / UNITS are whole-account figures Amazon reports ONCE.
         // A per-source row can repeat the same global number (the Creator
         // Connections row carrying the account's click count too), so take the MAX
         // across sources, never the sum. Summing is what doubled clicks and halved
         // conversion on accounts with more than one income source.
-        const mRev = tr.reduce((s, r) => Math.max(s, money(r.revenue_cents)), 0)
-        const mUnits = tr.reduce((s, r) => Math.max(s, r.units ?? 0), 0)
-        const mClicks = tr.reduce((s, r) => Math.max(s, r.clicks ?? 0), 0)
+        const mRev = tr.reduce<number | null>((m, r) => maxN(m, money(r.revenue_cents)), null)
+        const mUnits = tr.reduce<number | null>((m, r) => maxN(m, r.units), null)
+        const mClicks = tr.reduce<number | null>((m, r) => maxN(m, r.clicks), null)
         // These period_totals are SCOUT's parse of Amazon's own summary tiles — the
         // authoritative "all products" figure — so use them whenever present and
         // positive. The product-sum fallback double-counts any product that earns
         // through BOTH sources, so it is NOT a valid floor: the old ">= product-sum"
         // guard let that inflated sum win and corrupt the headline (earnings and
         // clicks both read high).
-        if (sEarn > 0) { totals.earnings = Math.round(sEarn * 100) / 100; totalsSource = 'summary' }
-        if (mRev > 0) totals.revenue = Math.round(mRev * 100) / 100
-        if (mUnits > 0) totals.units = mUnits
-        if (mClicks > 0) totals.clicks = mClicks
+        if (sEarn != null && sEarn > 0) { totals.earnings = r2(sEarn); totalsSource = 'summary' }
+        if (mRev != null && mRev > 0) totals.revenue = r2(mRev)
+        if (mUnits != null && mUnits > 0) totals.units = mUnits
+        if (mClicks != null && mClicks > 0) totals.clicks = mClicks
         // Recompute the derived ratios off the authoritative figures.
-        totals.conversion = Math.round(ratio(totals.units, totals.clicks) * 1000) / 10
-        totals.epc = Math.round(ratio(totals.earnings, totals.clicks) * 100) / 100
+        totals.conversion = pct1(ratio(totals.units, totals.clicks))
+        totals.epc = r2(ratio(totals.earnings, totals.clicks))
       }
     } catch { /* totals table absent (migration 269 not run) — product-sum stands */ }
 
@@ -181,16 +193,16 @@ export async function GET(request: NextRequest) {
           if (prior) {
             const pEarn = money(prior.earnings_cents)
             const pRev = money(prior.revenue_cents)
-            const pUnits = prior.units ?? 0
-            const pClicks = prior.clicks ?? 0
+            const pUnits = prior.units
+            const pClicks = prior.clicks
             headlinePrev = {
-              earnings: Math.round(pEarn * 100) / 100,
-              revenue: Math.round(pRev * 100) / 100,
+              earnings: r2(pEarn),
+              revenue: r2(pRev),
               units: pUnits,
               clicks: pClicks,
               products: 0,
-              conversion: Math.round(ratio(pUnits, pClicks) * 1000) / 10,
-              epc: Math.round(ratio(pEarn, pClicks) * 100) / 100,
+              conversion: pct1(ratio(pUnits, pClicks)),
+              epc: r2(ratio(pEarn, pClicks)),
             }
             trendBasis = 'snapshot'
             trendSince = prior.taken_on
@@ -200,16 +212,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Prior-period per-ASIN earnings, for per-product trend.
-    const prevByAsin = new Map<string, number>()
+    const prevByAsin = new Map<string, number | null>()
     for (const r of prevRows) prevByAsin.set(r.asin, money(r.commission_cents))
 
     const products = latestRows
       .map(r => {
-        const earnings = Math.round(money(r.commission_cents) * 100) / 100
-        const revenue = Math.round(money(r.revenue_cents) * 100) / 100
-        const units = r.units ?? 0
-        const clicks = r.clicks ?? 0
-        const prevEarnings = prevByAsin.has(r.asin) ? Math.round((prevByAsin.get(r.asin) ?? 0) * 100) / 100 : null
+        const earnings = r2(money(r.commission_cents))
+        const revenue = r2(money(r.revenue_cents))
+        const units = r.units
+        const clicks = r.clicks
+        const prevEarnings = r2(prevByAsin.get(r.asin) ?? null)
         return {
           asin: r.asin,
           title: r.product_title || r.asin,
@@ -217,16 +229,18 @@ export async function GET(request: NextRequest) {
           revenue,
           units,
           clicks,
-          conversion: Math.round(ratio(units, clicks) * 1000) / 10,
-          epc: Math.round(ratio(earnings, clicks) * 100) / 100,
-          commissionPct: revenue > 0 ? Math.round((earnings / revenue) * 1000) / 10 : null,
+          conversion: pct1(ratio(units, clicks)),
+          epc: r2(ratio(earnings, clicks)),
+          commissionPct: pct1(ratio(earnings, revenue)),
           earningsPrev: prevEarnings,
-          earningsDelta: prevEarnings == null ? null : Math.round((earnings - prevEarnings) * 100) / 100,
+          earningsDelta: prevEarnings == null || earnings == null ? null : r2(earnings - prevEarnings),
+          // Not in last period's report. Amazon lists a product only past a few
+          // sales, so this is "not reported then", which may or may not be new.
           isNew: prevStart != null && !prevByAsin.has(r.asin),
           amazonUrl: `https://www.amazon.com/dp/${r.asin}`,
         }
       })
-      .sort((a, b) => b.earnings - a.earnings)
+      .sort((a, b) => (b.earnings ?? -1) - (a.earnings ?? -1))
 
     // ── Garnish: Keepa demand/price (deal_radar_cache) + open CC campaign ──────
     // Enrich each product with a catalogue snapshot (image, price, ~monthly
