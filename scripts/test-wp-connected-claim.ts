@@ -136,9 +136,21 @@ const CHIP = live(read('components/layout/SiteSwitcherChip.tsx'))
     `grep -rl "wordpress_url: null" app lib services components --include=*.ts --include=*.tsx`,
     { cwd: root, encoding: 'utf8' },
   ).trim().split('\n').filter(Boolean)
+  // Files that null a BLOG POST's wordpress_url, not the site's credentials.
+  // Each is named with why, and must touch blog_posts, never integrations.
+  const POST_UNLINKS: Record<string, string> = {
+    // Title Check, Keep this one: a second record pointing at the same post
+    // is unlinked from it and kept as a draft (Seb, 2026-10-15).
+    'app/api/tools/title-audit/live/route.ts': "from('blog_posts')",
+  }
+  for (const [f, table] of Object.entries(POST_UNLINKS)) {
+    const src = readFileSync(join(root, f), 'utf8')
+    const at = src.indexOf('wordpress_url: null')
+    check(`${f} nulls a post's address, not the site's credentials`, at > 0 && src.lastIndexOf(table, at) > src.lastIndexOf("from('integrations')", at))
+  }
   check('every file that disconnects WordPress is one this test knows about',
-    all.every((f) => DISCONNECTS.includes(f)),
-    `unlisted: ${all.filter((f) => !DISCONNECTS.includes(f)).join(', ')}`)
+    all.every((f) => DISCONNECTS.includes(f) || f in POST_UNLINKS),
+    `unlisted: ${all.filter((f) => !DISCONNECTS.includes(f) && !(f in POST_UNLINKS)).join(', ')}`)
 
   for (const rel of DISCONNECTS) {
     const src = read(rel)
