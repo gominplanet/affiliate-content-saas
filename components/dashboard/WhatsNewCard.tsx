@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-14-5'
+const RELEASE_ID = '2026-10-15-1'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,15 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // SEO (Seb, 2026-10-15: "one button that is able to completely audit
+  // someone's site and then give them actionable things to do").
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Audit my site: one button, a short list in order',
+    desc: 'The SEO page now opens with one button. MVP checks your site, every post and what Google says about each one, then lists what to do, most important first. Where MVP can do it, the button is right there; where it is yours, it gives you the exact clicks.',
+    href: '/seo',
+  },
   // TRYBE, the fifth release of the day (Seb, 2026-10-14: from six TRYBE
   // strategy videos, "build 1, 2, 3, and 4"). Newest first.
   {

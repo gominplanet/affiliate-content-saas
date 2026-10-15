@@ -29,7 +29,12 @@ export async function fetchSitemapSlugs(siteUrl: string): Promise<{ slugs: Set<s
   const get = async (url: string): Promise<string | null> => {
     try {
       const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) })
-      return r.ok ? await r.text() : null
+      if (!r.ok) return null
+      // A host's robot check (SiteGround answers 202 with a captcha page) or
+      // an HTML error page is not a sitemap. Reading one as "found, 0 posts"
+      // flagged every post as missing from the sitemap.
+      const text = await r.text()
+      return /<(urlset|sitemapindex)[\s>]/i.test(text) ? text : null
     } catch { return null }
   }
 

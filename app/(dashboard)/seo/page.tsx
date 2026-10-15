@@ -27,6 +27,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import IndexingHelp from '@/components/seo/IndexingHelp'
+import SiteAudit, { type GetFoundResult } from '@/components/seo/SiteAudit'
 import PostBoard from '@/components/seo/PostBoard'
 import { canUsePreview } from '@/lib/labs-preview'
 import { SeoIntro, SeoSection, InfoTip } from '@/components/seo/SeoExplain'
@@ -103,6 +104,13 @@ export default function SeoPage() {
   // fix-all + URL refresh + sitemap, so the individual actions are tucked away
   // to keep the header calm. Off by default.
   const [toolsOpen, setToolsOpen] = useState(false)
+  // EVERY SEO TOOL (Seb, 2026-10-15: "there's so much stuff to read that
+  // people just don't want to spend the time"). The page leads with Audit my
+  // site; everything below it folds away, closed by default, and remembers
+  // the choice for people who use the tools.
+  const [allTools, setAllTools] = useState(false)
+  useEffect(() => { try { setAllTools(localStorage.getItem('mvp.seo.allTools') === '1') } catch { /* private window */ } }, [])
+  const toggleAllTools = useCallback(() => setAllTools((v) => { try { localStorage.setItem('mvp.seo.allTools', v ? '0' : '1') } catch { /* private window */ } return !v }), [])
   // One-click "Get my blog found" — runs the whole visibility loop (sitemap +
   // ping Google/Bing/AI, heal changed links, auto-fix SEO) with a plain
   // checklist. step = which stage is running; null = idle.
@@ -370,8 +378,8 @@ export default function SeoPage() {
   // The dummy-proof button: one click runs the whole get-found loop so a
   // non-technical creator never has to know which tool does what. Every step
   // reuses an existing, non-destructive endpoint.
-  const runGetFound = useCallback(async () => {
-    const results: { purged: boolean; pinged: number; pingError?: string; links: number; posts: number } = { purged: false, pinged: 0, links: 0, posts: 0 }
+  const runGetFound = useCallback(async (): Promise<GetFoundResult> => {
+    const results: GetFoundResult = { purged: false, pinged: 0, links: 0, posts: 0 }
     setGetFound({ step: 0, done: false, results: { ...results } })
     // 1 — refresh the sitemap (Google reads it; Google has no ping any more)
     //     and send every post to Bing and Copilot through IndexNow. A refusal
@@ -409,6 +417,7 @@ export default function SeoPage() {
     await new Promise(r => setTimeout(r, 1500))
     await load()
     setGetFound({ step: 4, done: true, results: { ...results } })
+    return results
   }, [load])
 
   const previewFixAll = useCallback(async () => {
@@ -637,6 +646,21 @@ export default function SeoPage() {
         }
       />
 
+      <SeoHubTabs />
+
+      <SiteAudit onGetFound={runGetFound} onChanged={() => void load()} />
+
+      <button onClick={toggleAllTools} aria-expanded={allTools}
+        className="mb-4 w-full flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-colors hover:border-[#7C3AED]/60"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)' }}>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Every SEO tool and number</span>
+          <span className="block text-[12.5px]" style={{ color: 'var(--text-2)' }}>{allTools ? 'Hide them. The audit above covers what to do next.' : 'Every post, its score and Google status, Get my blog found, AI answers and the SEO guide. The audit above already tells you which of these to use.'}</span>
+        </span>
+        <ChevronDown size={16} className={`flex-shrink-0 transition-transform ${allTools ? 'rotate-180' : ''}`} style={{ color: '#7C3AED' }} />
+      </button>
+
+      {allTools && (<>
       {/* THE GUIDE, FIRST THING ON THE PAGE (Seb, 2026-10-12: "a guide for
           confused users ... clickable at the top of that page"). */}
       <Link href="/seo/guide"
@@ -650,7 +674,6 @@ export default function SeoPage() {
         <ArrowRight size={16} className="flex-shrink-0" style={{ color: '#7C3AED' }} />
       </Link>
 
-      <SeoHubTabs />
 
       {/* HOW THIS PAGE WORKS (Seb, 2026-10-12: "cleaned up for ease of use..
           explain to users what each thing does and what it means to them").
@@ -1164,6 +1187,8 @@ export default function SeoPage() {
           </div>
         </SeoSection>
       )}
+
+      </>)}
 
       {/* Rebuild-from-video modal — turn a low-score legacy post into a
           full MVP-quality post grounded in its source video. */}
