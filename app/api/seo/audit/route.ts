@@ -182,7 +182,7 @@ export async function POST(request: Request) {
   const { data: rows } = await db.from('blog_posts')
     .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,published_at')
     .eq('user_id', ownerId).eq('status', 'published')
-    .order('published_at', { ascending: false }).limit(1000)
+    .order('published_at', { ascending: false, nullsFirst: false }).limit(1000)
   type Row = { id: string; title: string | null; wordpress_url: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
   const postRows: Row[] = rows || []
   const seo = new Map<string, { indexed_state: string | null; coverage_state: string | null; clicks: number | null; impressions: number | null; dropped_at: string | null }>()
