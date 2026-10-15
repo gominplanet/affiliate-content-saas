@@ -1185,9 +1185,21 @@ export function facebookLogText(st: FacebookGroupPostStatus | null, scoutVersion
   return [...head, `${st.log.length} requests:`, ...rows].join('\n')
 }
 
+// ONE MISSED ANSWER IS NOT THE END OF THE WATCH (Seb, 2026-10-15: "it does
+// not want to post the group post into the page"). Every caller polls every
+// few seconds, and a single check SCOUT did not answer in time (a busy
+// Facebook tab, the MVP tab in the background) read as "SCOUT stopped
+// watching", so the Page Reel never went out though SCOUT was still watching.
+// A miss now reads as still watching until SCOUT has missed for 30 seconds
+// in a row; then it is said as "unknown".
+const groupWatchMisses = new Map<string, { since: number }>()
+export const GROUP_WATCH_MISS_MS = 30_000
 export async function getFacebookGroupPostStatus(watchId: string): Promise<FacebookGroupPostStatus> {
   const res = await sendToExtension<FacebookGroupPostStatus>({ type: 'MVP_FB_GROUP_POST_STATUS', watchId }, 8_000)
-  return res && res.state ? res : { state: 'unknown' }
+  if (res && res.state && res.state !== 'unknown') { groupWatchMisses.delete(watchId); return res }
+  const miss = groupWatchMisses.get(watchId) ?? { since: Date.now() }
+  groupWatchMisses.set(watchId, miss)
+  return Date.now() - miss.since < GROUP_WATCH_MISS_MS ? { state: 'watching' } : { state: 'unknown' }
 }
 
 export interface PostCommentResult { ok: boolean; commentId?: string; already?: boolean; notPublic?: boolean; error?: string; detail?: string; steps?: string[] }

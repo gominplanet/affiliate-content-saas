@@ -287,7 +287,7 @@ const logChecks = (async () => {
     && st.log[2].hit === true && st.log[2].ids.includes('legacy_story_hideable_id=1234567890123') && st.log[2].urls[0] === 'https://www.facebook.com/groups/kitchen/posts/1234567890123')
   check('the post address is still read from the answer as before', st.net?.url === 'https://www.facebook.com/groups/kitchen/posts/1234567890123/')
   check('a tab an older SCOUT hooked gets the logging hook', /if \(window\.__scoutGroupHook === 2\) return 'ready'/.test(bg))
-  check('every watch answer carries the log', /const save = \(st\) => saveGroupWatch\(id, log \? \{ \.\.\.st, log \} : st\)/.test(bg) && /if \(Array\.isArray\(r\.log\)\) log = r\.log/.test(bg))
+  check('every watch answer carries the log', /const save = \(st\) => saveGroupWatch\(id, \{ \.\.\.\(log \? \{ \.\.\.st, log \} : st\)/.test(bg) && /if \(Array\.isArray\(r\.log\)\) log = r\.log/.test(bg))
   const ef = read('lib/extension-frame.ts')
   check('a missing or empty log says so in the copied text', /No request log: this SCOUT does not record one/.test(ef) && /Request log is empty/.test(ef))
   check('Clip Factory offers the copy, read fresh from SCOUT, and says when it was not', /What Facebook sent \(for support\)/.test(reel) && /getFacebookGroupPostStatus\(watchId\)/.test(reel) && /SCOUT did not answer just now, so this is the last copy MVP had/.test(reel))

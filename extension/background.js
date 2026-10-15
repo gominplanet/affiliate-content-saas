@@ -13832,26 +13832,37 @@ async function readGroupWatch(id) {
   let st = null
   try { const o = await chrome.storage.session.get('fbw_' + id); st = o['fbw_' + id] || null } catch (e) {}
   if (!st) return { state: 'unknown' }
-  // Chrome restarted SCOUT mid-watch: the watch is gone, so say so rather than
-  // leave MVP waiting on a "watching" that will never change.
-  if (st.state === 'watching') return { state: 'lost' }
+  // Chrome restarted SCOUT mid-watch (it does, while Facebook spends minutes
+  // processing a video), and the loop went with it. 1.47.2: the watch keeps
+  // what it was watching, so it picks itself back up on the same tab instead
+  // of saying "lost" and leaving the Page Reel undone (Seb, 2026-10-15).
+  if (st.state === 'watching') {
+    const c = st.ctx
+    if (c && c.tabId && Date.now() - (c.started || 0) < 30 * 60 * 1000) {
+      watchGroupPost(c.tabId, c.snippet || '', c.linkKey || '', { id, started: c.started })
+      return { state: 'watching', resumed: true }
+    }
+    return { state: 'lost' }
+  }
   return st
 }
 
-function watchGroupPost(tabId, snippet, linkKey) {
-  const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+function watchGroupPost(tabId, snippet, linkKey, resume) {
+  const id = (resume && resume.id) || ('w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7))
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const ka = startKeepAlive()
+  // What the watch needs to pick itself back up after a restart.
+  const ctx = { tabId, snippet, linkKey, started: (resume && resume.started) || Date.now() }
   void (async () => {
-    const started = Date.now()
+    const started = ctx.started
     let dialogGoneAt = 0
     let seenAt = 0
     // What Facebook sent, as last read (see installGroupPostHook). Kept in
     // every answer so the creator can copy it whatever the outcome.
     let log = null
-    const save = (st) => saveGroupWatch(id, log ? { ...st, log } : st)
+    const save = (st) => saveGroupWatch(id, { ...(log ? { ...st, log } : st), ...(st.state === 'watching' ? { ctx } : {}) })
     try {
-      await saveGroupWatch(id, { state: 'watching' })
+      await saveGroupWatch(id, { state: 'watching', ctx })
       while (Date.now() - started < 30 * 60 * 1000) {
         await sleep(2000)
         let tab = null

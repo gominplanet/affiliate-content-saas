@@ -79,7 +79,11 @@ check('the watcher exists and MVP can ask it', /function watchGroupPost\(/.test(
 const hookStart = BG.indexOf('function installGroupPostHook(')
 check('the watcher never clicks anything', hookStart >= 0 && !/\.click\(\)/.test(BG.slice(hookStart, sectionEnd(hookStart))))
 check('the listener goes in before the fill', BG.indexOf("func: installGroupPostHook, args: [true]") > 0 && BG.indexOf("func: installGroupPostHook, args: [true]") < BG.indexOf('func: fillGroupComposerInPage'))
-check('a restarted SCOUT says lost, not watching forever', /if \(st\.state === 'watching'\) return \{ state: 'lost' \}/.test(BG))
+// 1.47.2 (Seb, 2026-10-15): a restart picks the watch back up on the same
+// tab; only a watch with nothing to resume, or past 30 minutes, says lost.
+check('a restarted SCOUT resumes the watch on the same tab', /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ id, started: c\.started \}\)/.test(BG) && /await saveGroupWatch\(id, \{ state: 'watching', ctx \}\)/.test(BG))
+check('a restarted SCOUT with nothing to resume says lost, not watching forever', /return \{ state: 'watching', resumed: true \}\n    \}\n    return \{ state: 'lost' \}/.test(BG))
+check('one missed status answer is not the end of the watch', /GROUP_WATCH_MISS_MS = 30_000/.test(readFileSync('lib/extension-frame.ts', 'utf8')) && /< GROUP_WATCH_MISS_MS \? \{ state: 'watching' \} : \{ state: 'unknown' \}/.test(readFileSync('lib/extension-frame.ts', 'utf8')))
 check('every way of not finding the post is its own state', ['closed', 'posted_no_link', 'not_seen', 'timeout'].every((k) => WATCH.includes(`state: '${k}'`)))
 const TR = read('app/api/blog/facebook-group-teaser/route.ts')
 check('the Page post route refuses any link that is not a Facebook Group', /if \(!isFacebookGroupLink\(link\)\) return NextResponse\.json/.test(TR))
