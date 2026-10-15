@@ -1130,7 +1130,7 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
     <>
       <StepHeading
         title="Set up your affiliate links"
-        blurb="This is how your product links earn. Add your Amazon Associates tag. We recommend Passport, MVP's own short links that send every shopper to their own country's Amazon store with your tag. Already use Geniuslink? It is supported too."
+        blurb="This is how your product links earn. Add your Amazon Associates tag: a shopper who reaches Amazon through it, from your blog, a pin or a video description, can earn you on everything else they buy within 24 hours, which a storefront video does not. We recommend Passport, MVP's own short links that send every shopper to their own country's Amazon store with your tag. Already use Geniuslink? It is supported too."
       />
       {done && (
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">

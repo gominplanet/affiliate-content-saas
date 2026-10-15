@@ -463,6 +463,20 @@ for (const { label, src } of AD_PAGES) {
   }
 }
 
+// HALO SALES (Seb, 2026-10-15): offsite traffic can earn on the rest of the
+// shopper's cart, a storefront video does not. Said as how Amazon pays, and
+// the private conversation it was confirmed in is never named.
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  const { execSync } = require('node:child_process') as typeof import('node:child_process')
+  const home = rf('app/page.tsx', 'utf8'), onboard = rf('components/onboarding/OnboardingFunnel.tsx', 'utf8')
+  check('the landing page says offsite links can earn on the rest of the cart', /can earn you on everything else they buy within 24 hours/.test(home))
+  check('onboarding says it where the Associates tag is set', /can earn you on everything else they buy within 24 hours, which a storefront video does not/.test(onboard))
+  let named = ''
+  try { named = execSync('grep -rliwE "kalya|behdad|amazon told us|off the record" app components lib --exclude-dir=pdf-brand --include=*.ts --include=*.tsx', { encoding: 'utf8' }).trim() } catch { named = '' }
+  check('the source is never named in the product', named === '', named)
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

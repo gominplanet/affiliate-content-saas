@@ -790,6 +790,11 @@ function OldWayNewWay() {
       mvp: 'Everything also lands on a blog on your own domain, which is yours whatever Amazon does next.',
     },
     {
+      // HALO SALES (Seb, 2026-10-15). Said as how Amazon pays, never as a source.
+      old: 'A sale through your storefront video pays you on that one product.',
+      mvp: 'A shopper who reaches Amazon from your blog, a pin or a video description can earn you on everything else they buy within 24 hours, not just the product you linked.',
+    },
+    {
       old: 'A video gets filmed, uploaded, and that is the end of its life.',
       mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
     },
