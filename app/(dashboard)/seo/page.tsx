@@ -109,7 +109,15 @@ export default function SeoPage() {
   // site; everything below it folds away, closed by default, and remembers
   // the choice for people who use the tools.
   const [allTools, setAllTools] = useState(false)
-  useEffect(() => { try { setAllTools(localStorage.getItem('mvp.seo.allTools') === '1') } catch { /* private window */ } }, [])
+  // Opened from the SEO guide (a link like /seo#seo-health) opens them, so
+  // the section the guide points at is there to scroll to.
+  useEffect(() => {
+    let open = false
+    try { open = localStorage.getItem('mvp.seo.allTools') === '1' } catch { /* private window */ }
+    if (window.location.hash.startsWith('#seo-') || window.location.hash === '#get-found') open = true
+    setAllTools(open)
+    if (open && window.location.hash) setTimeout(() => document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'start' }), 400)
+  }, [])
   const toggleAllTools = useCallback(() => setAllTools((v) => { try { localStorage.setItem('mvp.seo.allTools', v ? '0' : '1') } catch { /* private window */ } return !v }), [])
   // One-click "Get my blog found" — runs the whole visibility loop (sitemap +
   // ping Google/Bing/AI, heal changed links, auto-fix SEO) with a plain
@@ -646,6 +654,19 @@ export default function SeoPage() {
         }
       />
 
+      {/* THE GUIDE, FIRST THING ON THE PAGE (Seb, 2026-10-12: "a guide for
+          confused users ... clickable at the top of that page"). */}
+      <Link href="/seo/guide"
+        className="mb-4 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-[#7C3AED]/60"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)' }}>
+        <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}><BookOpen size={17} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>New here, or not sure what this page means? Read the SEO guide</span>
+          <span className="block text-[12.5px]" style={{ color: 'var(--text-2)' }}>Your first 15 minutes, a 10 minute weekly routine, every section and stage, and every word in plain language.</span>
+        </span>
+        <ArrowRight size={16} className="flex-shrink-0" style={{ color: '#7C3AED' }} />
+      </Link>
+
       <SeoHubTabs />
 
       <SiteAudit onGetFound={runGetFound} onChanged={() => void load()} />
@@ -661,18 +682,6 @@ export default function SeoPage() {
       </button>
 
       {allTools && (<>
-      {/* THE GUIDE, FIRST THING ON THE PAGE (Seb, 2026-10-12: "a guide for
-          confused users ... clickable at the top of that page"). */}
-      <Link href="/seo/guide"
-        className="mb-4 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-[#7C3AED]/60"
-        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)' }}>
-        <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}><BookOpen size={17} /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>New here, or not sure what this page means? Read the SEO guide</span>
-          <span className="block text-[12.5px]" style={{ color: 'var(--text-2)' }}>Your first 15 minutes, a 10 minute weekly routine, every section and stage, and every word in plain language.</span>
-        </span>
-        <ArrowRight size={16} className="flex-shrink-0" style={{ color: '#7C3AED' }} />
-      </Link>
 
 
       {/* HOW THIS PAGE WORKS (Seb, 2026-10-12: "cleaned up for ease of use..
