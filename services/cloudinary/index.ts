@@ -125,6 +125,26 @@ export async function remoteVideoPosterUrl(videoUrl: string): Promise<string | n
   } catch { return null }
 }
 
+/**
+ * A poster frame for a remote video by UPLOADING it to Cloudinary, for when
+ * remote fetch is refused (the video host is not on the fetch list, or the
+ * account does not allow fetched video). Slower, but any public video works.
+ * Seb, 2026-10-16: a clip's Pinterest pin failed with no cover. Null on failure.
+ */
+export async function uploadedVideoPosterUrl(videoUrl: string): Promise<string | null> {
+  if (!ensureConfig()) return null
+  if (!/^https:\/\//i.test(videoUrl)) return null
+  try {
+    const up = await cloudinary.uploader.upload(videoUrl, {
+      resource_type: 'video', folder: 'pin-covers', overwrite: false,
+      eager: [{ start_offset: '0', width: 720, crop: 'fill', format: 'jpg' }],
+    })
+    const eager = (up.eager as Array<{ secure_url?: string }> | undefined)?.[0]?.secure_url
+    const url = eager || cloudinary.url(String(up.public_id), { resource_type: 'video', format: 'jpg', secure: true, transformation: [{ start_offset: '0', width: 720, crop: 'fill' }] })
+    return (await urlIsImage(url)) ? url : null
+  } catch { return null }
+}
+
 export async function renderStoryImage(
   productImageUrl: string,
   opts: { headline?: string; handle?: string; logoUrl?: string } = {},

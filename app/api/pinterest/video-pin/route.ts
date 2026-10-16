@@ -22,7 +22,7 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { PinterestService } from '@/services/pinterest'
-import { remoteVideoPosterUrl } from '@/services/cloudinary'
+import { remoteVideoPosterUrl, uploadedVideoPosterUrl } from '@/services/cloudinary'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -61,7 +61,17 @@ export async function POST(request: Request) {
   if (!/^https:\/\//i.test(coverImageUrl)) {
     coverImageUrl = (await remoteVideoPosterUrl(videoUrl)) || ''
   }
-  if (!/^https:\/\//i.test(coverImageUrl)) return NextResponse.json({ error: 'Pinterest video pins need a cover image (pass coverImageUrl, or use a Cloudinary-hosted video so MVP can derive one).' }, { status: 400 })
+  // Remote fetch refused (Seb, 2026-10-16: a clip's pin failed with no
+  // cover): upload the clip to Cloudinary and take its first frame, then, last,
+  // the thumbnail of the YouTube video the clip came from.
+  if (!/^https:\/\//i.test(coverImageUrl)) {
+    coverImageUrl = (await uploadedVideoPosterUrl(videoUrl)) || ''
+  }
+  const coverYt = (body.youtubeVideoId || '').trim()
+  if (!/^https:\/\//i.test(coverImageUrl) && /^[\w-]{11}$/.test(coverYt)) {
+    coverImageUrl = `https://i.ytimg.com/vi/${coverYt}/hqdefault.jpg`
+  }
+  if (!/^https:\/\//i.test(coverImageUrl)) return NextResponse.json({ error: 'MVP could not make a cover image for this video, and Pinterest needs one for a video pin. Try again in a minute; if it keeps failing, the video file may not be reachable.' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
