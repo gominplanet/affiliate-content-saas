@@ -10,6 +10,7 @@
  * Runs on the transcript alone (no video file), so planning works for every
  * user instantly; rendering the picked clips is a separate, opt-in step.
  */
+import { pickHashtags } from '@/lib/hashtag-engine'
 import type Anthropic from '@anthropic-ai/sdk'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { TranscriptCue, ClipSuggestion } from '@/lib/shorts-types'
@@ -343,9 +344,13 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
       caption: scrubBanned((rc.caption || '').toString().slice(0, 400).replace(/\bhonest(ly)?\b/gi, '').trim()),
       reason: (rc.reason || '').toString().slice(0, 300).trim(),
       score: Math.max(0, Math.min(100, Math.round(Number(rc.score) || 0))),
-      hashtags: Array.isArray(rc.hashtags)
-        ? rc.hashtags.map(h => String(h).trim()).filter(Boolean).slice(0, 6)
-        : [],
+      // The engine's rules (lib/hashtag-engine): spam, years and duplicates
+      // out, about this clip, 3 to 5. Each platform picks again when it posts.
+      hashtags: pickHashtags({
+        platform: 'youtube_short',
+        text: [opts.videoTitle, rc.hook, rc.caption, (opts.sourceDescription || '').slice(0, 600)].filter(Boolean).join('\n'),
+        writer: Array.isArray(rc.hashtags) ? rc.hashtags.map(h => String(h).trim()).filter(Boolean) : [],
+      }).tags.map(t => t.tag),
       subtitles,
     })
   }

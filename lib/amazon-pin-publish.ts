@@ -5,6 +5,9 @@
 // (/api/amazon/pin), the copy pre-fill endpoint (/api/amazon/pin-copy), and the
 // scheduler cron (process-amazon-schedules). Points the Pin straight at the
 // creator's geni.us affiliate link (not a blog post).
+import { trackPost } from '@/lib/reach-pulse'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags, withTags } from '@/lib/hashtag-engine'
 import { PinterestService } from '@/services/pinterest'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
@@ -238,7 +241,7 @@ export async function writePinCopy(opts: {
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
-      system: 'You write high-CTR Pinterest Pins for product finds. Return STRICT JSON {"title","description"}. title ≤ 90 chars, punchy and keyword-rich. description ≤ 350 chars, benefit-led, then 4–6 relevant NICHE hashtags for discovery (specific to the product category, e.g. #skincareroutine #vitaminc), then #ad #sponsored, then the exact text "As an Amazon Associate I earn from qualifying purchases." No price claims, no "cheap", no fake urgency. No markdown, JSON only.',
+      system: 'You write high-CTR Pinterest Pins for product finds. Return STRICT JSON {"title","description"}. title ≤ 90 chars, punchy and keyword-rich. description ≤ 350 chars, benefit-led, then up to 6 SUGGESTED niche hashtags specific to the product (e.g. #skincareroutine #vitaminc; MVP keeps the best 3), then #ad #sponsored, then the exact text "As an Amazon Associate I earn from qualifying purchases." No price claims, no "cheap", no fake urgency. No markdown, JSON only.',
       messages: [{ role: 'user', content: `PRODUCT: ${productTitle || opts.productUrl || 'a great find'}\n\nWrite the Pin JSON now.` }],
     })
     recordAnthropicUsage(msg, { userId: opts.userId, tier: opts.tier, feature: 'amazon_pin_caption', model: 'claude-haiku-4-5-20251001' })
@@ -248,8 +251,10 @@ export async function writePinCopy(opts: {
     description = scrubBanned(String(j.description || '').trim())
   } catch { /* fall back below */ }
   if (!title) title = (productTitle || 'Great find').slice(0, 100)
-  // Guarantee the disclosure + #ad #sponsored no matter what the model returned.
-  description = finalizeSocialCaption(description || productTitle || '')
+  // THE HASHTAG ENGINE picks the tags; then the disclosure + #ad #sponsored,
+  // guaranteed no matter what the model returned.
+  const pick = await hashtagsFor({ platform: 'pinterest', text: productTitle || opts.productUrl || '', brand: productTitle || null, writer: writerTags(description), userId: opts.userId })
+  description = finalizeSocialCaption(withTags(description || productTitle || '', pick.tags.map(t => t.tag), { maxChars: 420 }))
   return { title, description }
 }
 
@@ -573,6 +578,8 @@ export async function publishAmazonPin(opts: {
     } catch { /* best-effort heal — pin already published */ }
   }
   const pinId = pin.id
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+  await trackPost({ userId: opts.userId, platform: 'pinterest', postId: pinId, caption: description, productText: title })
   return {
     pinId, pinUrl: `https://www.pinterest.com/pin/${pinId}/`, title, description,
     // What the PIN points at (the creator's page) and what that page sends the

@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   // Pending rows old enough to have real numbers, with a media id to query.
   const { data: pending, error: pErr } = await admin
     .from('reach_samples')
-    .select('id,user_id,media_id,reach,platform')
+    .select('id,user_id,media_id,reach,platform,posted_at')
     .eq('status', 'pending')
     .not('media_id', 'is', null)
     .lte('posted_at', matureBefore)
@@ -53,13 +53,19 @@ export async function GET(request: Request) {
     .limit(BATCH)
   if (pErr) return NextResponse.json({ error: `query failed: ${pErr.message}` }, { status: 500 })
 
-  const rows = (pending ?? []) as Array<{ id: string; user_id: string; media_id: string; platform: string | null }>
+  const rows = (pending ?? []) as Array<{ id: string; user_id: string; media_id: string; platform: string | null; posted_at: string | null }>
   if (rows.length === 0) return NextResponse.json({ ok: true, collected: 0, note: 'nothing due' })
 
   // Split by platform. Instagram reads per-media reach; YouTube reads public
   // view counts. Legacy rows with a null platform are treated as Instagram.
   const igRows = rows.filter(r => (r.platform ?? 'instagram') === 'instagram')
   const ytRows = rows.filter(r => r.platform === 'youtube')
+  // EVERY PLATFORM THAT SHARES RESULTS (lib/reach-pulse RESULTS_FROM). Each
+  // reads what that platform gives MVP's connection, and its baseline is its
+  // own, so a Facebook reaction count never shares a median with IG reach.
+  const fbRows = rows.filter(r => r.platform === 'facebook')
+  const pinRows = rows.filter(r => r.platform === 'pinterest')
+  const bskyRows = rows.filter(r => r.platform === 'bluesky')
 
   let collected = 0, failed = 0, retried = 0
   // Track (user, platform) pairs so baselines are computed WITHIN a platform —
@@ -118,6 +124,78 @@ export async function GET(request: Request) {
     }
   }
 
+  // ── Facebook: reactions, comments and shares (pages_read_engagement) ──────
+  // Reach needs read_insights, which MVP's Facebook connection does not ask
+  // for, so a post's engagement is its measure, against the Page's own median.
+  if (fbRows.length) {
+    const users = [...new Set(fbRows.map(r => r.user_id))]
+    const tokens = new Map<string, Array<{ page: string | null; token: string }>>()
+    const { data: accts } = await admin.from('social_accounts').select('user_id,external_id,access_token').eq('platform', 'facebook').in('user_id', users)
+    for (const a of (accts ?? []) as Array<{ user_id: string; external_id: string | null; access_token: string | null }>) {
+      const t = (maybeDecrypt(a.access_token) as string | undefined) || ''
+      if (t) tokens.set(a.user_id, [...(tokens.get(a.user_id) || []), { page: a.external_id, token: t }])
+    }
+    const { data: fbInt } = await admin.from('integrations').select('user_id,facebook_page_id,facebook_page_access_token').in('user_id', users)
+    for (const it of (fbInt ?? []) as Array<{ user_id: string; facebook_page_id: string | null; facebook_page_access_token: string | null }>) {
+      const t = (maybeDecrypt(it.facebook_page_access_token) as string | undefined) || ''
+      if (t) tokens.set(it.user_id, [...(tokens.get(it.user_id) || []), { page: it.facebook_page_id, token: t }])
+    }
+    for (const row of fbRows) {
+      const page = row.media_id.includes('_') ? row.media_id.split('_')[0] : null
+      const list = (tokens.get(row.user_id) || []).sort((a, b) => Number(b.page === page) - Number(a.page === page)).slice(0, 3)
+      let got: { likes: number; comments: number; shares: number } | null = null
+      for (const t of list) { got = await facebookEngagement(row.media_id, t.token); if (got) break }
+      if (!got) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
+      const total = got.likes + got.comments + got.shares
+      await admin.from('reach_samples').update({
+        reach: total, likes: got.likes, comments: got.comments, shares: got.shares,
+        status: 'collected', fetched_at: new Date().toISOString(),
+      }).eq('id', row.id)
+      collected++
+      touched.add(`${row.user_id}:facebook`)
+    }
+  }
+
+  // ── Pinterest: impressions, saves, clicks (pins:read) ──────────────────────
+  if (pinRows.length) {
+    const users = [...new Set(pinRows.map(r => r.user_id))]
+    const tok = new Map<string, string>()
+    const { data: pInt } = await admin.from('integrations').select('user_id,pinterest_access_token').in('user_id', users)
+    for (const it of (pInt ?? []) as Array<{ user_id: string; pinterest_access_token: string | null }>) {
+      const t = (maybeDecrypt(it.pinterest_access_token) as string | undefined) || ''
+      if (t) tok.set(it.user_id, t)
+    }
+    for (const row of pinRows) {
+      const t = tok.get(row.user_id)
+      const got = t ? await pinterestAnalytics(row.media_id, t, row.posted_at) : null
+      if (!got || got.impressions == null) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
+      await admin.from('reach_samples').update({
+        reach: got.impressions, plays: got.impressions, saves: got.saves, likes: got.clicks,
+        status: 'collected', fetched_at: new Date().toISOString(),
+      }).eq('id', row.id)
+      collected++
+      touched.add(`${row.user_id}:pinterest`)
+    }
+  }
+
+  // ── Bluesky: likes, reposts, replies, quotes (public, no sign-in) ──────────
+  if (bskyRows.length) {
+    for (let i = 0; i < bskyRows.length; i += 25) {
+      const part = bskyRows.slice(i, i + 25)
+      const counts = await blueskyCounts(part.map(r => r.media_id))
+      for (const row of part) {
+        const c = counts?.get(row.media_id)
+        if (!c) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
+        await admin.from('reach_samples').update({
+          reach: c.likes + c.reposts * 2 + c.replies + c.quotes, likes: c.likes, comments: c.replies, shares: c.reposts + c.quotes,
+          status: 'collected', fetched_at: new Date().toISOString(),
+        }).eq('id', row.id)
+        collected++
+        touched.add(`${row.user_id}:bluesky`)
+      }
+    }
+  }
+
   // Baselines: median reach PER (user, platform), lift stamped within platform,
   // only on rows that don't have a lift yet (existing lifts stay stable).
   for (const key of touched) {
@@ -155,4 +233,50 @@ async function bumpAttempt(admin: any, id: string): Promise<boolean> {
     .update({ attempts, ...(failed ? { status: 'failed' } : {}) })
     .eq('id', id)
   return failed
+}
+
+/** A Facebook post's reactions, comments and shares; a Reel (a video) has
+ *  likes and comments. Null when Facebook does not answer for this token. */
+async function facebookEngagement(id: string, token: string): Promise<{ likes: number; comments: number; shares: number } | null> {
+  const get = async (fields: string) => {
+    try {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(id)}?fields=${fields}&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(15_000) })
+      if (!r.ok) return null
+      return await r.json() as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+    } catch { return null }
+  }
+  const post = await get('reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares')
+  if (post && (post.reactions || post.comments)) {
+    return { likes: Number(post.reactions?.summary?.total_count) || 0, comments: Number(post.comments?.summary?.total_count) || 0, shares: Number(post.shares?.count) || 0 }
+  }
+  const video = await get('likes.summary(true).limit(0),comments.summary(true).limit(0)')
+  if (video && (video.likes || video.comments)) {
+    return { likes: Number(video.likes?.summary?.total_count) || 0, comments: Number(video.comments?.summary?.total_count) || 0, shares: 0 }
+  }
+  return null
+}
+
+/** A pin's impressions, saves and clicks since it was posted. */
+async function pinterestAnalytics(pinId: string, token: string, postedAt: string | null): Promise<{ impressions: number | null; saves: number; clicks: number } | null> {
+  const day = (t: number) => new Date(t).toISOString().slice(0, 10)
+  const start = Math.max(Date.parse(postedAt || '') || Date.now() - 30 * 86_400_000, Date.now() - 89 * 86_400_000)
+  try {
+    const r = await fetch(`https://api.pinterest.com/v5/pins/${encodeURIComponent(pinId)}/analytics?start_date=${day(start)}&end_date=${day(Date.now())}&metric_types=IMPRESSION,SAVE,PIN_CLICK`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) return null
+    const j = await r.json() as { all?: { summary_metrics?: Record<string, number> } }
+    const m = j.all?.summary_metrics
+    if (!m) return null
+    return { impressions: typeof m.IMPRESSION === 'number' ? m.IMPRESSION : null, saves: Number(m.SAVE) || 0, clicks: Number(m.PIN_CLICK) || 0 }
+  } catch { return null }
+}
+
+/** Public counts for up to 25 Bluesky posts by their at:// address. */
+async function blueskyCounts(uris: string[]): Promise<Map<string, { likes: number; reposts: number; replies: number; quotes: number }> | null> {
+  try {
+    const q = uris.map(u => `uris=${encodeURIComponent(u)}`).join('&')
+    const r = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?${q}`, { signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) return null
+    const j = await r.json() as { posts?: Array<{ uri: string; likeCount?: number; repostCount?: number; replyCount?: number; quoteCount?: number }> }
+    return new Map((j.posts || []).map(p => [p.uri, { likes: p.likeCount || 0, reposts: p.repostCount || 0, replies: p.replyCount || 0, quotes: p.quoteCount || 0 }]))
+  } catch { return null }
 }

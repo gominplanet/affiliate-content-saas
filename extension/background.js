@@ -11874,7 +11874,7 @@ function trybeCallerOk(sender) {
 
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
-  if (/^MVP_TRYBE_/.test(msg.type) && !trybeCallerOk(sender)) { sendResponse({ ok: false, outcome: 'failed', error: 'bad-origin' }); return false }
+  if (/^MVP_(TRYBE|HASHTAG)_/.test(msg.type) && !trybeCallerOk(sender)) { sendResponse({ ok: false, outcome: 'failed', error: 'bad-origin' }); return false }
   // The page asks SCOUT to keep Liftoff running (or to stop), from its own
   // origin, which is where the background tab will be opened.
   if (msg.type === 'MVP_LIFTOFF_AUTO') {
@@ -12380,6 +12380,25 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       if (!has && msg.ask) has = await askTrybeAccess()
       return { granted: !!has }
     })().then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_HASHTAG_ACCESS') {
+    // 1.49.0 (Labs): may SCOUT read TikTok Creative Center and Instagram's tag counts.
+    hashtagAccess(!!msg.ask).then(sendResponse).catch(() => sendResponse({ granted: false, tiktok: false, instagram: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_HASHTAG_TIKTOK') {
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 110000)
+    hashtagOnce(() => hashtagTikTok({ country: msg.country, period: msg.period }, sender && sender.tab ? sender.tab.id : null))
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
+  if (msg.type === 'MVP_HASHTAG_INSTAGRAM') {
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 110000)
+    hashtagOnce(() => hashtagInstagram({ tags: msg.tags }))
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
   if (msg.type === 'MVP_TRYBE_SCAN') {
@@ -15293,3 +15312,211 @@ async function trybeRunTick() {
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_RUN_ALARM) void trybeRunTick() }) } catch (e) {}
 // After Chrome restarts, a run still on carries on.
 try { chrome.runtime.onStartup.addListener(() => { void trybeRunTick() }) } catch (e) {}
+
+
+// ── HASHTAG TRENDS (1.49.0, Labs) ────────────────────────────────────────────
+// Seb, 2026-10-16: "lifting them from like TikTok Creative Center's trending
+// hashtags... We could do the same thing with Instagram as well". Neither has
+// an API MVP's server can use, so SCOUT reads them in the creator's Chrome:
+//
+//   MVP_HASHTAG_ACCESS     is SCOUT allowed on TikTok Creative Center and
+//                          Instagram; ask: show the Allow window now.
+//   MVP_HASHTAG_TIKTOK     open Creative Center's trending hashtags in SCOUT's
+//                          window, keep the list TikTok's own page loads
+//                          (tiktok-cc-hook.js), press View more a few times,
+//                          and hand MVP the answers as TikTok sent them.
+//   MVP_HASHTAG_INSTAGRAM  ask Instagram, from the creator's own signed-in
+//                          Instagram tab, how many posts each tag has. At most
+//                          20 tags, an unhurried pause between them.
+//
+// READING ONLY. Nothing is pressed except Creative Center's View more; nothing
+// is posted, liked or followed. MVP's server reads the answers
+// (lib/hashtag-trends), so a change on TikTok's side is fixed in MVP. A read
+// that found nothing says so ('nothing-read'), never an empty success.
+const CC_ORIGINS = ['https://ads.tiktok.com/*']
+const IG_ORIGINS = ['https://www.instagram.com/*']
+const CC_HOOK_ID = 'mvp-tiktok-cc-hook'
+let hashtagBusy = null
+
+async function hasOrigins(origins) {
+  try { return await chrome.permissions.contains({ origins }) } catch (e) { return false }
+}
+
+function askHashtagAccess() {
+  return new Promise((resolve) => {
+    let done = false
+    let winId = null
+    const finish = (granted) => {
+      if (done) return
+      done = true
+      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
+      try { chrome.windows.onRemoved.removeListener(onClosed) } catch (e) {}
+      resolve(!!granted)
+    }
+    const onMsg = (m) => { if (m && m.type === 'SCOUT_HASHTAG_ALLOW_RESULT') finish(m.granted) }
+    const onClosed = (id) => { if (id === winId) setTimeout(() => finish(false), 300) }
+    chrome.runtime.onMessage.addListener(onMsg)
+    chrome.windows.onRemoved.addListener(onClosed)
+    chrome.windows.create({ url: chrome.runtime.getURL('hashtags-allow.html'), type: 'popup', width: 480, height: 360, focused: true })
+      .then((w) => { winId = w && w.id })
+      .catch(() => finish(false))
+    setTimeout(() => finish(false), 180000)
+  })
+}
+
+async function hashtagAccess(ask) {
+  let tiktok = await hasOrigins(CC_ORIGINS)
+  let instagram = await hasOrigins(IG_ORIGINS)
+  if ((!tiktok || !instagram) && ask) {
+    await askHashtagAccess()
+    tiktok = await hasOrigins(CC_ORIGINS)
+    instagram = await hasOrigins(IG_ORIGINS)
+  }
+  return { granted: tiktok && instagram, tiktok, instagram }
+}
+
+// One read at a time: two would fight over SCOUT's window.
+async function hashtagOnce(fn) {
+  if (hashtagBusy) return { ok: false, error: 'busy' }
+  hashtagBusy = fn()
+  try { return await hashtagBusy } finally { hashtagBusy = null }
+}
+
+// In page: what Creative Center has shown so far. EVERYTHING IT USES IS
+// INSIDE IT (Chrome copies only this function into the page).
+function ccReadInPage() {
+  const bodies = Array.isArray(window.__mvpCcHashtags) ? window.__mvpCcHashtags.slice(0, 30) : []
+  const rows = []
+  const seen = new Set()
+  const leaves = Array.from(document.querySelectorAll('span, div, a, p, h3, h4')).filter((e) => e.children.length === 0 && /^#\s?[\p{L}\p{N}_]{2,60}$/u.test((e.textContent || '').trim()))
+  for (const e of leaves) {
+    const name = (e.textContent || '').trim().replace(/^#\s?/, '')
+    if (seen.has(name.toLowerCase())) continue
+    let row = e
+    for (let i = 0; i < 7 && row && !/posts/i.test(row.innerText || ''); i++) row = row.parentElement
+    const t = (row && row.innerText) || ''
+    const posts = (t.match(/([\d.,]+\s*[KMB]?)\s*Posts/i) || t.match(/Posts\s*([\d.,]+\s*[KMB]?)/i) || [])[1] || null
+    const rank = (t.match(/^\s*(\d{1,3})\s*$/m) || [])[1] || null
+    seen.add(name.toLowerCase())
+    rows.push({ name, rank: rank ? Number(rank) : rows.length + 1, posts })
+    if (rows.length >= 200) break
+  }
+  const text = (document.body && document.body.innerText) || ''
+  return { bodies, rows, blocked: /verify to continue|access denied|captcha/i.test(text) }
+}
+
+// In page: press View more, if it is there.
+function ccMoreInPage() {
+  const b = Array.from(document.querySelectorAll('button, div[role=button], span, a')).find((e) => /^\s*(view|load|see) more\s*$/i.test(e.textContent || '') && e.offsetParent !== null)
+  if (!b) return false
+  try { b.scrollIntoView({ block: 'center' }) } catch (e) {}
+  b.click()
+  return true
+}
+
+async function hashtagTikTok({ country, period }, callerTabId) {
+  if (!(await hasOrigins(CC_ORIGINS))) return { ok: false, error: 'no-access' }
+  const cc = /^[A-Z]{2}$/.test(String(country || '')) ? String(country) : 'US'
+  const days = [7, 30, 120].includes(Number(period)) ? Number(period) : 7
+  const url = `https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en?countryCode=${cc}&period=${days}`
+  const ka = startKeepAlive()
+  let tabId = null
+  let shown = false
+  const steps = []
+  try {
+    try { await chrome.scripting.unregisterContentScripts({ ids: [CC_HOOK_ID] }) } catch (e) {}
+    await chrome.scripting.registerContentScripts([{ id: CC_HOOK_ID, matches: CC_ORIGINS, js: ['tiktok-cc-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: false }])
+    const tab = await openWorkTab(url)
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    steps.push('opened')
+    const count = (r) => (r ? (r.bodies || []).length + (r.rows || []).length : 0)
+    let read = null
+    for (let i = 0; i < 16 && !count(read); i++) { await _sleep(1250); read = await trybeRun(ccReadInPage, [], tabId) }
+    // Some pages only draw when they can be seen: bring it up once.
+    if (!count(read)) {
+      shown = true
+      steps.push('shown')
+      await showWorkTab(tabId)
+      for (let i = 0; i < 10 && !count(read); i++) { await _sleep(1250); read = await trybeRun(ccReadInPage, [], tabId) }
+    }
+    if (read && read.blocked) return { ok: false, error: 'blocked', steps }
+    if (!count(read)) return { ok: false, error: 'nothing-read', steps }
+    steps.push('read')
+    let clicks = 0
+    for (let i = 0; i < 3; i++) {
+      const before = count(read)
+      if (!(await trybeRun(ccMoreInPage, [], tabId))) break
+      clicks++
+      await _sleep(2500 + Math.round(Math.random() * 1500))
+      read = await trybeRun(ccReadInPage, [], tabId)
+      if (count(read) <= before) break
+    }
+    if (clicks) steps.push(`more x${clicks}`)
+    return { ok: true, bodies: read.bodies || [], rows: read.rows || [], country: cc, period: days, shown, steps }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception', steps }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    try { await chrome.scripting.unregisterContentScripts({ ids: [CC_HOOK_ID] }) } catch (e) {}
+    if (shown) await trybeBackTo(callerTabId)
+    stopKeepAlive(ka)
+  }
+}
+
+// In page, on instagram.com: each tag's post count, asked of Instagram the
+// way its own tag page asks. EVERYTHING IT USES IS INSIDE IT.
+async function igTagCountsInPage(tags, gapMs) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const signedIn = /(?:^|;\s*)ds_user_id=/.test(document.cookie || '')
+  const csrf = ((document.cookie || '').match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || ''
+  const find = (o, depth) => {
+    if (!o || typeof o !== 'object' || depth > 6) return null
+    if (typeof o.media_count === 'number') return o.media_count
+    if (o.edge_hashtag_to_media && typeof o.edge_hashtag_to_media.count === 'number') return o.edge_hashtag_to_media.count
+    for (const k of Object.keys(o)) { const v = find(o[k], depth + 1); if (v != null) return v }
+    return null
+  }
+  const items = []
+  for (let i = 0; i < tags.length; i++) {
+    const tag = tags[i]
+    let posts = null
+    let error = null
+    try {
+      const headers = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' }
+      if (csrf) headers['x-csrftoken'] = csrf
+      const r = await fetch('/api/v1/tags/web_info/?tag_name=' + encodeURIComponent(tag), { credentials: 'include', headers })
+      const text = await r.text()
+      let j = null
+      try { j = JSON.parse(text) } catch (e) {}
+      if (r.status === 401 || (j && (j.require_login || j.message === 'login_required')) || (!j && !signedIn)) return { ok: false, error: 'not-signed-in', signedIn, items }
+      if (r.status === 429 || (j && /wait a few minutes/i.test(String(j.message || '')))) { items.push({ tag, posts: null, error: 'slow-down' }); return { ok: items.some((x) => x.posts != null), error: 'slow-down', signedIn, items } }
+      posts = find(j, 0)
+      if (posts == null) error = r.ok ? 'no-count' : 'http-' + r.status
+    } catch (e) { error = 'fetch' }
+    items.push({ tag, posts, error })
+    if (i < tags.length - 1) await sleep(gapMs + Math.round(Math.random() * gapMs))
+  }
+  return { ok: items.some((x) => x.posts != null), error: items.some((x) => x.posts != null) ? null : 'nothing-read', signedIn, items }
+}
+
+async function hashtagInstagram({ tags }) {
+  if (!(await hasOrigins(IG_ORIGINS))) return { ok: false, error: 'no-access' }
+  const list = Array.from(new Set((Array.isArray(tags) ? tags : []).map((t) => String(t || '').trim().replace(/^#/, '').toLowerCase()).filter((t) => /^[\p{L}\p{N}_]{2,60}$/u.test(t)))).slice(0, 20)
+  if (!list.length) return { ok: false, error: 'no-tags' }
+  const ka = startKeepAlive()
+  let tabId = null
+  try {
+    const tab = await openWorkTab('https://www.instagram.com/')
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(1500)
+    const res = await trybeRun(igTagCountsInPage, [list, 1500], tabId)
+    return res || { ok: false, error: 'no-answer' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(ka)
+  }
+}

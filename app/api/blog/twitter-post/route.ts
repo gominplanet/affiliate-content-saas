@@ -1,3 +1,4 @@
+import { trackPost } from '@/lib/reach-pulse'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -310,6 +311,8 @@ Return ONLY the tweet text.`,
       .eq('id', postId).eq('user_id', user.id)
     // Record the real permalink so the brand-recap links straight to the tweet.
     await recordSocialPermalink(supabase, postId!, 'x', socialPermalink.x(tweet.id))
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'x', postId: tweet.id, caption: finalText, productText: post.title })
     await incrementSocialCount(supabase, postId!, 'twitter')
 
     return NextResponse.json({

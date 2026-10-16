@@ -34,7 +34,8 @@ function aggregate(rows: SampleRow[], minSamples: number): TagStat[] {
     if (r.lift == null || !Number.isFinite(r.lift)) continue
     for (const raw of r.hashtags || []) {
       const tag = String(raw || '').toLowerCase()
-      if (!tag || tag === '#ad') continue
+      // A phrase is a YouTube keyword tag, not a hashtag (rows before the engine).
+      if (!tag || tag === '#ad' || /\s/.test(tag)) continue
       const arr = liftsByTag.get(tag)
       if (arr) arr.push(r.lift)
       else liftsByTag.set(tag, [r.lift])
@@ -48,23 +49,25 @@ function aggregate(rows: SampleRow[], minSamples: number): TagStat[] {
   return out.sort((a, b) => b.avgLift - a.avgLift)
 }
 
-/** This user's tags ranked by their own average lift. */
-export async function personalTagStats(userId: string, minSamples = 2): Promise<TagStat[]> {
+/** This user's tags ranked by their own average lift. With a platform, only
+ *  that platform's posts count (a tag that works on TikTok is not an
+ *  Instagram tag; lib/hashtag-engine). */
+export async function personalTagStats(userId: string, minSamples = 2, platform?: string | null): Promise<TagStat[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
-  const { data } = await admin
+  let q = admin
     .from('reach_samples')
     .select('hashtags,lift')
     .eq('user_id', userId)
     .eq('status', 'collected')
     .not('lift', 'is', null)
-    .order('posted_at', { ascending: false })
-    .limit(500)
+  if (platform) q = q.eq('platform', platform)
+  const { data } = await q.order('posted_at', { ascending: false }).limit(500)
   return aggregate((data ?? []) as SampleRow[], minSamples)
 }
 
 /** Tags ranked across ALL users for a niche (null = every niche pooled). */
-export async function pooledTagStats(niche: string | null, minSamples = 5): Promise<TagStat[]> {
+export async function pooledTagStats(niche: string | null, minSamples = 5, platform?: string | null): Promise<TagStat[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
   let q = admin
@@ -75,6 +78,7 @@ export async function pooledTagStats(niche: string | null, minSamples = 5): Prom
     .order('posted_at', { ascending: false })
     .limit(2000)
   if (niche) q = q.eq('niche', niche)
+  if (platform) q = q.eq('platform', platform)
   const { data } = await q
   return aggregate((data ?? []) as SampleRow[], minSamples)
 }

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.48.0'
+export const SCOUT_LATEST_VERSION = '1.49.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: Send all now runs inside SCOUT. MVP\'s tab can be closed or left while it sends, and nothing takes your screen: a request that needs TRYBE in front is left for Send now.'
+  'Hashtags (Labs): SCOUT reads TikTok Creative Center\'s trending hashtags and how many posts a hashtag has on Instagram, so MVP picks tags that are live right now. Reading only.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -86,6 +86,9 @@ export const SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION = '1.41.7'
 /** The oldest SCOUT that runs Send all by itself (1.48.0): MVP hands it the
  *  list and its tab can close; nothing takes the screen during the run. */
 export const SCOUT_TRYBE_RUNNER_MIN_VERSION = '1.48.0'
+/** The oldest SCOUT that reads hashtag trends (TikTok Creative Center and
+ *  Instagram's tag counts, Labs). */
+export const SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1.49.0'
 /** The oldest SCOUT that opens one brand's own popup on TRYBE for the
  *  creator (On TRYBE links, Labs). */
 export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'

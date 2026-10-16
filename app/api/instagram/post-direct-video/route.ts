@@ -14,6 +14,7 @@
  * tierAllowsSocial(tier, 'instagram') is the same gate the blog-post IG
  * route uses.
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -22,6 +23,7 @@ import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { addPostedProductToBio } from '@/lib/link-bio-import'
+import { fitHashtags } from '@/lib/hashtag-engine'
 
 export const maxDuration = 300
 
@@ -93,7 +95,9 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  const caption = (body.caption || '').slice(0, 2200)
+  // The hashtag safety net (lib/hashtag-engine): each tag once, no spam or
+  // years, and no more than Instagram takes with #ad counted.
+  const caption = fitHashtags((body.caption || '').slice(0, 2200), 'instagram')
 
   // ── Publish ──────────────────────────────────────────────────────────────
   const wantReel = mode === 'reel' || mode === 'both'
@@ -153,6 +157,8 @@ export async function POST(request: Request) {
     }, { status: 502 })
   }
 
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): the Reel's tags.
+  if (reelId) await trackPost({ userId: user.id, platform: 'instagram', postId: reelId, caption })
   return NextResponse.json({
     ok: true,
     reelId,

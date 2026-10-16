@@ -12,6 +12,7 @@
 //
 // LABS, admin only while it is tested (lib/labs-preview facebook_reels).
 
+import { trackPost } from '@/lib/reach-pulse'
 import { cleanNicheGroup } from '@/lib/facebook-niche'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -137,5 +138,7 @@ export async function POST(req: Request) {
       error: perm ? `Facebook refused: ${r.error} Reconnect Facebook under Social Accounts so the Page grants Reels publishing, then try again.` : `Facebook did not post the Reel: ${r.error}`,
     }, { status: 502 })
   }
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+  await trackPost({ userId: user.id, platform: 'facebook', postId: r.videoId || null, caption: description, postUrl: r.url || null })
   return NextResponse.json({ ok: true, page: page.displayName, state: r.state, url: r.url, videoId: r.videoId, description, kind: asVideo ? 'video' : 'reel' })
 }

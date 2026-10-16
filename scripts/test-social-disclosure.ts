@@ -50,7 +50,8 @@ const SP = /(?<![\w#\\])\\?#sponsored\b/gi
   check('the default disclosure has no dashes', !/[—–]| - /.test(AFFILIATE_DISCLAIMER_DEFAULT))
   // Placement: first line on the short-form platforms, inside the fold on long-form.
   const igCap = 'Loving this lamp\n\nAs an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
-  check('instagram: tags move to the first line', discloseSocialPost(igCap, 'instagram').startsWith('#ad #sponsored\n'))
+  // Instagram: #ad only (Seb, 2026-10-16), first, and #sponsored gone.
+  check('instagram: #ad alone moves to the first line', discloseSocialPost(igCap, 'instagram').startsWith('#ad\n') && !/#sponsored/.test(discloseSocialPost(igCap, 'instagram')))
   check('instagram: still exactly once after the move', count(discloseSocialPost(igCap, 'instagram'), AD) === 1)
   const fbCap = '🛒 Grab it on Amazon 👉 https://amzn.to/x\nAs an Amazon Associate I earn from qualifying purchases. #ad #sponsored\n\nGreat.'
   check('facebook: tags already inside the fold stay where they are', discloseSocialPost(fbCap, 'facebook') === fbCap)
@@ -65,15 +66,16 @@ const SP = /(?<![\w#\\])\\?#sponsored\b/gi
     const body = p === 'linkedin' || p === 'instagram' ? long.repeat(5) : long
     const out = discloseSocialPost(`${body} ${url}`, p)
     check(`${p}: within ${max} characters`, out.length <= max)
-    check(`${p}: both tags survive the cut`, count(out, AD) === 1 && count(out, SP) === 1)
+    check(`${p}: ${p === 'instagram' ? '#ad survives' : 'both tags survive'} the cut`, count(out, AD) === 1 && count(out, SP) === (p === 'instagram' ? 0 : 1))
     check(`${p}: the link survives whole`, out.includes(url))
     check(`${p}: the link is labelled`, out.includes(`${DEST_LABEL.amazon} ${url}`) || out.includes(`here on Amazon: ${url}`))
     check(`${p}: idempotent`, discloseSocialPost(out, p) === out)
   }
   const tags = Array.from({ length: 30 }, (_, i) => `#topic${i}`).join(' ')
   const ig = discloseSocialPost(`Nice find\n\n${tags}`, 'instagram')
-  check('instagram: never more than 30 hashtags', count(ig, /(?<![\w#])#[\p{L}\p{N}_]+/gu) <= 30)
-  check('instagram: a topical tag is dropped, not a disclosure tag', count(ig, AD) === 1 && count(ig, SP) === 1 && !ig.includes('#topic29'))
+  // Instagram's cap since its 2025 change: 5 a post, #ad included.
+  check('instagram: never more than 5 hashtags, #ad included', count(ig, /(?<![\w#])#[\p{L}\p{N}_]+/gu) === 5)
+  check('instagram: topical tags are dropped, never #ad', count(ig, AD) === 1 && count(ig, SP) === 0 && ig.includes('#topic0') && !ig.includes('#topic4'))
 }
 
 // ── Labels ───────────────────────────────────────────────────────────────────
@@ -163,4 +165,4 @@ if (failures.length) {
   for (const f of failures) console.error(`  - ${f}`)
   process.exit(1)
 }
-console.log('✓ social-disclosure: #ad and #sponsored once each on every post, inside every limit, and every link says where it goes')
+console.log('✓ social-disclosure: #ad and #sponsored once each (Instagram: #ad only) on every post, inside every limit, and every link says where it goes')

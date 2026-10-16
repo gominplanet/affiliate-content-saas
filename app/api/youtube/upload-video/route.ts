@@ -141,8 +141,9 @@ async function handleUpload(request: Request) {
     recordUsage({ userId: user.id, tier, feature: 'youtube_video_upload', model: 'youtube-data-api', images: 1 })
     void recordReachSample({
       userId: user.id, platform: 'youtube', mediaId: id,
+      // The description's real hashtags, not the keyword tags: a phrase like
+      // "wavy hair tool" is a search term, not a hashtag anyone follows.
       caption: description,
-      hashtags: tags.map(t => (t.startsWith('#') ? t : `#${t}`)),
       productText: title,
     }).catch(() => {})
     // channelId lets the caller build a Studio link scoped to the owning channel.

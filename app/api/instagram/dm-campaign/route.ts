@@ -14,6 +14,7 @@
  * once Meta approves the comment/message permissions; safe to ship now — the
  * publish itself only needs the content-publishing permission MVP already has.
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { maybeDecrypt } from '@/lib/secrets'
@@ -242,6 +243,8 @@ export async function POST(request: Request) {
     }, { status: 500 })
   }
 
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+  await trackPost({ userId: user.id, platform: 'instagram', postId: mediaId, caption })
   return NextResponse.json({ ok: true, campaign: created, mediaId, caption })
 }
 

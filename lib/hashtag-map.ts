@@ -215,7 +215,8 @@ function scoreWith(hay: string, re: RegExp): number {
 }
 
 // Never emit these — low-value spam that hurts reach and looks desperate.
-const SPAM = new Set<string>([
+// Exported: the ONE list every hashtag path checks (lib/hashtag-engine).
+export const SPAM = new Set<string>([
   'amazonfinds', 'amazonmusthaves', 'amazonmusthave', 'musthave', 'musthaves',
   'viral', 'viralvideo', 'viralreels', 'fyp', 'foryou', 'foryoupage', 'trending',
   'tiktokmademebuyit', 'reels', 'reel', 'reelsinstagram', 'explore', 'explorepage',
@@ -255,6 +256,22 @@ export function detectNiche(text: string): string | null {
     if (score > 0 && (!best || score > best.score)) best = { key: cat.key, score }
   }
   return best?.key ?? null
+}
+
+/** The categories a piece of text belongs to, best first, with their tag
+ *  tiers and match terms (for lib/hashtag-engine's relevance check). */
+export function categoriesFor(text: string, limit = 2): Array<{ key: string; match: string[]; broad: string[]; mid: string[]; niche: string[]; score: number }> {
+  const hay = ` ${String(text || '')} `.toLowerCase()
+  return COMPILED
+    .map((x) => ({ ...x.cat, score: scoreWith(hay, x.re) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+}
+
+/** Every tag the category map can suggest, for the trend readers to check. */
+export function allCategoryTags(): string[] {
+  return Array.from(new Set(TAXONOMY.flatMap((c) => [...c.niche, ...c.mid, ...c.broad, ...c.match.filter((m) => m.length >= 4)]).map((t) => `#${t.toLowerCase().replace(/[^a-z0-9]+/g, '')}`).filter((t) => t.length > 3)))
 }
 
 /** Normalize any string into a clean `#lowercasetag`, or '' if nothing usable. */

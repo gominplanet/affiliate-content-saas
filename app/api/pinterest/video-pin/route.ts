@@ -15,6 +15,7 @@
  * answers 202 { pending, finish } and the page sends `finish` back until the
  * pin is made (lib/pinterest-video-pin.ts). Nothing is lost to a timeout.
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { isBlockedPinLink } from '@/lib/pinterest-destination'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -164,6 +165,8 @@ export async function POST(request: Request) {
     if (status !== 'succeeded') return NextResponse.json({ ok: false, pending: true, status, finish }, { status: 202 })
     const { id } = await pinterest.pinFromVideoMedia({ boardId: board.id, title, description, link, mediaId, coverImageUrl })
     recordUsage({ userId: user.id, tier, feature: 'pinterest_video_pin', model: 'pinterest-api', images: 1 })
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+    await trackPost({ userId: user.id, platform: 'pinterest', postId: id, caption: description, productText: title })
     return NextResponse.json({ ok: true, pinId: id, board: fbName })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Pinterest video pin failed.'
@@ -199,6 +202,8 @@ async function finishPin(supabase: any, userId: string, f: PinFinish) {
     const description = scrubBanned(String(f.description || '')).slice(0, 500)
     const { id } = await pinterest.pinFromVideoMedia({ boardId, title, description, link, mediaId, coverImageUrl: cover })
     recordUsage({ userId, tier, feature: 'pinterest_video_pin', model: 'pinterest-api', images: 1 })
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+    await trackPost({ userId, platform: 'pinterest', postId: id, caption: description, productText: title })
     return NextResponse.json({ ok: true, pinId: id, board: f.boardName || null })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest video pin failed.' }, { status: 502 })

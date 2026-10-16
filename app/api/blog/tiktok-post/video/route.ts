@@ -8,6 +8,7 @@
  * cap (counted across both video-direct AND blog-post posts so a creator
  * can't double the cap by using both surfaces).
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -178,5 +179,7 @@ export async function POST(request: Request) {
   // Always when the caption says "link in bio".
   const bio = await addPostedProductToBio(sb, user.id, videoId, { caption })
 
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+  await trackPost({ userId: user.id, platform: 'tiktok', postId: publishId, caption })
   return NextResponse.json({ ok: true, publishId, bio })
 }

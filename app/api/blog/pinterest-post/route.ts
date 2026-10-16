@@ -3,6 +3,7 @@
  * Publishes a pin from assets the user reviewed in the preview modal.
  * Publish logic is shared via lib/pin-publish.
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -147,6 +148,8 @@ export async function POST(request: NextRequest) {
       await recordSocialPermalink(supabase, postId, 'pinterest', socialPermalink.pinterest(pinId))
       await incrementSocialCount(supabase, postId, 'pinterest')
     }
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'pinterest', postId: pinId, caption: description, productText: title })
     return NextResponse.json({
       ok: true,
       pinId,

@@ -8,8 +8,8 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl } from '@/services/research'
-import { selectHashtags, mergeHashtags, extractHashtags, stripHashtags, detectNiche } from '@/lib/hashtag-map'
-import { pulseTrendingTags } from '@/lib/pulse-rank'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags, withTags } from '@/lib/hashtag-engine'
 
 export interface IgBurnCtx { userId: string; tier: string | null }
 
@@ -89,17 +89,12 @@ Return ONLY the caption text + the 2-3 specific hashtags.`,
     let text = ((msg.content[0] as { type: string; text: string }).text || '').trim()
     text = text.replace(/\bhonest(ly)?\b/gi, '').replace(/https?:\/\/\S+/g, '').replace(/[ \t]{2,}/g, ' ').trim()
 
-    // Own the hashtag line: the AI supplies 2-3 specific tags, we add the vetted
-    // brand + broad-reach category mix and drop any spam, so every caption gets a
-    // deliberate spread instead of whatever the model happened to invent.
-    const aiSpecific = extractHashtags(text).filter(t => t !== '#ad')
-    const body = stripHashtags(text)
+    // THE HASHTAG ENGINE (lib/hashtag-engine) picks the tags: the writer's are
+    // suggestions; your results, trends, the brand and the category decide.
+    // Instagram takes 5 in all, so 4 plus the #ad the disclosure leads with.
     const title = productContext.split('\n')[0] || productContext
-    // Pulse: proven tags for this creator/niche lead the mix (best-effort).
-    const trending = await pulseTrendingTags(ctx.userId, detectNiche(productContext), 3)
-    const curated = selectHashtags({ text: productContext, brand: title, trending, max: 6 })
-    const tags = mergeHashtags([...aiSpecific.slice(0, 2), ...curated], [], 7)
-    const finalCaption = `${body}${tags.length ? `\n\n${tags.join(' ')}` : ''}\n\n#ad`
+    const pick = await hashtagsFor({ platform: 'instagram', text: productContext, brand: title, writer: writerTags(text), userId: ctx.userId })
+    const finalCaption = `${withTags(text, pick.tags.map(t => t.tag))}\n\n#ad`
     return finalCaption.trim() || null
   } catch {
     return null

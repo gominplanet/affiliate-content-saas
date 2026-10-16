@@ -11,6 +11,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { personalTagStats, pooledTagStats, collectedSampleCount, bestPostingTimes } from '@/lib/pulse-rank'
+import { MEASURED_BY, NO_RESULTS_WHY, PULSE_PLATFORMS, RESULTS_FROM } from '@/lib/reach-pulse'
 
 export const runtime = 'nodejs'
 
@@ -55,7 +56,38 @@ export async function GET(request: NextRequest) {
     bestPostingTimes(user.id, tzOffsetMinutes),
   ])
 
+  // EVERY PLATFORM (2026-10-16): what was posted with tags in the last 90
+  // days, what came back measured, what is still waiting, and where the
+  // platform does not share results, why. A platform with no results never
+  // reads as one whose tags did nothing.
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString()
+  const { data: recentRows } = await admin.from('reach_samples').select('platform,status')
+    .eq('user_id', user.id).gte('posted_at', since).limit(3000)
+  const tally = new Map<string, { posted: number; measured: number; waiting: number; noResults: number; failed: number }>()
+  for (const r of (recentRows ?? []) as Array<{ platform: string | null; status: string | null }>) {
+    const k = r.platform || 'instagram'
+    const t = tally.get(k) || { posted: 0, measured: 0, waiting: 0, noResults: 0, failed: 0 }
+    t.posted++
+    if (r.status === 'collected') t.measured++
+    else if (r.status === 'pending') t.waiting++
+    else if (r.status === 'recorded') t.noResults++
+    else if (r.status === 'failed') t.failed++
+    tally.set(k, t)
+  }
+  const byPlatform = await Promise.all(PULSE_PLATFORMS.map(async (p) => {
+    const t = tally.get(p.key) || { posted: 0, measured: 0, waiting: 0, noResults: 0, failed: 0 }
+    const top = t.measured >= 2 ? (await personalTagStats(user.id, 2, p.key)).filter((x) => x.avgLift >= 1).slice(0, 3) : []
+    return {
+      platform: p.key, label: p.label, ...t,
+      sharesResults: RESULTS_FROM.has(p.key),
+      measuredBy: MEASURED_BY[p.key] || null,
+      noResultsWhy: RESULTS_FROM.has(p.key) ? null : NO_RESULTS_WHY[p.key] || null,
+      top,
+    }
+  }))
+
   return NextResponse.json({
+    byPlatform,
     collecting: sampleCount < MIN_FOR_PERSONAL,
     sampleCount,
     minForPersonal: MIN_FOR_PERSONAL,

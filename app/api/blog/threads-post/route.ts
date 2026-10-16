@@ -1,3 +1,4 @@
+import { trackPost } from '@/lib/reach-pulse'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
         max_tokens: 300,
         messages: [{
           role: 'user',
-          content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).${learnBlock ? `\n\n${learnBlock}` : ''}
+          content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with ONE topic tag about this exact product or subject (Threads links one tag a post), never a generic tag like #fyp or #amazonfinds. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Blog title: ${p.title}
 Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}
@@ -146,6 +147,8 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     // Store the real public permalink (Threads has none derivable from the id),
     // so the brand-recap can actually link to the Threads post. Best-effort.
     if (result.permalink) await recordSocialPermalink(supabase, postId!, 'threads', result.permalink)
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'threads', postId: result.id, caption: fullText, productText: p.title, postUrl: result.permalink || null })
     await incrementSocialCount(supabase, postId!, 'threads')
 
     return NextResponse.json({

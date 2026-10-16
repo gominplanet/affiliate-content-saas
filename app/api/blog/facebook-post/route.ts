@@ -1,3 +1,6 @@
+import { trackPost } from '@/lib/reach-pulse'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags } from '@/lib/hashtag-engine'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { landsOnAmazon } from '@/lib/amazon-destination'
@@ -256,13 +259,24 @@ Title: ${post.title}
 Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 500)}`,
           }],
         })
-        hashtags = (hres.content[0] as { type: string; text: string }).text
-          .trim().split(/\s+/).filter(t => t.startsWith('#')).slice(0, 3).join(' ')
+        hashtags = (hres.content[0] as { type: string; text: string }).text.trim()
         recordAnthropicUsage(hres, {
           userId: user.id, tier: integration?.tier,
           feature: 'social_facebook_hashtags', model: 'claude-haiku-4-5-20251001',
         })
-      } catch { /* hashtags optional — copy block still works without them */ }
+      } catch { /* the engine below still picks from the brand and category */ }
+      // THE HASHTAG ENGINE picks the Group's 3 (lib/hashtag-engine): the
+      // writer's are suggestions, and a failed write still gets real tags.
+      {
+        const pick = await hashtagsFor({
+          platform: 'facebook_group',
+          text: `${post.title}\n${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 800)}`,
+          brand: post.title,
+          writer: writerTags(hashtags),
+          userId: user.id,
+        })
+        hashtags = pick.tags.map(t => t.tag).join(' ')
+      }
       // videoAvailable drives the thumbnail/video choice in the preview modal.
       // Offering "post the video" on a post that has none is how a creator picks
       // it, gets a thumbnail, and never learns why.
@@ -353,6 +367,8 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     // Count one re-publish per Page actually posted to, so the per-post cap
     // holds across fan-outs and subsequent re-publishes.
     for (let i = 0; i < succeeded.length; i++) await incrementSocialCount(supabase, postId, 'facebook')
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'facebook', postId: firstId, caption, productText: post.title as string })
     const newCount = fbSocialCount + succeeded.length
 
     return NextResponse.json({

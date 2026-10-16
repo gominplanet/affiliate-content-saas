@@ -1,3 +1,4 @@
+import { trackPost } from '@/lib/reach-pulse'
 import { NextRequest, NextResponse } from 'next/server'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { postProductAsin } from '@/lib/post-product-link'
@@ -227,6 +228,8 @@ Return ONLY the post text.`,
       .from('blog_posts')
       .update({ bluesky_post_uri: result.uri })
       .eq('id', postId).eq('user_id', user.id)
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'bluesky', postId: result.uri, caption: finalText, productText: post.title })
     await incrementSocialCount(supabase, postId!, 'bluesky')
 
     return NextResponse.json({

@@ -19,6 +19,8 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags, withTags } from '@/lib/hashtag-engine'
 import { scrubBanned } from '@/lib/scrub'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken, getMediaCount } from '@/services/instagram'
@@ -234,7 +236,7 @@ export async function POST(request: NextRequest) {
             role: 'user',
             content: `Write an Instagram ${postTypeLabel} caption for this product review article.
 
-Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with up to 6 suggested hashtags specific to this product and what it is used for (MVP keeps the best 4: Instagram takes 5 a post with #ad). Never generic tags like #fyp, #viral, #reels or #amazonfinds. Match the voice provided.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - TOTAL output (text + hashtags) must be under 2000 characters.
@@ -257,6 +259,10 @@ Return ONLY the caption text + hashtags.`,
           feature: 'social_instagram_caption', model: 'claude-haiku-4-5-20251001',
         })
         if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
+        // THE HASHTAG ENGINE picks the tags (lib/hashtag-engine): the writer's
+        // are suggestions; your results, trends, the brand and category decide.
+        const pick = await hashtagsFor({ platform: 'instagram', text: `${post.title || ''}\n${post.excerpt || ''}\n${plainContent.slice(0, 800)}`, brand: post.title || null, writer: writerTags(feedCaption), userId: user.id })
+        feedCaption = withTags(feedCaption, pick.tags.map(t => t.tag))
       }
       // Reel/feed captions can't carry a clickable URL, so direct people to the
       // bio link — the standard creator CTA. Appended above any hashtag block.
@@ -289,7 +295,7 @@ Return ONLY the caption text + hashtags.`,
         ok: true,
         dryRun: true,
         // THE PREVIEW IS WHAT POSTS: services/instagram discloses every caption
-        // (#ad #sponsored first, hashtags capped at 30). Idempotent, so the
+        // (#ad first, hashtags capped at Instagram's 5). Idempotent, so the
         // edited copy coming back as `caption` is not tagged twice.
         reelCaption: feedCaption ? discloseSocialPost(feedCaption, 'instagram') : null, // legacy field name, UI reads this
         affiliateUrl: (mode === 'story' || mode === 'both') ? affiliateUrl : null,

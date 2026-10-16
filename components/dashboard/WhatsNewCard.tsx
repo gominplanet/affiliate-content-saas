@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-4'
+const RELEASE_ID = '2026-10-16-5'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // One hashtag engine for everything MVP posts (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#ff3b30',
+    title: 'Better hashtags on every post',
+    desc: 'Every caption MVP writes now picks its hashtags the same way: your proven tags, what is active on that platform and about the post, the brand and the product\u2019s own category. Each platform gets the count it rewards: Instagram 5 including #ad, Threads 1, YouTube 3 to 5. Spam tags, years and repeats are taken out before anything posts. Hashtag insights now shows every platform you post to, and says plainly where a platform does not share results.',
+    href: '/pulse',
+  },
   // Ticks before a suggested TRYBE reply (2026-10-16).
   {
     badge: 'NEW',

@@ -26,8 +26,8 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { Tier } from '@/lib/tier'
-import { selectHashtags, mergeHashtags, detectNiche } from '@/lib/hashtag-map'
-import { pulseTrendingTags } from '@/lib/pulse-rank'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { TAG_RULES } from '@/lib/hashtag-engine'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { capSocialText } from '@/lib/social-cap'
@@ -96,15 +96,14 @@ const PLATFORM_RULES: Record<CaptionPlatform, {
 }> = {
   tiktok: {
     charCap: 2200,
-    // TikTok's algorithm favors 3-5 specific niche hashtags; more is
-    // treated as spam-y. We aim for 4.
-    hashtagCount: 4,
+    // From the one rulebook (lib/hashtag-engine TAG_RULES): 3 to 5.
+    hashtagCount: TAG_RULES.tiktok.max,
     voice: 'TikTok: punchy, hook in the first line, conversational, ONE clear takeaway. No "link in bio" mentions — the description handles links separately.',
   },
   instagram: {
     charCap: 2200,
-    // Instagram tolerates more hashtags. We aim for 8 — niche heavy.
-    hashtagCount: 8,
+    // Instagram takes 5 in all since its 2025 change: 4 plus the #ad.
+    hashtagCount: TAG_RULES.instagram.max,
     voice: 'Instagram Reels: friendly, build to the value, drop the takeaway. NO "link in bio" mentions — IG already has a Link Sticker for Stories.',
   },
 }
@@ -171,10 +170,10 @@ Hook + value lines should reference the REAL product (not a generic category). P
 
 1. Open with a punchy hook line — under 80 characters — that lifts the most clickable angle from the video's title${input.product?.title ? ' or the product' : ''}.
 2. Follow with 1-2 lines of value or context. Concrete, specific.${input.product?.title ? ' Cite ONE real feature from the product bullets.' : ''} Pull from the description if useful — but never invent product details, specs, or numbers that aren't in the source material above.
-3. Then a blank line, then ${rules.hashtagCount} hashtags on one line:
-   - 2-3 niche hashtags tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}
-   - 1-2 product/category hashtags${input.product?.title ? ' pulled from the product title — use the brand or product type as a tag' : ' pulled from the title'}
-   - 1 general engagement hashtag appropriate for ${platformLabel}
+3. Then a blank line, then up to 6 SUGGESTED hashtags on one line (MVP keeps the best ${rules.hashtagCount} for ${platformLabel}):
+   - specific to this exact product and what it is used for, tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}
+   - the product type${input.product?.title ? ' from the product title' : ' from the title'} as a tag
+   - never generic engagement or spam tags (#fyp, #viral, #reels, #amazonfinds, #tiktokmademebuyit)
    - All in #lowercase, no spaces inside the tag, no duplicate hashtags
 4. Then a blank line, then the affiliate disclaimer EXACTLY as given:
    ${disclaimer}
@@ -230,23 +229,24 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     parsed = {
       hook: input.videoTitle,
       body: '',
-      hashtags: [
-        `#${niche.toLowerCase().replace(/[^a-z0-9]+/g, '')}`,
-        `#review`,
-        `#${input.platform === 'tiktok' ? 'tiktokmademebuyit' : 'reels'}`,
-      ],
+      // No spam fallbacks (#tiktokmademebuyit, #reels): the engine fills in.
+      hashtags: [`#${niche.toLowerCase().replace(/[^a-z0-9]+/g, '')}`],
     }
   }
 
   const hook = scrubTitle(scrub((parsed.hook || '').slice(0, 200)))
   const body = scrub((parsed.body || '').slice(0, 400))
-  const hashtags = (Array.isArray(parsed.hashtags) ? parsed.hashtags : [])
-    .map(t => String(t).trim())
-    .filter(Boolean)
-    .map(t => (t.startsWith('#') ? t : `#${t}`))
-    .map(t => t.replace(/\s+/g, ''))
-    .filter((t, i, arr) => arr.indexOf(t) === i)              // dedupe
-    .slice(0, rules.hashtagCount)
+  // THE HASHTAG ENGINE picks (lib/hashtag-engine): the writer's tags are
+  // suggestions; your results, trends, the brand and the category decide.
+  const pick = await hashtagsFor({
+    platform: input.platform,
+    text: [input.product?.title, input.videoTitle, ...(input.product?.bullets || []).slice(0, 3), input.videoDescription.slice(0, 600)].filter(Boolean).join('\n'),
+    brand: input.product?.title || input.videoTitle,
+    niches: input.niches,
+    writer: (Array.isArray(parsed.hashtags) ? parsed.hashtags : []).map(t => String(t)),
+    userId: ctx.userId,
+  })
+  const hashtags = pick.tags.map(t => t.tag)
 
   // Final assembly. Capped to the platform char limit just in case.
   const fullCaption = assembleCaption([hook, body, hashtags.join(' ')], [disclaimer], rules.charCap)
@@ -297,7 +297,7 @@ export async function generateDmCampaignCaption(
 
 1. A punchy hook line — under 80 characters — built around the product.
 2. 1-2 lines of concrete value: what the product is and one specific reason it's worth it. ${input.description ? 'Polish the creator\'s description below; keep their facts, tighten the wording.' : 'Write this from the product name — but stay generic; never invent specs, numbers, or features you can\'t verify.'}
-3. Then up to ${rules.hashtagCount} hashtags on one line, #lowercase, no duplicates, as a smart MIX: if the product has a clear brand name include it as a tag (e.g. HOVERAir X1 → #hoverair; skip if there's no real brand), 2-3 tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}, 1-2 specific to the product, and 2-3 BROADER category/audience tags this product fits so it reaches beyond the niche (e.g. a creator drone → #contentcreator #filmmaking #tech). Never generic spam (#amazonfinds, #musthave, #viral, #fyp).
+3. Then up to 6 SUGGESTED hashtags on one line (MVP keeps the best ${rules.hashtagCount}), #lowercase, no duplicates, as a smart MIX: if the product has a clear brand name include it as a tag (e.g. HOVERAir X1 → #hoverair; skip if there's no real brand), 2-3 tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}, 1-2 specific to the product, and 2-3 BROADER category/audience tags this product fits so it reaches beyond the niche (e.g. a creator drone → #contentcreator #filmmaking #tech). Never generic spam (#amazonfinds, #musthave, #viral, #fyp).
 
 Do NOT write the call-to-action or the disclaimer — those are appended separately. Do NOT use the word "honest" in any form, and avoid hype clichés (game-changer, mind-blowing, next-level).${input.wordsToAvoid.length ? `\nCreator's banned words: ${input.wordsToAvoid.slice(0, 30).join(', ')}` : ''}
 
@@ -327,26 +327,22 @@ Return ONLY a JSON object shaped EXACTLY:
     parsed = {
       hook: input.productName,
       body: input.description?.slice(0, 300) || '',
-      hashtags: [`#${niche.toLowerCase().replace(/[^a-z0-9]+/g, '')}`, '#review', '#reels'],
+      hashtags: [`#${niche.toLowerCase().replace(/[^a-z0-9]+/g, '')}`],
     }
   }
 
   const hook = scrubTitle(scrub((parsed.hook || input.productName).slice(0, 200)))
   const body = scrub((parsed.body || '').slice(0, 400))
-  // Curated brand + broad category mix leads (reliable, vetted), then the AI's
-  // product-specific tags fill the rest — deduped, spam-filtered, capped.
-  // Pulse: proven tags for this creator/niche lead the mix (best-effort).
-  const pulseNiche = detectNiche(`${input.productName} ${input.description || ''} ${input.niches.join(' ')}`)
-  const trending = await pulseTrendingTags(ctx.userId, pulseNiche, 3)
-  const curated = selectHashtags({
-    text: `${input.productName} ${input.description || ''}`,
+  // THE HASHTAG ENGINE picks (lib/hashtag-engine), as for every post.
+  const pick = await hashtagsFor({
+    platform: 'instagram',
+    text: `${input.productName}\n${input.description || ''}`,
     brand: input.productName,
     niches: input.niches,
-    trending,
-    max: rules.hashtagCount,
+    writer: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(t => String(t)) : [],
+    userId: ctx.userId,
   })
-  const aiTags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(t => String(t)) : []
-  const hashtags = mergeHashtags(curated, aiTags, rules.hashtagCount)
+  const hashtags = pick.tags.map(t => t.tag)
 
   // hook · value · CTA (with trigger word) · hashtags · disclaimer
   // The trigger word and the disclosure are the tail: trimming either breaks

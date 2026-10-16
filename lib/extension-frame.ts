@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1048,6 +1048,45 @@ export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'grante
   if (!scoutAtLeast(status.version, SCOUT_TRYBE_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
   const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_TRYBE_ACCESS', ask }, ask ? 185_000 : 10_000)
   return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
+}
+
+/** Hashtag trends (Labs, SCOUT 1.49.0+). Is SCOUT allowed to read TikTok
+ *  Creative Center and Instagram's tag counts; ask: show the Allow window now.
+ *  Resolves, never throws. */
+export async function requestHashtagAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; tiktok?: boolean; instagram?: boolean; version?: string | null }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_HASHTAG_TRENDS_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
+  const res = await sendToExtension<{ granted?: boolean; tiktok?: boolean; instagram?: boolean }>({ type: 'MVP_HASHTAG_ACCESS', ask }, ask ? 185_000 : 10_000)
+  return { state: res?.granted ? 'granted' : 'not-granted', tiktok: !!res?.tiktok, instagram: !!res?.instagram, version: status.version ?? null }
+}
+
+export interface TikTokTrendsResult {
+  ok: boolean; error?: string
+  /** Creative Center's own answers, as { url, body }; MVP's server reads them (lib/hashtag-trends parseTikTokCC). */
+  bodies?: unknown[]
+  /** What SCOUT read off the page itself, when the answers were not there. */
+  rows?: Array<{ name: string; rank: number | null; posts: string | null }>
+  country?: string; period?: number; shown?: boolean; steps?: string[]
+}
+
+/** SCOUT 1.49.0+: TikTok Creative Center's trending hashtags, read in SCOUT's
+ *  own window. Nothing is posted. */
+export async function requestTikTokTrends(country = 'US', period = 7): Promise<TikTokTrendsResult> {
+  const res = await sendToExtension<TikTokTrendsResult>({ type: 'MVP_HASHTAG_TIKTOK', country, period }, 120_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
+export interface InstagramTagCountsResult {
+  ok: boolean; error?: string | null; signedIn?: boolean
+  items?: Array<{ tag: string; posts: number | null; error: string | null }>
+}
+
+/** SCOUT 1.49.0+: how many posts each tag has on Instagram, asked from the
+ *  creator's own signed-in Instagram (up to 20 tags, unhurried). */
+export async function requestInstagramTagCounts(tags: string[]): Promise<InstagramTagCountsResult> {
+  const res = await sendToExtension<InstagramTagCountsResult>({ type: 'MVP_HASHTAG_INSTAGRAM', tags: tags.slice(0, 20) }, 120_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
 export interface TrybeScannedBrand {

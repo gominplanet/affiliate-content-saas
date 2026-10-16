@@ -9,6 +9,7 @@
  *
  * Status is polled (stateless) via GET /api/tiktok/publish-burned/status.
  */
+import { trackPost } from '@/lib/reach-pulse'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -97,6 +98,8 @@ export async function POST(request: Request) {
     // undo) the TikTok post that already went out.
     // A caption that says "link in bio" always puts the product there.
     const bio = await addProductUrlToBio(sb, user.id, { url: body.product, title: body.productTitle }, { caption, sourceYoutubeVideoId: body.sourceYoutubeVideoId })
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+    await trackPost({ userId: user.id, platform: 'tiktok', postId: publishId, caption, productText: body.productTitle || null })
     return NextResponse.json({ ok: true, publishId, bio })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'

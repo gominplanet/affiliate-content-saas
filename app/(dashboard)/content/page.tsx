@@ -3,6 +3,7 @@
 // entry after a new client component entered its import graph (a stale build
 // cache dropped content/page.tsx#default from the manifest → RSC render error).
 
+import { pickHashtags } from '@/lib/hashtag-engine'
 import { isQueuedNote, queuedWords } from '@/lib/facebook-queue-words'
 import { canUsePreview } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
@@ -1890,16 +1891,10 @@ const VideoCard = memo(function VideoCardImpl({
               bluesky:  { endpoint: '/api/blog/bluesky-post',  color: '#1185fe', label: 'Bluesky',   onPublished: () => setBsPosted(true) },
               telegram: { endpoint: '/api/blog/telegram-post', color: '#229ED9', label: 'Telegram',  onPublished: () => setTgPosted(true) },
             }[previewPlatform]
-            // 3 hashtags for the Facebook Group copy block: brand niches first,
-            // padded with evergreen affiliate tags.
-            const fbHashtags = (() => {
-              const tags = (brandNiches || []).slice(0, 3).map(n => '#' + n.toLowerCase().replace(/[^a-z0-9]+/g, ''))
-              for (const e of ['#amazonfinds', '#founditonamazon', '#musthave']) {
-                if (tags.length >= 3) break
-                if (!tags.includes(e)) tags.push(e)
-              }
-              return tags.slice(0, 3).join(' ')
-            })()
+            // The Group copy block's fallback when the server's pick is not in:
+            // the engine's rules (lib/hashtag-engine), never the spam tags this
+            // used to pad with (#amazonfinds, #founditonamazon, #musthave).
+            const fbHashtags = pickHashtags({ platform: 'facebook_group', text: (brandNiches || []).join(' '), niches: brandNiches || [] }).tags.map(t => t.tag).join(' ')
             const fbPageLabel = fbAccounts.find(a => a.id === effectiveFbAccountId)?.displayName
               || fbAccounts.find(a => a.isDefault)?.displayName
               || fbAccounts[0]?.displayName

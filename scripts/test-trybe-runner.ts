@@ -132,7 +132,7 @@ async function main() {
   }
 
   // ── MVP's page ──
-  check('only MVP\'s own site can start, read or stop a run', /if \(\/\^MVP_TRYBE_\/\.test\(msg\.type\) && !trybeCallerOk\(sender\)\)/.test(BG) && /msg\.type === 'MVP_TRYBE_RUN'/.test(BG) && /msg\.type === 'MVP_TRYBE_RUN_STOP'/.test(BG))
+  check('only MVP\'s own site can start, read or stop a run', /if \(\/\^MVP_\(TRYBE\|HASHTAG\)_\/\.test\(msg\.type\) && !trybeCallerOk\(sender\)\)/.test(BG) && /msg\.type === 'MVP_TRYBE_RUN'/.test(BG) && /msg\.type === 'MVP_TRYBE_RUN_STOP'/.test(BG))
   check('Send all hands the list to SCOUT when SCOUT can run it', /if \(usesRunner\) \{ await startRunner\(list, 'Send all'\); return \}/.test(UI) && /scoutAtLeast\(scoutVersion, SCOUT_TRYBE_RUNNER_MIN_VERSION\)/.test(UI))
   check('the page says the tab can close and nothing takes the screen', /You can close this tab or keep working\. Nothing takes your screen/.test(UI))
   check('Stop stops SCOUT\'s run', /if \(scoutRun\?\.on\) \{ const r = await requestTrybeRunStop\(\)/.test(UI))

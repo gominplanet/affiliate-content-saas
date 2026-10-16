@@ -7,6 +7,7 @@
  * Single source of truth so the prompt, banned-word scrubbing, image
  * compositing and compliance text stay consistent everywhere.
  */
+import { hashtagsFor } from '@/lib/hashtag-data'
 import { GoogleGenAI } from '@google/genai'
 import { getBrandPresetId } from '@/lib/brand-preset'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -100,7 +101,7 @@ Return ONLY valid JSON with these exact keys:
 {
   "pin_title": "A curiosity-driven, intrigue-building Pinterest pin title. Max 90 characters. Make people NEED to click — open a loop, hint at a surprising result or mistake — but no false claims and no clickbait lies. Do not just restate the blog title.",
   "pinterest_description": "ONE or TWO short, plain sentences (max ~180 chars total) that simply explain what the post is about, ending with a soft CTA like 'See the full breakdown.' No hashtags, no hype, no keyword stuffing.",
-  "hashtags": ["6 to 8 short, relevant, SEO + viral hashtags about THIS post's subject. No '#' symbol, lowercase, no spaces, no banned words. e.g. swampcooler, garagecooling, homecoolinghacks"],
+  "hashtags": ["up to 6 SUGGESTED short hashtags specific to THIS post's subject (MVP keeps the best 3 for Pinterest). No '#' symbol, lowercase, no spaces, no banned words, never generic tags like fyp or viral. e.g. swampcooler, garagecooling, homecoolinghacks"],
   "product_category": "e.g. Face Cream, Vacuum Cleaner, Dog Toy",
   "product_name": "The specific product name from the post",
   "emotion": "One word emotion for the expert in the image: shocked | excited | relieved | disgusted | happy | amazed",
@@ -143,9 +144,15 @@ Return ONLY valid JSON with these exact keys:
     trust_factor: parsed.trust_factor, problem: parsed.problem, solution: parsed.solution,
   }
   for (const k of Object.keys(fields)) fields[k] = scrubBanned(fields[k])
-  const hashtags = rawTags
-    .map(t => scrubBanned(String(t)).replace(/[^a-z0-9]/gi, '').toLowerCase())
-    .filter(Boolean).slice(0, 8)
+  // THE HASHTAG ENGINE picks the tags (lib/hashtag-engine); kept without the #.
+  const pick = await hashtagsFor({
+    platform: 'pinterest',
+    text: [p.title, fields.product_name, fields.product_category, fields.main_benefit, fields.problem].filter(Boolean).join('\n'),
+    brand: fields.product_name || p.title,
+    writer: rawTags.map(t => `#${scrubBanned(String(t)).replace(/[^a-z0-9]/gi, '').toLowerCase()}`),
+    userId: ctx.userId,
+  })
+  const hashtags = pick.tags.map(t => t.tag.slice(1))
   // Never fall back to a raw (unscrubbed) value — keep the banned word out
   // even when the scrubbed string is empty.
   const pinTitle = scrubBanned(parsed.pin_title) || scrubTitle(p.title)

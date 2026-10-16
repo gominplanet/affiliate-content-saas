@@ -1,5 +1,6 @@
 // Every YouTube call is counted against the shared daily quota, and held
 // back once YouTube refuses (lib/youtube-quota).
+import { fitHashtags } from '@/lib/hashtag-engine'
 import { ytFetch as fetchWithTimeout, noteTokenOwner } from '@/lib/youtube-quota'
 import { isQuotaRefusalBody } from '@/lib/youtube-quota'
 const BASE = 'https://www.googleapis.com/youtube/v3'
@@ -750,7 +751,8 @@ export class YouTubeOAuthService {
 
     const baseSnippet = {
       title: metadata.title.slice(0, 100),
-      description: metadata.description.slice(0, 5000),
+      // THE HASHTAG SAFETY NET (lib/hashtag-engine): past 15, YouTube ignores them all.
+      description: fitHashtags(metadata.description, 'youtube').slice(0, 5000),
       categoryId,
       ...(existingSnippet.defaultLanguage
         ? { defaultLanguage: existingSnippet.defaultLanguage }
@@ -1230,7 +1232,7 @@ export class YouTubeOAuthService {
     const meta = {
       snippet: {
         title: (opts.title || 'Short').slice(0, 100),
-        description: (opts.description || '').slice(0, 4900),
+        description: fitHashtags(opts.description || '', 'youtube_short').slice(0, 4900),
         ...(tags.length ? { tags } : {}),
       },
       status: {
@@ -1512,7 +1514,7 @@ function uploadMeta(opts: { title: string; description?: string; tags?: string[]
   return {
     snippet: {
       title: (opts.title || 'Short').slice(0, 100),
-      description: (opts.description || '').slice(0, 4900),
+      description: fitHashtags(opts.description || '', 'youtube_short').slice(0, 4900),
       ...(tags.length ? { tags } : {}),
     },
     status: {

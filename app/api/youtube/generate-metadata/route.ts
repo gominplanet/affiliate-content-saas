@@ -1,3 +1,5 @@
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags } from '@/lib/hashtag-engine'
 import { NextResponse } from 'next/server'
 import { descriptionLines } from '@/lib/yt-description-lines'
 import { footerBlocks, sameUrl } from '@/lib/yt-description-footer'
@@ -400,7 +402,7 @@ async function seoResearcherAgent(
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 900,
     feature: 'yt_meta_seo_researcher',
-    system: 'You are a YouTube SEO expert. You research high-traffic keywords and trending hashtags. Return ONLY valid JSON.',
+    system: 'You are a YouTube SEO expert. You suggest the keywords and hashtags buyers search for. Return ONLY valid JSON.',
     user: `Generate maximum-reach YouTube tags and hashtags for this ${isProduct ? 'product review' : 'video (not a product review — general content)'}.
 
 ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'}: ${productContext}
@@ -411,13 +413,13 @@ KNOWN KEYWORDS: ${productKeywords.join(', ')}
 RULES:
 - Tags: plain text only, NO special characters (#"[]{}()), NO emojis, each tag under 30 words
 ${isProduct
-  ? '- Hashtags: include #ad #affiliate #productreview plus 15-19 niche-specific ones, space-separated\n- Mix: brand name, product type, use case, comparison terms, problem-solution terms, broad category'
-  : '- Hashtags: 18-22 niche-specific ones, space-separated. Do NOT include #ad / #affiliate / #productreview — this is not a sponsored / product video.\n- Mix: topic, audience descriptors, use case, niche category, broader content category'}
+  ? '- Hashtags: up to 8 SUGGESTED niche-specific ones, space-separated (MVP keeps the best 3 to 5; YouTube ignores every hashtag past 15). No #ad, MVP adds it.\n- Mix: brand name, product type, use case, problem-solution terms'
+  : '- Hashtags: up to 8 SUGGESTED niche-specific ones, space-separated (MVP keeps the best 3 to 5). Do NOT include #ad / #affiliate / #productreview: this is not a sponsored / product video.\n- Mix: topic, audience, use case, niche category'}
 
 Return JSON:
 {
   "tags": ["25 YouTube tags — plain words/phrases only, no special characters, mix of exact-match and long-tail"],
-  "hashtags": "#hashtag1 #hashtag2 ... (18-22 total, space-separated)"
+  "hashtags": "#hashtag1 #hashtag2 ... (up to 8, space-separated)"
 }`,
   })
   return parseJSON(raw, { tags: [], hashtags: '' })
@@ -1313,6 +1315,21 @@ export async function POST(request: Request) {
       productAnalystAgent(anthropic, agentContext, videoTitle, niches, isProduct),
       seoResearcherAgent(anthropic, agentContext, videoTitle, niches, [], isProduct),
     ])
+    // THE HASHTAG ENGINE picks the description hashtags (lib/hashtag-engine):
+    // 3 to 5, never near YouTube's 15 (past it YouTube ignores them all). The
+    // researcher's are suggestions; your results, trends, the brand and the
+    // category decide. A product video keeps #ad first, the disclosure.
+    {
+      const pick = await hashtagsFor({
+        platform: shortMode ? 'youtube_short' : 'youtube',
+        text: [videoTitle, seoProductName, product.title, agentContext.slice(0, 1500)].filter(Boolean).join('\n'),
+        brand: isProduct ? (product.title || seoProductName) : null,
+        niches: niches.split(',').map((n) => n.trim()).filter(Boolean),
+        writer: writerTags(String(seoData.hashtags || '')),
+        userId: ownerId,
+      })
+      seoData.hashtags = [isProduct ? '#ad' : '', ...pick.tags.map((t) => t.tag)].filter(Boolean).join(' ')
+    }
 
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)

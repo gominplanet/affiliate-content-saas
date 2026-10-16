@@ -19,7 +19,14 @@ interface BestTimes {
   topWindows: Array<{ weekday: number; hour: number; avgLift: number; samples: number }>
   byWeekday: TimeBucket[]
 }
+interface PlatformRow {
+  platform: string; label: string
+  posted: number; measured: number; waiting: number; noResults: number; failed: number
+  sharesResults: boolean; measuredBy: string | null; noResultsWhy: string | null
+  top: TagStat[]
+}
 interface Summary {
+  byPlatform?: PlatformRow[]
   collecting: boolean
   sampleCount: number
   minForPersonal: number
@@ -70,7 +77,9 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
 
   const bt = data.bestTimes
   const hasBestTimes = !!bt && (bt.topWindows.length > 0 || !!bt.bestWeekday || !!bt.bestHour)
-  const hasAnything = data.personalTop.length > 0 || data.personalBottom.length > 0 || data.pooled.length > 0 || hasBestTimes
+  const platforms = (data.byPlatform || []).filter(p => p.posted > 0)
+  const notYet = (data.byPlatform || []).filter(p => p.posted === 0).map(p => p.label)
+  const hasAnything = platforms.length > 0 || data.personalTop.length > 0 || data.personalBottom.length > 0 || data.pooled.length > 0 || hasBestTimes
   // On embedded surfaces, stay out of the way until there's something to show.
   // The dedicated /pulse page passes alwaysShow so the "collecting" state is
   // still visible at zero data.
@@ -90,7 +99,7 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
         {data.collecting && (
           <div className="flex items-center gap-2 text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">
             <Loader2 size={13} className="animate-spin text-[#7C3AED]" />
-            Learning from your posts: {data.sampleCount}/{data.minForPersonal} measured so far. Your personal ranking unlocks once a few more Reels have their numbers in.
+            Learning from your posts: {data.sampleCount}/{data.minForPersonal} measured so far. Your personal ranking unlocks once a few more posts have their numbers in.
           </div>
         )}
 
@@ -111,6 +120,41 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
               {bt.bestHour ? ` Around ${fmtHour(bt.bestHour.key)} tends to land best.` : ''}
               {' '}Based on {bt.samples} measured post{bt.samples === 1 ? '' : 's'}, in your timezone.
             </p>
+          </div>
+        )}
+
+        {platforms.length > 0 && (
+          <div>
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"><Activity size={13} /> Every platform, last 90 days</p>
+            <div className="space-y-2">
+              {platforms.map(p => (
+                <div key={p.platform} className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
+                    <span className="text-[11px] tabular-nums text-[#86868b] dark:text-[#8e8e93]">
+                      {p.posted} post{p.posted === 1 ? '' : 's'} with hashtags
+                      {p.sharesResults ? ` · ${p.measured} measured${p.waiting ? ` · ${p.waiting} waiting` : ''}${p.failed ? ` · ${p.failed} could not be read` : ''}` : ''}
+                    </span>
+                  </div>
+                  {p.sharesResults ? (
+                    <p className="text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">
+                      Measured by {p.measuredBy}, against your own {p.label} average.
+                      {p.noResults ? ` ${p.noResults} post${p.noResults === 1 ? '' : 's'} came back without an id, so cannot be measured.` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">Tags recorded, results not available: {p.noResultsWhy || 'this platform does not share post results with MVP.'}</p>
+                  )}
+                  {p.top.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {p.top.map(t => (
+                        <span key={t.tag} className="text-[12px] px-2 py-0.5 rounded-lg tabular-nums" style={{ background: 'rgba(52,199,89,0.1)', color: '#248a3d' }}>{t.tag} {pct(t.avgLift)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {notYet.length > 0 && <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">No posts with hashtags yet on {notYet.join(', ')}.</p>}
           </div>
         )}
 

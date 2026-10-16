@@ -1,3 +1,4 @@
+import { trackPost } from '@/lib/reach-pulse'
 import { NextRequest, NextResponse } from 'next/server'
 import { landsOnAmazon } from '@/lib/amazon-destination'
 import { scrubBanned } from '@/lib/scrub'
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling LinkedIn post for this blog article.
 
-Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3 hashtags at the end, specific to the product or subject, never generic tags like #amazonfinds.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Keep the ENTIRE post under 600 characters (LinkedIn sweet spot for engagement).
 
@@ -261,6 +262,8 @@ Return ONLY the post text, no extra commentary.`,
     // Only with a real id: LinkedIn can answer without one, and a permalink
     // built from nothing is a link that leads nowhere.
     if (result.id) await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'linkedin', postId: result.id || null, caption: postText, productText: post.title })
     await incrementSocialCount(supabase, postId!, 'linkedin')
 
     return NextResponse.json({

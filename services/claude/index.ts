@@ -1605,7 +1605,7 @@ QUALITY CHECK:
 ✅ Hero prompt includes bold text overlay with punchy verdict
 ✅ Lifestyle prompt has bokeh/blurred background
 ✅ Setting prompt is a flat lay — no box, no packaging
-✅ 10 hashtag pills rendered at end of post below CTA button
+✅ No hashtags anywhere in the post (rule [8])
 ✅ "honest" / "honestly" appears NOWHERE in the post`
 }
 
@@ -2360,7 +2360,7 @@ STRUCTURE OVERRIDE (replaces the product-review template above)
 [5] FAQ → keep, but reframe around the TOPIC / story / claims of the video. Answer with transcript-backed specifics.
 [3b]/[6] SCORECARD (the rating card) → OMIT ENTIRELY (no scorecard, no subscores, no rating line — this isn't a product review).
 [7] FINAL CTA CARD → REPLACE with a simple "Watch it for yourself" paragraph pointing back to the embedded video (and a soft subscribe nudge if it fits). No button styling, no Amazon language.
-[8] HASHTAG TAGS → keep, but exclude #ad / #affiliate / any sponsorship-flavoured tags.
+[8] NO HASHTAG BLOCK → same as a review: no hashtags anywhere in the post.
 
 ═══════════════════════════════════════
 HARD BANS for general-video mode

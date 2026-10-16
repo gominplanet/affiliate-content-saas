@@ -91,8 +91,9 @@ export async function POST(request: Request) {
     // learns which hashtags/times earn reach on YouTube. Best-effort, never blocks.
     void recordReachSample({
       userId: user.id, platform: 'youtube', mediaId: id,
+      // The description's real hashtags, not the keyword tags: a phrase like
+      // "wavy hair tool" is a search term, not a hashtag anyone follows.
       caption: description,
-      hashtags: tags.map(t => (t.startsWith('#') ? t : `#${t}`)),
       productText: title,
     }).catch(() => {})
     return NextResponse.json({ ok: true, videoId: id, url: `https://youtube.com/shorts/${id}` })

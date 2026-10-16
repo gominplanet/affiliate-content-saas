@@ -6,6 +6,7 @@
 // → publish. FB puts the geni.us link inline; IG can't carry a caption link, so
 // it appends "link in bio" and (best-effort) drops a product tile in the shop
 // grid the bio points at.
+import { trackPost } from '@/lib/reach-pulse'
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { publishMedia, getMediaPermalink } from '@/services/instagram'
 import { createFacebookService } from '@/services/facebook'
@@ -13,6 +14,8 @@ import { queueForGroup } from '@/lib/facebook-queue'
 import type { QueueSource } from '@/lib/facebook-queue-words'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { tileImageFor } from '@/lib/tile-image'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import { writerTags, withTags } from '@/lib/hashtag-engine'
 import { resolveAffiliateLink, finalizeSocialCaption, type PinIntegration } from '@/lib/amazon-pin-publish'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -54,6 +57,9 @@ export async function writeSocialCaption(opts: {
    *  report. See lib/product-ownership.ts for why this is a question and not
    *  a disclaimer. */
   handsOn?: boolean
+  /** Where it posts, for its hashtags (lib/hashtag-engine): Instagram 4 + #ad,
+   *  Facebook up to 3. Instagram when not said (a preview for both). */
+  platform?: 'instagram' | 'facebook'
 }): Promise<string> {
   const asin = (opts.asin || '').trim().toUpperCase()
   let productTitle = (opts.productTitle || '').trim()
@@ -70,7 +76,7 @@ export async function writeSocialCaption(opts: {
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
-      system: `You write high-CTR social captions for product finds (Instagram/Facebook). Return STRICT JSON {"caption"}. caption ≤ 350 chars, benefit-led and scroll-stopping, then 4–6 relevant NICHE hashtags for discovery (specific to the product category). No price claims, no "cheap", no fake urgency. No markdown, JSON only.${voice}`,
+      system: `You write high-CTR social captions for product finds (Instagram/Facebook). Return STRICT JSON {"caption"}. caption ≤ 350 chars, benefit-led and scroll-stopping, then up to 6 SUGGESTED niche hashtags specific to the product (MVP keeps the best for the platform; never generic tags like #amazonfinds or #fyp). No price claims, no "cheap", no fake urgency. No markdown, JSON only.${voice}`,
       messages: [{ role: 'user', content: `PRODUCT: ${productTitle || opts.productUrl || 'a great find'}${facts.length ? `\n\nKNOWN FACTS (use only these, do not invent others):\n${facts.map(f => `- ${f}`).join('\n')}` : ''}\n\nWrite the caption JSON now.` }],
     })
     recordAnthropicUsage(msg, { userId: opts.userId, tier: opts.tier, feature: 'amazon_social_caption', model: 'claude-haiku-4-5-20251001' })
@@ -82,7 +88,10 @@ export async function writeSocialCaption(opts: {
     body = handsOn ? cleaned : scrubReviewLanguage(cleaned)
   } catch { /* fall back */ }
   if (!body) body = productTitle || 'A great find'
-  return finalizeSocialCaption(body)
+  // THE HASHTAG ENGINE picks the tags; they go in before the disclosure,
+  // with room kept so the 500-character cut never takes them.
+  const pick = await hashtagsFor({ platform: opts.platform || 'instagram', text: [productTitle, ...facts].filter(Boolean).join('\n'), brand: productTitle || null, writer: writerTags(body), userId: opts.userId })
+  return finalizeSocialCaption(withTags(body, pick.tags.map(t => t.tag), { maxChars: 420 }))
 }
 
 /** Drop the just-posted product into the creator's Link-in-Bio shop grid and
@@ -200,7 +209,7 @@ export async function publishToFacebook(opts: {
     useShowcase: opts.useShowcase, showcaseUrl: opts.showcaseUrl,
   })
 
-  const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
+  const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin, platform: 'facebook' })
   // Facebook: lead with the affiliate link + disclosure, then the rest.
   const caption = facebookCaptionOrder(body, linkUrl)
 
@@ -221,6 +230,8 @@ export async function publishToFacebook(opts: {
   const res = await fb.postPhoto({ imageUrl: opts.imageUrl, caption })
   const postId = res.post_id || res.id
   if (linkCheck.counts) await recordPageLinkPost({ userId: opts.userId, pageId: intRow.facebook_page_id, postId, source: 'amazon-design' })
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost).
+  await trackPost({ userId: opts.userId, platform: 'facebook', postId, caption, productText: opts.productTitle || null })
   return { id: postId, url: `https://www.facebook.com/${postId}`, caption, linkUrl, note }
 }
 
@@ -250,7 +261,7 @@ export async function publishToInstagram(opts: {
     useShowcase: opts.useShowcase, showcaseUrl: opts.showcaseUrl,
   })
 
-  let caption = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
+  let caption = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin, platform: 'instagram' })
   caption = finalizeSocialCaption(caption)
   // IG can't put a clickable link in the caption — route through Link-in-Bio.
   if (!/link in bio/i.test(caption)) caption = `${caption}\n\n🔗 Link in bio to shop`
@@ -280,6 +291,8 @@ export async function publishToInstagram(opts: {
     userId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
     mediaType: isStory ? 'STORIES' : 'IMAGE', imageUrl: opts.imageUrl, caption: isStory ? undefined : caption,
   })
+  // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost); a Story has no caption.
+  if (!isStory) await trackPost({ userId: opts.userId, platform: 'instagram', postId: mediaId, caption, productText: opts.productTitle || null })
   // THE ADDRESS META REPORTS, NOT ONE BUILT FROM THE ID. /p/<mediaId> was dead
   // on every post. No permalink means no link (null), and the id is still kept.
   return {

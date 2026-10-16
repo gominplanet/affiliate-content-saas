@@ -17,6 +17,7 @@
  * racing for the same row → one wins, the other sees an empty result.
  */
 
+import { trackPost } from '@/lib/reach-pulse'
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { queueForGroup } from '@/lib/facebook-queue'
 import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
@@ -306,6 +307,9 @@ export async function GET(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', row.id)
+      // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): every scheduled
+      // social post's tags, quick posts included. Never blocks or fails a post.
+      if (row.platform) await trackPost({ userId: row.user_id, platform: row.platform === 'twitter' ? 'x' : row.platform, postId: result.externalId ?? null, caption: row.body_text })
       return { id: row.id, ok: true, externalId: result.externalId }
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : String(err)

@@ -12,6 +12,7 @@
  * Gated to Pro tier. Trial / Creator get 403.
  */
 
+import { trackPost } from '@/lib/reach-pulse'
 import { capSocialText } from '@/lib/social-cap'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
@@ -216,6 +217,8 @@ Return ONLY the post text.`,
       .from('blog_posts')
       .update({ telegram_message_id: String(result.messageId) })
       .eq('id', postId).eq('user_id', user.id)
+    // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): this post's tags, for what earns reach.
+    await trackPost({ userId: user.id, platform: 'telegram', postId: String(result.messageId), caption: finalCaption, productText: post.title, postUrl: result.channelPostUrl ?? null })
     await incrementSocialCount(supabase, postId!, 'telegram')
 
     return NextResponse.json({

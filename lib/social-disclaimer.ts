@@ -12,6 +12,7 @@
 //                      platform's API (services/*), so no publish path can miss
 //                      it. scripts/test-social-disclosure pins both.
 
+import { fitHashtags, type TagPlatform } from '@/lib/hashtag-engine'
 import { SOCIAL_LIMITS } from '@/lib/social-cap'
 
 export const AFFILIATE_DISCLAIMER_DEFAULT =
@@ -60,11 +61,24 @@ function tidy(s: string): string {
 }
 
 /** Both #ad and #sponsored, each exactly once, both inside the fold. Each tag
- *  is checked on its own: "#ad" present does not satisfy "#sponsored". */
-export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLine?: boolean; afterLinkLead?: boolean } = {}): string {
+ *  is checked on its own: "#ad" present does not satisfy "#sponsored".
+ *  INSTAGRAM, #ad ONLY (Seb, 2026-10-16: "on Instagram, we should just have
+ *  hashtag ad ... a single hashtag ad is still meeting the FTC rule").
+ *  Instagram takes 5 hashtags a post, and #sponsored would take one that
+ *  helps people find it; onlyAd drops it and keeps #ad first. */
+export function ensureAdTags(text: string, opts: { markdownV2?: boolean; firstLine?: boolean; afterLinkLead?: boolean; onlyAd?: boolean } = {}): string {
   const md = opts.markdownV2 === true
   const tag = (n: string) => (md ? `\\#${n}` : `#${n}`)
   let t = (text || '').trim()
+  if (opts.onlyAd) {
+    t = tidy(t.replace(tagRe('sponsored'), ''))
+    const all = [...t.matchAll(tagRe('ad'))]
+    const nl = t.indexOf('\n')
+    const keep = all.length && (all[0].index ?? 0) < AD_TAG_FOLD && (!opts.firstLine || nl < 0 || (all[0].index ?? 0) < nl)
+    let seen = 0
+    if (all.length) t = tidy(t.replace(tagRe('ad'), (m) => (keep && seen++ === 0 ? m : '')))
+    return keep ? t : (t ? `${tag('ad')}\n\n${t}` : tag('ad'))
+  }
   // FACEBOOK (Seb, 2026-10-15): a post that opens with its link (and the
   // disclaimer under it) carries the tags right after that opening: the fold
   // reaches to the end of the opening plus the tags, and missing tags go
@@ -264,11 +278,17 @@ export const DISCLOSURE_LIMITS: Record<DisclosurePlatform, { maxChars: number | 
   twitter: { maxChars: SOCIAL_LIMITS.twitter, maxHashtags: null },
   bluesky: { maxChars: SOCIAL_LIMITS.bluesky, maxHashtags: null },
   threads: { maxChars: SOCIAL_LIMITS.threads, maxHashtags: null },
-  instagram: { maxChars: 2200, maxHashtags: 30 },
+  // Instagram's own cap since its 2025 change: 5 hashtags a post, #ad included.
+  instagram: { maxChars: 2200, maxHashtags: 5 },
   pinterest: { maxChars: SOCIAL_LIMITS.pinterest, maxHashtags: null },
   facebook: { maxChars: null, maxHashtags: null },
   linkedin: { maxChars: SOCIAL_LIMITS.linkedin, maxHashtags: null },
   telegram: { maxChars: null, maxHashtags: null },
+}
+
+/** The hashtag rulebook's name for each platform here (lib/hashtag-engine). */
+const DISCLOSURE_TAG_PLATFORM: Record<DisclosurePlatform, TagPlatform> = {
+  twitter: 'x', bluesky: 'bluesky', threads: 'threads', instagram: 'instagram', pinterest: 'pinterest', facebook: 'facebook', linkedin: 'linkedin', telegram: 'telegram',
 }
 
 const TAGS_ON_FIRST_LINE = new Set<DisclosurePlatform>(['twitter', 'bluesky', 'threads', 'instagram', 'pinterest', 'telegram'])
@@ -281,7 +301,8 @@ const isAdTag = (h: string) => /^#(ad|sponsored)$/i.test(h)
 function capHashtags(text: string, max: number): string {
   const tags = [...text.matchAll(HASHTAG_RE)]
   const topical = tags.filter((m) => !isAdTag(m[0]))
-  let excess = topical.length + 2 - max
+  // The disclosure tags present count toward the cap and always stay.
+  let excess = topical.length + (tags.length - topical.length) - max
   if (excess <= 0) return text
   let t = text
   for (const m of topical.reverse()) {
@@ -354,7 +375,11 @@ export function discloseSocialPost(
 ): string {
   const md = platform === 'telegram'
   let t = labelLinks(text || '', opts.known, { markdownV2: md })
-  t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook' })
+  t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook', onlyAd: platform === 'instagram' })
+  // THE HASHTAG SAFETY NET (lib/hashtag-engine fitHashtags), on every post:
+  // duplicates, spam and years out, and no more than the platform takes.
+  // Telegram is MarkdownV2 (its tags are escaped), so it is left as written.
+  if (!md) t = fitHashtags(t, DISCLOSURE_TAG_PLATFORM[platform])
   const lim = DISCLOSURE_LIMITS[platform]
   if (lim.maxHashtags) t = capHashtags(t, lim.maxHashtags)
   if (lim.maxChars) t = fitBody(t, lim.maxChars)
