@@ -21,7 +21,7 @@
 
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
-import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
+import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
 import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
@@ -1044,7 +1044,15 @@ export async function POST(request: Request) {
     }))
     // WHAT IT PAYS CREATORS A MONTH (lib/trybe-finder creatorSpendOf): its
     // videos approved in the last 30 days times its pay per approved video.
-    const spendBy = new Map(rows.map(r => [r.brand_id as string, creatorSpendOf({ crowd: crowdBy.get(r.brand_id), perVideo: estBy.get(r.brand_id)?.dollars ?? null, basis: estBy.get(r.brand_id)?.basis ?? null })]))
+    // Until MVP has 30 days, what TRYBE shows creators earned with it over its months there.
+    const spendBy = new Map(rows.map(r => {
+      const st = statsBy.get(r.brand_id)
+      const bucket = bucketDollars(r.earnings_bucket)
+      return [r.brand_id as string, creatorSpendOf({
+        crowd: crowdBy.get(r.brand_id), perVideo: estBy.get(r.brand_id)?.dollars ?? null, basis: estBy.get(r.brand_id)?.basis ?? null,
+        earned: st?.paidOut ?? bucket, earnedFloor: st?.paidOut == null && bucket != null, joinedAt: st?.joinedAt ?? null,
+      })]
+    }))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1167,6 +1175,14 @@ export async function POST(request: Request) {
       })(),
       // Days of MVP's own snapshots the crowd words compare with (null: under a week so far).
       crowdDays: base?.days ?? null,
+      // WHAT IT PAYS CREATORS, said for the list as a whole: how many of the
+      // brands matched have an estimate, and from which basis, so a list of
+      // brands with no figure never looks like a feature that did nothing.
+      spendKnown: (() => {
+        let recent = 0, lifetime = 0, none = 0
+        for (const x of shown) { const b = spendBy.get(x.r.brand_id)?.basis; if (b === 'recent') recent++; else if (b === 'lifetime') lifetime++; else none++ }
+        return { recent, lifetime, none }
+      })(),
       priorities, prioritiesSaved: settings.priorities != null, starsSaved: settings.starred != null,
       // What TRYBE's list sends, seen not guessed (admin only).
       ...(tier === 'admin' ? { rawKeys: rawKeys(rows.map(r => r.raw)) } : {}),

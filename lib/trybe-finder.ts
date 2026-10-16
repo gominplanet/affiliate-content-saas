@@ -179,33 +179,76 @@ const shortUsd = (n: number) => n >= 10_000 ? `$${Math.round(n / 1000)}K` : n >=
 export interface SpendRead {
   /** Dollars a month to TRYBE creators, estimated; null when it cannot be. */
   dollars: number | null
-  /** Videos approved, scaled to 30 days. */
+  /** 'recent': its last 30 days. 'lifetime': its average since it joined TRYBE. */
+  basis: 'recent' | 'lifetime' | null
+  /** Videos approved, scaled to 30 days (recent only). */
   videos: number | null
   perVideo: number | null
-  /** The window the videos were counted over. */
+  /** The window the videos were counted over (recent only). */
   days: number | null
   /** For the chip; null when there is no estimate. */
   short: string | null
   why: string
 }
 
-/** What a brand pays TRYBE creators a month, estimated. Pure. */
-export function creatorSpendOf(input: { crowd: Pick<CrowdRead, 'newVideos' | 'days'> | null | undefined; perVideo: number | null | undefined; basis?: string | null }): SpendRead {
+const FOR_CHOOSING = ' An estimate, for choosing brands only: never put it in a message to a brand.'
+
+/** What a brand pays TRYBE creators a month, estimated. Pure.
+ *
+ *  1. RECENT, when MVP can: its videos approved in the last 30 days times
+ *     its pay per approved video.
+ *  2. LIFETIME, until then (Seb, 2026-10-16: "i'm not seeing what it would
+ *     say next to each brand": MVP's own daily copies of TRYBE's list only
+ *     began on Oct 14, and the 30 days need a week of them): what TRYBE shows
+ *     creators have earned with it, over its months on TRYBE. TRYBE's
+ *     earnings bucket is a floor ("$10K+"), so that figure says "+".
+ *  Neither known: no estimate, and why. */
+export function creatorSpendOf(input: {
+  crowd: Pick<CrowdRead, 'newVideos' | 'days'> | null | undefined
+  perVideo: number | null | undefined
+  basis?: string | null
+  /** What creators have earned with it on TRYBE, all time. */
+  earned?: number | null
+  /** The earned figure is TRYBE's bucket, a floor. */
+  earnedFloor?: boolean
+  /** When it joined TRYBE, as TRYBE says. */
+  joinedAt?: string | null
+  now?: number
+}): SpendRead {
   const per = typeof input.perVideo === 'number' && Number.isFinite(input.perVideo) && input.perVideo > 0 ? input.perVideo : null
   const n = input.crowd?.newVideos
   const days = input.crowd?.days ?? null
-  if (per == null) return { dollars: null, videos: null, perVideo: null, days, short: null, why: 'No pay per approved video is known for it, so MVP cannot estimate what it pays creators.' }
-  if (n == null || !days || days < 7) return { dollars: null, videos: null, perVideo: per, days, short: null, why: 'MVP does not yet know how many videos it approved in the last 30 days, so it cannot estimate what it pays creators.' }
-  const videos = Math.round((n * 30) / days)
-  const dollars = Math.round(videos * per)
-  const scaled = days !== 30 ? ` Counted over ${days} days and scaled to 30.` : ''
-  const basis = input.basis && BASIS_SAID[input.basis] ? ` (${BASIS_SAID[input.basis]})` : ''
-  if (!videos) return { dollars: 0, videos: 0, perVideo: per, days, short: 'No videos approved lately', why: `No videos approved in the last ${days} days: it is not paying TRYBE creators for videos right now.` }
-  return {
-    dollars, videos, perVideo: per, days,
-    short: `~${shortUsd(dollars)}/mo to creators`,
-    why: `About ${usd(dollars)} a month to TRYBE creators: ${videos.toLocaleString('en-US')} video${videos === 1 ? '' : 's'} approved a month, about ${usd(per)} each${basis}.${scaled} Pay on top, like a % of sales or of ad spend, is not in it. An estimate, for choosing brands only: never put it in a message to a brand.`,
+  if (per != null && n != null && days && days >= 7) {
+    const videos = Math.round((n * 30) / days)
+    const dollars = Math.round(videos * per)
+    const scaled = days !== 30 ? ` Counted over ${days} days and scaled to 30.` : ''
+    const basis = input.basis && BASIS_SAID[input.basis] ? ` (${BASIS_SAID[input.basis]})` : ''
+    if (!videos) return { dollars: 0, basis: 'recent', videos: 0, perVideo: per, days, short: 'No videos approved lately', why: `No videos approved in the last ${days} days: it is not paying TRYBE creators for videos right now.` }
+    return {
+      dollars, basis: 'recent', videos, perVideo: per, days,
+      short: `~${shortUsd(dollars)}/mo to creators`,
+      why: `About ${usd(dollars)} a month to TRYBE creators: ${videos.toLocaleString('en-US')} video${videos === 1 ? '' : 's'} approved a month, about ${usd(per)} each${basis}.${scaled} Pay on top, like a % of sales or of ad spend, is not in it.${FOR_CHOOSING}`,
+    }
   }
+  const earned = typeof input.earned === 'number' && Number.isFinite(input.earned) && input.earned > 0 ? input.earned : null
+  const joined = input.joinedAt ? Date.parse(input.joinedAt) : NaN
+  const daysOn = Number.isFinite(joined) ? Math.floor(((input.now ?? Date.now()) - joined) / 86_400_000) : null
+  if (earned != null && daysOn != null && daysOn >= 14) {
+    // Under a month on TRYBE: what it paid so far, never scaled up.
+    const months = Math.max(daysOn, 30.44) / 30.44
+    const dollars = Math.round(earned / months)
+    const floor = !!input.earnedFloor
+    const age = daysOn < 60 ? `${daysOn} days` : `${Math.round(daysOn / 30.44)} months`
+    return {
+      dollars, basis: 'lifetime', videos: null, perVideo: per, days: null,
+      short: `${floor ? '' : '~'}${shortUsd(dollars)}${floor ? '+' : ''}/mo avg to creators`,
+      why: `${floor ? 'At least' : 'About'} ${usd(dollars)} a month to TRYBE creators on average: TRYBE shows creators have earned ${floor ? 'at least ' : ''}${usd(earned)} with it since it joined TRYBE ${age} ago. An average over all its time on TRYBE, so this month may be higher or lower. Once MVP has a week of its own daily copies of TRYBE\u2019s list, it counts the last 30 days instead.${FOR_CHOOSING}`,
+    }
+  }
+  const missing = per == null && earned == null ? 'No pay per approved video and no creator earnings are known for it'
+    : per == null ? 'No pay per approved video is known for it, and TRYBE gives no join date to average its earnings over'
+      : 'MVP does not yet know how many videos it approved in the last 30 days'
+  return { dollars: null, basis: null, videos: null, perVideo: per, days, short: null, why: `${missing}, so MVP cannot estimate what it pays creators yet.` }
 }
 
 /** Every key TRYBE's entries carry, one level deep, for the admin box: so

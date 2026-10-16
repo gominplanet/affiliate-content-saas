@@ -46,7 +46,7 @@ import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
@@ -390,7 +390,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
-    hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1799,6 +1799,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </p>
             )}
             {live && <FinderFilterNote hiddenBy={live.hiddenBy} blankBy={live.blankBy} unknownBy={live.unknownBy} />}
+            {/* Said whenever the list leans on it, or when no brand on it has a figure. */}
+            {live?.spendKnown && (sortBy === 'spend' || !!filters.minSpend || live.spendKnown.recent + live.spendKnown.lifetime === 0) && <SpendNote known={live.spendKnown} windowDays={live.crowdDays} />}
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}

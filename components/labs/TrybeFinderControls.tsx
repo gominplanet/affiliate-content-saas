@@ -386,6 +386,22 @@ export function SpendChip({ spend }: { spend: SpendRead | null | undefined }) {
   )
 }
 
+/** What the estimates rest on, for the list as a whole: how many brands have
+ *  one and from what, and why the rest do not. */
+export function SpendNote({ known, windowDays }: { known: { recent: number; lifetime: number; none: number } | null | undefined; windowDays?: number | null }) {
+  if (!known) return null
+  const have = known.recent + known.lifetime
+  const total = have + known.none
+  if (!total) return null
+  const parts = [`What each brand pays TRYBE creators a month: MVP estimates ${have.toLocaleString()} of these ${total.toLocaleString()}.`]
+  if (known.recent) parts.push(`${known.recent.toLocaleString()} from the last ${windowDays ?? 30} days (videos approved times pay per video).`)
+  if (known.lifetime) parts.push(`${known.lifetime.toLocaleString()} from the brand\u2019s average since it joined TRYBE (what TRYBE shows creators earned, over its months there).`)
+  if (windowDays == null) parts.push('The last 30 days count starts once MVP has a week of its own daily copies of TRYBE\u2019s list.')
+  if (known.none) parts.push(`${known.none.toLocaleString()} have no figure yet: TRYBE shows no pay, earnings or join date MVP can use.`)
+  parts.push('No platform shows a brand\u2019s real ad budget, so this is the honest figure. Hover one to see the math.')
+  return <p className="text-[12px] mt-3" style={soft}>{parts.join(' ')}</p>
+}
+
 export function NewChip({ on }: { on: boolean | undefined }) {
   if (!on) return null
   return <span className="text-[10.5px] font-extrabold tracking-wider rounded-md px-2 py-0.5 inline-flex items-center gap-1" style={{ background: PURPLE, color: '#fff' }} title="New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14."><Sparkles size={10} />NEW</span>
