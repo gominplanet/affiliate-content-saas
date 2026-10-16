@@ -110,6 +110,31 @@ for (const [name, src] of [['pinterest', PIN], ['instagram', SOCIAL]] as const) 
     /no ASIN, so the product could not be added/.test(PIN))
 }
 
+// ── 8. a caption that says "link in bio" always gets the product ────────────
+// Seb, 2026-10-16: a clip went to TikTok with "link in bio" and the product
+// was not on the page: auto-import was the only switch, the clip had no typed
+// link, and the old writer appended at the bottom in silence. The Short and
+// clip paths now go through the same writer as Instagram and Pinterest.
+{
+  const IMP = readFileSync(join(root, 'lib/link-bio-import.ts'), 'utf8')
+  const re = /\blink (?:is )?in (?:my |the )?bio\b/i
+  check('caption rule: "Link in bio" and "link in my bio" count', re.test('Get it, LINK IN BIO 👆') && re.test('The link is in my bio') && !re.test('linking biology'))
+  check('caption rule: the same words in the code', IMP.includes('export const CAPTION_SENDS_TO_BIO = /\\blink (?:is )?in (?:my |the )?bio\\b/i'))
+  check('a bio caption puts the product on the page even with auto-import off', /if \(!force && !page\.auto_import_posts\) return quiet/.test(IMP))
+  check('the clip and Short paths use the one tile writer', /syncLinkInBioTile\(sb, userId,/.test(IMP) && !/position: number[\s\S]{0,40}\+ 1|\(last\?\.position \?\? -1\) \+ 1/.test(IMP))
+  check('no typed link: the product of the YouTube video the clip came from', /eq\('youtube_video_id', yt\)/.test(IMP))
+  check('every reason it could not is said', /no Link in Bio page in MVP yet/.test(IMP) && /has no product link for this clip/.test(IMP))
+  for (const f of ['app/api/tiktok/publish-burned/route.ts', 'app/api/instagram/publish-burned/route.ts']) {
+    const r = readFileSync(join(root, f), 'utf8')
+    check(`${f}: passes the caption and the source video, returns the outcome`, /\{ caption, sourceYoutubeVideoId: body\.sourceYoutubeVideoId \}/.test(r) && /bio \}\)/.test(r))
+  }
+  for (const f of ['app/api/blog/tiktok-post/video/route.ts', 'app/api/instagram/post-direct-video/route.ts']) {
+    check(`${f}: passes the caption`, /addPostedProductToBio\(sb, user\.id, videoId, \{ caption \}\)/.test(readFileSync(join(root, f), 'utf8')))
+  }
+  const MOD = readFileSync(join(root, 'components/TikTokDirectModal.tsx'), 'utf8')
+  check('the post screen says what happened to the Link in Bio page', /Link in Bio: \{bioNote\.text\}/.test(MOD) && /sourceYoutubeVideoId \}/.test(MOD))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

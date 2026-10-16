@@ -43,6 +43,8 @@ export async function POST(request: Request) {
     // typed. When their Link in Bio has auto-import on, we add it as a shop tile.
     product?: string
     productTitle?: string
+    /** The YouTube video the clip came from: its product, when none was typed. */
+    sourceYoutubeVideoId?: string
   }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -93,8 +95,9 @@ export async function POST(request: Request) {
     // If the creator opted in, feature this product on their Link in Bio shop
     // page automatically. Best-effort — a bio-import hiccup must not fail (or
     // undo) the TikTok post that already went out.
-    try { await addProductUrlToBio(sb, user.id, { url: body.product, title: body.productTitle }) } catch { /* non-fatal */ }
-    return NextResponse.json({ ok: true, publishId })
+    // A caption that says "link in bio" always puts the product there.
+    const bio = await addProductUrlToBio(sb, user.id, { url: body.product, title: body.productTitle }, { caption, sourceYoutubeVideoId: body.sourceYoutubeVideoId })
+    return NextResponse.json({ ok: true, publishId, bio })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'
     return NextResponse.json({ error: msg }, { status: 502 })

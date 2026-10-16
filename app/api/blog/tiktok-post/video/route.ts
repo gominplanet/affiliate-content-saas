@@ -175,7 +175,8 @@ export async function POST(request: Request) {
 
   // If the creator opted in, add this product to their Link in Bio shop page
   // automatically. Best-effort — a bio-import hiccup must not fail the publish.
-  await addPostedProductToBio(sb, user.id, videoId)
+  // Always when the caption says "link in bio".
+  const bio = await addPostedProductToBio(sb, user.id, videoId, { caption })
 
-  return NextResponse.json({ ok: true, publishId })
+  return NextResponse.json({ ok: true, publishId, bio })
 }

@@ -67,6 +67,7 @@ export async function POST(request: Request) {
       // shop tile. Falls back to the auto-DM link when a dedicated one isn't sent.
       product?: string
       productTitle?: string
+      sourceYoutubeVideoId?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) {
@@ -138,18 +139,19 @@ export async function POST(request: Request) {
         productText: (body.autoDm?.productName || '').trim() || null,
       })
 
-      // If the creator opted in, feature this product on their Link in Bio shop
-      // page automatically. Best-effort — never fail (or undo) a live Reel.
+      // Feature this product on the Link in Bio page: when the creator opted in,
+      // or always when the caption says "link in bio". Never fails a live Reel.
+      let bio: Awaited<ReturnType<typeof addProductUrlToBio>> | null = null
       try {
         // Only a product link becomes a shop tile: a DM link that is the blog
         // post or the shop page itself is not a product.
         const dmIsProduct = !body.autoDm?.kind || body.autoDm.kind === 'amazon'
         const bioUrl = (body.product || '').trim() || (dmIsProduct ? (body.autoDm?.link || '').trim() : '')
         const bioTitle = (body.productTitle || '').trim() || (body.autoDm?.productName || '').trim()
-        await addProductUrlToBio(supabase, user.id, { url: bioUrl, title: bioTitle })
+        bio = await addProductUrlToBio(supabase, user.id, { url: bioUrl, title: bioTitle }, { caption, sourceYoutubeVideoId: body.sourceYoutubeVideoId })
       } catch { /* non-fatal */ }
 
-      return NextResponse.json({ ok: true, published: true, mediaId, autoDm })
+      return NextResponse.json({ ok: true, published: true, mediaId, autoDm, bio })
     } catch (e) {
       console.error('[instagram/publish-burned] publish failed:', e instanceof Error ? e.message : e)
       return NextResponse.json({ ok: false, published: false, error: toUserMessage(e, 'Instagram couldn’t accept the post — please try again in a moment.') }, { status: 502 })

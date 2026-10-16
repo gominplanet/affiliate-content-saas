@@ -142,7 +142,8 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
     // If the creator opted in, drop this product onto their Link in Bio shop page
     // automatically. Best-effort — never let a bio-import hiccup fail the publish.
-    await addPostedProductToBio(sb, user.id, videoId)
+    // Always when the caption says "link in bio".
+    await addPostedProductToBio(sb, user.id, videoId, { caption })
   }
 
   if (!reelId && !storyId) {

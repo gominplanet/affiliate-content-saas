@@ -109,6 +109,7 @@ export function TikTokDirectModal({
   const [productInput, setProductInput] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [productResolved, setProductResolved] = useState<{ title: string; asin: string | null } | null>(null)
+  const [bioNote, setBioNote] = useState<{ ok: boolean; text: string } | null>(null)
 
   const [caption, setCaption] = useState('')
   const [privacy, setPrivacy] = useState<PrivacyLevel | ''>('')
@@ -330,7 +331,7 @@ export function TikTokDirectModal({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...(isBurned ? { videoUrl: burnedVideoUrl, product, productTitle } : { videoId }),
+            ...(isBurned ? { videoUrl: burnedVideoUrl, product, productTitle, sourceYoutubeVideoId } : { videoId }),
             caption,
             privacyLevel: privacy,
             disableComment: !allowComment || (info?.commentDisabled ?? false),
@@ -349,6 +350,8 @@ export function TikTokDirectModal({
         }
         setPublishId(json.publishId)
         setPublishStatus('processing')
+        // What happened to the Link in Bio page, said rather than assumed.
+        if (json.bio?.note) setBioNote({ ok: json.bio.state === 'added', text: String(json.bio.note) })
       }
 
       // One-click cross-post: also publish the same video to Instagram as a Reel.
@@ -360,13 +363,14 @@ export function TikTokDirectModal({
           const igRes = isBurned
             ? await fetch('/api/instagram/publish-burned', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption, product, productTitle }),
+                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption, product, productTitle, sourceYoutubeVideoId }),
               })
             : await fetch('/api/instagram/post-direct-video', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ videoId, caption, mode: 'reel' }),
               })
           const igJson = await igRes.json().catch(() => ({}))
+          if (igRes.ok && igJson.bio?.note) setBioNote((cur) => cur ?? { ok: igJson.bio.state === 'added', text: String(igJson.bio.note) })
           if (igRes.ok) setIgResult('done')
           else { setIgResult('failed'); setIgErr((igJson.error as string) || 'Instagram post failed.') }
         } catch (e) {
@@ -821,6 +825,7 @@ export function TikTokDirectModal({
             )}
           </div>
         )}
+        {bioNote && <p className={`px-5 pb-1 text-[11px] flex items-center gap-1.5 ${bioNote.ok ? 'text-[#34c759]' : 'text-[#c93400]'}`}>{bioNote.ok ? <CheckCircle size={11} /> : <AlertCircle size={11} />} Link in Bio: {bioNote.text}</p>}
         {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
         {igResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>}
         {igResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igErr || 'failed'} (TikTok was unaffected.)</p>}
