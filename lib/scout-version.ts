@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.49.0'
+export const SCOUT_LATEST_VERSION = '1.49.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Hashtags (Labs): SCOUT reads TikTok Creative Center\'s trending hashtags and how many posts a hashtag has on Instagram, so MVP picks tags that are live right now. Reading only.'
+  'Studio schedule: when vidIQ\'s best time suggestion is applied, SCOUT takes it off that video before setting your time, and if vidIQ still puts its own time back, the step says so by name.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

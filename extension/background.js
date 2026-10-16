@@ -8863,7 +8863,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 21
+  const KIT_VERSION = 22
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -10302,6 +10302,23 @@ K.steps.monetization = async (out, o) => {
     const dateOk = !!matched
     out.readBack.date = shownDate
     if (!dateOk) { out.detail = 'Typed ' + dateStr + ', but Studio shows "' + shownDate + '", so nothing was scheduled'; return out }
+    // VIDIQ'S BEST TIME (Seb, 2026-10-16: "turned off vidiq and worked").
+    // vidIQ's extension adds a "Suggestions ... Peak time is" box under
+    // Studio's schedule and, once its suggestion shows Applied, puts its own
+    // time back over the one typed (1:00 PM on Oct 5 and again on Oct 16).
+    // SCOUT presses its Applied once, as a person would, to take vidIQ's
+    // time off this video only; vidIQ's settings are not touched. If vidIQ
+    // still puts its time back, the step says so by name.
+    const vidiqApplied = () => all(document).filter((el) => visible(el) && /^\W*applied$/i.test(norm(deepText(el)))).find((el) => {
+      let h = el
+      for (let i = 0; i < 8 && h; i++) { if (/peak time/i.test(deepText(h) || '')) return true; h = up(h) }
+      return false
+    })
+    const vidiqHere = () => !!vidiqApplied() || all(document).some((el) => /vidiq/i.test((el.tagName || '') + ' ' + (el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '')) || (visible(el) && /^peak time is /i.test(norm(deepText(el))) && deepText(el).length < 80))
+    const vApplied = vidiqApplied()
+    out.readBack.vidiq = !!vApplied || vidiqHere()
+    if (vApplied) { click(vApplied); await sleep(900); out.readBack.vidiqUnapplied = !vidiqApplied() }
+    const vidiqSays = (shown) => 'vidIQ put its own suggested time (' + shown + ') back over ' + timeStr + ', so SCOUT did not press Schedule. Turn vidIQ off in Chrome while Co-Pilot schedules (or switch off its applied best time), then press Retry.'
     // Time: the box shows 12 or 24 hour depending on the account; write in
     // whichever it already uses.
     const timeInput = all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(norm(el.value)))
@@ -10320,7 +10337,7 @@ K.steps.monetization = async (out, o) => {
     }
     if (readTime(timeInput.value) !== H * 60 + Mi) { setVal(timeInput, timeStr); await sleep(700) }
     out.readBack.time = norm(timeInput.value)
-    if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled'; return out }
+    if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled' + (out.readBack.vidiq ? '. vidIQ is on this page and suggests its own time: turn vidIQ off in Chrome while Co-Pilot schedules, then press Retry.' : ''); return out }
     // THE BOX SHOWING IT IS NOT STUDIO KEEPING IT. A KeyboardEvent built in a
     // script ignores keyCode, so the Enter above reached Studio as key 0, and
     // a picker that waits for 13 never took the time: the box read 7:09 PM,
@@ -10392,7 +10409,10 @@ K.steps.monetization = async (out, o) => {
         if (trigger() && !dateMatches()) { out.detail = 'Pressed Apply again, but Studio then showed "' + deepText(trigger()) + '" instead of ' + dateStr + ', so nothing was scheduled'; return out }
         if (tBox && readTime(tBox.value) !== H * 60 + Mi) {
           out.debug.timeList = listedTimes().map((el) => deepText(el)).slice(0, 8)
-          out.detail = 'Pressed Apply, but Studio then showed ' + out.readBack.timeAfterApply + ' instead of ' + timeStr + ', and again (' + norm(tBox.value) + ') on a second go, so nothing was scheduled'
+          // WHAT HAPPENED, NOT "NOTHING": Apply was pressed, so the draft may
+          // now hold Studio's time. SCOUT stopped before Schedule.
+          out.detail = out.readBack.vidiq ? vidiqSays(norm(tBox.value))
+            : 'Pressed Apply, but Studio then showed ' + out.readBack.timeAfterApply + ' instead of ' + timeStr + ', and again (' + norm(tBox.value) + ') on a second go, so SCOUT did not press Schedule. Check the time in Studio before you schedule it.'
           return out
         }
       }

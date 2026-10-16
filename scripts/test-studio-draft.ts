@@ -78,6 +78,14 @@ const vis = kit.slice(kit.indexOf('K.steps.visibility'), kit.indexOf('window.__m
 check('Schedule is pressed only after the date reads back',
   /if \(!dateOk\) \{[^}]*nothing was scheduled/.test(vis))
 check('and the time', /readTime\(timeInput\.value\) !== H \* 60 \+ Mi\) \{[^}]*nothing was scheduled/.test(vis))
+// VIDIQ'S BEST TIME (Seb, 2026-10-16: "turned off vidiq and worked"): its
+// Applied suggestion put 1:00 PM back over the time typed. SCOUT presses its
+// Applied once before the time, and a failure after Apply names vidIQ and
+// says SCOUT stopped before Schedule, never that nothing happened.
+check('vidIQ\'s applied time is taken off before the time is typed', /const vApplied = vidiqApplied\(\)[\s\S]{0,120}if \(vApplied\) \{ click\(vApplied\)/.test(vis) && vis.indexOf('const vApplied = vidiqApplied()') < vis.indexOf('await typeInto(timeInput, timeStr)'))
+check('the Applied pressed is vidIQ\'s, beside its Peak time box, nothing else', /\/\^\\W\*applied\$\/i\.test\(norm\(deepText\(el\)\)\)/.test(vis) && /if \(\/peak time\/i\.test\(deepText\(h\) \|\| ''\)\) return true/.test(vis))
+check('a time vidIQ put back is said by name, with what to do', /vidIQ put its own suggested time \(' \+ shown \+ '\) back over ' \+ timeStr \+ ', so SCOUT did not press Schedule\. Turn vidIQ off in Chrome while Co-Pilot schedules/.test(vis) && /out\.detail = out\.readBack\.vidiq \? vidiqSays\(norm\(tBox\.value\)\)/.test(vis))
+check('after Apply it never says nothing was scheduled', /on a second go, so SCOUT did not press Schedule\. Check the time in Studio before you schedule it\./.test(vis) && !/on a second go, so nothing was scheduled/.test(vis))
 check('the final button must say what was asked before it is pressed',
   /!wantRe\.test\(lbl\)/.test(vis) && /finish\(\/\^schedule\$\/i/.test(vis))
 check('the zone is the one Studio shows', /GMT/.test(vis))

@@ -105,7 +105,7 @@ async function main() {
   check('the card copy has no dashes', !/[–—]| - /.test(CARD.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '').match(/'[^'\n]{12,}'|`[^`\n]{12,}`|>[^<>{}\n]{12,}</g)?.join(' ') || ''))
   const MIG = read('supabase/migrations/434_hashtag_engine.sql')
   check('migration 434 is safe to run twice', /create table if not exists public\.hashtag_trends/.test(MIG) && (MIG.match(/add column if not exists/g) || []).length === 2 && !/create index (?!if not exists)/.test(MIG) && /primary key \(platform, tag, source, region\)/.test(MIG))
-  check('SCOUT version bumped for the hashtag reads', /SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1\.49\.0'/.test(read('lib/scout-version.ts')) && JSON.parse(read('extension/manifest.json')).version === '1.49.0')
+  check('SCOUT version bumped for the hashtag reads', /SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1\.49\.0'/.test(read('lib/scout-version.ts')) && /^1\.49\.\d+$/.test(JSON.parse(read('extension/manifest.json')).version))
 
   if (fails.length) { console.error('hashtag-trends failed:\n - ' + fails.join('\n - ')); process.exit(1) }
   console.log('✅ hashtag-trends: TikTok Creative Center (promoted tags out), YouTube hashtag pages and Instagram counts read as the platforms wrote them; a failed read is nothing, a dead tag is remembered')
