@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.47.2'
+export const SCOUT_LATEST_VERSION = '1.47.3'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Facebook Reels: when Chrome restarts SCOUT while Facebook processes the Group video, SCOUT picks the watch back up on the same tab, so the Page Reel still goes out linking to the Group post.'
+  'Facebook Reels: SCOUT reads the Group post link from more of Facebook\'s link forms (multi_permalinks, story_fbid, videos, watch), and builds it from Facebook\'s own answer when the feed shows none, so the Page Reel links to the exact post.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

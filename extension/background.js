@@ -13717,9 +13717,14 @@ function installGroupPostHook(markOld) {
     // No URL in the answer: build it from the post id and this Group.
     // Facebook names the new post's number several ways; a video post often
     // carries only one of the later ones.
-    const id = (flat.match(/"(?:post_id|top_level_post_id|legacy_story_hideable_id|story_fbid|mf_story_key)"\s*:\s*"?(\d{6,})"?/) || [])[1]
+    const id = (flat.match(/"(?:post_id|top_level_post_id|legacy_story_hideable_id|story_fbid|mf_story_key|post_fbid|share_fbid)"\s*:\s*"?(\d{6,})"?/) || [])[1]
     const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
-    if (id && slug) window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }
+    if (id && slug) { window.__scoutGroupPost = { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + id + '/', via: 'facebook id' }; return }
+    // 1.47.3: a VIDEO post's answer often carries only its video's number. A
+    // video in a Group opens as a Reel at that number (Seb, 2026-10-16: "saw
+    // your Group post go up but could not read its own link").
+    const vid = (flat.match(/"(?:video_id|reel_id)"\s*:\s*"?(\d{6,})"?/) || [])[1]
+    if (vid) window.__scoutGroupPost = { url: 'https://www.facebook.com/reel/' + vid + '/', via: 'facebook video id' }
   }
   try {
     const X = XMLHttpRequest.prototype
@@ -13767,6 +13772,7 @@ function readGroupPostState(snippet, linkKey) {
     feedUrl: null,
     // Facebook's notice while a video post is still being processed.
     processing: /processing video|video in your post is being processed|vidéo est en cours de traitement|se está procesando el video/i.test(document.body ? document.body.innerText : ''),
+    slug: (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1] || null,
   }
   if (out.net || (!snippet && !linkKey)) return out
   const norm = (s) => String(s || '').replace(/\s+/g, ' ')
@@ -13788,17 +13794,22 @@ function readGroupPostState(snippet, linkKey) {
   if (!arts.length) return out
   out.seen = true
   const RE = /\/groups\/[\w.-]+\/(?:posts|permalink)\/\d+/
+  const slug = (location.pathname.match(/^\/groups\/([^/]+)/) || [])[1]
   for (const a of arts) {
     for (const l of Array.from(a.querySelectorAll('a[href]'))) {
-      const m = String(l.href || '').match(RE)
+      const href = String(l.href || '')
+      const m = href.match(RE)
       if (m) { out.feedUrl = 'https://www.facebook.com' + m[0] + '/'; return out }
+      // 1.47.3: the other ways Facebook links a Group post from the feed.
+      const p = href.match(/[?&](?:multi_permalinks|story_fbid)=(\d{6,})/)
+      if (p && slug) { out.feedUrl = 'https://www.facebook.com/groups/' + slug + '/posts/' + p[1] + '/'; return out }
     }
     // A VIDEO posted in a Group has no Group post address: its timestamp opens
     // it as a Reel (facebook.com/reel/<id>), which shows the video with the
     // post's text and links. That is its address, so it is the one used.
     for (const l of Array.from(a.querySelectorAll('a[href]'))) {
-      const v = String(l.href || '').match(/\/reel\/(\d{6,})/)
-      if (v) { out.feedUrl = 'https://www.facebook.com/reel/' + v[1] + '/'; return out }
+      const v = String(l.href || '').match(/\/reel\/(\d{6,})|\/videos\/(?:[\w.-]+\/)?(\d{6,})|\/watch\/?\?v=(\d{6,})/)
+      if (v) { out.feedUrl = 'https://www.facebook.com/reel/' + (v[1] || v[2] || v[3]) + '/'; return out }
     }
   }
   // Facebook fills in the timestamp link's real address on hover. Hover only
@@ -13817,6 +13828,30 @@ function readGroupPostState(snippet, linkKey) {
     }
   }
   return out
+}
+
+// The new post's address from the support notes: only the answers to the
+// create request itself (hit), never another request's numbers. A post number
+// gives the Group post; a video's number gives the Reel it opens as.
+function groupPostUrlFromLog(log, slug) {
+  if (!Array.isArray(log)) return null
+  const hits = log.filter((e) => e && e.hit)
+  for (const e of hits) for (const u of (e.urls || [])) {
+    const g = String(u).match(/^https:\/\/(?:www|web|m)\.facebook\.com\/(groups\/[\w.-]+\/(?:posts|permalink)\/\d+|reel\/\d+)/)
+    if (g) return { url: 'https://www.facebook.com/' + g[1] + '/', via: 'log url' }
+  }
+  const val = (keys) => {
+    for (const e of hits) for (const kv of (e.ids || [])) {
+      const [k, v] = String(kv).split('=')
+      if (keys.indexOf(k) >= 0 && /^\d{6,}$/.test(v || '')) return v
+    }
+    return null
+  }
+  const post = val(['post_id', 'top_level_post_id', 'post_fbid', 'share_fbid', 'story_fbid'])
+  if (post && slug) return { url: 'https://www.facebook.com/groups/' + slug + '/posts/' + post + '/', via: 'log post id' }
+  const vid = val(['video_id', 'reel_id'])
+  if (vid) return { url: 'https://www.facebook.com/reel/' + vid + '/', via: 'log video id' }
+  return null
 }
 
 async function saveGroupWatch(id, st) {
@@ -13894,7 +13929,14 @@ function watchGroupPost(tabId, snippet, linkKey, resume) {
           // is still coming: no clock runs while it shows.
           if (r.processing && !r.seen) seenAt = Date.now()
           const patience = r.seen ? 45000 : 6 * 60 * 1000
-          if (Date.now() - seenAt > patience) return await save({ state: 'posted_no_link' })
+          if (Date.now() - seenAt > patience) {
+            // 1.47.3: before saying the link could not be read, build it from
+            // what Facebook answered when the post was created (the same notes
+            // the support log shows): a post number, else the video's number.
+            const fromLog = groupPostUrlFromLog(log, r.slug)
+            if (fromLog) return await save({ state: 'posted', url: fromLog.url, via: fromLog.via })
+            return await save({ state: 'posted_no_link' })
+          }
         }
         if (!r.dialog) {
           if (!dialogGoneAt) dialogGoneAt = Date.now()

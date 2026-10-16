@@ -83,6 +83,12 @@ check('the listener goes in before the fill', BG.indexOf("func: installGroupPost
 // tab; only a watch with nothing to resume, or past 30 minutes, says lost.
 check('a restarted SCOUT resumes the watch on the same tab', /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ id, started: c\.started \}\)/.test(BG) && /await saveGroupWatch\(id, \{ state: 'watching', ctx \}\)/.test(BG))
 check('a restarted SCOUT with nothing to resume says lost, not watching forever', /return \{ state: 'watching', resumed: true \}\n    \}\n    return \{ state: 'lost' \}/.test(BG))
+// 1.47.3 (Seb, 2026-10-16: "saw your Group post go up but could not read its
+// own link"): the other link forms, the video's number, and the support notes.
+check('the feed reads multi_permalinks and story_fbid links', /\[\?&\]\(\?:multi_permalinks\|story_fbid\)=/.test(BG))
+check('the feed reads /videos/ and watch?v= as the Reel', /\\\/videos\\\/\(\?:\[\\w\.-\]\+\\\/\)\?/.test(BG) && /watch\\\/\?\\\?v=/.test(BG))
+check('the create answer\'s video number makes the Reel link', /via: 'facebook video id'/.test(BG))
+check('before "could not read its link", the create answer\'s notes are tried', /const fromLog = groupPostUrlFromLog\(log, r\.slug\)/.test(BG) && /const hits = log\.filter\(\(e\) => e && e\.hit\)/.test(BG))
 check('one missed status answer is not the end of the watch', /GROUP_WATCH_MISS_MS = 30_000/.test(readFileSync('lib/extension-frame.ts', 'utf8')) && /< GROUP_WATCH_MISS_MS \? \{ state: 'watching' \} : \{ state: 'unknown' \}/.test(readFileSync('lib/extension-frame.ts', 'utf8')))
 check('every way of not finding the post is its own state', ['closed', 'posted_no_link', 'not_seen', 'timeout'].every((k) => WATCH.includes(`state: '${k}'`)))
 const TR = read('app/api/blog/facebook-group-teaser/route.ts')

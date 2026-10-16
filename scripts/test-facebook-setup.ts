@@ -150,7 +150,7 @@ check('Clip Factory runs it with the Labs switch and a Group, and nudges without
   check('a Group video\'s Reel address is accepted', isFacebookReelLink('https://www.facebook.com/reel/2121612745112942') && !isFacebookReelLink('https://evil.com/reel/2121612745112942') && !isFacebookReelLink('https://www.facebook.com/reel/abc'))
   check('a Group post address is still accepted', isFacebookGroupPostLink('https://www.facebook.com/groups/247dealsandcoupons/posts/123456789/'))
   const bg = read('extension/background.js')
-  check('SCOUT reads the Reel address from the new post and from the tab', /out\.feedUrl = 'https:\/\/www\.facebook\.com\/reel\/' \+ v\[1\]/.test(bg) && /via: 'tab reel'/.test(bg))
+  check('SCOUT reads the Reel address from the new post and from the tab', /out\.feedUrl = 'https:\/\/www\.facebook\.com\/reel\/' \+ \(v\[1\] \|\| v\[2\] \|\| v\[3\]\)/.test(bg) && /via: 'tab reel'/.test(bg))
   check('Clip Factory posts the Reel linking to either address', /isFacebookGroupPostLink\(st\.url\) \|\| isFacebookReelLink\(st\.url\)/.test(read('components/clip-factory/ReelDestinations.tsx')))
 }
 
