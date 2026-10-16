@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-2'
+const RELEASE_ID = '2026-10-16-3'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // What a TRYBE brand sells (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'TRYBE: filter by what a brand sells',
+    desc: 'Find brands now tells physical products, apps, software and services apart, read from TRYBE and each brand\u2019s own website. Pick one under Sells; hover a brand\u2019s chip to see why. A brand MVP cannot tell yet is left out and counted. On the Pro plan, and to browse on the Amazon plan.',
+    href: '/trybe?tab=find',
+  },
   // TRYBE sends keep going when you leave the page (2026-10-16).
   {
     badge: 'NEW',

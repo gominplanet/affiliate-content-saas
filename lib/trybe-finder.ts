@@ -20,6 +20,7 @@
 // the names it is likely to have, and a number TRYBE did not send is null:
 // "not known", never zero. A filter says how many brands it could not check.
 
+import { readSells, type Sells, type SellsRead } from '@/lib/trybe-sells'
 import { brandKey } from '@/lib/brand-normalize'
 import type { Judged } from '@/lib/trybe-mybrands'
 
@@ -307,6 +308,8 @@ export interface FinderFilters {
   newOnly?: boolean
   /** Decides videos within FAST_REVIEW_DAYS (members' review speed). */
   fastReview?: boolean
+  /** What it sells (lib/trybe-sells): one kind, or any. */
+  sells?: Sells | null
 }
 /** "Decides fast": members' middle figure at or under this many days. */
 export const FAST_REVIEW_DAYS = 5
@@ -319,6 +322,7 @@ export function readFilters(v: unknown): FinderFilters {
     minPerVideo: pos(o.minPerVideo), maxCreators: pos(o.maxCreators), maxVideos: pos(o.maxVideos),
     paidCreators: o.paidCreators === true, samples: o.samples === true, onAmazon: o.onAmazon === true, starred: o.starred === true,
     openOnly: o.openOnly === true, spending: o.spending === true, newOnly: o.newOnly === true, fastReview: o.fastReview === true,
+    sells: readSells(o.sells),
   }
 }
 
@@ -334,8 +338,10 @@ export interface FilterRow {
   spending?: boolean | null
   isNew?: boolean
   reviewDays?: number | null
+  /** What it sells (lib/trybe-sells sellsOf). */
+  sells?: SellsRead | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -363,13 +369,15 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   // NEW is known for every brand (TRYBE's join date or MVP's first sighting).
   if (f.newOnly) judge('newOnly', !!r.isNew)
   if (f.fastReview) judge('fastReview', r.reviewDays == null ? null : r.reviewDays <= FAST_REVIEW_DAYS)
+  // WHAT IT SELLS: a brand MVP cannot tell is left out and counted, not listed after.
+  if (f.sells) { if (!r.sells?.kind) { failed.push('sells'); blank.push('sells') } else judge('sells', r.sells.kinds.includes(f.sells)) }
   return { pass: !failed.length, unknown, failed, blank }
 }
 
 export const FILTER_WORDS: Record<FilterId, string> = {
   minPerVideo: 'pay per video', maxCreators: 'creator count', maxVideos: 'videos approved',
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
-  openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides',
+  openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────

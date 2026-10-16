@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, MessageCircle, Send, Globe, ExternalLink, ArrowRight } from 'lucide-react'
-import { BrandExtras, PayChip, CrowdChip, NewChip, StaticsChip, VerdictChip, ReviewChip, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { BrandExtras, PayChip, CrowdChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { adLibraryUrl, type PickReason } from '@/lib/trybe-pick'
 import type { DirStats, CrowdRead } from '@/lib/trybe-finder'
 
@@ -51,6 +51,7 @@ interface PeekBrand {
   amazon?: LiveAmazon | null; stats?: DirStats | null
   pay_est?: LivePayEst | null; crowd?: CrowdRead | null; is_new?: boolean; statics?: boolean | null
   review?: { reviewDays: number | null; slowShare: number | null } | null
+  sells?: import('@/lib/trybe-sells').SellsRead | null
 }
 
 // Read once per page visit; a failed read is tried again next time.
@@ -127,6 +128,7 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
         <PayChip est={brand.pay_est} payText={brand.pay_text} />
         <ReviewChip review={brand.review} />
         <StaticsChip on={brand.statics} />
+        <SellsChip sells={brand.sells} />
         {brand.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE.">TRYBE score {brand.trybe_score}</span>}
         {brand.total_creators != null && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{brand.total_creators.toLocaleString()} creator{brand.total_creators === 1 ? '' : 's'}</span>}
       </div>

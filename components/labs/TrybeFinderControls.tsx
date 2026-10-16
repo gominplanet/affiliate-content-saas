@@ -13,6 +13,7 @@ import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, ty
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
+import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -28,8 +29,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -78,6 +79,16 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {(filtersOn(filters) || name) && (
         <button onClick={() => { onFilters(NO_FILTERS); onName('') }} className="text-[12px] font-semibold underline ml-1" style={{ color: PURPLE }}>Clear filters</button>
       )}
+      {/* WHAT IT SELLS (lib/trybe-sells): read from TRYBE and the brand's website. */}
+      <span className="basis-full h-0" aria-hidden />
+      <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Sells</span>
+      <button onClick={() => onFilters({ ...filters, sells: null })} aria-pressed={!filters.sells} className={chip}
+        style={!filters.sells ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>Anything</button>
+      {SELLS.map((k) => (
+        <button key={k} onClick={() => onFilters({ ...filters, sells: filters.sells === k ? null : k })} aria-pressed={filters.sells === k} className={chip}
+          title={`${SELLS_WORDS[k].says} Read from TRYBE's categories and description, whether it sends samples, and the brand's own website. A brand MVP cannot tell is left out.`}
+          style={filters.sells === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{SELLS_WORDS[k].label}</button>
+      ))}
     </div>
   )
 }
@@ -94,6 +105,10 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     if (f === 'minPerVideo' && blank > 0) {
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} paying less` : null, `${blank.toLocaleString()} with no pay figure`].filter(Boolean).join(' and ')
+    }
+    if (f === 'sells' && blank > 0) {
+      const other = n - blank
+      return [other > 0 ? `${other.toLocaleString()} selling something else` : null, `${blank.toLocaleString()} where MVP cannot yet tell what they sell (website not read, or too little on it)`].filter(Boolean).join(' and ')
     }
     return `${n.toLocaleString()} by ${FILTER_WORDS[f]}`
   }
@@ -358,6 +373,14 @@ export function CrowdChip({ crowd, windowDays }: { crowd: CrowdRead | null | und
 export function NewChip({ on }: { on: boolean | undefined }) {
   if (!on) return null
   return <span className="text-[10.5px] font-extrabold tracking-wider rounded-md px-2 py-0.5 inline-flex items-center gap-1" style={{ background: PURPLE, color: '#fff' }} title="New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14."><Sparkles size={10} />NEW</span>
+}
+
+/** What it sells, with why in the hover; nothing when MVP cannot tell. */
+export function SellsChip({ sells }: { sells: SellsRead | null | undefined }) {
+  if (!sells?.kind) return null
+  const also = sells.kinds.filter((k) => k !== sells.kind).map((k) => SELLS_WORDS[k].chip.toLowerCase())
+  const why = `${SELLS_WORDS[sells.kind].says} Why MVP thinks so: ${sells.why.join('; ')}.${also.length ? ` Also looks like ${also.join(' and ')}.` : ''}`
+  return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }} title={why}>{SELLS_WORDS[sells.kind].chip}{also.length ? ` + ${also.join(' + ')}` : ''}</span>
 }
 
 export function StaticsChip({ on }: { on: boolean | null | undefined }) {

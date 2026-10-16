@@ -19,6 +19,7 @@
 // The cap is enforced here, at claim time, not in the browser: a page that is
 // reloaded, or open twice, cannot send more than the cap allows.
 
+import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
 import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
@@ -1039,6 +1040,9 @@ export async function POST(request: Request) {
     // THE FILTERS: a brand that fails one is hidden and counted; a brand
     // TRYBE gave no number for stays, after the ones that pass, and is
     // counted too, so the list is never quietly short or quietly wrong.
+    // WHAT IT SELLS (lib/trybe-sells), from what MVP keeps: nothing fetched.
+    const sellsBy = new Map<string, SellsRead>()
+    for (const x of matchedAll) sellsBy.set(x.r.brand_id, sellsOf({ name: x.r.name, categories: x.r.categories || [], about: x.r.about, siteText: x.r.site_text, products: x.r.site_products || [], samples: statsBy.get(x.r.brand_id)?.samples ?? null, raw: x.r.raw }))
     const hiddenBy: Partial<Record<FilterId, number>> = {}
     // Of those hidden, the ones hidden for having no figure at all.
     const blankBy: Partial<Record<FilterId, number>> = {}
@@ -1046,7 +1050,7 @@ export async function POST(request: Request) {
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
-        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null }, filters)
+        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
@@ -1140,6 +1144,7 @@ export async function POST(request: Request) {
           is_new: newBy.get(r.brand_id) ?? false,
           review: results.review.get(r.brand_id) ?? null,
           statics: staticsOf(r.raw, r.about),
+          sells: sellsBy.get(r.brand_id) ?? null,
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null,
