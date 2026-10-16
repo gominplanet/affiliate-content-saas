@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-1'
+const RELEASE_ID = '2026-10-16-2'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // TRYBE sends keep going when you leave the page (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'TRYBE: Send all keeps going when you leave',
+    desc: 'Press Send all and SCOUT sends the whole list by itself, out of sight. Close the tab or keep working; nothing pops up or takes your screen. Brands with no pay figure now stay out of At least $25 a video, and What changed opens any brand to read it and message it. Needs SCOUT 1.48.0, which Chrome installs by itself. On the Pro plan.',
+    href: '/trybe?tab=queue',
+  },
   // Group Post Queue live for Pro (Seb, 2026-10-16).
   {
     badge: 'NEW',

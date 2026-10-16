@@ -1127,6 +1127,27 @@ export async function requestTrybeSend(url: string, name: string, message: strin
   return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 
+/** SCOUT 1.48.0+: a Send all run SCOUT does by itself (see background.js
+ *  TRYBE SENDS, RUN BY SCOUT ITSELF). */
+export interface TrybeRun {
+  on: boolean; ids: string[]; idx: number; sent: number; label?: string
+  current: { id: string; name: string } | null; nextAt: number; startedAt: number; endedAt?: number; ended?: string
+  nextFreeAt?: string | null
+  log: Array<{ at: number; name: string; text: string; tone: 'ok' | 'bad' | 'warn' | 'info' }>
+}
+export async function requestTrybeRun(ids: string[], label: string): Promise<{ ok: boolean; error?: string; run?: TrybeRun | null }> {
+  const res = await sendToExtension<{ ok: boolean; error?: string; run?: TrybeRun | null }>({ type: 'MVP_TRYBE_RUN', ids, label }, 20_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+export async function requestTrybeRunStatus(): Promise<TrybeRun | null> {
+  const res = await sendToExtension<{ ok: boolean; run?: TrybeRun | null }>({ type: 'MVP_TRYBE_RUN_STATUS' }, 8_000)
+  return res && res.ok ? res.run ?? null : null
+}
+export async function requestTrybeRunStop(): Promise<TrybeRun | null> {
+  const res = await sendToExtension<{ ok: boolean; run?: TrybeRun | null }>({ type: 'MVP_TRYBE_RUN_STOP' }, 8_000)
+  return res && res.ok ? res.run ?? null : null
+}
+
 export interface TrybeOpenResult { ok: boolean; error?: string; via?: string }
 
 /** SCOUT 1.41.8+: opens TRYBE in front on one brand's own popup, so the

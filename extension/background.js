@@ -12426,6 +12426,39 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  // 1.48.0: SCOUT runs Send all by itself; MVP's tab can close.
+  if (msg.type === 'MVP_TRYBE_RUN') {
+    void (async () => {
+      let origin = ''
+      try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+      const ids = Array.isArray(msg.ids) ? msg.ids.map((x) => String(x || '').slice(0, 80)).filter(Boolean).slice(0, 400) : []
+      const now = await trybeRunState()
+      if (now && now.on) return { ok: false, error: 'running', run: now }
+      if (!ids.length) return { ok: false, error: 'empty' }
+      if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+      const st = { on: true, origin: TRYBE_CALLERS.test(origin) ? origin : 'https://mvpaffiliate.io', ids, idx: 0, sent: 0, failStreak: 0, misses: 0, current: null, busyAt: null, nextAt: 0, startedAt: Date.now(), label: String(msg.label || 'Send all').slice(0, 40), log: [] }
+      trybeRunSay(st, st.label, `Started: ${ids.length} request${ids.length === 1 ? '' : 's'}, one at a time. SCOUT carries on if you close MVP.`, 'info')
+      await trybeRunSave(st)
+      void trybeRunTick()
+      return { ok: true, run: st }
+    })().then(sendResponse)
+    return true
+  }
+  if (msg.type === 'MVP_TRYBE_RUN_STATUS') {
+    void trybeRunState().then((st) => sendResponse({ ok: true, run: st }))
+    return true
+  }
+  if (msg.type === 'MVP_TRYBE_RUN_STOP') {
+    void (async () => {
+      const st = await trybeRunState()
+      if (!st || !st.on) return { ok: true, run: st }
+      // A send under way finishes and is recorded; nothing after it starts.
+      if (st.current) { st.on = false; trybeRunSay(st, 'SCOUT', 'Stopping after the request being sent now.', 'warn'); await trybeRunSave(st); return { ok: true, run: st } }
+      await trybeRunEnd(st, `Stopped. ${st.sent || 0} sent.`, 'warn')
+      return { ok: true, run: st }
+    })().then(sendResponse)
+    return true
+  }
   if (msg.type === 'MVP_TRYBE_SEND') {
     // Past the press, a late answer is 'unconfirmed', never 'failed'.
     const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 150000)
@@ -15070,7 +15103,9 @@ const TRYBE_RETRY_IN_FRONT = ['brand-not-found', 'request-button-not-found', 'me
 //    from a fresh page;
 //  - a box that did not close AFTER the press is only looked at in front
 //    (its closing animation finishes there). Send is never pressed again.
-async function trybeSend({ url, name, message }, callerTabId) {
+async function trybeSend({ url, name, message }, callerTabId, opts) {
+  // BEHIND ONLY (1.48.0): a run SCOUT does by itself never takes the screen.
+  const behind = !!(opts && opts.behind)
   if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
   const safe = trybeSafeUrl(url)
   if (!safe) return { outcome: 'failed', error: 'bad-url' }
@@ -15093,13 +15128,21 @@ async function trybeSend({ url, name, message }, callerTabId) {
     const pressed = Array.isArray(res.steps) && res.steps.includes('pressed')
     // ONLY WITH TIME LEFT: the front try is skipped once 40 seconds are gone,
     // so the whole send ends inside MVP's wait and never overlaps the next one.
-    if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error) && Date.now() - startedAt < 40000) {
+    // A run SCOUT does by itself leaves it for MVP's Send now, said as such.
+    if (behind && res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error)) {
+      res = { ...res, error: 'needs-screen: ' + res.error, steps: (res.steps || []).concat('not brought forward') }
+    } else if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error) && Date.now() - startedAt < 40000) {
       await forward()
       await chrome.tabs.reload(tabId)
       await waitForTabLoad(tabId, 30000)
       await _sleep(1500)
       const again = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
       res = again ? { ...again, steps: ['behind: ' + res.error, 'in front'].concat(again.steps || []) } : { outcome: 'failed', error: 'no-answer-from-page', steps: ['behind: ' + res.error, 'in front'] }
+    } else if (behind && res.outcome === 'unconfirmed' && pressed) {
+      // Looked at where it is, hidden: a closed box is a sent request.
+      await _sleep(3000)
+      const open = await trybeRun(trybeBoxStillOpenInPage, [String(message)], tabId)
+      if (open === false) res = { outcome: 'sent', steps: (res.steps || []).concat('closed behind') }
     } else if (res.outcome === 'unconfirmed' && pressed && Date.now() - startedAt < 110000) {
       await forward()
       await _sleep(3000)
@@ -15118,3 +15161,135 @@ async function trybeSend({ url, name, message }, callerTabId) {
     stopKeepAlive(ka)
   }
 }
+
+// ── TRYBE SENDS, RUN BY SCOUT ITSELF (1.48.0) ───────────────────────────────
+// A creator, 2026-10-16: "is there a way to keep the window popping in the
+// background? when you are sending messages and doing something else it cuts
+// you off". The run lived in MVP's tab: leaving or closing that tab ended it,
+// and a send that needed TRYBE on screen took the screen, then pulled MVP's
+// tab to the front. Now MVP hands SCOUT the list and SCOUT runs it alone, one
+// request at a time on MVP's pacing, waiting between sends with alarms. MVP's
+// tab can be closed or left, and nothing takes the screen: a send that would
+// have needed TRYBE in front is left as failed with "needs-screen", which MVP
+// says in words and sends with Send now while the creator is there.
+//
+// Each step goes through MVP's own API (claim, then result), so the daily
+// limit, the message and the record are the same as a run from MVP's tab.
+const TRYBE_RUN_KEY = 'mvpTrybeRun'
+const TRYBE_RUN_ALARM = 'mvp-trybe-run'
+// A send that started this long ago and never finished was cut off (SCOUT
+// restarted mid-send): settled as not confirmed, never sent twice.
+const TRYBE_RUN_STALE_MS = 4 * 60 * 1000
+// MVP's pacing (lib/trybe-outreach: SHORT_RUN_UNDER, SHORT_GAP_MS, MIN_GAP_MS,
+// MAX_GAP_MS, BREAK_EVERY, BREAK_MS); a guard keeps the two the same.
+const TRYBE_PACE = { shortUnder: 40, shortMs: 10000, minMs: 45000, maxMs: 120000, breakEvery: 5, breakMs: [180000, 300000] }
+function trybeRunGapMs(sentThisRun, runSize) {
+  if (runSize < TRYBE_PACE.shortUnder) return TRYBE_PACE.shortMs
+  const span = (lo, hi) => Math.round(lo + Math.random() * (hi - lo))
+  if (sentThisRun > 0 && sentThisRun % TRYBE_PACE.breakEvery === 0) return span(TRYBE_PACE.breakMs[0], TRYBE_PACE.breakMs[1])
+  return span(TRYBE_PACE.minMs, TRYBE_PACE.maxMs)
+}
+async function trybeRunState() {
+  try { const got = await chrome.storage.local.get(TRYBE_RUN_KEY); return (got && got[TRYBE_RUN_KEY]) || null } catch (e) { return null }
+}
+async function trybeRunSave(st) { try { await chrome.storage.local.set({ [TRYBE_RUN_KEY]: st }) } catch (e) {} return st }
+function trybeRunSay(st, name, text, tone) {
+  st.log = [{ at: Date.now(), name: String(name || ''), text: String(text || ''), tone: tone || 'info' }].concat(st.log || []).slice(0, 120)
+}
+// MVP's API from the worker, with the creator's MVP session (the same bridge
+// as the storefront sync): the page's own origin first, then apex and www.
+async function trybeRunApi(origin, body) {
+  const origins = Array.from(new Set([origin, 'https://mvpaffiliate.io', 'https://www.mvpaffiliate.io'].filter((o) => TRYBE_CALLERS.test(o || ''))))
+  for (const o of origins) {
+    try {
+      const res = await fetch(`${o}/api/labs/trybe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', redirect: 'follow', body: JSON.stringify(body) })
+      let data = null
+      try { data = await res.json() } catch (e) {}
+      return { reached: true, status: res.status, ok: res.ok, data: data || {} }
+    } catch (e) {}
+  }
+  return { reached: false, status: 0, ok: false, data: {} }
+}
+function trybeRunWake(atMs) {
+  const wait = Math.max(0, atMs - Date.now())
+  // Alarms fire 30 seconds out at the soonest; a shorter wait also has a timer.
+  try { chrome.alarms.create(TRYBE_RUN_ALARM, { when: Math.max(atMs, Date.now() + 30000) }) } catch (e) {}
+  if (wait < 30000) setTimeout(() => { void trybeRunTick() }, wait)
+}
+async function trybeRunEnd(st, label, tone) {
+  st.on = false; st.current = null; st.busyAt = null; st.endedAt = Date.now(); st.ended = label
+  trybeRunSay(st, 'SCOUT', label, tone)
+  try { chrome.alarms.clear(TRYBE_RUN_ALARM) } catch (e) {}
+  await trybeRunSave(st)
+}
+let trybeRunTicking = false
+async function trybeRunTick() {
+  if (trybeRunTicking) return
+  trybeRunTicking = true
+  try {
+    let st = await trybeRunState()
+    if (!st || !st.on) return
+    // A send cut off mid-way (SCOUT restarted): not confirmed, and the run goes on.
+    if (st.current) {
+      if (st.busyAt && Date.now() - st.busyAt < TRYBE_RUN_STALE_MS) return
+      await trybeRunApi(st.origin, { action: 'result', brandId: st.current.id, outcome: 'unconfirmed', error: 'SCOUT restarted while sending it, so it cannot tell whether TRYBE got it.' })
+      trybeRunSay(st, st.current.name, 'Not confirmed: SCOUT restarted while sending it. Check TRYBE’s Pending Requests.', 'warn')
+      st.current = null; st.busyAt = null; st.idx++
+      await trybeRunSave(st)
+    }
+    if (st.idx >= st.ids.length) { await trybeRunEnd(st, `Done: ${st.sent} sent.`, st.sent ? 'ok' : 'warn'); return }
+    if (st.nextAt && Date.now() < st.nextAt - 500) { trybeRunWake(st.nextAt); return }
+    const id = st.ids[st.idx]
+    const c = await trybeRunApi(st.origin, { action: 'claim', brandId: id })
+    if (!c.reached) {
+      st.misses = (st.misses || 0) + 1
+      if (st.misses >= 3) { await trybeRunEnd(st, 'Stopped: SCOUT could not reach MVP three times in a row. Check the internet, then press Send all again.', 'bad'); return }
+      trybeRunSay(st, 'SCOUT', 'Could not reach MVP. Trying again in a minute.', 'warn')
+      st.nextAt = Date.now() + 60000; await trybeRunSave(st); trybeRunWake(st.nextAt); return
+    }
+    st.misses = 0
+    if (c.status === 401) { await trybeRunEnd(st, 'Stopped: this Chrome is signed out of MVP. Sign in, then press Send all again.', 'bad'); return }
+    const d = c.data || {}
+    if (d.capped) {
+      st.nextFreeAt = d.nextFreeAt || null
+      await trybeRunEnd(st, `All ${d.dailyCap} sends of the last 24 hours are used. The rest wait in Ready to send.`, 'warn'); return
+    }
+    if (!d.ok) {
+      trybeRunSay(st, id, `Not started: ${d.error || 'MVP could not reserve it'}.`, 'bad')
+      st.idx++; st.nextAt = Date.now() + 3000; await trybeRunSave(st); trybeRunWake(st.nextAt); return
+    }
+    st.current = { id, name: d.name || id }; st.busyAt = Date.now(); st.usedToday = d.usedToday
+    trybeRunSay(st, st.current.name, 'SCOUT is sending it on TRYBE, out of sight.', 'info')
+    await trybeRunSave(st)
+    const res = await trybeSend({ url: d.url, name: d.name, message: d.message }, null, { behind: true })
+    const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
+    const err = res.error ? `${res.error}${res.steps && res.steps.length ? ` (got to: ${res.steps[res.steps.length - 1]}${seen})` : ''}` : null
+    const rec = await trybeRunApi(st.origin, { action: 'result', brandId: id, outcome: res.outcome, error: err })
+    // Read again: a Stop pressed during the send is kept.
+    st = (await trybeRunState()) || st
+    const who = st.current ? st.current.name : id
+    if (res.outcome === 'sent') trybeRunSay(st, who, 'Sent. TRYBE closed the request box.', 'ok')
+    else if (res.outcome === 'already') trybeRunSay(st, who, 'TRYBE already shows a request to this brand.', 'warn')
+    else if (res.outcome === 'failed') trybeRunSay(st, who, `Not sent: ${err || 'SCOUT could not send it'}.`, 'bad')
+    else trybeRunSay(st, who, `Not confirmed: ${err || 'TRYBE did not show the box closing'}. Check TRYBE’s Pending Requests.`, 'warn')
+    if (!rec.ok) trybeRunSay(st, who, 'MVP could not save this result. Open Ready to send before sending again.', 'bad')
+    if (res.outcome === 'sent') st.sent = (st.sent || 0) + 1
+    st.current = null; st.busyAt = null; st.idx++
+    // Two real failures in a row usually mean TRYBE changed or signed out.
+    const realFail = res.outcome === 'failed' && !String(res.error || '').startsWith('needs-screen')
+    st.failStreak = realFail ? (st.failStreak || 0) + 1 : 0
+    if (st.failStreak >= 2) { await trybeRunEnd(st, 'Stopped: two sends in a row failed. TRYBE may have signed out or changed.', 'bad'); return }
+    if (!st.on) { await trybeRunEnd(st, `Stopped. ${st.sent || 0} sent.`, 'warn'); return }
+    if (st.idx >= st.ids.length) { await trybeRunEnd(st, `Done: ${st.sent || 0} sent.`, st.sent ? 'ok' : 'warn'); return }
+    st.nextAt = Date.now() + trybeRunGapMs(st.sent || 0, st.ids.length)
+    await trybeRunSave(st)
+    trybeRunWake(st.nextAt)
+  } catch (e) {
+    try { const st = await trybeRunState(); if (st && st.on) { trybeRunSay(st, 'SCOUT', `Something went wrong (${e && e.message ? e.message : 'error'}). Trying again in a minute.`, 'warn'); st.nextAt = Date.now() + 60000; await trybeRunSave(st); trybeRunWake(st.nextAt) } } catch (er) {}
+  } finally {
+    trybeRunTicking = false
+  }
+}
+try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_RUN_ALARM) void trybeRunTick() }) } catch (e) {}
+// After Chrome restarts, a run still on carries on.
+try { chrome.runtime.onStartup.addListener(() => { void trybeRunTick() }) } catch (e) {}

@@ -23,13 +23,13 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, type LucideIcon } from 'lucide-react'
-import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, type TrybeScanPass } from '@/lib/extension-frame'
+import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { readAdLibraryCount, META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
@@ -179,8 +179,10 @@ const SEND_WORDS: Record<string, string> = {
   'no-answer-from-page': 'The TRYBE page did not answer',
   'request-button-not-found': 'TRYBE showed the brand but no Request to Join button',
 }
-const sendWords = (e: string | null | undefined) => {
+const sendWords = (e: string | null | undefined): string => {
   const raw = String(e || '')
+  // SCOUT 1.48.0 ran it out of sight and would not take the screen for it.
+  if (raw.startsWith('needs-screen: ')) return `TRYBE needed to be on screen for this one (${sendWords(raw.slice(14))}). Press Send now on it while you are at your computer`
   const code = raw.split(' (')[0]
   return SEND_WORDS[code] ? raw.replace(code, SEND_WORDS[code]) : raw
 }
@@ -359,7 +361,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const [findNotes, setFindNotes] = useState<string[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showNotFit, setShowNotFit] = useState(false)
-  const [running, setRunning] = useState(false)
+  const [pageRunning, setRunning] = useState(false)
+  // SEND ALL RUN BY SCOUT (1.48.0): the run lives in SCOUT, this page only
+  // shows it, so the tab can close. Read on load and every few seconds while on.
+  const [scoutRun, setScoutRun] = useState<TrybeRun | null>(null)
+  const running = pageRunning || !!scoutRun?.on
   const [current, setCurrent] = useState<string | null>(null)
   const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -562,6 +568,28 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [waitUntil])
+  const usesRunner = scoutAtLeast(scoutVersion, SCOUT_TRYBE_RUNNER_MIN_VERSION)
+  // This page's lines and SCOUT's own run, newest first, in the same words.
+  const runLog = useMemo(() => {
+    const fromScout: LogLine[] = (scoutRun?.log || []).map(l => ({ ...l, text: l.text.startsWith('Not sent: ') ? `Not sent: ${sendWords(l.text.slice(10).replace(/\.$/, ''))}.` : l.text }))
+    return [...log, ...fromScout].sort((a, b) => b.at - a.at).slice(0, 200)
+  }, [log, scoutRun])
+  const runSeen = useRef<string>('')
+  useEffect(() => {
+    if (!usesRunner || preview) return
+    let gone = false
+    const read = async () => {
+      const r = await requestTrybeRunStatus().catch(() => null)
+      if (gone) return
+      setScoutRun(r)
+      // Each request SCOUT finished, and the end of the run, show on the list.
+      const mark = r ? `${r.startedAt}:${r.idx}:${r.on}` : ''
+      if (mark !== runSeen.current) { const first = !runSeen.current; runSeen.current = mark; if (!first) void load() }
+    }
+    void read()
+    const t = setInterval(() => { void read(); setNow(Date.now()) }, scoutRun?.on ? 4000 : 30000)
+    return () => { gone = true; clearInterval(t) }
+  }, [usesRunner, preview, scoutRun?.on]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pageKey = prefsKey(cats, kws)
   const unsavedNiche = pageKey !== savedKey
@@ -1064,9 +1092,30 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     await load()
   }
 
-  async function sendAll() { await runSends(queue.slice(0, remaining), 'Send all') }
+  async function sendAll() {
+    const list = queue.slice(0, remaining)
+    if (usesRunner) { await startRunner(list, 'Send all'); return }
+    await runSends(list, 'Send all')
+  }
+  /** Hand the list to SCOUT, which sends it by itself (1.48.0). */
+  async function startRunner(list: Brand[], label: string) {
+    if (access !== 'granted') { toast.error('Allow SCOUT on TRYBE first'); say(label, 'Not started: SCOUT is not allowed on TRYBE yet.', 'bad'); return }
+    if (!list.length) { say(label, remaining ? 'Nothing in the queue to send.' : `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)} The queue waits until then.`, 'warn'); return }
+    const r = await requestTrybeRun(list.map(b => b.brand_id), label)
+    if (r.run !== undefined) setScoutRun(r.run ?? null)
+    if (r.ok) { toast.success(`SCOUT is sending ${list.length}. You can close this tab or keep working.`); return }
+    const why = r.error === 'running' ? 'SCOUT is already sending a list. It takes the next one when that finishes.'
+      : r.error === 'no-access' ? 'SCOUT is not allowed on TRYBE yet.' : r.error || 'SCOUT did not answer.'
+    toast.error(why); say(label, `Not started: ${why}`, 'bad')
+  }
+  async function stopRun() {
+    if (scoutRun?.on) { const r = await requestTrybeRunStop().catch(() => null); if (r) setScoutRun(r); return }
+    stopRef.current = true
+  }
   /** One message now, without waiting for the rest. */
   async function sendOne(b: Brand) {
+    // One at a time on TRYBE: a Send now waits for SCOUT's own run.
+    if (scoutRun?.on) { toast.message('SCOUT is sending your list right now. Press Send now again when it finishes.'); return }
     if (!remaining) { toast.error(`All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}`); return }
     await runSends([b], 'Send now')
   }
@@ -1816,9 +1865,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           <div className="flex flex-wrap items-center gap-3 mb-2">
             <p className="text-[14px] font-semibold">Ready to send ({queue.length})</p>
             <div className="ml-auto flex items-center gap-2">
-              {running && waitUntil && <span className="text-[12px]" style={soft}>Next request in {Math.max(0, Math.ceil((waitUntil - now) / 1000))}s</span>}
+              {running && (scoutRun?.on ? (scoutRun.current ? null : scoutRun.nextAt) : waitUntil) ? <span className="text-[12px]" style={soft}>Next request in {Math.max(0, Math.ceil(((scoutRun?.on ? scoutRun.nextAt : waitUntil) as number - now) / 1000))}s</span> : null}
               {running
-                ? <button onClick={() => { stopRef.current = true }} className={btn} style={{ border: '1px solid var(--border)' }}><Square size={13} /> Stop</button>
+                ? <button onClick={() => void stopRun()} className={btn} style={{ border: '1px solid var(--border)' }}><Square size={13} /> Stop</button>
                 : <>
                   {queue.length > 0 && <button onClick={() => void rewrite(queue)} disabled={!!finding} className={btn} style={{ border: '1px solid var(--border)' }} title="Write every message here again from your core message as it is now">
                     {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Rewrite all
@@ -1839,13 +1888,22 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.filter(n => isAdmin || !ADMIN_NOTE.test(n)).map((n, i) => <li key={i}>{n}</li>)}</ul>
           )}
           {sendBlocked && !running && queue.length > 0 && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{sendBlocked}</p>}
-          {running && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
+          {scoutRun?.on && (
+            <p className="text-[12px] mb-3" style={{ color: GREEN }}>
+              SCOUT is sending these by itself, out of sight: {scoutRun.sent} sent, {Math.min(scoutRun.idx + (scoutRun.current ? 1 : 0), scoutRun.ids.length)} of {scoutRun.ids.length} done{scoutRun.current ? `, sending ${scoutRun.current.name} now` : ''}.
+              {' '}You can close this tab or keep working. Nothing takes your screen; a request that needs TRYBE in front is left for Send now.
+            </p>
+          )}
+          {!scoutRun?.on && scoutRun?.ended && scoutRun.endedAt && Date.now() - scoutRun.endedAt < 6 * 3600_000 && (
+            <p className="text-[12px] mb-3" style={soft}>Last run by SCOUT, {new Date(scoutRun.endedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: {scoutRun.ended}</p>
+          )}
+          {pageRunning && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
             ? `Keep this tab open. SCOUT sends each request in a TRYBE tab behind this one, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}. It comes to the front only if TRYBE needs it.`
             : `Keep this tab open. SCOUT opens TRYBE for each request and brings you back, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}.`}</p>}
-          {log.length > 0 && (
+          {runLog.length > 0 && (
             <div className="rounded-xl border p-3 mb-3 max-h-56 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
               <p className="text-[12px] font-semibold mb-1">Run log</p>
-              {log.map((l, i) => (
+              {runLog.map((l, i) => (
                 <p key={i} className="text-[12px]" style={{ color: l.tone === 'ok' ? GREEN : l.tone === 'bad' ? RED : l.tone === 'warn' ? AMBER : 'var(--text)' }}>
                   <span style={soft}>{new Date(l.at).toLocaleTimeString()}</span> <b>{l.name}</b>: {l.text}
                 </p>
@@ -1854,7 +1912,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. <button onClick={() => setTab('find')} className="font-semibold underline" style={{ color: PURPLE }}>Pick brands in Find brands</button> and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} amazon={amz.brand(b.brand_id)} promotes={promotes(b)} busy={current === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} amazon={amz.brand(b.brand_id)} promotes={promotes(b)} busy={current === b.brand_id || scoutRun?.current?.id === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (

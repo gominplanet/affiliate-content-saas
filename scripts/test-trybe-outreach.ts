@@ -161,7 +161,9 @@ check('a member\'s collection cannot overwrite a kept website, name or descripti
 
 // THE INBOX (Seb, 2026-10-07: "reading and replying to messages right on MVP").
 const INBOX = readFileSync('components/labs/TrybeInbox.tsx', 'utf8')
-const API = BG.slice(BG.indexOf('const TRYBE_API_ALLOW = ['), BG.indexOf('let trybeApiTab = null'))
+// Up to the code after the list (the old end marker, let trybeApiTab = null,
+// went with the tab store, so the slice had silently run to the end of the file).
+const API = BG.slice(BG.indexOf('const TRYBE_API_ALLOW = ['), BG.indexOf('async function trybeApiTabGet('))
 check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing else',
   (API.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (API.match(/method: 'POST'/g) || []).length === 1 && API.includes('(messages|read)$/'))
 check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /async function trybeApiInPage\(method, path, body\)/.test(BG))
@@ -308,7 +310,8 @@ check('the Replied tile counts this week, with the all-time count under it', /<S
 check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ id: c\.id, n: \(o\?\.n \?\? 0\) \+ 1 \}\)\); setTab\('inbox'\)/.test(UI) && /openRequest=\{openChat\}/.test(UI) && /handled\.current === openRequest\.n/.test(INBOX))
 check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
 check('Send now waits for the save and never sends after a failed one', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(ok => \{ if \(ok\) void sendOne\(\{ \.\.\.b, draft: t \}\) \}\)\}/.test(UI) && /const inFlight = pendingSave\.current\.get\(b\.brand_id\)/.test(UI))
-check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{ await runSends\(queue\.slice\(0, remaining\), 'Send all'\) \}/.test(UI) && /if \(!remaining\) \{ toast\.error\(`All \$\{savedCap\} sends of the last 24 hours are used\. \$\{opensWords\(freeAt\)\}`\); return \}/.test(UI))
+// SCOUT 1.48.0: Send all goes to SCOUT's own run when it can (scripts/test-trybe-runner).
+check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{\s*const list = queue\.slice\(0, remaining\)\s*if \(usesRunner\) \{ await startRunner\(list, 'Send all'\); return \}\s*await runSends\(list, 'Send all'\)/.test(UI) && /if \(!remaining\) \{ toast\.error\(`All \$\{savedCap\} sends of the last 24 hours are used\. \$\{opensWords\(freeAt\)\}`\); return \}/.test(UI))
 {
   const n = (s: string) => s
   void n

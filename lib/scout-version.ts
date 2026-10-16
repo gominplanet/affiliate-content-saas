@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.47.3'
+export const SCOUT_LATEST_VERSION = '1.48.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Facebook Reels: SCOUT reads the Group post link from more of Facebook\'s link forms (multi_permalinks, story_fbid, videos, watch), and builds it from Facebook\'s own answer when the feed shows none, so the Page Reel links to the exact post.'
+  'TRYBE: Send all now runs inside SCOUT. MVP\'s tab can be closed or left while it sends, and nothing takes your screen: a request that needs TRYBE in front is left for Send now.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -83,6 +83,9 @@ export const SCOUT_TRYBE_INBOX_MIN_VERSION = '1.41.5'
 /** The oldest SCOUT that sends TRYBE requests in a tab behind MVP's, taking
  *  the screen only when a send needs it (Labs). */
 export const SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION = '1.41.7'
+/** The oldest SCOUT that runs Send all by itself (1.48.0): MVP hands it the
+ *  list and its tab can close; nothing takes the screen during the run. */
+export const SCOUT_TRYBE_RUNNER_MIN_VERSION = '1.48.0'
 /** The oldest SCOUT that opens one brand's own popup on TRYBE for the
  *  creator (On TRYBE links, Labs). */
 export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'
