@@ -12518,6 +12518,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     })().then(sendResponse).catch(() => sendResponse({ granted: false }))
     return true // async
   }
+  if (msg.type === 'MVP_FB_GROUP_REEL_JOB') {
+    // 1.50.0: the Page Reel posts itself. The answer goes only to MVP's own
+    // server, at the address of the page that asked.
+    let origin = ''
+    try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+    const j = msg.job || {}
+    const readyUrl = origin + '/api/clip-factory/reel-job/ready'
+    if (!/^https:\/\/(www\.)?mvpaffiliate\.io$|^http:\/\/localhost:3000$/.test(origin) || !/^[0-9a-f-]{36}$/i.test(String(j.id || '')) || typeof j.token !== 'string' || j.token.length < 20) { sendResponse({ ok: false, error: 'bad-job' }); return false }
+    handOffReelJob(String(msg.watchId || ''), { id: j.id, token: j.token, readyUrl })
+      .then(sendResponse).catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
+    return true // async
+  }
   if (msg.type === 'MVP_FB_GROUP_POST_STATUS') {
     // MVP asks whether the Group post it filled has gone up yet, and where.
     readGroupWatch(msg.watchId).then(sendResponse).catch(() => sendResponse({ state: 'unknown' }))
@@ -13945,13 +13957,63 @@ async function readGroupWatch(id) {
   // of saying "lost" and leaving the Page Reel undone (Seb, 2026-10-15).
   if (st.state === 'watching') {
     const c = st.ctx
-    if (c && c.tabId && Date.now() - (c.started || 0) < 30 * 60 * 1000) {
-      watchGroupPost(c.tabId, c.snippet || '', c.linkKey || '', { id, started: c.started })
+    if (c && c.tabId && Date.now() < (c.until || (c.started || 0) + 30 * 60 * 1000)) {
+      watchGroupPost(c.tabId, c.snippet || '', c.linkKey || '', { id, started: c.started, until: c.until, job: c.job })
       return { state: 'watching', resumed: true }
     }
+    // Ended while SCOUT was asleep: said once, and a handed-off job hears why.
+    await saveGroupWatch(id, { state: 'lost' })
+    try { chrome.alarms.clear(reelJobAlarm(id)) } catch (e) {}
+    if (c && c.job) void reportReelJob(c.job, { state: 'lost' })
     return { state: 'lost' }
   }
   return st
+}
+
+// ── THE PAGE REEL POSTS ITSELF (1.50.0; Seb, 2026-10-16: "while meta is
+// processing the video.. mvp is not able to post on the facebook page.. are
+// we able to get this done in the background"). MVP hands a watch its Reel
+// job (an id and a one-time key from MVP's server). The watch then runs for up
+// to 3 hours, a minute alarm picks it back up whenever Chrome put SCOUT to
+// sleep, and when it ends SCOUT tells MVP's server: the Group post's link, so
+// the server posts the Reel, or why there is none. MVP's tab can be closed.
+const REEL_JOB_HOURS = 3
+const reelJobAlarm = (id) => 'fbw:' + id
+async function reportReelJob(job, st) {
+  if (!job || !job.readyUrl || !job.id || !job.token) return false
+  const body = st.state === 'posted' && st.url ? { id: job.id, token: job.token, url: st.url } : { id: job.id, token: job.token, state: st.state }
+  for (const wait of [0, 3000, 15000, 60000]) {
+    if (wait) await _sleep(wait)
+    try {
+      const r = await fetch(job.readyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (r.status < 500) return true
+    } catch (e) {}
+  }
+  return false
+}
+try {
+  chrome.alarms.onAlarm.addListener((a) => {
+    if (!a || !String(a.name || '').startsWith('fbw:')) return
+    const id = a.name.slice(4)
+    void readGroupWatch(id).then((st) => { if (!st || (st.state !== 'watching')) { try { chrome.alarms.clear(a.name) } catch (e) {} } })
+  })
+} catch (e) {}
+async function handOffReelJob(watchId, job) {
+  let st = fbGroupWatches.get(watchId)
+  if (!st) { try { const o = await chrome.storage.session.get('fbw_' + watchId); st = o['fbw_' + watchId] || null } catch (e) {} }
+  if (!st) return { ok: false, error: 'no-watch' }
+  if (st.state === 'watching' && st.ctx) {
+    // The running watch shares this ctx object, so it sees the job and the
+    // longer watch at once; a sleeping one gets them on its next pick up.
+    st.ctx.job = job
+    st.ctx.until = (st.ctx.started || Date.now()) + REEL_JOB_HOURS * 3600 * 1000
+    await saveGroupWatch(watchId, st)
+    try { chrome.alarms.create(reelJobAlarm(watchId), { periodInMinutes: 1 }) } catch (e) {}
+    return { ok: true, state: 'watching' }
+  }
+  // Already over (the post went up before MVP handed the job over): say it now.
+  void reportReelJob(job, st)
+  return { ok: true, state: st.state }
 }
 
 function watchGroupPost(tabId, snippet, linkKey, resume) {
@@ -13959,7 +14021,7 @@ function watchGroupPost(tabId, snippet, linkKey, resume) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const ka = startKeepAlive()
   // What the watch needs to pick itself back up after a restart.
-  const ctx = { tabId, snippet, linkKey, started: (resume && resume.started) || Date.now() }
+  const ctx = { tabId, snippet, linkKey, started: (resume && resume.started) || Date.now(), until: (resume && resume.until) || 0, job: (resume && resume.job) || null }
   void (async () => {
     const started = ctx.started
     let dialogGoneAt = 0
@@ -13967,11 +14029,16 @@ function watchGroupPost(tabId, snippet, linkKey, resume) {
     // What Facebook sent, as last read (see installGroupPostHook). Kept in
     // every answer so the creator can copy it whatever the outcome.
     let log = null
-    const save = (st) => saveGroupWatch(id, { ...(log ? { ...st, log } : st), ...(st.state === 'watching' ? { ctx } : {}) })
+    const save = async (st) => {
+      await saveGroupWatch(id, { ...(log ? { ...st, log } : st), ...(st.state === 'watching' ? { ctx } : {}) })
+      // A handed-off Reel job hears how the watch ended (1.50.0).
+      if (st.state !== 'watching' && ctx.job) { try { chrome.alarms.clear(reelJobAlarm(id)) } catch (e) {} ; await reportReelJob(ctx.job, st) }
+    }
     try {
       await saveGroupWatch(id, { state: 'watching', ctx })
-      while (Date.now() - started < 30 * 60 * 1000) {
-        await sleep(2000)
+      while (Date.now() < (ctx.until || started + 30 * 60 * 1000)) {
+        // A handed-off job is a long wait: look every 10 seconds, not 2.
+        await sleep(ctx.job ? 10000 : 2000)
         let tab = null
         try { tab = await chrome.tabs.get(tabId) } catch (e) {}
         if (!tab) return await save({ state: 'closed' })

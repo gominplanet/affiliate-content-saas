@@ -135,6 +135,10 @@ export function ReelGroupFirst(p: {
   // ONE PAGE POST. The creator can go on by hand while SCOUT still watches;
   // whichever comes first posts, and the watch stops.
   const pageStarted = useRef(false)
+  // THE PAGE REEL POSTS ITSELF (SCOUT 1.50.0, migration 435): the server job
+  // that posts the Reel once SCOUT sees the Group post. Set, every way of
+  // posting the Reel from this page goes through it, so it posts once.
+  const jobRef = useRef<string | null>(null)
   // WHAT FACEBOOK SENT (SCOUT 1.46.4+): the watch's request log, for support.
   const [watchId, setWatchId] = useState<string | null>(null)
   const [watchSeen, setWatchSeen] = useState<FacebookGroupPostStatus | null>(null)
@@ -159,7 +163,85 @@ export function ReelGroupFirst(p: {
     }).catch(() => {})
   }
 
+  // The creator's own link (or the Group) for a Reel job: MVP's server posts it.
+  async function jobManual(link: string, how: 'post' | 'group') {
+    const id = jobRef.current
+    if (!id) return
+    setRetry(null); setManual(null)
+    const what = longClip ? 'video' : 'Reel'
+    say({ tone: 'wait', text: `Sending the ${what} to ${p.pageName || 'your Page'}, linking to ${how === 'post' ? 'your Group post' : 'your Group'}…` })
+    p.onBusy(true)
+    try {
+      const r = await fetch('/api/clip-factory/reel-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'manual', id, how, link }), signal: AbortSignal.timeout(290_000) })
+      const j = await r.json().catch(() => ({})) as { ok?: boolean; already?: boolean; status?: string; error?: string; pageUrl?: string | null }
+      if (j.ok) {
+        say({ tone: 'ok', text: j.already ? `MVP had already posted the ${what} on ${p.pageName || 'your Page'}.` : `Done. Facebook took the ${what}: it appears on ${p.pageName || 'your Page'} once processed, linking to ${how === 'post' ? 'your Group post' : 'your Group'}.` })
+        p.onReelPosted(j.pageUrl ?? null, caption)
+      } else {
+        say({ tone: 'bad', text: `Your Group post is up, but the ${what} did not go out: ${j.error || `MVP did not get an answer (${r.status}).`}` })
+        setRetry(link)
+      }
+    } catch {
+      say({ tone: 'bad', text: `Facebook took too long to answer. Check ${p.pageName || 'your Page'} before trying again: it may still appear.` })
+      setRetry(link)
+    } finally { p.onBusy(false) }
+  }
+
+  // Ask MVP's server to keep the Reel as a job and hand SCOUT its key. Null
+  // when this cannot run in the background (an older SCOUT, migration 435 not
+  // in yet): the page then posts the Reel itself, as before.
+  async function startReelJob(watch: string): Promise<string | null> {
+    try {
+      const r = await fetch('/api/clip-factory/reel-job', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', clipUrl: p.clipUrl, caption, clipSeconds: p.clipSeconds ?? undefined, socialAccountId: p.pageId || undefined, sourceVideoId: p.sourceVideoId ?? undefined, title: p.clipTitle ?? undefined, groupUrl: group?.url }),
+      })
+      const j = await r.json().catch(() => ({})) as { ok?: boolean; id?: string; token?: string }
+      if (!j.ok || !j.id || !j.token) return null
+      const { requestFacebookReelJob } = await import('@/lib/extension-frame')
+      const h = await requestFacebookReelJob(watch, { id: j.id, token: j.token })
+      if (h.state !== 'handed') {
+        void fetch('/api/clip-factory/reel-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel', id: j.id }) }).catch(() => {})
+        return null
+      }
+      return j.id
+    } catch { return null }
+  }
+
+  // While this page is open it shows where the job stands; closed, the job
+  // carries on without it.
+  async function followJob(id: string) {
+    const what = longClip ? 'video' : 'Reel'
+    const end = Date.now() + 4 * 3600_000
+    let last = ''
+    while (mounted.current && Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 5000))
+      type JobRow = { status?: string; note?: string | null; page_post_url?: string | null; group_post_url?: string | null }
+      let job: JobRow | null = null
+      try {
+        const r = await fetch('/api/clip-factory/reel-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status', id }) })
+        job = ((await r.json().catch(() => ({}))) as { job?: JobRow }).job ?? null
+      } catch { continue }
+      if (!job?.status || job.status === last) continue
+      last = job.status
+      if (job.status === 'waiting') continue
+      if (job.status === 'posting') { sayLive({ tone: 'wait', text: `Your Group post is up. MVP is posting the ${what} on ${p.pageName || 'your Page'}…` }); continue }
+      if (job.status === 'posted') {
+        say({ tone: 'ok', text: `Done. MVP posted the ${what} on ${p.pageName || 'your Page'}, linking to ${job.note ? 'your Group' : 'your Group post'}. It appears once Facebook has processed it.` })
+        setManual(null)
+        p.onReelPosted(job.page_post_url ?? null, caption)
+        return
+      }
+      if (job.status === 'cancelled') return
+      say({ tone: job.status === 'failed' ? 'bad' : 'warn', text: job.note || `The ${what} was not posted.` })
+      setManual({ link: '' })
+      if (job.status === 'failed' && job.group_post_url) setRetry(job.group_post_url)
+      return
+    }
+  }
+
   async function postReel(link: string, how: 'post' | 'group', isRetry = false) {
+    if (jobRef.current) { await jobManual(link, how); return }
     if (pageStarted.current && !isRetry) return
     pageStarted.current = true
     setRetry(null)
@@ -230,11 +312,23 @@ export function ReelGroupFirst(p: {
       setManual({ link: '' })
       return
     }
+    setWatchId(res.watchId)
+    // IN THE BACKGROUND when it can be (Seb, 2026-10-16: "are we able to get
+    // this done in the background like pinned comments on youtube?").
+    const jobId = await startReelJob(res.watchId)
+    if (jobId) {
+      jobRef.current = jobId
+      pageStarted.current = true
+      say({ tone: 'ok', text: `You can close this tab. After you press Post, Facebook processes the video (often several minutes), and MVP then posts the ${longClip ? 'video' : 'Reel'} on ${p.pageName || 'your Page'} by itself, linking to that Group post. Keep the Facebook tab open until it is up.` })
+      say({ tone: 'wait', text: 'Waiting for your Group post. Posted and nothing is happening after a while? Paste the post\'s link below, or post linking to your Group.' })
+      setManual({ link: '' })
+      await followJob(jobId)
+      return
+    }
     say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open: after you post, Facebook processes the video first, which can take several minutes, and MVP carries on by itself. Posted and nothing is happening? Paste the post\'s link below, or post linking to your Group.' })
     // The way on by hand, from the start, so a watch that misses the post
     // never leaves the creator stuck (Seb, 2026-10-13).
     setManual({ link: '' })
-    setWatchId(res.watchId)
     // Facebook can process a video post for many minutes; SCOUT watches for 30.
     const end = Date.now() + 32 * 60 * 1000
     while (mounted.current && Date.now() < end && !pageStarted.current) {

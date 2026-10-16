@@ -81,8 +81,8 @@ check('the watcher never clicks anything', hookStart >= 0 && !/\.click\(\)/.test
 check('the listener goes in before the fill', BG.indexOf("func: installGroupPostHook, args: [true]") > 0 && BG.indexOf("func: installGroupPostHook, args: [true]") < BG.indexOf('func: fillGroupComposerInPage'))
 // 1.47.2 (Seb, 2026-10-15): a restart picks the watch back up on the same
 // tab; only a watch with nothing to resume, or past 30 minutes, says lost.
-check('a restarted SCOUT resumes the watch on the same tab', /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ id, started: c\.started \}\)/.test(BG) && /await saveGroupWatch\(id, \{ state: 'watching', ctx \}\)/.test(BG))
-check('a restarted SCOUT with nothing to resume says lost, not watching forever', /return \{ state: 'watching', resumed: true \}\n    \}\n    return \{ state: 'lost' \}/.test(BG))
+check('a restarted SCOUT resumes the watch on the same tab', /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ id, started: c\.started, until: c\.until, job: c\.job \}\)/.test(BG) && /await saveGroupWatch\(id, \{ state: 'watching', ctx \}\)/.test(BG))
+check('a restarted SCOUT with nothing to resume says lost, not watching forever', /return \{ state: 'watching', resumed: true \}\n    \}\n[\s\S]{0,300}?await saveGroupWatch\(id, \{ state: 'lost' \}\)[\s\S]{0,200}?return \{ state: 'lost' \}/.test(BG))
 // 1.47.3 (Seb, 2026-10-16: "saw your Group post go up but could not read its
 // own link"): the other link forms, the video's number, and the support notes.
 check('the feed reads multi_permalinks and story_fbid links', /\[\?&\]\(\?:multi_permalinks\|story_fbid\)=/.test(BG))

@@ -10,6 +10,10 @@ const publicPaths = [
   // this also keeps the app-domain fallback (mvpaffiliate.io/go/<code>) public.
   '/go',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
+  // SCOUT's answer for a Page Reel job, from Chrome's background with no
+  // session: the job's own one-time key is checked by the route
+  // (lib/reel-jobs). It can only post that job's Reel, once.
+  '/api/clip-factory/reel-job/ready',
   // Which commit is serving. Public because it has to be answerable without a
   // session: it exists so "is my fix live?" is one request instead of reading a
   // dashboard screenshot. Returns a short SHA and production/preview, nothing

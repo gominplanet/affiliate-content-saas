@@ -25,6 +25,7 @@ import { resolveSocialAccounts } from '@/lib/social-accounts'
 import { publishPageReel, publishPageVideo, reelState, REEL_MAX_SEC } from '@/lib/facebook-reels'
 import { buildReelCaption } from '@/lib/reel-caption'
 import { facebookReelOrder } from '@/lib/reel-group-caption'
+import { fitHashtags } from '@/lib/hashtag-engine'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
 export const runtime = 'nodejs'
@@ -122,7 +123,9 @@ export async function POST(req: Request) {
   // disclaimer from Brand Profile when they set one.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await (supabase as any).from('brand_profiles').select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
-  const description = facebookReelOrder(raw, (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT)
+  // Through the hashtag safety net (lib/hashtag-engine): no years or spam,
+  // each tag once, Facebook's three.
+  const description = fitHashtags(facebookReelOrder(raw, (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT), 'facebook')
 
   // Longer than a Reel can be: an ordinary Page video, said as one.
   const secs = Number(body.clipSeconds)

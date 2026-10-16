@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1194,6 +1194,16 @@ export interface TrybeOpenResult { ok: boolean; error?: string; via?: string }
 export async function requestTrybeOpenBrand(brandId: string, name: string): Promise<TrybeOpenResult> {
   const res = await sendToExtension<TrybeOpenResult>({ type: 'MVP_TRYBE_OPEN', brandId, name }, 70_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
+/** SCOUT 1.50.0+: hand the Group post watch its Page Reel job, so SCOUT
+ *  tells MVP's server when the post is up (or why not) and the server posts
+ *  the Reel. 'old' is a SCOUT that cannot: the page posts it as before. */
+export async function requestFacebookReelJob(watchId: string, job: { id: string; token: string }): Promise<{ state: 'handed' | 'old' | 'failed'; watch?: string; error?: string }> {
+  const status = await getScoutStatus()
+  if (!status.installed || !scoutAtLeast(status.version, SCOUT_FB_REEL_JOB_MIN_VERSION)) return { state: 'old' }
+  const res = await sendToExtension<{ ok?: boolean; state?: string; error?: string }>({ type: 'MVP_FB_GROUP_REEL_JOB', watchId, job }, 10_000)
+  return res?.ok ? { state: 'handed', watch: res.state } : { state: 'failed', error: res?.error || 'SCOUT did not answer.' }
 }
 
 /** Where the Group post SCOUT filled stands, after the creator presses Post.

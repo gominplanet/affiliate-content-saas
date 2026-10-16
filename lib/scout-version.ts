@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.49.1'
+export const SCOUT_LATEST_VERSION = '1.50.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Studio schedule: when vidIQ\'s best time suggestion is applied, SCOUT takes it off that video before setting your time, and if vidIQ still puts its own time back, the step says so by name.'
+  'Clip Factory: the Page Reel posts itself. After you press Post in your Group, SCOUT watches in the background for up to 3 hours while Facebook processes the video, then MVP posts the Reel linking to that Group post. MVP\'s tab can be closed.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -89,6 +89,9 @@ export const SCOUT_TRYBE_RUNNER_MIN_VERSION = '1.48.0'
 /** The oldest SCOUT that reads hashtag trends (TikTok Creative Center and
  *  Instagram's tag counts, Labs). */
 export const SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1.49.0'
+/** The oldest SCOUT that takes a Page Reel job and reports back from the
+ *  background (Clip Factory, Group first). */
+export const SCOUT_FB_REEL_JOB_MIN_VERSION = '1.50.0'
 /** The oldest SCOUT that opens one brand's own popup on TRYBE for the
  *  creator (On TRYBE links, Labs). */
 export const SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION = '1.41.8'

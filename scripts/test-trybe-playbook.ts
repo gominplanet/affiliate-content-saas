@@ -100,7 +100,7 @@ const bg = read('extension/background.js')
 check('SCOUT may read TRYBE\'s Top 100, read only', /creator\\\/v2\\\/top-creatives/.test(bg) && /method: 'GET', re: \/\^\\\/backend\\\/api\\\/creator\\\/v2\\\/top-creatives/.test(bg))
 check('SCOUT reads Meta\'s Ad Library behind the TRYBE origin check, with Facebook access asked first', /msg\.type === 'MVP_TRYBE_META_ADS'/.test(bg) && /async function metaAdsCounts[\s\S]{0,400}askFacebookAccess/.test(bg))
 const manifest = JSON.parse(read('extension/manifest.json')) as { version: string }
-check('SCOUT version bumped in lockstep', read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`) && /^1\.4[5-9]\./.test(manifest.version))
+check('SCOUT version bumped in lockstep', read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`) && /^1\.(4[5-9]|[5-9]\d)\./.test(manifest.version))
 const route = read('app/api/labs/trybe/route.ts')
 check('the route saves the Top 100 and Meta counts, guarded against rewrites', /action === 'top100'/.test(route) && /action === 'meta_ads'/.test(route) && /meta_ads_checked_at\.lt\./.test(route))
 check('the route writes the first message, the follow up and the plan', /action === 'kickoff' \|\| action === 'followup'/.test(route) && /action === 'video_plan'/.test(route) && /honestCtas\(/.test(route))

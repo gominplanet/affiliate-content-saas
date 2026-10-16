@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-6'
+const RELEASE_ID = '2026-10-16-7'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // The Page Reel posts itself after the Group post (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#1877F2',
+    title: 'Clip Factory: the Page Reel posts itself',
+    desc: 'After you press Post in your Facebook Group, you can close MVP. While Facebook processes the video, SCOUT keeps watching for up to 3 hours, and MVP then posts the Reel on your Page linking to that exact Group post. Keep the Facebook tab open until it is up. Needs SCOUT 1.50.0, which Chrome installs by itself.',
+    href: '/meta',
+  },
   // What a TRYBE brand pays creators a month (2026-10-16).
   {
     badge: 'NEW',
