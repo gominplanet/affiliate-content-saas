@@ -161,6 +161,53 @@ export function crowdOf(input: { creators: number | null; recent30?: number | nu
   return { level: 'open', newCreators, newVideos, days, why: `${why}: room for you.` }
 }
 
+// ── WHAT IT PAYS CREATORS A MONTH (Seb, 2026-10-16: "for Trybe, could we
+// find out ad spend budget each brand has monthly?"). No platform publishes
+// a brand's ad budget for product ads: Meta's Ad Library gives spend only for
+// political and social-issue ads, TikTok's gives none, TRYBE gives none. What
+// MVP can work out honestly is what a brand pays TRYBE creators: the videos
+// it approved in the last 30 days times what it pays per approved video.
+// Both are figures MVP already has (crowdOf, lib/trybe-pay estimatePay);
+// when either is missing there is no estimate, never a guess or a zero.
+
+const BASIS_SAID: Record<string, string> = {
+  yours: 'from your own results with it', members: 'from MVP members\u2019 results with it', terms: 'from its pay terms on TRYBE',
+}
+const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`
+const shortUsd = (n: number) => n >= 10_000 ? `$${Math.round(n / 1000)}K` : n >= 1000 ? `$${(n / 1000).toFixed(1).replace(/\.0$/, '')}K` : `$${Math.round(n)}`
+
+export interface SpendRead {
+  /** Dollars a month to TRYBE creators, estimated; null when it cannot be. */
+  dollars: number | null
+  /** Videos approved, scaled to 30 days. */
+  videos: number | null
+  perVideo: number | null
+  /** The window the videos were counted over. */
+  days: number | null
+  /** For the chip; null when there is no estimate. */
+  short: string | null
+  why: string
+}
+
+/** What a brand pays TRYBE creators a month, estimated. Pure. */
+export function creatorSpendOf(input: { crowd: Pick<CrowdRead, 'newVideos' | 'days'> | null | undefined; perVideo: number | null | undefined; basis?: string | null }): SpendRead {
+  const per = typeof input.perVideo === 'number' && Number.isFinite(input.perVideo) && input.perVideo > 0 ? input.perVideo : null
+  const n = input.crowd?.newVideos
+  const days = input.crowd?.days ?? null
+  if (per == null) return { dollars: null, videos: null, perVideo: null, days, short: null, why: 'No pay per approved video is known for it, so MVP cannot estimate what it pays creators.' }
+  if (n == null || !days || days < 7) return { dollars: null, videos: null, perVideo: per, days, short: null, why: 'MVP does not yet know how many videos it approved in the last 30 days, so it cannot estimate what it pays creators.' }
+  const videos = Math.round((n * 30) / days)
+  const dollars = Math.round(videos * per)
+  const scaled = days !== 30 ? ` Counted over ${days} days and scaled to 30.` : ''
+  const basis = input.basis && BASIS_SAID[input.basis] ? ` (${BASIS_SAID[input.basis]})` : ''
+  if (!videos) return { dollars: 0, videos: 0, perVideo: per, days, short: 'No videos approved lately', why: `No videos approved in the last ${days} days: it is not paying TRYBE creators for videos right now.` }
+  return {
+    dollars, videos, perVideo: per, days,
+    short: `~${shortUsd(dollars)}/mo to creators`,
+    why: `About ${usd(dollars)} a month to TRYBE creators: ${videos.toLocaleString('en-US')} video${videos === 1 ? '' : 's'} approved a month, about ${usd(per)} each${basis}.${scaled} Pay on top, like a % of sales or of ad spend, is not in it. An estimate, for choosing brands only: never put it in a message to a brand.`,
+  }
+}
+
 /** Every key TRYBE's entries carry, one level deep, for the admin box: so
  *  what TRYBE sends is seen, not guessed. Pure. */
 export function rawKeys(raws: unknown[], max = 60): string[] {
@@ -310,6 +357,8 @@ export interface FinderFilters {
   fastReview?: boolean
   /** What it sells (lib/trybe-sells): one kind, or any. */
   sells?: Sells | null
+  /** Pays TRYBE creators at least this a month (creatorSpendOf). */
+  minSpend?: number | null
 }
 /** "Decides fast": members' middle figure at or under this many days. */
 export const FAST_REVIEW_DAYS = 5
@@ -322,7 +371,7 @@ export function readFilters(v: unknown): FinderFilters {
     minPerVideo: pos(o.minPerVideo), maxCreators: pos(o.maxCreators), maxVideos: pos(o.maxVideos),
     paidCreators: o.paidCreators === true, samples: o.samples === true, onAmazon: o.onAmazon === true, starred: o.starred === true,
     openOnly: o.openOnly === true, spending: o.spending === true, newOnly: o.newOnly === true, fastReview: o.fastReview === true,
-    sells: readSells(o.sells),
+    sells: readSells(o.sells), minSpend: pos(o.minSpend),
   }
 }
 
@@ -340,8 +389,10 @@ export interface FilterRow {
   reviewDays?: number | null
   /** What it sells (lib/trybe-sells sellsOf). */
   sells?: SellsRead | null
+  /** Dollars a month to TRYBE creators (creatorSpendOf), null when not known. */
+  spend?: number | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -371,13 +422,15 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   if (f.fastReview) judge('fastReview', r.reviewDays == null ? null : r.reviewDays <= FAST_REVIEW_DAYS)
   // WHAT IT SELLS: a brand MVP cannot tell is left out and counted, not listed after.
   if (f.sells) { if (!r.sells?.kind) { failed.push('sells'); blank.push('sells') } else judge('sells', r.sells.kinds.includes(f.sells)) }
+  // WHAT IT PAYS CREATORS: like a pay minimum, no estimate is left out and counted.
+  if (f.minSpend) { if (r.spend == null) { failed.push('minSpend'); blank.push('minSpend') } else judge('minSpend', r.spend >= f.minSpend) }
   return { pass: !failed.length, unknown, failed, blank }
 }
 
 export const FILTER_WORDS: Record<FilterId, string> = {
   minPerVideo: 'pay per video', maxCreators: 'creator count', maxVideos: 'videos approved',
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
-  openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells',
+  openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells', minSpend: 'what it pays creators a month',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────

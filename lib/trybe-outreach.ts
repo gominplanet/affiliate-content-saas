@@ -183,7 +183,7 @@ export function readPay(text: string | null | undefined): PayRead {
   return { kind, dollars, percent }
 }
 
-export const BROWSE_SORTS = ['match', 'picks', 'pay', 'creators', 'fit', 'newest'] as const
+export const BROWSE_SORTS = ['match', 'picks', 'pay', 'spend', 'creators', 'fit', 'newest'] as const
 export type BrowseSort = typeof BROWSE_SORTS[number]
 export const PAY_TYPES = ['any', 'flat', 'percent', 'both', 'adspend', 'guaranteed'] as const
 export type PayType = typeof PAY_TYPES[number]

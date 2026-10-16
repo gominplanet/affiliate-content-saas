@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
-import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
+import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
 
@@ -29,8 +29,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -47,7 +47,7 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {icon}{label}
     </button>
   )
-  const numberBox = (k: 'minPerVideo' | 'maxCreators' | 'maxVideos', before: string, after: string, title: string) => (
+  const numberBox = (k: 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend', before: string, after: string, title: string) => (
     <label className={`${chip} cursor-text`} style={filters[k] ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'var(--border-2)' }} title={title}>
       {before}
       <input type="number" inputMode="numeric" min={1} value={filters[k] ?? ''} placeholder="any"
@@ -74,6 +74,7 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {toggle('paidCreators', 'Has paid creators', undefined, 'TRYBE says it has paid creators.')}
       {toggle('samples', 'Sends samples')}
       {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
+      {numberBox('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. No platform shows a brand\u2019s real ad budget, so this is the honest figure MVP can work out. A brand MVP cannot estimate is left out.')}
       {numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
       {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
       {(filtersOn(filters) || name) && (
@@ -105,6 +106,10 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     if (f === 'minPerVideo' && blank > 0) {
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} paying less` : null, `${blank.toLocaleString()} with no pay figure`].filter(Boolean).join(' and ')
+    }
+    if (f === 'minSpend' && blank > 0) {
+      const low = n - blank
+      return [low > 0 ? `${low.toLocaleString()} paying creators less` : null, `${blank.toLocaleString()} MVP cannot estimate yet (no pay figure, or no count of its videos in the last 30 days)`].filter(Boolean).join(' and ')
     }
     if (f === 'sells' && blank > 0) {
       const other = n - blank
@@ -370,6 +375,17 @@ export function CrowdChip({ crowd, windowDays }: { crowd: CrowdRead | null | und
   )
 }
 
+/** What it pays TRYBE creators a month, estimated, with the math in the
+ *  hover. Nothing when MVP cannot estimate it (the filter note counts those). */
+export function SpendChip({ spend }: { spend: SpendRead | null | undefined }) {
+  if (!spend || spend.dollars == null || !spend.short) return null
+  return (
+    <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={spend.dollars > 0 ? { background: 'rgba(14,116,144,0.10)', color: '#0E7490' } : { background: 'var(--surface-2)', color: 'var(--text-3)' }} title={spend.why}>
+      <DollarSign size={11} />{spend.short}<span className="sr-only">: {spend.why}</span>
+    </span>
+  )
+}
+
 export function NewChip({ on }: { on: boolean | undefined }) {
   if (!on) return null
   return <span className="text-[10.5px] font-extrabold tracking-wider rounded-md px-2 py-0.5 inline-flex items-center gap-1" style={{ background: PURPLE, color: '#fff' }} title="New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14."><Sparkles size={10} />NEW</span>
@@ -391,13 +407,14 @@ export function StaticsChip({ on }: { on: boolean | null | undefined }) {
 // ── HUNTR'S IDEAS (Seb, 2026-10-14: "do 1,2,3,4,5") ─────────────────────────
 
 /** One tap lists: each sets the filters and the sort in one go. */
-export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays'
-export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' }> = [
+export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets'
+export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' | 'spend' }> = [
   { id: 'untapped', label: 'Untapped', says: 'Spending on ads (Meta ads or TRYBE’s Top 100) with 30 creators or fewer: the budget is there and few creators share it.', filters: { ...NO_FILTERS, spending: true, maxCreators: 30 }, sort: 'picks' },
   { id: 'new', label: 'New this week', says: 'New on TRYBE, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
   { id: 'spenders', label: 'Big spenders', says: 'Every brand spending on ads now, best bets first.', filters: { ...NO_FILTERS, spending: true }, sort: 'picks' },
   { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
   { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. A brand with no pay figure is left out. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
+  { id: 'budgets', label: 'Big creator budgets', says: 'Pays TRYBE creators about $1,000 a month or more, estimated from its videos approved in the last 30 days and its pay per video. Biggest first. A brand MVP cannot estimate is left out.', filters: { ...NO_FILTERS, minSpend: 1000 }, sort: 'spend' },
 ]
 const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
 export const presetOf = (f: FinderFilters, sort: string): PresetId | null => PRESETS.find((p) => p.sort === sort && sameFilters(p.filters, f))?.id ?? null

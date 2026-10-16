@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-5'
+const RELEASE_ID = '2026-10-16-6'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // What a TRYBE brand pays creators a month (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#0E7490',
+    title: 'TRYBE: what each brand pays creators a month',
+    desc: 'Find brands now estimates what a brand pays TRYBE creators a month: its videos approved in the last 30 days times what it pays per video. Sort by Pays creators most, set a monthly minimum, or tap Big creator budgets. Hover a figure to see the math. A brand MVP cannot estimate yet is left out and counted. On the Pro plan, and to browse on the Amazon plan.',
+    href: '/trybe?tab=find',
+  },
   // One hashtag engine for everything MVP posts (2026-10-16).
   {
     badge: 'NEW',

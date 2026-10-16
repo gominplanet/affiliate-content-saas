@@ -22,7 +22,7 @@
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -951,7 +951,7 @@ export async function POST(request: Request) {
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = sort === 'picks' || sort === 'creators' ? 1200 : 400
+    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1042,6 +1042,9 @@ export async function POST(request: Request) {
         then: base?.snap[r.brand_id] ?? null, videosNow: st?.videosApproved ?? null, days: base?.days ?? null,
       })]
     }))
+    // WHAT IT PAYS CREATORS A MONTH (lib/trybe-finder creatorSpendOf): its
+    // videos approved in the last 30 days times its pay per approved video.
+    const spendBy = new Map(rows.map(r => [r.brand_id as string, creatorSpendOf({ crowd: crowdBy.get(r.brand_id), perVideo: estBy.get(r.brand_id)?.dollars ?? null, basis: estBy.get(r.brand_id)?.basis ?? null })]))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1080,7 +1083,7 @@ export async function POST(request: Request) {
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
-        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null }, filters)
+        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
@@ -1130,8 +1133,11 @@ export async function POST(request: Request) {
     // Highest pay: the figure per approved video (yours, members', or its
     // fixed terms) leads, then a % of sales, then brands with no pay given.
     const payOrder = (x: typeof ranked[number]) => { const d = estBy.get(x.r.brand_id)?.dollars; return d != null ? 1_000_000 + d * 100 + (x.pay.percent ?? 0) : payRank(x.pay) }
+    // Spends most on creators: the estimate, biggest first; no estimate after.
+    const spendOrder = (x: typeof ranked[number]) => spendBy.get(x.r.brand_id)?.dollars ?? -1
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
+        : sort === 'spend' ? spendOrder(b) - spendOrder(a) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
@@ -1171,6 +1177,7 @@ export async function POST(request: Request) {
           pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
+          spend: spendBy.get(r.brand_id) ?? null,
           is_new: newBy.get(r.brand_id) ?? false,
           review: results.review.get(r.brand_id) ?? null,
           statics: staticsOf(r.raw, r.about),

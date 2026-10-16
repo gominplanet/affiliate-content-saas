@@ -46,11 +46,11 @@ import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
-import { type FinderFilters, type FilterId, type DirStats, type CrowdRead } from '@/lib/trybe-finder'
+import { type FinderFilters, type FilterId, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { SellsRead } from '@/lib/trybe-sells'
 
 const PURPLE = '#7C3AED'
@@ -116,7 +116,7 @@ interface LiveBrand {
   /** The brand on Amazon, TRYBE's own numbers, and the creator's star. */
   amazon?: LiveAmazon | null; stats?: DirStats | null; starred?: boolean
   /** What a video pays (lib/trybe-pay), how crowded, new, and statics. */
-  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; is_new?: boolean; statics?: boolean | null
+  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; spend?: SpendRead | null; is_new?: boolean; statics?: boolean | null
   /** What it sells (lib/trybe-sells), with why. */
   sells?: SellsRead | null
   /** How fast it decides videos, from MVP members' results. */
@@ -129,12 +129,13 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
-type LiveSort = 'match' | 'picks' | 'pay' | 'creators' | 'fit' | 'newest'
+type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'creators' | 'fit' | 'newest'
 type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
   { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: what a video pays (your results, members\u2019 results, or its flat fee and retainer), then % of sales.' },
+  { id: 'spend', label: 'Pays creators most', says: 'Most paid to TRYBE creators a month first, estimated: its videos approved in the last 30 days times its pay per video. Brands MVP cannot estimate come after.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
@@ -1736,6 +1737,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         {sortBy !== 'picks' && <VerdictChip score={b.pick} read={b.pick_read} />}
                         <CrowdChip crowd={b.crowd} windowDays={live?.crowdDays} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
+                        <SpendChip spend={b.spend} />
                         <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />
                         <SellsChip sells={b.sells} />
