@@ -8,8 +8,9 @@
 // A failed read says so, never "no new brands".
 
 import { useEffect, useState } from 'react'
-import { Loader2, Sparkles, AlertTriangle } from 'lucide-react'
+import { Loader2, Sparkles, AlertTriangle, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
+import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { VerdictChip, CrowdChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import type { CrowdRead } from '@/lib/trybe-finder'
 import type { PickReason } from '@/lib/trybe-pick'
@@ -19,7 +20,8 @@ const AMBER = '#B45309'
 
 interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; categories?: string[] }
 
-export default function TrybeBestNew({ scoutOpens, onSeeAll }: { scoutOpens: boolean; onSeeAll?: () => void }) {
+export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutOpens: boolean; onSeeAll?: () => void; actions?: PeekActions }) {
+  const [open, setOpen] = useState<string | null>(null)
   const [list, setList] = useState<NewBrand[] | null>(null)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +64,11 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll }: { scoutOpens: boo
                 <CrowdChip crowd={b.crowd} />
                 <PayChip est={b.pay_est} payText={b.pay_text} />
                 <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
+                <button onClick={() => setOpen(open === b.brand_id ? null : b.brand_id)} aria-expanded={open === b.brand_id} className="inline-flex items-center gap-0.5 text-[12.5px] font-semibold" style={{ color: PURPLE }}>
+                  {open === b.brand_id ? 'Hide' : actions ? 'Details and message' : 'Details'} <ChevronDown size={13} className={open === b.brand_id ? 'rotate-180' : ''} />
+                </button>
                 {why && <span className="basis-full pl-6 text-[12px]" style={soft}>{why}</span>}
+                {open === b.brand_id && <div className="basis-full pl-6"><TrybeBrandPeek brandId={b.brand_id} name={b.name} actions={actions} /></div>}
               </li>
             )
           })}

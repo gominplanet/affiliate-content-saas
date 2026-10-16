@@ -931,13 +931,18 @@ export async function POST(request: Request) {
     // A brand's name, or the starred brands, are looked up directly: the
     // niche and keywords do not narrow them.
     const nameQ = typeof body.name === 'string' ? body.name.replace(/[%,()_\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : ''
-    const direct = nameQ.length >= 2 || filters.starred
+    // BRANDS BY ID (Seb, 2026-10-16: "we should be able to see more details on
+    // these brands here too"): What changed opens one brand with the same
+    // details Find brands shows, so the two pages never disagree.
+    const idsQ = Array.isArray(body.ids) ? (body.ids as unknown[]).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 60) : []
+    const direct = nameQ.length >= 2 || filters.starred || idsQ.length > 0
     const rpc = direct ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
     if (direct) {
       let q = admin.from('trybe_directory').select(COLS)
       if (filters.starred) q = q.in('brand_id', Array.from(starredIds).slice(0, 500))
+      if (idsQ.length) q = q.in('brand_id', idsQ)
       if (nameQ.length >= 2) q = q.ilike('name', `%${nameQ}%`)
       if (since) q = q.gte('last_seen_at', since)
       const { data, error: e } = filters.starred && !starredIds.size ? { data: [], error: null } : await q.limit(400)
@@ -1035,12 +1040,15 @@ export async function POST(request: Request) {
     // TRYBE gave no number for stays, after the ones that pass, and is
     // counted too, so the list is never quietly short or quietly wrong.
     const hiddenBy: Partial<Record<FilterId, number>> = {}
+    // Of those hidden, the ones hidden for having no figure at all.
+    const blankBy: Partial<Record<FilterId, number>> = {}
     const unknownBy: Partial<Record<FilterId, number>> = {}
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
+      for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
       for (const f of c.unknown) unknownBy[f] = (unknownBy[f] ?? 0) + 1
       unknownOf.set(x.r.brand_id, c.unknown.length)
@@ -1110,7 +1118,7 @@ export async function POST(request: Request) {
       sort,
       payType,
       capped: !direct && rows.length >= (rpc.error ? 800 : pool),
-      hiddenBy, unknownBy, amazonNotes,
+      hiddenBy, blankBy, unknownBy, amazonNotes,
       amazonVideos: videos.length,
       // YOUR MIX: the brands you asked, by size (lib/trybe-finder mixOf).
       mix: await (async () => {

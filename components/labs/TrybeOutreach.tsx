@@ -36,6 +36,7 @@ import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterA
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
+import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -379,7 +380,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
-    hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -838,7 +839,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}) })
         if (id !== liveReq.current) return // a newer search has started
         setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
-          hiddenBy: d.hiddenBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved })
+          hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved })
         // The saved priorities, until the creator changes them on this visit.
         if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
@@ -1140,6 +1141,28 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const soft = { color: 'var(--text-soft)' }
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50'
   const busy = !!finding || running
+  // WHAT CHANGED CAN MESSAGE TOO (Seb, 2026-10-16): the same draft and send
+  // steps as Find brands and Ready to send, handed to the brand details there.
+  // Not on the Amazon plan's preview, which only shows the details.
+  const peekActions: PeekActions | undefined = preview ? undefined : {
+    mineOf: (id) => { const b = brands.find(x => x.brand_id === id); return b ? { status: b.status, draft: b.draft } : null },
+    message: (id) => draftPicked([id]),
+    send: async (id) => {
+      const b = brands.find(x => x.brand_id === id)
+      if (!b || !b.draft) { toast.error('That message is not in Ready to send any more. Reload the page.'); return }
+      await sendOne(b)
+      const after = (await api().catch(() => null))?.brands as Brand[] | undefined
+      const now = after?.find(x => x.brand_id === id)?.status
+      if (now === 'sent') toast.success(`Sent to ${b.name}`)
+      else if (now === 'already') toast.message(`TRYBE already shows a request to ${b.name}`)
+      else if (now === 'failed') toast.error(`${b.name}: not sent. Sent shows why, and it can be sent again.`)
+      else if (now === 'sending') toast.message(`${b.name}: TRYBE did not confirm it. Check TRYBE's Pending Requests.`)
+      // Still in Ready to send: the send never started, and sendOne said why.
+    },
+    openList: (where) => go(where),
+    busy,
+    sendBlocked: access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page).' : null,
+  }
   const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.' : !remaining ? `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}` : !queue.length ? 'Nothing drafted yet.' : null
 
   const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
@@ -1335,8 +1358,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       })()}
 
       {tab === 'changes' && (changesError && !changes
-        ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} />
-        : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
+        ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} actions={peekActions} />
+        : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} actions={peekActions} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
@@ -1713,7 +1736,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button>
               </p>
             )}
-            {live && <FinderFilterNote hiddenBy={live.hiddenBy} unknownBy={live.unknownBy} />}
+            {live && <FinderFilterNote hiddenBy={live.hiddenBy} blankBy={live.blankBy} unknownBy={live.unknownBy} />}
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}

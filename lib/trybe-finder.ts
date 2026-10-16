@@ -338,12 +338,19 @@ export interface FilterRow {
 export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
- *  known (TRYBE did not say). Pure. */
-export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; unknown: FilterId[]; failed: FilterId[] } {
+ *  known (TRYBE did not say). Pure.
+ *
+ *  A MINIMUM PAY NEEDS A FIGURE (Seb, 2026-10-16: "i asked to show me brands
+ *  that pay $25+ per video.. if there is no data it should simply not show
+ *  up there"). A brand with no pay per video is hidden by "At least $X a
+ *  video", not listed after, and counted apart in `blank` so the page can say
+ *  how many had no figure rather than calling them underpaying. */
+export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; unknown: FilterId[]; failed: FilterId[]; blank: FilterId[] } {
   const unknown: FilterId[] = []
   const failed: FilterId[] = []
+  const blank: FilterId[] = []
   const judge = (id: FilterId, v: boolean | null) => { if (v === null) unknown.push(id); else if (!v) failed.push(id) }
-  if (f.minPerVideo) judge('minPerVideo', r.perVideo == null ? null : r.perVideo >= f.minPerVideo)
+  if (f.minPerVideo) { if (r.perVideo == null) { failed.push('minPerVideo'); blank.push('minPerVideo') } else judge('minPerVideo', r.perVideo >= f.minPerVideo) }
   if (f.maxCreators) judge('maxCreators', r.creators == null ? null : r.creators <= f.maxCreators)
   if (f.maxVideos) judge('maxVideos', r.stats.videosApproved == null ? null : r.stats.videosApproved <= f.maxVideos)
   if (f.paidCreators) judge('paidCreators', r.stats.paidOut != null ? r.stats.paidOut > 0 : r.earningsBucket ? true : null)
@@ -356,7 +363,7 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   // NEW is known for every brand (TRYBE's join date or MVP's first sighting).
   if (f.newOnly) judge('newOnly', !!r.isNew)
   if (f.fastReview) judge('fastReview', r.reviewDays == null ? null : r.reviewDays <= FAST_REVIEW_DAYS)
-  return { pass: !failed.length, unknown, failed }
+  return { pass: !failed.length, unknown, failed, blank }
 }
 
 export const FILTER_WORDS: Record<FilterId, string> = {

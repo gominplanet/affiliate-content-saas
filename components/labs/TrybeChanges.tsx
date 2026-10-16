@@ -9,9 +9,10 @@
 // A list MVP could not read says so, never "nothing changed".
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, AlertTriangle, RotateCcw, Sparkles } from 'lucide-react'
+import { Loader2, AlertTriangle, RotateCcw, Sparkles, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
 import TrybeBestNew from '@/components/labs/TrybeBestNew'
+import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { changeLine, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
 
 const PURPLE = '#7C3AED'
@@ -40,13 +41,16 @@ export function changesSummary(c: ChangesRead | null): string | null {
   return [yours ? `${yours} of your brands changed` : null, fresh ? `${fresh} new on TRYBE` : null, pay ? `${pay} pay change${pay === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || null
 }
 
-export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void; onSeeNew?: () => void }) {
+export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, actions }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void; onSeeNew?: () => void; actions?: PeekActions }) {
   const [data, setData] = useState<ChangesRead | null>(initial ?? null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [who, setWho] = useState<'yours' | 'all'>('all')
   const [kind, setKind] = useState<ChangeKind | 'any'>('any')
   const [limit, setLimit] = useState(60)
+  // The rows opened to show the brand's details, by row key.
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const flip = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n })
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -89,7 +93,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew }: 
 
   return (
     <div className="space-y-4">
-      <TrybeBestNew scoutOpens={scoutOpens} onSeeAll={onSeeNew} />
+      <TrybeBestNew scoutOpens={scoutOpens} onSeeAll={onSeeNew} actions={actions} />
       {/* At a glance: one tile per kind of change, a press filters the list. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {CHANGE_ORDER.filter((k) => k !== 'back').map((k) => {
@@ -129,17 +133,29 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew }: 
             <section key={g.day}>
               <p className="text-[12px] font-bold uppercase tracking-wider mb-1.5" style={soft}>{g.day}</p>
               <ul className="rounded-2xl border divide-y overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                {g.list.map((c, i) => (
-                  <li key={`${c.brand_id}-${c.kind}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5" style={{ borderColor: 'var(--border)' }}>
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TONE[c.kind] }} aria-hidden />
-                    <span className="min-w-0 flex-1">
-                      <span className="text-[13.5px] font-semibold">{c.name || 'A brand MVP no longer lists'}</span>
-                      {c.yours && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Yours</span>}
-                      <span className="block text-[12.5px]" style={{ color: c.kind === 'left' ? RED : 'var(--text-soft)' }}>{changeLine(c)}{c.categories?.length ? ` · ${c.categories.slice(0, 2).join(', ')}` : ''}</span>
-                    </span>
-                    {c.name && <TrybeLink brandId={c.brand_id} name={c.name} scout={scoutOpens} />}
+                {g.list.map((c, i) => {
+                  const k = `${c.brand_id}-${c.kind}-${i}`
+                  const isOpen = open.has(k)
+                  return (
+                  <li key={k} className="px-4 py-2.5" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TONE[c.kind] }} aria-hidden />
+                      <span className="min-w-0 flex-1">
+                        <span className="text-[13.5px] font-semibold">{c.name || 'A brand MVP no longer lists'}</span>
+                        {c.yours && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Yours</span>}
+                        <span className="block text-[12.5px]" style={{ color: c.kind === 'left' ? RED : 'var(--text-soft)' }}>{changeLine(c)}{c.categories?.length ? ` · ${c.categories.slice(0, 2).join(', ')}` : ''}</span>
+                      </span>
+                      {c.name && <TrybeLink brandId={c.brand_id} name={c.name} scout={scoutOpens} />}
+                      {c.name && (
+                        <button onClick={() => flip(k)} aria-expanded={isOpen} className="inline-flex items-center gap-0.5 text-[12.5px] font-semibold" style={{ color: PURPLE }}>
+                          {isOpen ? 'Hide' : actions && c.kind !== 'left' ? 'Details and message' : 'Details'} <ChevronDown size={13} className={isOpen ? 'rotate-180' : ''} />
+                        </button>
+                      )}
+                    </div>
+                    {isOpen && c.name && <TrybeBrandPeek brandId={c.brand_id} name={c.name} actions={actions} />}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             </section>
           ))}

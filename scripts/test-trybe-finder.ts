@@ -65,6 +65,18 @@ const c1 = filterCheck(row, f)
 check('a brand passing what is known passes, and samples TRYBE did not give is not known', c1.pass && c1.unknown.join() === 'samples' && !c1.failed.length, JSON.stringify(c1))
 const c2 = filterCheck({ ...row, perVideo: 20, creators: 400 }, f)
 check('a brand that fails a filter is hidden, with each reason', !c2.pass && c2.failed.includes('minPerVideo') && c2.failed.includes('maxCreators'))
+const c3 = filterCheck({ ...row, perVideo: null }, { minPerVideo: 25 })
+check('At least $X a video hides a brand with no pay figure, counted as blank, never listed after', !c3.pass && c3.failed.join() === 'minPerVideo' && c3.blank.join() === 'minPerVideo' && !c3.unknown.length, JSON.stringify(c3))
+check('a brand paying less is hidden but not blank', filterCheck({ ...row, perVideo: 20 }, { minPerVideo: 25 }).blank.length === 0)
+check('the page says how many had no pay figure', /with no pay figure/.test(read('components/labs/TrybeFinderControls.tsx')) && /blankBy/.test(read('app/api/labs/trybe/route.ts')))
+{
+  const peek = read('components/labs/TrybeBrandPeek.tsx'), ch = read('components/labs/TrybeChanges.tsx'), bn = read('components/labs/TrybeBestNew.tsx'), out = read('components/labs/TrybeOutreach.tsx'), rt = read('app/api/labs/trybe/route.ts')
+  check('What changed opens a brand with the Find brands details, read by id', /ids: \[id\]/.test(peek) && /idsQ\.length\) q = q\.in\('brand_id', idsQ\)/.test(rt) && /<BrandExtras /.test(peek) && /<PayChip /.test(peek))
+  check('What changed and Best new brands both open the details', /<TrybeBrandPeek /.test(ch) && /<TrybeBrandPeek /.test(bn) && /actions=\{actions\}/.test(ch))
+  check('the details write and send with the same steps as Find brands and Ready to send', /message: \(id\) => draftPicked\(\[id\]\)/.test(out) && /await sendOne\(b\)/.test(out) && (out.match(/actions=\{peekActions\}/g) || []).length === 2)
+  check('the Amazon preview shows details only, never a send', /const peekActions: PeekActions \| undefined = preview \? undefined/.test(out))
+  check('a brand TRYBE no longer lists says so instead of a blank panel', /TRYBE no longer lists/.test(peek))
+}
 check('On Amazon is a no when MVP found nothing, never unknown', filterCheck({ ...row, amazon: null }, { onAmazon: true }).failed.join() === 'onAmazon')
 check('"% plus a fee" passes only brands that pay both', payPasses(readPay('$50 per video + 10% of sales'), 'both') && !payPasses(readPay('$50 per video'), 'both'))
 

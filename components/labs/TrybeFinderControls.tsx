@@ -72,7 +72,7 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {toggle('fastReview', 'Decides fast', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
       {toggle('paidCreators', 'Has paid creators', undefined, 'TRYBE says it has paid creators.')}
       {toggle('samples', 'Sends samples')}
-      {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A % of sales alone has no dollar figure, so it is listed after.')}
+      {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
       {numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
       {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
       {(filtersOn(filters) || name) && (
@@ -83,13 +83,23 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
 }
 
 /** What the filters did, counted: hidden, and not known (listed after). */
-export function FinderFilterNote({ hiddenBy, unknownBy }: { hiddenBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>> }) {
+export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>> }) {
   const hid = Object.entries(hiddenBy || {}).filter(([, n]) => (n ?? 0) > 0) as Array<[FilterId, number]>
   const unk = Object.entries(unknownBy || {}).filter(([, n]) => (n ?? 0) > 0) as Array<[FilterId, number]>
   if (!hid.length && !unk.length) return null
+  // A pay minimum hides brands with no pay figure too: said apart, so a brand
+  // TRYBE gives no pay for never reads as one that pays too little.
+  const hidWords = ([f, n]: [FilterId, number]) => {
+    const blank = Math.min(n, blankBy?.[f] ?? 0)
+    if (f === 'minPerVideo' && blank > 0) {
+      const low = n - blank
+      return [low > 0 ? `${low.toLocaleString()} paying less` : null, `${blank.toLocaleString()} with no pay figure`].filter(Boolean).join(' and ')
+    }
+    return `${n.toLocaleString()} by ${FILTER_WORDS[f]}`
+  }
   return (
     <p className="text-[12px] mt-3" style={soft}>
-      {hid.length > 0 && <>Hidden by your filters: {hid.map(([f, n]) => `${n.toLocaleString()} by ${FILTER_WORDS[f]}`).join(', ')}. </>}
+      {hid.length > 0 && <>Hidden by your filters: {hid.map(hidWords).join(', ')}. </>}
       {unk.length > 0 && <>TRYBE&rsquo;s list does not give {unk.map(([f, n]) => `the ${FILTER_WORDS[f]} of ${n.toLocaleString()} brand${n === 1 ? '' : 's'}`).join(', ')}, so {unk.length === 1 && unk[0][1] === 1 ? 'it is' : 'they are'} listed after the ones that pass. Open a brand on TRYBE to check.</>}
     </p>
   )
@@ -364,7 +374,7 @@ export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters
   { id: 'new', label: 'New this week', says: 'New on TRYBE, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
   { id: 'spenders', label: 'Big spenders', says: 'Every brand spending on ads now, best bets first.', filters: { ...NO_FILTERS, spending: true }, sort: 'picks' },
   { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
-  { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
+  { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. A brand with no pay figure is left out. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
 ]
 const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
 export const presetOf = (f: FinderFilters, sort: string): PresetId | null => PRESETS.find((p) => p.sort === sort && sameFilters(p.filters, f))?.id ?? null
