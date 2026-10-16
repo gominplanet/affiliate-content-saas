@@ -14,6 +14,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import TrybeBestNew from '@/components/labs/TrybeBestNew'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { changeLine, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
+import { readJoinedBrandIds } from '@/lib/trybe-joined'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -21,15 +22,19 @@ const AMBER = '#B45309'
 const RED = '#DC2626'
 
 export interface ChangeRow { brand_id: string; kind: ChangeKind; before: string | null; after: string | null; at: string; name: string | null; pay: string | null; categories: string[]; yours: boolean }
-export interface ChangesRead { changes: ChangeRow[]; lastCollectedAt: string | null; days: number }
+export interface ChangesRead { changes: ChangeRow[]; lastCollectedAt: string | null; days: number
+  /** Brands you joined that were wrongly marked as left, put right on this read. */
+  healed?: number }
 
 const TONE: Record<ChangeKind, string> = { new: PURPLE, pay: GREEN, tier: GREEN, ads: GREEN, top100: GREEN, back: PURPLE, left: RED }
 
-export async function fetchChanges(days = 7): Promise<ChangesRead> {
-  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'changes', days }), signal: AbortSignal.timeout(45_000) })
+export async function fetchChanges(days = 7, scoutOpens = false): Promise<ChangesRead> {
+  // Your joined brands, read live, clear any false "left" before the list is read.
+  const joined = scoutOpens ? await readJoinedBrandIds() : null
+  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'changes', days, ...(joined ? { joined } : {}) }), signal: AbortSignal.timeout(45_000) })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
-  return { changes: (d.changes || []) as ChangeRow[], lastCollectedAt: d.lastCollectedAt ?? null, days: d.days ?? days }
+  return { changes: (d.changes || []) as ChangeRow[], lastCollectedAt: d.lastCollectedAt ?? null, days: d.days ?? days, healed: Number(d.healed) || 0 }
 }
 
 /** The one-line summary for the top of the page. */
@@ -54,10 +59,10 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
-    try { const c = await fetchChanges(7); setData(c); onRead?.(c) }
+    try { const c = await fetchChanges(7, scoutOpens); setData(c); onRead?.(c) }
     catch (e) { setError(e instanceof Error ? e.message : 'MVP could not read what changed.') }
     finally { setLoading(false) }
-  }, [onRead])
+  }, [onRead, scoutOpens])
   useEffect(() => { if (!initial) void load() }, [initial, load])
 
   const counts = useMemo(() => {
@@ -109,6 +114,11 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
         })}
       </div>
 
+      {(data.healed ?? 0) > 0 && (
+        <p className="text-[12.5px] rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'rgba(22,163,74,0.06)' }}>
+          Put right: {data.healed} brand{data.healed === 1 ? '' : 's'} you joined {data.healed === 1 ? 'was' : 'were'} listed here as left TRYBE. TRYBE&rsquo;s Discover list leaves out the brands you already joined, which MVP had read as leaving. They are on TRYBE, and no longer shown as left.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => setWho('all')} className={chip(who === 'all')} style={chipStyle(who === 'all')}>All of TRYBE</button>
         <button onClick={() => setWho('yours')} className={chip(who === 'yours')} style={chipStyle(who === 'yours')}>Your brands ({yoursCount})</button>

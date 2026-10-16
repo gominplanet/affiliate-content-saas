@@ -36,6 +36,7 @@ import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterA
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
+import { readJoinedBrandIds } from '@/lib/trybe-joined'
 import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
@@ -331,7 +332,6 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // "Your week" line and the What changed tab.
   const [changes, setChanges] = useState<ChangesRead | null>(null)
   const [changesError, setChangesError] = useState<string | null>(null)
-  useEffect(() => { if (preview) return; fetchChanges(7).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The brand list the Inbox matches chats against (id, name, website).
   const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
@@ -470,6 +470,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.
   const canMyBrands = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)
+  // What changed, read ahead. Read again once SCOUT can read your joined
+  // brands, so any brand you joined wrongly listed as left is put right first.
+  useEffect(() => { if (preview || access === 'checking') return; fetchChanges(7, canMyBrands).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [access, canMyBrands]) // eslint-disable-line react-hooks/exhaustive-deps
   const myBrandsUpdate = access === 'granted' && scoutVersion && !canMyBrands
     ? `Your SCOUT is ${scoutVersion}. My brands needs SCOUT ${SCOUT_TRYBE_MYBRANDS_MIN_VERSION} or newer: update it from the Chrome Web Store (or remove it and add it again), then reload this page.`
     : null
@@ -798,6 +801,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         let saved = 0, withSite = 0
         let keys: string[] = []
         const STEP = 250
+        // YOUR JOINED BRANDS (Seb, 2026-10-16): TRYBE's Discover list leaves
+        // them out, so MVP is told them, or nothing is marked as left.
+        const joinedIds = canMyBrands ? await readJoinedBrandIds() : null
+        if (joinedIds == null) notes.push('SCOUT could not read the brands you joined on TRYBE, so this collection marks no brand as left TRYBE.')
         for (let i = 0; i < items.length; i += STEP) {
           setFinding({ stage: 'Saving the TRYBE brands to MVP', done: i, total: items.length })
           const lastChunk = i + STEP >= items.length
@@ -805,7 +812,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             action: 'directory', items: items.slice(i, i + STEP),
             ...(i === 0 && h.categories ? { categories: h.categories } : {}),
             // Only a whole collection lets MVP wait a day before the next.
-            ...(lastChunk ? { collected: { complete: h.complete === true, pages: h.pages, totalPages: h.totalPages } } : {}),
+            ...(lastChunk ? { collected: { complete: h.complete === true, pages: h.pages, totalPages: h.totalPages }, joined: joinedIds == null ? { read: false } : { read: true, ids: joinedIds } } : {}),
           })
           saved += d.saved || 0; withSite += d.withWebsite || 0
           if (!keys.length && Array.isArray(d.keys)) keys = d.keys

@@ -141,6 +141,17 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
 // Wiring
 const route = read('app/api/labs/trybe/route.ts')
 check('changes are logged where MVP\'s copy is written: directory, tiers, left, Meta ads, Top 100', /directoryChanges\(rows, prev, !collectedBefore\)/.test(route) && /kind: 'tier'/.test(route) && /kind: 'left'/.test(route) && /adsChange\(was, n\)/.test(route) && /kind: 'top100'/.test(route) && /await logChanges\(admin, changes\)/.test(route))
+// YOUR JOINED BRANDS ARE NOT "LEFT" (Seb, 2026-10-16: "NOBL, Ridge, NeuroGum
+// ... they're all still on TRYBE"). TRYBE's Discover list leaves them out.
+{
+  const out = read('components/labs/TrybeOutreach.tsx'), ch = read('components/labs/TrybeChanges.tsx'), jn = read('lib/trybe-joined.ts')
+  check('a collection sends the collector\'s live joined brands, or says it could not read them', /const joinedIds = canMyBrands \? await readJoinedBrandIds\(\) : null/.test(out) && /joined: joinedIds == null \? \{ read: false \} : \{ read: true, ids: joinedIds \}/.test(out) && /brands\/stats\?period=all/.test(jn))
+  check('joined brands are stamped seen before anything is marked left', /if \(joinedRead\) await healJoined\(admin, joined\.ids, now\)[\s\S]{0,800}if \(c\.complete === true && hasLeft && joinedRead\)/.test(route))
+  check('a collection that could not read joined brands marks nothing as left', /c\.complete === true && hasLeft && joinedRead/.test(route) && /marks no brand as left TRYBE/.test(out))
+  check('healing clears the left mark and the false left rows, and logs no "back"', /update\(\{ last_seen_at: now, left_at: null \}\)\.in\('brand_id', part\)/.test(route) && /from\('trybe_directory_changes'\)\.delete\(\)\.eq\('kind', 'left'\)\.in\('brand_id', part\)/.test(route))
+  check('What changed reads your joined brands first and says what it put right', /const joined = scoutOpens \? await readJoinedBrandIds\(\) : null/.test(ch) && /const healed = await healJoined\(admin, body\.joined, now\)/.test(route) && /Put right: \{data\.healed\}/.test(ch))
+  check('a joined read that failed is never taken as "joined nothing"', /if \(!r\.ok \|\| r\.json == null\) return null/.test(jn))
+}
 check('a database without migration 428 still saves the copy', /Without migration 428 there is no left_at/.test(route) && /the copy is saved either way/.test(route))
 check('a member who turned it off keeps nothing, and turning it off deletes what was kept', /if \(settings\.poolOptOut\) return NextResponse\.json\(\{ ok: true, kept: 0, optedOut: true \}\)/.test(route) && /from\('trybe_member_stats'\)\.delete\(\)\.eq\('user_id', ownerId\)/.test(route))
 check('the combined numbers come only from poolBrands', /const pooled = poolBrands\(/.test(route) && !/from\('trybe_member_stats'\)\.select\('\*'\)/.test(route))

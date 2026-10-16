@@ -224,6 +224,28 @@ async function listedSince(admin: Db): Promise<string | null> {
   } catch { return null }
 }
 
+/** YOUR JOINED BRANDS ARE STILL ON TRYBE (Seb, 2026-10-16: "MVP is showing
+ *  me that these brands have left ... NOBL, Ridge, NeuroGum, Innovation
+ *  Laboratories, they're all still on TRYBE"). SCOUT collects the creator's
+ *  own Discover list, and TRYBE leaves out of it the brands they already
+ *  joined, so every brand the collector worked with read as "left". A brand
+ *  in a creator's live joined list (TRYBE's brands/stats, read by SCOUT) is
+ *  on TRYBE: it is stamped as seen, any left mark comes off, and the false
+ *  "left" rows go, with no "back" row (it never went). Read from TRYBE, never
+ *  guessed: ids that are not in MVP's copy are ignored. */
+async function healJoined(admin: Db, raw: unknown, now: string): Promise<number> {
+  const ids = Array.isArray(raw) ? Array.from(new Set((raw as unknown[]).map(v => String(v || '').slice(0, 80)).filter(Boolean))).slice(0, 1000) : []
+  if (!ids.length) return 0
+  let healed = 0
+  for (let i = 0; i < ids.length; i += 200) {
+    const part = ids.slice(i, i + 200)
+    const { data } = await admin.from('trybe_directory').update({ last_seen_at: now, left_at: null }).in('brand_id', part).select('brand_id')
+    healed += (data || []).length
+    await admin.from('trybe_directory_changes').delete().eq('kind', 'left').in('brand_id', part)
+  }
+  return healed
+}
+
 /** How complete MVP's copy of TRYBE is. Null before migration 417. */
 async function directoryStats(admin: Db) {
   try {
@@ -538,10 +560,17 @@ export async function POST(request: Request) {
     if (body.collected && typeof body.collected === 'object' && (tier === 'admin' || ((body.collected as { complete?: unknown }).complete === true && Number((body.collected as { pages?: unknown }).pages) >= 40))) {
       const c = body.collected as { complete?: unknown; pages?: unknown; totalPages?: unknown }
       await admin.from('trybe_directory_meta').upsert({ key: 'collected', value: { at: now, complete: c.complete === true, pages: Number(c.pages) || null, totalPages: Number(c.totalPages) || null }, updated_at: now })
+      // The collector's joined brands are on TRYBE though their Discover list
+      // leaves them out (healJoined), so they are stamped seen first.
+      const joined = (body.joined && typeof body.joined === 'object' ? body.joined : {}) as { read?: unknown; ids?: unknown }
+      const joinedRead = joined.read === true
+      if (joinedRead) await healJoined(admin, joined.ids, now)
       // LEFT THE LIST: a WHOLE collection that did not see a brand in 12
       // hours means TRYBE no longer lists it. Marked once; it comes back as
-      // "back" when a collection sees it again.
-      if (c.complete === true && hasLeft) {
+      // "back" when a collection sees it again. ONLY WHEN MVP COULD CHECK: a
+      // collection that could not read the collector's joined brands marks
+      // nothing as left, since its Discover list leaves those out.
+      if (c.complete === true && hasLeft && joinedRead) {
         const cutoff = new Date(Date.now() - 12 * 3600_000).toISOString()
         const { data: gone } = await admin.from('trybe_directory').update({ left_at: now }).lt('last_seen_at', cutoff).is('left_at', null).select('brand_id')
         for (const g of (gone || []) as Array<{ brand_id: string }>) changes.push({ brand_id: g.brand_id, kind: 'left', before: null, after: null })
@@ -561,6 +590,8 @@ export async function POST(request: Request) {
     // first, each with the brand's name and whether it is one of yours.
     const days = Math.max(1, Math.min(14, Number(body.days) || 7))
     const since = new Date(Date.now() - days * 86_400_000).toISOString()
+    // The viewer's live joined brands clear any false "left" first (healJoined).
+    const healed = await healJoined(admin, body.joined, now).catch(() => 0)
     const { data: ch, error: chErr } = await admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).limit(3000)
     if (chErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(chErr.message) ? setupWords(tier, 'What changed needs migration 428 in Supabase first.') : chErr.message, needsMigration: /does not exist|schema cache/i.test(chErr.message) }, { status: 500 })
     const list = (ch || []) as Array<{ brand_id: string; kind: string; before: string | null; after: string | null; at: string }>
@@ -576,7 +607,7 @@ export async function POST(request: Request) {
     const yours = new Set([...((mine || []) as Array<{ brand_id: string }>), ...((sam || []) as Array<{ brand_id: string }>)].map(r => r.brand_id))
     const { data: col } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
     return NextResponse.json({
-      ok: true, days,
+      ok: true, days, healed,
       lastCollectedAt: (col?.value as { at?: string; complete?: boolean } | undefined)?.complete ? (col!.value as { at: string }).at : null,
       changes: list.map(c => ({ ...c, name: names.get(c.brand_id)?.name || null, website: names.get(c.brand_id)?.website || null, pay: names.get(c.brand_id)?.pay_text || null, categories: names.get(c.brand_id)?.categories || [], yours: yours.has(c.brand_id) })),
     })
