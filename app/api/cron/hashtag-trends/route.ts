@@ -7,14 +7,15 @@
 // shared hashtag_trends table (migration 434) for the hashtag engine. A tag
 // YouTube did not answer for is left as it was, never written as zero.
 //
-// TikTok and Instagram are read by SCOUT in a creator's Chrome (their pages
-// need a signed-in browser), through /api/hashtags/trends.
+// TikTok first: Creative Center's trending lists, every industry, this week
+// and this month (lib/hashtag-trends readTikTokTrends). Instagram's counts
+// need a signed-in browser, so SCOUT reads those through /api/hashtags/trends.
 //
 // Auth: Vercel cron carries `Authorization: Bearer ${CRON_SECRET}`.
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { allCategoryTags } from '@/lib/hashtag-map'
-import { readYouTubeHashtag, saveTrends, trendTag, type TrendRow } from '@/lib/hashtag-trends'
+import { readTikTokTrends, readYouTubeHashtag, saveTrends, trendTag, type TrendRow } from '@/lib/hashtag-trends'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,6 +33,12 @@ export async function GET(request: Request) {
   const started = Date.now()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
+
+  // TikTok Creative Center: about 44 small lists, a few seconds.
+  const tt = await readTikTokTrends('US')
+  const ttSaved = tt.rows.length ? await saveTrends(admin, tt.rows) : { saved: 0, error: null }
+  if (ttSaved.error && /does not exist|schema cache/i.test(ttSaved.error)) return NextResponse.json({ ok: false, error: 'hashtag_trends is missing: run migration 434.' })
+  const tiktok = { asked: tt.asked, answered: tt.answered, read: tt.rows.length, saved: ttSaved.saved, error: tt.error || ttSaved.error }
 
   // What creators posted lately leads, then the category map.
   const since = new Date(Date.now() - 14 * 86_400_000).toISOString()
@@ -55,5 +62,5 @@ export async function GET(request: Request) {
     for (const g of got) { if (g) rows.push(g); else unanswered++ }
   }
   const { saved, error } = await saveTrends(admin, rows)
-  return NextResponse.json({ ok: !error, checked: todo.length, read: rows.length, saved, unanswered, error })
+  return NextResponse.json({ ok: !error && !tiktok.error, tiktok, youtube: { checked: todo.length, read: rows.length, saved, unanswered, error } })
 }

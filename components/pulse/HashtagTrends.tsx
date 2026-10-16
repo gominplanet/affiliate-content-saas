@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Flame, Loader2, RefreshCw, Check, AlertTriangle } from 'lucide-react'
-import { requestHashtagAccess, requestTikTokTrends, requestInstagramTagCounts } from '@/lib/extension-frame'
+import { requestHashtagAccess, requestInstagramTagCounts } from '@/lib/extension-frame'
 
 /**
  * LIVE HASHTAG DATA (Labs). Where the hashtag engine's trend readings come
  * from, how fresh each one is, and what was actually read: TikTok Creative
- * Center's list and Instagram's tag counts (read by SCOUT in this Chrome) and
- * YouTube's hashtag pages (read by MVP every night). A read that found nothing
- * says so in words; it never looks like a read that worked.
+ * Center's lists and YouTube's hashtag pages (read by MVP's server every
+ * night, or now on a press) and Instagram's tag counts (read by SCOUT in this
+ * Chrome, since Instagram wants a signed-in browser). A read that found
+ * nothing says so in words; it never looks like a read that worked.
  */
 
 interface Source { platform: string; source: string; label: string; by: string; tags: number | null; lastAt: string | null; missing: boolean }
@@ -38,13 +39,6 @@ function short(n: number | null): string {
   return n >= 1e9 ? `${(n / 1e9).toFixed(1).replace(/\.0$/, '')}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n)
 }
 
-const TIKTOK_WHY: Record<string, string> = {
-  'no-access': 'SCOUT is not allowed on TikTok Creative Center yet. Press Allow first.',
-  'nothing-read': 'Creative Center opened but showed no hashtags. Open it once yourself in this Chrome (sign in if it asks), then try again.',
-  blocked: 'TikTok asked for a check before showing the list. Open Creative Center once yourself, then try again.',
-  busy: 'SCOUT is already reading hashtags. Try again in a minute.',
-  timeout: 'SCOUT took too long. Nothing was saved; try again.',
-}
 const IG_WHY: Record<string, string> = {
   'no-access': 'SCOUT is not allowed on Instagram yet. Press Allow first.',
   'not-signed-in': 'Instagram is not signed in in this Chrome. Sign in at instagram.com, then try again.',
@@ -85,16 +79,14 @@ export default function HashtagTrends() {
   }
 
   const readTikTok = useCallback(async () => {
-    setBusy('tiktok'); setSaid({ tone: 'info', text: 'SCOUT is reading TikTok Creative Center in its own window...' })
+    setBusy('tiktok'); setSaid({ tone: 'info', text: 'MVP is reading TikTok Creative Center, industry by industry...' })
     try {
-      const res = await requestTikTokTrends('US', 7)
-      if (!res.ok) { setSaid({ tone: 'bad', text: TIKTOK_WHY[res.error || ''] || `SCOUT could not read Creative Center (${res.error || 'no answer'}).` }); return }
-      const r = await fetch('/api/hashtags/trends', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tiktok', bodies: res.bodies || [], rows: res.rows || [], country: res.country || 'US' }) })
-      const j = await r.json().catch(() => ({})) as { ok?: boolean; saved?: number; read?: number; error?: string }
-      if (!j.ok) { setSaid({ tone: 'bad', text: j.error || 'MVP could not save what SCOUT read.' }); return }
-      setSaid({ tone: 'ok', text: `Read ${j.read} trending hashtags from Creative Center${res.rows?.length && !res.bodies?.length ? ' (off the page itself)' : ''}. Saved ${j.saved}.` })
+      const r = await fetch('/api/hashtags/trends', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tiktok', country: 'US' }) })
+      const j = await r.json().catch(() => ({})) as { ok?: boolean; saved?: number; read?: number; asked?: number; answered?: number; error?: string }
+      if (!j.ok) { setSaid({ tone: 'bad', text: j.error || `MVP could not read Creative Center (${r.status}).` }); return }
+      setSaid({ tone: 'ok', text: `Read ${j.read} trending hashtags from ${j.answered} of ${j.asked} Creative Center lists (every industry, this week and this month). Saved ${j.saved}.` })
       await load()
-    } finally { setBusy(null) }
+    } catch { setSaid({ tone: 'bad', text: 'MVP did not answer. Nothing was saved; try again.' }) } finally { setBusy(null) }
   }, [load])
 
   const readInstagram = useCallback(async (tags: string[]) => {
@@ -114,16 +106,16 @@ export default function HashtagTrends() {
     } finally { setBusy(null) }
   }, [load])
 
-  // KEPT FRESH WITHOUT A PRESS: once a session, when SCOUT is allowed and
-  // TikTok's list is more than two days old, read it again on its own.
+  // KEPT FRESH WITHOUT A PRESS: MVP reads TikTok every night; if that has
+  // not happened for two days, the card reads it once a session on its own.
   useEffect(() => {
-    if (autoTried.current || access !== 'granted' || !info?.allowed || busy) return
+    if (autoTried.current || !info?.allowed || busy) return
     const tt = info.sources.find((s) => s.source === 'tiktok_cc')
     if (!tt || tt.missing || (tt.lastAt && Date.now() - new Date(tt.lastAt).getTime() < STALE_MS)) return
     autoTried.current = true
     try { if (sessionStorage.getItem(AUTO_KEY)) return; sessionStorage.setItem(AUTO_KEY, '1') } catch { /* read anyway */ }
     void readTikTok()
-  }, [access, info, busy, readTikTok])
+  }, [info, busy, readTikTok])
 
   if (!info || !info.allowed) return null
   const missing = info.sources.some((s) => s.missing)
@@ -153,22 +145,22 @@ export default function HashtagTrends() {
           ))}
         </div>
 
-        {access !== 'granted' ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={allow} disabled={busy !== null || access === 'checking'} className="inline-flex items-center gap-1.5 rounded-lg bg-[#7C3AED] px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-60">
-              {busy === 'allow' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Allow SCOUT to read hashtags
-            </button>
-            <span className="text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">{access === 'no-scout' ? 'SCOUT is not installed in this Chrome.' : access === 'old' ? 'Needs SCOUT 1.49.0.' : access === 'checking' ? 'Checking SCOUT...' : 'Chrome asks once. Reading only: nothing is posted, liked or followed.'}</span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void readTikTok()} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-60" style={{ borderColor: 'var(--border)' }}>
-              {busy === 'tiktok' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Read TikTok trends
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void readTikTok()} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-60" style={{ borderColor: 'var(--border)' }}>
+            {busy === 'tiktok' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Read TikTok trends now
+          </button>
+          {access === 'granted' ? (
             <button type="button" onClick={() => void readInstagram(info.instagramNext)} disabled={busy !== null || !info.instagramNext.length} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-60" style={{ borderColor: 'var(--border)' }}>
               {busy === 'instagram' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Check {info.instagramNext.length || ''} tags on Instagram
             </button>
-          </div>
+          ) : (
+            <button type="button" onClick={allow} disabled={busy !== null || access === 'checking' || access === 'no-scout'} className="inline-flex items-center gap-1.5 rounded-lg bg-[#7C3AED] px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-60">
+              {busy === 'allow' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Allow SCOUT to read Instagram counts
+            </button>
+          )}
+        </div>
+        {access !== 'granted' && (
+          <p className="text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">{access === 'no-scout' ? 'Instagram counts need SCOUT in this Chrome.' : access === 'old' ? 'Instagram counts need SCOUT 1.49.0.' : access === 'checking' ? 'Checking SCOUT...' : 'Instagram shows tag counts only to a signed-in browser, so SCOUT reads them in yours. Chrome asks once. Reading only: nothing is posted, liked or followed.'}</p>
         )}
 
         {said && (

@@ -5,8 +5,12 @@
 // a great idea. We could do the same thing with YouTube. We could do the same
 // thing with Instagram as well").
 //
-//   TikTok: Creative Center's trending hashtags, read by SCOUT in the
-//     creator's Chrome (it has no API), rank and post counts as TikTok shows.
+//   TikTok: Creative Center's trending hashtags, read by MVP's server every
+//     night (cron/hashtag-trends) from the list TikTok's own page asks for,
+//     industry by industry: signed out, TikTok gives the top 3 of each, so 21
+//     industries and two periods make a list about products, not just the
+//     day's memes. (Seb, 2026-10-16: SCOUT's read hit Chrome's error page;
+//     Creative Center had moved to /creative/creativeCenter/trends.)
 //   YouTube: each tag's own hashtag page ("2M videos • 505K channels"), read
 //     by MVP's server (cron/hashtag-trends), and YouTube's search suggestions.
 //   Instagram: each tag's post count, asked of Instagram by SCOUT from the
@@ -67,14 +71,82 @@ export function parseTikTokCC(bodies: unknown[], country = 'US'): TrendRow[] {
       if (cc) region = cc[1].toUpperCase()
     }
     const o = b && typeof b === 'object' ? b as Record<string, any> : {} // eslint-disable-line @typescript-eslint/no-explicit-any
-    const list = Array.isArray(o?.data?.list) ? o.data.list : Array.isArray(o?.list) ? o.list : Array.isArray(o?.rows) ? o.rows : Array.isArray(b) ? b : []
+    const list = Array.isArray(o?.data?.list) ? o.data.list : Array.isArray(o?.items) ? o.items : Array.isArray(o?.list) ? o.list : Array.isArray(o?.rows) ? o.rows : Array.isArray(b) ? b : []
     for (const it of list as Array<Record<string, any>>) { // eslint-disable-line @typescript-eslint/no-explicit-any
       if (!it || typeof it !== 'object' || it.is_promoted === true || it.isPromoted === true) continue
       const itRegion = typeof it.country_info?.id === 'string' && /^[A-Z]{2}$/i.test(it.country_info.id) ? it.country_info.id.toUpperCase() : region
-      add(it.hashtag_name ?? it.hashtagName ?? it.name ?? it.tag, it.rank ?? it.position, it.publish_cnt ?? it.publishCnt ?? it.posts, it.video_views ?? it.videoViews ?? it.views, it.industry_info?.value ?? it.industry ?? null, itRegion)
+      add(it.hashtag_name ?? it.hashtagName ?? it.name ?? it.tag, it.rank ?? it.rankIndex ?? it.position, it.publish_cnt ?? it.publishCnt ?? it.posts, it.video_views ?? it.videoViews ?? it.vv ?? it.views, it.industry_info?.value ?? it.industry ?? null, itRegion)
     }
   }
   return Array.from(out.values()).slice(0, 500)
+}
+
+/** Creative Center's industries, as TikTok labels them. */
+export const TIKTOK_INDUSTRIES: Record<string, string> = {
+  '10000000000': 'Education', '11000000000': 'Vehicle & Transportation', '12000000000': 'Baby, Kids & Maternity',
+  '13000000000': 'Financial Services', '14000000000': 'Beauty & Personal Care', '15000000000': 'Tech & Electronics',
+  '16000000000': 'Appliances', '17000000000': 'Travel', '18000000000': 'Household Products', '19000000000': 'Pets',
+  '20000000000': 'Apps', '21000000000': 'Home Improvement', '22000000000': 'Apparel & Accessories',
+  '23000000000': 'News & Entertainment', '24000000000': 'Business Services', '25000000000': 'Games',
+  '26000000000': 'Life Services', '27000000000': 'Food & Beverage', '28000000000': 'Sports & Outdoor',
+  '29000000000': 'Health', '30000000000': 'E-Commerce',
+}
+export const TIKTOK_LIST_URL = 'https://ads.tiktok.com/CreativeOne/KnowledgeAPI/GetHashtagList'
+
+/** One Creative Center list, as TikTok answered it: { items: [{ hashtagName,
+ *  rankIndex, publishCnt, vv, industryIDs }] }. The rank is within this list
+ *  (this industry, this period), and the label says so. */
+export function parseTikTokList(json: unknown, ctx: { country: string; period: number; industry: string | null }): TrendRow[] {
+  const o = json && typeof json === 'object' ? json as { items?: unknown } : {}
+  const when = ctx.period <= 7 ? 'this week' : ctx.period <= 30 ? 'this month' : `over ${ctx.period} days`
+  const where = ctx.industry && TIKTOK_INDUSTRIES[ctx.industry] ? ` in ${TIKTOK_INDUSTRIES[ctx.industry]}` : ''
+  const out: TrendRow[] = []
+  for (const it of Array.isArray(o.items) ? o.items as Array<Record<string, unknown>> : []) {
+    const tag = trendTag(it?.hashtagName)
+    if (!tag || it?.isPromoted === true) continue
+    const rank = Number(it.rankIndex)
+    out.push({
+      platform: 'tiktok', tag, source: 'tiktok_cc', region: ctx.country,
+      rank: Number.isFinite(rank) && rank > 0 ? Math.round(rank) : null,
+      posts: compactNumber(it.publishCnt), views: compactNumber(it.vv),
+      label: `${Number.isFinite(rank) && rank > 0 ? `#${Math.round(rank)} ` : ''}trending on TikTok${where} ${when}`,
+    })
+  }
+  return out
+}
+
+/** Every Creative Center list MVP reads: the overall list and each industry,
+ *  this week and this month. Each tag is kept once, at its best showing
+ *  (an industry list over the overall one, this week over this month).
+ *  `answered` counts the lists TikTok actually answered, so a night TikTok
+ *  refused reads as refused, never as a quiet night. */
+export async function readTikTokTrends(country = 'US', opts: { atOnce?: number; fetcher?: typeof fetch } = {}): Promise<{ rows: TrendRow[]; asked: number; answered: number; error: string | null }> {
+  const go = opts.fetcher || fetch
+  const cc = /^[A-Z]{2}$/.test(country) ? country : 'US'
+  const asks: Array<{ period: number; industry: string | null }> = []
+  for (const period of [7, 30]) for (const industry of [null, ...Object.keys(TIKTOK_INDUSTRIES)]) asks.push({ period, industry })
+  const best = new Map<string, { row: TrendRow; score: number }>()
+  let answered = 0
+  let error: string | null = null
+  const atOnce = Math.max(1, opts.atOnce ?? 4)
+  for (let i = 0; i < asks.length; i += atOnce) {
+    await Promise.all(asks.slice(i, i + atOnce).map(async (a) => {
+      try {
+        const body: Record<string, unknown> = { timeRange: a.period, countryCode: cc, page: 1, limit: 20 }
+        if (a.industry) body.industryID = Number(a.industry)
+        const r = await go(TIKTOK_LIST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Origin: 'https://ads.tiktok.com', Referer: 'https://ads.tiktok.com/creative/creativeCenter/trends/hashtag' }, body: JSON.stringify(body), signal: AbortSignal.timeout(12_000) })
+        const j = await r.json().catch(() => null) as { items?: unknown; code?: string; message?: string } | null
+        if (!r.ok || !j || !Array.isArray(j.items)) { error = error || `TikTok answered ${r.status}${j?.message ? `: ${String(j.message).slice(0, 120)}` : ''}`; return }
+        answered++
+        for (const row of parseTikTokList(j, { country: cc, ...a })) {
+          const score = (a.industry ? 0 : 10) + (a.period === 7 ? 0 : 5) + (row.rank ?? 9)
+          const had = best.get(row.tag)
+          if (!had || score < had.score) best.set(row.tag, { row, score })
+        }
+      } catch (e) { error = error || (e instanceof Error ? e.message : 'TikTok did not answer') }
+    }))
+  }
+  return { rows: Array.from(best.values()).map((b) => b.row), asked: asks.length, answered, error: answered ? null : error || 'TikTok answered none of the lists' }
 }
 
 /** A YouTube hashtag page's counts: "2M videos • 505K channels". */

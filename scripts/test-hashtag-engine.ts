@@ -13,7 +13,8 @@
 // through the engine, every post goes through the safety net, every platform
 // is tracked, and SCOUT reads trends without ever posting.
 import { readFileSync, existsSync } from 'node:fs'
-import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS } from '../lib/hashtag-engine'
+import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords } from '../lib/hashtag-engine'
+import { categoriesFor } from '../lib/hashtag-map'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -49,6 +50,20 @@ check('Threads gets exactly one, about the product', th.tags.length === 1 && /ai
 check('every pick says where it came from', [...ig.tags, ...tt.tags, ...th.tags].every((t) => t.why.length > 3 && SOURCE_WORDS[t.source]))
 const lamp = pickHashtags({ platform: 'instagram', text: 'Dimmable LED desk lamp with USB charging port for home office', brand: 'TaoTronics' })
 check('a desk lamp gets lighting or office tags, not kitchen ones', lamp.tags.length >= 3 && !lamp.tags.some((t) => /kitchen|airfryer|cook/.test(t.tag)), lamp.tags)
+
+// ── A trending tag must be about THIS product (live TikTok lists, 2026-10-16) ──
+const vacWords = contentWords('Shark cordless vacuum with self-empty base, pet hair pickup')
+check('#cordlessvacuum is about a cordless vacuum', madeOfContent('#cordlessvacuum', vacWords))
+check('#cordlessblower is not, though it shares "cordless"', !madeOfContent('#cordlessblower', vacWords))
+check('an add-on keeps it about the product (#airfryerrecipes)', madeOfContent('#airfryerrecipes', contentWords(air.text)))
+check('an add-on alone is about nothing (#recipes)', !madeOfContent('#recipes', contentWords(air.text)) && !madeOfContent('#tipshacks', contentWords(air.text)))
+check('#yellowteeth is about strips for yellow teeth', madeOfContent('#yellowteeth', contentWords('Crest whitening strips for yellow teeth')))
+const ttLive = [{ tag: '#cordlessvacuum', source: 'tiktok_cc', rank: 3 }, { tag: '#cordlessblower', source: 'tiktok_cc', rank: 2 }, { tag: '#productreview', source: 'tiktok_cc', rank: 1 }]
+const vac = pickHashtags({ platform: 'tiktok', text: 'Shark cordless vacuum with self-empty base, pet hair pickup', trends: ttLive })
+check('a vacuum gets the vacuum trend, not the blower one or a generic one', vac.tags.some((t) => t.tag === '#cordlessvacuum' && t.source === 'trend') && !vac.tags.some((t) => t.tag === '#cordlessblower' || t.tag === '#productreview'), vac.tags)
+check('"pet hair" on a vacuum is not hair care', !categoriesFor('Shark cordless vacuum with self-empty base, pet hair pickup', 3).some((c) => c.key === 'haircare') && !vac.tags.some((t) => /hair/.test(t.tag)), vac.tags)
+check('an electric blanket is bedding, not single words', categoriesFor('Electric blanket heated throw', 1)[0]?.key === 'bedding' && pickHashtags({ platform: 'tiktok', text: 'Electric blanket heated throw, cosy nights' }).tags.every((t) => t.source !== 'keyword'))
+check('whitening strips are oral care', categoriesFor('Crest whitening strips for yellow teeth', 1)[0]?.key === 'oral-care')
 
 // ── What the platforms themselves say ────────────────────────────────────────
 check('standing: Instagram under 2K posts is a dead end, over 300M a crowd', trendStanding({ source: 'instagram', posts: 1500 }) === 'dead' && trendStanding({ source: 'instagram', posts: 4e8 }) === 'crowd' && trendStanding({ source: 'instagram', posts: 4e6 }) === 'active')

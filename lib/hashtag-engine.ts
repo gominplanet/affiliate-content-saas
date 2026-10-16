@@ -136,6 +136,34 @@ export function contentWords(text: string): Set<string> {
 
 /** Is this tag about this content? A word of the content inside the tag, or
  *  the tag inside a word of the content. Short words only match whole. */
+/** Words a hashtag adds to a product without changing what it is about
+ *  (#airfryerrecipes, #cleaninghacks, #skincareroutine). */
+const ADD_ON = new Set(['recipe', 'recipes', 'hack', 'hacks', 'tip', 'tips', 'tok', 'review', 'reviews', 'finds', 'ideas', 'idea', 'routine', 'essentials', 'lover', 'lovers', 'life', 'tutorial', 'tricks', 'tested', 'test', 'setup', 'goals', 'care', 'day', 'daily', 'time', 'season', 'must', 'haves', 'unboxing', 'tiktok', 'check', 'challenge'])
+
+/** A TRENDING tag is about this content only when it is made of the
+ *  content's own words, with at most add-ons like "recipes" or "hacks", and
+ *  at least one real word of the content in it. #cordlessvacuum is about a
+ *  cordless vacuum; #cordlessblower is not, though it shares "cordless". */
+export function madeOfContent(tag: string, words: Set<string>): boolean {
+  const body = tag.replace(/^#/, '').toLowerCase()
+  if (!body || words.has(body)) return !!body
+  // Fewest pieces first; reach[i] = the tag up to i is covered, and whether a real content word is in it.
+  const reach: Array<{ ok: boolean; real: boolean }> = Array.from({ length: body.length + 1 }, () => ({ ok: false, real: false }))
+  reach[0] = { ok: true, real: false }
+  for (let i = 0; i < body.length; i++) {
+    if (!reach[i].ok) continue
+    for (let j = i + 3; j <= body.length; j++) {
+      const piece = body.slice(i, j)
+      const real = piece.length >= 4 && words.has(piece)
+      if (real || ADD_ON.has(piece) || (piece.length >= 3 && words.has(piece))) {
+        const next = { ok: true, real: reach[i].real || real }
+        if (!reach[j].ok || (next.real && !reach[j].real)) reach[j] = next
+      }
+    }
+  }
+  return reach[body.length].ok && reach[body.length].real
+}
+
 export function aboutContent(tag: string, words: Set<string>): boolean {
   const body = tag.replace(/^#/, '').toLowerCase()
   if (words.has(body)) return true
@@ -195,7 +223,7 @@ export function pickHashtags(input: TagInput): TagPick {
   const brandTag = deriveBrandTag(input.brand || '')
   const yours = (input.yours || []).filter((t) => t.avgLift >= 1.1).sort((a, b) => b.avgLift - a.avgLift)
   const members = (input.members || []).filter((t) => t.avgLift >= 1.1).sort((a, b) => b.avgLift - a.avgLift)
-  const trends = (input.trends || []).filter((t) => relevant(hashify(t.tag)) && trendStanding(t) === 'active')
+  const trends = (input.trends || []).filter((t) => (madeOfContent(hashify(t.tag), words) || catTags.has(hashify(t.tag))) && trendStanding(t) === 'active')
   function trendWhy(t: TrendTag): string { return t.label || (t.source === 'tiktok_cc' ? `trending on TikTok${t.rank ? ` (#${t.rank} this week)` : ''}` : t.source === 'youtube' ? `active on YouTube${t.posts ? ` (${compact(t.posts)} videos)` : ''}` : t.source === 'instagram' ? `active on Instagram${t.posts ? ` (${compact(t.posts)} posts)` : ''}` : 'trending') }
   const liftWhy = (who: string, t: TagStatLite) => `${who} ${t.avgLift.toFixed(1)}x reach over ${t.samples} post${t.samples === 1 ? '' : 's'}`
 

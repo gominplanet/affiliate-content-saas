@@ -4,8 +4,8 @@
 // trends, migration 434).
 //   GET: how fresh each source is (TikTok, YouTube, Instagram), and the tags
 //     worth checking on Instagram next for this creator.
-//   POST { action: 'tiktok', bodies, rows, country }: TikTok Creative
-//     Center's lists, as SCOUT read them in the creator's Chrome.
+//   POST { action: 'tiktok' }: MVP's server reads TikTok Creative Center's
+//     lists now (the nightly read, on demand).
 //   POST { action: 'instagram', items }: Instagram's post counts for tags, as
 //     SCOUT asked Instagram in the creator's signed-in Chrome.
 // SHARED, SO GUARDED: what a member's SCOUT sends is parsed and capped here,
@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { parseTikTokCC, parseInstagramCounts, saveTrends, trendTag } from '@/lib/hashtag-trends'
+import { parseInstagramCounts, readTikTokTrends, saveTrends, trendTag } from '@/lib/hashtag-trends'
 import { categoriesFor } from '@/lib/hashtag-map'
 import { trendStanding } from '@/lib/hashtag-engine'
 import { canUsePreview } from '@/lib/labs-preview'
@@ -21,7 +21,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 export const runtime = 'nodejs'
 
 const SOURCES = [
-  { platform: 'tiktok', source: 'tiktok_cc', label: 'TikTok Creative Center', by: 'SCOUT, in your Chrome' },
+  { platform: 'tiktok', source: 'tiktok_cc', label: 'TikTok Creative Center', by: 'MVP, every night' },
   { platform: 'youtube', source: 'youtube', label: 'YouTube hashtag pages', by: 'MVP, every night' },
   { platform: 'instagram', source: 'instagram', label: 'Instagram tag counts', by: 'SCOUT, in your Chrome' },
 ] as const
@@ -70,18 +70,23 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await request.json().catch(() => ({})) as { action?: string; bodies?: unknown[]; rows?: unknown[]; country?: string; items?: unknown[] }
+  const body = await request.json().catch(() => ({})) as { action?: string; country?: string; items?: unknown[] }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
   if (!(await allowed(admin, user.id))) return NextResponse.json({ error: 'Live hashtag reading is in Labs.' }, { status: 403 })
-  // Creative Center's own answers first; the rows read off its page only add
-  // what the answers did not carry.
-  const rows = body.action === 'tiktok' ? parseTikTokCC([...(Array.isArray(body.bodies) ? body.bodies.slice(0, 30) : []), { rows: Array.isArray(body.rows) ? body.rows.slice(0, 200) : [] }], String(body.country || 'US').toUpperCase())
-    : body.action === 'instagram' ? parseInstagramCounts(Array.isArray(body.items) ? body.items : [])
-    : null
+  // TikTok: MVP's server reads Creative Center itself, now (the same read
+  // as every night). Instagram: the counts SCOUT asked Instagram for.
+  let tiktok: { asked: number; answered: number } | null = null
+  let rows = null as ReturnType<typeof parseInstagramCounts> | null
+  if (body.action === 'tiktok') {
+    const tt = await readTikTokTrends(String(body.country || 'US').toUpperCase())
+    if (tt.error) return NextResponse.json({ ok: false, saved: 0, error: `TikTok Creative Center did not answer: ${tt.error}` })
+    tiktok = { asked: tt.asked, answered: tt.answered }
+    rows = tt.rows
+  } else if (body.action === 'instagram') rows = parseInstagramCounts(Array.isArray(body.items) ? body.items : [])
   if (!rows) return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
-  if (!rows.length) return NextResponse.json({ ok: false, saved: 0, error: body.action === 'tiktok' ? 'SCOUT read no hashtags from TikTok Creative Center.' : 'SCOUT read no Instagram counts.' })
+  if (!rows.length) return NextResponse.json({ ok: false, saved: 0, error: body.action === 'tiktok' ? 'TikTok Creative Center answered but listed no usable hashtags.' : 'SCOUT read no Instagram counts.' })
   const { saved, error } = await saveTrends(admin, rows)
   if (error) return NextResponse.json({ ok: false, saved: 0, error: /does not exist|schema cache/i.test(error) ? 'Live hashtag data needs migration 434 in Supabase first.' : error }, { status: 500 })
-  return NextResponse.json({ ok: true, saved, read: rows.length })
+  return NextResponse.json({ ok: true, saved, read: rows.length, ...(tiktok || {}) })
 }
