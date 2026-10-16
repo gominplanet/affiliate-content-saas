@@ -181,7 +181,7 @@ const FAQ: { q: string; a: string }[] = [
   },
 ]
 
-// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+// Re-rendered every 10 minutes so the January 1 price change shows without a deploy.
 export const revalidate = 600
 
 export default function RunYourStorefrontPage() {
@@ -215,7 +215,7 @@ export default function RunYourStorefrontPage() {
             <Cta />
             <CtaSubtext />
           </div>
-          {/* Prices go up for new members on November 1; the lock and countdown. */}
+          {/* Prices go up for new members on January 1; the lock and countdown. */}
           {!newPricesLive() && <PriceLockCountdown tone="light" className="mt-10 text-left" />}
         </div>
       </section>
@@ -364,7 +364,7 @@ export default function RunYourStorefrontPage() {
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
             {[
-              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: TIERS.amazon.regularPrice > TIERS.amazon.price ? `New members pay $${TIERS.amazon.regularPrice} from November 1. Join before and yours is locked for as long as you stay.` : 'Locked for as long as you stay.' },
+              { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: TIERS.amazon.regularPrice > TIERS.amazon.price ? `New members pay $${TIERS.amazon.regularPrice} from January 1. Join before and yours is locked for as long as you stay.` : 'Locked for as long as you stay.' },
               { icon: <LayoutTemplate size={15} />, t: 'No blog needed', b: 'Built for the storefront and the socials around it. No WordPress.' },
               { icon: <ShieldCheck size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
             ].map((f) => (

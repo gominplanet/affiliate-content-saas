@@ -106,7 +106,7 @@ const OTHER_TIERS = SELLABLE_TIERS
   .filter((t) => t !== 'amazon' && OTHER_BLURBS[t])
   .map((t) => ({ name: TIERS[t].label, price: `$${TIERS[t].price}`, blurb: OTHER_BLURBS[t] as string }))
 
-// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+// Re-rendered every 10 minutes so the January 1 price change shows without a deploy.
 export const revalidate = 600
 
 export default function AmazonInfluencerPage() {
@@ -171,10 +171,10 @@ export default function AmazonInfluencerPage() {
           <p className="mt-4 text-sm text-[#86868b] dark:text-[#8e8e93]">
             {FREE_TRIAL.trialDays}-day free trial: {FREE_THUMBS} thumbnails, {FREE_DESIGNS} designs and your own face on them, yours to download.
             Then <span className="text-lg font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">${AMZ.price}</span>/mo{' '}
-            {AMZ_SAVING > 0 && <><span className="line-through">${AMZ.regularPrice}</span> from November 1 · save ${AMZ_SAVING} a month for as long as you stay</>}
+            {AMZ_SAVING > 0 && <><span className="line-through">${AMZ.regularPrice}</span> from January 1 · save ${AMZ_SAVING} a month for as long as you stay</>}
           </p>
           {SALES_PAUSED && <p className="mt-4 text-sm text-[#ff9500]">{SALES_PAUSED_MESSAGE}</p>}
-          {/* Prices go up for new members on November 1; the lock and countdown. */}
+          {/* Prices go up for new members on January 1; the lock and countdown. */}
           {!newPricesLive() && <PriceLockCountdown className="mt-8 text-left" />}
         </div>
       </section>

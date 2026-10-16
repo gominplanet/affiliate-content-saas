@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       const item = live?.items.data[0]
       if (live && item) {
         // SAME PRICE THE PREVIEW QUOTED: the member's current interval unless
-        // they picked one, and a member who joined before the November 1 price
+        // they picked one, and a member who joined before the January 1 price
         // change keeps that price level on whichever plan they move to
         // (lib/stripe planChangeTarget). Everyone else moves to the new-member
         // price.

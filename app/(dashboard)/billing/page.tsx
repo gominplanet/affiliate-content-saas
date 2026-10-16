@@ -197,7 +197,7 @@ export default function BillingPage() {
     limit: (TIERS[t].postsPerMonth ?? 0) > 0
       ? `${TIERS[t].postsPerMonth} posts / month`
       : `${TIERS[t].thumbnailsPerMonth} designs / month`,
-    // A member who joined before the November 1 change switches plans at the
+    // A member who joined before the January 1 change switches plans at the
     // price they locked in, which is what checkout charges them (lib/stripe).
     price: paying?.lockedIn && (t === 'amazon' || t === 'pro') ? PRICES_BEFORE[t].month : TIERS[t].price,
     regularPrice: TIERS[t].regularPrice,

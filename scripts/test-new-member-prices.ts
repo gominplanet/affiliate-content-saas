@@ -1,11 +1,11 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// PRICES GO UP ON NOVEMBER 1, BY DATE, AND EVERYONE WHO JOINS BEFORE KEEPS
+// PRICES GO UP ON JANUARY 1, BY DATE, AND EVERYONE WHO JOINS BEFORE KEEPS
 // THEIR PRICE FOR GOOD, ON EITHER PLAN. NOBODY IS CHARGED A PRICE THE PAGE DID
 // NOT SHOW.
 //
 // Seb, 2026-10-05: new members pay Amazon $159 and Pro $299 ($1,590 and $2,990
-// a year) from November 1. Join before and you keep $99 or $199 for as long as
+// a year) from January 1. Join before and you keep $99 or $199 for as long as
 // you stay subscribed, whatever MVP adds, "whatever tier they take". The sales
 // pages count down to it and explain the lock.
 //
@@ -32,13 +32,13 @@ async function main() {
   const ST = await import('../lib/stripe')
   const { shownPriceCents, PRICE_MISMATCH_ERROR } = await import('../lib/price-guard')
 
-  const BEFORE = Date.parse('2026-11-01T06:59:59Z') // 11:59:59 pm Oct 31, Pacific
-  const AFTER = Date.parse('2026-11-01T07:00:00Z')  // midnight Nov 1, Pacific
+  const BEFORE = Date.parse('2027-01-01T07:59:59Z') // 11:59:59 pm Dec 31, Pacific
+  const AFTER = Date.parse('2027-01-01T08:00:00Z')  // midnight Jan 1, Pacific
   const realNow = Date.now
   const at = <T>(t: number, f: () => T): T => { Date.now = () => t; try { return f() } finally { Date.now = realNow } }
 
   // ── the schedule ──────────────────────────────────────────────────────────
-  check('the change is midnight November 1, Pacific', S.PRICE_CHANGE_AT === '2026-11-01T07:00:00.000Z')
+  check('the change is midnight January 1, Pacific', S.PRICE_CHANGE_AT === '2027-01-01T08:00:00.000Z')
   check('the prices: $99/$199 before, $159/$299 after, yearly $999/$1,999 then $1,590/$2,990',
     S.PRICES_BEFORE.amazon.month === 99 && S.PRICES_BEFORE.pro.month === 199 && S.PRICES_BEFORE.amazon.year === 999 && S.PRICES_BEFORE.pro.year === 1999
     && S.NEW_MEMBER_PRICES.amazon.month === 159 && S.NEW_MEMBER_PRICES.pro.month === 299 && S.NEW_MEMBER_PRICES.amazon.year === 1590 && S.NEW_MEMBER_PRICES.pro.year === 2990)
@@ -126,5 +126,5 @@ main().then(() => {
     for (const f of failures) console.error(`   • ${f}`)
     process.exit(1)
   }
-  console.log('✓ new-member-prices: $99/$199 until November 1, then $159/$299 by date; early members keep their price on either plan; the sales pages count down; checkout never charges a price the page did not show')
+  console.log('✓ new-member-prices: $99/$199 until January 1, then $159/$299 by date; early members keep their price on either plan; the sales pages count down; checkout never charges a price the page did not show')
 })

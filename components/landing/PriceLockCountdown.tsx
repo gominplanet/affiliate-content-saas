@@ -4,7 +4,7 @@
 //
 // THE PRICE LOCK, ON THE SALES PAGES.
 //
-// Seb, 2026-10-05: prices go up for new members on November 1, and 2026-10-07:
+// Seb, 2026-10-05: prices go up for new members on January 1, and 2026-10-07:
 // present today's price as founding member pricing, salesy but not sleazy. Anyone who joins
 // before keeps $99 (Amazon) or $199 (Pro) for as long as they stay subscribed,
 // whatever MVP adds, on either plan. This says so, with a live countdown to the
@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange } from '@/lib/price-schedule'
 
-// THE OFFER, IN NUMBERS. Today's price next to the November price and the
+// THE OFFER, IN NUMBERS. Today's price next to the January price and the
 // monthly difference, so "lock in" means something concrete. Honest about
 // the one condition: the lock lasts while the membership does.
 const plans = [
@@ -68,17 +68,17 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
   ]
 
   return (
-    <section aria-label="Founding member pricing until November 1" className={`w-full max-w-3xl mx-auto rounded-2xl border p-5 sm:p-6 shadow-sm ${box} ${className}`}>
+    <section aria-label="Founding member pricing until January 1" className={`w-full max-w-3xl mx-auto rounded-2xl border p-5 sm:p-6 shadow-sm ${box} ${className}`}>
       <div className="flex flex-col sm:flex-row sm:items-start gap-5">
         <div className="flex-1 min-w-0">
           <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9D6BFF]">
             <Lock size={12} /> Founding member pricing
           </p>
           <h2 className="mt-1.5 text-xl sm:text-2xl font-bold tracking-tight" style={{ textWrap: 'balance' }}>
-            Lock in today&apos;s price before November 1
+            Lock in today&apos;s price before January 1
           </h2>
           <p className={`mt-2 text-sm leading-relaxed ${soft}`}>
-            On November 1, MVP moves to its full price. Join before then and today&apos;s price is
+            On January 1, MVP moves to its full price. Join before then and today&apos;s price is
             {' '}<strong className={strong}>locked for as long as you stay subscribed</strong>.
             Every feature we add is included at that price, and it stays yours if you switch plans.
           </p>
@@ -105,7 +105,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
             <p className="mt-1 flex items-baseline gap-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
               <span className={`text-2xl font-bold ${strong}`}>${pl.now}</span>
               <span className={`text-sm ${soft}`}>a month</span>
-              <span className={`ml-auto text-sm line-through ${soft}`} aria-label={`${pl.later} dollars from November 1`}>${pl.later}</span>
+              <span className={`ml-auto text-sm line-through ${soft}`} aria-label={`${pl.later} dollars from January 1`}>${pl.later}</span>
             </p>
             <p className="mt-1 text-[12.5px] font-medium text-[#10B981]">You save ${pl.saved} every month</p>
           </div>
@@ -114,7 +114,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
 
       <p className={`mt-4 text-[12px] leading-relaxed ${soft}`}>
         No catch, and you can cancel anytime. The lock lasts while your membership is active, so if you cancel
-        and come back after November 1, you join at the price of the day. From November 1, new members pay
+        and come back after January 1, you join at the price of the day. From January 1, new members pay
         {' '}${NEW_MEMBER_PRICES.amazon.month} for Amazon and ${NEW_MEMBER_PRICES.pro.month} for Pro.
       </p>
     </section>

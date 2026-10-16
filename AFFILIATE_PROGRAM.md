@@ -20,7 +20,7 @@ affiliate reads and the figure the server charges cannot drift apart:
 | What | Source of truth |
 | --- | --- |
 | Commission, cookie, payout terms | `lib/affiliate-campaign.ts` → `AFFILIATE_CAMPAIGN` |
-| Plan prices, and the November 1 change | `lib/price-schedule.ts` |
+| Plan prices, and the January 1 change | `lib/price-schedule.ts` |
 | Which plans are sellable | `lib/tier.ts` → `SELLABLE_TIERS` |
 | What the free trial includes | `lib/free-trial.ts` → `freeTrialHighlights()` |
 | What the free trial excludes | `lib/free-trial.ts` → `freeTrialExclusions()` |
@@ -37,7 +37,7 @@ affiliate reads and the figure the server charges cannot drift apart:
   Studio plan to quote. Those names survive in `lib/tier.ts` only for legacy
   accounts.
 
-### Prices, and the November 1 change
+### Prices, and the January 1 change
 
 `lib/price-schedule.ts` flips these by date, at 2026-11-01T07:00:00Z:
 
@@ -56,7 +56,7 @@ subscribed, on whichever of the two plans they move to.
 | Amazon | $9.90/month | $15.90/month |
 | Pro | $19.90/month | $29.90/month |
 
-**Swap the Rewardful copy on November 1.** Until then, the deadline is the
+**Swap the Rewardful copy on January 1.** Until then, the deadline is the
 single best thing an affiliate has to push, so it is written into the copy
 below. Delete those sentences once the date passes, or the program is
 advertising a lock nobody can still get.
@@ -83,7 +83,7 @@ for as long as they stay subscribed. Real recurring income, not a
 one-time bounty.
 
 Right now there is a deadline worth leading with: MVP's prices rise on
-November 1, and anyone who joins before then keeps the lower price for
+January 1, and anyone who joins before then keeps the lower price for
 life. That is the strongest reason your audience has to act this month.
 
 Best fit: Amazon Influencers, YouTube reviewers, affiliate-marketing
@@ -112,7 +112,7 @@ held 60 days before payout, and the referral cookie lasts 60 days, so a
 slow decision still earns.
 
 THIS MONTH'S ANGLE
-MVP's prices rise on November 1. Anyone who joins before then keeps the
+MVP's prices rise on January 1. Anyone who joins before then keeps the
 lower price for as long as they stay subscribed. A real deadline beats
 any pitch you could write, so lead with it while it is true.
 
@@ -181,7 +181,7 @@ You can find the key in the Rewardful dashboard. It is the
 1. **Lifetime recurring commission**, paid for as long as the referred
    customer stays subscribed. Not a one-time bounty. This is the biggest
    differentiator against most SaaS affiliate programs.
-2. **The November 1 deadline.** Prices rise, and joining before then locks
+2. **The January 1 deadline.** Prices rise, and joining before then locks
    the lower price for life. Retire this point once the date passes.
 3. **Free entry for the referred customer**, 30 days with no card, plus 20%
    off their first 3 months through a referral link. Low-friction CTA.

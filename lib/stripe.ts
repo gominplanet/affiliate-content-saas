@@ -70,7 +70,7 @@ export const ANNUAL_PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon
  *  this file, so annual ids are folded in at the source rather than at each of
  *  the three call sites that would each have to remember. */
 /**
- * THE PRICES NEW MEMBERS PAY FROM NOVEMBER 1 (lib/price-schedule).
+ * THE PRICES NEW MEMBERS PAY FROM JANUARY 1 (lib/price-schedule).
  *
  * Their own env vars, so the ids can be set now and the switch happens by date
  * with no deploy: STRIPE_PRICE_AMAZON_NEW, STRIPE_PRICE_AMAZON_ANNUAL_NEW,
@@ -109,7 +109,7 @@ export function newBuyerPriceId(tier: string, interval: BillingInterval): string
   return list?.[0] ?? null
 }
 
-/** Is this a price someone joined on before the November 1 change (any plan,
+/** Is this a price someone joined on before the January 1 change (any plan,
  *  monthly or yearly)? Those members keep that price level for good. */
 export function isLockedInPrice(priceId: string | null | undefined): boolean {
   if (!priceId) return false
@@ -121,7 +121,7 @@ export function isLockedInPrice(priceId: string | null | undefined): boolean {
 
 /**
  * The price a member moving to `tier` is put on. Seb, 2026-10-05: whoever joins
- * before November 1 keeps $99 or $199 "whatever tier they take", so a member
+ * before January 1 keeps $99 or $199 "whatever tier they take", so a member
  * still on a pre-change price who switches between Amazon and Pro after the
  * change lands on the OLD price of the new plan, not the new-member one.
  * Everyone else gets what a new buyer pays.
@@ -175,7 +175,7 @@ export function hasAnnual(tier: string): boolean {
 }
 
 /** The price a NEW buyer is charged. The first id in the list. */
-// Getters, so the November 1 change takes effect in a server that was already
+// Getters, so the January 1 change takes effect in a server that was already
 // running (lib/price-schedule).
 export const PRICE_IDS = {
   get creator(): string { return newBuyerPriceId('creator', 'month') ?? '' },

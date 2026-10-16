@@ -1,9 +1,9 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// THE PRICE CHANGE OF NOVEMBER 1, AND THE LOCK FOR EVERYONE WHO JOINS BEFORE.
+// THE PRICE CHANGE OF JANUARY 1, AND THE LOCK FOR EVERYONE WHO JOINS BEFORE.
 //
 // Seb, 2026-10-05: new members pay Amazon $159 and Pro $299 a month ($1,590
-// and $2,990 a year) from November 1. Anyone who joins before then keeps $99
+// and $2,990 a year) from January 1. Anyone who joins before then keeps $99
 // or $199 for as long as they stay subscribed, whatever MVP adds, and on
 // whichever of the two plans they move to.
 //
@@ -13,10 +13,10 @@
 // overrides it ('off' postpones, 'on' starts early) for the day Seb changes his
 // mind. Pure: no server-only imports, so client components read it too.
 
-/** Midnight at the start of November 1, Pacific time (PDT, UTC-7). The last
+/** Midnight at the start of January 1, Pacific time (PST, UTC-8). The last
  *  US midnight, so nobody in the US loses the old price before their own
- *  November 1 begins. */
-export const PRICE_CHANGE_AT = '2026-11-01T07:00:00.000Z'
+ *  January 1 begins. Seb, 2026-10-16: moved from November 1 to January 1. */
+export const PRICE_CHANGE_AT = '2027-01-01T08:00:00.000Z'
 
 export type PricedTier = 'amazon' | 'pro'
 export type PriceInterval = 'month' | 'year'

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     if (!live || !item) return NextResponse.json({ kind: 'new' })
     // SAME FUNCTION, SAME INPUTS AS CHECKOUT, so the price quoted here is the
     // price charged: current interval unless one was picked, and a member from
-    // before the November 1 change keeps that price level (lib/stripe).
+    // before the January 1 change keeps that price level (lib/stripe).
     const change = planChangeTarget(tier, interval, item.price)
     const changePriceId = change.priceId ?? priceId
     // Checkout treats any price this tier has had at the same interval as

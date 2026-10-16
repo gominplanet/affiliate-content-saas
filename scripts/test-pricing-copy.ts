@@ -66,7 +66,7 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
   check('and offers only the sellable plans',
     /const planDetails = SELLABLE_TIERS\.map/.test(BILLING),
     'the old hardcoded list omitted Amazon entirely, so an Amazon customer saw three plans and none was theirs')
-  // A member locked in before the November 1 change sees their locked price
+  // A member locked in before the January 1 change sees their locked price
   // (lib/price-schedule PRICES_BEFORE); everyone else the TIERS price.
   check('and its prices', /price: (?:paying\?\.lockedIn && \(t === 'amazon' \|\| t === 'pro'\) \? PRICES_BEFORE\[t\]\.month : )?TIERS\[t\]\.price/.test(BILLING),
     'three hand-kept price lists is how one of them goes stale unnoticed')

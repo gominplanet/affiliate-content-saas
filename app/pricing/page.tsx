@@ -340,7 +340,7 @@ export default async function PricingPage({
         )
       })()}
 
-      {/* Prices go up for new members on November 1; the lock and countdown. */}
+      {/* Prices go up for new members on January 1; the lock and countdown. */}
       {!newPricesLive() && <PriceLockCountdown className="mb-8" />}
 
       <div id="plans" className={`grid gap-5 w-full mx-auto scroll-mt-8 items-start ${PLAN_GRID[plans.length] ?? PLAN_GRID[4]}`}>
@@ -491,7 +491,7 @@ export default async function PricingPage({
               </div>
               {TIERS.amazon.regularPrice > TIERS.amazon.price && (
                 <p className="text-sm mt-2 text-[#86868b] dark:text-[#8e8e93]">
-                  <span className="line-through">${TIERS.amazon.regularPrice}/month</span> from November 1{' '}
+                  <span className="line-through">${TIERS.amazon.regularPrice}/month</span> from January 1{' '}
                   <span className="font-semibold" style={{ color: '#C2410C' }}>
                     Save ${TIERS.amazon.regularPrice - TIERS.amazon.price} a month for as long as you stay
                   </span>

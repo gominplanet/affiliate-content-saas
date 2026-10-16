@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
 }
 
-// Checked hourly, so the price paragraph turns over on November 1 by itself.
+// Checked hourly, so the price paragraph turns over on January 1 by itself.
 export const revalidate = 3600
 
 const C = {
@@ -231,14 +231,14 @@ export default function PartnerLetter() {
                   <p style={{ margin: '6px 0 0', fontSize: 34, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
                     ${p.now}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> a month</span>
                   </p>
-                  {!later && <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Goes up to ${p.next} on November 1</p>}
+                  {!later && <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Goes up to ${p.next} on January 1</p>}
                 </div>
               ))}
             </div>
             <p className="pl-letter" style={{ margin: '18px 0 0' }}>
               {later
                 ? <>Amazon at ${amazonNow} a month, Pro at ${proNow} a month.</>
-                : <>Both go up on November 1, to ${NEW_MEMBER_PRICES.amazon.month} and ${NEW_MEMBER_PRICES.pro.month}. Anyone who joins before November 1 keeps the lower price for as long as they stay subscribed, so there is a real reason to move this month.</>}
+                : <>Both go up on January 1, to ${NEW_MEMBER_PRICES.amazon.month} and ${NEW_MEMBER_PRICES.pro.month}. Anyone who joins before January 1 keeps the lower price for as long as they stay subscribed, so there is a real reason to move this month.</>}
             </p>
           </div>
         </article>

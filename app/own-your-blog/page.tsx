@@ -152,7 +152,7 @@ const FAQ: { q: string; a: string }[] = [
   },
 ]
 
-// Re-rendered every 10 minutes so the November 1 price change shows without a
+// Re-rendered every 10 minutes so the January 1 price change shows without a
 // deploy. This page prints both plan prices (AdPricingTable) and was fully
 // static, so it would have kept quoting the old ones after checkout moved on.
 export const revalidate = 600

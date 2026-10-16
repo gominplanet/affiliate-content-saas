@@ -72,7 +72,7 @@ export function normalizeTier(raw: unknown): Tier {
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram' | 'tiktok'
 
 // ── PRICES ──────────────────────────────────────────────────────────────────
-// Amazon and Pro prices change for NEW members on November 1 (lib/price-schedule).
+// Amazon and Pro prices change for NEW members on January 1 (lib/price-schedule).
 // They are getters so a server that has been running since before the change
 // still reads the new price after it. Members who joined earlier keep their
 // Stripe price; the billing page shows that real amount (api/stripe/plan-status),
@@ -295,9 +295,9 @@ export const TIERS = {
     // assistant + $3.60 collabs + $2.28 Photobooth + ~$2 digest/captions = ~$52,
     // against $99.
     label: 'Amazon',
-    // New-member price; changes on November 1 (lib/price-schedule).
+    // New-member price; changes on January 1 (lib/price-schedule).
     get price(): number { return livePrice('amazon', 'month') },
-    // THE STRUCK PRICE IS A REAL ONE: what new members pay from November 1
+    // THE STRUCK PRICE IS A REAL ONE: what new members pay from January 1
     // (lib/price-schedule). It was 179, a price never charged anywhere. On and
     // after the change it equals price, and the pages show no strike at all.
     get regularPrice(): number { return NEW_MEMBER_PRICES.amazon.month },
@@ -507,9 +507,9 @@ export const TIERS = {
     // old proportions, still above Amazon's), X 100 -> 75 (lib/usage-cap), and
     // dubs are gone entirely (lib/markets DUBS_ENABLED).
     label: 'Pro',
-    // New-member price; changes on November 1 (lib/price-schedule).
+    // New-member price; changes on January 1 (lib/price-schedule).
     get price(): number { return livePrice('pro', 'month') },
-    // The real November 1 price, not the 399 that was never charged.
+    // The real January 1 price, not the 399 that was never charged.
     get regularPrice(): number { return NEW_MEMBER_PRICES.pro.month },
     /** Yearly price in USD, or null when this tier is not sold yearly. Read by
      *  the pricing page; the Stripe price id it maps to lives in

@@ -35,7 +35,7 @@ export async function GET() {
     const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 })
     const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
     const livePrice = live?.items?.data?.[0]?.price
-    // lockedIn: on a price from before the November 1 change, so plan changes
+    // lockedIn: on a price from before the January 1 change, so plan changes
     // keep that price level (lib/stripe planChangePriceId).
     const paying = livePrice?.unit_amount != null
       ? { amountUsd: livePrice.unit_amount / 100, interval: livePrice.recurring?.interval === 'year' ? 'year' : 'month', lockedIn: isLockedInPrice(livePrice.id) }

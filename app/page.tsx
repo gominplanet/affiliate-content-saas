@@ -113,7 +113,7 @@ const LIGHT_VARS: React.CSSProperties = {
 }
 
 
-// Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
+// Re-rendered every 10 minutes so the January 1 price change shows without a deploy.
 export const revalidate = 600
 
 export default function LandingPreview() {
@@ -350,7 +350,7 @@ function PricingSection() {
         style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.22) 0%, rgba(192,38,211,0.10) 45%, transparent 70%)' }}
       />
       <div className="max-w-6xl mx-auto relative">
-        {/* Prices go up for new members on November 1; the lock and countdown. */}
+        {/* Prices go up for new members on January 1; the lock and countdown. */}
         {!newPricesLive() && <PriceLockCountdown tone="light" className="mb-10" />}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
@@ -687,7 +687,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           <div className="mt-auto pt-4" style={{ borderTop: '1px solid var(--border)' }}>
             {tier.regularPrice > tier.price && (
               <p className="text-[12px] mb-0.5" style={{ color: 'var(--text-faint)' }}>
-                <span className="line-through">${tier.regularPrice}/month</span> from November 1
+                <span className="line-through">${tier.regularPrice}/month</span> from January 1
               </p>
             )}
             <div className="flex items-baseline gap-1.5">
