@@ -105,7 +105,7 @@ check('only an admin sees what TRYBE\'s list sends', /tier === 'admin' \? \{ raw
 const mig = 'supabase/migrations/430_trybe_priorities_and_stars.sql'
 check('migration 430 adds the two columns and is safe to run twice', existsSync(join(process.cwd(), mig)) && (read(mig).match(/add column if not exists/g) || []).length === 2)
 const ui = read('components/labs/TrybeOutreach.tsx')
-check('Find brands shows the stage, filters, priorities, Amazon and star and pass', /<TrybeStage canRead=\{canMyBrands\}/.test(ui) && /<FinderFilterBar/.test(ui) && /<FinderPriorities/.test(ui) && /<BrandExtras amazon=\{b\.amazon\}/.test(ui) && /<StarButton/.test(ui) && /<PassButton/.test(ui) && /<FinderFilterNote/.test(ui))
+check('Find brands shows the stage, filters, priorities, Amazon and star and pass', /<TrybeStage canRead=\{canMyBrands\}/.test(ui) && /<FinderToolbar/.test(ui) && /<FinderPriorities/.test(ui) && /<BrandExtras amazon=\{b\.amazon\}/.test(ui) && /<StarButton/.test(ui) && /<PassButton/.test(ui) && /<FinderFilterNote/.test(ui))
 check('no Amazon videos synced is said, with where to sync them', /MVP has none of your Amazon videos yet/.test(ui) && /href="\/earnings"/.test(ui))
 const stage = read('components/labs/TrybeStage.tsx')
 check('a failed read of your numbers says the stage is not known', /your stage is not known/.test(stage))

@@ -46,7 +46,7 @@ import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderFilterBar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
@@ -1589,30 +1589,28 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </div>}
             </div>
             <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} {preview ? 'Star the ones you like and pass on the rest.' : 'Tick the brands you want and MVP writes each one a message from your core message.'}</p>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
-              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Sort brands">
-                <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Sort</span>
-                {SORTS.filter(s => !preview || s.id !== 'fit').map(s => (
-                  <button key={s.id} onClick={() => setSortBy(s.id)} aria-pressed={sortBy === s.id}
-                    className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
-                    style={sortBy === s.id ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>{s.label}</button>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by pay type">
-                <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Pay</span>
-                {PAYS.map(p => (
-                  <button key={p.id} onClick={() => setPayType(p.id)} aria-pressed={payType === p.id} title={PAY_SAYS[p.id]}
-                    className="text-[12px] font-semibold rounded-full px-2.5 py-1 border"
-                    style={payType === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border)' }}>{p.label}</button>
-                ))}
-              </div>
-            </div>
+            {/* ONE TOOLBAR (Seb, 2026-10-16: "very overwhelming"): Quick lists,
+                then search, Sort, Pay, Sells and Filters; every choice that is
+                on shows as a chip with an x (components/labs/TrybeFinderControls). */}
+            <FinderPresets filters={filters} sort={sortBy} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
+            {(() => {
+              const priorityBox = (
+                <FinderPriorities priorities={priorities} onChange={changePriorities}
+                  note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
+              )
+              return (
+                <>
+                  <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
+                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit')} onSort={v => setSortBy(v as LiveSort)}
+                    pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
+                    panelExtra={sortBy === 'picks' ? undefined : priorityBox} />
+                  {/* Your priorities rank Best bets: in view when that is the sort. */}
+                  {sortBy === 'picks' && priorityBox}
+                </>
+              )
+            })()}
             {!preview && <TrybeSampleGuard onFilm={() => go('week')} />}
             {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
-            <FinderPresets filters={filters} sort={sortBy} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
-            <FinderFilterBar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ} />
-            <FinderPriorities priorities={priorities} onChange={changePriorities}
-              note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
             {filters.onAmazon && live && (live.amazonVideos ?? 0) === 0 && (
               <p className="text-[12px] mb-3" style={{ color: AMBER }}>MVP has none of your Amazon videos yet, so On Amazon only finds brands in your storefront and on Creator Connections. <a href="/earnings" className="font-semibold underline">Sync your Amazon videos</a> to see which TRYBE brands you already filmed.</p>
             )}
@@ -1679,8 +1677,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </p>
             )}
             {isAdmin && (
-              <div className="rounded-lg border border-dashed px-3 py-2 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-                <p className="text-[10px] font-bold uppercase tracking-wider">Admin only</p>
+              <details className="rounded-lg border border-dashed px-3 py-2 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                <summary className="cursor-pointer font-semibold">Admin only</summary>
                 <p>Updates as you change niches and keywords, from MVP&rsquo;s copy of every TRYBE brand: nothing is fetched from TRYBE or the websites.</p>
                 {directory && (
                   <p>{directory.listed != null ? <>On TRYBE now: <b>{directory.listed.toLocaleString()}</b> brands{directory.brands > directory.listed ? <> (MVP also keeps {(directory.brands - directory.listed).toLocaleString()} that TRYBE no longer lists; they are left out of matches)</> : null}. </> : null}{directory.joinedSinceFirst != null && directory.firstCountAt ? <>New on TRYBE since MVP&rsquo;s first count ({new Date(directory.firstCountAt).toLocaleDateString()}): <b>{directory.joinedSinceFirst.toLocaleString()}</b>{directory.joinedStillListed != null && directory.joinedStillListed !== directory.joinedSinceFirst ? <>, {directory.joinedStillListed.toLocaleString()} of them still listed</> : null}. </> : null}MVP&rsquo;s copy of TRYBE: <b>{directory.brands.toLocaleString()}</b> brands ever seen, {directory.withWebsite.toLocaleString()} with a website, {directory.websitesRead.toLocaleString()} websites read so far{directory.websitesRead < directory.withWebsite ? ' (the rest are read in the background, so website matches grow every hour)' : ''}.{directory.lastCollectedAt ? ` Collected ${new Date(directory.lastCollectedAt).toLocaleString()}.` : ''}</p>
@@ -1688,7 +1686,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 {findNotes.filter(n => ADMIN_NOTE.test(n)).map((n, i) => <p key={i}>{n}</p>)}
                 {/* What TRYBE's list sends, so the new filters are read from what is there. */}
                 {live?.rawKeys && live.rawKeys.length > 0 && <p className="break-words">TRYBE&rsquo;s brand list sends: {live.rawKeys.join(', ')}</p>}
-              </div>
+              </details>
             )}
             {findNotes.some(n => !ADMIN_NOTE.test(n)) && (
               <ul className="text-[12px] mb-3 space-y-0.5">{findNotes.filter(n => !ADMIN_NOTE.test(n)).map((n, i) => <li key={i}>{n}</li>)}</ul>

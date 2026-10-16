@@ -8,7 +8,7 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, Image as ImageIcon } from 'lucide-react'
+import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
@@ -20,6 +20,8 @@ const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const soft = { color: 'var(--text-3)' }
 const chip = 'text-[12px] font-semibold rounded-full px-2.5 py-1 border inline-flex items-center gap-1'
+/** Purple words that stay readable on the dark theme too. */
+const ON_TEXT = 'text-[#7C3AED] dark:text-[#B9A2FF]'
 
 export interface LiveAmazon {
   yourVideos: number; storefront: number; ccCampaigns: number; ccBestPct: number | null
@@ -34,21 +36,69 @@ export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
-/** The filter row and the brand name search. */
-export function FinderFilterBar({ filters, onFilters, name, onName }: {
+/** One choice of a dropdown: its words, and what it does (the hover). */
+export interface PickOption { id: string; label: string; says?: string }
+
+/** A labelled native dropdown: familiar, keyboard friendly, one line. */
+function Picker({ label, value, options, onChange, changed }: { label: string; value: string; options: PickOption[]; onChange: (v: string) => void; changed: boolean }) {
+  const now = options.find((o) => o.id === value)
+  return (
+    <label className="flex sm:inline-flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1.5 py-1.5 text-[13px] min-w-0 focus-within:ring-2 focus-within:ring-[#7C3AED]/40" title={now?.says}
+      style={{ borderColor: changed ? PURPLE : 'var(--border-2)' }}>
+      <span className="shrink-0" style={soft}>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={`flex-1 sm:flex-none min-w-0 bg-transparent font-semibold outline-none cursor-pointer ${changed ? ON_TEXT : ''}`} style={changed ? undefined : { color: 'var(--text)' }}>
+        {options.map((o) => <option key={o.id} value={o.id} style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>{o.label}</option>)}
+      </select>
+    </label>
+  )
+}
+
+type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview'
+type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend'
+export const TOGGLE_WORDS: Record<ToggleKey, string> = {
+  starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
+  fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
+}
+export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
+  minPerVideo: (n) => `At least $${n.toLocaleString()} a video`,
+  minSpend: (n) => `Pays creators $${n.toLocaleString()}+ a month`,
+  maxCreators: (n) => `Up to ${n.toLocaleString()} creators`,
+  maxVideos: (n) => `Up to ${n.toLocaleString()} videos approved`,
+}
+/** How many of the panel's filters are on (sort, pay and sells have their own dropdowns). */
+export const panelFiltersOn = (f: FinderFilters) =>
+  (Object.keys(TOGGLE_WORDS) as ToggleKey[]).filter((k) => f[k]).length + (Object.keys(NUMBER_WORDS) as NumberKey[]).filter((k) => f[k]).length
+
+/** FIND BRANDS, ONE TOOLBAR (Seb, 2026-10-16: "This whole section ... is very
+ *  confusing ... at first glance, it is very overwhelming"). Six rows of
+ *  chips before the first brand became: brand search, Sort, Pay and Sells as
+ *  dropdowns, and a Filters button that opens the rest, grouped. Every choice
+ *  that is on shows as a chip with an x under the bar, so a filter inside a
+ *  closed panel is never on without being seen. */
+export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, onSort, pay, pays, onPay, panelExtra }: {
   filters: FinderFilters
   onFilters: (f: FinderFilters) => void
   name: string
   onName: (n: string) => void
+  sort: string
+  sorts: PickOption[]
+  onSort: (s: string) => void
+  pay: string
+  pays: PickOption[]
+  onPay: (p: string) => void
+  /** Shown at the foot of the open panel (Your priorities, when Best bets is not the sort). */
+  panelExtra?: React.ReactNode
 }) {
-  const toggle = (k: 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview', label: string, icon?: React.ReactNode, title?: string) => (
-    <button onClick={() => onFilters({ ...filters, [k]: !filters[k] })} aria-pressed={!!filters[k]} title={title}
+  const [open, setOpen] = useState(false)
+  const inPanel = panelFiltersOn(filters)
+  const toggle = (k: ToggleKey, icon?: React.ReactNode, title?: string) => (
+    <button key={k} onClick={() => onFilters({ ...filters, [k]: !filters[k] })} aria-pressed={!!filters[k]} title={title}
       className={chip} style={filters[k] ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>
-      {icon}{label}
+      {icon}{TOGGLE_WORDS[k]}
     </button>
   )
-  const numberBox = (k: 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend', before: string, after: string, title: string) => (
-    <label className={`${chip} cursor-text`} style={filters[k] ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'var(--border-2)' }} title={title}>
+  const numberBox = (k: NumberKey, before: string, after: string, title: string) => (
+    <label key={k} className={`${chip} cursor-text focus-within:ring-2 focus-within:ring-[#7C3AED]/40 ${filters[k] ? ON_TEXT : ''}`} style={filters[k] ? { borderColor: PURPLE } : { borderColor: 'var(--border-2)' }} title={title}>
       {before}
       <input type="number" inputMode="numeric" min={1} value={filters[k] ?? ''} placeholder="any"
         onChange={(e) => { const n = Number(e.target.value); onFilters({ ...filters, [k]: e.target.value && Number.isFinite(n) && n > 0 ? n : null }) }}
@@ -56,40 +106,87 @@ export function FinderFilterBar({ filters, onFilters, name, onName }: {
       {after}
     </label>
   )
+  const group = (legend: string, children: React.ReactNode) => (
+    <fieldset className="min-w-0">
+      <legend className="text-[12px] font-semibold mb-1.5">{legend}</legend>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </fieldset>
+  )
+
+  // EVERYTHING THAT IS ON, each with its own x.
+  const on: Array<{ key: string; text: string; off: () => void }> = []
+  if (name) on.push({ key: 'name', text: `Name: \u201c${name}\u201d`, off: () => onName('') })
+  if (sort !== sorts[0]?.id) { const s = sorts.find((x) => x.id === sort); if (s) on.push({ key: 'sort', text: `Sort: ${s.label}`, off: () => onSort(sorts[0].id) }) }
+  if (pay !== pays[0]?.id) { const p = pays.find((x) => x.id === pay); if (p) on.push({ key: 'pay', text: `Pay: ${p.label}`, off: () => onPay(pays[0].id) }) }
+  if (filters.sells) on.push({ key: 'sells', text: `Sells: ${SELLS_WORDS[filters.sells].label}`, off: () => onFilters({ ...filters, sells: null }) })
+  for (const k of Object.keys(NUMBER_WORDS) as NumberKey[]) { const n = filters[k]; if (n) on.push({ key: k, text: NUMBER_WORDS[k](n), off: () => onFilters({ ...filters, [k]: null }) }) }
+  for (const k of Object.keys(TOGGLE_WORDS) as ToggleKey[]) if (filters[k]) on.push({ key: k, text: TOGGLE_WORDS[k], off: () => onFilters({ ...filters, [k]: false }) })
+
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mb-3" role="group" aria-label="Filter brands">
-      <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Filter</span>
-      <label className={`${chip} cursor-text`} style={{ borderColor: name ? PURPLE : 'var(--border-2)' }}>
-        <Search size={12} />
-        <input value={name} onChange={(e) => onName(e.target.value)} placeholder="A brand's name" aria-label="Find a brand by name"
-          className="w-36 bg-transparent outline-none font-normal" style={{ color: 'var(--text)' }} />
-        {name && <button onClick={() => onName('')} aria-label="Clear the name"><X size={12} /></button>}
-      </label>
-      {toggle('starred', 'Starred', <Star size={12} />)}
-      {toggle('onAmazon', 'On Amazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
-      {toggle('openOnly', 'Open only', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
-      {toggle('newOnly', 'New', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
-      {toggle('spending', 'Spending on ads', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
-      {toggle('fastReview', 'Decides fast', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
-      {toggle('paidCreators', 'Has paid creators', undefined, 'TRYBE says it has paid creators.')}
-      {toggle('samples', 'Sends samples')}
-      {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
-      {numberBox('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. No platform shows a brand\u2019s real ad budget, so this is the honest figure MVP can work out. A brand MVP cannot estimate is left out.')}
-      {numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
-      {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
-      {(filtersOn(filters) || name) && (
-        <button onClick={() => { onFilters(NO_FILTERS); onName('') }} className="text-[12px] font-semibold underline ml-1" style={{ color: PURPLE }}>Clear filters</button>
+    <div className="mb-3 space-y-2.5">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="toolbar" aria-label="Find and sort brands">
+        <label className="col-span-2 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] sm:flex-1 sm:min-w-[11rem] sm:max-w-[18rem] focus-within:ring-2 focus-within:ring-[#7C3AED]/40" style={{ borderColor: name ? PURPLE : 'var(--border-2)' }}>
+          <Search size={14} style={soft} />
+          <input value={name} onChange={(e) => onName(e.target.value)} placeholder="Find a brand by name" aria-label="Find a brand by name"
+            className="w-full min-w-0 bg-transparent outline-none" style={{ color: 'var(--text)' }} />
+          {name && <button onClick={() => onName('')} aria-label="Clear the name"><X size={13} /></button>}
+        </label>
+        <Picker label="Sort" value={sort} options={sorts} onChange={onSort} changed={sort !== sorts[0]?.id} />
+        <Picker label="Pay" value={pay} options={pays} onChange={onPay} changed={pay !== pays[0]?.id} />
+        {/* WHAT IT SELLS (lib/trybe-sells): read from TRYBE and the brand's website. */}
+        <Picker label="Sells" value={filters.sells ?? 'any'} changed={!!filters.sells}
+          options={[{ id: 'any', label: 'Anything', says: 'Every brand, whatever it sells.' }, ...SELLS.map((k) => ({ id: k, label: SELLS_WORDS[k].label, says: `${SELLS_WORDS[k].says} Read from TRYBE's categories and description, whether it sends samples, and the brand's own website. A brand MVP cannot tell is left out.` }))]}
+          onChange={(v) => onFilters({ ...filters, sells: v === 'any' ? null : v as FinderFilters['sells'] })} />
+        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="finder-filters"
+          className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 outline-none ${open || inPanel ? ON_TEXT : ''}`}
+          style={open || inPanel ? { borderColor: PURPLE } : { borderColor: 'var(--border-2)' }}>
+          <SlidersHorizontal size={14} />Filters
+          {inPanel > 0 && <span className="min-w-[1.25rem] rounded-full px-1.5 text-[11px] leading-5 text-center tabular-nums" style={{ background: PURPLE, color: '#fff' }}>{inPanel}</span>}
+          <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div id="finder-filters" role="region" aria-label="Filters" className="rounded-xl p-3 sm:p-4 space-y-4" style={{ background: 'var(--surface-2)' }}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {group('Pay', <>
+              {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
+              {numberBox('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. No platform shows a brand\u2019s real ad budget, so this is the honest figure MVP can work out. A brand MVP cannot estimate is left out.')}
+              {toggle('paidCreators', undefined, 'TRYBE says it has paid creators.')}
+            </>)}
+            {group('Room for you', <>
+              {toggle('openOnly', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
+              {toggle('newOnly', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
+              {numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
+              {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
+            </>)}
+            {group('The brand', <>
+              {toggle('spending', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
+              {toggle('fastReview', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
+              {toggle('samples')}
+              {toggle('onAmazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
+              {toggle('starred', <Star size={12} />)}
+            </>)}
+          </div>
+          {panelExtra}
+          <div className="flex justify-end">
+            <button onClick={() => setOpen(false)} className={`text-[12px] font-semibold underline ${ON_TEXT}`}>Done</button>
+          </div>
+        </div>
       )}
-      {/* WHAT IT SELLS (lib/trybe-sells): read from TRYBE and the brand's website. */}
-      <span className="basis-full h-0" aria-hidden />
-      <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Sells</span>
-      <button onClick={() => onFilters({ ...filters, sells: null })} aria-pressed={!filters.sells} className={chip}
-        style={!filters.sells ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>Anything</button>
-      {SELLS.map((k) => (
-        <button key={k} onClick={() => onFilters({ ...filters, sells: filters.sells === k ? null : k })} aria-pressed={filters.sells === k} className={chip}
-          title={`${SELLS_WORDS[k].says} Read from TRYBE's categories and description, whether it sends samples, and the brand's own website. A brand MVP cannot tell is left out.`}
-          style={filters.sells === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{SELLS_WORDS[k].label}</button>
-      ))}
+
+      {on.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="What is on">
+          {on.map((o) => (
+            <button key={o.key} onClick={o.off} className={`${chip} ${ON_TEXT} focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 outline-none`} style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.08)' }} aria-label={`Remove: ${o.text}`}>
+              {o.text}<X size={11} />
+            </button>
+          ))}
+          {on.length > 1 && (
+            <button onClick={() => { onFilters(NO_FILTERS); onName(''); onSort(sorts[0].id); onPay(pays[0].id) }} className={`text-[12px] font-semibold underline px-1 whitespace-nowrap ${ON_TEXT}`}>Clear all</button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -438,8 +535,8 @@ export const presetOf = (f: FinderFilters, sort: string): PresetId | null => PRE
 export function FinderPresets({ filters, sort, onPick }: { filters: FinderFilters; sort: string; onPick: (p: (typeof PRESETS)[number] | null) => void }) {
   const on = presetOf(filters, sort)
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mb-2" role="group" aria-label="Ready made lists">
-      <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={soft}>Lists</span>
+    <div className="flex flex-wrap items-center gap-1.5 mb-2.5" role="group" aria-label="Quick lists">
+      <span className="text-[12px] mr-1" style={soft}>Quick lists</span>
       {PRESETS.map((p) => (
         <button key={p.id} onClick={() => onPick(on === p.id ? null : p)} aria-pressed={on === p.id} title={p.says}
           className={chip} style={on === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{p.label}</button>
