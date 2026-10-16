@@ -56,7 +56,7 @@ export const TAG_RULES: Record<TagPlatform, PlatformRule> = {
   telegram: { min: 0, max: 1, hardMax: 2, disclosure: 0, says: 'One at most on Telegram.' },
 }
 
-export type TagSource = 'yours' | 'trend' | 'brand' | 'category' | 'members' | 'writer' | 'keyword'
+export type TagSource = 'yours' | 'trend' | 'measured' | 'brand' | 'category' | 'members' | 'writer' | 'keyword'
 export interface PickedTag { tag: string; source: TagSource; why: string }
 export interface TagStatLite { tag: string; samples: number; avgLift: number }
 export interface TrendTag {
@@ -79,6 +79,23 @@ export function trendStanding(t: Pick<TrendTag, 'source' | 'posts'>): 'dead' | '
   if (t.source === 'youtube') return t.posts < 200 ? 'dead' : 'active'
   if (t.source === 'instagram') return t.posts < 2000 ? 'dead' : t.posts > 300_000_000 ? 'crowd' : 'active'
   return 'unknown'
+}
+
+/** How good a tag's own count is for reaching buyers, from what the platform
+ *  showed: a tag in the busy middle (enough people browse it, not so many a
+ *  post is buried in minutes) scores highest; one MVP has no count for sits
+ *  in the middle of the order; a crowd scores low; a dead end is never used. */
+export function sizeScore(t: Pick<TrendTag, 'source' | 'posts' | 'rank'> | null | undefined): number {
+  if (!t) return 1
+  if (t.source === 'tiktok_cc') return 3 + 1 / Math.max(1, t.rank ?? 10)
+  const st = trendStanding(t)
+  if (st === 'dead') return -1
+  if (st === 'crowd') return 0.5
+  if (st !== 'active' || typeof t.posts !== 'number') return 1
+  const n = t.posts
+  if (t.source === 'instagram') return n >= 20_000 && n <= 3_000_000 ? 3 : 2
+  if (t.source === 'youtube') return n >= 2_000 && n <= 500_000 ? 3 : 2
+  return 2
 }
 
 export interface TagInput {
@@ -215,8 +232,12 @@ export function pickHashtags(input: TagInput): TagPick {
     seen.add(tag)
     // A tag that is also trending says so: that is the stronger reason.
     const tr = trendBy.get(tag)
-    if (tr && trendStanding(tr) === 'active' && (source === 'category' || source === 'writer' || source === 'keyword')) out.push({ tag, source: 'trend', why: trendWhy(tr) })
-    else out.push({ tag, source, why })
+    // Only TikTok's own trend list makes a tag "Trending"; a count Instagram
+    // or YouTube showed is said beside the reason it was picked.
+    if (tr && trendStanding(tr) === 'active' && (source === 'category' || source === 'writer' || source === 'keyword')) {
+      if (tr.source === 'tiktok_cc') out.push({ tag, source: 'trend', why: trendWhy(tr) })
+      else out.push({ tag, source, why: `${why}; ${trendWhy(tr)}` })
+    } else out.push({ tag, source, why })
     return out.length >= want
   }
 
@@ -224,6 +245,13 @@ export function pickHashtags(input: TagInput): TagPick {
   const yours = (input.yours || []).filter((t) => t.avgLift >= 1.1).sort((a, b) => b.avgLift - a.avgLift)
   const members = (input.members || []).filter((t) => t.avgLift >= 1.1).sort((a, b) => b.avgLift - a.avgLift)
   const trends = (input.trends || []).filter((t) => (madeOfContent(hashify(t.tag), words) || catTags.has(hashify(t.tag))) && trendStanding(t) === 'active')
+    .sort((a, b) => sizeScore(b) - sizeScore(a))
+  const trendSource = (t: TrendTag): TagSource => (t.source === 'tiktok_cc' ? 'trend' : 'measured')
+  // MVP's category tags in the order the platforms' own counts favour: the
+  // busy middle first, unchecked next, crowds last (dead ones never).
+  // A dead end in the list is said in dropped, with its count, never used.
+  const bySize = (list: string[]) => list.map((t, i) => ({ t, i, s: sizeScore(trendBy.get(hashify(t))) })).sort((a, b) => b.s - a.s || a.i - b.i)
+    .filter((x) => { if (x.s < 0) take(x.t, 'category', ''); return x.s >= 0 }).map((x) => x.t)
   function trendWhy(t: TrendTag): string { return t.label || (t.source === 'tiktok_cc' ? `trending on TikTok${t.rank ? ` (#${t.rank} this week)` : ''}` : t.source === 'youtube' ? `active on YouTube${t.posts ? ` (${compact(t.posts)} videos)` : ''}` : t.source === 'instagram' ? `active on Instagram${t.posts ? ` (${compact(t.posts)} posts)` : ''}` : 'trending') }
   const liftWhy = (who: string, t: TagStatLite) => `${who} ${t.avgLift.toFixed(1)}x reach over ${t.samples} post${t.samples === 1 ? '' : 's'}`
 
@@ -231,9 +259,9 @@ export function pickHashtags(input: TagInput): TagPick {
   // One tag (Threads, X, Bluesky, Telegram): the most specific community tag.
   if (want === 1) {
     for (const t of yours) if (take(t.tag, 'yours', liftWhy('lifted your', t), { needsRelevance: true })) break
-    for (const t of trends) if (take(t.tag, 'trend', trendWhy(t))) break
+    for (const t of trends) if (take(t.tag, trendSource(t), trendWhy(t))) break
     for (const k of kinds) if (take(k, 'category', 'what the product is')) break
-    for (const c of cats) if (take(c.niche[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)) break
+    for (const c of cats) if (take(bySize(c.niche)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)) break
     for (const w of input.writer || []) if (take(w, 'writer', 'written for this post', { needsRelevance: true })) break
     take(brandTag, 'brand', "the product's brand")
     return { tags: out, dropped, rule }
@@ -244,11 +272,12 @@ export function pickHashtags(input: TagInput): TagPick {
   if (want >= 3) take(brandTag, 'brand', "the product's brand")
   take(kinds[0], 'category', 'what the product is')
   for (const t of yours.slice(0, 2)) take(t.tag, 'yours', liftWhy('lifted your', t), { needsRelevance: true })
-  for (const t of trends.slice(0, 2)) take(t.tag, 'trend', trendWhy(t))
-  for (const c of cats) take(c.niche[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)
+  // Up to three tags the platforms themselves vouch for, when they are about the post.
+  for (const t of trends.slice(0, 3)) take(t.tag, trendSource(t), trendWhy(t))
+  for (const c of cats) take(bySize(c.niche)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)
   for (const t of members.slice(0, 2)) take(t.tag, 'members', liftWhy('lifted members’', t), { needsRelevance: true })
   for (const w of input.writer || []) take(w, 'writer', 'written for this post', { needsRelevance: true })
-  for (const c of cats) { take(c.mid[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`); take(c.niche[1], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`) }
+  for (const c of cats) { take(bySize(c.mid)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`); take(bySize(c.niche)[1], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`) }
   if (want < 3) take(brandTag, 'brand', "the product's brand")
   for (const c of cats) take(c.broad[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags, for reach`, { broad: true })
   for (const n of input.niches || []) take(n, 'category', 'your niche', { needsRelevance: true })
@@ -323,5 +352,5 @@ export function fitHashtags(text: string, platform: TagPlatform): string {
 
 /** The words for the screen: each tag and where it came from. */
 export const SOURCE_WORDS: Record<TagSource, string> = {
-  yours: 'Your results', trend: 'Trending', brand: 'Brand', category: 'Category', members: 'Members’ results', writer: 'Written for this post', keyword: 'From the content',
+  yours: 'Your results', trend: 'Trending', measured: 'Checked on the platform', brand: 'Brand', category: 'Category', members: 'Members’ results', writer: 'Written for this post', keyword: 'From the content',
 }

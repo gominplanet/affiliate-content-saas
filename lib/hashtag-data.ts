@@ -14,7 +14,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { personalTagStats, pooledTagStats } from '@/lib/pulse-rank'
 import { detectNiche } from '@/lib/hashtag-map'
-import { pickHashtags, type TagInput, type TagPick, type TagPlatform, type TrendTag } from '@/lib/hashtag-engine'
+import { pickHashtags, withTags, withoutTags, writerTags, type TagInput, type TagPick, type TagPlatform, type TrendTag } from '@/lib/hashtag-engine'
 
 /** The platform Pulse and the trends are kept under. */
 export function pulsePlatform(p: TagPlatform): string {
@@ -58,4 +58,35 @@ export async function hashtagsFor(input: TagInput & { userId?: string | null }):
 /** Just the tags, for a caller that only needs the line. */
 export async function hashtagLine(input: TagInput & { userId?: string | null }): Promise<string[]> {
   return (await hashtagsFor(input)).tags.map((t) => t.tag)
+}
+
+/** What the engine knows, loaded ONCE for several posts at a time (a plan of
+ *  clips that go to TikTok, Reels and Shorts): the creator's Pulse and the
+ *  niche's pooled results across all platforms, and the trends of every
+ *  platform named, together. Never throws; a slow source is empty. */
+export async function tagData(opts: { platforms: TagPlatform[]; userId?: string | null; text: string; niches?: string[] }): Promise<Pick<TagInput, 'yours' | 'members' | 'trends'>> {
+  const niche = detectNiche(`${opts.text || ''} ${(opts.niches || []).join(' ')}`)
+  const [yours, members, ...trendLists] = await Promise.all([
+    opts.userId ? within(personalTagStats(opts.userId, 2, null), 2500, []) : Promise.resolve([]),
+    within(pooledTagStats(niche, 5, null), 2500, []),
+    ...Array.from(new Set(opts.platforms)).map((p) => within(trendsFor(p), 2500, [] as TrendTag[])),
+  ])
+  return { yours, members, trends: trendLists.flat() }
+}
+
+/** A finished post with its hashtags PICKED BY THE ENGINE, from the research
+ *  (Pulse, trends, the platform's counts), the writer's own tags kept as
+ *  candidates. Used where a model writes the post (Threads, X, LinkedIn,
+ *  Bluesky, Telegram), which used to post the writer's guess, cleaned up.
+ *  The tags go on the last line, dropped from the end to fit maxChars. Never
+ *  throws: on any failure the post goes as written, and the safety net
+ *  (fitHashtags) still runs when it is sent. */
+export async function researchedTags(text: string, input: { platform: TagPlatform; about: string; brand?: string | null; userId?: string | null; maxChars?: number | null; niches?: string[] }): Promise<{ text: string; pick: TagPick | null }> {
+  try {
+    const pick = await hashtagsFor({ platform: input.platform, text: `${input.about || ''}\n${withoutTags(text)}`, brand: input.brand ?? null, writer: writerTags(text), niches: input.niches, userId: input.userId })
+    if (!pick.tags.length) return { text, pick }
+    return { text: withTags(text, pick.tags.map((t) => t.tag), { maxChars: input.maxChars ?? null }), pick }
+  } catch {
+    return { text, pick: null }
+  }
 }

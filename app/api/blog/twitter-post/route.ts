@@ -22,6 +22,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
+import { researchedTags } from '@/lib/hashtag-data'
 
 export const maxDuration = 60
 
@@ -202,6 +203,10 @@ Return ONLY the tweet text.`,
       }
 
       tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      // THE ENGINE PICKS THE TAGS from the research (lib/hashtag-data
+      // researchedTags); the writer's own are candidates. A post the creator
+      // edited keeps their tags.
+      tweetText = (await researchedTags(tweetText, { platform: 'x', about: `${post.title || ''}\n${post.excerpt || ''}`, brand: post.title || null, userId: user.id, maxChars: generationBudget })).text
       recordAnthropicUsage(msg, {
         userId: user.id, tier,
         feature: 'social_twitter_caption', model: 'claude-haiku-4-5-20251001',

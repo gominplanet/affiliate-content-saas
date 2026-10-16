@@ -17,6 +17,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { spendGate } from '@/lib/ai-spend'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
+import { researchedTags } from '@/lib/hashtag-data'
 
 const DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
@@ -116,6 +117,10 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
         }],
       })
       bodyText = (msg.content[0] as { type: string; text: string }).text
+      // THE ENGINE PICKS THE TAGS from the research (lib/hashtag-data
+      // researchedTags); the writer's own are candidates. A post the creator
+      // edited keeps their tags.
+      bodyText = (await researchedTags(bodyText, { platform: 'threads', about: `${p.title || ''}\n${p.excerpt || ''}`, brand: p.title || null, userId: user.id, maxChars: 440 })).text
       recordAnthropicUsage(msg, {
         userId: user.id, tier,
         feature: 'social_threads_caption', model: 'claude-haiku-4-5-20251001',

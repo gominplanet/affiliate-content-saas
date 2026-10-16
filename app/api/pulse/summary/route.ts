@@ -12,12 +12,16 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { personalTagStats, pooledTagStats, collectedSampleCount, bestPostingTimes } from '@/lib/pulse-rank'
 import { MEASURED_BY, NO_RESULTS_WHY, PULSE_PLATFORMS, RESULTS_FROM } from '@/lib/reach-pulse'
+import { trendStanding } from '@/lib/hashtag-engine'
 
 export const runtime = 'nodejs'
 
 // Below this many collected posts the personal ranking is noise — show a
 // "still learning" state instead of crowning tags off 1-2 posts.
 const MIN_FOR_PERSONAL = 4
+/** When MVP began picking hashtags from live platform data (5251a309 and
+ *  5659fcee live): posts before this were picked without it. */
+const RESEARCH_LIVE_AT = '2026-10-16T18:00:00.000Z'
 
 export async function GET(request: NextRequest) {
   const supabase = await createServerClient()
@@ -61,7 +65,7 @@ export async function GET(request: NextRequest) {
   // platform does not share results, why. A platform with no results never
   // reads as one whose tags did nothing.
   const since = new Date(Date.now() - 90 * 86_400_000).toISOString()
-  const { data: recentRows } = await admin.from('reach_samples').select('platform,status')
+  const { data: recentRows } = await admin.from('reach_samples').select('platform,status,hashtags,posted_at')
     .eq('user_id', user.id).gte('posted_at', since).limit(3000)
   const tally = new Map<string, { posted: number; measured: number; waiting: number; noResults: number; failed: number }>()
   for (const r of (recentRows ?? []) as Array<{ platform: string | null; status: string | null }>) {
@@ -74,6 +78,35 @@ export async function GET(request: NextRequest) {
     else if (r.status === 'failed') t.failed++
     tally.set(k, t)
   }
+  // IS MVP USING THE RESEARCH (Seb, 2026-10-16: "the whole idea here is, is
+  // MVP creating its content using the correct hashtag research"). For the
+  // platforms that show MVP a tag's own numbers (Instagram counts, YouTube
+  // hashtag pages, TikTok Creative Center), each tag MVP posted since the
+  // engine went live is looked up: did it have a live reading, and was any a
+  // dead end. Counted from what was posted, not from what was planned.
+  const READS = new Set(['instagram', 'youtube', 'tiktok'])
+  const usedBy = new Map<string, Set<string>>()
+  for (const r of (recentRows ?? []) as Array<{ platform: string | null; hashtags: string[] | null; posted_at: string | null }>) {
+    if (!r.posted_at || r.posted_at < RESEARCH_LIVE_AT) continue
+    const k = r.platform || 'instagram'
+    if (!READS.has(k)) continue
+    const set = usedBy.get(k) || new Set<string>()
+    for (const t of r.hashtags || []) if (t && t !== '#ad' && t !== '#sponsored') set.add(t.toLowerCase())
+    usedBy.set(k, set)
+  }
+  const researchOf = async (platform: string) => {
+    const used = Array.from(usedBy.get(platform) || [])
+    if (!READS.has(platform)) return null
+    if (!used.length) return { used: 0, read: 0, dead: 0, vouched: [] as Array<{ tag: string; label: string | null }> }
+    const fresh = new Date(Date.now() - 21 * 86_400_000).toISOString()
+    const { data: rows, error } = await admin.from('hashtag_trends').select('tag,source,posts,label').eq('platform', platform).in('tag', used.slice(0, 300)).gte('seen_at', fresh)
+    if (error) return null
+    const seen = new Map<string, { source: string; posts: number | null; label: string | null }>()
+    for (const r of (rows ?? []) as Array<{ tag: string; source: string; posts: number | null; label: string | null }>) if (!seen.has(r.tag)) seen.set(r.tag, r)
+    const dead = Array.from(seen.values()).filter((r) => trendStanding(r) === 'dead').length
+    const vouched = Array.from(seen.entries()).filter(([, r]) => trendStanding(r) === 'active').slice(0, 6).map(([tag, r]) => ({ tag, label: r.label }))
+    return { used: used.length, read: seen.size, dead, vouched }
+  }
   const byPlatform = await Promise.all(PULSE_PLATFORMS.map(async (p) => {
     const t = tally.get(p.key) || { posted: 0, measured: 0, waiting: 0, noResults: 0, failed: 0 }
     const top = t.measured >= 2 ? (await personalTagStats(user.id, 2, p.key)).filter((x) => x.avgLift >= 1).slice(0, 3) : []
@@ -83,6 +116,7 @@ export async function GET(request: NextRequest) {
       measuredBy: MEASURED_BY[p.key] || null,
       noResultsWhy: RESULTS_FROM.has(p.key) ? null : NO_RESULTS_WHY[p.key] || null,
       top,
+      research: await researchOf(p.key),
     }
   }))
 

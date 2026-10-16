@@ -21,6 +21,7 @@ import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl, isAmazonL
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
+import { researchedTags } from '@/lib/hashtag-data'
 
 export const maxDuration = 60
 
@@ -174,6 +175,10 @@ Return ONLY the post text.`,
       })
 
       postText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      // THE ENGINE PICKS THE TAGS from the research (lib/hashtag-data
+      // researchedTags); the writer's own are candidates. A post the creator
+      // edited keeps their tags.
+      postText = (await researchedTags(postText, { platform: 'bluesky', about: `${post.title || ''}\n${post.excerpt || ''}`, brand: post.title || null, userId: user.id, maxChars: generationBudget })).text
       recordAnthropicUsage(msg, {
         userId: user.id, tier,
         feature: 'social_bluesky_caption', model: 'claude-haiku-4-5-20251001',

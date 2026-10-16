@@ -18,6 +18,7 @@ import { cuesToTimestampedText } from '@/lib/shorts-transcript'
 import { sliceCuesToWindow } from '@/lib/shorts-captions'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { snapToSentences } from '@/lib/shorts-snap'
+import { tagData } from '@/lib/hashtag-data'
 
 const MODEL = 'claude-sonnet-4-6'
 // Cheap first pass that scores where the good moments ARE, so the expensive
@@ -319,6 +320,11 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     if (rawClips.length === 0 && (reply.cut || !/^\s*\[\s*\]\s*$/.test(reply.text))) throw new PlanUnreadableError()
   }
 
+  // THE RESEARCH, LOADED ONCE FOR THE PLAN (Seb, 2026-10-16: "is MVP creating
+  // its content using the correct hashtag research"). These clips go to
+  // TikTok, Reels and Shorts, so the pick reads the creator's results and
+  // the trends of all three. It used to pick from the category map alone.
+  const tagInfo = await tagData({ platforms: ['tiktok', 'youtube_short', 'instagram'], userId: opts.telemetry?.userId ?? null, text: [opts.videoTitle, (opts.sourceDescription || '').slice(0, 600), opts.niches || ''].join('\n') })
   const out: ClipSuggestion[] = []
   for (const rc of rawClips) {
     const ws = Number(rc.startSec)
@@ -350,6 +356,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
         platform: 'youtube_short',
         text: [opts.videoTitle, rc.hook, rc.caption, (opts.sourceDescription || '').slice(0, 600)].filter(Boolean).join('\n'),
         writer: Array.isArray(rc.hashtags) ? rc.hashtags.map(h => String(h).trim()).filter(Boolean) : [],
+        ...tagInfo,
       }).tags.map(t => t.tag),
       subtitles,
     })

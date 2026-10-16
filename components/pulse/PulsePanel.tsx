@@ -24,6 +24,9 @@ interface PlatformRow {
   posted: number; measured: number; waiting: number; noResults: number; failed: number
   sharesResults: boolean; measuredBy: string | null; noResultsWhy: string | null
   top: TagStat[]
+  /** Of the tags MVP posted here since it began reading live data: how many
+   *  the platform's own numbers vouch for, and dead ends (null: no reading here). */
+  research?: { used: number; read: number; dead: number; vouched: Array<{ tag: string; label: string | null }> } | null
 }
 interface Summary {
   byPlatform?: PlatformRow[]
@@ -143,6 +146,16 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
                     </p>
                   ) : (
                     <p className="text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">Tags recorded, results not available: {p.noResultsWhy || 'this platform does not share post results with MVP.'}</p>
+                  )}
+                  {p.research && p.research.used > 0 && (
+                    <p className="text-[11px] mt-1" style={{ color: p.research.dead ? '#c93400' : '#248a3d' }}>
+                      Research: {p.research.read} of the {p.research.used} tags MVP posted here had a live reading from {p.label}
+                      {p.research.dead ? `, and ${p.research.dead} ${p.research.dead === 1 ? 'was a dead end' : 'were dead ends'} (almost nobody uses ${p.research.dead === 1 ? 'it' : 'them'}).` : ', and none was a dead end.'}
+                      {p.research.vouched.length > 0 && <span style={{ color: 'var(--text-3)' }}> {p.research.vouched.map(v => v.tag).join(' ')}</span>}
+                    </p>
+                  )}
+                  {p.research && p.research.used === 0 && p.posted > 0 && (
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-3)' }}>Research: no posts here yet since MVP began picking tags from live {p.label} data.</p>
                   )}
                   {p.top.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-1.5">

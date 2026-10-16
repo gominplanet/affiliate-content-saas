@@ -26,6 +26,7 @@ import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { spendGate } from '@/lib/ai-spend'
+import { researchedTags } from '@/lib/hashtag-data'
 
 export const maxDuration = 60
 
@@ -165,6 +166,10 @@ Return ONLY the post text, no extra commentary.`,
         }],
       })
       rawText = (msg.content[0] as { type: string; text: string }).text
+      // THE ENGINE PICKS THE TAGS from the research (lib/hashtag-data
+      // researchedTags); the writer's own are candidates. A post the creator
+      // edited keeps their tags.
+      rawText = (await researchedTags(rawText, { platform: 'linkedin', about: `${post.title || ''}\n${post.excerpt || ''}`, brand: post.title || null, userId: user.id })).text
       recordAnthropicUsage(msg, {
         userId: user.id, tier,
         feature: 'social_linkedin_caption', model: 'claude-haiku-4-5-20251001',

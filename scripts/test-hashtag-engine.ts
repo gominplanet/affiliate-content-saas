@@ -13,7 +13,7 @@
 // through the engine, every post goes through the safety net, every platform
 // is tracked, and SCOUT reads trends without ever posting.
 import { readFileSync, existsSync } from 'node:fs'
-import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords } from '../lib/hashtag-engine'
+import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore } from '../lib/hashtag-engine'
 import { categoriesFor } from '../lib/hashtag-map'
 
 const fails: string[] = []
@@ -73,6 +73,30 @@ const dead = pickHashtags({ platform: 'instagram', ...air, trends: [{ tag: '#kit
 check('a tag Instagram shows almost nobody using is dropped, with the count', !dead.tags.some((t) => t.tag === '#kitchenessentials') && dead.dropped.some((d) => d.tag === '#kitchenessentials' && /500/.test(d.why)), dead)
 check('the brand tag stays even when small (brand tags are)', dead.tags[0]?.tag === '#cosori', dead.tags)
 check('the pick is still full after a dead tag is dropped', dead.tags.length >= 3, dead.tags)
+
+// ── Picked by what the platforms vouch for (Seb, 2026-10-16: "it means
+// nothing if MVP is not really honing in onto using the appropriate, correct,
+// and most viral hashtag") ──
+check('the busy middle beats unchecked, unchecked beats a crowd, a dead end is never used', sizeScore({ source: 'instagram', posts: 500_000 }) > sizeScore(null) && sizeScore(null) > sizeScore({ source: 'instagram', posts: 4e8 }) && sizeScore({ source: 'instagram', posts: 300 }) < 0 && sizeScore({ source: 'tiktok_cc', posts: null, rank: 1 }) > sizeScore({ source: 'instagram', posts: 500_000 }))
+const igReal = [['#hairdryer', 558e3], ['#hairtips', 2.2e6], ['#haircare', 30.9e6], ['#dreamegleam', 173]].map(([tag, posts]) => ({ tag: tag as string, source: 'instagram', posts: posts as number, label: `on Instagram: ${posts} posts` }))
+const dryer = pickHashtags({ platform: 'instagram', text: 'Dreame Gleam hair dryer, high speed blow dryer with ionic care for fast drying hair', brand: 'Dreame Gleam', trends: igReal })
+check('a hair dryer gets the tags Instagram vouches for', dryer.tags.some((t) => t.tag === '#hairdryer') && dryer.tags.some((t) => t.tag === '#hairtips') && !dryer.tags.some((t) => t.tag === '#dreamegleam'), dryer.tags)
+check('a count Instagram showed is never called Trending', dryer.tags.every((t) => t.source !== 'trend') && dryer.tags.some((t) => t.source === 'measured') && /on Instagram/.test(dryer.tags.find((t) => t.tag === '#hairdryer')?.why || ''), dryer.tags)
+check('Checked on the platform has its words', SOURCE_WORDS.measured === 'Checked on the platform')
+const deadCat = pickHashtags({ platform: 'instagram', ...air, trends: [{ tag: '#kitchenessentials', source: 'instagram', posts: 500 }] })
+check('a dead category tag is said in dropped, with its count', deadCat.dropped.some((d) => d.tag === '#kitchenessentials' && /500/.test(d.why)) && !deadCat.tags.some((t) => t.tag === '#kitchenessentials'), deadCat)
+
+// ── Every generator reads the research, not only the map ──
+const PLAN = read('lib/shorts-planner.ts')
+check('Clip Factory\u2019s planner loads the research once, from TikTok, Shorts and Reels', /const tagInfo = await tagData\(\{ platforms: \['tiktok', 'youtube_short', 'instagram'\], userId: opts\.telemetry\?\.userId \?\? null/.test(PLAN) && /\.\.\.tagInfo,\n\s*\}\)\.tags\.map/.test(PLAN))
+for (const [f, plat] of [['threads-post', 'threads'], ['twitter-post', 'x'], ['bluesky-post', 'bluesky'], ['telegram-post', 'telegram'], ['linkedin-post', 'linkedin']] as const) {
+  const src = read(`app/api/blog/${f}/route.ts`)
+  check(`${f}: the engine picks the tags of what the model wrote, never of what the creator typed`, new RegExp(`\\.text[^\\n]*\\n(?:\\s*//[^\\n]*\\n)*\\s*\\w+ = \\(await researchedTags\\(\\w+, \\{ platform: '${plat}'`).test(src) && (src.match(/researchedTags\(/g) || []).length === 1)
+}
+const DATA = read('lib/hashtag-data.ts')
+check('the post goes as written if the research fails, and the safety net still runs', /export async function researchedTags[\s\S]{0,1200}\} catch \{\n\s*return \{ text, pick: null \}/.test(DATA))
+const SUM = read('app/api/pulse/summary/route.ts')
+check('Pulse shows, per platform, how many posted tags had a live reading and any dead ends', /research: await researchOf\(p\.key\)/.test(SUM) && /if \(!r\.posted_at \|\| r\.posted_at < RESEARCH_LIVE_AT\) continue/.test(SUM) && /tags MVP posted here had a live reading from/.test(read('components/pulse/PulsePanel.tsx')))
 
 // ── The safety net every post goes through ──────────────────────────────────
 const net = fitHashtags('I love my #airfryer and my #Cosori daily. #a\n\n#AirFryer #cosori #kitchen #cooking #food #yum #ad', 'instagram')
