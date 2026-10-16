@@ -66,8 +66,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   facebook_setup: 'labs',
   // Group Post Queue: Sponsored Products and Amazon videos in a batch, Group
   // first (SCOUT fills the post with the link), then a Page post linking to
-  // it. Admin only while it is tested (Seb, 2026-10-06: "build 1 and 3 in labs").
-  group_queue: 'admin',
+  // it. Live for Pro 2026-10-16 (Seb: "the group post queue should go live").
+  group_queue: 'labs',
   // TRYBE outreach: SCOUT reads TRYBE's Discover Brands, MVP drafts a first
   // message per brand, the creator approves the Ready to send list, SCOUT sends it slowly.
   // Opened to Pro 2026-10-08, in Find products (Seb: "unlock TRYBE for pro users").

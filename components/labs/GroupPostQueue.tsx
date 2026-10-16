@@ -1,7 +1,7 @@
 'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Group Post Queue (Labs). Pick Sponsored Products from the EPC Library or your
+// Group Post Queue (live for Pro). Pick Sponsored Products from the EPC Library or your
 // published Amazon videos, write the posts in one go, then work down the list,
 // Group first like everything else MVP puts on Facebook: SCOUT fills the post,
 // affiliate link included, into your Group; you press Post; the moment SCOUT
@@ -12,7 +12,7 @@
 // when SCOUT saw the text land, "In your Group" only with the post seen going
 // up, and "On your Page" only with the Page post's id from Facebook.
 //
-// The queue lives in this browser (localStorage) while it is in Labs.
+// The queue lives in this browser (localStorage).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isFacebookGroupLink } from '@/lib/facebook-group-link'
 import WhyGroupFirst from '@/components/meta/WhyGroupFirst'
@@ -264,7 +264,7 @@ export default function GroupPostQueue() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Labs · Facebook</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Facebook</p>
         <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Group Post Queue</h1>
         <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
           Pick Sponsored Products or your Amazon videos, write every post at once, then work down the list. Each post goes into your Group with your affiliate link: SCOUT fills it in and you press Post. MVP then posts on your Page linking to that Group post, so your Page never uses up Meta's link limit.

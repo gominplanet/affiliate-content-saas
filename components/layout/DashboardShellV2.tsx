@@ -602,6 +602,10 @@ export default function DashboardShellV2({
         { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social designs', gate: canAmazonHub, onAmazon: 'included' },
         { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders, onAmazon: 'included' },
         { href: '/meta', icon: <Users size={15} />, label: 'Meta Hub', gate: previewOpenToPro('facebook_setup') ? isPro : isAdmin, badge: 'New' },
+        // Group Post Queue: Sponsored Products and Amazon videos in a batch, Group
+        // first with the link (SCOUT fills it), then a Page post linking to it.
+        // Live for Pro 2026-10-16, beside Meta Hub (lib/labs-preview group_queue).
+        { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: previewOpenToPro('group_queue') ? isPro : isAdmin, badge: 'New' },
         // Was Pulse: which hashtags actually earn reach, from your posts and
         // pooled across MVP per niche.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isPro },
@@ -682,10 +686,6 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Group Post Queue: Sponsored Products and Amazon videos in a batch, Group
-        // first with the link (SCOUT fills it), then a Page post linking to it.
-        // Admin only while it is tested (lib/labs-preview group_queue).
-        { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: isAdmin, badge: 'New' },
       ],
     },
     {

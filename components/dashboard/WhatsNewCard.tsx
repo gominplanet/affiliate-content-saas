@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-15-2'
+const RELEASE_ID = '2026-10-16-1'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // Group Post Queue live for Pro (Seb, 2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#2563EB',
+    title: 'Group Post Queue: a batch of Facebook Group posts',
+    desc: 'Pick Sponsored Products or your Amazon videos and MVP writes every post at once. Each goes into your Facebook Group with your link (SCOUT fills it in, you press Post), then MVP shares it on your Page linking to that Group post. Under Share, next to Meta Hub.',
+    href: '/group-queue',
+  },
   // Amazon's hidden figures (Seb, 2026-10-15).
   {
     badge: 'IMPROVED',

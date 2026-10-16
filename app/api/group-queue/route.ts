@@ -1,7 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// /api/group-queue — Group Post Queue (LABS, admin while it is tested,
-// lib/labs-preview.ts group_queue).
+// /api/group-queue — Group Post Queue (Pro, lib/labs-preview.ts group_queue).
 //
 // The Group-first route (the Facebook hub's one rule), in batches: the GROUP
 // gets the post with the affiliate link, filled in by SCOUT for the creator to
@@ -53,7 +52,7 @@ async function gate() {
   const { user, ownerId } = auth as { user: { id: string }; ownerId: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('group_queue', intg?.tier)) return { error: NextResponse.json({ error: 'Group Post Queue is still being tested.' }, { status: 403 }) }
+  if (!canUsePreview('group_queue', intg?.tier)) return { error: NextResponse.json({ error: 'Group Post Queue is part of the Pro plan.' }, { status: 403 }) }
   return { userId: user.id, ownerId, tier: normalizeTier(intg?.tier) as Tier }
 }
 

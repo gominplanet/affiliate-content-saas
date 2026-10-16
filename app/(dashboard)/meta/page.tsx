@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Check, Loader2, FlaskConical, Trash2, ExternalLink, ShieldCheck, ChevronDown, Pencil } from 'lucide-react'
+import { Check, Loader2, Trash2, ExternalLink, ShieldCheck, ChevronDown, Pencil } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { canUsePreview } from '@/lib/labs-preview'
 import { requestFacebookAccess } from '@/lib/extension-frame'
@@ -274,10 +274,6 @@ function MetaHub() {
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Meta Hub</h1>
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
-            <FlaskConical size={11} /> Labs
-          </span>
           <span className="ml-auto text-[12.5px] font-semibold" style={{ color: doneCount === 5 ? OK : 'var(--text-soft)' }}>{doneCount} of 5 done</span>
         </div>
         <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Your Facebook Page and niche Groups, set up and posting from one place.</p>
