@@ -55,8 +55,7 @@ import {
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
   REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms,
-  nextFreeAt, MAX_DAILY_CAP,
-} from '@/lib/trybe-outreach'
+  nextFreeAt, MAX_DAILY_CAP, readReplySteps, claimsUnticked, REPLY_STEPS } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -1678,6 +1677,8 @@ export async function POST(request: Request) {
     const creator = await writerFacts(admin, ownerId)
     // The creator's own messages to brands, for their voice (lib/trybe-voice).
     const voice = readVoiceBody(body.voice)
+    // WHERE THE CREATOR STANDS: what they ticked (lib/trybe-outreach REPLY_STEPS).
+    const steps = readReplySteps(body.steps)
     try {
       // NO RATES ON TRYBE (Seb, 2026-10-14: "we should not ask for rates and
       // such when replying to trybe brands.. this is not like amazon"). The
@@ -1688,15 +1689,19 @@ export async function POST(request: Request) {
           model: MODEL,
           max_tokens: 400,
           system: REPLY_SYSTEM(BANNED_RULE) + (voice.length ? `\n${VOICE_RULE}` : ''),
-          messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages }) + voiceBlock(voice) + extra }],
+          messages: [{ role: 'user', content: replyUserPrompt({ coreMessage: settings.coreMessage, creator, brandName, messages, steps }) + voiceBlock(voice) + extra }],
         })
         try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_reply', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
         return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)
       }
       let text = await ask('')
       if (text && talksTerms(text)) text = await ask('\n\n(Your last try talked about rates, pay, deliverables or terms. On TRYBE the brand sets the pay. Write it again without any of that.)')
+      // NEVER SAYS A STEP IS DONE THAT WAS NOT TICKED: written again once, then refused.
+      const claimed = (t: string) => claimsUnticked(t, steps).map(k => REPLY_STEPS.find(s => s.id === k)!.done.toLowerCase())
+      if (text && claimed(text).length) text = await ask(`\n\n(Your last try said the creator ${claimed(text).join(' and ')}, which they have not ticked. Do not say that. If it is the next step, say they will do it next.)`)
       if (!text) return NextResponse.json({ error: 'The suggestion came back empty. Try again.' }, { status: 502 })
       if (talksTerms(text)) return NextResponse.json({ error: 'The suggestion kept talking about rates or terms, which TRYBE brands set themselves, so it is not shown. Press Suggest another.' }, { status: 502 })
+      if (claimed(text).length) return NextResponse.json({ error: `The suggestion kept saying you ${claimed(text).join(' and ')}, which you have not ticked, so it is not shown. Tick it if it is true, or press Suggest another.` }, { status: 502 })
       return NextResponse.json({ ok: true, text, blanks: replyBlanks(text) })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not write a suggestion: ${e.message}` : 'MVP could not write a suggestion.' }, { status: 502 })

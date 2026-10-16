@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
-import { replyBlanks } from '@/lib/trybe-outreach'
+import { replyBlanks, REPLY_STEPS, type ReplySteps } from '@/lib/trybe-outreach'
 import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
@@ -31,6 +31,24 @@ const AMBER = '#B45309'
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
+
+// WHERE YOU STAND WITH EACH BRAND (Seb, 2026-10-16): the three ticks before a
+// suggested reply, remembered per conversation in this browser.
+const STEPS_KEY = 'mvp.trybe.replySteps'
+const NO_STEPS: ReplySteps = { brief: false, sample: false, partnershipAds: false }
+function readStepsFor(id: string): ReplySteps {
+  try { const all = JSON.parse(localStorage.getItem(STEPS_KEY) || '{}') as Record<string, ReplySteps>; return { ...NO_STEPS, ...(all[id] || {}) } } catch { return NO_STEPS }
+}
+function saveStepsFor(id: string, s: ReplySteps) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STEPS_KEY) || '{}') as Record<string, ReplySteps>
+    all[id] = s
+    // Kept to the latest 300 conversations.
+    const keys = Object.keys(all)
+    for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete all[k]
+    localStorage.setItem(STEPS_KEY, JSON.stringify(all))
+  } catch { /* private window: the ticks last for this visit */ }
+}
 
 /** The first non-empty value under any of these keys, in order, on the object
  *  or one level inside it. */
@@ -226,6 +244,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   // SUGGEST A REPLY (Seb, 2026-10-08 upgrade 2): what the box held before, to
   // put back, and the [brackets] the suggestion left for the creator to fill.
   const [suggesting, setSuggesting] = useState(false)
+  const [steps, setSteps] = useState<ReplySteps>(NO_STEPS)
+  useEffect(() => { setSteps(openId ? readStepsFor(openId) : NO_STEPS) }, [openId])
+  const tick = (k: keyof ReplySteps) => setSteps(s => { const n = { ...s, [k]: !s[k] }; if (openId) saveStepsFor(openId, n); return n })
   const [suggestNote, setSuggestNote] = useState<string | null>(null)
   const [beforeSuggest, setBeforeSuggest] = useState<string | null>(null)
   const [blanks, setBlanks] = useState<string[]>([])
@@ -323,7 +344,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     setSuggesting(true); setSuggestNote(null)
     try {
       const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(120_000), body: JSON.stringify({
-        action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })), voice: readVoice(),
+        action: 'suggest_reply', brandName: convo?.name || '', messages: msgs.slice(-30).map(m => ({ mine: m.mine, who: m.who, text: m.text })), voice: readVoice(), steps,
       }) })
       const d = await r.json().catch(() => ({}))
       if (openRef.current !== id) return // another conversation is open now
@@ -470,6 +491,18 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                   {voice.state.voice.map((v, i) => <li key={i}><b>To {v.brand || 'a brand'}:</b> <span className="whitespace-pre-line">{v.text}</span></li>)}
                 </ul>
               )}
+              {/* What is true, ticked by you: a suggestion says a step is done only when it is ticked. */}
+              <fieldset className="mt-2 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
+                <legend className="px-1 text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>Before MVP suggests a reply, tick what is true</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {REPLY_STEPS.map(s => (
+                    <label key={s.id} className="inline-flex items-center gap-1.5 text-[12.5px] cursor-pointer">
+                      <input type="checkbox" className="accent-[#7C3AED]" checked={steps[s.id]} onChange={() => tick(s.id)} /> {s.label}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-soft)' }}>The reply only says you did what is ticked here. Anything not ticked, it offers to do next. Remembered for this chat.</p>
+              </fieldset>
               <div className="flex flex-wrap items-center gap-3 mt-2">
                 <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}

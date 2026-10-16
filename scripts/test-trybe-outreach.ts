@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync, existsSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, talksTerms, replyUserPrompt, replyBlanks, nextFreeAt } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, talksTerms, replyUserPrompt, replyBlanks, nextFreeAt, claimsUnticked, readReplySteps, REPLY_STEPS } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
@@ -441,6 +441,21 @@ check('a late answer for another conversation is dropped', /const current = open
   check('a row is found without a picture, by any of its first lines or the logo alt', [send, open].every(f => !/el\.querySelector\('img'\) \|\| !visible\(el\)/.test(f) && /\.slice\(0, 4\)/.test(f) && /img\[alt\]/.test(f) && /role'\) === 'button'/.test(f)))
   check('"&" and "and" are the same name', [send, open].every(f => /replace\(\/&\/g, ' and '\)/.test(f)))
   check('a brand not found says what TRYBE listed instead', /return \{ \.\.\.fail\('brand-not-found'\), seen \}/.test(send) && /TRYBE listed: \$\{res\.seen/.test(readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')))
+}
+
+// WHERE THE CREATOR STANDS (Seb, 2026-10-16): three ticks before a suggested
+// reply; a reply says a step is done only when it is ticked.
+{
+  const none = { brief: false, sample: false, partnershipAds: false }
+  check('the three ticks are the brief, the sample and partnership ads', REPLY_STEPS.map(s => s.id).join() === 'brief,sample,partnershipAds' && /read the creative brief/.test(REPLY_STEPS[0].label) && /requested samples/.test(REPLY_STEPS[1].label) && /partnership ad permissions/.test(REPLY_STEPS[2].label))
+  check('ticks are read safely', JSON.stringify(readReplySteps({ brief: true, sample: 'yes', x: 1 })) === JSON.stringify({ brief: true, sample: false, partnershipAds: false }) && readReplySteps(null) === null)
+  check('a reply claiming unticked steps is caught', claimsUnticked("I've read the creative brief, I have requested the sample and I've approved the partnership ad permissions.", none).join() === 'brief,sample,partnershipAds')
+  check('saying a step comes next is not a claim', claimsUnticked("I'll read the brief and request a sample next.", none).length === 0)
+  check('a ticked step may be said', claimsUnticked("We've read your brief and requested a sample.", { brief: true, sample: true, partnershipAds: false }).length === 0)
+  const p = replyUserPrompt({ coreMessage: 'x', creator: [], brandName: 'B', messages: [{ mine: false, who: 'B', text: 'Hi' }], steps: { brief: true, sample: false, partnershipAds: false } })
+  check('the writer is told what is done and what is not ticked', /WHERE THE CREATOR STANDS[\s\S]*Read the creative brief: done[\s\S]*Requested the sample: not ticked/.test(p) && /Say a step is done ONLY when it says "done"/.test(REPLY_SYSTEM('')))
+  check('a reply that still claims an unticked step is refused, not shown', /if \(text && claimed\(text\)\.length\) text = await ask\(/.test(ROUTE) && /if \(claimed\(text\)\.length\) return NextResponse\.json\(\{ error: `The suggestion kept saying you/.test(ROUTE) && /replyUserPrompt\(\{ coreMessage: settings\.coreMessage, creator, brandName, messages, steps \}\)/.test(ROUTE))
+  check('the Inbox asks for the ticks before suggesting and sends them', /Before MVP suggests a reply, tick what is true/.test(INBOX) && /voice: readVoice\(\), steps,/.test(INBOX) && /REPLY_STEPS\.map\(s => \(/.test(INBOX))
 }
 
 void collectorRun.then(() => {

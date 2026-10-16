@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-10-16-3'
+const RELEASE_ID = '2026-10-16-4'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,14 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  // Ticks before a suggested TRYBE reply (2026-10-16).
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'TRYBE replies: tick what is true first',
+    desc: 'In the Inbox, tick whether you have read the creative brief, requested samples and approved partnership ad permissions. A suggested reply only says you did what is ticked, and offers to do the rest next. Remembered for each chat. On the Pro plan.',
+    href: '/trybe?tab=inbox',
+  },
   // What a TRYBE brand sells (2026-10-16).
   {
     badge: 'NEW',
