@@ -32,6 +32,10 @@ import type { PreviewFeature } from '@/lib/labs-preview'
 /** The MVP Affiliate YouTube channel (youtube.com/@MVPaffiliate). */
 export const MVP_CHANNEL_ID = 'UCyxAkGx_IbKVCs0Uon9MAfA'
 export const MVP_CHANNEL_URL = 'https://www.youtube.com/@MVPaffiliate/videos'
+/** ?sub_confirmation=1 makes YouTube open its Subscribe prompt on arrival
+ *  (Seb, 2026-10-17: "add a subscribe to the youtube channel and to the
+ *  facebook group"). The group is lib/community's FACEBOOK_GROUP_URL. */
+export const MVP_SUBSCRIBE_URL = 'https://www.youtube.com/@MVPaffiliate?sub_confirmation=1'
 
 /** The browser's record of the newest release whose news it has shown. */
 export const SEEN_KEY = 'mvp_scout_news_seen'

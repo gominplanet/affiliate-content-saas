@@ -105,6 +105,7 @@ check('nothing unseen: not even a request', POP.indexOf("releases: SCOUT_RELEASE
 check('the button words are readable: white on dark orange', /const SCOUT_BUTTON = '#C2410C'/.test(POP))
 const words = (POP.match(/>[^<>{}\n]{3,}</g) || []).join(' ') + (POP.match(/'[^'\n]{12,}'/g) || []).join(' ') + (POP.match(/`[^`\n]{12,}`/g) || []).join(' ')
 check('the words on the card have no dashes', !/[–—]| - /.test(words))
+check('Subscribe on YouTube opens YouTube\u2019s subscribe prompt, and Join the Facebook group is MVP\u2019s group', /export const MVP_SUBSCRIBE_URL = 'https:\/\/www\.youtube\.com\/@MVPaffiliate\?sub_confirmation=1'/.test(read('lib/scout-news.ts')) && /href=\{MVP_SUBSCRIBE_URL\}[^>]*target="_blank"/.test(POP) && /href=\{FACEBOOK_GROUP_URL\}[^>]*target="_blank"/.test(POP) && /Subscribe on YouTube/.test(POP) && /Join the Facebook group/.test(POP) && /FACEBOOK_GROUP_URL = 'https:\/\/www\.facebook\.com\/groups\/mvpaffiliate'/.test(read('lib/community.ts')))
 check('mounted on every dashboard page', /<ScoutNewsPopup \/>/.test(read('components/layout/DashboardShellV2.tsx')))
 
 if (fails.length) { console.error('scout-news failed:\n - ' + fails.join('\n - ')); process.exit(1) }

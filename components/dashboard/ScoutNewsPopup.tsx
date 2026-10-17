@@ -9,7 +9,9 @@
  * "update now", is in lib/scout-news.ts.
  *
  * It waits for any other popup (What's new, an announcement) to close first,
- * so two never stack. "Got it" puts it away until the next release; "Later",
+ * so two never stack. Under the videos: Subscribe on YouTube and Join the
+ * Facebook group, each in a new tab, leaving the card open.
+ * "Got it" puts it away until the next release; "Later",
  * the X, Escape and a click outside put it away until the next visit.
  * ?scoutnews on any MVP page opens it again.
  */
@@ -17,11 +19,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Check, ExternalLink, Play, Telescope, X } from 'lucide-react'
+import { Check, ExternalLink, Facebook, Play, Telescope, X, Youtube } from 'lucide-react'
 import { getScoutInstallKind } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
+import { FACEBOOK_GROUP_URL } from '@/lib/community'
 import {
-  FORCE_PARAM, LATER_KEY, MVP_CHANNEL_URL, SCOUT_RELEASES, SEEN_KEY, scoutPopupPlan,
+  FORCE_PARAM, LATER_KEY, MVP_CHANNEL_URL, MVP_SUBSCRIBE_URL, SCOUT_RELEASES, SEEN_KEY, scoutPopupPlan,
   type ChannelVideo, type PopupPlan, type ScoutRelease,
 } from '@/lib/scout-news'
 
@@ -222,6 +225,14 @@ export default function ScoutNewsPopup() {
               <a href={MVP_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className={`font-semibold hover:underline ${LINK}`}>Open the MVP Affiliate channel</a>
             </div>
           )}
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <a href={MVP_SUBSCRIBE_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[12px] leading-tight text-center font-semibold transition-colors bg-[#FF0000]/[0.06] hover:bg-[#FF0000]/[0.12] border-[#FF0000]/25 text-[#CC0000] dark:text-[#FF7A7A]">
+              <Youtube size={15} className="flex-shrink-0" /> Subscribe on YouTube
+            </a>
+            <a href={FACEBOOK_GROUP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[12px] leading-tight text-center font-semibold transition-colors bg-[#0866FF]/[0.06] hover:bg-[#0866FF]/[0.12] border-[#0866FF]/25 text-[#0866FF] dark:text-[#7FB0FF]">
+              <Facebook size={15} className="flex-shrink-0" /> Join the Facebook group
+            </a>
+          </div>
         </div>
         </div>
 
