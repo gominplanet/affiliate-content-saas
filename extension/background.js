@@ -635,7 +635,7 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
     return { ok: false, error: 'The YouTube tab kept changing while SCOUT tried to pin, so nothing was pinned. Pin it in Studio.' }
   }
   try {
-    const tab = await chrome.tabs.create({ url, active: true })
+    const tab = await jobTab('pin', url, true)
     tabId = tab.id
     await waitLoaded()
     let out = await run(false)
@@ -657,12 +657,7 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
     // Closed by what it shows, so a swapped tab is still the one closed.
     await refind()
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) {
-      try {
-        const t = await chrome.tabs.update(callerTabId, { active: true })
-        if (t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
-      } catch (e) {}
-    }
+    await jobBack('pin', callerTabId, true)
   }
 }
 
@@ -3508,7 +3503,7 @@ async function scanCreatorConnections(callerTabId) {
     if (!tab || tab.id == null) {
       // None open — open the SPONSORED PRODUCTS (EPC) grid, FOREGROUND so the
       // React/virtualized grid renders reliably (background tabs throttle).
-      tab = await chrome.tabs.create({ url: ccSponsoredUrl(), active: true })
+      tab = await jobTab('cc', ccSponsoredUrl(), true)
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500) // let the SPA + grid paint before scrolling/harvesting
@@ -3518,7 +3513,7 @@ async function scanCreatorConnections(callerTabId) {
       // to the "New Opportunities" spcc URL threw away their Accepted products and
       // read 0. The content script detects the sponsored grid (by heading + ASIN
       // cards, not just the URL) and guides them if they're on the wrong view.
-      try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
+      try { await jobFront('cc', tab.id) } catch (e) {}
       await _sleep(800)
     }
     return await scanTab(tab.id)
@@ -3526,7 +3521,7 @@ async function scanCreatorConnections(callerTabId) {
     return { ok: false, error: opened ? 'scan-failed' : 'content-script-unreachable' }
   } finally {
     // Always hand focus back to MVP so the cockpit is where the user lands.
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    await jobBack('cc', callerTabId)
   }
 }
 
@@ -3598,14 +3593,14 @@ async function ccFindCampaign(query, asin, callerTabId, brand, campaignIds) {
     // lives in Active, not Opportunities). Then hand focus back to MVP.
     if (ccFoundNothingToCheck(res)) {
       try {
-        await chrome.tabs.update(tab.id, { active: true })
+        await jobFront('cc', tab.id)
         await _sleep(2800) // let the now-visible grid paint + settle
         const fg = await findCampaignOnTab(tab.id, query, want, brand, true, campaignIds, true)
         if (fg) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {
         // Return the user to where they were — never leave them on the CC tab.
-        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+        await jobBack('cc', callerTabId)
       }
     }
     return res || { ok: false, error: 'no-result' }
@@ -3662,13 +3657,13 @@ async function ccSmartScan(rules, keyword, callerTabId) {
     // Hidden grid never rendered → brief foreground pass, then give focus back.
     if (!res || !res.ok || (res.stats && res.stats.scannedOnCard === 0)) {
       try {
-        await chrome.tabs.update(tab.id, { active: true })
+        await jobFront('cc', tab.id)
         await _sleep(2800)
         const fg = await smartScanOnTab(tab.id, rules, keyword)
         if (fg && fg.ok) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {
-        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+        await jobBack('cc', callerTabId)
       }
     }
     return res || { ok: false, error: 'no-result' }
@@ -3721,13 +3716,13 @@ async function ccMatchCampaigns(keyword, asins, callerTabId) {
     // No cards resolved → the hidden grid didn't render; retry foreground once.
     if (res && res.ok && !res.scanned) {
       try {
-        await chrome.tabs.update(tab.id, { active: true })
+        await jobFront('cc', tab.id)
         await _sleep(2800)
         const fg = await matchCampaignsOnTab(tab.id, keyword, want)
         if (fg) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {
-        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+        await jobBack('cc', callerTabId)
       }
     }
     return res || { ok: false, error: 'no-result' }
@@ -3871,12 +3866,12 @@ async function acceptCampaignByUrl(detailsUrl, callerTabId) {
     // Button never rendered headless → bring the tab forward once, retry, return.
     if (!r) {
       try {
-        await chrome.tabs.update(tabId, { active: true })
+        await jobFront('cc', tabId)
         await _sleep(2500)
         r = await tryAccept()
       } catch (e) { /* keep null */ }
       finally {
-        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+        await jobBack('cc', callerTabId)
       }
     }
     if (r && r.ok) await _sleep(1500) // let the click commit before we close
@@ -4316,7 +4311,7 @@ async function scanAmazonVideoForeground(asin, callerTabId) {
   try {
     // FOREGROUND so OINK's content script + its API-driven injection run
     // reliably (same trade-off as the CC scout). Focus returns to the caller.
-    const tab = await chrome.tabs.create({ url, active: true })
+    const tab = await jobTab('amazon', url, true)
     tabId = tab.id
     await waitForTabLoad(tabId, 25000)
     await _sleep(2000) // give OINK a head start before we poll
@@ -4330,7 +4325,7 @@ async function scanAmazonVideoForeground(asin, callerTabId) {
     return { ok: false, error: 'scan-failed' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    await jobBack('amazon', callerTabId)
   }
 }
 
@@ -7134,7 +7129,7 @@ async function readLiveReplay(url, callerTabId) {
     // up to 15s more so the player starts, then give the creator's tab back.
     for (let i = 0; i < 18; i++) {
       await _sleep(1500)
-      if (i === 8 && !activated) { try { await chrome.tabs.update(tabId, { active: true }); activated = true } catch (e) {} }
+      if (i === 8 && !activated) { try { await jobFront('amazon', tabId); activated = true } catch (e) {} }
       const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: harvestLiveReplayInPage })
       last = (r && r[0] && r[0].result) || null
       if (last && last.signIn) return { ok: false, error: 'signed-out' }
@@ -7147,7 +7142,7 @@ async function readLiveReplay(url, callerTabId) {
     return { ok: false, error: 'scan-failed' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (activated && callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    if (activated) await jobBack('amazon', callerTabId)
   }
 }
 
@@ -7730,12 +7725,12 @@ async function scanAmazonVideos(callerTabId) {
   let opened = false
   try {
     if (!tab || tab.id == null) {
-      tab = await chrome.tabs.create({ url: AMZ_MANAGE_URL, active: true })
+      tab = await jobTab('amazon', AMZ_MANAGE_URL, true)
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500)
     } else {
-      try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
+      try { await jobFront('amazon', tab.id) } catch (e) {}
       await _sleep(800)
     }
     const results = await chrome.scripting.executeScript({
@@ -7746,7 +7741,7 @@ async function scanAmazonVideos(callerTabId) {
   } catch (e) {
     return { ok: false, error: opened ? 'scan-failed' : 'content-script-unreachable' }
   } finally {
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    await jobBack('amazon', callerTabId)
   }
 }
 
@@ -8748,7 +8743,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
   let tabId = null
   try {
     // Foreground — contenteditable edits + Save are far more reliable focused.
-    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, 'edit'), active: true })
+    const tab = await jobTab('studio', STUDIO_VIDEO(videoId, 'edit'), true)
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await new Promise((r) => setTimeout(r, 2500))
@@ -8822,7 +8817,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
     return { ok: false, error: (e && e.message) || 'inject-failed' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    await jobBack('studio', callerTabId)
   }
 }
 
@@ -10885,9 +10880,11 @@ async function scanStudioUpload(o) {
     // window drawn, and the creator's own tab is put back each time.
     let prevTab = null
     try { const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }); prevTab = a || null } catch (e) {}
-    const tab = await chrome.tabs.create({ url: 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', active: false })
+    const tab = await jobTab('studio', 'https://studio.youtube.com/channel/' + channelId + '/videos/upload?d=ud', false)
     tabId = tab.id
     front = async () => {
+      // Quiet (1.50.2): the page is told it is on screen; nothing moves.
+      if (await quietFor('studio')) { quietTabIds.add(tabId); await quietShim(tabId); await _sleep(1500); return }
       try {
         const [a] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
         if (a && a.id !== tabId) prevTab = a
@@ -10897,7 +10894,7 @@ async function scanStudioUpload(o) {
       await _sleep(1500)
     }
     back = async () => {
-      if (!prevTab || prevTab.id === tabId) return
+      if (!prevTab || prevTab.id === tabId || (await quietFor('studio'))) return
       try {
         await chrome.tabs.update(prevTab.id, { active: true })
         if (prevTab.windowId != null) await chrome.windows.update(prevTab.windowId, { focused: true })
@@ -11104,7 +11101,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     // IN THE BACKGROUND RUNNER, never in front: the creator is using Chrome
     // for something else, and a Studio tab jumping forward every few minutes
     // would be the runner getting in the way. Read-backs keep it honest.
-    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, startPanel), active: want.background !== true })
+    const tab = await jobTab('studio', STUDIO_VIDEO(videoId, startPanel), want.background !== true)
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     const summarise = (list, path) => {
@@ -11256,7 +11253,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   } finally {
     stopKeepAlive(keepAlive)
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null && want.background !== true) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    if (want.background !== true) await jobBack('studio', callerTabId)
   }
 }
 
@@ -12124,6 +12121,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_SCOUT_QUIET') {
+    // Which jobs run out of sight (1.50.2). MVP decides, SCOUT keeps it, and
+    // the answer is what SCOUT now holds, not what was asked.
+    setQuietJobs(msg.jobs || {}).then((jobs) => sendResponse({ ok: true, jobs })).catch(() => sendResponse({ ok: false }))
+    return true // async
   }
   if (msg.type === 'MVP_SCAN_IDEA_LIST') {
     // Read a full idea list in a BACKGROUND tab (user stays in MVP), then close it.
@@ -13137,10 +13140,10 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
     if (nothingSent && !accepted && !fast) {
       step('fallback-fg')
       try {
-        await chrome.tabs.update(tabId, { active: true }); await _sleep(1500)
+        await jobFront('cc', tabId); await _sleep(1500)
         accepted = await runAccept()
       } catch (e) {}
-      finally { if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} } }
+      finally { await jobBack('cc', callerTabId) }
       if (accepted) { await reload(); sr = await runSend() }
     }
     const full = fullSeen ? { full: true, said: fullSeen.said } : {}
@@ -13236,10 +13239,10 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
   const wantValid = (a) => /^[A-Z0-9]{10}$/.test(want(a))
   let tabId = null
   let last = null
-  const load = async (url) => { await chrome.tabs.update(tabId, { url, active: true }); await waitForTabLoad(tabId, 12000); await _sleep(1200) }
+  const load = async (url) => { const quiet = await quietFor('cc'); await chrome.tabs.update(tabId, quiet ? { url } : { url, active: true }); await waitForTabLoad(tabId, 12000); await _sleep(1200) }
   try {
     // ONE visible, focused tab for the whole flow.
-    const tab = await chrome.tabs.create({ url: 'about:blank', active: true })
+    const tab = await jobTab('cc', 'about:blank', true)
     tabId = tab.id
     for (const c of candidates) {
       // A campaign is either affiliate-plus or spcc; the type just picks the view.
@@ -14162,6 +14165,108 @@ async function trybeRun(func, args, tabId) {
   return res && res[0] ? res[0].result : null
 }
 
+
+// ── QUIET JOBS (1.50.2; Seb, 2026-10-17: "Make sure we don't have any pop-up
+// windows or Scout being brought into the foreground while people are trying
+// to work"). TRYBE is always out of sight (1.50.1). These four jobs came to the
+// front on purpose, because Amazon's and YouTube Studio's pages barely draw in
+// a hidden tab: comment pins ('pin'), Creator Connections ('cc'), Amazon
+// videos ('amazon') and YouTube Studio ('studio'). Each can now run out of
+// sight too, in SCOUT's own minimized window, with the page told it is on
+// screen so it keeps drawing (quietShimInPage). MVP says which jobs run quiet
+// (MVP_SCOUT_QUIET): admin tries each one first, then MVP turns it on for
+// everyone, with no new SCOUT. A job not marked quiet works exactly as before.
+const QUIET_KEY = 'mvpQuietJobs'
+const QUIET_JOBS = ['pin', 'cc', 'amazon', 'studio']
+let quietCache = null
+async function quietFor(job) {
+  if (!quietCache) {
+    try { const got = await chrome.storage.local.get(QUIET_KEY); quietCache = (got && got[QUIET_KEY]) || {} } catch (e) { quietCache = {} }
+  }
+  return quietCache[job] === true
+}
+async function setQuietJobs(map) {
+  const next = {}
+  for (const j of QUIET_JOBS) next[j] = !!(map && map[j] === true)
+  quietCache = next
+  try { await chrome.storage.local.set({ [QUIET_KEY]: next }) } catch (e) {}
+  return next
+}
+// In page, alone: the page is told it is on screen. A hidden page never
+// paints, so animation frames and in-view checks never come: a short timer
+// stands in for a frame, and everything watched counts as in view.
+function quietShimInPage() {
+  if (window.__mvpQuiet) return true
+  window.__mvpQuiet = true
+  try {
+    Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get: () => 'visible' })
+    Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get: () => false })
+    document.dispatchEvent(new Event('visibilitychange'))
+  } catch (e) {}
+  try {
+    const raf = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = (cb) => {
+      let done = false
+      const run = (t) => { if (done) return; done = true; cb(t) }
+      const id = raf(run)
+      setTimeout(() => run(performance.now()), 50)
+      return id
+    }
+  } catch (e) {}
+  try {
+    const IO = window.IntersectionObserver
+    if (IO) {
+      window.IntersectionObserver = class extends IO {
+        constructor(cb, opts) { super(cb, opts); this.__mvpCb = cb }
+        observe(el) {
+          super.observe(el)
+          setTimeout(() => {
+            try {
+              const r = el.getBoundingClientRect()
+              this.__mvpCb([{ target: el, isIntersecting: true, intersectionRatio: 1, boundingClientRect: r, intersectionRect: r, rootBounds: null, time: performance.now() }], this)
+            } catch (e) {}
+          }, 0)
+        }
+      }
+    }
+  } catch (e) {}
+  return true
+}
+const quietTabIds = new Set()
+function quietShim(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', injectImmediately: true, func: quietShimInPage }).catch(() => null)
+}
+try {
+  // Each new page in a quiet tab is told again, as early as Chrome allows.
+  chrome.tabs.onUpdated.addListener((tabId, info) => { if (quietTabIds.has(tabId) && (info.status === 'loading' || info.status === 'complete')) void quietShim(tabId) })
+  chrome.tabs.onRemoved.addListener((tabId) => { quietTabIds.delete(tabId) })
+} catch (e) {}
+/** A tab for a job. Quiet: in SCOUT's minimized window, the page told it is on
+ *  screen. Otherwise opened as it always was. */
+async function jobTab(job, url, active) {
+  if (await quietFor(job)) {
+    const t = await openWorkTab(url)
+    quietTabIds.add(t.id)
+    void quietShim(t.id)
+    return t
+  }
+  return chrome.tabs.create({ url, active })
+}
+/** Where a job brought its tab to the front. Quiet: the page is told it is on
+ *  screen instead, and nothing moves. */
+async function jobFront(job, tabId) {
+  if (await quietFor(job)) { quietTabIds.add(tabId); await quietShim(tabId); return }
+  await chrome.tabs.update(tabId, { active: true })
+}
+/** Where a job brought the creator's tab back. Quiet: nothing moved, so
+ *  nothing is brought back. */
+async function jobBack(job, callerTabId, focusWindow) {
+  if (callerTabId == null || (await quietFor(job))) return
+  try {
+    const t = await chrome.tabs.update(callerTabId, { active: true })
+    if (focusWindow && t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
+  } catch (e) {}
+}
 
 // ── ONE WINDOW FOR SCOUT'S OWN WORK (Seb, 2026-10-10: "when doing trybe
 // outreach can we stop opening so many windows.. i would like scout to simply

@@ -65,6 +65,7 @@ import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
 import AmazonTagNudge from './AmazonTagNudge'
 import ScoutRequired from './ScoutRequired'
+import ScoutQuietSync from '@/components/scout/ScoutQuietSync'
 import { useTrybeAlerts } from './useTrybeAlerts'
 // TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
@@ -724,6 +725,7 @@ export default function DashboardShellV2({
         { href: '/admin/broadcast', icon: <Megaphone size={15} />, label: 'Broadcast email (admin)' },
         { href: '/admin/audio-tracks', icon: <Globe size={15} />, label: 'YouTube audio tracks' },
         { href: '/admin/youtube-cookies', icon: <ShieldCheck size={15} />, label: 'YouTube cookies (downloader)' },
+        { href: '/admin/scout-quiet', icon: <ShieldCheck size={15} />, label: 'SCOUT out of sight (try)' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
         { href: '/admin/cc-import', icon: <Database size={15} />, label: 'CC Catalog Import' },
       ],
@@ -1363,6 +1365,8 @@ export default function DashboardShellV2({
             line saying which of those is missing. Also switches its background
             work on, so first comments post from Chrome, not the shared quota. */}
         <ScoutRequired tier={String(tier)} />
+        {/* Which SCOUT jobs run out of sight (lib/scout-quiet). Silent. */}
+        <ScoutQuietSync isAdmin={isAdmin} />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison

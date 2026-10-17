@@ -412,6 +412,14 @@ export async function getScoutCcRecipe(): Promise<{ send: CcRecipeTemplate | nul
   return { send: resp?.send ?? null, search: resp?.search ?? null }
 }
 
+/** Which jobs SCOUT runs out of sight (SCOUT 1.50.2, lib/scout-quiet). The
+ *  answer is what SCOUT now holds, or null when it did not answer. */
+export async function setScoutQuietJobs(jobs: Record<string, boolean>): Promise<Record<string, boolean> | null> {
+  if (!(await isExtensionAvailable())) return null
+  const resp = await sendToExtension<{ ok?: boolean; jobs?: Record<string, boolean> }>({ type: 'MVP_SCOUT_QUIET', jobs }, 8000)
+  return resp?.ok && resp.jobs ? resp.jobs : null
+}
+
 /** Restore a saved CC recipe INTO SCOUT (only fills in when SCOUT has none, so a
  *  fresh local learn is never clobbered by a stale backup). Best-effort. */
 export async function setScoutCcRecipe(recipe: { send: CcRecipeTemplate; search: CcRecipeTemplate }): Promise<{ ok: boolean; applied?: boolean }> {

@@ -72,7 +72,9 @@ check('stuck work waits longer each time, up to an hour',
   /Math\.min\(60, \(st\.lastWait \|\| 5\) \* 2\)/.test(handlers) && /sig === st\.lastSignature/.test(handlers))
 const scan = BG.slice(BG.indexOf('async function scanStudioFinish('), BG.indexOf('async function scanStudioFinish(') + 16000)
 check('a background Studio pass opens Studio behind, and does not jump back',
-  /active: want\.background !== true/.test(scan) && /callerTabId != null && want\.background !== true/.test(scan))
+  // Through SCOUT's quiet switch since 1.50.2 (lib/scout-quiet): the same
+  // "behind, and no jump back" when the pass is a background one.
+  /jobTab\('studio', STUDIO_VIDEO\(videoId, startPanel\), want\.background !== true\)/.test(scan) && /if \(want\.background !== true\) await jobBack\('studio', callerTabId\)/.test(scan))
 
 const RUN = read('components/launch/LiftoffRunner.tsx')
 check('the runner never retries a refused listing', /retryFailed: false/.test(RUN))

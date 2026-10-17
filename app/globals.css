@@ -31,6 +31,14 @@
   --text:      #18181B;
   --text-2:    #52525B;
   --text-3:    #71717A;
+  /* The dashboard's softer text shades (DashboardShellV2 LIGHT_VARS and
+     DARK_VARS), here too. A popup drawn straight onto the page (createPortal
+     to body: What's new, the SCOUT card, menus) sits outside the shell and
+     never saw them, so its grey words came out in full black or white. */
+  --text-soft:   rgba(0,0,0,0.78);
+  --text-subtle: rgba(0,0,0,0.68);
+  --text-faint:  rgba(0,0,0,0.55);
+  --text-dim:    rgba(0,0,0,0.40);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.03);
 }
@@ -49,6 +57,10 @@
   --text:      #FAFAFA;
   --text-2:    #D4D4D8;
   --text-3:    #71717A;
+  --text-soft:   rgba(255,255,255,0.86);
+  --text-subtle: rgba(255,255,255,0.78);
+  --text-faint:  rgba(255,255,255,0.65);
+  --text-dim:    rgba(255,255,255,0.50);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
 }
@@ -292,6 +304,10 @@ html { scroll-behavior: smooth; }
   --text:   #18181B;
   --text-2: #52525B;
   --text-3: #71717A;
+  --text-soft:   rgba(0,0,0,0.78);
+  --text-subtle: rgba(0,0,0,0.68);
+  --text-faint:  rgba(0,0,0,0.55);
+  --text-dim:    rgba(0,0,0,0.40);
   color: #18181B;
 }
 /* Light grey text written for a dark background, sitting on a light one. */
@@ -313,5 +329,9 @@ html:not(.dark) :is(.bg-black, .bg-gray-900, .bg-zinc-900, .bg-neutral-900):not(
   --text:   #FAFAFA;
   --text-2: #D4D4D8;
   --text-3: #A1A1AA;
+  --text-soft:   rgba(255,255,255,0.86);
+  --text-subtle: rgba(255,255,255,0.78);
+  --text-faint:  rgba(255,255,255,0.65);
+  --text-dim:    rgba(255,255,255,0.50);
   color: #FAFAFA;
 }

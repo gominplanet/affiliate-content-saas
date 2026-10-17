@@ -138,6 +138,20 @@ async function nextFree(admin: Db, ownerId: string, cap: number): Promise<string
   return nextFreeAt(await capRows(admin, ownerId), cap, Date.now())
 }
 
+/** GONE FROM TRYBE (Seb, 2026-10-17: "do 5"). Of these brands, the ones MVP's
+ *  last whole read of TRYBE's list did not have (trybe_directory.left_at,
+ *  migration 428), with when. A mark for the page only: nothing is moved or
+ *  deleted, and before migration 428 the answer is empty, never a guess. */
+async function leftTrybe(admin: Db, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await admin.from('trybe_directory').select('brand_id, left_at').in('brand_id', ids.slice(i, i + 200)).not('left_at', 'is', null)
+    if (error) return out
+    for (const r of (data || []) as Array<{ brand_id: string; left_at: string | null }>) if (r.left_at) out.set(String(r.brand_id), String(r.left_at))
+  }
+  return out
+}
+
 export async function GET() {
   const g = await gate()
   if ('error' in g) return g.error
@@ -152,7 +166,9 @@ export async function GET() {
   let worked = new Map<string, unknown>()
   try { worked = await getWorkedWithBrands(supabase as Db, ownerId) } catch { /* best-effort */ }
   if (rows.error) return NextResponse.json({ error: dbWords(rows.error.message) }, { status: 500 })
-  const brands = rows.rows.map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))) }))
+  // Only the brands still to send or that failed: a sent brand is history.
+  const left = await leftTrybe(admin, rows.rows.filter(r => r.status === 'failed' || r.status === 'drafted').map(r => String(r.brand_id))).catch(() => new Map<string, string>())
+  const brands = rows.rows.map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))), left_trybe_at: left.get(String(r.brand_id)) ?? null }))
   return NextResponse.json({ ok: true, settings, usedToday: used, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap), maxDailyCap: MAX_DAILY_CAP, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin' })
 }
 

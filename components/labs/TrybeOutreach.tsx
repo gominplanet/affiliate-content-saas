@@ -81,6 +81,9 @@ interface Brand {
   send_started_at: string | null
   error: string | null
   worked_with: boolean
+  /** When MVP's last whole read of TRYBE's list missed this brand (failed and
+   *  queued brands only). Null while TRYBE still lists it. */
+  left_trybe_at?: string | null
   fit_score?: number | null
   fit_reason?: string | null
   fit_prefs?: string | null
@@ -192,6 +195,13 @@ const sendWords = (e: string | null | undefined): string => {
   if (raw.startsWith('needs-screen: ')) return `SCOUT could not reach it out of sight (${sendWords(raw.slice(14))}). Press Send now on it to try again`
   const code = raw.split(' (')[0]
   return SEND_WORDS[code] ? raw.replace(code, SEND_WORDS[code]) : raw
+}
+
+/** A failed send to a brand that is gone: SCOUT could not find it on TRYBE,
+ *  and MVP's last whole read of TRYBE's list did not have it either. Two
+ *  signals, so a brand SCOUT merely missed is never called gone. */
+function goneFromTrybe(b: Brand): boolean {
+  return b.status === 'failed' && !!b.left_trybe_at && /^brand-not-found/.test(String(b.error || '').replace(/^needs-screen: /, ''))
 }
 
 function priority(b: Brand): number {
@@ -2069,7 +2079,14 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                   <div className="text-[12px] mt-1">
                     {b.status === 'sent' && <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={12} /> Request sent {b.sent_at ? new Date(b.sent_at).toLocaleString() : ''}</span>}
                     {b.status === 'already' && <span style={soft}>Already requested on TRYBE</span>}
-                    {b.status === 'failed' && (
+                    {b.status === 'failed' && goneFromTrybe(b) && (
+                      <span className="inline-flex flex-wrap items-center gap-2" style={{ color: AMBER }}>
+                        <AlertTriangle size={12} /> No longer on TRYBE&rsquo;s Discover: SCOUT could not find it, and MVP&rsquo;s last full read of TRYBE&rsquo;s list ({new Date(b.left_trybe_at || '').toLocaleDateString()}) did not have it either.
+                        {!running && <button onClick={() => void remove(b)} className="underline">Remove</button>}
+                        {!running && b.draft && <button onClick={() => void requeue(b)} className="underline">Queue it again anyway</button>}
+                      </span>
+                    )}
+                    {b.status === 'failed' && !goneFromTrybe(b) && (
                       <span className="inline-flex flex-wrap items-center gap-2" style={{ color: RED }}>
                         <AlertTriangle size={12} /> Not sent: {sendWords(b.error)}
                         {!running && b.draft && <button onClick={() => void requeue(b)} className="underline">Queue it again</button>}
@@ -2135,6 +2152,7 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
             <span className="text-[14px] font-semibold">{b.name}</span>
             {promotes && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+            {b.left_trybe_at && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(217,119,6,0.12)', color: AMBER }} title={`MVP's last full read of TRYBE's list (${new Date(b.left_trybe_at).toLocaleDateString()}) did not have this brand. It may have left TRYBE, or stopped taking creators. Open it on TRYBE to check before sending.`}>Not in TRYBE&rsquo;s list lately</span>}
             <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
             {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
             {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}

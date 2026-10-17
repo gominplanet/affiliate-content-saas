@@ -464,6 +464,20 @@ check('a late answer for another conversation is dropped', /const current = open
   check('a failed send says its last few steps, not only the last', /got to: \$\{res\.steps\.slice\(-3\)\.join\(', '\)\}/.test(BG_ALL) && /got to: \$\{res\.steps\.slice\(-3\)\.join\(', '\)\}/.test(readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')))
 }
 
+// GONE FROM TRYBE (Seb, 2026-10-17: "do 5"). A failed send is called gone only
+// on two signals: SCOUT could not find the brand, and MVP's last whole read of
+// TRYBE's list did not have it either (trybe_directory.left_at). Then Sent
+// says so and offers Remove first; a queued brand with the mark gets a chip.
+// Nothing is moved or deleted by MVP itself.
+{
+  const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
+  const U = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('the page gets when a failed or queued brand left TRYBE\'s list, nothing else', /async function leftTrybe\(admin: Db, ids: string\[\]\)/.test(R) && /\.not\('left_at', 'is', null\)/.test(R) && /r\.status === 'failed' \|\| r\.status === 'drafted'/.test(R) && /left_trybe_at: left\.get\(String\(r\.brand_id\)\) \?\? null/.test(R))
+  check('a brand is called gone only on both signals', /return b\.status === 'failed' && !!b\.left_trybe_at && \/\^brand-not-found\/\.test\(String\(b\.error \|\| ''\)\.replace\(\/\^needs-screen: \/, ''\)\)/.test(U))
+  check('Sent says it is no longer on TRYBE\'s Discover, Remove first, queueing again still possible', /No longer on TRYBE&rsquo;s Discover: SCOUT could not find it, and MVP&rsquo;s last full read of TRYBE&rsquo;s list/.test(U) && /Queue it again anyway/.test(U) && U.indexOf('Queue it again anyway') > U.indexOf("No longer on TRYBE&rsquo;s Discover"))
+  check('a queued brand MVP last missed on TRYBE says so before it is sent', /Not in TRYBE&rsquo;s list lately/.test(U))
+}
+
 // WHERE THE CREATOR STANDS (Seb, 2026-10-16): three ticks before a suggested
 // reply; a reply says a step is done only when it is ticked.
 {
