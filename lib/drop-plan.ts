@@ -34,6 +34,65 @@ export function defaultDest(kind: DropKind, hasBlog: boolean): DropDest {
   return kind === 'long' ? { liftoff: true, blog: hasBlog, trybe: false } : { liftoff: false, blog: false, trybe: true }
 }
 
+// ── Every place a dropped video can go ───────────────────────────────────────
+//
+// liftoff, blog and trybe have their own columns on drop_items (migration
+// 436). The rest are one drop_sends row each (migration 437), run by
+// lib/drop-places once the place can take the video.
+
+export type ExtraPlace = 'tiktok' | 'instagram' | 'shorts' | 'facebook' | 'pinterest' | 'pin' | 'group' | 'clips'
+export type PlaceId = 'liftoff' | 'blog' | 'trybe' | ExtraPlace
+
+export const EXTRA_PLACES: ExtraPlace[] = ['tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'pin', 'group', 'clips']
+
+export interface PlaceInfo {
+  label: string
+  /** The kind of video it takes. */
+  kind: DropKind
+  /** It works from the YouTube video, so it waits for Liftoff. */
+  afterYouTube: boolean
+  /** In plain words, what the creator gets. */
+  says: string
+}
+
+export const PLACE_INFO: Record<PlaceId, PlaceInfo> = {
+  liftoff: { label: 'YouTube and Amazon', kind: 'long', afterYouTube: false, says: 'Liftoff, with your last choices' },
+  blog: { label: 'Blog post', kind: 'long', afterYouTube: true, says: 'Live ten minutes after the video' },
+  pin: { label: 'Pinterest pin', kind: 'long', afterYouTube: true, says: 'A pin for the video, once it is public' },
+  group: { label: 'Facebook Group', kind: 'long', afterYouTube: true, says: 'Queued in your Group Post Queue for you to post' },
+  clips: { label: '3 clips', kind: 'long', afterYouTube: true, says: 'Clip Factory finds 3 moments and makes them' },
+  tiktok: { label: 'TikTok', kind: 'vertical', afterYouTube: false, says: 'Posted to your TikTok' },
+  instagram: { label: 'Instagram Reel', kind: 'vertical', afterYouTube: false, says: 'Posted as a Reel' },
+  shorts: { label: 'YouTube Short', kind: 'vertical', afterYouTube: false, says: 'Posted as a Short with your link' },
+  facebook: { label: 'Facebook Reel', kind: 'vertical', afterYouTube: false, says: 'Posted as a Reel on your Page' },
+  pinterest: { label: 'Pinterest video', kind: 'vertical', afterYouTube: false, says: 'A video pin' },
+  trybe: { label: 'TRYBE brand', kind: 'vertical', afterYouTube: false, says: 'Sent to the brand you pick, through SCOUT' },
+}
+
+/** Can this place take this video. The places that work from the YouTube
+ *  video need it to go through Liftoff. Pure. */
+export function placeFits(place: string, kind: DropKind, toLiftoff: boolean): boolean {
+  const info = PLACE_INFO[place as PlaceId]
+  if (!info || info.kind !== kind) return false
+  return !info.afterYouTube || toLiftoff
+}
+
+/** A Launch plan: where each kind of video goes unless the creator says
+ *  otherwise on the day. */
+export interface LaunchPlans { long: PlaceId[]; vertical: PlaceId[] }
+export const DEFAULT_PLANS: LaunchPlans = { long: ['liftoff', 'blog'], vertical: ['trybe'] }
+
+/** A saved plan, cleaned: only places that exist and fit their kind. Pure. */
+export function readPlans(raw: unknown): LaunchPlans {
+  const o = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const pick = (kind: DropKind): PlaceId[] => {
+    const list = Array.isArray(o[kind]) ? (o[kind] as unknown[]).map(String) : null
+    if (!list) return DEFAULT_PLANS[kind]
+    return [...new Set(list)].filter((p): p is PlaceId => !!PLACE_INFO[p as PlaceId] && PLACE_INFO[p as PlaceId].kind === kind)
+  }
+  return { long: pick('long'), vertical: pick('vertical') }
+}
+
 // ── The creator's own last Liftoff choices ───────────────────────────────────
 
 /** The launch_batches columns a drop copies, as the row has them. */

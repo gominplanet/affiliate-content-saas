@@ -19,7 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { DROP_MAX, type LastBatch } from '@/lib/drop-plan'
+import { DROP_MAX, EXTRA_PLACES, placeFits, type LastBatch } from '@/lib/drop-plan'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +30,12 @@ const DROP_STATES = ['building', 'preparing', 'needs_you', 'launched', 'done', '
 const TRYBE_DONE = ['in_review', 'sent_unconfirmed', 'failed'] as const
 const missing = (m?: string) => /drops|drop_items/.test(m || '') && /does not exist|could not find|schema cache/i.test(m || '')
 const NEEDS_SQL = 'Drop needs migration 436 in the database first.'
+const PLACES_SQL = 'TikTok, Instagram, Shorts, pins, Group posts, clips and saved plans need migration 437 in the database first.'
+const missingPlaces = (m?: string) => /drop_sends|drop_plans/.test(m || '') && /does not exist|could not find|schema cache/i.test(m || '')
+const SEND_COLS = 'id,drop_item_id,drop_id,place,state,detail,url,ref_id,payload,at,updated_at'
+/** The places a drop_sends row may name (lib/drop-plan PLACES). */
+const SEND_PLACES = new Set<string>(EXTRA_PLACES)
+const SEND_DONE = ['done', 'failed', 'needs_you'] as const
 /** A blog post or TRYBE send quiet this long stopped with the page that ran
  *  it (lib/drop-plan STALE_MS). */
 const STALE_MS = 20 * 60_000
@@ -79,6 +85,20 @@ export async function GET() {
     if (iErr) return NextResponse.json({ error: iErr.message }, { status: 500 })
     items = rows ?? []
   }
+  // Every other place each video goes (migration 437), on its own read: a
+  // database without it still shows the drops, and says the places need it.
+  let sends: Array<Record<string, unknown>> = []
+  let placesAvailable = true
+  if (ids.length) {
+    const { data: srows, error: sErr } = await admin.from('drop_sends').select(SEND_COLS).in('drop_id', ids)
+    if (sErr) placesAvailable = false
+    else sends = srows ?? []
+  } else {
+    const { error: sErr } = await admin.from('drop_sends').select('id').limit(1)
+    if (sErr) placesAvailable = false
+  }
+  const { data: planRow, error: pErr } = await admin.from('drop_plans').select('plans').eq('user_id', g.userId).maybeSingle()
+  if (pErr) placesAvailable = false
   const last = await lastLaunched(g.sb, g.userId)
   // A blog post needs a site to go to; said before Launch, not after.
   const { data: site } = await admin.from('wordpress_sites').select('id').eq('user_id', g.userId).limit(1).maybeSingle()
@@ -89,13 +109,21 @@ export async function GET() {
     last,
     hasBlogSite: !!site,
     max: DROP_MAX,
-    drops: (drops ?? []).map((d: { id: string }) => ({ ...d, items: items.filter((i) => i.drop_id === d.id) })),
+    placesAvailable,
+    placesNeed: placesAvailable ? null : PLACES_SQL,
+    plans: (planRow?.plans as Record<string, unknown> | undefined) ?? null,
+    drops: (drops ?? []).map((d: { id: string }) => ({
+      ...d,
+      items: items.filter((i) => i.drop_id === d.id).map((i) => ({ ...i, sends: sends.filter((x) => x.drop_item_id === i.id) })),
+    })),
   })
 }
 
 interface NewItem {
   fileName?: string; sourceUrl?: string; mimeType?: string; sizeBytes?: number; durationSeconds?: number; width?: number; height?: number
   kind?: string; asin?: string; title?: string; toLiftoff?: boolean; toBlog?: boolean; toTrybe?: boolean
+  /** Every other place this video goes (lib/drop-plan EXTRA_PLACES). */
+  places?: string[]
   trybe?: { brandId?: string; brandName?: string; programId?: string | null; angleId?: string | null; productIds?: string[]; exclusive?: boolean; notes?: string }
 }
 
@@ -158,9 +186,28 @@ export async function POST(req: Request) {
       await admin.from('drops').delete().eq('id', drop.id)
       return fail(iErr)
     }
+    // THE OTHER PLACES, one row each, only where the place fits the video
+    // (a clip is cut from a long video, a TikTok is a vertical one).
+    const sendRows: Array<Record<string, unknown>> = []
+    for (const m of (made ?? []) as Array<{ id: string; position: number }>) {
+      const it = list[m.position]
+      const kind = rows[m.position].kind as 'long' | 'vertical'
+      const toLiftoff = rows[m.position].to_liftoff
+      for (const place of new Set((Array.isArray(it?.places) ? it.places : []).map(String))) {
+        if (!SEND_PLACES.has(place) || !placeFits(place, kind, toLiftoff)) continue
+        sendRows.push({ drop_item_id: m.id, drop_id: drop.id, user_id: g.userId, place, state: 'wanted' })
+      }
+    }
+    let placesSaved = true
+    if (sendRows.length) {
+      const { error: sErr } = await admin.from('drop_sends').insert(sendRows)
+      if (sErr) placesSaved = false
+    }
     // Nothing for Liftoff: the drop has no batch to build.
     if (!rows.some((r) => r.to_liftoff)) await admin.from('drops').update({ state: 'launched', launched_at: now, updated_at: now }).eq('id', drop.id)
-    return NextResponse.json({ ok: true, id: drop.id, items: made ?? [] })
+    // SAID, NOT DROPPED: places asked for that could not be kept.
+    return NextResponse.json({ ok: true, id: drop.id, items: made ?? [], places: sendRows.length, placesSaved,
+      ...(placesSaved ? {} : { placesError: PLACES_SQL }) })
   }
 
   // Everything below acts on one of this creator's drops or videos.
@@ -187,6 +234,59 @@ export async function POST(req: Request) {
     if (body.state === 'launched') patch.launched_at = now
     const { error } = await admin.from('drops').update(patch).eq('id', dropId).eq('user_id', g.userId)
     return error ? fail(error) : NextResponse.json({ ok: true })
+  }
+
+  if (action === 'plans_save') {
+    const plans = (body.plans && typeof body.plans === 'object') ? body.plans as Record<string, unknown> : null
+    if (!plans) return NextResponse.json({ error: 'No plan.' }, { status: 400 })
+    const clean: Record<string, string[]> = {}
+    for (const kind of ['long', 'vertical']) {
+      const list = Array.isArray(plans[kind]) ? (plans[kind] as unknown[]).map(String) : []
+      clean[kind] = [...new Set(list)].filter((x) => x === 'liftoff' || x === 'blog' || x === 'trybe' || SEND_PLACES.has(x)).slice(0, 20)
+    }
+    const { error } = await admin.from('drop_plans').upsert({ user_id: g.userId, plans: clean, updated_at: now }, { onConflict: 'user_id' })
+    if (error) return NextResponse.json({ error: missingPlaces(error.message) ? PLACES_SQL : error.message }, { status: missingPlaces(error.message) ? 503 : 500 })
+    return NextResponse.json({ ok: true, plans: clean })
+  }
+
+  // ── one other place for one video: claimed, progress, result ─────────────
+  const sendId = s(body.sendId, 60)
+  if (action === 'send_claim' || action === 'send_step' || action === 'send_done' || action === 'send_again') {
+    if (!sendId) return NextResponse.json({ error: 'No place.' }, { status: 400 })
+    const sendFail = (e: { message?: string }) => NextResponse.json({ error: missingPlaces(e.message) ? PLACES_SQL : e.message }, { status: missingPlaces(e.message) ? 503 : 500 })
+    const row = () => admin.from('drop_sends').update({ updated_at: now }).eq('id', sendId).eq('user_id', g.userId)
+    if (action === 'send_claim') {
+      // `again`: one that stopped with its page, quiet past STALE_MS.
+      let { data, error } = await admin.from('drop_sends').update({ state: 'sending', detail: null, updated_at: now })
+        .eq('id', sendId).eq('user_id', g.userId).eq('state', 'wanted').select(SEND_COLS)
+      if (!error && (data ?? []).length === 0 && body.again === true) {
+        ({ data, error } = await admin.from('drop_sends').update({ state: 'sending', detail: null, updated_at: now })
+          .eq('id', sendId).eq('user_id', g.userId).eq('state', 'sending').lt('updated_at', new Date(Date.now() - STALE_MS).toISOString()).select(SEND_COLS))
+      }
+      if (error) return sendFail(error)
+      return NextResponse.json({ ok: true, claimed: (data ?? []).length === 1, send: (data ?? [])[0] ?? null })
+    }
+    if (action === 'send_step') {
+      await row().update({ detail: s(body.detail, 300), updated_at: now }).eq('state', 'sending')
+      return NextResponse.json({ ok: true })
+    }
+    if (action === 'send_done') {
+      const state = SEND_DONE.includes(body.state as typeof SEND_DONE[number]) ? body.state : 'failed'
+      const patch: Record<string, unknown> = { state, detail: s(body.detail, 600), url: s(body.url, 1000), ref_id: s(body.refId, 200), at: now, updated_at: now }
+      if (body.payload && typeof body.payload === 'object') patch.payload = body.payload
+      // Back to waiting: a step that needs YouTube first, or a later pass.
+      if (body.state === 'wanted') patch.state = 'wanted'
+      const { error } = await admin.from('drop_sends').update(patch).eq('id', sendId).eq('user_id', g.userId).eq('state', 'sending')
+      return error ? sendFail(error) : NextResponse.json({ ok: true })
+    }
+    // send_again: a place that failed or needs the creator goes back in line,
+    // and a finished drop opens again so a pass looks at it.
+    const { data, error } = await admin.from('drop_sends').update({ state: 'wanted', detail: null, updated_at: now })
+      .eq('id', sendId).eq('user_id', g.userId).in('state', ['failed', 'needs_you']).select('id,drop_id')
+    if (error) return sendFail(error)
+    const r = (data ?? [])[0] as { drop_id?: string } | undefined
+    if (r?.drop_id) await admin.from('drops').update({ state: 'launched', updated_at: now }).eq('id', r.drop_id).eq('user_id', g.userId).eq('state', 'done')
+    return NextResponse.json({ ok: true, queued: !!r })
   }
 
   if (action === 'delete') {
