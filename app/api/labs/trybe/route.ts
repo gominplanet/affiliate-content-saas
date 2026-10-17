@@ -31,6 +31,7 @@ import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } fr
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
+import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -707,10 +708,13 @@ export async function POST(request: Request) {
     }
     const { byId, byName } = tallyTop(entries)
     const hits = new Map<string, { hits: number; best: number | null }>(byId)
+    // A video without a brand id, placed by its brand's name (also for the day's row).
+    const nameIds = new Map<string, string>()
     if (byName.size) {
       const { data: named } = await admin.from('trybe_directory').select('brand_id, name').in('name', Array.from(new Set(entries.map(e => e.brandName).filter(Boolean))) as string[])
       for (const r of (named || []) as Array<{ brand_id: string; name: string }>) {
         const t = byName.get(r.name.toLowerCase())
+        if (t) nameIds.set(r.name.toLowerCase(), r.brand_id)
         if (t && !hits.has(r.brand_id)) hits.set(r.brand_id, t)
       }
     }
@@ -742,6 +746,12 @@ export async function POST(request: Request) {
     // Every brand is now "read": one not in the Top 100 counts 0, not unknown.
     await admin.from('trybe_directory').update({ top100_checked_at: now }).is('top100_checked_at', null)
     await admin.from('trybe_directory_meta').upsert({ key: 'top100', value: { at: now, entries: entries.length, brands: hits.size, matched }, updated_at: now })
+    // THE TOP 100, DAY BY DAY (lib/trybe-topdays): this read is also today's
+    // row, for movers, days in and streaks. Extra: a failure never fails the read.
+    try {
+      await admin.from('trybe_directory_meta').upsert({ key: topDayKey(now), value: topDayOf(entries, nameIds, now), updated_at: now })
+      await admin.from('trybe_directory_meta').delete().like('key', 'top:%').lt('key', topDayKey(new Date(Date.now() - TOP_DAYS_KEEP * 86_400_000).toISOString()))
+    } catch { /* the Top 100 itself is saved */ }
     // HOOKS WINNING ON TRYBE (lib/trybe-hooks): the Top 100's own words when
     // it carries them; else the page reads each video's script through SCOUT
     // (needScripts) and sends them to 'top100_hooks'.
