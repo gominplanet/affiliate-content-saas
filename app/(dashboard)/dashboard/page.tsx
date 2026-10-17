@@ -225,7 +225,7 @@ export default async function DashboardPage() {
               <BookOpen size={12} />
               Tutorials
             </Link>
-            {!isNewUser && <WhatsNewCard />}
+            {!isNewUser && <WhatsNewCard tier={tier} />}
           </div>
           </div>
           {/* Right column: Pro capabilities tour — shown only to users who

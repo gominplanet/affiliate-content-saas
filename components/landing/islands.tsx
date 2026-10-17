@@ -462,3 +462,83 @@ export function StickyBottomBar() {
     </div>
   )
 }
+
+/** WATCH IT WORK (Seb, 2026-10-17: "change the mvp affiliate sales page to add
+ *  some youtube videos in there so people have more knowledge of what is being
+ *  offered"). The walkthrough large, then one video per feature, each from the
+ *  MVP Affiliate channel. Click to play in place: until then each is a
+ *  thumbnail, so nothing from YouTube loads (and no cookies are set) for a
+ *  visitor scrolling by. The captions are ours, written for this page. */
+export const SALES_VIDEOS: Array<{ id: string; tag: string; caption: string }> = [
+  { id: 'ZHbTj4G1n3w', tag: 'Start here', caption: 'MVP Affiliate walkthrough: everything you need to know' },
+  { id: 'I8E44azBC9Q', tag: 'Bulk Amazon upload', caption: 'Upload 10 product videos to YouTube and Amazon in one click' },
+  { id: '42L9QKuxr2k', tag: 'TRYBE brand deals', caption: 'Find the brands that actually pay, before you film' },
+  { id: 'FCzGIMH8fZw', tag: 'Passport', caption: 'Stop sending visitors to the wrong Amazon store' },
+  { id: 'O4fOrgudOOA', tag: 'Social Launch Kit', caption: 'Launch your social accounts, ready to post' },
+  { id: '10j-UgqbEUg', tag: 'MVP Finder', caption: 'Find high converting products to review' },
+  { id: 'JIQWKaWXeag', tag: 'Thumbnails', caption: 'Thumbnails from one product photo, upgraded' },
+]
+export const SALES_CHANNEL_URL = 'https://www.youtube.com/@MVPaffiliate/videos'
+
+function SalesVideo({ id, tag, caption, big }: { id: string; tag: string; caption: string; big?: boolean }) {
+  const [playing, setPlaying] = useState(false)
+  return (
+    <figure className="flex flex-col">
+      <div className="relative w-full overflow-hidden rounded-2xl bg-black shadow-sm" style={{ aspectRatio: '16 / 9' }}>
+        {playing ? (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1`}
+            title={caption}
+            className="absolute inset-0 w-full h-full"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allowFullScreen
+          />
+        ) : (
+          <button onClick={() => setPlaying(true)} className="group absolute inset-0 w-full h-full" aria-label={`Play: ${caption}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`https://i.ytimg.com/vi/${id}/${big ? 'maxresdefault' : 'hqdefault'}.jpg`} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { const img = e.currentTarget; if (!img.dataset.fallback) { img.dataset.fallback = '1'; img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg` } else img.style.display = 'none' }} />
+            <span className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition-colors" />
+            <span className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center shadow-lg transition-transform group-hover:scale-105 ${big ? 'w-16 h-16' : 'w-12 h-12'}`} style={{ background: '#FF0000' }}>
+              <Play size={big ? 26 : 20} className="text-white ml-0.5" fill="white" />
+            </span>
+          </button>
+        )}
+      </div>
+      <figcaption className="mt-2.5">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em]" style={{ color: '#7C3AED' }}>{tag}</span>
+        <p className={`${big ? 'text-[17px]' : 'text-[14px]'} font-semibold leading-snug mt-0.5`} style={{ color: 'var(--text)' }}>{caption}</p>
+      </figcaption>
+    </figure>
+  )
+}
+
+export function SalesVideosSection() {
+  const [first, ...rest] = SALES_VIDEOS
+  return (
+    <section id="videos" className="px-6 lg:px-8 pt-12 pb-8 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Watch it work</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            See exactly what you get
+          </h2>
+          <p className="text-[15px] leading-relaxed mt-3" style={{ color: 'var(--text-soft)' }}>
+            Short walkthroughs of the tools inside MVP, recorded on real accounts.
+          </p>
+        </div>
+        <div className="mt-10 max-w-4xl mx-auto">
+          <SalesVideo {...first} big />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-7 mt-10">
+          {rest.map((v) => <SalesVideo key={v.id} {...v} />)}
+        </div>
+        <p className="text-center mt-8">
+          <a href={SALES_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
+            More on the MVP Affiliate channel <ArrowRight size={14} />
+          </a>
+        </p>
+      </div>
+    </section>
+  )
+}

@@ -73,7 +73,7 @@ import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
-import ScoutNewsPopup from '@/components/dashboard/ScoutNewsPopup'
+import MvpNews from '@/components/dashboard/MvpNews'
 import ReconnectCheckup from '@/components/dashboard/ReconnectCheckup'
 
 // Wrapper to handle context safely
@@ -1378,9 +1378,11 @@ export default function DashboardShellV2({
           <SoldCampaignsDaily />
           {/* Action-needed announcement popup (admin-managed, variant 'modal'). */}
           <AnnouncementModal />
-          {/* SCOUT news: once per SCOUT release, what is new and a video from
-              the MVP Affiliate channel. Waits for any other popup to close. */}
-          <ScoutNewsPopup />
+          {/* What's new in MVP, once a day: the last 7 days of updates for
+              this plan, SCOUT's news, the latest MVP Affiliate videos, and
+              Join TRYBE, Subscribe and the Facebook group. One card, so two
+              never stack; it waits for any other popup to close. */}
+          <MvpNews tier={String(effectiveTier)} />
           <ReconnectCheckup />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
             {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} />}

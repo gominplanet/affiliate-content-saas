@@ -41,7 +41,7 @@ import {
   Radar, Scissors,
 } from 'lucide-react'
 import NextImage from 'next/image'
-import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
+import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
 import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
@@ -166,6 +166,9 @@ export default function LandingPreview() {
       {TESTIMONIALS.length >= 3 && <TestimonialsSection />}
       <HowItWorks />
       <FeaturesGridCondensed />
+      {/* Watch it work (Seb, 2026-10-17): the walkthrough and one video per
+          feature, so a visitor sees what they get. Click to play. */}
+      <SalesVideosSection />
       {/* Flagship new work, shown with real product images. */}
       <FeatureSpotlights />
       <PassportSpotlight />
@@ -1851,6 +1854,7 @@ function Footer() {
             links={[
               { label: 'Roles', href: '#roles' },
               { label: 'Workflow', href: '#how-it-works' },
+              { label: 'Videos', href: '#videos' },
               { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },

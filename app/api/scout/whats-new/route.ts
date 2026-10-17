@@ -2,7 +2,7 @@
 //
 // GET /api/scout/whats-new
 //
-// What the SCOUT news card (components/dashboard/ScoutNewsPopup) needs: the
+// What the news card (components/dashboard/MvpNews) needs from SCOUT: the
 // releases with news, holding only the notes this member's plan can use, and
 // the MVP Affiliate channel's three latest videos for the card to play.
 //

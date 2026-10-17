@@ -1,6 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// THE SCOUT NEWS CARD (lib/scout-news, components/dashboard/ScoutNewsPopup,
+// THE SCOUT NEWS CARD (lib/scout-news, components/dashboard/MvpNews since the
+// daily What's new card took it in,
 // app/api/scout/whats-new; Seb, 2026-10-17: "an automatic pop up when users
 // first open MVP Affiliate.. anytime there is a new scout update ... the
 // latest, newest features ... and also a randomized YouTube video that they
@@ -95,18 +96,18 @@ check('the route sends the three latest', /videos = latestVideos\(got\.videos\)/
 check('the API first and counted, the feed after, kept 6 hours, a failure not kept', /await ytFetch\(pl\.toString\(\)/.test(ROUTE) && ROUTE.indexOf('ytFetch(pl') < ROUTE.indexOf('feeds/videos.xml') && /revalidate: 6 \* 3600/.test(ROUTE) && /throw new Error\(`\$\{apiWhy\}; \$\{feedWhy\}`\)/.test(ROUTE))
 check('the feed’s videos are asked whether they are Shorts', /probeShort\(v\.id\)/.test(ROUTE) && /shorts\[k\] !== true/.test(ROUTE))
 check('no video: it says why, never a blank frame', /videoError = e instanceof Error/.test(ROUTE))
-const POP = read('components/dashboard/ScoutNewsPopup.tsx')
+const POP = read('components/dashboard/MvpNews.tsx')
 check('the video plays in the card from youtube-nocookie', /https:\/\/www\.youtube-nocookie\.com\/embed\/\$\{video\.id\}/.test(POP))
 check('the newest is ready to play, and all three are a click away', /setPick\(0\)/.test(POP) && /videos\.map\(\(v, i\) => \(/.test(POP) && /onClick=\{\(\) => choose\(i\)\}/.test(POP) && !/Math\.random/.test(POP))
 check('no video says so and links the channel', /The videos could not load right now\./.test(POP) && /MVP_CHANNEL_URL/.test(POP))
 check('Got it records the release; Later only this visit', /localSet\(SEEN_KEY, plan\.seenTo\)/.test(POP) && /sessionSet\(LATER_KEY, plan\.seenTo\)/.test(POP))
-check('it waits for any other popup to close', /otherPopupOpen\(\)/.test(POP) && /:not\(\[data-scout-news\]\)/.test(POP) && /data-scout-news=""/.test(POP))
-check('nothing unseen: not even a request', POP.indexOf("releases: SCOUT_RELEASES })) return") > 0 && POP.indexOf("releases: SCOUT_RELEASES })) return") < POP.indexOf("fetch('/api/scout/whats-new')"))
+check('it waits for any other popup to close', /otherPopupOpen\(\)/.test(POP) && /:not\(\[data-mvp-news\]\)/.test(POP) && /data-mvp-news=""/.test(POP))
+check('nothing to show: not even a request', POP.indexOf('if (!opensToday(') > 0 && POP.indexOf('if (!opensToday(') < POP.indexOf('const res = await load()'))
 check('the button words are readable: white on dark orange', /const SCOUT_BUTTON = '#C2410C'/.test(POP))
 const words = (POP.match(/>[^<>{}\n]{3,}</g) || []).join(' ') + (POP.match(/'[^'\n]{12,}'/g) || []).join(' ') + (POP.match(/`[^`\n]{12,}`/g) || []).join(' ')
 check('the words on the card have no dashes', !/[–—]| - /.test(words))
 check('Subscribe on YouTube opens YouTube\u2019s subscribe prompt, and Join the Facebook group is MVP\u2019s group', /export const MVP_SUBSCRIBE_URL = 'https:\/\/www\.youtube\.com\/@MVPaffiliate\?sub_confirmation=1'/.test(read('lib/scout-news.ts')) && /href=\{MVP_SUBSCRIBE_URL\}[^>]*target="_blank"/.test(POP) && /href=\{FACEBOOK_GROUP_URL\}[^>]*target="_blank"/.test(POP) && /Subscribe on YouTube/.test(POP) && /Join the Facebook group/.test(POP) && /FACEBOOK_GROUP_URL = 'https:\/\/www\.facebook\.com\/groups\/mvpaffiliate'/.test(read('lib/community.ts')))
-check('mounted on every dashboard page', /<ScoutNewsPopup \/>/.test(read('components/layout/DashboardShellV2.tsx')))
+check('mounted on every dashboard page', /<MvpNews tier=\{String\(effectiveTier\)\} \/>/.test(read('components/layout/DashboardShellV2.tsx')))
 
 if (fails.length) { console.error('scout-news failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ scout-news: once per SCOUT release, what is new for this member’s plan and the three latest MVP Affiliate videos in the card; a store SCOUT is never told to update')
