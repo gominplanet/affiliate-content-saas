@@ -7,7 +7,7 @@
 // otherwise on the day.
 
 import { useState } from 'react'
-import { Youtube, FileText, Pin, Users, Scissors, Music2, Instagram, Facebook, Handshake, Smartphone, Check, Loader2 } from 'lucide-react'
+import { Youtube, FileText, Pin, Users, Scissors, Music2, Instagram, Facebook, Handshake, Smartphone, Check, Loader2, ShoppingCart } from 'lucide-react'
 import { PLACE_INFO, type PlaceId, type LaunchPlans, type DropKind } from '@/lib/drop-plan'
 
 export const TEAL = '#0EA5A4'
@@ -24,12 +24,13 @@ export function PlaceIcon({ place, size = 14 }: { place: PlaceId; size?: number 
     case 'shorts': return <Smartphone size={size} />
     case 'facebook': return <Facebook size={size} />
     case 'trybe': return <Handshake size={size} />
+    case 'amazon': return <ShoppingCart size={size} />
   }
 }
 
 /** One place, on or off. A place that cannot be used says why instead of
  *  looking like a choice. */
-export function PlaceTile({ place, on, onClick, why }: { place: PlaceId; on: boolean; onClick: () => void; why?: string | null }) {
+export function PlaceTile({ place, on, onClick, why, label }: { place: PlaceId; on: boolean; onClick: () => void; why?: string | null; label?: string }) {
   const info = PLACE_INFO[place]
   const off = !!why
   const lit = on && !off
@@ -42,7 +43,7 @@ export function PlaceTile({ place, on, onClick, why }: { place: PlaceId; on: boo
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-[12px] font-semibold leading-tight">
-          {info.label}
+          {label || info.label}
           {lit && <Check size={12} className="shrink-0" />}
         </span>
         <span className="block text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-2)' }}>{why || info.says}</span>
@@ -54,7 +55,7 @@ export function PlaceTile({ place, on, onClick, why }: { place: PlaceId; on: boo
 /** The places of one kind, in the order the page shows them. */
 export const PLACES_OF: Record<DropKind, PlaceId[]> = {
   long: ['liftoff', 'blog', 'pin', 'group', 'clips'],
-  vertical: ['tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'trybe'],
+  vertical: ['tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'amazon', 'trybe'],
 }
 
 /** The Launch plan, set once: long videos go here, vertical ones there. */

@@ -33,7 +33,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'LABS',
     tone: '#0EA5A4',
     title: 'Drop: finished videos in, one Launch',
-    desc: 'Drop your finished videos and say once where each goes. Long videos go to YouTube and Amazon through Liftoff with your last Liftoff choices, and each gets a blog post that goes live after the video. Vertical videos go to the TRYBE brand you pick, through SCOUT.',
+    desc: 'Drop your finished videos and set your Launch plan once. Long videos go to YouTube and Amazon through Liftoff, then a blog post, a pin, a Facebook post and 3 clips. Vertical videos go to TikTok, Reels, Shorts, a Facebook Reel, a video pin, Amazon and the TRYBE brand you pick. The board shows where each one landed.',
     href: '/drop',
   },
   // TRYBE, after TrybeDaily's Today, What's Working, Creators and Brands (2026-10-17).

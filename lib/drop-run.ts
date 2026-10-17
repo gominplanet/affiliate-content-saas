@@ -17,6 +17,7 @@
 
 import { copiedSettings, nextForBatch, blogReady, blogTimeFor, isStale, type LastBatch } from '@/lib/drop-plan'
 import { sendToTrybe, type SendDeps, type SendResult } from '@/lib/trybe-submit'
+import { runSend, type PlaceDeps } from '@/lib/drop-places'
 
 export interface HttpAnswer { ok: boolean; status: number; json: Record<string, unknown> }
 export type Http = (url: string, init?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; timeoutMs?: number }) => Promise<HttpAnswer>
@@ -114,92 +115,148 @@ export async function buildLiftoff(o: {
   return { batchId, added: links.length, problems, state }
 }
 
-// ── Launch when prepared, then the blog posts ────────────────────────────────
+// ── Launch when prepared, the blog posts, then every other place ─────────────
 
-interface DropRow { id: string; state: string; note: string | null; batch_id: string | null; items: Array<{ id: string; to_blog: boolean; blog_state: string; launch_item_id: string | null; to_trybe: boolean; trybe_state: string; updated_at?: string | null }> }
-interface BatchItem { id: string; state: string; video_id?: string | null; publish_at?: string | null; title?: string | null }
+interface SendRowFull { id: string; place: string; state: string; payload?: Record<string, unknown> | null; updated_at?: string | null }
+interface DropItemFull {
+  id: string; to_blog: boolean; blog_state: string; launch_item_id: string | null; to_trybe: boolean; trybe_state: string; updated_at?: string | null
+  file_name?: string | null; source_url?: string | null; duration_seconds?: number | null; asin?: string | null; title?: string | null
+  sends?: SendRowFull[]
+}
+interface DropRow { id: string; state: string; note: string | null; batch_id: string | null; items: DropItemFull[] }
+interface BatchItem { id: string; state: string; video_id?: string | null; youtube_video_id?: string | null; publish_at?: string | null; title?: string | null }
 
-export interface StepsResult { more: boolean; signature: string; launched: number; blogs: number; failed: number; notes: string[] }
+export interface StepsResult { more: boolean; signature: string; launched: number; blogs: number; sent: number; failed: number; notes: string[] }
+
+/** The places that go out with the blog post, as its socials. */
+const WITH_BLOG: Record<string, 'pinterest' | 'facebook'> = { pin: 'pinterest', group: 'facebook' }
+/** A place's state that needs nothing more from a pass. */
+const SETTLED = new Set(['done', 'failed', 'needs_you'])
 
 /** One pass over the creator's open drops. Safe to run from two places at
  *  once: Launch twice is Liftoff's own "latecomers only", and each blog post
- *  is claimed before it is written. */
-export async function dropSteps(http: Http, say: (t: string) => void = () => {}, now: () => Date = () => new Date()): Promise<StepsResult> {
-  const out: StepsResult = { more: false, signature: '', launched: 0, blogs: 0, failed: 0, notes: [] }
+ *  and each other place is claimed before it runs. */
+export async function dropSteps(http: Http, say: (t: string) => void = () => {}, now: () => Date = () => new Date(),
+  placeDeps: Omit<PlaceDeps, 'http'> = {}): Promise<StepsResult> {
+  const out: StepsResult = { more: false, signature: '', launched: 0, blogs: 0, sent: 0, failed: 0, notes: [] }
   const list = await http('/api/drop')
   // Not open to this account, or migration 436 not run: nothing to do here.
   if (!list.ok || list.json.available === false) return out
   const sig: string[] = []
+  const nowMs = () => now().getTime()
+  const sendDone = (sendId: string, o: { state: string; detail?: string | null; url?: string | null; refId?: string | null; payload?: Record<string, unknown> }) =>
+    dropApi(http, { action: 'send_done', sendId, ...o })
+
   for (const d of (list.json.drops ?? []) as DropRow[]) {
-    if (!d.batch_id || d.state === 'done' || d.state === 'failed' || d.state === 'building') continue
-    const b = await http(`/api/launch/batches/${d.batch_id}`)
-    if (!b.ok) {
-      // A batch deleted in Liftoff ends the drop; any other miss comes round again.
-      if (b.status === 404) await dropApi(http, { action: 'state', dropId: d.id, state: 'failed', note: 'The Liftoff batch for this drop was deleted.' })
-      else { out.more = true; sig.push(`${d.id}:unread`) }
-      continue
-    }
-    const batch = (b.json.batch ?? {}) as { state?: string }
-    const blocker = (b.json.launchBlocker ?? null) as string | null
-    const items = (b.json.items ?? []) as BatchItem[]
+    if (d.state === 'done' || d.state === 'failed' || d.state === 'building') continue
+    let items: BatchItem[] = []
+    let launchedNow = false
 
-    if (d.state === 'preparing' || d.state === 'needs_you') {
-      const next = nextForBatch(String(batch.state || ''), blocker)
-      if (next === 'launch') {
-        say(`Launching ${d.id.slice(0, 8)} in Liftoff`)
-        const l = await http(`/api/launch/batches/${d.batch_id}/launch`, { method: 'POST' })
-        if (l.ok) { await dropApi(http, { action: 'state', dropId: d.id, state: 'launched' }); out.launched++; out.more = true; sig.push(`${d.id}:launched`) }
-        else { await dropApi(http, { action: 'state', dropId: d.id, state: 'needs_you', note: `Liftoff did not launch it: ${err(l, 'no answer')}` }); out.more = true; sig.push(`${d.id}:refused`) }
+    // ── the Liftoff half: launch once prepared ──────────────────────────────
+    if (d.batch_id) {
+      const b = await http(`/api/launch/batches/${d.batch_id}`)
+      if (!b.ok) {
+        // A batch deleted in Liftoff ends the drop; any other miss comes round again.
+        if (b.status === 404) await dropApi(http, { action: 'state', dropId: d.id, state: 'failed', note: 'The Liftoff batch for this drop was deleted.' })
+        else { out.more = true; sig.push(`${d.id}:unread`) }
         continue
       }
-      if (next === 'launched') { await dropApi(http, { action: 'state', dropId: d.id, state: 'launched' }); sig.push(`${d.id}:launched`) }
-      else {
-        const state = next === 'wait' ? 'preparing' : 'needs_you'
-        if (state !== d.state || (state === 'needs_you' && blocker !== d.note)) await dropApi(http, { action: 'state', dropId: d.id, state, note: state === 'needs_you' ? blocker : null })
-        // Preparing finishes on its own; a choice in Liftoff may be made at
-        // any time, so both come round again (SCOUT waits longer while the
-        // signature stays the same).
-        out.more = true
-        sig.push(`${d.id}:${state}:${items.map((i) => i.state).join(',')}`)
-        continue
+      const batch = (b.json.batch ?? {}) as { state?: string }
+      const blocker = (b.json.launchBlocker ?? null) as string | null
+      items = (b.json.items ?? []) as BatchItem[]
+      if (d.state === 'preparing' || d.state === 'needs_you') {
+        const next = nextForBatch(String(batch.state || ''), blocker)
+        if (next === 'launch') {
+          say(`Launching ${d.id.slice(0, 8)} in Liftoff`)
+          const l = await http(`/api/launch/batches/${d.batch_id}/launch`, { method: 'POST' })
+          if (l.ok) { await dropApi(http, { action: 'state', dropId: d.id, state: 'launched' }); out.launched++; out.more = true; sig.push(`${d.id}:launched`); launchedNow = true }
+          else { await dropApi(http, { action: 'state', dropId: d.id, state: 'needs_you', note: `Liftoff did not launch it: ${err(l, 'no answer')}` }); out.more = true; sig.push(`${d.id}:refused`) }
+        } else if (next === 'launched') { await dropApi(http, { action: 'state', dropId: d.id, state: 'launched' }); sig.push(`${d.id}:launched`) }
+        else {
+          const state = next === 'wait' ? 'preparing' : 'needs_you'
+          if (state !== d.state || (state === 'needs_you' && blocker !== d.note)) await dropApi(http, { action: 'state', dropId: d.id, state, note: state === 'needs_you' ? blocker : null })
+          // Preparing finishes on its own; a choice in Liftoff may be made at
+          // any time, so both come round again (SCOUT waits longer while the
+          // signature stays the same).
+          out.more = true
+          sig.push(`${d.id}:${state}:${items.map((i) => i.state).join(',')}`)
+        }
       }
     }
+    const youtubeGoing = !d.batch_id || d.state === 'launched' || launchedNow
 
-    // ── blog posts, each once YouTube has its video and time ────────────────
     let open = 0
     for (const it of d.items) {
+      const li = items.find((x) => x.id === it.launch_item_id) ?? null
+      const sends = it.sends ?? []
+      const blogSends = sends.filter((x) => WITH_BLOG[x.place])
+
+      // ── the blog post, once YouTube has its video and time ──────────────
       // A post still being written is waited for; one quiet past STALE_MS
       // stopped with its page, and the board offers to write it again.
-      if (!it.to_blog || it.blog_state !== 'wanted') { if (it.blog_state === 'writing' && !isStale(it.updated_at, now().getTime())) open++; continue }
-      const li = items.find((x) => x.id === it.launch_item_id) ?? null
-      if (li?.state === 'blocked') {
-        if ((await dropApi(http, { action: 'blog_claim', itemId: it.id })).json.claimed) {
-          await dropApi(http, { action: 'blog_done', itemId: it.id, ok: false, detail: 'The video did not reach YouTube, so there is nothing to write the post from.' })
-          out.failed++
+      if (it.to_blog && it.blog_state === 'writing' && !isStale(it.updated_at, nowMs())) open++
+      if (it.to_blog && it.blog_state === 'wanted' && youtubeGoing) {
+        if (li?.state === 'blocked') {
+          if ((await dropApi(http, { action: 'blog_claim', itemId: it.id })).json.claimed) {
+            await dropApi(http, { action: 'blog_done', itemId: it.id, ok: false, detail: 'The video did not reach YouTube, so there is nothing to write the post from.' })
+            for (const x of blogSends) if ((await dropApi(http, { action: 'send_claim', sendId: x.id })).json.claimed) await sendDone(x.id, { state: 'failed', detail: 'It goes out with the blog post, and there is no post: the video did not reach YouTube.' })
+            out.failed++
+          }
+        } else if (!blogReady(li)) open++
+        else if ((await dropApi(http, { action: 'blog_claim', itemId: it.id })).json.claimed) {
+          const at = blogTimeFor(li!.publish_at, now())!
+          // The pin and the Facebook post go out with the post: claimed first.
+          const riding: Array<{ id: string; platform: 'pinterest' | 'facebook' }> = []
+          for (const x of blogSends) if (x.state === 'wanted' && (await dropApi(http, { action: 'send_claim', sendId: x.id })).json.claimed) riding.push({ id: x.id, platform: WITH_BLOG[x.place] })
+          const socials = riding.map((x) => ({ platform: x.platform, offsetMinutes: 5, bodyText: String(li!.title || it.title || '').slice(0, 280) || 'New review' }))
+          say(`Writing the blog post for ${li!.title || 'a video'}`)
+          // About four minutes: the post is written now and goes live at `at`.
+          const r = await http('/api/blog/schedule-publish', { method: 'POST', timeoutMs: 330_000, body: {
+            videoId: li!.video_id, siteId: null, scheduleMode: 'wp-native', scheduledFor: at, socials, includeImages: true,
+          } })
+          const ok = r.ok && r.json.ok !== false && !!r.json.postId
+          await dropApi(http, { action: 'blog_done', itemId: it.id, ok, at, postId: r.json.postId ?? null, url: r.json.wordpressUrl ?? null,
+            detail: ok ? null : err(r, 'The blog did not answer') })
+          const skipped = new Set(((r.json.skippedPlatforms ?? []) as unknown[]).map(String))
+          for (const x of riding) {
+            if (!ok) await sendDone(x.id, { state: 'failed', detail: 'It goes out with the blog post, and the post was not scheduled.' })
+            else if (skipped.has(x.platform)) await sendDone(x.id, { state: 'failed', detail: `${x.platform === 'pinterest' ? 'Pinterest' : 'Facebook'} is not connected, so the blog post went without it.` })
+            else await sendDone(x.id, { state: 'done', detail: x.platform === 'pinterest'
+              ? 'Pinned when the blog post goes live'
+              : 'Goes out with the blog post. With a Group saved in Meta Hub it waits there for you to post; without one it goes on your Page.', url: (r.json.wordpressUrl as string) || null })
+          }
+          if (ok) out.blogs++
+          else { out.failed++; out.notes.push(err(r, 'The blog did not answer')) }
         }
-        continue
       }
-      if (!blogReady(li)) { open++; continue }
-      const claim = await dropApi(http, { action: 'blog_claim', itemId: it.id })
-      if (!claim.json.claimed) continue
-      const at = blogTimeFor(li!.publish_at, now())!
-      say(`Writing the blog post for ${li!.title || 'a video'}`)
-      // About four minutes: the post is written now and goes live at `at`.
-      const r = await http('/api/blog/schedule-publish', { method: 'POST', timeoutMs: 330_000, body: {
-        videoId: li!.video_id, siteId: null, scheduleMode: 'wp-native', scheduledFor: at, socials: [], includeImages: true,
-      } })
-      const ok = r.ok && r.json.ok !== false && !!r.json.postId
-      await dropApi(http, { action: 'blog_done', itemId: it.id, ok, at, postId: r.json.postId ?? null, url: r.json.wordpressUrl ?? null,
-        detail: ok ? null : err(r, 'The blog did not answer') })
-      if (ok) out.blogs++
-      else { out.failed++; out.notes.push(err(r, 'The blog did not answer')) }
+
+      // ── every other place ───────────────────────────────────────────────
+      for (const x of sends) {
+        if (WITH_BLOG[x.place]) { if (!SETTLED.has(x.state)) open++; continue }
+        if (x.state === 'sending') { if (!isStale(x.updated_at, nowMs())) open++; continue }
+        if (x.state !== 'wanted') continue
+        // Clips work from the YouTube video: nothing to claim until it exists.
+        if (x.place === 'clips' && !li?.video_id && li?.state !== 'blocked') { open++; continue }
+        const claim = await dropApi(http, { action: 'send_claim', sendId: x.id })
+        if (!claim.json.claimed) continue
+        say(`${x.place}: ${it.file_name || 'a video'}`)
+        const res = await runSend({ id: x.id, place: x.place, state: 'sending', payload: (x.payload ?? {}) as Record<string, unknown> }, {
+          id: it.id, file_name: it.file_name ?? null, source_url: it.source_url ?? null, duration_seconds: it.duration_seconds ?? null, asin: it.asin ?? null, title: it.title ?? null,
+        }, li, { http, ...placeDeps })
+        await sendDone(x.id, { state: res.state, detail: res.detail, url: res.url ?? null, refId: res.refId ?? null,
+          payload: res.payload ? { ...(x.payload ?? {}), ...res.payload } : undefined })
+        if (res.state === 'done') out.sent++
+        else if (res.state === 'failed') { out.failed++; out.notes.push(`${x.place}: ${res.detail || 'not done'}`) }
+        else if (res.state === 'wanted') open++
+      }
     }
 
-    // DONE when YouTube has settled every video and no post is still owed.
+    // DONE when YouTube has settled every video and nothing is still owed.
     const settled = items.every((i) => ['scheduled', 'published', 'blocked', 'amazon_only'].includes(i.state))
-    const owed = d.items.some((i) => i.to_blog && (i.blog_state === 'wanted' || (i.blog_state === 'writing' && !isStale(i.updated_at, now().getTime()))))
-    if (settled && !owed && open === 0) await dropApi(http, { action: 'state', dropId: d.id, state: 'done' })
-    else { out.more = true; sig.push(`${d.id}:${items.map((i) => i.state).join(',')}:${open}`) }
+    const owed = d.items.some((i) => i.to_blog && (i.blog_state === 'wanted' || (i.blog_state === 'writing' && !isStale(i.updated_at, nowMs()))))
+    const trybeOwed = d.items.some((i) => i.to_trybe && i.trybe_state === 'sending' && !isStale(i.updated_at, nowMs()))
+    if (youtubeGoing && settled && !owed && !trybeOwed && open === 0) await dropApi(http, { action: 'state', dropId: d.id, state: 'done' })
+    else if (youtubeGoing) { out.more = true; sig.push(`${d.id}:${items.map((i) => i.state).join(',')}:${open}`) }
   }
   out.signature = sig.length ? `drop#${sig.join('#')}` : ''
   return out

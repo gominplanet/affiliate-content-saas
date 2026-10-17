@@ -40,10 +40,10 @@ export function defaultDest(kind: DropKind, hasBlog: boolean): DropDest {
 // 436). The rest are one drop_sends row each (migration 437), run by
 // lib/drop-places once the place can take the video.
 
-export type ExtraPlace = 'tiktok' | 'instagram' | 'shorts' | 'facebook' | 'pinterest' | 'pin' | 'group' | 'clips'
+export type ExtraPlace = 'tiktok' | 'instagram' | 'shorts' | 'facebook' | 'pinterest' | 'amazon' | 'pin' | 'group' | 'clips'
 export type PlaceId = 'liftoff' | 'blog' | 'trybe' | ExtraPlace
 
-export const EXTRA_PLACES: ExtraPlace[] = ['tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'pin', 'group', 'clips']
+export const EXTRA_PLACES: ExtraPlace[] = ['tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'amazon', 'pin', 'group', 'clips']
 
 export interface PlaceInfo {
   label: string
@@ -53,27 +53,35 @@ export interface PlaceInfo {
   afterYouTube: boolean
   /** In plain words, what the creator gets. */
   says: string
+  /** It goes out with the blog post (as one of its socials), so it needs it. */
+  withBlog?: boolean
 }
 
 export const PLACE_INFO: Record<PlaceId, PlaceInfo> = {
   liftoff: { label: 'YouTube and Amazon', kind: 'long', afterYouTube: false, says: 'Liftoff, with your last choices' },
   blog: { label: 'Blog post', kind: 'long', afterYouTube: true, says: 'Live ten minutes after the video' },
-  pin: { label: 'Pinterest pin', kind: 'long', afterYouTube: true, says: 'A pin for the video, once it is public' },
-  group: { label: 'Facebook Group', kind: 'long', afterYouTube: true, says: 'Queued in your Group Post Queue for you to post' },
-  clips: { label: '3 clips', kind: 'long', afterYouTube: true, says: 'Clip Factory finds 3 moments and makes them' },
+  pin: { label: 'Pinterest pin', kind: 'long', afterYouTube: true, withBlog: true, says: 'Pinned when the blog post goes live' },
+  group: { label: 'Facebook post', kind: 'long', afterYouTube: true, withBlog: true, says: 'With the blog post. Waits in Meta Hub for your Group when one is saved' },
+  clips: { label: '3 clips', kind: 'long', afterYouTube: true, says: 'Clip Factory finds 3 moments and makes them, up to 10 minute videos' },
   tiktok: { label: 'TikTok', kind: 'vertical', afterYouTube: false, says: 'Posted to your TikTok' },
   instagram: { label: 'Instagram Reel', kind: 'vertical', afterYouTube: false, says: 'Posted as a Reel' },
   shorts: { label: 'YouTube Short', kind: 'vertical', afterYouTube: false, says: 'Posted as a Short with your link' },
   facebook: { label: 'Facebook Reel', kind: 'vertical', afterYouTube: false, says: 'Posted as a Reel on your Page' },
   pinterest: { label: 'Pinterest video', kind: 'vertical', afterYouTube: false, says: 'A video pin' },
+  amazon: { label: 'Amazon', kind: 'vertical', afterYouTube: false, says: 'Your US storefront, through SCOUT. Needs the product' },
   trybe: { label: 'TRYBE brand', kind: 'vertical', afterYouTube: false, says: 'Sent to the brand you pick, through SCOUT' },
 }
 
+/** The places this version of Drop can actually send to. The others are
+ *  shown as coming, never as a choice that would sit unsent. */
+export const READY_PLACES = new Set<PlaceId>(['liftoff', 'blog', 'trybe', 'tiktok', 'instagram', 'shorts', 'facebook', 'pinterest', 'amazon', 'pin', 'group', 'clips'])
+
 /** Can this place take this video. The places that work from the YouTube
  *  video need it to go through Liftoff. Pure. */
-export function placeFits(place: string, kind: DropKind, toLiftoff: boolean): boolean {
+export function placeFits(place: string, kind: DropKind, toLiftoff: boolean, toBlog = true): boolean {
   const info = PLACE_INFO[place as PlaceId]
   if (!info || info.kind !== kind) return false
+  if (info.withBlog && !toBlog) return false
   return !info.afterYouTube || toLiftoff
 }
 
@@ -223,7 +231,19 @@ export const isStale = (updatedAt: string | null | undefined, now: number = Date
   const t = Date.parse(String(updatedAt ?? ''))
   return Number.isFinite(t) && now - t > STALE_MS
 }
-export interface PlaceLine { place: 'YouTube' | 'Amazon' | 'Blog' | 'TRYBE'; tone: Tone; text: string }
+export interface PlaceLine {
+  /** What the line is about, in words: YouTube, Amazon, Blog, TRYBE, TikTok... */
+  place: string
+  /** Which place's icon: a PlaceId, or amazon (Liftoff's second half). */
+  id: PlaceId | 'amazon'
+  tone: Tone
+  text: string
+  /** Where the result is, when there is one to open. */
+  url?: string | null
+}
+
+/** One other place for one video, as drop_sends has it (migration 437). */
+export interface SendRow { id: string; place: string; state: string; detail: string | null; url: string | null; updated_at?: string | null }
 
 export interface DropItemRow {
   id: string
@@ -240,6 +260,8 @@ export interface DropItemRow {
   trybe_brand_name: string | null
   trybe_detail: string | null
   updated_at?: string | null
+  /** The other places (migration 437). */
+  sends?: SendRow[]
 }
 
 export interface LaunchItemView {
@@ -265,7 +287,7 @@ export function placeLines(it: DropItemRow, li: LaunchItemView | null, opts: { d
   const stale = isStale(it.updated_at, opts.now)
   if (it.to_liftoff) {
     if (!li) {
-      out.push({ place: 'YouTube', tone: opts.dropState === 'failed' ? 'bad' : opts.dropState === 'building' ? 'busy' : 'warn',
+      out.push({ place: 'YouTube', id: 'liftoff', tone: opts.dropState === 'failed' ? 'bad' : opts.dropState === 'building' ? 'busy' : 'warn',
         text: opts.dropState === 'building' ? 'Being added to Liftoff' : 'Not in Liftoff: it was not added' })
     } else {
       if (opts.sendToYouTube !== false && li.state === 'prepared' && !li.planned_publish_at) {
@@ -273,39 +295,50 @@ export function placeLines(it: DropItemRow, li: LaunchItemView | null, opts: { d
         // launch") is green there, where it asks for a press; here the drop
         // presses it, so it is still on the way.
         out.push(opts.dropState === 'needs_you'
-          ? { place: 'YouTube', tone: 'warn', text: 'Prepared. It launches once Liftoff has what it needs (above).' }
-          : { place: 'YouTube', tone: 'busy', text: 'Prepared, launching next' })
+          ? { place: 'YouTube', id: 'liftoff', tone: 'warn', text: 'Prepared. It launches once Liftoff has what it needs (above).' }
+          : { place: 'YouTube', id: 'liftoff', tone: 'busy', text: 'Prepared, launching next' })
       } else if (opts.sendToYouTube !== false) {
         const label = itemProgressLabel(li)
         const tone = li.state === 'blocked' ? 'bad' : itemProgressTone(li)
         const at = li.state === 'scheduled' ? ` for ${when(li.publish_at)}` : ''
-        out.push({ place: 'YouTube', tone, text: `${label}${at}${li.state === 'blocked' && li.reason ? `: ${li.reason}` : ''}` })
+        out.push({ place: 'YouTube', id: 'liftoff', tone, text: `${label}${at}${li.state === 'blocked' && li.reason ? `: ${li.reason}` : ''}` })
       }
       const us = (li.amazon ?? []).find((a) => a.domain === 'amazon.com') ?? (li.amazon ?? [])[0]
-      if (!us) out.push({ place: 'Amazon', tone: 'idle', text: opts.sendToYouTube === false ? 'Waiting for Liftoff' : 'Starts once YouTube has it' })
-      else if (us.state === 'delivered') out.push({ place: 'Amazon', tone: 'good', text: 'On Amazon' })
-      else if (us.state === 'failed') out.push({ place: 'Amazon', tone: 'bad', text: `Not uploaded${us.detail ? `: ${us.detail}` : ''}` })
-      else if (us.state.startsWith('grid:')) out.push({ place: 'Amazon', tone: 'warn', text: us.detail || 'Amazon has not taken it yet' })
-      else out.push({ place: 'Amazon', tone: 'busy', text: 'Waiting for SCOUT to upload it' })
+      if (!us) out.push({ place: 'Amazon', id: 'amazon', tone: 'idle', text: opts.sendToYouTube === false ? 'Waiting for Liftoff' : 'Starts once YouTube has it' })
+      else if (us.state === 'delivered') out.push({ place: 'Amazon', id: 'amazon', tone: 'good', text: 'On Amazon' })
+      else if (us.state === 'failed') out.push({ place: 'Amazon', id: 'amazon', tone: 'bad', text: `Not uploaded${us.detail ? `: ${us.detail}` : ''}` })
+      else if (us.state.startsWith('grid:')) out.push({ place: 'Amazon', id: 'amazon', tone: 'warn', text: us.detail || 'Amazon has not taken it yet' })
+      else out.push({ place: 'Amazon', id: 'amazon', tone: 'busy', text: 'Waiting for SCOUT to upload it' })
     }
   }
   if (it.to_blog) {
     const b = it.blog_state
-    out.push(b === 'scheduled' ? { place: 'Blog', tone: 'good', text: `Scheduled${it.blog_at ? ` for ${when(it.blog_at)}` : ''}` }
-      : b === 'writing' ? (stale ? { place: 'Blog', tone: 'warn', text: 'Stopped while it was being written. Check your blog for it before writing it again.' } : { place: 'Blog', tone: 'busy', text: 'Being written' })
-        : b === 'failed' ? { place: 'Blog', tone: 'bad', text: `Not scheduled${it.blog_detail ? `: ${it.blog_detail}` : ''}` }
-          : { place: 'Blog', tone: 'idle', text: 'Written once YouTube has the video and its time' })
+    out.push(b === 'scheduled' ? { place: 'Blog', id: 'blog', tone: 'good', text: `Scheduled${it.blog_at ? ` for ${when(it.blog_at)}` : ''}`, url: it.blog_url }
+      : b === 'writing' ? (stale ? { place: 'Blog', id: 'blog', tone: 'warn', text: 'Stopped while it was being written. Check your blog for it before writing it again.' } : { place: 'Blog', id: 'blog', tone: 'busy', text: 'Being written' })
+        : b === 'failed' ? { place: 'Blog', id: 'blog', tone: 'bad', text: `Not scheduled${it.blog_detail ? `: ${it.blog_detail}` : ''}` }
+          : { place: 'Blog', id: 'blog', tone: 'idle', text: 'Written once YouTube has the video and its time' })
   }
   if (it.to_trybe) {
     const s = it.trybe_state
     const brand = it.trybe_brand_name || 'the brand'
-    out.push(s === 'in_review' ? { place: 'TRYBE', tone: 'good', text: `In ${brand}'s review on TRYBE` }
-      : s === 'sent_unconfirmed' ? { place: 'TRYBE', tone: 'warn', text: `TRYBE took it, but it is not in your ${brand} submissions yet. Check TRYBE before sending again.` }
-        : s === 'sending' ? (stale ? { place: 'TRYBE', tone: 'warn', text: `Stopped while sending to ${brand}. Check your TRYBE submissions before sending again.` } : { place: 'TRYBE', tone: 'busy', text: it.trybe_detail || `Sending to ${brand}` })
-          : s === 'failed' ? { place: 'TRYBE', tone: 'bad', text: `Not sent${it.trybe_detail ? `: ${it.trybe_detail}` : ''}` }
-            : { place: 'TRYBE', tone: 'idle', text: `Ready to send to ${brand}` })
+    out.push(s === 'in_review' ? { place: 'TRYBE', id: 'trybe', tone: 'good', text: `In ${brand}'s review on TRYBE` }
+      : s === 'sent_unconfirmed' ? { place: 'TRYBE', id: 'trybe', tone: 'warn', text: `TRYBE took it, but it is not in your ${brand} submissions yet. Check TRYBE before sending again.` }
+        : s === 'sending' ? (stale ? { place: 'TRYBE', id: 'trybe', tone: 'warn', text: `Stopped while sending to ${brand}. Check your TRYBE submissions before sending again.` } : { place: 'TRYBE', id: 'trybe', tone: 'busy', text: it.trybe_detail || `Sending to ${brand}` })
+          : s === 'failed' ? { place: 'TRYBE', id: 'trybe', tone: 'bad', text: `Not sent${it.trybe_detail ? `: ${it.trybe_detail}` : ''}` }
+            : { place: 'TRYBE', id: 'trybe', tone: 'idle', text: `Ready to send to ${brand}` })
   }
-  if (!it.to_liftoff && !it.to_blog && !it.to_trybe) out.push({ place: it.kind === 'vertical' ? 'TRYBE' : 'YouTube', tone: 'idle', text: 'Not sent anywhere: no place was ticked' })
+  for (const x of it.sends ?? []) {
+    const info = PLACE_INFO[x.place as PlaceId]
+    if (!info) continue
+    const id = x.place as PlaceId
+    const sStale = isStale(x.updated_at, opts.now)
+    out.push(x.state === 'done' ? { place: info.label, id, tone: 'good', text: x.detail || 'Done', url: x.url }
+      : x.state === 'failed' ? { place: info.label, id, tone: 'bad', text: `Not done${x.detail ? `: ${x.detail}` : ''}` }
+        : x.state === 'needs_you' ? { place: info.label, id, tone: 'warn', text: x.detail || 'Needs a choice from you', url: x.url }
+          : x.state === 'sending' ? (sStale ? { place: info.label, id, tone: 'warn', text: 'Stopped part way. Check it before trying again.' } : { place: info.label, id, tone: 'busy', text: x.detail || 'On its way' })
+            : { place: info.label, id, tone: 'idle', text: info.afterYouTube ? 'Starts once YouTube has the video' : 'Waiting its turn' })
+  }
+  if (!it.to_liftoff && !it.to_blog && !it.to_trybe && !(it.sends ?? []).length) out.push({ place: it.kind === 'vertical' ? 'TRYBE' : 'YouTube', id: it.kind === 'vertical' ? 'trybe' : 'liftoff', tone: 'idle', text: 'Not sent anywhere: no place was picked' })
   return out
 }
 

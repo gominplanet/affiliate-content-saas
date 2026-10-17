@@ -13,6 +13,9 @@ import {
 } from '../lib/drop-plan'
 import { buildLiftoff, dropSteps, sendDropToTrybe, type Http, type HttpAnswer } from '../lib/drop-run'
 import type { SendDeps, TrybeCall } from '../lib/trybe-submit'
+import { runSend, type SendJob, type SendItem } from '../lib/drop-places'
+import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES } from '../lib/drop-plan'
+import { tiktokBlocker, emptyTikTok } from '../components/labs/DropTikTok'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -228,6 +231,144 @@ void (async () => {
   const sql = read('supabase/migrations/436_drops.sql')
   check('migration 436 makes both tables, safe to run twice', /create table if not exists public\.drops/.test(sql) && /create table if not exists public\.drop_items/.test(sql)
     && /drop policy if exists "own drops"/.test(sql) && /enable row level security/.test(sql))
+
+
+  // ── every other place ──────────────────────────────────────────────────────
+  check('each place fits its kind of video; a pin and a Facebook post ride on the blog post; clips need YouTube',
+    placeFits('tiktok', 'vertical', false) && !placeFits('tiktok', 'long', true) && placeFits('clips', 'long', true) && !placeFits('clips', 'long', false)
+    && placeFits('pin', 'long', true, true) && !placeFits('pin', 'long', true, false) && placeFits('amazon', 'vertical', false))
+  check('a saved plan keeps only places that exist and fit', JSON.stringify(readPlans({ long: ['liftoff', 'tiktok', 'nope', 'clips'], vertical: ['trybe', 'blog', 'tiktok'] }))
+    === JSON.stringify({ long: ['liftoff', 'clips'], vertical: ['trybe', 'tiktok'] }) && readPlans(null).long.includes('liftoff'))
+  check('every place Drop offers has a handler or rides on one', EXTRA_PLACES.every((p) => READY_PLACES.has(p)) && EXTRA_PLACES.every((p) => !!PLACE_INFO[p]))
+
+  const vItem: SendItem = { id: 'i7', file_name: 'band morning.mp4', source_url: 'https://x.supabase.co/storage/v1/object/public/instagram-videos/u1/drop-1.mp4', duration_seconds: 34, asin: 'B0BAND1234', title: null }
+  const job = (place: string, payload: Record<string, unknown> = {}): SendJob => ({ id: 's1', place, state: 'sending', payload })
+  const kit = (url: string) => url === '/api/clip-factory/publish-kit' ? ok({ ok: true, productLink: 'https://amzn.to/x', amazon: true, disclosure: '#ad', linkHub: null, blogUrl: null, videoUrl: null }) : undefined
+  const caption = (url: string) => url === '/api/amazon/social-caption' ? ok({ ok: true, caption: 'This band tracks my sleep. #sleep #wellness #fitness #health #tech #gadgets #ad' }) : undefined
+  {
+    const { http, calls } = fakeHttp((url, method) => caption(url) ?? kit(url) ?? (url === '/api/tiktok/publish-burned' && method === 'POST' ? ok({ ok: true, publishId: 'pub-1' }) : undefined))
+    const r = await runSend(job('tiktok', { privacyLevel: 'PUBLIC_TO_EVERYONE' }), vItem, null, { http, waitMs: 0 })
+    const post = calls.find((c) => c.url === '/api/tiktok/publish-burned')
+    check('TikTok: the creator’s privacy, switches off unless turned on, link in bio and not a link in the caption', post?.body.privacyLevel === 'PUBLIC_TO_EVERYONE'
+      && post.body.disableComment === true && post.body.disableDuet === true && /link in bio/i.test(post.body.caption) && !/amzn\.to/.test(post.body.caption))
+    check('TikTok: as many tags as TikTok rewards, and #ad once', (post?.body.caption.match(/#\w+/g) || []).length <= 6 && (post?.body.caption.match(/#ad\b/g) || []).length === 1)
+    check('TikTok: sent is not posted; it is read back on the next pass', r.state === 'wanted' && r.payload?.publishId === 'pub-1' && typeof r.payload?.written === 'string')
+    const back = fakeHttp((url) => url.startsWith('/api/tiktok/publish-burned/status') ? ok({ status: 'published', shareUrl: 'https://tiktok.com/@me/video/9' }) : undefined)
+    const r2 = await runSend(job('tiktok', { privacyLevel: 'PUBLIC_TO_EVERYONE', publishId: 'pub-1' }), vItem, null, { http: back.http, waitMs: 0 })
+    check('TikTok: done only when TikTok says it posted', r2.state === 'done' && r2.url === 'https://tiktok.com/@me/video/9' && !back.calls.some((c) => c.url === '/api/tiktok/publish-burned'))
+    const inbox = fakeHttp((url) => url.startsWith('/api/tiktok/publish-burned/status') ? ok({ status: 'inbox' }) : undefined)
+    check('TikTok: a video left in the TikTok inbox is the creator’s to post', (await runSend(job('tiktok', { privacyLevel: 'SELF_ONLY', publishId: 'p' }), vItem, null, { http: inbox.http, waitMs: 0 })).state === 'needs_you')
+    const none = fakeHttp(() => undefined)
+    check('TikTok: never posted without the creator choosing who can see it', (await runSend(job('tiktok'), vItem, null, { http: none.http, waitMs: 0 })).state === 'needs_you' && none.calls.length === 0)
+  }
+  check('TikTok choices: privacy picked, commercial content declared, branded content not private', !!tiktokBlocker(emptyTikTok(), { username: 'me', privacyLevelOptions: ['PUBLIC_TO_EVERYONE'] }, 30)
+    && !!tiktokBlocker({ ...emptyTikTok(), privacyLevel: 'PUBLIC_TO_EVERYONE', commercial: true }, { username: 'me', privacyLevelOptions: ['PUBLIC_TO_EVERYONE'] }, 30)
+    && !!tiktokBlocker({ ...emptyTikTok(), privacyLevel: 'SELF_ONLY', commercial: true, brandedPartnership: true }, { username: 'me', privacyLevelOptions: ['SELF_ONLY'] }, 30)
+    && tiktokBlocker({ ...emptyTikTok(), privacyLevel: 'PUBLIC_TO_EVERYONE' }, { username: 'me', privacyLevelOptions: ['PUBLIC_TO_EVERYONE'] }, 30) === null
+    && !!tiktokBlocker({ ...emptyTikTok(), privacyLevel: 'PUBLIC_TO_EVERYONE' }, null, 30))
+  {
+    const { http, calls } = fakeHttp((url) => caption(url) ?? kit(url) ?? (url === '/api/instagram/publish-burned' ? ok({ ok: true, published: true, mediaId: 'm1' }) : undefined))
+    const r = await runSend(job('instagram'), vItem, null, { http })
+    const post = calls.find((c) => c.url === '/api/instagram/publish-burned')
+    check('Instagram: a Reel with link in bio and #ad, done from Meta’s answer', r.state === 'done' && /link in bio/i.test(post?.body.caption) && /#ad/.test(post?.body.caption)
+      && (post?.body.caption.match(/#\w+/g) || []).length <= 5 && (post?.body.caption.match(/#ad\b/g) || []).length === 1)
+  }
+  {
+    const { http } = fakeHttp((url) => caption(url) ?? kit(url) ?? (url === '/api/youtube/upload-short' ? { ok: false, status: 429, json: { error: 'quota', quotaExceeded: true } } : undefined))
+    check('Shorts: YouTube’s used up allowance is said, and left for the creator to try again', (await runSend(job('shorts'), vItem, null, { http })).state === 'needs_you')
+    const okShort = fakeHttp((url) => caption(url) ?? kit(url) ?? (url === '/api/youtube/upload-short' ? ok({ ok: true, videoId: 'yt1', url: 'https://youtu.be/yt1' }) : undefined))
+    const r = await runSend(job('shorts', { title: 'My band test' }), vItem, null, { http: okShort.http })
+    const up = okShort.calls.find((c) => c.url === '/api/youtube/upload-short')
+    check('Shorts: the creator’s title, the product link in the description', r.state === 'done' && up?.body.title === 'My band test' && /amzn\.to/.test(up?.body.description))
+  }
+  {
+    const { http, calls } = fakeHttp((url) => caption(url) ?? kit(url) ?? (url === '/api/clip-factory/facebook-reel' ? ok({ ok: true, page: 'Seb Reviews', kind: 'reel', url: 'https://fb.com/r/1' }) : undefined))
+    const r = await runSend(job('facebook'), vItem, null, { http })
+    check('Facebook: a Reel on the Page with the link first, and which Page it went to', r.state === 'done' && /Seb Reviews/.test(r.detail || '')
+      && /^.*amzn\.to/.test(calls.find((c) => c.url === '/api/clip-factory/facebook-reel')?.body.description || ''))
+  }
+  {
+    const { http } = fakeHttp((url) => caption(url))
+    const pins: unknown[] = []
+    const r = await runSend(job('pinterest'), vItem, null, { http, videoPin: async (b) => { pins.push(b); return { ok: true, pinId: 'p1', board: 'Gadgets' } } })
+    check('Pinterest: a video pin through the helper that waits out Pinterest', r.state === 'done' && /Gadgets/.test(r.detail || '') && pins.length === 1)
+  }
+  {
+    // Amazon for a vertical video: its own Liftoff batch, Amazon only.
+    const first = fakeHttp((url, method) => url === '/api/launch/batches' && method === 'POST' ? ok({ ok: true, id: 'b-am' }) : url === '/api/launch/batches/b-am/items' ? ok({ ok: true, id: 'li-am' }) : undefined)
+    const r1 = await runSend(job('amazon'), vItem, null, { http: first.http, timezone: 'UTC' })
+    const patch = first.calls.find((c) => c.url === '/api/launch/batches/b-am' && c.method === 'PATCH')
+    check('Amazon (vertical): an Amazon only Liftoff batch with no CTA, the house look and the US store', patch?.body.sendToYouTube === false && patch.body.ctaChosen === true && patch.body.cta === null
+      && patch.body.thumbnailChosen === true && JSON.stringify(patch.body.markets) === '["amazon.com"]' && r1.state === 'wanted' && r1.payload?.batchId === 'b-am'
+      && first.calls.some((c) => c.url === '/api/launch/items/li-am' && c.body.product === 'B0BAND1234'))
+    const second = fakeHttp((url) => url === '/api/launch/batches/b-am' ? ok({ ok: true, batch: { state: 'draft' }, launchBlocker: null, items: [{ id: 'li-am', state: 'prepared' }] }) : undefined)
+    const r2 = await runSend(job('amazon', { batchId: 'b-am', launchItemId: 'li-am' }), vItem, null, { http: second.http })
+    check('Amazon (vertical): launched once Liftoff prepared it', r2.state === 'wanted' && second.calls.some((c) => c.url === '/api/launch/batches/b-am/launch'))
+    const third = fakeHttp((url) => url === '/api/launch/batches/b-am' ? ok({ ok: true, batch: { state: 'launched' }, launchBlocker: null, items: [{ id: 'li-am', state: 'amazon_only', amazon: [{ domain: 'amazon.com', state: 'delivered', detail: null }] }] }) : undefined)
+    check('Amazon (vertical): done only when Amazon has it', (await runSend(job('amazon', { batchId: 'b-am', launchItemId: 'li-am' }), vItem, null, { http: third.http })).state === 'done')
+    const noAsin = fakeHttp(() => undefined)
+    check('Amazon (vertical): no product, no batch', (await runSend(job('amazon'), { ...vItem, asin: null }, null, { http: noAsin.http })).state === 'needs_you' && noAsin.calls.length === 0)
+  }
+  {
+    const longItem: SendItem = { ...vItem, file_name: 'mixer.mp4' }
+    const wait = fakeHttp(() => undefined)
+    check('Clips: nothing until YouTube has the video', (await runSend(job('clips'), longItem, { state: 'prepared' }, { http: wait.http })).state === 'wanted' && wait.calls.length === 0)
+    const limit = fakeHttp((url) => url === '/api/youtube/shorts/plan' ? { ok: false, status: 429, json: { error: 'limit', limitReached: true } } : undefined)
+    check('Clips: a used up Find Moments allowance is the creator’s, said plainly', (await runSend(job('clips'), longItem, { state: 'scheduled', video_id: 'v1' }, { http: limit.http })).state === 'needs_you')
+    let rendered = 0
+    const make = fakeHttp((url) => {
+      if (url.startsWith('/api/youtube/shorts?')) return ok({ ok: true, shorts: [] })
+      if (url === '/api/youtube/shorts/plan') return ok({ ok: true, shorts: [{ id: 'c1', status: 'suggested' }, { id: 'c2', status: 'suggested' }, { id: 'c3', status: 'suggested' }, { id: 'c4', status: 'suggested' }] })
+      if (url === '/api/youtube/shorts/render') { rendered++; return ok({ ok: true, short: { status: 'rendered' } }) }
+      return undefined
+    })
+    const r = await runSend(job('clips'), longItem, { state: 'scheduled', video_id: 'v1' }, { http: make.http })
+    check('Clips: three moments found and three rendered, from the YouTube video', r.state === 'done' && rendered === 3 && /3 clips ready/.test(r.detail || '') && r.url === '/clip-factory?video=v1'
+      && make.calls.find((c) => c.url === '/api/youtube/shorts/plan')?.body.count === 3)
+  }
+  {
+    // A vertical-only drop has no Liftoff batch, and its places still run.
+    const send = { id: 's9', place: 'instagram', state: 'wanted', payload: {}, updated_at: new Date().toISOString() }
+    const vdrop = { ok: true, available: true, drops: [{ id: 'd9', state: 'launched', note: null, batch_id: null, items: [{ ...vItem, to_blog: false, blog_state: 'off', launch_item_id: null, to_trybe: false, trybe_state: 'off', sends: [send] }] }] }
+    const { http, calls } = fakeHttp((url, _m, b) => {
+      if (url === '/api/drop' && !b) return ok(vdrop)
+      if (b?.action === 'send_claim') return ok({ ok: true, claimed: true })
+      return caption(url) ?? kit(url) ?? (url === '/api/instagram/publish-burned' ? ok({ ok: true, published: true, mediaId: 'm9' }) : undefined)
+    })
+    const r = await dropSteps(http)
+    const done = calls.find((c) => c.body?.action === 'send_done')
+    check('a drop with no Liftoff batch still sends its places, claimed first, the result recorded', r.sent === 1 && done?.body.state === 'done' && done.body.sendId === 's9'
+      && calls.findIndex((c) => c.body?.action === 'send_claim') < calls.findIndex((c) => c.url === '/api/instagram/publish-burned'))
+  }
+  {
+    // The pin and the Facebook post go out with the blog post as its socials.
+    const pin = { id: 'sp', place: 'pin', state: 'wanted', payload: {} }
+    const grp = { id: 'sg', place: 'group', state: 'wanted', payload: {} }
+    const item = { id: 'i1', to_blog: true, blog_state: 'wanted', launch_item_id: 'li1', to_trybe: false, trybe_state: 'off', sends: [pin, grp] }
+    const { http, calls } = fakeHttp((url, _m, b) => {
+      if (url === '/api/drop' && !b) return ok(drop('launched', [item]))
+      if (url === '/api/launch/batches/b1') return ok({ ok: true, batch: { state: 'launched' }, launchBlocker: null, items: [{ id: 'li1', state: 'scheduled', video_id: 'vid-1', publish_at: '2030-01-01T15:00:00Z', title: 'Mixer review' }] })
+      if (b?.action === 'blog_claim' || b?.action === 'send_claim') return ok({ ok: true, claimed: true })
+      if (url === '/api/blog/schedule-publish') return ok({ ok: true, postId: 'post-1', wordpressUrl: 'https://blog/x', skippedPlatforms: ['facebook'] })
+      return undefined
+    })
+    await dropSteps(http)
+    const sp = calls.find((c) => c.url === '/api/blog/schedule-publish')
+    const doneOf = (id: string) => calls.find((c) => c.body?.action === 'send_done' && c.body.sendId === id)?.body
+    check('the pin and the Facebook post are the blog post’s socials', JSON.stringify(sp?.body.socials.map((x: { platform: string }) => x.platform)) === '["pinterest","facebook"]' && !!sp && sp.body.socials.every((x: { bodyText: string }) => !!x.bodyText))
+    check('a social the blog route skipped is said, not shown as done', doneOf('sp')?.state === 'done' && doneOf('sg')?.state === 'failed' && /not connected/.test(doneOf('sg')?.detail))
+  }
+
+  // ── wiring for the places ──────────────────────────────────────────────────
+  const route2 = read('app/api/drop/route.ts')
+  check('a place is claimed from waiting, and its result written only from sending', /\.eq\('state', 'wanted'\)\.select\(SEND_COLS\)/.test(route2) && /send_done[\s\S]{0,900}\.eq\('state', 'sending'\)/.test(route2))
+  check('each place keeps the creator’s own words and choices, plain values only', /function sendPayload\(/.test(route2) && /typeof v === 'boolean' \|\| \(typeof v === 'number'/.test(route2))
+  const board = read('components/labs/DropBoard.tsx')
+  check('the page reads TikTok’s account settings as the posting screen opens, and the real connections', /\/api\/blog\/tiktok-post\/creator-info/.test(board) && /\/api\/social\/connected/.test(board))
+  check('only on TRYBE is never posted elsewhere anyway', /Only on TRYBE and also set to post on/.test(board))
+  check('SCOUT’s background tab runs every place too', /dropSteps\(browserHttp, \(t\) => say\(`Drop: \$\{t\}`\), undefined, \{ videoPin/.test(read('components/launch/LiftoffRunner.tsx')))
+  const sql437 = read('supabase/migrations/437_drop_places.sql')
+  check('migration 437 makes drop_sends and drop_plans, safe to run twice', /create table if not exists public\.drop_sends/.test(sql437) && /create table if not exists public\.drop_plans/.test(sql437) && /unique \(drop_item_id, place\)/.test(sql437))
 
   if (failures.length) { console.error('❌ drop guard failed:\n  - ' + failures.join('\n  - ')); process.exit(1) }
   console.log('✓ drop guard passed')

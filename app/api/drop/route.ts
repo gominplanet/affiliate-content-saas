@@ -124,11 +124,32 @@ interface NewItem {
   kind?: string; asin?: string; title?: string; toLiftoff?: boolean; toBlog?: boolean; toTrybe?: boolean
   /** Every other place this video goes (lib/drop-plan EXTRA_PLACES). */
   places?: string[]
+  /** The words for a vertical video's posts; empty lets MVP write them. */
+  caption?: string
+  /** Per place, what only the creator can choose (TikTok's who can see it). */
+  options?: Record<string, Record<string, unknown>>
   trybe?: { brandId?: string; brandName?: string; programId?: string | null; angleId?: string | null; productIds?: string[]; exclusive?: boolean; notes?: string }
 }
 
 const s = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '') || null
 const n = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : null)
+
+/** What a place starts with: the creator's own words and choices, kept
+ *  small. Only plain values; nothing here is ever run. */
+function sendPayload(it: NewItem, place: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const caption = s(it.caption, 2000)
+  if (caption) out.caption = caption
+  const title = s(it.title, 100)
+  if (title) out.title = title
+  const opt = it.options && typeof it.options[place] === 'object' ? it.options[place] : null
+  for (const [k, v] of Object.entries(opt ?? {}).slice(0, 12)) {
+    if (!/^[a-zA-Z]{1,30}$/.test(k)) continue
+    if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) out[k] = v
+    else if (typeof v === 'string') out[k] = v.slice(0, 200)
+  }
+  return out
+}
 
 /** The TRYBE choice for one video, as columns. */
 function trybeCols(t: NewItem['trybe'] | undefined) {
@@ -195,7 +216,7 @@ export async function POST(req: Request) {
       const toLiftoff = rows[m.position].to_liftoff
       for (const place of new Set((Array.isArray(it?.places) ? it.places : []).map(String))) {
         if (!SEND_PLACES.has(place) || !placeFits(place, kind, toLiftoff)) continue
-        sendRows.push({ drop_item_id: m.id, drop_id: drop.id, user_id: g.userId, place, state: 'wanted' })
+        sendRows.push({ drop_item_id: m.id, drop_id: drop.id, user_id: g.userId, place, state: 'wanted', payload: sendPayload(it, place) })
       }
     }
     let placesSaved = true

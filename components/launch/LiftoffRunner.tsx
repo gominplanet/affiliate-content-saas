@@ -24,6 +24,7 @@ import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION
 import { runStudioUploads } from '@/lib/studio-upload-client'
 import { postDueFirstCommentsViaScout } from '@/lib/first-comment-pins'
 import { dropSteps, browserHttp } from '@/lib/drop-run'
+import { postVideoPin } from '@/lib/pinterest-video-pin'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -66,9 +67,12 @@ export default function LiftoffRunner() {
         // ── DROP (Labs): a drop's Liftoff batch launches here once it is
         // prepared, and each blog post is written once YouTube has its video,
         // so the Drop page can be closed. Nothing for an account without Drop.
-        const drops = await dropSteps(browserHttp, (t) => say(`Drop: ${t}`))
+        let tz = 'UTC'
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { /* UTC */ }
+        const drops = await dropSteps(browserHttp, (t) => say(`Drop: ${t}`), undefined, { videoPin: (b) => postVideoPin(b), timezone: tz })
         if (drops.launched) say(`Drop: launched ${drops.launched}`)
         if (drops.blogs) say(`Drop: ${drops.blogs} blog post${drops.blogs === 1 ? '' : 's'} scheduled`)
+        if (drops.sent) say(`Drop: ${drops.sent} more place${drops.sent === 1 ? '' : 's'} done`)
         if (drops.more) { more = true; sigs.push(drops.signature) }
         const r = await fetch('/api/launch/batches')
         const j = await r.json().catch(() => ({}))
