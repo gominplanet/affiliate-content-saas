@@ -16,7 +16,7 @@ import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
-  Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
+  Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil, ChevronDown,
 } from 'lucide-react'
 import { acceptCampaignViaScout, recordAccept } from '@/lib/accept-campaign'
 import { campaignRunway } from '@/lib/campaign-runway'
@@ -305,7 +305,9 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             {accepting ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} {accepting ? 'Accepting via SCOUT…' : 'Accept campaign'}
           </button>
         )}
-        <div className="flex items-center gap-2">
+        {/* Wraps, so the last icon never runs past the card's edge on a
+            narrower card (Seb's screenshot, 2026-10-17). */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Amazon Influencer tier: no blog — the primary action is Save (→ Social
               Influencer). Accept + Message stay below (they're Creator Connections). */}
           {socialOnly ? (
@@ -356,6 +358,23 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           </a>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** LOAD MORE, ON THE RIGHT (Seb, 2026-10-17: "look at the load more button ..
+ *  it's being hidden.. make it more visible but onto one of the sides so it
+ *  doesn't get blocked by the messaging buttons"). The bulk bar floats at the
+ *  bottom centre, so this sits on the right, purple and full size, with room
+ *  under it while the bar is up so it can always be scrolled clear. */
+function LoadMoreButton({ onClick, busy, more, barUp }: { onClick: () => void; busy: boolean; more?: number; barUp: boolean }) {
+  return (
+    <div className={`flex justify-end mt-6 ${barUp ? 'mb-28' : ''}`}>
+      <button onClick={onClick} disabled={busy}
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 text-[14px] font-semibold transition-colors disabled:opacity-60 border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED]/[0.07] dark:border-[#B9A2FF] dark:text-[#B9A2FF]">
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <ChevronDown size={16} />} Load more campaigns
+        {more != null && more > 0 && <span className="text-[12px] font-medium opacity-80">({more.toLocaleString()} more)</span>}
+      </button>
     </div>
   )
 }
@@ -1146,23 +1165,11 @@ export default function CcCampaignsPage() {
           </div>
           {moreToReveal ? (
             // First reveal more of what's already loaded, in 100-card steps.
-            <div className="flex justify-center mt-6">
-              <button onClick={() => setRenderLimit((l) => l + RENDER_STEP)} className="btn-secondary flex items-center gap-2">
-                Load more <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>({(visible.length - shown.length).toLocaleString()} more)</span>
-              </button>
-            </div>
+            <LoadMoreButton onClick={() => setRenderLimit((l) => l + RENDER_STEP)} busy={false} more={visible.length - shown.length} barUp={selected.size > 0 && !bulkOpen} />
           ) : joinedOnly ? (joinedHasMore && (
-            <div className="flex justify-center mt-6">
-              <button onClick={() => { const p = joinedPages + 12; setJoinedPages(p); void fetchJoinedLive(p, true) }} disabled={loadingMore} className="btn-secondary flex items-center gap-2">
-                {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null} Load more
-              </button>
-            </div>
+            <LoadMoreButton onClick={() => { const p = joinedPages + 12; setJoinedPages(p); void fetchJoinedLive(p, true) }} busy={loadingMore} barUp={selected.size > 0 && !bulkOpen} />
           )) : (nextPage && (
-            <div className="flex justify-center mt-6">
-              <button onClick={() => fetchPage(nextPage, true)} disabled={loadingMore} className="btn-secondary flex items-center gap-2">
-                {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null} Load more
-              </button>
-            </div>
+            <LoadMoreButton onClick={() => fetchPage(nextPage, true)} busy={loadingMore} barUp={selected.size > 0 && !bulkOpen} />
           ))}
         </>
         )
