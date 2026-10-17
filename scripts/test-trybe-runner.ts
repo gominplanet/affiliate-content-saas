@@ -28,7 +28,8 @@ const SENDER = BG.slice(BG.indexOf('async function trybeSend('), BG.indexOf('\n}
 check('SCOUT paces sends with MVP\'s numbers', new RegExp(`shortUnder: ${OUT.SHORT_RUN_UNDER}, shortMs: ${OUT.SHORT_GAP_MS}, minMs: ${OUT.MIN_GAP_MS}, maxMs: ${OUT.MAX_GAP_MS}, breakEvery: ${OUT.BREAK_EVERY}, breakMs: \\[${OUT.BREAK_MS[0]}, ${OUT.BREAK_MS[1]}\\]`).test(RUNNER))
 
 // ── Behind only: a run never takes the screen ──
-check('a run SCOUT does alone never comes forward', /if \(behind && res\.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT\.includes\(res\.error\)\) \{\s*res = \{ \.\.\.res, error: 'needs-screen: ' \+ res\.error/.test(SENDER) && /\} else if \(behind && res\.outcome === 'unconfirmed' && pressed\) \{[\s\S]{0,200}trybeBoxStillOpenInPage/.test(SENDER))
+// 1.50.1: no send comes forward at all, Send now included (Seb, 2026-10-17).
+check('a run SCOUT does alone never comes forward', !/showWorkTab|forward\(\)|cameForward/.test(SENDER) && /if \(res\.outcome === 'unconfirmed' && pressed\) \{[\s\S]{0,200}trybeBoxStillOpenInPage/.test(SENDER))
 check('the runner sends with behind on and no MVP tab to bring back', /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message \}, null, \{ behind: true \}\)/.test(RUNNER))
 
 type Store = Record<string, unknown>
@@ -107,6 +108,13 @@ async function main() {
     check('a send left for Send now is not counted as TRYBE breaking', r.sends.length === 3 && r.results.every(x => x.error?.startsWith('needs-screen')) && /Done: 0 sent/.test(r.st.ended || ''))
   }
   {
+    // 1.50.1: a brand SCOUT could not find is not TRYBE breaking, unless four come in a row.
+    const r = await sim({ ids: ['a', 'b', 'c'], send: () => ({ outcome: 'failed', error: 'brand-not-found' }) })
+    check('three brands not found in a row do not stop the run', r.sends.length === 3 && /Done: 0 sent/.test(r.st.ended || ''))
+    const r4 = await sim({ ids: ['a', 'b', 'c', 'd', 'e'], send: () => ({ outcome: 'failed', error: 'brand-not-found' }) })
+    check('four in a row stop it, saying TRYBE may have changed its list', r4.sends.length === 4 && /could not find four brands in a row/.test(r4.st.ended || ''))
+  }
+  {
     const r = await sim({ ids: ['a', 'b', 'c'], stopAfter: 1 })
     check('Stop lets the send under way finish and record, then nothing more starts', r.sends.length === 1 && r.results.length === 1 && r.results[0].outcome === 'sent' && /Stopped\. 1 sent/.test(r.st.ended || ''))
   }
@@ -136,7 +144,7 @@ async function main() {
   check('Send all hands the list to SCOUT when SCOUT can run it', /if \(usesRunner\) \{ await startRunner\(list, 'Send all'\); return \}/.test(UI) && /scoutAtLeast\(scoutVersion, SCOUT_TRYBE_RUNNER_MIN_VERSION\)/.test(UI))
   check('the page says the tab can close and nothing takes the screen', /You can close this tab or keep working\. Nothing takes your screen/.test(UI))
   check('Stop stops SCOUT\'s run', /if \(scoutRun\?\.on\) \{ const r = await requestTrybeRunStop\(\)/.test(UI))
-  check('a request left for Send now says so in words', /needs-screen: [\s\S]{0,40}TRYBE needed to be on screen for this one/.test(UI))
+  check('an older SCOUT\u2019s out of sight miss says so in words, and that Send now tries again', /needs-screen: [\s\S]{0,40}SCOUT could not reach it out of sight/.test(UI) && /Press Send now on it to try again/.test(UI))
   check('a Send now never runs beside SCOUT\'s own run', /if \(scoutRun\?\.on\) \{ toast\.message\('SCOUT is sending your list right now/.test(UI))
 
   if (fails.length) { console.error('trybe-runner failed:\n - ' + fails.join('\n - ')); process.exit(1) }

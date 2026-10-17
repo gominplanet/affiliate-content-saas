@@ -14168,9 +14168,13 @@ async function trybeRun(func, args, tabId) {
 // work in one window in the background"). Every TRYBE send opened a tab in the
 // creator's own window, its sign-in tab another, and a send that stalled came
 // to the front. Now SCOUT keeps ONE window of its own, opened minimized, with
-// a page saying what it is. Its tabs open and close in there; it is only
-// brought up when TRYBE refuses to send from a hidden page, then minimized
-// again; and it closes itself after five quiet minutes.
+// a page saying what it is. Its tabs open and close in there, and it is never
+// brought up (1.50.1: nothing SCOUT does on TRYBE comes to the front).
+// KEPT AN HOUR, NOT FIVE MINUTES (1.50.1; Alejandro, Oct 17: "the windows keep
+// popping up"). Closed after five quiet minutes, it was opened again by the
+// next TRYBE read (the Inbox and the other TRYBE pages read through it), so a
+// new window kept appearing while he worked. It now stays, minimized, until an
+// hour passes with nothing to do.
 const SCOUT_WORK_KEY = 'scoutWorkWindow'
 const SCOUT_WORK_IDLE_ALARM = 'scout-work-idle'
 let scoutWorkOpening = null
@@ -14186,7 +14190,8 @@ async function scoutWorkWindowId() {
   })()
   try { return await scoutWorkOpening } finally { scoutWorkOpening = null }
 }
-function scoutWorkTouch() { try { chrome.alarms.create(SCOUT_WORK_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {} }
+const SCOUT_WORK_IDLE_MINUTES = 60
+function scoutWorkTouch() { try { chrome.alarms.create(SCOUT_WORK_IDLE_ALARM, { delayInMinutes: SCOUT_WORK_IDLE_MINUTES }) } catch (e) {} }
 // A tab for SCOUT's work, in SCOUT's window. If that window cannot be made,
 // the old way (a tab behind, in the current window) rather than no work.
 async function openWorkTab(url) {
@@ -14198,21 +14203,6 @@ async function openWorkTab(url) {
     return chrome.tabs.create({ url, active: false })
   }
 }
-// Brought up only when a page will not work hidden; minimized again after.
-async function showWorkTab(tabId) {
-  try {
-    const t = await chrome.tabs.get(tabId)
-    await chrome.tabs.update(tabId, { active: true })
-    await chrome.windows.update(t.windowId, { state: 'normal', focused: true })
-  } catch (e) {}
-}
-async function hideWorkWindow() {
-  try {
-    const got = await chrome.storage.session.get(SCOUT_WORK_KEY)
-    const id = got ? got[SCOUT_WORK_KEY] : null
-    if (id != null) await chrome.windows.update(id, { state: 'minimized' })
-  } catch (e) {}
-}
 async function scoutWorkIdleCheck() {
   try {
     const got = await chrome.storage.session.get(SCOUT_WORK_KEY)
@@ -14220,22 +14210,13 @@ async function scoutWorkIdleCheck() {
     if (id == null) return
     const tabs = await chrome.tabs.query({ windowId: id })
     const page = chrome.runtime.getURL('scout-working.html')
-    // Still working (any tab but its own page): look again in five minutes.
+    // Still working (any tab but its own page): look again later.
     if (tabs.some((t) => (t.url || t.pendingUrl || '') !== page)) { scoutWorkTouch(); return }
     await chrome.windows.remove(id)
     await chrome.storage.session.remove(SCOUT_WORK_KEY)
   } catch (e) {}
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === SCOUT_WORK_IDLE_ALARM) void scoutWorkIdleCheck() }) } catch (e) {}
-
-async function trybeBackTo(callerTabId) {
-  await hideWorkWindow()
-  if (callerTabId == null) return
-  try {
-    const t = await chrome.tabs.update(callerTabId, { active: true })
-    if (t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
-  } catch (e) {}
-}
 
 // In page: is this TRYBE's discover screen, a sign-in screen, or still loading?
 function trybePageStateInPage() {
@@ -14340,12 +14321,24 @@ async function trybeSearchInPage(term) {
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
   const box = Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test((i.placeholder || '') + ' ' + (i.getAttribute('aria-label') || '')))
   if (!box) return false
+  // Typed key by key (1.50.1), as in trybeSendInPage: a value set in one go
+  // left TRYBE's list as it was.
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-  box.focus()
-  set.call(box, String(term || ''))
-  box.dispatchEvent(new Event('input', { bubbles: true }))
+  box.focus(); box.click()
+  set.call(box, ''); box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+  for (const ch of String(term || '')) {
+    const k = { key: ch, bubbles: true, cancelable: true }
+    box.dispatchEvent(new KeyboardEvent('keydown', k))
+    box.dispatchEvent(new KeyboardEvent('keypress', k))
+    const before = box.value.length
+    let typed = false
+    try { typed = document.execCommand('insertText', false, ch) && box.value.length === before + ch.length } catch (e) {}
+    if (!typed) { set.call(box, box.value + ch); box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })) }
+    box.dispatchEvent(new KeyboardEvent('keyup', k))
+    await sleep(30)
+  }
   box.dispatchEvent(new Event('change', { bubbles: true }))
-  box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+  for (const t of ['keydown', 'keypress', 'keyup']) box.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }))
   await sleep(2600)
   return true
 }
@@ -14483,10 +14476,9 @@ async function trybeScan({ knownNames, max, keywords, categories }, callerTabId)
   const brands = []
   const failures = []
   try {
-    // In SCOUT's own window, brought up while it reads TRYBE's list on screen.
+    // In SCOUT's own window, hidden like everything else on TRYBE (1.50.1).
     const tab = await openWorkTab(TRYBE_DISCOVER)
     tabId = tab.id
-    await showWorkTab(tabId)
     await waitForTabLoad(tabId, 30000)
     let state = 'loading'
     for (let i = 0; i < 20 && state === 'loading'; i++) {
@@ -14545,7 +14537,6 @@ async function trybeScan({ knownNames, max, keywords, categories }, callerTabId)
     return { ok: false, error: e && e.message ? e.message : 'exception', brands, failures, passes: report }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    await trybeBackTo(callerTabId)
     stopKeepAlive(ka)
   }
 }
@@ -15037,6 +15028,30 @@ async function trybeSendInPage(name, message) {
   const fail = (error) => ({ outcome: 'failed', error, steps })
 
   const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  // TYPED, NOT SET (1.50.1). Setting the box's value and firing an input
+  // event left TRYBE's list as it was: every brand not on the first screen
+  // came back not found, even with TRYBE in front, while the same name typed
+  // by hand found it (Alejandro's run, Oct 17: Bomber Eyewear). So the name
+  // goes in one key at a time, the way a keyboard does, and Enter is pressed
+  // if the list has not narrowed.
+  const typeInto = async (input, text) => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    input.focus(); input.click()
+    set.call(input, ''); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+    for (const ch of String(text)) {
+      const k = { key: ch, bubbles: true, cancelable: true }
+      input.dispatchEvent(new KeyboardEvent('keydown', k))
+      input.dispatchEvent(new KeyboardEvent('keypress', k))
+      const before = input.value.length
+      let typed = false
+      try { typed = document.execCommand('insertText', false, ch) && input.value.length === before + ch.length } catch (e) {}
+      if (!typed) { set.call(input, input.value + ch); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })) }
+      input.dispatchEvent(new KeyboardEvent('keyup', k))
+      await sleep(30)
+    }
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  const pressEnter = (input) => { for (const t of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true })) }
   // THE BRAND'S OWN POPUP, NEVER THE WHOLE PAGE (1.41.4). "Pending Requests"
   // on the page itself matched the requested words, the page body passed for
   // the popup, and a brand was recorded as already requested with nothing
@@ -15068,7 +15083,7 @@ async function trybeSendInPage(name, message) {
   }).sort((a, b) => Number(b.getAttribute('role') === 'button') - Number(a.getAttribute('role') === 'button') || area(a) - area(b))[0]
   // What TRYBE listed, for the error when the brand is not among them.
   const seenRows = () => Array.from(document.querySelectorAll('[role=button]')).filter(visible)
-    .map((el) => String(el.innerText || '').split('\n').map((t) => t.trim()).filter((t) => t.length > 2)[0]).filter(Boolean).slice(0, 5)
+    .map((el) => String(el.innerText || '').split('\n').map((t) => t.trim()).filter((t) => t.length > 2)[0]).filter((t) => t && !/^\d[\d,]*\+?$/.test(t)).slice(0, 5)
 
   // The deep link usually opens the brand's popup. If not, find its row.
   let dialog = await waitFor(popupFor, 9000)
@@ -15081,12 +15096,10 @@ async function trybeSendInPage(name, message) {
     // Not on screen: type the name into TRYBE's own Search Brand box.
     const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 6000)
     if (search) {
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-      search.focus(); set.call(search, name)
-      search.dispatchEvent(new Event('input', { bubbles: true }))
-      search.dispatchEvent(new Event('change', { bubbles: true }))
+      await typeInto(search, name)
       steps.push('searched')
-      const hit = await waitFor(rowFor, 10000)
+      let hit = await waitFor(rowFor, 8000)
+      if (!hit) { pressEnter(search); steps.push('enter'); hit = await waitFor(rowFor, 8000) }
       if (hit) { hit.scrollIntoView({ block: 'center' }); await sleep(300); hit.click(); steps.push('found'); dialog = await waitFor(popupFor, 9000) }
     } else steps.push('no search box')
   }
@@ -15139,6 +15152,30 @@ async function trybeOpenBrandInPage(name) {
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
   const want = norm(name)
   const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  // TYPED, NOT SET (1.50.1). Setting the box's value and firing an input
+  // event left TRYBE's list as it was: every brand not on the first screen
+  // came back not found, even with TRYBE in front, while the same name typed
+  // by hand found it (Alejandro's run, Oct 17: Bomber Eyewear). So the name
+  // goes in one key at a time, the way a keyboard does, and Enter is pressed
+  // if the list has not narrowed.
+  const typeInto = async (input, text) => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    input.focus(); input.click()
+    set.call(input, ''); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+    for (const ch of String(text)) {
+      const k = { key: ch, bubbles: true, cancelable: true }
+      input.dispatchEvent(new KeyboardEvent('keydown', k))
+      input.dispatchEvent(new KeyboardEvent('keypress', k))
+      const before = input.value.length
+      let typed = false
+      try { typed = document.execCommand('insertText', false, ch) && input.value.length === before + ch.length } catch (e) {}
+      if (!typed) { set.call(input, input.value + ch); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })) }
+      input.dispatchEvent(new KeyboardEvent('keyup', k))
+      await sleep(30)
+    }
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  const pressEnter = (input) => { for (const t of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true })) }
   if (/log ?in|sign ?in|auth/i.test(location.pathname) || document.querySelector('input[type=password]')) return { ok: false, error: 'not-signed-in' }
   const popupOpen = () => {
     const d = Array.from(document.querySelectorAll('[role=dialog], [aria-modal=true]')).find(visible)
@@ -15158,11 +15195,9 @@ async function trybeOpenBrandInPage(name) {
   if (!row) {
     const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 8000)
     if (!search) return { ok: false, error: 'search-not-found' }
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    search.focus(); set.call(search, name)
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    search.dispatchEvent(new Event('change', { bubbles: true }))
-    row = await waitFor(rowFor, 10000)
+    await typeInto(search, name)
+    row = await waitFor(rowFor, 8000)
+    if (!row) { pressEnter(search); row = await waitFor(rowFor, 8000) }
     if (!row) return { ok: false, error: 'brand-not-found', via: 'searched' }
   }
   row.scrollIntoView({ block: 'center' }); await sleep(300); row.click()
@@ -15199,18 +15234,25 @@ function trybeBoxStillOpenInPage(message) {
  *  the send can be tried again safely. */
 // Never 'no-answer-from-page': a lost answer says nothing about whether Send
 // Request was pressed, so it is 'unconfirmed', never tried again.
-const TRYBE_RETRY_IN_FRONT = ['brand-not-found', 'request-button-not-found', 'message-box-not-found', 'send-button-not-found', 'message-did-not-take', 'send-disabled']
+const TRYBE_RETRY_HIDDEN = ['brand-not-found', 'request-button-not-found', 'message-box-not-found', 'send-button-not-found', 'message-did-not-take', 'send-disabled']
 
-// IN A TAB BEHIND (1.41.7, Seb: "i would prefer if it could do all of this
-// in a background tab"). Each request runs in a tab that never takes the
-// screen. Chrome holds back animation in a hidden tab, so a popup that
-// animates can stall there. Two fallbacks, and neither can send twice:
-//  - a stop BEFORE Send Request was pressed is tried once more in front,
-//    from a fresh page;
-//  - a box that did not close AFTER the press is only looked at in front
-//    (its closing animation finishes there). Send is never pressed again.
+// NEVER ON SCREEN (1.50.1; Seb, 2026-10-17: "Make sure we don't have any
+// pop-up windows or Scout being brought into the foreground while people are
+// trying to work. Everything that Scout needs to do, especially on Tribe,
+// sending messages and all that stuff, needs to be done in the background").
+// Every send, Send all and Send now alike, runs in SCOUT's minimized window
+// and never comes to the front. Chrome holds back animation in a hidden page,
+// so a popup can stall there; the two fallbacks stay hidden too, and neither
+// can send twice:
+//  - a stop BEFORE Send Request was pressed is tried once more, hidden, from
+//    a fresh page;
+//  - a box that did not close AFTER the press is only looked at again, a few
+//    seconds later. Send is never pressed again.
+// A brand SCOUT still cannot reach is reported with the steps it got through,
+// and stays in Ready to send.
 async function trybeSend({ url, name, message }, callerTabId, opts) {
-  // BEHIND ONLY (1.48.0): a run SCOUT does by itself never takes the screen.
+  // A run SCOUT does by itself has no MVP page waiting on the answer, so its
+  // fresh page try is not held to MVP's 40 seconds.
   const behind = !!(opts && opts.behind)
   if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
   const safe = trybeSafeUrl(url)
@@ -15219,10 +15261,9 @@ async function trybeSend({ url, name, message }, callerTabId, opts) {
   const ka = startKeepAlive()
   const startedAt = Date.now()
   let tabId = null
-  let cameForward = false
   // Once the page has been asked to send, an error is no longer "not sent".
   let asked = false
-  const forward = async () => { cameForward = true; await showWorkTab(tabId) }
+  const pressedIn = (r) => !!(r && Array.isArray(r.steps) && r.steps.includes('pressed'))
   try {
     const tab = await openWorkTab(safe)
     tabId = tab.id
@@ -15231,29 +15272,22 @@ async function trybeSend({ url, name, message }, callerTabId, opts) {
     asked = true
     let res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
     if (!res) res = { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: [] }
-    const pressed = Array.isArray(res.steps) && res.steps.includes('pressed')
-    // ONLY WITH TIME LEFT: the front try is skipped once 40 seconds are gone,
-    // so the whole send ends inside MVP's wait and never overlaps the next one.
-    // A run SCOUT does by itself leaves it for MVP's Send now, said as such.
-    if (behind && res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error)) {
-      res = { ...res, error: 'needs-screen: ' + res.error, steps: (res.steps || []).concat('not brought forward') }
-    } else if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_IN_FRONT.includes(res.error) && Date.now() - startedAt < 40000) {
-      await forward()
+    let pressed = pressedIn(res)
+    if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_HIDDEN.includes(res.error) && (behind || Date.now() - startedAt < 40000)) {
       await chrome.tabs.reload(tabId)
       await waitForTabLoad(tabId, 30000)
       await _sleep(1500)
       const again = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
-      res = again ? { ...again, steps: ['behind: ' + res.error, 'in front'].concat(again.steps || []) } : { outcome: 'failed', error: 'no-answer-from-page', steps: ['behind: ' + res.error, 'in front'] }
-    } else if (behind && res.outcome === 'unconfirmed' && pressed) {
+      res = again
+        ? { ...again, steps: ['first try: ' + res.error, 'fresh page'].concat(again.steps || []) }
+        : { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: ['first try: ' + res.error, 'fresh page'] }
+      pressed = pressedIn(res)
+    }
+    if (res.outcome === 'unconfirmed' && pressed) {
       // Looked at where it is, hidden: a closed box is a sent request.
       await _sleep(3000)
       const open = await trybeRun(trybeBoxStillOpenInPage, [String(message)], tabId)
       if (open === false) res = { outcome: 'sent', steps: (res.steps || []).concat('closed behind') }
-    } else if (res.outcome === 'unconfirmed' && pressed && Date.now() - startedAt < 110000) {
-      await forward()
-      await _sleep(3000)
-      const open = await trybeRun(trybeBoxStillOpenInPage, [String(message)], tabId)
-      if (open === false) res = { outcome: 'sent', steps: (res.steps || []).concat('closed in front') }
     }
     if (res.outcome === 'sent') await _sleep(1200)
     return res
@@ -15262,8 +15296,6 @@ async function trybeSend({ url, name, message }, callerTabId, opts) {
     return asked ? { outcome: 'unconfirmed', error: `SCOUT lost the TRYBE page after asking it to send (${why}).` } : { outcome: 'failed', error: why }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    // Back to MVP only when SCOUT had to take the screen.
-    if (cameForward) await trybeBackTo(callerTabId)
     stopKeepAlive(ka)
   }
 }
@@ -15275,9 +15307,10 @@ async function trybeSend({ url, name, message }, callerTabId, opts) {
 // and a send that needed TRYBE on screen took the screen, then pulled MVP's
 // tab to the front. Now MVP hands SCOUT the list and SCOUT runs it alone, one
 // request at a time on MVP's pacing, waiting between sends with alarms. MVP's
-// tab can be closed or left, and nothing takes the screen: a send that would
-// have needed TRYBE in front is left as failed with "needs-screen", which MVP
-// says in words and sends with Send now while the creator is there.
+// tab can be closed or left, and nothing takes the screen. (Until 1.50.1 a
+// send that would have needed TRYBE in front was left as "needs-screen" for
+// Send now; now Send now stays hidden too, and each send gets one fresh page
+// try, hidden, before it is reported with the steps it got through.)
 //
 // Each step goes through MVP's own API (claim, then result), so the daily
 // limit, the message and the record are the same as a run from MVP's tab.
@@ -15369,7 +15402,9 @@ async function trybeRunTick() {
     await trybeRunSave(st)
     const res = await trybeSend({ url: d.url, name: d.name, message: d.message }, null, { behind: true })
     const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
-    const err = res.error ? `${res.error}${res.steps && res.steps.length ? ` (got to: ${res.steps[res.steps.length - 1]}${seen})` : ''}` : null
+    // The last few steps (1.50.1): "not brought forward" alone hid whether
+    // SCOUT had searched at all.
+    const err = res.error ? `${res.error}${res.steps && res.steps.length ? ` (got to: ${res.steps.slice(-3).join(', ')}${seen})` : ''}` : null
     const rec = await trybeRunApi(st.origin, { action: 'result', brandId: id, outcome: res.outcome, error: err })
     // Read again: a Stop pressed during the send is kept.
     st = (await trybeRunState()) || st
@@ -15381,10 +15416,14 @@ async function trybeRunTick() {
     if (!rec.ok) trybeRunSay(st, who, 'MVP could not save this result. Open Ready to send before sending again.', 'bad')
     if (res.outcome === 'sent') st.sent = (st.sent || 0) + 1
     st.current = null; st.busyAt = null; st.idx++
-    // Two real failures in a row usually mean TRYBE changed or signed out.
-    const realFail = res.outcome === 'failed' && !String(res.error || '').startsWith('needs-screen')
+    // Two real failures in a row usually mean TRYBE changed or signed out. A
+    // brand SCOUT could not find is not that, unless it keeps happening.
+    const notFound = res.outcome === 'failed' && /^brand-not-found/.test(String(res.error || ''))
+    const realFail = res.outcome === 'failed' && !notFound && !String(res.error || '').startsWith('needs-screen')
     st.failStreak = realFail ? (st.failStreak || 0) + 1 : 0
+    st.missStreak = notFound ? (st.missStreak || 0) + 1 : 0
     if (st.failStreak >= 2) { await trybeRunEnd(st, 'Stopped: two sends in a row failed. TRYBE may have signed out or changed.', 'bad'); return }
+    if (st.missStreak >= 4) { await trybeRunEnd(st, 'Stopped: SCOUT could not find four brands in a row on TRYBE. TRYBE may have changed its brand list.', 'bad'); return }
     if (!st.on) { await trybeRunEnd(st, `Stopped. ${st.sent || 0} sent.`, 'warn'); return }
     if (st.idx >= st.ids.length) { await trybeRunEnd(st, `Done: ${st.sent || 0} sent.`, st.sent ? 'ok' : 'warn'); return }
     st.nextAt = Date.now() + trybeRunGapMs(st.sent || 0, st.ids.length)
@@ -15508,7 +15547,7 @@ async function hashtagTikTok({ country, period }, callerTabId) {
   const url = `https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en?countryCode=${cc}&period=${days}`
   const ka = startKeepAlive()
   let tabId = null
-  let shown = false
+  const shown = false
   const steps = []
   try {
     try { await chrome.scripting.unregisterContentScripts({ ids: [CC_HOOK_ID] }) } catch (e) {}
@@ -15520,13 +15559,8 @@ async function hashtagTikTok({ country, period }, callerTabId) {
     const count = (r) => (r ? (r.bodies || []).length + (r.rows || []).length : 0)
     let read = null
     for (let i = 0; i < 16 && !count(read); i++) { await _sleep(1250); read = await trybeRun(ccReadInPage, [], tabId) }
-    // Some pages only draw when they can be seen: bring it up once.
-    if (!count(read)) {
-      shown = true
-      steps.push('shown')
-      await showWorkTab(tabId)
-      for (let i = 0; i < 10 && !count(read); i++) { await _sleep(1250); read = await trybeRun(ccReadInPage, [], tabId) }
-    }
+    // Never brought up (1.50.1): a page that will not draw hidden is a
+    // failed read, said as such. MVP reads TikTok on its server now anyway.
     if (read && read.blocked) return { ok: false, error: 'blocked', steps }
     if (!count(read)) return { ok: false, error: 'nothing-read', steps }
     steps.push('read')
@@ -15546,7 +15580,6 @@ async function hashtagTikTok({ country, period }, callerTabId) {
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     try { await chrome.scripting.unregisterContentScripts({ ids: [CC_HOOK_ID] }) } catch (e) {}
-    if (shown) await trybeBackTo(callerTabId)
     stopKeepAlive(ka)
   }
 }

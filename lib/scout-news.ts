@@ -54,6 +54,13 @@ export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
  *  manual: at most 110 characters), plain words, no dashes. */
 export const SCOUT_RELEASES: ScoutRelease[] = [
   {
+    version: '1.50.1',
+    date: '2026-10-17',
+    notes: [
+      { text: 'TRYBE: no more windows popping up. SCOUT works out of sight and finds brands further down TRYBE\u2019s list.', href: '/trybe?tab=queue', gate: 'trybe_outreach' },
+    ],
+  },
+  {
     version: '1.50.0',
     date: '2026-10-16',
     notes: [

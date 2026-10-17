@@ -186,8 +186,10 @@ const SEND_WORDS: Record<string, string> = {
 }
 const sendWords = (e: string | null | undefined): string => {
   const raw = String(e || '')
-  // SCOUT 1.48.0 ran it out of sight and would not take the screen for it.
-  if (raw.startsWith('needs-screen: ')) return `TRYBE needed to be on screen for this one (${sendWords(raw.slice(14))}). Press Send now on it while you are at your computer`
+  // SCOUT 1.48.0 to 1.50.0 ran it out of sight and would not take the screen
+  // for it. From 1.50.1 nothing on TRYBE takes the screen, and Send now tries
+  // again hidden with the name typed into TRYBE's search.
+  if (raw.startsWith('needs-screen: ')) return `SCOUT could not reach it out of sight (${sendWords(raw.slice(14))}). Press Send now on it to try again`
   const code = raw.split(' (')[0]
   return SEND_WORDS[code] ? raw.replace(code, SEND_WORDS[code]) : raw
 }
@@ -1158,7 +1160,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         const res = await requestTrybeSend(c.url, c.name, c.message)
         // What TRYBE listed instead, when SCOUT could not find the brand (1.47.1).
         const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
-        const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps[res.steps.length - 1]}${seen})` : ''}` : null
+        const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps.slice(-3).join(', ')}${seen})` : ''}` : null
         const recorded = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err }).then(() => true).catch(() => false)
         patch(b.brand_id, {
           status: res.outcome === 'sent' ? 'sent' : res.outcome === 'already' ? 'already' : res.outcome === 'failed' ? 'failed' : 'sending',
@@ -1904,7 +1906,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           {scoutRun?.on && (
             <p className="text-[12px] mb-3" style={{ color: GREEN }}>
               SCOUT is sending these by itself, out of sight: {scoutRun.sent} sent, {Math.min(scoutRun.idx + (scoutRun.current ? 1 : 0), scoutRun.ids.length)} of {scoutRun.ids.length} done{scoutRun.current ? `, sending ${scoutRun.current.name} now` : ''}.
-              {' '}You can close this tab or keep working. Nothing takes your screen; a request that needs TRYBE in front is left for Send now.
+              {' '}You can close this tab or keep working. Nothing takes your screen; a brand SCOUT cannot reach stays in Ready to send with the reason.
             </p>
           )}
           {!scoutRun?.on && scoutRun?.ended && scoutRun.endedAt && Date.now() - scoutRun.endedAt < 6 * 3600_000 && (

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.50.0'
+export const SCOUT_LATEST_VERSION = '1.50.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Clip Factory: the Page Reel posts itself. After you press Post in your Group, SCOUT watches in the background for up to 3 hours while Facebook processes the video, then MVP posts the Reel linking to that Group post. MVP\'s tab can be closed.'
+  'TRYBE, out of sight: nothing SCOUT does on TRYBE comes to the front any more (Send all, Send now, the brand scan), and its own window stays minimized for an hour instead of closing and reopening. SCOUT also types brand names into TRYBE\'s search the way a keyboard does, so it finds brands that are not on the first screen of Discover.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
