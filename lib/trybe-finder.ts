@@ -402,6 +402,10 @@ export interface FinderFilters {
   sells?: Sells | null
   /** Pays TRYBE creators at least this a month (creatorSpendOf). */
   minSpend?: number | null
+  /** On TikTok Shop, from its own website (Seb, 2026-10-17: "do ... seven"). */
+  tiktokShop?: boolean
+  /** TRYBE's payout tier for it went up in the last 30 days (MVP's changes log). */
+  tierUp?: boolean
 }
 /** "Decides fast": members' middle figure at or under this many days. */
 export const FAST_REVIEW_DAYS = 5
@@ -415,6 +419,7 @@ export function readFilters(v: unknown): FinderFilters {
     paidCreators: o.paidCreators === true, samples: o.samples === true, onAmazon: o.onAmazon === true, starred: o.starred === true,
     openOnly: o.openOnly === true, spending: o.spending === true, newOnly: o.newOnly === true, fastReview: o.fastReview === true,
     sells: readSells(o.sells), minSpend: pos(o.minSpend),
+    tiktokShop: o.tiktokShop === true, tierUp: o.tierUp === true,
   }
 }
 
@@ -434,8 +439,12 @@ export interface FilterRow {
   sells?: SellsRead | null
   /** Dollars a month to TRYBE creators (creatorSpendOf), null when not known. */
   spend?: number | null
+  /** On TikTok Shop: true, false, or null when its website was not checked. */
+  tiktokShop?: boolean | null
+  /** Its payout tier went up lately; null when the changes log could not be read. */
+  tierUp?: boolean | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -467,6 +476,9 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   if (f.sells) { if (!r.sells?.kind) { failed.push('sells'); blank.push('sells') } else judge('sells', r.sells.kinds.includes(f.sells)) }
   // WHAT IT PAYS CREATORS: like a pay minimum, no estimate is left out and counted.
   if (f.minSpend) { if (r.spend == null) { failed.push('minSpend'); blank.push('minSpend') } else judge('minSpend', r.spend >= f.minSpend) }
+  // ON TIKTOK SHOP: a website not checked yet is not known, listed after.
+  if (f.tiktokShop) judge('tiktokShop', r.tiktokShop ?? null)
+  if (f.tierUp) judge('tierUp', r.tierUp ?? null)
   return { pass: !failed.length, unknown, failed, blank }
 }
 
@@ -474,6 +486,7 @@ export const FILTER_WORDS: Record<FilterId, string> = {
   minPerVideo: 'pay per video', maxCreators: 'creator count', maxVideos: 'videos approved',
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
   openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells', minSpend: 'what it pays creators a month',
+  tiktokShop: 'TikTok Shop', tierUp: 'payout tier',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────

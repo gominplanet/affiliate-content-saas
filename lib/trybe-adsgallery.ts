@@ -1,0 +1,161 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// THE ADS TRYBE BRANDS RUN ON META (Seb, 2026-10-17: "do ... five", after
+// TrybeDaily's "Ads Trybe brands ran on Meta"). SCOUT 1.51.0 hands MVP the
+// words of each ad card it sees in Meta's public Ad Library (the same visit
+// as the ad count), whether the card plays a video, and its preview picture.
+// This reads those words into an ad: when it started running, the page that
+// runs it, its opening line, whether it is a paid partnership with a creator.
+// Kept for every member and written from the MVP team's reads only, so no
+// member can put words in front of every other member. Words MVP cannot read
+// stay out: an ad with no Library ID is not kept. Pure, so it is tested
+// (scripts/test-trybe-board.ts).
+
+import { openingLine } from '@/lib/trybe-working'
+
+/** The meta table row the gallery lives in. */
+export const GALLERY_KEY = 'meta_gallery'
+/** Ads kept in all, the newest reads first. */
+export const GALLERY_MAX = 400
+/** Ads kept per brand. */
+export const ADS_PER_BRAND = 8
+
+export interface AdCardIn { text: string; video: boolean; preview: string | null }
+
+export interface MetaAd {
+  /** Meta's Library ID. */
+  id: string
+  brandId: string
+  brand: string
+  /** The Facebook page that runs it (a creator's page for a paid partnership). */
+  page: string | null
+  /** "Started running on" as Meta wrote it, and as a date (YYYY-MM-DD) when it reads as one. */
+  startedText: string | null
+  started: string | null
+  body: string
+  opening: string
+  paid: boolean
+  video: boolean
+  versions: boolean
+  preview: string | null
+  readAt: string
+}
+
+export interface Gallery {
+  at: string
+  /** Each brand read: its name, when, and its count of active ads then. */
+  brands: Record<string, { name: string; at: string; count: number | null }>
+  ads: MetaAd[]
+}
+
+const BOILER = /^(active|inactive|platforms|see ad details|see summary details|open drop-?down|this ad has multiple versions|sponsored|library id:.*|started running on.*|total active time.*|\d+ ads? use this creative and text\.?|eu transparency.*|see ad|ad details)$/i
+const CTA = /^(shop now|learn more|sign up|order now|get offer|buy now|book now|download|watch more|send message|subscribe|contact us|apply now|see menu|get quote|install now|play game|listen now|get started|donate now|see more|get directions|call now|request time|use app|send whatsapp message)$/i
+/** Meta writes a link's domain in capitals ("HUMEHEALTH.COM"). */
+const DOMAIN = /^[A-Z0-9][A-Z0-9.-]*\.[A-Z]{2,}(\/\S*)?$/
+
+/** A preview picture MVP will show: Meta's own image servers only. */
+export function safePreview(v: unknown): string | null {
+  const s = typeof v === 'string' ? v.trim() : ''
+  if (!/^https:\/\//i.test(s) || s.length > 1500) return null
+  try {
+    const h = new URL(s).hostname.toLowerCase()
+    return h.endsWith('.fbcdn.net') || h === 'fbcdn.net' || h.endsWith('.facebook.com') ? s : null
+  } catch { return null }
+}
+
+/** The cards SCOUT sent, read safely. Pure. */
+export function readCardsBody(v: unknown): AdCardIn[] {
+  if (!Array.isArray(v)) return []
+  return v.slice(0, ADS_PER_BRAND * 2).flatMap((c) => {
+    if (!c || typeof c !== 'object') return []
+    const o = c as Record<string, unknown>
+    const text = typeof o.text === 'string' ? o.text.slice(0, 3000) : ''
+    return text.trim() ? [{ text, video: o.video === true, preview: safePreview(o.preview) }] : []
+  })
+}
+
+const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11 }
+
+/** "Sep 12, 2025", "12 Sep 2025" or "September 12, 2025" as YYYY-MM-DD. Pure. */
+export function adDate(text: string | null | undefined): string | null {
+  const t = String(text || '').trim()
+  const a = t.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/)
+  const b = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})/)
+  const [mon, day, year] = a ? [a[1], a[2], a[3]] : b ? [b[2], b[1], b[3]] : [null, null, null]
+  if (!mon) return null
+  const m = MONTHS[mon.toLowerCase().slice(0, mon.toLowerCase().startsWith('sept') ? 4 : 3)]
+  const d = Number(day), y = Number(year)
+  if (m == null || !(d >= 1 && d <= 31) || !(y >= 2015 && y <= 2100)) return null
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/** One ad from the words of its card. Null when the card has no Library ID. Pure. */
+export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: string): MetaAd | null {
+  const lines = String(c.text || '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const id = lines.map((l) => l.match(/^Library ID:\s*(\d{6,})/i)?.[1]).find(Boolean)
+  if (!id) return null
+  const startedText = lines.map((l) => l.match(/^Started running on\s+(.+?)(?:\s+[·•-]\s+.*)?$/i)?.[1]).find(Boolean) ?? null
+  const sp = lines.findIndex((l) => /^sponsored$/i.test(l))
+  let page: string | null = null
+  if (sp > 0) for (let i = sp - 1; i >= 0; i--) { if (!BOILER.test(lines[i])) { page = lines[i].slice(0, 120); break } }
+  const after = sp >= 0 ? lines.slice(sp + 1) : lines.filter((l) => !BOILER.test(l)).slice(page ? 1 : 0)
+  const body: string[] = []
+  for (const l of after) {
+    if (DOMAIN.test(l) || CTA.test(l) || BOILER.test(l)) break
+    if (/^paid partnership/i.test(l)) continue
+    body.push(l)
+    if (body.join(' ').length > 600) break
+  }
+  const text = body.join('\n').slice(0, 600).trim()
+  return {
+    id, brandId, brand, page, startedText, started: adDate(startedText), body: text, opening: text ? openingLine(text) : '',
+    paid: /paid partnership/i.test(c.text), video: c.video === true, versions: /multiple versions/i.test(c.text),
+    preview: c.preview ? safePreview(c.preview) : null, readAt: now,
+  }
+}
+
+/** The gallery with this brand's ads read now in place of its older ones.
+ *  The newest reads stay when there are more than GALLERY_MAX. Pure. */
+export function mergeGallery(had: Gallery | null | undefined, brandId: string, brandName: string, ads: MetaAd[], count: number | null, now: string): Gallery {
+  const keep = (had?.ads || []).filter((a) => a.brandId !== brandId)
+  const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId).map((a) => [a.id, a])).values()).slice(0, ADS_PER_BRAND)
+  const all = [...mine, ...keep].sort((a, b) => b.readAt.localeCompare(a.readAt)).slice(0, GALLERY_MAX)
+  const brands = { ...(had?.brands || {}), [brandId]: { name: brandName, at: now, count } }
+  return { at: now, brands, ads: all }
+}
+
+/** Days since an ad started running; null when MVP could not read the date. Pure. */
+export function adDays(started: string | null | undefined, now: number): number | null {
+  const t = started ? Date.parse(started) : NaN
+  return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 86_400_000)) : null
+}
+
+export interface GalleryStats { brands: number; ads: number; medianDays: number | null; paidShare: number | null; videoShare: number | null; dated: number }
+
+/** The four tiles: brands read, ads kept, the middle ad's age, the share of
+ *  paid partnerships and of videos. A share over no ads is null, never 0%. Pure. */
+export function galleryStats(ads: MetaAd[], brandsRead: number, now: number): GalleryStats {
+  const days = ads.map((a) => adDays(a.started, now)).filter((d): d is number => d != null).sort((a, b) => a - b)
+  const median = days.length ? (days.length % 2 ? days[(days.length - 1) / 2] : Math.round((days[days.length / 2 - 1] + days[days.length / 2]) / 2)) : null
+  return {
+    brands: brandsRead, ads: ads.length, medianDays: median, dated: days.length,
+    paidShare: ads.length ? ads.filter((a) => a.paid).length / ads.length : null,
+    videoShare: ads.length ? ads.filter((a) => a.video).length / ads.length : null,
+  }
+}
+
+export type AdSort = 'opening' | 'longest' | 'newest'
+
+/** Opening line first (ads with words, then the rest), running longest, or
+ *  newest. Ties keep the brand together. Pure. */
+export function sortAds(ads: MetaAd[], by: AdSort, now: number): MetaAd[] {
+  const age = (a: MetaAd) => adDays(a.started, now)
+  return [...ads].sort((a, b) => {
+    if (by === 'opening') return Number(!a.opening) - Number(!b.opening) || (age(b) ?? -1) - (age(a) ?? -1) || a.brand.localeCompare(b.brand)
+    if (by === 'longest') return (age(b) ?? -1) - (age(a) ?? -1) || a.brand.localeCompare(b.brand)
+    return (age(a) ?? 1e9) - (age(b) ?? 1e9) || a.brand.localeCompare(b.brand)
+  })
+}
+
+/** An ad's page on Meta's Ad Library. */
+export const adUrl = (id: string) => `https://www.facebook.com/ads/library/?id=${encodeURIComponent(id)}`

@@ -8,7 +8,7 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, Image as ImageIcon } from 'lucide-react'
+import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
@@ -31,8 +31,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -53,11 +53,12 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
   )
 }
 
-type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview'
+type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp'
 type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
+  tiktokShop: 'On TikTok Shop', tierUp: 'Payout tier went up',
 }
 export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minPerVideo: (n) => `At least $${n.toLocaleString()} a video`,
@@ -153,6 +154,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
               {numberBox('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. No platform shows a brand\u2019s real ad budget, so this is the honest figure MVP can work out. A brand MVP cannot estimate is left out.')}
               {toggle('paidCreators', undefined, 'TRYBE says it has paid creators.')}
+              {toggle('tierUp', <TrendingUp size={12} />, 'TRYBE\u2019s payout tier for it went up in the last 30 days, in MVP\u2019s daily log of TRYBE: it is paying creators more.')}
             </>)}
             {group('Room for you', <>
               {toggle('openOnly', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
@@ -166,6 +168,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {toggle('samples')}
               {toggle('onAmazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
               {toggle('starred', <Star size={12} />)}
+              {toggle('tiktokShop', undefined, 'Sells on TikTok Shop, from its own website. Brands whose website MVP has not checked yet are listed after.')}
             </>)}
           </div>
           {panelExtra}
@@ -391,6 +394,50 @@ export function BrandExtras({ amazon, stats }: { amazon?: LiveAmazon | null; sta
   if (days != null) parts.push(<span key="d" className={pill} style={quiet}>{days <= 1 ? 'Joined TRYBE today' : `${days} days on TRYBE`}</span>)
   if (!parts.length) return null
   return <span className="flex flex-wrap items-center gap-1.5 mt-1.5">{parts}</span>
+}
+
+/** A brand's own website icon, else its first letter. */
+export function BrandMark({ name, website, size = 40 }: { name: string; website: string | null; size?: number }) {
+  const [bad, setBad] = useState(false)
+  let host = ''
+  try { host = website ? new URL(/^https?:/i.test(website) ? website : `https://${website}`).hostname : '' } catch { host = '' }
+  const box = { width: size, height: size }
+  if (!host || bad) {
+    return <span className="shrink-0 rounded-lg inline-flex items-center justify-center font-bold" style={{ ...box, background: 'rgba(124,58,237,0.12)', color: PURPLE, fontSize: size * 0.42 }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`} alt="" loading="lazy" onError={() => setBad(true)}
+    className="shrink-0 rounded-lg border object-contain p-1.5" style={{ ...box, borderColor: 'var(--border)', background: '#fff' }} />
+}
+
+
+/** WHAT TRYBE SHOWS CREATORS EARNED WITH IT (Seb, 2026-10-17: "do ... seven"):
+ *  TRYBE's own payout range, and the range before when it went up lately. */
+export function PaidOutChip({ bucket, up }: { bucket: string | null | undefined; up?: { before: string | null; after: string | null } | null }) {
+  if (!bucket) return null
+  return (
+    <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}
+      title={`What TRYBE shows creators have earned with it, as TRYBE's own range.${up?.before ? ` It was ${up.before} before: TRYBE raised it in the last 30 days.` : ''}`}>
+      <DollarSign size={11} />Paid out {bucket}{up?.before ? <><TrendingUp size={11} className="ml-0.5" /> up from {up.before}</> : null}
+    </span>
+  )
+}
+
+/** On TikTok Shop, from its own website (Cole: more creators compete there). */
+export function TikTokShopChip({ on }: { on: boolean | null | undefined }) {
+  if (on !== true) return null
+  return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }} title="Its own website links a TikTok Shop. Top TRYBE creators say brands that are only on TRYBE have less competition.">On TikTok Shop</span>
+}
+
+/** Add a brand to the side by side comparison, or take it off (lib/trybe-compare). */
+export function CompareButton({ on, full, onClick }: { on: boolean; full: boolean; onClick: () => void }) {
+  return (
+    <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }} aria-pressed={on} disabled={!on && full}
+      title={on ? 'In your comparison: press to take it out' : full ? 'Three brands are already in your comparison' : 'Compare it side by side with another brand'}
+      className={`inline-flex items-center gap-0.5 text-[12px] font-semibold rounded-md px-1.5 py-0.5 disabled:opacity-40 ${on ? ON_TEXT : ''}`} style={on ? { background: 'rgba(124,58,237,0.10)' } : { color: 'var(--text-3)' }}>
+      <ArrowLeftRight size={12} />{on ? 'Comparing' : 'Compare'}
+    </button>
+  )
 }
 
 /** Star and Pass on a brand's card. */

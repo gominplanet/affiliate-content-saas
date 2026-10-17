@@ -48,7 +48,7 @@ check('clock reads minutes and seconds', clock(245) === '4:05' && clock(3725) ==
 const bgjs = read('extension/background.js')
 check('SCOUT says which video of how many per store', /setSfProgress\(domain, \{ total: jobs\.length, done: jobNo - 1, current: jobNo/.test(bgjs) && /pct: r\.ok \? 100 : null, done: jobNo \}/.test(bgjs))
 const manifest = JSON.parse(read('extension/manifest.json'))
-check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.50\.2'/.test(read('lib/scout-version.ts')) && manifest.version === '1.50.2')
+check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.51\.0'/.test(read('lib/scout-version.ts')) && manifest.version === '1.51.0')
 const lb = read('components/launch/LaunchBoard.tsx')
 check('Bulk Amazon upload shows the live bar', /<AmazonProgress running=\{amazonBusy\}/.test(lb) && /onSending: \(n\) => setAmazonRun/.test(lb))
 check('the listing count is passed out before SCOUT starts', /scope\?\.onSending\?\.\(sendNow\.length\)[^\n]*\n\s*const res = await requestStorefrontDelivery\(sendNow\)/.test(read('lib/storefront-delivery.ts')))

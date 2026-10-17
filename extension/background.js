@@ -12454,7 +12454,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // 1.45.1: a deadline inside the run, so it answers with what it read
     // before MVP stops waiting, never a bare timeout that loses every count.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
-    metaAdsCounts({ brands: msg.brands, endsAt: Date.now() + 240000 })
+    metaAdsCounts({ brands: msg.brands, endsAt: Date.now() + 240000, cards: msg.cards === true })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -14984,7 +14984,10 @@ function metaAdsUrl(name) {
   return 'https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&q=' + q + '&search_type=keyword_exact_phrase'
 }
 // In page, alone: wait for the count to show, then hand back the words.
-async function metaAdsReadInPage() {
+// 1.51.0: with `withCards`, the words of up to 8 ad cards too, whether each
+// plays a video, and its preview picture (MVP's ads gallery). MVP reads the
+// words into ads; SCOUT only copies what the page shows.
+async function metaAdsReadInPage(withCards) {
   // Facebook in another language words the count differently ("Ergebnisse",
   // "resultados"): said so at once instead of waiting for English words.
   const lang = String((document.documentElement && document.documentElement.lang) || '').toLowerCase()
@@ -14998,17 +15001,50 @@ async function metaAdsReadInPage() {
   }
   // A clock deadline, not a count of tries: a minimized window runs timers
   // slowly, and 40 tries could take far longer than 20 seconds.
+  const readCards = () => {
+    const out = []
+    const seen = {}
+    const nodes = Array.from(document.querySelectorAll('div, span')).filter((el) => el.childElementCount === 0 && /^\s*Library ID:\s*\d{6,}/.test(el.textContent || ''))
+    for (const node of nodes) {
+      const id = ((node.textContent || '').match(/\d{6,}/) || [''])[0]
+      if (!id || seen[id]) continue
+      seen[id] = true
+      // The card: the biggest box around this ID that holds no other ad.
+      let card = node
+      for (let el = node.parentElement, i = 0; el && i < 16; el = el.parentElement, i++) {
+        const n = (String(el.innerText || '').match(/Library ID:/g) || []).length
+        if (n > 1) break
+        card = el
+      }
+      const video = card.querySelector('video')
+      let preview = video && video.poster ? video.poster : null
+      if (!preview) {
+        const imgs = Array.from(card.querySelectorAll('img')).filter((im) => (im.naturalWidth || im.width || 0) >= 120 && /^https:/.test(im.src || ''))
+        preview = imgs.length ? imgs[0].src : null
+      }
+      out.push({ text: String(card.innerText || '').slice(0, 2500), video: !!video, preview: preview ? String(preview).slice(0, 1500) : null })
+      if (out.length >= 8) break
+    }
+    return out
+  }
   const until = Date.now() + 15000
   while (Date.now() < until) {
     const got = find()
-    if (got) return { text: got }
+    if (got && withCards && !/no ads match/i.test(got)) {
+      // The cards draw a moment after the count: a few seconds, then what is there.
+      const cardsUntil = Date.now() + 5000
+      let cards = readCards()
+      while (!cards.length && Date.now() < cardsUntil) { await new Promise((r) => setTimeout(r, 400)); cards = readCards() }
+      return { text: got, cards }
+    }
+    if (got) return { text: got, cards: withCards ? [] : undefined }
     if (!english && Date.now() > until - 12000) return { text: null, lang }
     await new Promise((r) => setTimeout(r, 500))
   }
   return { text: null, title: String(document.title || '').slice(0, 80), lang }
 }
 let metaAdsRunning = false
-async function metaAdsCounts({ brands, endsAt }) {
+async function metaAdsCounts({ brands, endsAt, cards }) {
   if (metaAdsRunning) return { ok: false, error: 'already-running' }
   // Taken at once, before any await, so two calls close together cannot both run.
   metaAdsRunning = true
@@ -15040,12 +15076,12 @@ async function metaAdsCounts({ brands, endsAt }) {
         else await chrome.tabs.update(tab.id, { url: metaAdsUrl(b.name) })
         await waitForTabLoad(tab.id, 25000)
         await _sleep(1500)
-        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage })
+        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage, args: [cards === true] })
         const got = res && res[0] ? res[0].result : null
         const why = got && got.text ? null
           : got && got.lang && !/^en/.test(got.lang) ? 'not-english (' + got.lang + ')'
             : 'count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')
-        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why })
+        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why, ...(cards === true ? { cards: got && Array.isArray(got.cards) ? got.cards : [] } : {}) })
       } catch (e) {
         results.push({ brandId: b.brandId, name: b.name, text: null, error: 'could-not-open: ' + (e && e.message ? e.message : 'error') })
       }

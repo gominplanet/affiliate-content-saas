@@ -32,6 +32,8 @@ import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_P
 import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
+import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd } from '@/lib/trybe-adsgallery'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -373,6 +375,79 @@ async function crowdBaseline(admin: Db, today: string): Promise<{ snap: Snapshot
   return base
 }
 
+/** PAYOUT TIERS THAT MOVED (Seb, 2026-10-17: "do ... seven"): the newest
+ *  tier change per brand from MVP's changes log since `sinceIso` (30 days by
+ *  default). Null when the log could not be read, so a filter on it says
+ *  "not known" instead of "none went up". */
+async function recentTierChanges(admin: Db, sinceIso?: string): Promise<Map<string, { before: string | null; after: string | null; at: string; up: boolean }> | null> {
+  try {
+    const since = sinceIso || new Date(Date.now() - 30 * 86_400_000).toISOString()
+    const { data, error: e } = await admin.from('trybe_directory_changes').select('brand_id, before, after, at').eq('kind', 'tier').gte('at', since).order('at', { ascending: false }).limit(5000)
+    if (e) return null
+    return latestTierChanges((data || []) as Array<{ brand_id: string; before: string | null; after: string | null; at: string }>)
+  } catch { return null }
+}
+
+/** On TikTok Shop, from the brand's own website: true, false, or null when
+ *  its website was not checked yet. */
+function tiktokShopOf(r: Record<string, any>): boolean | null { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return r.socials_checked_at ? (r.tiktok_shop === true ? true : r.tiktok_shop === false || r.tiktok_handle ? false : null) : null
+}
+
+/** MOST ACTIVE BRANDS (lib/trybe-active), worked out for everyone once in a
+ *  while per server: creators joining each brand between MVP's own daily
+ *  copies of TRYBE's list. Brands TRYBE no longer lists are left out. */
+interface ActiveBoardOut {
+  by: ActiveBy; days: number | null; latest: string | null; hasDay: boolean; copies: number; since: string | null
+  brands: Array<ActiveRow & { name: string; website: string | null; categories: string[]; pay_text: string | null; earnings_bucket: string | null; tier_up: { before: string | null; after: string | null } | null; top100_hits: number | null; top100_best_rank: number | null; meta_ads: number | null }>
+  categories: Array<{ name: string; n: number }>
+}
+let activeCache: { at: number; board: ActiveBoardOut } | null = null
+async function activeBoard(admin: Db): Promise<ActiveBoardOut | { error: string }> {
+  if (activeCache && Date.now() - activeCache.at < 20 * 60_000) return activeCache.board
+  const { data: keyRows, error: kErr } = await admin.from('trybe_directory_meta').select('key').like('key', 'snap:%').limit(100)
+  if (kErr) return { error: kErr.message }
+  const keys = ((keyRows || []) as Array<{ key: string }>).map(k => k.key).sort()
+  const pick = activeKeys(keys)
+  const since = keys.length ? keys[0].replace(/^snap:/, '') : null
+  const empty: ActiveBoardOut = { by: 'creators', days: pick?.days ?? null, latest: pick ? pick.latest.replace(/^snap:/, '') : null, hasDay: !!pick?.prev, copies: keys.length, since, brands: [], categories: [] }
+  if (!pick) return empty
+  const read = async (k: string | null): Promise<Snapshot | null> => {
+    if (!k) return null
+    const { data } = await admin.from('trybe_directory_meta').select('value').eq('key', k).maybeSingle()
+    return data?.value && typeof data.value === 'object' ? data.value as Snapshot : null
+  }
+  const [latest, prev, base] = await Promise.all([read(pick.latest), read(pick.prev), read(pick.base)])
+  if (!latest) return empty
+  const rows = activeRows(latest, prev, base)
+  const by = activeBy(rows)
+  const top = rankActive(rows, by)
+  const ids = top.map(r => r.brand_id)
+  const info = new Map<string, Record<string, any>>() // eslint-disable-line @typescript-eslint/no-explicit-any
+  for (let i = 0; i < ids.length; i += 200) {
+    const part = ids.slice(i, i + 200)
+    let { data, error: e } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, earnings_bucket, top100_hits, top100_best_rank, top100_checked_at, meta_ads, meta_ads_checked_at, left_at').in('brand_id', part)
+    if (e && /does not exist|schema cache/i.test(e.message)) ({ data, error: e } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text').in('brand_id', part))
+    if (e) return { error: e.message }
+    for (const r of (data || []) as Array<Record<string, any>>) info.set(String(r.brand_id), r) // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+  const tiers = await recentTierChanges(admin, pick.base ? new Date(Date.parse(pick.base.replace(/^snap:/, ''))).toISOString() : undefined)
+  const topRead = Array.from(info.values()).some(r => r.top100_checked_at)
+  const brands = top.filter(r => info.has(r.brand_id) && !info.get(r.brand_id)!.left_at).map(r => {
+    const d = info.get(r.brand_id)!
+    const t = tiers?.get(r.brand_id)
+    return {
+      ...r, name: String(d.name || ''), website: d.website ?? null, categories: Array.isArray(d.categories) ? d.categories as string[] : [], pay_text: d.pay_text ?? null,
+      earnings_bucket: d.earnings_bucket ?? null, tier_up: t?.up ? { before: t.before, after: t.after } : null,
+      top100_hits: topRead ? (d.top100_hits ?? 0) : null, top100_best_rank: d.top100_best_rank ?? null,
+      meta_ads: d.meta_ads_checked_at ? (d.meta_ads ?? null) : null,
+    }
+  })
+  const board: ActiveBoardOut = { ...empty, by, brands, categories: categoryCounts(brands) }
+  activeCache = { at: Date.now(), board }
+  return board
+}
+
 /** The hooks winning on TRYBE, as last kept (lib/trybe-hooks). */
 async function readTopHookList(admin: Db): Promise<{ at: string; hooks: TopHook[] } | null> {
   const { data } = await admin.from('trybe_directory_meta').select('value').eq('key', 'top100_hooks').maybeSingle()
@@ -609,7 +684,7 @@ export async function POST(request: Request) {
     const since = new Date(Date.now() - days * 86_400_000).toISOString()
     // The viewer's live joined brands clear any false "left" first (healJoined).
     const healed = await healJoined(admin, body.joined, now).catch(() => 0)
-    const { data: ch, error: chErr } = await admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).limit(3000)
+    const { data: ch, error: chErr } = await admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).limit(6000)
     if (chErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(chErr.message) ? setupWords(tier, 'What changed needs migration 428 in Supabase first.') : chErr.message, needsMigration: /does not exist|schema cache/i.test(chErr.message) }, { status: 500 })
     const list = (ch || []) as Array<{ brand_id: string; kind: string; before: string | null; after: string | null; at: string }>
     const ids = Array.from(new Set(list.map(c => c.brand_id)))
@@ -628,6 +703,82 @@ export async function POST(request: Request) {
       lastCollectedAt: (col?.value as { at?: string; complete?: boolean } | undefined)?.complete ? (col!.value as { at: string }).at : null,
       changes: list.map(c => ({ ...c, name: names.get(c.brand_id)?.name || null, website: names.get(c.brand_id)?.website || null, pay: names.get(c.brand_id)?.pay_text || null, categories: names.get(c.brand_id)?.categories || [], yours: yours.has(c.brand_id) })),
     })
+  }
+
+  if (action === 'active') {
+    // MOST ACTIVE BRANDS (Seb, 2026-10-17: "do one"): the brands creators are
+    // joining fastest, from MVP's daily copies of TRYBE's list, with what is
+    // yours on top of the board everyone shares.
+    const board = await activeBoard(admin)
+    if ('error' in board) return NextResponse.json({ error: board.error }, { status: 500 })
+    const ids = board.brands.map(b => b.brand_id)
+    const { data: mine } = ids.length ? await admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).in('brand_id', ids) : { data: [] }
+    const statusBy = new Map(((mine || []) as Array<{ brand_id: string; status: string }>).map(r => [r.brand_id, r.status]))
+    return NextResponse.json({ ok: true, ...board, brands: board.brands.map(b => ({ ...b, status: statusBy.get(b.brand_id) ?? null })) })
+  }
+
+  if (action === 'off_discover') {
+    // NOT ON TRYBE'S DISCOVER LIST (Seb, 2026-10-17: "do ... ten"): brands
+    // MVP's last whole read of TRYBE's list did not have (left_at), and brands
+    // TRYBE itself marks as not listed (its isListed field). Nobody finds them
+    // on Discover, so MVP's search leaves them out; here they are in one place.
+    // The viewer's live joined brands are on TRYBE: any false "left" goes first (healJoined).
+    const healed = await healJoined(admin, body.joined, now).catch(() => 0)
+    const OFF_COLS = 'brand_id, name, website, categories, pay_text, left_at, last_seen_at, total_creators'
+    const left = await admin.from('trybe_directory').select(OFF_COLS, { count: 'exact' }).not('left_at', 'is', null).order('left_at', { ascending: false }).limit(300)
+    if (left.error) {
+      const missing = /left_at|does not exist|schema cache/i.test(left.error.message)
+      return NextResponse.json({ error: missing ? setupWords(tier, 'This list needs migration 428 in Supabase first.') : left.error.message }, { status: 500 })
+    }
+    const sinceListed = await listedSince(admin)
+    let uq = admin.from('trybe_directory').select(OFF_COLS, { count: 'exact' }).eq('raw->>isListed', 'false').is('left_at', null)
+    if (sinceListed) uq = uq.gte('last_seen_at', sinceListed)
+    const unlisted = await uq.order('last_seen_at', { ascending: false }).limit(200)
+    type OffRow = Record<string, unknown> & { brand_id: string; reason: 'left' | 'unlisted' }
+    const off: OffRow[] = [
+      ...((left.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, brand_id: String(r.brand_id), reason: 'left' as const })),
+      ...(unlisted.error ? [] : (unlisted.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, brand_id: String(r.brand_id), reason: 'unlisted' as const })),
+    ]
+    const ids = off.map(r => String(r.brand_id))
+    const statusBy = new Map<string, string>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data: mine } = await admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).in('brand_id', ids.slice(i, i + 200))
+      for (const r of (mine || []) as Array<{ brand_id: string; status: string }>) statusBy.set(r.brand_id, r.status)
+    }
+    const { data: col } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
+    return NextResponse.json({
+      ok: true, healed, leftCount: left.count ?? null, unlistedCount: unlisted.error ? null : (unlisted.count ?? null),
+      unlistedError: unlisted.error ? unlisted.error.message : null,
+      lastCollectedAt: (col?.value as { at?: string; complete?: boolean } | undefined)?.complete ? (col!.value as { at: string }).at : null,
+      brands: off.map(r => ({ ...r, status: statusBy.get(String(r.brand_id)) ?? null })),
+    })
+  }
+
+  if (action === 'meta_gallery') {
+    // THE ADS TRYBE BRANDS RUN ON META (lib/trybe-adsgallery), as the MVP
+    // team's SCOUT last read them, with each brand's categories for the filter.
+    const { data: gRow, error: gErr } = await admin.from('trybe_directory_meta').select('value').eq('key', GALLERY_KEY).maybeSingle()
+    if (gErr) return NextResponse.json({ error: gErr.message }, { status: 500 })
+    const g = (gRow?.value || null) as Gallery | null
+    const ads = Array.isArray(g?.ads) ? g!.ads : []
+    const ids = Array.from(new Set(ads.map(a => a.brandId))).slice(0, 500)
+    const cats: Record<string, string[]> = {}
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data: d } = await admin.from('trybe_directory').select('brand_id, categories').in('brand_id', ids.slice(i, i + 200))
+      for (const r of (d || []) as Array<{ brand_id: string; categories: string[] | null }>) cats[r.brand_id] = r.categories || []
+    }
+    return NextResponse.json({ ok: true, at: g?.at ?? null, brandsRead: g ? Object.keys(g.brands || {}).length : 0, ads, categories: cats })
+  }
+
+  if (action === 'brands_brief') {
+    // Names, websites and categories of the Top 100's brands, for What's
+    // working's category filter and the brands next to each top creator.
+    const ids = (Array.isArray(body.ids) ? body.ids : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 80)).slice(0, 200)
+    const names = (Array.isArray(body.names) ? body.names : []).filter((x): x is string => typeof x === 'string').map(x => x.slice(0, 120)).slice(0, 200)
+    const out: Array<{ brand_id: string; name: string; website: string | null; categories: string[] }> = []
+    if (ids.length) { const { data: d } = await admin.from('trybe_directory').select('brand_id, name, website, categories').in('brand_id', ids); out.push(...((d || []) as typeof out)) }
+    if (names.length) { const { data: d } = await admin.from('trybe_directory').select('brand_id, name, website, categories').in('name', names); for (const r of (d || []) as typeof out) if (!out.some(o => o.brand_id === r.brand_id)) out.push(r) }
+    return NextResponse.json({ ok: true, brands: out })
   }
 
   if (action === 'my_stats') {
@@ -805,7 +956,7 @@ export async function POST(request: Request) {
     // How many active Meta ads mention each brand, as SCOUT read Meta's Ad
     // Library in the creator's own Chrome. Shared; a count kept less than six
     // days is not replaced, so one member cannot rewrite every brand's count.
-    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown }>
+    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown }>
     let saved = 0
     for (const x of list) {
       const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
@@ -825,7 +976,32 @@ export async function POST(request: Request) {
         if (was !== undefined && adsChange(was, n)) await logChanges(admin, [{ brand_id: id, kind: 'ads', before: String(was ?? 0), after: String(n) }])
       }
     }
-    return NextResponse.json({ ok: true, saved })
+    // THE ADS THEMSELVES (SCOUT 1.51.0, lib/trybe-adsgallery): every member
+    // sees them, so only the MVP team's reads are kept. A brand with ads
+    // running whose cards SCOUT could not read keeps the ads kept before; a
+    // brand running none has its old ones taken off.
+    let galleryAds = 0, cardsMissed = 0
+    const withCards = list.filter(x => Array.isArray(x.cards))
+    if (tier === 'admin' && withCards.length) {
+      try {
+        const { data: gRow } = await admin.from('trybe_directory_meta').select('value').eq('key', GALLERY_KEY).maybeSingle()
+        let g = (gRow?.value || null) as Gallery | null
+        let changed = false
+        for (const x of withCards) {
+          const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
+          if (!id) continue
+          const nm = typeof x.name === 'string' && x.name.trim() ? x.name.trim().slice(0, 120) : id
+          const n = typeof x.count === 'number' && Number.isFinite(x.count) ? Math.round(x.count) : null
+          const ads = readCardsBody(x.cards).map(c => readAdCard(c, id, nm, now)).filter((a): a is MetaAd => !!a)
+          if (!ads.length && n !== 0) { cardsMissed++; continue }
+          g = mergeGallery(g, id, nm, ads, n, now)
+          galleryAds += ads.length
+          changed = true
+        }
+        if (changed && g) await admin.from('trybe_directory_meta').upsert({ key: GALLERY_KEY, value: g, updated_at: now })
+      } catch { /* the counts are saved either way */ }
+    }
+    return NextResponse.json({ ok: true, saved, galleryAds, cardsMissed, galleryKept: tier === 'admin' })
   }
 
   if (action === 'kickoff' || action === 'followup') {
@@ -977,7 +1153,7 @@ export async function POST(request: Request) {
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' ? 1200 : 400
+    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1035,6 +1211,21 @@ export async function POST(request: Request) {
       const have = new Set(rows.map(r => r.brand_id))
       for (const r of (fresh || []) as Array<Record<string, any>>) if (!have.has(r.brand_id)) rows.push(r) // eslint-disable-line @typescript-eslint/no-explicit-any
     }
+    // PAYOUT TIER WENT UP (Seb, 2026-10-17: "do ... seven"): from MVP's
+    // changes log, the last 30 days. Those brands are added directly, like New
+    // only, so one outside the search's best matches is not missed. A log that
+    // could not be read leaves the filter not known, never "none went up".
+    const tierLog = await recentTierChanges(admin)
+    if (filters.tierUp && tierLog) {
+      const have = new Set(rows.map(r => r.brand_id))
+      const want = Array.from(tierLog.entries()).filter(([id, t]) => t.up && !have.has(id)).map(([id]) => id).slice(0, 600)
+      for (let i = 0; i < want.length; i += 200) {
+        let q = admin.from('trybe_directory').select(COLS).in('brand_id', want.slice(i, i + 200))
+        if (since) q = q.gte('last_seen_at', since)
+        const { data: up } = await q
+        rows.push(...((up || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+    }
     // THE BRAND ON AMAZON (amazonContext): said as not read when a read
     // fails, never as "not on Amazon".
     const today = now.slice(0, 10)
@@ -1086,7 +1277,7 @@ export async function POST(request: Request) {
       metaAds: typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS ? r.meta_ads : null,
       top100Hits: topRead ? (r.top100_hits ?? 0) : null,
       top100BestRank: r.top100_best_rank ?? null,
-      tiktokShop: r.socials_checked_at ? (r.tiktok_shop === true ? true : r.tiktok_shop === false || r.tiktok_handle ? false : null) : null,
+      tiktokShop: tiktokShopOf(r),
       tiktokHandle: r.tiktok_handle ?? null,
       earningsBucket: r.earnings_bucket ?? null,
       commissionPct: payBy.get(r.brand_id)?.percent ?? null,
@@ -1117,7 +1308,8 @@ export async function POST(request: Request) {
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
-        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null }, filters)
+        spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
+        tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
@@ -1169,9 +1361,13 @@ export async function POST(request: Request) {
     const payOrder = (x: typeof ranked[number]) => { const d = estBy.get(x.r.brand_id)?.dollars; return d != null ? 1_000_000 + d * 100 + (x.pay.percent ?? 0) : payRank(x.pay) }
     // Spends most on creators: the estimate, biggest first; no estimate after.
     const spendOrder = (x: typeof ranked[number]) => spendBy.get(x.r.brand_id)?.dollars ?? -1
+    // Highest total payouts: TRYBE's own payout tier, then most creators
+    // (TrybeDaily's "Payouts, then creators"). No tier: after the rest.
+    const payoutOrder = (x: typeof ranked[number]) => bucketDollars(x.r.earnings_bucket) ?? statsBy.get(x.r.brand_id)?.paidOut ?? -1
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
         : sort === 'spend' ? spendOrder(b) - spendOrder(a) || byMatch(a, b)
+        : sort === 'payouts' ? payoutOrder(b) - payoutOrder(a) || (b.r.total_creators ?? -1) - (a.r.total_creators ?? -1) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
@@ -1235,6 +1431,11 @@ export async function POST(request: Request) {
           starred: starredIds.has(r.brand_id),
           amazon: (() => { const a = amazonBy.get(r.brand_id); return a ? amazonLive(a) : null })(),
           meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
+          // TRYBE's payout tier and TikTok Shop, on the card (Seb, 2026-10-17: "do ... seven").
+          earnings_bucket: r.earnings_bucket ?? null,
+          tier_up: (() => { const t = tierLog?.get(r.brand_id); return t?.up ? { before: t.before, after: t.after, at: t.at } : null })(),
+          tiktok_shop: tiktokShopOf(r),
+          top100_hits: topRead ? (r.top100_hits ?? 0) : null, top100_best_rank: r.top100_best_rank ?? null,
         }
       }),
     })

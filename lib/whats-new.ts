@@ -26,6 +26,34 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // TRYBE, after TrybeDaily's Today, What's Working, Creators and Brands (2026-10-17).
+  {
+    date: '2026-10-17',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'TRYBE: Most active brands, and any day of What changed',
+    desc: 'What changed has three views now. Most active brands ranks the brands creators are joining fastest, with TRYBE\u2019s payout range, Top 100 videos and Meta ads next to each. Pick any day of the last two weeks from Day. Not on Discover lists the brands creators cannot find on TRYBE\u2019s Discover.',
+    href: '/trybe?tab=changes',
+  },
+  {
+    date: '2026-10-17',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#DB2777',
+    title: 'TRYBE: who is winning the Top 100, and the ads brands run',
+    desc: 'What\u2019s working narrows to one category, lists the creators with the most videos in TRYBE\u2019s Top 100 with their brands and videos, and shows the ads TRYBE brands run on Meta, with how long each has been running.',
+    href: '/trybe?tab=working',
+  },
+  {
+    date: '2026-10-17',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#16A34A',
+    title: 'TRYBE: payouts, TikTok Shop and Compare in Find brands',
+    desc: 'Each brand shows what TRYBE says it paid out, and the range before when it went up, plus whether it sells on TikTok Shop. Sort by Highest total payouts, filter by Payout tier went up or On TikTok Shop, and press Compare on two or three brands to see them side by side.',
+    href: '/trybe?tab=find',
+  },
   // The Page Reel posts itself after the Group post (2026-10-16).
   {
     date: '2026-10-16',

@@ -6,12 +6,20 @@
 // creator's own TRYBE, with the words of the first ones: how their opening
 // lines start, real examples to watch, and how long they run. Every count
 // says what it is out of; what TRYBE did not share is said, never guessed.
+//
+// Seb, 2026-10-17 ("do ... four, five, six", after TrybeDaily's What's
+// Working and Creators): one category narrows the whole tab, the top creators
+// behind the Top 100 (lib/trybe-creators), and the ads TRYBE brands run on
+// Meta (components/labs/TrybeAdsGallery).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, AlertTriangle, RotateCcw, Play } from 'lucide-react'
+import { Loader2, AlertTriangle, RotateCcw, Play, Users } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readScript, keysOf } from '@/lib/trybe-mybrands'
 import { readTopEntries, openingLine, hookType, hookCounts, middleHalf, HOOK_TYPES, type TopVideoEntry, type HookType } from '@/lib/trybe-working'
+import { topCreators } from '@/lib/trybe-creators'
+import { BrandMark } from '@/components/labs/TrybeFinderControls'
+import TrybeAdsGallery from '@/components/labs/TrybeAdsGallery'
 
 const PURPLE = '#7C3AED'
 const AMBER = '#B45309'
@@ -28,14 +36,23 @@ function cached(): Read | null {
   } catch { return null }
 }
 
-export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
+/** A brand's categories and website, from MVP's copy of TRYBE. */
+type Brief = { categories: string[]; website: string | null }
+const CREATORS_SHOWN = 10
+
+export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion = null }: {
   /** SCOUT 1.46.0+ allowed on TRYBE. */
   canRead: boolean
   isAdmin: boolean
   /** Brands that entered the Top 100 in the last days, from What changed. */
   newToTop: Array<{ id: string; name: string }> | null
+  scoutVersion?: string | null
 }) {
   const [data, setData] = useState<Read | null>(null)
+  // CATEGORY (Seb, 2026-10-17: "do ... six"): one pick narrows every part of the tab.
+  const [cat, setCat] = useState<string | null>(null)
+  const [brief, setBrief] = useState<Record<string, Brief>>({})
+  const [creatorsShown, setCreatorsShown] = useState(CREATORS_SHOWN)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ done: number; of: number } | null>(null)
   const [pick, setPick] = useState<HookType | null>(null)
@@ -64,30 +81,67 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
     finally { setProgress(null) }
   }, [isAdmin])
   useEffect(() => { if (canRead) void load() }, [canRead, load])
+  // Each Top 100 brand's categories and website from MVP's copy of TRYBE, for
+  // the category pick and the brand marks. Without it, the Top 100's own
+  // category word is used.
+  useEffect(() => {
+    if (!data?.entries.length) return
+    const ids = Array.from(new Set(data.entries.map((e) => e.brandId).filter(Boolean))) as string[]
+    const names = Array.from(new Set(data.entries.filter((e) => !e.brandId && e.brandName).map((e) => e.brandName as string)))
+    fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'brands_brief', ids: ids.slice(0, 200), names: names.slice(0, 200) }), signal: AbortSignal.timeout(30_000) })
+      .then((r) => r.json()).then((d) => {
+        const out: Record<string, Brief> = {}
+        for (const b of (d.brands || []) as Array<{ brand_id: string; name: string; website: string | null; categories: string[] | null }>) {
+          const v = { categories: b.categories || [], website: b.website }
+          out[b.brand_id] = v; if (b.name) out[`name:${b.name.toLowerCase()}`] = v
+        }
+        setBrief(out)
+      }).catch(() => { /* the Top 100's own category word is used */ })
+  }, [data])
+  const briefOf = useCallback((e: TopVideoEntry): Brief | null => (e.brandId && brief[e.brandId]) || (e.brandName && brief[`name:${e.brandName.toLowerCase()}`]) || null, [brief])
+  const catsOf = useCallback((e: TopVideoEntry): string[] => Array.from(new Set([...(e.category ? [e.category] : []), ...(briefOf(e)?.categories || [])])), [briefOf])
+  const catOptions = useMemo(() => {
+    const m = new Map<string, { name: string; n: number }>()
+    for (const e of data?.entries || []) for (const c of catsOf(e)) { const k = c.toLowerCase(); const cur = m.get(k) ?? { name: c, n: 0 }; cur.n++; m.set(k, cur) }
+    return Array.from(m.values()).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+  }, [data, catsOf])
+  const entries = useMemo(() => (data?.entries || []).filter((e) => !cat || catsOf(e).some((c) => c.toLowerCase() === cat.toLowerCase())), [data, cat, catsOf])
 
-  const lineList = useMemo(() => Object.values(data?.lines || {}), [data])
+  const lineList = useMemo(() => entries.filter((e) => e.id && data?.lines[e.id]).map((e) => data!.lines[e.id as string]), [entries, data])
   const counts = useMemo(() => hookCounts(lineList), [lineList])
   const top = counts[0]
-  const lengths = useMemo(() => middleHalf((data?.entries || []).map((e) => e.seconds || 0)), [data])
+  const lengths = useMemo(() => middleHalf(entries.map((e) => e.seconds || 0)), [entries])
   const byCategory = useMemo(() => {
     const m = new Map<string, number[]>()
     for (const e of data?.entries || []) if (e.category && e.seconds) m.set(e.category, [...(m.get(e.category) || []), e.seconds])
     return Array.from(m.entries()).map(([cat, s]) => ({ cat, mid: middleHalf(s) })).filter((x) => x.mid).sort((a, b) => (a.mid!.low - b.mid!.low))
   }, [data])
-  const brands = useMemo(() => new Set((data?.entries || []).map((e) => e.brandId || e.brandName)).size, [data])
-  const examples = useMemo(() => (data?.entries || []).filter((e) => e.id && data?.lines[e.id] && (!pick || hookType(data.lines[e.id]) === pick)).slice(0, 6), [data, pick])
+  const brands = useMemo(() => new Set(entries.map((e) => e.brandId || e.brandName)).size, [entries])
+  const examples = useMemo(() => entries.filter((e) => e.id && data?.lines[e.id] && (!pick || hookType(data.lines[e.id]) === pick)).slice(0, 6), [entries, data, pick])
+  const creators = useMemo(() => topCreators(entries), [entries])
+  const topBrands = useMemo(() => Array.from(new Map((data?.entries || []).filter((e) => e.brandId && e.brandName).map((e) => [e.brandId as string, { brandId: e.brandId as string, name: e.brandName as string }])).values()), [data])
 
   const soft = { color: 'var(--text-soft)' }
   const tile = 'rounded-2xl border px-5 py-4 flex flex-col'
 
+  // The ads gallery is MVP's own copy, so it shows even when the Top 100 cannot be read.
+  const gallery = <TrybeAdsGallery isAdmin={isAdmin} scoutVersion={scoutVersion} canRead={canRead} topBrands={topBrands} category={data ? cat : null} />
   if (!canRead) {
-    return <div className={tile} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}><p className="text-[14px] font-semibold">What&rsquo;s working needs SCOUT on TRYBE</p><p className="text-[13px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this browser. MVP then reads TRYBE&rsquo;s Top 100 and how those videos open.</p></div>
+    return (
+      <div className="space-y-7">
+        <div className={tile} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}><p className="text-[14px] font-semibold">What&rsquo;s working needs SCOUT on TRYBE</p><p className="text-[13px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this browser. MVP then reads TRYBE&rsquo;s Top 100, how those videos open and who made them.</p></div>
+        {gallery}
+      </div>
+    )
   }
   if (error) {
     return (
-      <div className={tile} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
-        <button onClick={() => void load(true)} className="mt-2 self-start inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold" style={{ border: '1px solid var(--border)' }}><RotateCcw size={12} /> Try again</button>
+      <div className="space-y-7">
+        <div className={tile} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
+          <button onClick={() => void load(true)} className="mt-2 self-start inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold" style={{ border: '1px solid var(--border)' }}><RotateCcw size={12} /> Try again</button>
+        </div>
+        {gallery}
       </div>
     )
   }
@@ -97,11 +151,27 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
 
   return (
     <div className="space-y-7">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h2 className="text-[22px] font-bold tracking-tight">TRYBE&rsquo;s Top 100 at a glance</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <nav className="flex flex-wrap gap-1.5" aria-label="On this tab">
+          {[['ww-glance', 'At a glance'], ['ww-hooks', 'Hooks'], ['ww-lengths', 'Video lengths'], ['ww-creators', 'Top creators'], ['ww-ads', 'Meta ads']].map(([id, label]) => (
+            <a key={id} href={`#${id}`} className="rounded-full px-3 py-1 text-[12.5px] font-semibold border hover:border-[#7C3AED]/50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>{label}</a>
+          ))}
+        </nav>
+        <label className="ml-auto inline-flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1.5 py-1.5 text-[13px]" style={{ borderColor: cat ? PURPLE : 'var(--border)' }}>
+          <span style={soft}>Category</span>
+          <select value={cat ?? ''} onChange={(e) => { setCat(e.target.value || null); setCreatorsShown(CREATORS_SHOWN) }} aria-label="Category" className="bg-transparent font-semibold outline-none cursor-pointer max-w-[14rem]" style={{ color: cat ? PURPLE : 'var(--text)' }}>
+            <option value="" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>All categories</option>
+            {catOptions.map((c) => <option key={c.name} value={c.name} style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>{c.name} ({c.n})</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div id="ww-glance" className="flex flex-wrap items-baseline gap-2 scroll-mt-24">
+        <h2 className="text-[22px] font-bold tracking-tight">TRYBE&rsquo;s Top 100 at a glance{cat ? `: ${cat}` : ''}</h2>
         <span className="text-[12.5px]" style={soft}>read {new Date(data.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
         <button onClick={() => void load(true)} className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: PURPLE }}><RotateCcw size={12} /> Read again</button>
       </div>
+      {cat && entries.length === 0 && <p className="text-[13px]" style={soft}>No Top 100 video right now is from a brand in {cat}. <button onClick={() => setCat(null)} className="font-semibold underline" style={{ color: PURPLE }}>Show all categories</button></p>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Glance color={HOOK_TYPES.find((h) => h.type === top?.type)?.color || PURPLE} label="Most common opening"
@@ -112,10 +182,10 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
           title={lengths ? 'Where the middle half lands' : ''} sub={lengths ? `${lengths.n} Top 100 videos with a length` : 'TRYBE did not send video lengths with its Top 100.'} />
         <Glance color="#16A34A" label="New to the Top 100" big={newToTop ? `${newToTop.length} brand${newToTop.length === 1 ? '' : 's'}` : 'Not counted'}
           title={newToTop ? 'In the last 7 days' : ''} sub={newToTop ? (newToTop.slice(0, 3).map((b) => b.name).join(', ') || 'None this week') : 'Open What changed once to count them.'} />
-        <Glance color="#DB2777" label="Brands in it" big={String(brands)} title="Brands with a Top 100 video" sub={`${data.entries.length} videos in TRYBE's Top 100 right now`} />
+        <Glance color="#DB2777" label="Brands in it" big={String(brands)} title="Brands with a Top 100 video" sub={cat ? `${entries.length} of the ${data.entries.length} Top 100 videos are in ${cat}` : `${data.entries.length} videos in TRYBE's Top 100 right now`} />
       </div>
 
-      <section>
+      <section id="ww-hooks" className="scroll-mt-24">
         <div className="flex flex-wrap items-baseline gap-2">
           <h2 className="text-[22px] font-bold tracking-tight">How the top videos open</h2>
           <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{lineList.length} openings</span>
@@ -167,15 +237,15 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
       </section>
 
       {byCategory.length > 0 && (
-        <section>
+        <section id="ww-lengths" className="scroll-mt-24">
           <h2 className="text-[22px] font-bold tracking-tight">Video length by category</h2>
           <p className="text-[13px] mt-0.5" style={soft}>Where the middle half of the Top 100 videos land, on a 0 to 75 second scale. Not a target, just where they fall.</p>
           <div className="mt-3 rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <table className="w-full text-[13px]">
               <tbody>
-                {byCategory.map(({ cat, mid }) => (
-                  <tr key={cat} className="border-t first:border-t-0" style={{ borderColor: 'var(--border)' }}>
-                    <td className="px-4 py-2.5 font-semibold w-[34%]">{cat}</td>
+                {byCategory.map(({ cat: c, mid }) => (
+                  <tr key={c} className="border-t first:border-t-0" style={{ borderColor: 'var(--border)', ...(cat && c.toLowerCase() === cat.toLowerCase() ? { background: 'rgba(124,58,237,0.06)' } : {}) }}>
+                    <td className="px-4 py-2.5 font-semibold w-[34%]">{c}</td>
                     <td className="py-2.5 w-[42%]"><span className="block relative h-2 rounded-full" style={{ background: 'var(--border)' }}><span className="absolute h-2 rounded-full" style={{ left: `${Math.min(100, (mid!.low / 75) * 100)}%`, width: `${Math.max(2, Math.min(100, ((mid!.high - mid!.low) / 75) * 100))}%`, background: PURPLE }} /></span></td>
                     <td className="px-4 py-2.5 text-right font-bold tabular-nums">{mid!.low} to {mid!.high}s</td>
                     <td className="pr-4 py-2.5 text-right tabular-nums" style={soft}>{mid!.n} videos</td>
@@ -186,7 +256,63 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop }: {
           </div>
         </section>
       )}
-      {isAdmin && <p className="text-[11px]" style={soft}>Admin: TRYBE&rsquo;s Top 100 answer had {data.keys}. Words read for {lineList.length} of {data.tried} videos asked.</p>}
+      {/* TOP CREATORS (Seb, 2026-10-17: "do ... four"): who is behind the Top 100. */}
+      <section id="ww-creators" className="scroll-mt-24">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h2 className="text-[22px] font-bold tracking-tight">Top creators in TRYBE&rsquo;s Top 100</h2>
+          {creators.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{creators.length} creators</span>}
+        </div>
+        <p className="text-[13px] mt-0.5" style={soft}>The creators with the most videos TRYBE picked for its Top 100 right now{cat ? ` in ${cat}` : ''}, their best place, the brands, and the videos to watch.{creators.some((c) => c.sales) ? ' Sales ranges are TRYBE’s own.' : ''}</p>
+        {creators.length === 0 ? (
+          <p className="text-[13px] mt-3" style={soft}>{entries.length ? 'TRYBE did not say who made these videos, so MVP cannot list the creators.' : 'No Top 100 videos to list creators from.'}</p>
+        ) : (
+          <ol className="mt-3 rounded-2xl border divide-y overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            {creators.slice(0, creatorsShown).map((c, i) => (
+              <li key={`${c.handle || c.name}-${i}`} className="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2" style={{ borderColor: 'var(--border)' }}>
+                <span className="w-7 h-7 rounded-full inline-flex items-center justify-center text-[12.5px] font-bold tabular-nums shrink-0" style={i < 3 ? { background: PURPLE, color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>{i + 1}</span>
+                {c.avatar
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={c.avatar} alt="" loading="lazy" className="w-10 h-10 rounded-full object-cover border shrink-0" style={{ borderColor: 'var(--border)' }} />
+                  : <span className="w-10 h-10 rounded-full inline-flex items-center justify-center shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Users size={16} /></span>}
+                <div className="min-w-[9rem] flex-1">
+                  <p className="text-[14.5px] font-semibold leading-tight">{c.name}</p>
+                  {c.handle && c.handle.toLowerCase() !== c.name.toLowerCase() && <p className="text-[12.5px]" style={soft}>@{c.handle}</p>}
+                  {c.sales && <p className="text-[12px] font-semibold" style={{ color: '#16A34A' }}>TRYBE sales range: {c.sales}</p>}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[12px] font-bold rounded-full px-2 py-0.5 tabular-nums" style={{ background: 'rgba(219,39,119,0.10)', color: '#DB2777' }}>{c.videos} video{c.videos === 1 ? '' : 's'}</span>
+                  {c.best != null && <span className="text-[12px] font-bold rounded-full px-2 py-0.5 tabular-nums" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Best #{c.best}</span>}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 min-w-[10rem] flex-1">
+                  {c.brands.slice(0, 3).map((b) => (
+                    <span key={b.name} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold">
+                      <BrandMark name={b.name} website={(b.id && brief[b.id]?.website) || brief[`name:${b.name.toLowerCase()}`]?.website || null} size={22} />{b.name}
+                    </span>
+                  ))}
+                  {c.brands.length > 3 && <span className="text-[12px]" style={soft}>+{c.brands.length - 3} more</span>}
+                </div>
+                <div className="flex gap-1.5">
+                  {c.clips.slice(0, 3).map((v, k) => (
+                    <a key={`${v.id || k}`} href={v.video || v.thumbnail || '#'} target="_blank" rel="noopener noreferrer" title={`${v.brand || 'Video'}${v.rank ? `, TRYBE #${v.rank}` : ''}`}
+                      className="relative w-[46px] rounded-lg overflow-hidden border shrink-0" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                      {v.thumbnail
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={v.thumbnail} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                        : null}
+                      <span className="absolute inset-0 flex items-center justify-center"><span className="w-5 h-5 rounded-full inline-flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}><Play size={10} /></span></span>
+                    </a>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        {creators.length > creatorsShown && <button onClick={() => setCreatorsShown((n) => n + 25)} className="mt-2 text-[13px] font-semibold" style={{ color: PURPLE }}>Show more ({creators.length - creatorsShown} left)</button>}
+      </section>
+
+      {gallery}
+
+      {isAdmin && <p className="text-[11px]" style={soft}>Admin: TRYBE&rsquo;s Top 100 answer had {data.keys}. Words read for {Object.keys(data.lines).length} of {data.tried} videos asked.</p>}
     </div>
   )
 }

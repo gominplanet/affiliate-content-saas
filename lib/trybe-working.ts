@@ -23,6 +23,10 @@ export interface TopVideoEntry {
   brandLogo: string | null
   category: string | null
   creator: string | null
+  /** The creator's handle, picture and TRYBE's sales range for them, when TRYBE sends them. */
+  creatorHandle?: string | null
+  creatorAvatar?: string | null
+  creatorSales?: string | null
   thumbnail: string | null
   video: string | null
   /** Seconds, when TRYBE says. */
@@ -55,6 +59,9 @@ export function readTopEntries(json: unknown): TopVideoEntry[] {
       brandLogo: url(first(brand, ['logo', 'logoUrl', 'logo_url', 'image', 'profileImage'])),
       category: (Array.isArray(cats) ? str(cats[0]) : str(isObj(cats) ? cats.name : cats)) || null,
       creator: str(first(raw, ['creatorName', 'creator_name']) ?? first(creator, ['name', 'displayName', 'username', 'handle'])) || null,
+      creatorHandle: str(first(raw, ['creatorHandle', 'creator_handle', 'creatorUsername']) ?? first(creator, ['handle', 'username', 'tiktokHandle', 'instagramHandle'])).replace(/^@/, '') || null,
+      creatorAvatar: url(first(raw, ['creatorAvatarUrl', 'creatorImageUrl']) ?? first(creator, ['avatarUrl', 'avatar', 'profileImageUrl', 'profilePictureUrl', 'imageUrl', 'photoUrl', 'image'])),
+      creatorSales: str(first(raw, ['creatorGmvBucket', 'creatorSalesBucket', 'gmvBucket']) ?? first(creator, ['gmvBucket', 'gmv30dBucket', 'salesBucket', 'gmvRange', 'estimatedGmvBucket', 'gmvLabel'])).slice(0, 40) || null,
       thumbnail: url(first(raw, ['thumbnailUrl', 'thumbnail_url', 'thumbnail', 'coverUrl', 'posterUrl']) ?? first(meta, ['thumbnailUrl', 'thumbnail', 'coverUrl', 'posterUrl'])),
       video: url(first(raw, ['videoUrl', 'video_url', 'url', 'mediaUrl']) ?? first(meta, ['videoUrl', 'url', 'playbackUrl'])),
       // Milliseconds when large.

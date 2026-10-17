@@ -41,6 +41,20 @@ export function changeLine(c: Pick<Change, 'kind' | 'before' | 'after'>): string
   }
 }
 
+/** A change's day in the viewer's own clock, as YYYY-MM-DD (What changed's
+ *  Day pick, Seb 2026-10-17: "do ... two"). Pure. */
+export function changeDay(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** The days with changes, newest first, with how many each. Pure. */
+export function changeDays(list: Array<{ at: string }>): Array<{ day: string; n: number }> {
+  const m = new Map<string, number>()
+  for (const c of list) { const k = changeDay(c.at); m.set(k, (m.get(k) || 0) + 1) }
+  return Array.from(m.entries()).map(([day, n]) => ({ day, n })).sort((a, b) => b.day.localeCompare(a.day))
+}
+
 /** What the writes to MVP's copy changed, brand by brand. `prev` is what was
  *  kept before the write (absent for a brand MVP never saw); `next` is what
  *  was written. `firstCollection` is true while MVP's copy is being filled

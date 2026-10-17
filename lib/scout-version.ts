@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.50.2'
+export const SCOUT_LATEST_VERSION = '1.51.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Quiet jobs, for admin to try first: comment pins, Creator Connections, Amazon videos and YouTube Studio can run in SCOUT\'s minimized window, the page told it is on screen, instead of coming to the front. Off for everyone until MVP turns each one on. Includes 1.50.1 (TRYBE out of sight, typed search).'
+  'Meta ads gallery: when SCOUT counts a brand\'s ads in Meta\'s Ad Library it also copies the words of up to 8 ad cards, whether each is a video, and its preview, for What\'s working on TRYBE. Includes 1.50.2 (quiet jobs for admin to try) and 1.50.1 (TRYBE out of sight, typed search).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -92,6 +92,9 @@ export const SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1.49.0'
 /** The oldest SCOUT that can run comment pins, Creator Connections, Amazon
  *  videos and YouTube Studio out of sight when MVP says so (lib/scout-quiet). */
 export const SCOUT_QUIET_MIN_VERSION = '1.50.2'
+/** The oldest SCOUT that hands MVP the words of each Meta ad card with the
+ *  count (What's working's ads gallery). */
+export const SCOUT_META_CARDS_MIN_VERSION = '1.51.0'
 /** The oldest SCOUT that takes a Page Reel job and reports back from the
  *  background (Clip Factory, Group first). */
 export const SCOUT_FB_REEL_JOB_MIN_VERSION = '1.50.0'

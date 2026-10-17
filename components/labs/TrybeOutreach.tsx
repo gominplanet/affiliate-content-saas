@@ -23,14 +23,15 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, type LucideIcon } from 'lucide-react'
-import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestMetaAdsCounts, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
-import { readAdLibraryCount, META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
+import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
@@ -46,7 +47,9 @@ import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import TrybeCompare from '@/components/labs/TrybeCompare'
+import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
@@ -124,6 +127,12 @@ interface LiveBrand {
   sells?: SellsRead | null
   /** How fast it decides videos, from MVP members' results. */
   review?: { reviewDays: number | null; slowShare: number | null } | null
+  /** TRYBE's payout range, the range before when it went up lately, TikTok Shop, and the Top 100 (Seb, 2026-10-17). */
+  earnings_bucket?: string | null
+  tier_up?: { before: string | null; after: string | null; at: string } | null
+  tiktok_shop?: boolean | null
+  top100_hits?: number | null
+  top100_best_rank?: number | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -132,13 +141,14 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
-type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'creators' | 'fit' | 'newest'
+type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'payouts' | 'creators' | 'fit' | 'newest'
 type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
   { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: what a video pays (your results, members\u2019 results, or its flat fee and retainer), then % of sales.' },
   { id: 'spend', label: 'Pays creators most', says: 'Most paid to TRYBE creators a month first, estimated: its videos approved in the last 30 days times its pay per video. Brands MVP cannot estimate come after.' },
+  { id: 'payouts', label: 'Highest total payouts', says: 'Most paid out to creators on TRYBE first, by TRYBE\u2019s own payout range ($200K+, $50K+...), then most creators. Brands TRYBE gives no range for come after.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
@@ -245,20 +255,6 @@ function nicheIcon(name: string): LucideIcon {
     [/faith|bible|christian|church/, Church], [/craft|hobby|art/, Palette], [/clean/, SprayCan], [/sleep/, Moon], [/eco|garden|plant|natural/, Leaf],
   ]
   return rules.find(([re]) => re.test(n))?.[1] || Tag
-}
-
-/** A brand's own website icon, else its first letter. */
-function BrandMark({ name, website, size = 40 }: { name: string; website: string | null; size?: number }) {
-  const [bad, setBad] = useState(false)
-  let host = ''
-  try { host = website ? new URL(/^https?:/i.test(website) ? website : `https://${website}`).hostname : '' } catch { host = '' }
-  const box = { width: size, height: size }
-  if (!host || bad) {
-    return <span className="shrink-0 rounded-lg inline-flex items-center justify-center font-bold" style={{ ...box, background: 'rgba(124,58,237,0.12)', color: PURPLE, fontSize: size * 0.42 }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`} alt="" loading="lazy" onError={() => setBad(true)}
-    className="shrink-0 rounded-lg border object-contain p-1.5" style={{ ...box, borderColor: 'var(--border)', background: '#fff' }} />
 }
 
 /** A brand's TRYBE conversation, matched by its whole name: TRYBE names a
@@ -422,6 +418,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [livePick, setLivePick] = useState<Set<string>>(new Set())
+  // COMPARE (Seb, 2026-10-17: "do ... eight"): the brands kept for the side by
+  // side view, as they were shown, so a new search does not drop them.
+  const [compare, setCompare] = useState<LiveBrand[]>([])
+  const flipCompare = (b: LiveBrand) => setCompare(c => c.some(x => x.brand_id === b.brand_id) ? c.filter(x => x.brand_id !== b.brand_id) : c.length >= COMPARE_MAX ? c : [...c, b])
   const [liveNonce, setLiveNonce] = useState(0)
   const liveReq = useRef(0)
   // COLE'S PICKS (Seb, 2026-10-12): TRYBE's Top 100 and Meta ad counts, read
@@ -1015,39 +1015,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     const todo = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
     if (!todo.length) { setSignalNote({ tone: 'ok', text: 'Every brand shown already has a Meta ad count from this week.' }); return }
     setMetaRun({ done: 0, total: todo.length }); setSignalNote(null)
-    let read = 0, noCount = 0, notEnglish = '', couldNot = 0, late = 0, stopped = ''
     try {
-      for (let i = 0; i < todo.length; i += 8) {
-        if (leftRef.current) { stopped = 'You left the page.'; break }
-        const batch = todo.slice(i, i + 8)
-        const r = await requestMetaAdsCounts(batch.map(b => ({ brandId: b.brand_id, name: b.name })))
-        if (!r.ok) {
-          stopped = r.error === 'no-access' ? 'SCOUT is not allowed on Facebook, so it could not open Meta\u2019s Ad Library. Press the button again and allow it when Chrome asks.'
-            : r.error === 'already-running' ? 'SCOUT is already reading Meta\u2019s Ad Library in another tab. Wait for it to finish.'
-              : `SCOUT could not read Meta's Ad Library: ${r.error || 'no answer'}.`
-          break
-        }
-        const ok: Array<{ brandId: string; count: number }> = []
-        for (const x of r.results || []) {
-          const count = x.text ? readAdLibraryCount(x.text) : null
-          if (count != null) ok.push({ brandId: x.brandId, count })
-          else if (/^not-english/.test(x.error || '')) notEnglish = (x.error || '').replace(/^not-english\s*/, '')
-          else if (/^could-not-open/.test(x.error || '')) couldNot++
-          else noCount++
-        }
-        if (ok.length) await api({ action: 'meta_ads', results: ok })
-        read += ok.length
-        late += (r.notReached || []).length
-        setMetaRun({ done: Math.min(todo.length, i + 8), total: todo.length })
-        if (notEnglish) break
-      }
-      const parts = [`Meta ads read for ${read} of ${todo.length} brand${todo.length === 1 ? '' : 's'}.`]
-      if (noCount) parts.push(`${noCount} showed no result count on Meta's page, so ${noCount === 1 ? 'it stays' : 'they stay'} not read.`)
-      if (couldNot) parts.push(`SCOUT could not open Meta's page for ${couldNot}.`)
-      if (late) parts.push(`SCOUT ran out of time before ${late}; press again to read ${late === 1 ? 'it' : 'them'}.`)
-      if (notEnglish) parts.push(`Facebook is not in English in this Chrome (${notEnglish}), so the counts cannot be read. Switch Facebook to English and press again.`)
-      if (stopped) parts.push(stopped)
-      setSignalNote({ tone: stopped || notEnglish ? 'bad' : read < todo.length ? 'warn' : 'ok', text: parts.join(' ') })
+      // The MVP team's read also copies the ads themselves for What's working (SCOUT 1.51.0).
+      const run = await readMetaAds(todo.map(b => ({ brandId: b.brand_id, name: b.name })), { cards: isAdmin, onProgress: (done, total) => setMetaRun({ done, total }), gone: () => leftRef.current })
+      setSignalNote(metaAdsWords(run, scoutVersion))
       setLiveNonce(n => n + 1)
     } catch (e) {
       setSignalNote({ tone: 'bad', text: e instanceof Error ? e.message : 'The Meta ad counts could not be saved.' })
@@ -1437,7 +1408,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (
-        <TrybeWorking canRead={canMyBrands} isAdmin={isAdmin}
+        <TrybeWorking canRead={canMyBrands} isAdmin={isAdmin} scoutVersion={scoutVersion}
           newToTop={changes ? Array.from(new Map(changes.changes.filter((c) => c.kind === 'top100').map((c) => [c.brand_id, { id: c.brand_id, name: c.name || 'A brand' }])).values()) : null} />
       )}
 
@@ -1737,6 +1708,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[15px] font-semibold">{b.name}</span>
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
+                        <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
                         <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                         <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
@@ -1748,6 +1720,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <CrowdChip crowd={b.crowd} windowDays={live?.crowdDays} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
                         <SpendChip spend={b.spend} />
+                        {b.stats?.paidOut == null && <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />}
+                        <TikTokShopChip on={b.tiktok_shop} />
                         <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />
                         <SellsChip sells={b.sells} />
@@ -1814,6 +1788,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {live && live.matched > live.brands.length && (
               <p className="text-[12px] mt-3" style={soft}>Showing the best {live.brands.length} of {live.matched.toLocaleString()}{live.capped ? '+' : ''} matches. Add a keyword to narrow it down.</p>
             )}
+            {compare.length > 0 && <div className="h-20" aria-hidden />}
+            <TrybeCompare brands={compare} onRemove={(id) => setCompare(c => c.filter(x => x.brand_id !== id))} onClear={() => setCompare([])} />
           </div>
         ) : preview ? (
           <p className="text-[13px]" style={soft}>MVP&rsquo;s copy of TRYBE&rsquo;s brands is not ready yet. Check back soon.</p>

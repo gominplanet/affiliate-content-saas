@@ -7,13 +7,20 @@
 // a brand in the Top 100, brands that left or came back. Read from
 // app/api/labs/trybe (action 'changes'); described by lib/trybe-changes.
 // A list MVP could not read says so, never "nothing changed".
+//
+// Seb, 2026-10-17 ("do one, two ... ten", after TrybeDaily's Today): any one
+// day can be picked, back two weeks; and two more views, Most active brands
+// (components/labs/TrybeActive) and the brands off TRYBE's Discover list
+// (components/labs/TrybeOffDiscover).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, RotateCcw, Sparkles, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
 import TrybeBestNew from '@/components/labs/TrybeBestNew'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
-import { changeLine, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
+import TrybeActive from '@/components/labs/TrybeActive'
+import TrybeOffDiscover from '@/components/labs/TrybeOffDiscover'
+import { changeLine, changeDay, changeDays, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 
 const PURPLE = '#7C3AED'
@@ -37,6 +44,8 @@ export async function fetchChanges(days = 7, scoutOpens = false): Promise<Change
   return { changes: (d.changes || []) as ChangeRow[], lastCollectedAt: d.lastCollectedAt ?? null, days: d.days ?? days, healed: Number(d.healed) || 0 }
 }
 
+const dayWords = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+
 /** The one-line summary for the top of the page. */
 export function changesSummary(c: ChangesRead | null): string | null {
   if (!c) return null
@@ -53,25 +62,31 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
   const [who, setWho] = useState<'yours' | 'all'>('all')
   const [kind, setKind] = useState<ChangeKind | 'any'>('any')
   const [limit, setLimit] = useState(60)
+  const [view, setView] = useState<'changes' | 'active' | 'off'>('changes')
+  // One day, or every day read ('all'); 14 days are read once asked for.
+  const [dayPick, setDayPick] = useState<string>('all')
   // The rows opened to show the brand's details, by row key.
   const [open, setOpen] = useState<Set<string>>(new Set())
   const flip = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n })
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (days?: number) => {
     setLoading(true); setError(null)
-    try { const c = await fetchChanges(7, scoutOpens); setData(c); onRead?.(c) }
+    // The page's Your week line reads 7 days; a longer read stays here.
+    try { const c = await fetchChanges(days ?? 7, scoutOpens); setData(c); if ((days ?? 7) === 7) onRead?.(c) }
     catch (e) { setError(e instanceof Error ? e.message : 'MVP could not read what changed.') }
     finally { setLoading(false) }
   }, [onRead, scoutOpens])
   useEffect(() => { if (!initial) void load() }, [initial, load])
 
+  const days = useMemo(() => changeDays(data?.changes || []), [data])
+  const onDay = useCallback((c: ChangeRow) => dayPick === 'all' || changeDay(c.at) === dayPick, [dayPick])
   const counts = useMemo(() => {
     const m = new Map<ChangeKind, number>()
-    for (const c of data?.changes || []) if (who === 'all' || c.yours) m.set(c.kind, (m.get(c.kind) || 0) + 1)
+    for (const c of data?.changes || []) if ((who === 'all' || c.yours) && onDay(c)) m.set(c.kind, (m.get(c.kind) || 0) + 1)
     return m
-  }, [data, who])
-  const yoursCount = useMemo(() => (data?.changes || []).filter((c) => c.yours).length, [data])
-  const shown = useMemo(() => (data?.changes || []).filter((c) => (who === 'all' || c.yours) && (kind === 'any' || c.kind === kind)), [data, who, kind])
+  }, [data, who, onDay])
+  const yoursCount = useMemo(() => (data?.changes || []).filter((c) => c.yours && onDay(c)).length, [data, onDay])
+  const shown = useMemo(() => (data?.changes || []).filter((c) => (who === 'all' || c.yours) && (kind === 'any' || c.kind === kind) && onDay(c)), [data, who, kind, onDay])
   const byDay = useMemo(() => {
     const out: Array<{ day: string; list: ChangeRow[] }> = []
     for (const c of shown.slice(0, limit)) {
@@ -90,14 +105,35 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
     return (
       <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
-        <button onClick={() => void load()} className="mt-2 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold" style={{ border: '1px solid var(--border)' }}><RotateCcw size={12} /> Try again</button>
+        <button onClick={() => void load(data?.days)} className="mt-2 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold" style={{ border: '1px solid var(--border)' }}><RotateCcw size={12} /> Try again</button>
       </div>
     )
   }
   if (!data) return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>
 
+  const VIEWS = [
+    { id: 'changes' as const, label: 'What changed', says: 'Day by day' },
+    { id: 'active' as const, label: 'Most active brands', says: 'Creators joining fastest' },
+    { id: 'off' as const, label: 'Not on Discover', says: 'Hidden or gone' },
+  ]
+  const viewNav = (
+    <div className="flex flex-wrap gap-1.5 rounded-2xl border p-1.5" role="tablist" aria-label="What changed views" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      {VIEWS.map((v) => (
+        <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => setView(v.id)}
+          className="flex-1 min-w-[9rem] rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--surface-2)]" style={view === v.id ? { background: 'rgba(124,58,237,0.12)', color: PURPLE } : { color: 'var(--text)' }}>
+          <span className="block text-[13.5px] font-semibold leading-tight">{v.label}</span>
+          <span className="block text-[11.5px]" style={view === v.id ? undefined : soft}>{v.says}</span>
+        </button>
+      ))}
+    </div>
+  )
+  if (view === 'active') return <div className="space-y-4">{viewNav}<TrybeActive scoutOpens={scoutOpens} actions={actions} /></div>
+  if (view === 'off') return <div className="space-y-4">{viewNav}<TrybeOffDiscover scoutOpens={scoutOpens} /></div>
+  const span = dayPick === 'all' ? `in ${data.days} days` : `on ${dayWords(dayPick)}`
+
   return (
     <div className="space-y-4">
+      {viewNav}
       <TrybeBestNew scoutOpens={scoutOpens} onSeeAll={onSeeNew} actions={actions} />
       {/* At a glance: one tile per kind of change, a press filters the list. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -108,7 +144,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
               className="text-left rounded-2xl border px-4 py-3 transition-colors" style={{ borderColor: kind === k ? PURPLE : 'var(--border)', background: 'var(--surface)', borderTopWidth: 3, borderTopColor: TONE[k] }}>
               <p className="text-[12px] font-semibold" style={soft}>{CHANGE_WORDS[k]}</p>
               <p className="text-[26px] font-bold leading-tight tabular-nums" style={{ color: n ? TONE[k] : 'var(--text-soft)' }}>{n}</p>
-              <p className="text-[11.5px]" style={soft}>in {data.days} days{who === 'yours' ? ', your brands' : ''}</p>
+              <p className="text-[11.5px]" style={soft}>{span}{who === 'yours' ? ', your brands' : ''}</p>
             </button>
           )
         })}
@@ -123,10 +159,21 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
         <button onClick={() => setWho('all')} className={chip(who === 'all')} style={chipStyle(who === 'all')}>All of TRYBE</button>
         <button onClick={() => setWho('yours')} className={chip(who === 'yours')} style={chipStyle(who === 'yours')}>Your brands ({yoursCount})</button>
         {kind !== 'any' && <button onClick={() => setKind('any')} className="text-[12.5px] font-semibold" style={{ color: PURPLE }}>Show every kind</button>}
+        {/* EARLIER DAYS (TrybeDaily's "Latest · Oct 17"): one day at a time, back two weeks. */}
+        <label className="inline-flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1.5 py-1 text-[12.5px]" style={{ borderColor: dayPick === 'all' ? 'var(--border)' : PURPLE }}>
+          <span style={soft}>Day</span>
+          <select value={dayPick} aria-label="Pick a day"
+            onChange={(e) => { const v = e.target.value; if (v === 'more') { setDayPick('all'); void load(14) } else { setDayPick(v); setLimit(60) } }}
+            className="bg-transparent font-semibold outline-none cursor-pointer" style={{ color: dayPick === 'all' ? 'var(--text)' : PURPLE }}>
+            <option value="all" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>Last {data.days} days</option>
+            {days.map((d, i) => <option key={d.day} value={d.day} style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>{i === 0 ? 'Latest · ' : ''}{dayWords(d.day)} ({d.n})</option>)}
+            {data.days < 14 && <option value="more" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>Earlier days: read 14 days</option>}
+          </select>
+        </label>
         <span className="ml-auto text-[12px]" style={soft}>
           {data.lastCollectedAt ? `MVP's copy of TRYBE last updated ${new Date(data.lastCollectedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : 'MVP has not finished a full read of TRYBE yet'}
         </span>
-        <button onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1 text-[12.5px] font-semibold disabled:opacity-50" style={{ color: PURPLE }}>
+        <button onClick={() => void load(data.days)} disabled={loading} className="inline-flex items-center gap-1 text-[12.5px] font-semibold disabled:opacity-50" style={{ color: PURPLE }}>
           {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Refresh
         </button>
       </div>
@@ -135,7 +182,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
         <div className="rounded-2xl border p-5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)', ...soft }}>
           {data.changes.length === 0
             ? 'No changes recorded yet. MVP records them each time its copy of TRYBE is updated, so the first ones appear after the next full read.'
-            : who === 'yours' ? 'None of your brands changed in this time. Your brands are the ones on your MVP list and the samples you logged.' : 'Nothing of this kind in this time.'}
+            : who === 'yours' ? `None of your brands changed ${dayPick === 'all' ? 'in this time' : 'that day'}. Your brands are the ones on your MVP list and the samples you logged.` : dayPick === 'all' ? 'Nothing of this kind in this time.' : 'Nothing of this kind that day.'}
         </div>
       ) : (
         <div className="space-y-4">
