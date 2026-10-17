@@ -14,7 +14,8 @@ import {
 import { buildLiftoff, dropSteps, sendDropToTrybe, type Http, type HttpAnswer } from '../lib/drop-run'
 import type { SendDeps, TrybeCall } from '../lib/trybe-submit'
 import { runSend, type SendJob, type SendItem } from '../lib/drop-places'
-import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES } from '../lib/drop-plan'
+import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES, settingsFromLast, readSettings, settingsBody, setupMissing, nextFreeSlots } from '../lib/drop-plan'
+import { startDraftBatch, addDraftVideo } from '../lib/drop-run'
 import { tiktokBlocker, emptyTikTok } from '../components/labs/DropTikTok'
 
 const failures: string[] = []
@@ -238,7 +239,7 @@ void (async () => {
     placeFits('tiktok', 'vertical', false) && !placeFits('tiktok', 'long', true) && placeFits('clips', 'long', true) && !placeFits('clips', 'long', false)
     && placeFits('pin', 'long', true, true) && !placeFits('pin', 'long', true, false) && placeFits('amazon', 'vertical', false))
   check('a saved plan keeps only places that exist and fit', JSON.stringify(readPlans({ long: ['liftoff', 'tiktok', 'nope', 'clips'], vertical: ['trybe', 'blog', 'tiktok'] }))
-    === JSON.stringify({ long: ['liftoff', 'clips'], vertical: ['trybe', 'tiktok'] }) && readPlans(null).long.includes('liftoff'))
+    === JSON.stringify({ long: ['liftoff', 'clips'], vertical: ['trybe', 'tiktok'], settings: null }) && readPlans(null).long.includes('liftoff'))
   check('every place Drop offers has a handler or rides on one', EXTRA_PLACES.every((p) => READY_PLACES.has(p)) && EXTRA_PLACES.every((p) => !!PLACE_INFO[p]))
 
   const vItem: SendItem = { id: 'i7', file_name: 'band morning.mp4', source_url: 'https://x.supabase.co/storage/v1/object/public/instagram-videos/u1/drop-1.mp4', duration_seconds: 34, asin: 'B0BAND1234', title: null }
@@ -357,6 +358,80 @@ void (async () => {
     const doneOf = (id: string) => calls.find((c) => c.body?.action === 'send_done' && c.body.sendId === id)?.body
     check('the pin and the Facebook post are the blog post’s socials', JSON.stringify(sp?.body.socials.map((x: { platform: string }) => x.platform)) === '["pinterest","facebook"]' && !!sp && sp.body.socials.every((x: { bodyText: string }) => !!x.bodyText))
     check('a social the blog route skipped is said, not shown as done', doneOf('sp')?.state === 'done' && doneOf('sg')?.state === 'failed' && /not connected/.test(doneOf('sg')?.detail))
+  }
+
+  // ── the one page: set up once, then upload, upload, upload ─────────────────
+  {
+    const st = settingsFromLast(last)
+    check('the setup starts from the last batch: CTA, look, times, channel, playlist, notify, Amazon', st.ctaChosen && (st.cta as { image: string }).image === 'x' && st.thumbnailChosen
+      && JSON.stringify(st.dailySlots) === '["09:00","18:00"]' && st.channelId === 'UC123' && st.playlistId === 'PL1' && st.notifySubscribers && st.amazon && st.sendToYouTube)
+    check('the Studio steps keep only the four Drop shows, on unless turned off', JSON.stringify(st.studioOptions) === JSON.stringify({ disclosures: true, monetize: true, adRating: true, endScreen: true }))
+    const blank = settingsFromLast(null)
+    check('with no batch yet, nothing is picked for the creator but a time', !blank.ctaChosen && blank.cta === null && !blank.thumbnailChosen && blank.channelId === null && JSON.stringify(blank.dailySlots) === '["09:00"]')
+    check('a saved setup is cleaned: a CTA not chosen is dropped, unknown keys and bad times go', readSettings(null) === null
+      && readSettings({ ctaChosen: false, cta: { x: 1 }, dailySlots: ['18:00', 'nonsense'], studioOptions: { monetize: false, evil: 'x' } })!.cta === null
+      && JSON.stringify(readSettings({ dailySlots: ['18:00', 'nonsense'] })!.dailySlots) === '["18:00"]'
+      && readSettings({ studioOptions: { monetize: false, evil: 'x' } })!.studioOptions.monetize === false
+      && !('evil' in readSettings({ studioOptions: { evil: 'x' } })!.studioOptions))
+    check('a saved plan carries its setup', readPlans({ long: ['liftoff'], vertical: [], settings: { ctaChosen: true, cta: null, dailySlots: ['10:00'] } }).settings?.ctaChosen === true)
+    const body = settingsBody(st, 'America/Toronto', '2026-10-18')
+    check('the setup goes through Liftoff’s own batch PATCH', body.ctaChosen === true && body.thumbnailChosen === true && JSON.stringify(body.dailySlots) === '["09:00","18:00"]'
+      && JSON.stringify(body.markets) === '["amazon.com"]' && body.playlistId === 'PL1' && body.notifySubscribers === true && body.timezone === 'America/Toronto' && body.startOn === '2026-10-18')
+    const open = settingsBody(blank, 'UTC', '2026-10-18')
+    check('a choice the setup never made stays open for Liftoff', !('ctaChosen' in open) && !('cta' in open) && !('thumbnailChosen' in open))
+    check('Amazon off means no store', JSON.stringify(settingsBody({ ...st, amazon: false }, 'UTC', '2026-10-18').markets) === '[]')
+    check('what the setup still needs is named', setupMissing(null)[0] === 'your setup' && setupMissing(st).length === 0
+      && JSON.stringify(setupMissing(blank)) === JSON.stringify(['your CTA', 'your thumbnail look', 'your YouTube channel'])
+      && setupMissing({ ...st, sendToYouTube: false, amazon: false }).some((x) => /YouTube or Amazon/.test(x)))
+  }
+  {
+    // 08:00 in Toronto. 09:00 is too close; 18:00 today is the first free time.
+    const now = new Date('2026-10-17T12:00:00Z')
+    const two = nextFreeSlots(2, ['09:00', '18:00'], 'America/Toronto', [], now)
+    check('each video gets the next free time on the pattern, past the lead time', JSON.stringify(two.map((x) => `${x.date} ${x.time}`)) === '["2026-10-17 18:00","2026-10-18 09:00"]'
+      && two[0].at === Date.parse('2026-10-17T22:00:00Z'))
+    const after = nextFreeSlots(2, ['09:00', '18:00'], 'America/Toronto', [Date.parse('2026-10-17T22:00:00Z')], now)
+    check('a time one of your videos already has is skipped, so a new drop follows on', JSON.stringify(after.map((x) => `${x.date} ${x.time}`)) === '["2026-10-18 09:00","2026-10-18 18:00"]')
+    check('no times, no slots', nextFreeSlots(3, [], 'UTC', [], now).length === 0 && nextFreeSlots(0, ['09:00'], 'UTC', [], now).length === 0)
+  }
+  {
+    const { http, calls } = fakeHttp((url, method) => url === '/api/launch/batches' && method === 'POST' ? ok({ ok: true, id: 'b-d' }) : undefined)
+    const r = await startDraftBatch({ dropId: 'd-draft', name: 'Drop Sat', settings: settingsFromLast(last), timezone: 'America/Toronto', startOn: '2026-10-18' }, http)
+    check('the drop’s batch is made from the setup at the first long video: made, set, channel confirmed, kept on the draft',
+      r.batchId === 'b-d' && r.problems.length === 0 && JSON.stringify(calls.map((c) => `${c.method} ${c.url}`)) === JSON.stringify([
+        'POST /api/launch/batches', 'PATCH /api/launch/batches/b-d', 'POST /api/launch/batches/b-d/channel', 'POST /api/drop',
+      ]) && calls[1].body.ctaChosen === true && calls[2].body.channelId === 'UC123' && calls[3].body.action === 'link' && calls[3].body.keepDraft === true && calls[3].body.batchId === 'b-d')
+    const refused = fakeHttp((url, method) => url === '/api/launch/batches' && method === 'POST' ? { ok: false, status: 403, json: { error: 'Liftoff is on Pro' } } : undefined)
+    const r2 = await startDraftBatch({ dropId: 'd', name: 'x', settings: settingsFromLast(last), timezone: 'UTC', startOn: '2026-10-18' }, refused.http)
+    check('a batch Liftoff refused is said in its words, and nothing else is tried', r2.batchId === null && /Liftoff is on Pro/.test(r2.problems[0]) && refused.calls.length === 1)
+    const add = fakeHttp((url) => url === '/api/launch/batches/b-d/items' ? ok({ ok: true, id: 'li-9' }) : undefined)
+    const v = await addDraftVideo('b-d', { itemId: 'i9', sourceUrl: 'https://x/u1/a.mp4', fileName: 'mixer review.mp4', title: '', asin: 'B0MIXER123', durationSeconds: 600 }, add.http)
+    check('each long video goes into Liftoff as it is uploaded, with its product, and the drop keeps its Liftoff row',
+      v.launchItemId === 'li-9' && v.problem === null && add.calls[0].body.titleSource === 'filename' && add.calls[0].body.title === 'mixer review'
+      && add.calls[1].url === '/api/launch/items/li-9' && add.calls[1].body.product === 'B0MIXER123' && add.calls[2].body.action === 'draft_item' && add.calls[2].body.launchItemId === 'li-9')
+    const draftList = { ok: true, available: true, drops: [{ id: 'dd', state: 'draft', note: null, batch_id: 'b-d', items: [{ id: 'i9', to_blog: true, blog_state: 'off', launch_item_id: 'li-9', to_trybe: false, trybe_state: 'off', sends: [] }] }] }
+    const steps = fakeHttp((url, _m, b) => url === '/api/drop' && !b ? ok(draftList) : undefined)
+    await dropSteps(steps.http)
+    check('a drop still being set up is never launched or sent by the steps', steps.calls.length === 1)
+  }
+  {
+    const route3 = read('app/api/drop/route.ts')
+    check('the drop being set up is kept apart from the board, and comes back on its own', /\.neq\('state', 'draft'\)/.test(route3) && /eq\('state', 'draft'\)[\s\S]{0,200}maybeSingle\(\)/.test(route3))
+    check('Launch turns each video’s choices into its places, once', /action === 'draft_launch'/.test(route3) && /onConflict: 'drop_item_id,place', ignoreDuplicates: true/.test(route3)
+      && /\.eq\('state', 'draft'\)\s*\n?\s*if \(dErr\)/.test(route3))
+    check('a video added to the drop must be one of the creator’s own uploads', /action === 'draft_add'[\s\S]{0,500}instagram-videos\/\$\{g\.userId\}\//.test(route3))
+    check('the times already taken are read for the next free one', /planned_publish_at', 'publish_at'/.test(route3) && /busy,/.test(route3))
+    check('the product check is behind the Drop switch and says when Amazon did not show it', /canUsePreview\('drop', intg\?\.tier\)/.test(read('app/api/drop/product/route.ts'))
+      && /Amazon did not show this product just now/.test(read('app/api/drop/product/route.ts')) && /Could not check/.test(read('components/labs/DropProduct.tsx')))
+    const setup = read('components/labs/DropSetup.tsx')
+    check('the setup uses Liftoff’s own CTA, thumbnail and time pickers', /<CtaPicker /.test(setup) && /<ThumbnailPicker /.test(setup) && /<SlotEditor /.test(setup) && /\/api\/youtube\/playlists/.test(setup))
+    const b2 = read('components/labs/DropBoard.tsx')
+    check('each long video’s card has Liftoff’s own editor and its own time', /<ItemRowEditor /.test(b2) && /<ScheduleRow /.test(b2) && /<DropProduct /.test(b2))
+    check('each video is given the next free time, not the batch pattern', /nextFreeSlots\(1, settingsRef\.current\.dailySlots, timezone, takenTimes\(\)\)/.test(b2) && /schedule: \{ date: slot\.date, time: slot\.time \}/.test(b2))
+    check('Launch waits for Liftoff and says so, and never launches an unsaved time', /Launch when ready/.test(b2) && /has a time you have not set/.test(b2) && /Save your setup first/.test(b2))
+    check('the page only restores the drop on its first read', /const first = !restored\.current/.test(b2))
+    const sql438 = read('supabase/migrations/438_drop_draft.sql')
+    check('migration 438 is safe to run twice', /add column if not exists wish jsonb/.test(sql438) && /create index if not exists drops_draft_idx/.test(sql438))
   }
 
   // ── wiring for the places ──────────────────────────────────────────────────

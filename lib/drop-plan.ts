@@ -58,7 +58,7 @@ export interface PlaceInfo {
 }
 
 export const PLACE_INFO: Record<PlaceId, PlaceInfo> = {
-  liftoff: { label: 'YouTube and Amazon', kind: 'long', afterYouTube: false, says: 'Liftoff, with your last choices' },
+  liftoff: { label: 'YouTube and Amazon', kind: 'long', afterYouTube: false, says: 'Liftoff, with your setup' },
   blog: { label: 'Blog post', kind: 'long', afterYouTube: true, says: 'Live ten minutes after the video' },
   pin: { label: 'Pinterest pin', kind: 'long', afterYouTube: true, withBlog: true, says: 'Pinned when the blog post goes live' },
   group: { label: 'Facebook post', kind: 'long', afterYouTube: true, withBlog: true, says: 'With the blog post. Waits in Meta Hub for your Group when one is saved' },
@@ -86,8 +86,89 @@ export function placeFits(place: string, kind: DropKind, toLiftoff: boolean, toB
 }
 
 /** A Launch plan: where each kind of video goes unless the creator says
- *  otherwise on the day. */
-export interface LaunchPlans { long: PlaceId[]; vertical: PlaceId[] }
+ *  otherwise on the day, and (once set up) every YouTube and Amazon setting. */
+export interface LaunchPlans { long: PlaceId[]; vertical: PlaceId[]; settings?: DropSettings | null }
+
+/** EVERY LIFTOFF SETTING, SET ONCE ON THE DROP PAGE (Seb, 2026-10-17: "set
+ *  up their settings and their plan on one page. And then once that setup is
+ *  done, they never have to look at it again"). Each drop's Liftoff batch is
+ *  made with these, through Liftoff's own checks. */
+export interface DropSettings {
+  sendToYouTube: boolean
+  ctaChosen: boolean
+  cta: unknown | null
+  thumbnailChosen: boolean
+  thumbnail: unknown | null
+  dailySlots: string[]
+  /** The channel (UC...) to upload to, confirmed with YouTube for each drop. */
+  channelId: string | null
+  playlistId: string | null
+  notifySubscribers: boolean
+  studioOptions: { disclosures: boolean; monetize: boolean; adRating: boolean; endScreen: boolean }
+  /** The US Amazon store, or none. */
+  amazon: boolean
+}
+
+const STUDIO_DEFAULT = { disclosures: true, monetize: true, adRating: true, endScreen: true }
+
+/** The setup a creator starts from: their last launched batch, or blank. Pure. */
+export function settingsFromLast(last: LastBatch | null): DropSettings {
+  const so = (last?.studio_options && typeof last.studio_options === 'object' ? last.studio_options : {}) as Record<string, unknown>
+  return {
+    sendToYouTube: last?.send_to_youtube !== false,
+    ctaChosen: !!last?.cta_chosen, cta: last?.cta_chosen ? (last.cta ?? null) : null,
+    thumbnailChosen: !!last?.thumbnail_chosen, thumbnail: last?.thumbnail_chosen ? (last.thumbnail ?? null) : null,
+    dailySlots: normalizeSlots(last?.daily_slots).length ? normalizeSlots(last?.daily_slots) : ['09:00'],
+    channelId: last?.youtube_channel_id ?? null,
+    playlistId: last?.playlist_id ?? null,
+    notifySubscribers: last?.notify_subscribers === true,
+    studioOptions: { ...STUDIO_DEFAULT, ...Object.fromEntries(Object.entries(so).filter(([k, v]) => k in STUDIO_DEFAULT && typeof v === 'boolean')) },
+    amazon: (last?.markets ?? ['amazon.com']).includes('amazon.com'),
+  }
+}
+
+/** A saved setup, cleaned, or null when none was saved. Pure. */
+export function readSettings(raw: unknown): DropSettings | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const so = (o.studioOptions && typeof o.studioOptions === 'object' ? o.studioOptions : {}) as Record<string, unknown>
+  return {
+    sendToYouTube: o.sendToYouTube !== false,
+    ctaChosen: o.ctaChosen === true, cta: o.ctaChosen === true ? (o.cta ?? null) : null,
+    thumbnailChosen: o.thumbnailChosen === true, thumbnail: o.thumbnailChosen === true ? (o.thumbnail ?? null) : null,
+    dailySlots: normalizeSlots(Array.isArray(o.dailySlots) ? (o.dailySlots as string[]) : []),
+    channelId: typeof o.channelId === 'string' && o.channelId ? o.channelId : null,
+    playlistId: typeof o.playlistId === 'string' && o.playlistId ? o.playlistId : null,
+    notifySubscribers: o.notifySubscribers === true,
+    studioOptions: { ...STUDIO_DEFAULT, ...Object.fromEntries(Object.entries(so).filter(([k, v]) => k in STUDIO_DEFAULT && typeof v === 'boolean')) },
+    amazon: o.amazon !== false,
+  }
+}
+
+/** The PATCH for a drop's Liftoff batch from the setup, through Liftoff's
+ *  own checks. A choice the setup never made stays open. Pure. */
+export function settingsBody(st: DropSettings, timezone: string, startOn: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    timezone, startOn, sendToYouTube: st.sendToYouTube, markets: st.amazon ? ['amazon.com'] : [],
+    notifySubscribers: st.notifySubscribers, playlistId: st.playlistId, studioOptions: st.studioOptions,
+  }
+  if (st.ctaChosen) { body.ctaChosen = true; body.cta = st.cta ?? null }
+  if (st.thumbnailChosen) { body.thumbnailChosen = true; body.thumbnail = st.thumbnail ?? null }
+  if (st.dailySlots.length) body.dailySlots = st.dailySlots
+  return body
+}
+
+/** What the setup still needs before a long video can go, in words. Pure. */
+export function setupMissing(st: DropSettings | null): string[] {
+  if (!st) return ['your setup']
+  const out: string[] = []
+  if (!st.ctaChosen) out.push('your CTA')
+  if (!st.thumbnailChosen) out.push('your thumbnail look')
+  if (st.sendToYouTube && !st.dailySlots.length) out.push('your posting times')
+  if (st.sendToYouTube && !st.channelId) out.push('your YouTube channel')
+  if (!st.sendToYouTube && !st.amazon) out.push('somewhere to send it (YouTube or Amazon)')
+  return out
+}
 export const DEFAULT_PLANS: LaunchPlans = { long: ['liftoff', 'blog'], vertical: ['trybe'] }
 
 /** A saved plan, cleaned: only places that exist and fit their kind. Pure. */
@@ -98,7 +179,7 @@ export function readPlans(raw: unknown): LaunchPlans {
     if (!list) return DEFAULT_PLANS[kind]
     return [...new Set(list)].filter((p): p is PlaceId => !!PLACE_INFO[p as PlaceId] && PLACE_INFO[p as PlaceId].kind === kind)
   }
-  return { long: pick('long'), vertical: pick('vertical') }
+  return { long: pick('long'), vertical: pick('vertical'), settings: readSettings(o.settings) }
 }
 
 // ── The creator's own last Liftoff choices ───────────────────────────────────
@@ -186,6 +267,36 @@ export function startFor(choice: 'auto' | 'today' | 'tomorrow', slots: string[] 
   if (choice === 'today') return { startOn: today, today: true }
   const [y, mo, d] = today.split('-').map(Number)
   return { startOn: new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10), today: false }
+}
+
+/**
+ * THE NEXT FREE TIMES ON YOUR PATTERN, one per video: each a slot from the
+ * setup's times, at least `leadMinutes` ahead, not one a video of yours is
+ * already going public at. Dropping two videos on Tuesday after three on
+ * Monday follows on from Monday's, instead of putting two on the same
+ * morning. Each becomes that video's own time in Liftoff, shown and editable
+ * on its card. Pure.
+ */
+export function nextFreeSlots(n: number, slots: string[] | null | undefined, timezone: string, taken: number[],
+  now: Date = new Date(), leadMinutes = 90): Array<{ date: string; time: string; at: number }> {
+  const s = normalizeSlots(slots)
+  const out: Array<{ date: string; time: string; at: number }> = []
+  if (!s.length || n <= 0) return out
+  const [y, mo, d] = todayIn(timezone, now).split('-').map(Number)
+  for (let day = 0; day < 400 && out.length < n; day++) {
+    const dt = new Date(Date.UTC(y, mo - 1, d + day))
+    const yy = dt.getUTCFullYear(), mm = dt.getUTCMonth() + 1, dd = dt.getUTCDate()
+    for (const slot of s) {
+      const m = parseSlot(slot)
+      if (m == null) continue
+      const at = zonedTimeToInstant(yy, mm, dd, m, timezone).getTime()
+      if (at - now.getTime() < leadMinutes * 60_000) continue
+      if (taken.some((t) => Math.abs(t - at) < 60_000) || out.some((o) => o.at === at)) continue
+      out.push({ date: `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`, time: slot, at })
+      if (out.length >= n) break
+    }
+  }
+  return out
 }
 
 // ── Launch when Liftoff has prepared it ──────────────────────────────────────

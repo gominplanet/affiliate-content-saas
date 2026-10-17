@@ -52,7 +52,7 @@ import { liftoffEstimate, estimateWords, overnightWorthy, foldSpeed, speedOf, UP
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
 
-interface Item {
+export interface Item {
   id: string
   position: number
   source_url: string | null
@@ -2831,7 +2831,7 @@ function progressNote(it: Item): string {
  * thumbnails are chosen. Videos given one skip the look below; the rest still
  * get it.
  */
-function OwnThumbnails({ items, onReload }: { items: Item[]; onReload: () => Promise<void> }) {
+export function OwnThumbnails({ items, onReload }: { items: Item[]; onReload: () => Promise<void> }) {
   const ownCount = items.filter((i) => i.thumbnail_source === 'creator').length
   const [show, setShow] = useState(ownCount > 0)
   return (
@@ -2962,7 +2962,7 @@ function ItemThumbnail({ item, onReload, bare = false }: { item: Item; onReload:
   )
 }
 
-function ItemRowEditor({
+export function ItemRowEditor({
   item, busy, onSave, onMove, first, last, faces, faceAvailable, onReload,
 }: {
   /** Read the batch again (after this row's own thumbnail changed). */
@@ -3329,7 +3329,7 @@ function ItemRowEditor({
 }
 
 /** The publishing times. The number of them IS the videos-per-day. */
-function SlotEditor({
+export function SlotEditor({
   slots, disabled, onChange,
 }: {
   slots: string[]
@@ -3386,7 +3386,7 @@ function SlotEditor({
  * reports itself unsaved to the board, and the board refuses to launch while
  * any row is, naming which one. What is on screen is what YouTube gets.
  */
-function ScheduleRow({
+export function ScheduleRow({
   n, title, sched, fixedAt, timezone, locked, available, busy, onSet, onReset, onDirty,
 }: {
   n: number

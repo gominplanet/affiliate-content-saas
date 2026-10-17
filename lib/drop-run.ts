@@ -15,7 +15,7 @@
 // The calls are passed in, so scripts/test-drop.ts runs these without a
 // network. Never throws: what went wrong is written on the drop.
 
-import { copiedSettings, nextForBatch, blogReady, blogTimeFor, isStale, type LastBatch } from '@/lib/drop-plan'
+import { copiedSettings, nextForBatch, blogReady, blogTimeFor, isStale, settingsBody, type LastBatch, type DropSettings } from '@/lib/drop-plan'
 import { sendToTrybe, type SendDeps, type SendResult } from '@/lib/trybe-submit'
 import { runSend, type PlaceDeps } from '@/lib/drop-places'
 
@@ -115,6 +115,43 @@ export async function buildLiftoff(o: {
   return { batchId, added: links.length, problems, state }
 }
 
+// ── The drop on the page: its Liftoff batch from the setup, made at the first
+// long video, so each video is prepared while the creator is still there ────
+
+export async function startDraftBatch(o: { dropId: string; name: string; settings: DropSettings; timezone: string; startOn: string },
+  http: Http): Promise<{ batchId: string | null; problems: string[] }> {
+  const problems: string[] = []
+  const made = await http('/api/launch/batches', { method: 'POST', body: { name: o.name, timezone: o.timezone } })
+  const batchId = made.ok ? String(made.json.id || '') : ''
+  if (!batchId) return { batchId: null, problems: [`Liftoff did not start a batch: ${err(made, 'no answer')}.`] }
+  const set = await http(`/api/launch/batches/${batchId}`, { method: 'PATCH', body: settingsBody(o.settings, o.timezone, o.startOn) })
+  if (!set.ok) problems.push(`Your setup was not applied: ${err(set, 'no answer')}.`)
+  if (o.settings.sendToYouTube && o.settings.channelId) {
+    const c = await http(`/api/launch/batches/${batchId}/channel`, { method: 'POST', body: { channelId: o.settings.channelId } })
+    if (!c.ok) problems.push(`Your YouTube channel was not confirmed: ${err(c, 'no answer')}`)
+  }
+  const saved = await dropApi(http, { action: 'link', dropId: o.dropId, batchId, keepDraft: true })
+  if (!saved.ok) problems.push(`The drop could not keep its Liftoff batch: ${err(saved, 'no answer')}.`)
+  return { batchId, problems }
+}
+
+export async function addDraftVideo(batchId: string, v: { itemId: string; sourceUrl: string; fileName: string; title: string; asin: string; durationSeconds: number },
+  http: Http): Promise<{ launchItemId: string | null; problem: string | null }> {
+  const add = await http(`/api/launch/batches/${batchId}/items`, { method: 'POST', body: {
+    sourceUrl: v.sourceUrl, title: v.title.trim() || v.fileName.replace(/\.[^.]+$/, ''), titleSource: v.title.trim() ? 'creator' : 'filename', durationSeconds: v.durationSeconds,
+  } })
+  const id = add.ok ? String(add.json.id || '') : ''
+  if (!id) return { launchItemId: null, problem: `${v.fileName} was not added to Liftoff: ${err(add, 'no answer')}.` }
+  let problem: string | null = null
+  if (v.asin.trim()) {
+    const p = await http(`/api/launch/items/${id}`, { method: 'PATCH', body: { product: v.asin.trim() } })
+    if (!p.ok) problem = `${v.fileName}: the product was not saved (${err(p, 'no answer')}).`
+  }
+  const link = await dropApi(http, { action: 'draft_item', itemId: v.itemId, launchItemId: id })
+  if (!link.ok) problem = problem || `The drop could not keep ${v.fileName}'s Liftoff video: ${err(link, 'no answer')}.`
+  return { launchItemId: id, problem }
+}
+
 // ── Launch when prepared, the blog posts, then every other place ─────────────
 
 interface SendRowFull { id: string; place: string; state: string; payload?: Record<string, unknown> | null; updated_at?: string | null }
@@ -148,7 +185,8 @@ export async function dropSteps(http: Http, say: (t: string) => void = () => {},
     dropApi(http, { action: 'send_done', sendId, ...o })
 
   for (const d of (list.json.drops ?? []) as DropRow[]) {
-    if (d.state === 'done' || d.state === 'failed' || d.state === 'building') continue
+    // A DRAFT IS THE PAGE'S: nothing runs for it until Launch.
+    if (d.state === 'draft' || d.state === 'done' || d.state === 'failed' || d.state === 'building') continue
     let items: BatchItem[] = []
     let launchedNow = false
 

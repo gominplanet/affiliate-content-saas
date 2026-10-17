@@ -2,21 +2,23 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Drop: a still from the creator's own file, read in the browser (nothing is
-// uploaded for it), in the video's own shape. A frame the browser cannot read
-// shows the shape and an icon instead of an empty box.
+// uploaded for it), in the video's own shape. After a reload the file is gone,
+// so the still is read from the uploaded copy instead. A frame the browser
+// cannot read shows the shape and an icon instead of an empty box.
 
 import { useEffect, useState } from 'react'
 import { Film, Smartphone } from 'lucide-react'
 
-export default function DropThumb({ file, vertical, className = '' }: { file: File | null; vertical: boolean; className?: string }) {
-  const [url, setUrl] = useState<string | null>(null)
+export default function DropThumb({ file, src, vertical, className = '' }: { file: File | null; src?: string | null; vertical: boolean; className?: string }) {
+  const [local, setLocal] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     if (!file) return
     const u = URL.createObjectURL(file)
-    setUrl(u)
+    setLocal(u)
     return () => URL.revokeObjectURL(u)
   }, [file])
+  const url = local ?? (src && /^https:\/\//.test(src) ? src : null)
   const box = vertical ? 'aspect-[9/16] w-[64px]' : 'aspect-video w-[112px]'
   return (
     <div className={`${box} shrink-0 overflow-hidden rounded-lg relative ${className}`} style={{ background: 'var(--surface-2)' }}>

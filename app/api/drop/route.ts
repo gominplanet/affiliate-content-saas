@@ -19,14 +19,15 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { DROP_MAX, EXTRA_PLACES, placeFits, type LastBatch } from '@/lib/drop-plan'
+import { DROP_MAX, EXTRA_PLACES, placeFits, readSettings, type LastBatch } from '@/lib/drop-plan'
 
 export const runtime = 'nodejs'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
 
-const DROP_STATES = ['building', 'preparing', 'needs_you', 'launched', 'done', 'failed'] as const
+const DROP_STATES = ['draft', 'building', 'preparing', 'needs_you', 'launched', 'done', 'failed'] as const
+const DRAFT_SQL = 'Keeping the drop you are setting up needs migration 438 in the database first.'
 const TRYBE_DONE = ['in_review', 'sent_unconfirmed', 'failed'] as const
 const missing = (m?: string) => /drops|drop_items/.test(m || '') && /does not exist|could not find|schema cache/i.test(m || '')
 const NEEDS_SQL = 'Drop needs migration 436 in the database first.'
@@ -74,7 +75,7 @@ export async function GET() {
   const g = await gate()
   if ('error' in g) return g.error
   const admin = createAdminClient() as Sb
-  const { data: drops, error } = await admin.from('drops').select(DROP_COLS).eq('user_id', g.userId)
+  const { data: drops, error } = await admin.from('drops').select(DROP_COLS).eq('user_id', g.userId).neq('state', 'draft')
     .order('created_at', { ascending: false }).limit(8)
   const available = !error
   if (error && !missing(error.message)) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -99,6 +100,33 @@ export async function GET() {
   }
   const { data: planRow, error: pErr } = await admin.from('drop_plans').select('plans').eq('user_id', g.userId).maybeSingle()
   if (pErr) placesAvailable = false
+  // THE DROP ON THE PAGE, being set up (migration 438 keeps its choices).
+  let draft: Record<string, unknown> | null = null
+  let draftAvailable = available
+  if (available) {
+    const { data: d } = await admin.from('drops').select(DROP_COLS).eq('user_id', g.userId).eq('state', 'draft')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    if (d) {
+      const { data: rows } = await admin.from('drop_items').select(ITEM_COLS).eq('drop_id', d.id).order('position', { ascending: true })
+      const { data: wishes, error: wErr } = await admin.from('drop_items').select('id,wish').eq('drop_id', d.id)
+      if (wErr) draftAvailable = false
+      const wishOf = new Map(((wishes ?? []) as Array<{ id: string; wish: unknown }>).map((w) => [w.id, w.wish]))
+      draft = { ...d, items: ((rows ?? []) as Array<{ id: string }>).map((i) => ({ ...i, wish: wishOf.get(i.id) ?? {} })) }
+    } else {
+      const { error: wErr } = await admin.from('drop_items').select('wish').limit(1)
+      if (wErr) draftAvailable = false
+    }
+  }
+  // THE TIMES ALREADY TAKEN: every video of this creator's going public on
+  // YouTube from now on, so a new drop follows on instead of doubling up.
+  const busy: string[] = []
+  {
+    const nowIso = new Date().toISOString()
+    for (const col of ['planned_publish_at', 'publish_at']) {
+      const { data: rows } = await admin.from('launch_items').select(col).eq('user_id', g.userId).gt(col, nowIso).limit(500)
+      for (const r of (rows ?? []) as Array<Record<string, string | null>>) if (r[col]) busy.push(r[col] as string)
+    }
+  }
   const last = await lastLaunched(g.sb, g.userId)
   // A blog post needs a site to go to; said before Launch, not after.
   const { data: site } = await admin.from('wordpress_sites').select('id').eq('user_id', g.userId).limit(1).maybeSingle()
@@ -111,6 +139,9 @@ export async function GET() {
     max: DROP_MAX,
     placesAvailable,
     placesNeed: placesAvailable ? null : PLACES_SQL,
+    draft,
+    draftNeed: draftAvailable ? null : DRAFT_SQL,
+    busy,
     plans: (planRow?.plans as Record<string, unknown> | undefined) ?? null,
     drops: (drops ?? []).map((d: { id: string }) => ({
       ...d,
@@ -215,7 +246,7 @@ export async function POST(req: Request) {
       const kind = rows[m.position].kind as 'long' | 'vertical'
       const toLiftoff = rows[m.position].to_liftoff
       for (const place of new Set((Array.isArray(it?.places) ? it.places : []).map(String))) {
-        if (!SEND_PLACES.has(place) || !placeFits(place, kind, toLiftoff)) continue
+        if (!SEND_PLACES.has(place) || !placeFits(place, kind, toLiftoff, rows[m.position].to_blog)) continue
         sendRows.push({ drop_item_id: m.id, drop_id: drop.id, user_id: g.userId, place, state: 'wanted', payload: sendPayload(it, place) })
       }
     }
@@ -235,9 +266,119 @@ export async function POST(req: Request) {
   const dropId = s(body.dropId, 60)
   const itemId = s(body.itemId, 60)
 
+  // ── the drop being set up on the page ────────────────────────────────────
+  if (action === 'draft_start') {
+    const { data: have } = await admin.from('drops').select('id').eq('user_id', g.userId).eq('state', 'draft')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    if (have) return NextResponse.json({ ok: true, id: have.id })
+    const { data: made, error } = await admin.from('drops').insert({ user_id: g.userId, name: s(body.name, 120) || 'Drop', state: 'draft' }).select('id').single()
+    if (error || !made) return fail(error)
+    return NextResponse.json({ ok: true, id: made.id })
+  }
+  /** A draft video of this creator's, with its drop. */
+  const draftItem = async (id: string | null) => {
+    if (!id) return null
+    const { data } = await admin.from('drop_items').select('id,drop_id,launch_item_id').eq('id', id).eq('user_id', g.userId).maybeSingle()
+    if (!data) return null
+    const { data: d } = await admin.from('drops').select('id,state,batch_id').eq('id', data.drop_id).maybeSingle()
+    return d?.state === 'draft' ? { ...data, drop: d } : null
+  }
+  if (action === 'draft_add') {
+    if (!dropId) return NextResponse.json({ error: 'No drop.' }, { status: 400 })
+    const { data: d } = await admin.from('drops').select('id,state').eq('id', dropId).eq('user_id', g.userId).maybeSingle()
+    if (d?.state !== 'draft') return NextResponse.json({ error: 'That drop has launched. Drop the video again.' }, { status: 409 })
+    const it = (body.item ?? {}) as NewItem
+    const own = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/instagram-videos/${g.userId}/`
+    if (!String(it.sourceUrl || '').startsWith(own)) return NextResponse.json({ error: `${it.fileName || 'The video'} is not one of your uploads in MVP. Add it again.` }, { status: 400 })
+    const { count } = await admin.from('drop_items').select('id', { count: 'exact', head: true }).eq('drop_id', dropId)
+    if ((count ?? 0) >= DROP_MAX) return NextResponse.json({ error: `A drop holds ${DROP_MAX} videos.` }, { status: 400 })
+    const { data: made, error } = await admin.from('drop_items').insert({
+      drop_id: dropId, user_id: g.userId, position: count ?? 0,
+      file_name: s(it.fileName, 240), source_url: s(it.sourceUrl, 1000), mime_type: s(it.mimeType, 80),
+      size_bytes: n(it.sizeBytes), duration_seconds: n(it.durationSeconds), width: n(it.width), height: n(it.height),
+      kind: it.kind === 'vertical' ? 'vertical' : 'long', asin: s(it.asin, 300), title: s(it.title, 200),
+    }).select('id').single()
+    if (error || !made) return fail(error)
+    return NextResponse.json({ ok: true, id: made.id })
+  }
+  if (action === 'draft_item') {
+    const di = await draftItem(itemId)
+    if (!di) return NextResponse.json({ error: 'That video is not in the drop you are setting up.' }, { status: 404 })
+    const patch: Record<string, unknown> = { updated_at: now }
+    if (typeof body.asin === 'string') patch.asin = s(body.asin, 300)
+    if (typeof body.title === 'string') patch.title = s(body.title, 200)
+    if (body.launchItemId === null || typeof body.launchItemId === 'string') patch.launch_item_id = body.launchItemId ? s(body.launchItemId, 60) : null
+    const { error } = await admin.from('drop_items').update(patch).eq('id', di.id)
+    if (error) return fail(error)
+    // The choices, on their own: before migration 438 the rest still saves.
+    if (body.wish && typeof body.wish === 'object') {
+      const raw = JSON.stringify(body.wish)
+      if (raw.length > 8000) return NextResponse.json({ error: 'Too much to keep for one video.' }, { status: 400 })
+      const { error: wErr } = await admin.from('drop_items').update({ wish: body.wish }).eq('id', di.id)
+      if (wErr) return NextResponse.json({ ok: true, wishSaved: false, wishError: DRAFT_SQL })
+    }
+    return NextResponse.json({ ok: true, wishSaved: true })
+  }
+  if (action === 'draft_remove') {
+    const di = await draftItem(itemId)
+    if (!di) return NextResponse.json({ error: 'That video is not in the drop you are setting up.' }, { status: 404 })
+    const { error } = await admin.from('drop_items').delete().eq('id', di.id)
+    return error ? fail(error) : NextResponse.json({ ok: true, launchItemId: di.launch_item_id ?? null })
+  }
+  if (action === 'draft_launch') {
+    // THE CHOICES BECOME THE DROP: each video's places as rows, and the drop
+    // starts. Liftoff's own Launch is pressed by the steps (lib/drop-run).
+    if (!dropId) return NextResponse.json({ error: 'No drop.' }, { status: 400 })
+    const { data: d } = await admin.from('drops').select('id,state,batch_id').eq('id', dropId).eq('user_id', g.userId).maybeSingle()
+    if (d?.state !== 'draft') return NextResponse.json({ error: 'This drop has already launched.' }, { status: 409 })
+    const list = (Array.isArray(body.items) ? body.items : []) as Array<NewItem & { id?: string }>
+    const { data: rowsNow } = await admin.from('drop_items').select('id,kind,launch_item_id').eq('drop_id', dropId)
+    const byId = new Map(((rowsNow ?? []) as Array<{ id: string; kind: string; launch_item_id: string | null }>).map((r) => [r.id, r]))
+    const sendRows: Array<Record<string, unknown>> = []
+    let anyLiftoff = false
+    for (const it of list) {
+      const row = it.id ? byId.get(it.id) : null
+      if (!row) continue
+      const kind = row.kind === 'vertical' ? 'vertical' : 'long'
+      const toLiftoff = kind === 'long' && it.toLiftoff === true && !!row.launch_item_id
+      const toBlog = toLiftoff && it.toBlog === true
+      const toTrybe = it.toTrybe === true && !!s(it.trybe?.brandId, 80)
+      if (toLiftoff) anyLiftoff = true
+      const { error: uErr } = await admin.from('drop_items').update({
+        asin: s(it.asin, 300), title: s(it.title, 200), to_liftoff: toLiftoff, to_blog: toBlog, to_trybe: toTrybe,
+        blog_state: toBlog ? 'wanted' : 'off', trybe_state: toTrybe ? 'wanted' : 'off', ...trybeCols(toTrybe ? it.trybe : undefined), updated_at: now,
+      }).eq('id', row.id)
+      if (uErr) return fail(uErr)
+      for (const place of new Set((Array.isArray(it.places) ? it.places : []).map(String))) {
+        if (!SEND_PLACES.has(place) || !placeFits(place, kind, toLiftoff, toBlog)) continue
+        sendRows.push({ drop_item_id: row.id, drop_id: dropId, user_id: g.userId, place, state: 'wanted', payload: sendPayload(it, place) })
+      }
+    }
+    // Videos the page no longer shows are not sent anywhere.
+    const keep = new Set(list.map((x) => x.id).filter(Boolean) as string[])
+    const gone = [...byId.keys()].filter((id) => !keep.has(id))
+    if (gone.length) await admin.from('drop_items').delete().in('id', gone)
+    let placesSaved = true
+    if (sendRows.length) {
+      const { error: sErr } = await admin.from('drop_sends').upsert(sendRows, { onConflict: 'drop_item_id,place', ignoreDuplicates: true })
+      if (sErr) placesSaved = false
+    }
+    const state = anyLiftoff && d.batch_id ? 'preparing' : 'launched'
+    const { error: dErr } = await admin.from('drops').update({ state, name: s(body.name, 120) || 'Drop', updated_at: now, ...(state === 'launched' ? { launched_at: now } : {}) })
+      .eq('id', dropId).eq('user_id', g.userId).eq('state', 'draft')
+    if (dErr) return fail(dErr)
+    return NextResponse.json({ ok: true, state, places: sendRows.length, placesSaved, ...(placesSaved ? {} : { placesError: PLACES_SQL }) })
+  }
+
   if (action === 'link') {
     if (!dropId) return NextResponse.json({ error: 'No drop.' }, { status: 400 })
     const state = DROP_STATES.includes(body.state as typeof DROP_STATES[number]) ? body.state : 'preparing'
+    // A draft's batch is linked without starting it.
+    if (body.keepDraft === true) {
+      const { error } = await admin.from('drops').update({ batch_id: s(body.batchId, 60), settings_from: s(body.settingsFrom, 60), updated_at: now })
+        .eq('id', dropId).eq('user_id', g.userId).eq('state', 'draft')
+      return error ? fail(error) : NextResponse.json({ ok: true })
+    }
     const { error } = await admin.from('drops').update({
       batch_id: s(body.batchId, 60), settings_from: s(body.settingsFrom, 60), state, note: s(body.note, 1000), updated_at: now,
     }).eq('id', dropId).eq('user_id', g.userId)
@@ -260,10 +401,18 @@ export async function POST(req: Request) {
   if (action === 'plans_save') {
     const plans = (body.plans && typeof body.plans === 'object') ? body.plans as Record<string, unknown> : null
     if (!plans) return NextResponse.json({ error: 'No plan.' }, { status: 400 })
-    const clean: Record<string, string[]> = {}
+    const clean: Record<string, unknown> = {}
     for (const kind of ['long', 'vertical']) {
       const list = Array.isArray(plans[kind]) ? (plans[kind] as unknown[]).map(String) : []
       clean[kind] = [...new Set(list)].filter((x) => x === 'liftoff' || x === 'blog' || x === 'trybe' || SEND_PLACES.has(x)).slice(0, 20)
+    }
+    // THE SETUP, cleaned to plain values (lib/drop-plan readSettings). The
+    // CTA and thumbnail look are checked again by Liftoff when a drop's batch
+    // takes them, exactly as if they were picked in Liftoff.
+    const st = readSettings(plans.settings)
+    if (st) {
+      if (JSON.stringify(st).length > 20_000) return NextResponse.json({ error: 'That setup is too large to keep.' }, { status: 400 })
+      clean.settings = st
     }
     const { error } = await admin.from('drop_plans').upsert({ user_id: g.userId, plans: clean, updated_at: now }, { onConflict: 'user_id' })
     if (error) return NextResponse.json({ error: missingPlaces(error.message) ? PLACES_SQL : error.message }, { status: missingPlaces(error.message) ? 503 : 500 })
