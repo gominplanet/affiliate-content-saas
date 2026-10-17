@@ -200,6 +200,11 @@ export default function DropBoard() {
   const settings: DropSettings = useMemo(() => plans.settings ?? settingsFromLast(last), [plans.settings, last])
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  // Read by uploads and Liftoff adds that started in an earlier render.
+  const draftBatchRef = useRef(draftBatch)
+  draftBatchRef.current = draftBatch
+  const busyRef = useRef(busyTimes)
+  busyRef.current = busyTimes
   const toYouTube = settings.sendToYouTube
 
   /** Why a place cannot be used right now, in words, or null when it can. */
@@ -426,10 +431,10 @@ export default function DropBoard() {
   /** The times already taken: launched videos, this batch's, and any just
    *  handed out on this page. */
   const takenTimes = (): number[] => {
-    const b = draftBatch
+    const b = draftBatchRef.current
     const mine = b ? [...scheduleItems(b.items.map((i) => ({ id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time })),
       { timezone: b.batch.timezone, slots: b.batch.daily_slots ?? [], startOn: b.batch.start_on ?? '' }).values()].map((s) => s.at.getTime()) : []
-    return [...busyTimes, ...mine, ...handed.current]
+    return [...busyRef.current, ...mine, ...handed.current]
   }
 
   /** Into this drop's Liftoff batch, with its own next free time, so Liftoff
@@ -695,10 +700,19 @@ export default function DropBoard() {
     setLaunching(true)
     try {
       const go = ready.filter((v) => v.places.length > 0)
+      // WHAT IS ON SCREEN IS WHAT YOUTUBE GETS. A Liftoff video no card here
+      // shows (a reload in the middle of adding one, a removal Liftoff did not
+      // take) is taken out before Launch, or Launch stops and says so.
+      const bid = batchIdRef.current
+      const keep = new Set(go.filter((v) => has(v, 'liftoff') && v.launchItemId).map((v) => v.launchItemId as string))
+      const strays = (draftBatch?.items ?? []).filter((i) => !keep.has(i.id))
+      for (const i of strays) {
+        const del = await browserHttp(`/api/launch/items/${i.id}`, { method: 'DELETE' })
+        if (!del.ok) { toast.error(`Liftoff still has "${i.title || 'a video'}", which is not on this page, and did not let it go: ${String(del.json.error || del.status)}. Nothing was launched.`, { duration: 14000 }); await loadBatch(); return }
+      }
       // NO LONG VIDEO LEFT FOR LIFTOFF: its empty batch goes, so Liftoff's
       // list does not gain a batch with nothing in it.
-      const bid = batchIdRef.current
-      if (bid && !go.some((v) => has(v, 'liftoff') && v.launchItemId) && draftBatch && draftBatch.items.length === 0) {
+      if (bid && keep.size === 0 && draftBatch) {
         const del = await browserHttp(`/api/launch/batches/${bid}`, { method: 'DELETE' })
         if (del.ok) await browserHttp('/api/drop', { method: 'POST', body: { action: 'link', dropId, batchId: null, keepDraft: true } })
       }
@@ -894,7 +908,7 @@ export default function DropBoard() {
                   <div className="min-w-0 flex-1 flex flex-col gap-1">
                     <div className="flex items-start gap-2">
                       <p className="text-[13.5px] font-semibold line-clamp-2 break-words min-w-0 flex-1" style={{ color: 'var(--text)' }} title={li?.title || v.name}>{li?.title || v.name}</p>
-                      <button type="button" aria-label={`Remove ${v.name}`} disabled={launching || v.up === 'uploading'}
+                      <button type="button" aria-label={`Remove ${v.name}`} disabled={launching || v.up === 'uploading' || v.adding}
                         onClick={() => void removeVid(v)}
                         className="rounded-lg p-1 -mt-1 -mr-1 disabled:opacity-40" style={{ color: 'var(--text-2)' }}><X size={15} /></button>
                     </div>

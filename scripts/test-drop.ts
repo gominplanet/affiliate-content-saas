@@ -430,6 +430,7 @@ void (async () => {
     check('each video is given the next free time, not the batch pattern', /nextFreeSlots\(1, settingsRef\.current\.dailySlots, timezone, takenTimes\(\)\)/.test(b2) && /schedule: \{ date: slot\.date, time: slot\.time \}/.test(b2))
     check('Launch waits for Liftoff and says so, and never launches an unsaved time', /Launch when ready/.test(b2) && /has a time you have not set/.test(b2) && /Save your setup first/.test(b2))
     check('the page only restores the drop on its first read', /const first = !restored\.current/.test(b2))
+    check('a Liftoff video no card shows is taken out before Launch, or nothing launches', /const strays = \(draftBatch\?\.items \?\? \[\]\)\.filter\(\(i\) => !keep\.has\(i\.id\)\)/.test(b2) && /Nothing was launched\./.test(b2))
     const sql438 = read('supabase/migrations/438_drop_draft.sql')
     check('migration 438 is safe to run twice', /add column if not exists wish jsonb/.test(sql438) && /create index if not exists drops_draft_idx/.test(sql438))
   }
