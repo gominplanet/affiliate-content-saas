@@ -23,6 +23,7 @@ import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION, SCOUT_STUDIO_UPLOAD_MIN_VERSION } from '@/lib/scout-version'
 import { runStudioUploads } from '@/lib/studio-upload-client'
 import { postDueFirstCommentsViaScout } from '@/lib/first-comment-pins'
+import { dropSteps, browserHttp } from '@/lib/drop-run'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -62,6 +63,13 @@ export default function LiftoffRunner() {
           })
           if (ups.length > 0) more = true
         }
+        // ── DROP (Labs): a drop's Liftoff batch launches here once it is
+        // prepared, and each blog post is written once YouTube has its video,
+        // so the Drop page can be closed. Nothing for an account without Drop.
+        const drops = await dropSteps(browserHttp, (t) => say(`Drop: ${t}`))
+        if (drops.launched) say(`Drop: launched ${drops.launched}`)
+        if (drops.blogs) say(`Drop: ${drops.blogs} blog post${drops.blogs === 1 ? '' : 's'} scheduled`)
+        if (drops.more) { more = true; sigs.push(drops.signature) }
         const r = await fetch('/api/launch/batches')
         const j = await r.json().catch(() => ({}))
         if (!r.ok) { clearInterval(alive); say(`Could not read your batches: ${j?.error || r.status}`); await liftoffDone(true, 'error'); return }

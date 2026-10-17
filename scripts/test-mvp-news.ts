@@ -22,11 +22,12 @@ const read = (f: string) => readFileSync(f, 'utf8')
 // ── The entries ──
 check('every entry has a real date, a title and words, no dashes, no year in the copy', WHATS_NEW.every(u => /^\d{4}-\d\d-\d\d$/.test(u.date) && Number.isFinite(Date.parse(u.date)) && u.title.length > 5 && u.desc.length > 20 && !/[–—]| - /.test(u.title + u.desc) && !/\b20\d\d\b/.test(u.title + u.desc)))
 const at = (s: string) => new Date(s)
-check(`the last ${NEWS_DAYS} days only`, NEWS_DAYS === 7 && recentNews('pro', at('2026-10-17T12:00:00Z')).length === WHATS_NEW.filter(u => u.date >= '2026-10-10').length && recentNews('pro', at('2026-10-30T12:00:00Z')).every(u => u.date >= '2026-10-23'))
+check(`the last ${NEWS_DAYS} days only`, NEWS_DAYS === 7 && recentNews('admin', at('2026-10-17T12:00:00Z')).length === WHATS_NEW.filter(u => u.date >= '2026-10-10').length && recentNews('pro', at('2026-10-30T12:00:00Z')).every(u => u.date >= '2026-10-23'))
 const pro = recentNews('pro', at('2026-10-17T12:00:00Z'))
 check('newest first', pro.every((u, i) => i === 0 || pro[i - 1].date >= u.date))
 const trial = recentNews('trial', at('2026-10-17T12:00:00Z'))
 check('a plan without TRYBE does not see TRYBE news', !trial.some(u => u.gate === 'trybe') && pro.some(u => u.gate === 'trybe'))
+check('a feature still admin only in Labs is not news for Pro', WHATS_NEW.some(u => u.gate === 'drop') && !pro.some(u => u.gate === 'drop') && recentNews('admin', at('2026-10-17T12:00:00Z')).some(u => u.gate === 'drop'))
 
 // ── When it opens ──
 const POP = read('components/dashboard/MvpNews.tsx')

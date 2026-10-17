@@ -731,7 +731,10 @@ export default function LaunchBoard() {
         setBatches(all)
         // The one still being worked on, or failing that the most recent, so a
         // finished batch is still what you see when you come back to the page.
-        const openBatch = all.find((b) => b.state !== 'launched') ?? all[0]
+        // ?batch=<id> opens that one: the Drop page links a drop's own batch.
+        let asked: string | null = null
+        try { asked = new URLSearchParams(window.location.search).get('batch') } catch { /* none asked */ }
+        const openBatch = (asked && all.find((b) => b.id === asked)) || all.find((b) => b.state !== 'launched') || all[0]
         if (openBatch) { showBatch(openBatch.id); void load(openBatch.id); return }
         setLoading(false)
       } catch { setError('Could not reach the server.'); setLoading(false) }

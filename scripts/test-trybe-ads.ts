@@ -56,7 +56,8 @@ check('without ad results the stage judges as before', stageOf(judged).stage ===
 // ── SCOUT 1.47.0 and the wiring ──
 const bg = read('extension/background.js')
 const allow = bg.slice(bg.indexOf('const TRYBE_API_ALLOW'), bg.indexOf('\n]\n', bg.indexOf('const TRYBE_API_ALLOW')) + 2)
-const added = allow.slice(allow.indexOf('1.47.0 (Your ads, live'))
+// Up to Send to TRYBE (1.52.0), whose upload calls scripts/test-trybe-submit holds.
+const added = allow.slice(allow.indexOf('1.47.0 (Your ads, live'), allow.indexOf('1.52.0 SEND TO TRYBE'))
 check('SCOUT 1.47.0 reads your analytics, per video and per brand, and only reads', added.includes('analytics(\\/submissions)?') && added.includes('\\/stats(') && added.split('\n').filter(l => /method:/.test(l)).length === 3 && added.split('\n').filter(l => /method:/.test(l)).every(l => /method: 'GET'/.test(l)))
 const manifest = JSON.parse(read('extension/manifest.json'))
 check('SCOUT is 1.47.0 or newer, the same everywhere', /^1\.(4[7-9]|[5-9]\d)\./.test(manifest.version) && read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`))

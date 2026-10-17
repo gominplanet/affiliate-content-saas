@@ -146,7 +146,7 @@ check('the gallery says who reads it and when nothing was copied', /only an admi
 const bg = read('extension/background.js')
 check('SCOUT copies the words of up to 8 ad cards when asked', /async function metaAdsReadInPage\(withCards\)/.test(bg) && /Library ID:/.test(bg) && /if \(out\.length >= 8\) break/.test(bg) && /args: \[cards === true\]/.test(bg) && /cards: msg\.cards === true/.test(bg))
 check('MVP asks for the cards, and an older SCOUT is said as one', /\.\.\.\(cards \? \{ cards: true \} : \{\}\)/.test(read('lib/extension-frame.ts')) && /only reads the counts: SCOUT 1\.51\.0/.test(read('components/labs/metaAdsRead.ts')))
-check('SCOUT is 1.51.0', JSON.parse(read('extension/manifest.json')).version === '1.51.0' && /SCOUT_META_CARDS_MIN_VERSION = '1\.51\.0'/.test(read('lib/scout-version.ts')))
+check('SCOUT copies ad cards from 1.51.0', /SCOUT_META_CARDS_MIN_VERSION = '1\.51\.0'/.test(read('lib/scout-version.ts')))
 
 // ── Words ────────────────────────────────────────────────────────────────────
 for (const f of ['components/labs/TrybeActive.tsx', 'components/labs/TrybeOffDiscover.tsx', 'components/labs/TrybeAdsGallery.tsx', 'components/labs/TrybeCompare.tsx', 'components/labs/metaAdsRead.ts', 'lib/trybe-compare.ts', 'lib/trybe-adsgallery.ts', 'lib/trybe-active.ts', 'lib/trybe-creators.ts']) {

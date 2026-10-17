@@ -164,8 +164,14 @@ const INBOX = readFileSync('components/labs/TrybeInbox.tsx', 'utf8')
 // Up to the code after the list (the old end marker, let trybeApiTab = null,
 // went with the tab store, so the slice had silently run to the end of the file).
 const API = BG.slice(BG.indexOf('const TRYBE_API_ALLOW = ['), BG.indexOf('async function trybeApiTabGet('))
+// Before Send to TRYBE (1.52.0): reads, and one POST for a message. The
+// upload calls after it are held by scripts/test-trybe-submit.
+const BEFORE_SEND = API.slice(0, API.indexOf('1.52.0 SEND TO TRYBE'))
+const UPLOADS = API.slice(API.indexOf('1.52.0 SEND TO TRYBE'))
 check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing else',
-  (API.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (API.match(/method: 'POST'/g) || []).length === 1 && API.includes('(messages|read)$/'))
+  API.includes('1.52.0 SEND TO TRYBE') && (BEFORE_SEND.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (BEFORE_SEND.match(/method: 'POST'/g) || []).length === 1 && BEFORE_SEND.includes('(messages|read)$/'))
+check('the only other writes are the creator\'s own video submissions (Send to TRYBE)',
+  UPLOADS.split('\n').filter(l => /method: '(POST|DELETE)'/.test(l)).every(l => /\\\/backend\\\/api\\\/creator\\\/submissions\\\//.test(l)))
 check('the bridge runs alone in the page', !/trybeTokenInPage/.test(BG) && /async function trybeApiInPage\(method, path, body\)/.test(BG))
 check('a reply counts as sent only when a NEW message with its words shows', /const mineNow = after\.filter\(m => !before\.has\(m\.id\) && flat\(m\.text\) === flat\(text\)\)/.test(INBOX) && /const flat = \(t: string\) => t\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)/.test(INBOX))
 // The one call to MVP is Suggest a reply, which reads the conversation to

@@ -1319,7 +1319,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /const \[batches, setBatches\]/.test(BOARD) && /batches\.map\(\(b\)/.test(BOARD),
     'a finished batch vanishing is the page forgetting what it just did')
   check('and the most recent is shown when none are open',
-    /all\.find\(\(b\) => b\.state !== 'launched'\) \?\? all\[0\]/.test(BOARD),
+    /all\.find\(\(b\) => b\.state !== 'launched'\) \|\| all\[0\]/.test(BOARD),
     'falling through to an empty screen is what made it look like nothing happened')
   check('a new batch can be started while one is still going',
     /New batch/.test(BOARD),

@@ -1127,8 +1127,18 @@ export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; 
  *  signed-in TRYBE tab. SCOUT allows only the conversation and brand-list
  *  addresses, reading, posting a message or marking read. Resolves, never
  *  throws. */
-export async function requestTrybeApi(method: 'GET' | 'POST', path: string, body?: unknown): Promise<TrybeApiResult> {
+export async function requestTrybeApi(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<TrybeApiResult> {
   const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
+}
+
+export interface TrybePutResult { ok: boolean; status?: number; etag?: string | null; bytes?: number; error?: string | null; detail?: string }
+
+/** SCOUT 1.52.0 (Send to TRYBE): one video, or the bytes [start, end) of it,
+ *  from MVP's storage to the upload link TRYBE gave, from SCOUT's TRYBE tab.
+ *  Up to 16 minutes: a big part on a slow line takes a while. */
+export async function requestTrybePutFile(o: { fileUrl: string; uploadUrl: string; contentType: string; start?: number; end?: number }): Promise<TrybePutResult> {
+  const res = await sendToExtension<TrybePutResult>({ type: 'MVP_TRYBE_PUT_FILE', ...o }, 970_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 

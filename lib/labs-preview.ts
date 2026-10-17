@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -75,6 +75,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',
+  // Drop: drop finished videos, say once where each goes, press one Launch
+  // (Liftoff for YouTube and Amazon, the blog after the video, TRYBE through
+  // SCOUT). Admin while it is tested (Seb, 2026-10-17: "start phase one
+  // behind labs").
+  drop: 'admin',
 }
 
 /** Pro features the AMAZON plan has too (Seb, 2026-10-05: "add all six",

@@ -26,6 +26,16 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Drop (Labs, admin while it is tested; gated, so members do not see it).
+  {
+    date: '2026-10-17',
+    gate: 'drop',
+    badge: 'LABS',
+    tone: '#0EA5A4',
+    title: 'Drop: finished videos in, one Launch',
+    desc: 'Drop your finished videos and say once where each goes. Long videos go to YouTube and Amazon through Liftoff with your last Liftoff choices, and each gets a blog post that goes live after the video. Vertical videos go to the TRYBE brand you pick, through SCOUT.',
+    href: '/drop',
+  },
   // TRYBE, after TrybeDaily's Today, What's Working, Creators and Brands (2026-10-17).
   {
     date: '2026-10-17',

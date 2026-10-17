@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.51.0'
+export const SCOUT_LATEST_VERSION = '1.52.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Meta ads gallery: when SCOUT counts a brand\'s ads in Meta\'s Ad Library it also copies the words of up to 8 ad cards, whether each is a video, and its preview, for What\'s working on TRYBE. Includes 1.50.2 (quiet jobs for admin to try) and 1.50.1 (TRYBE out of sight, typed search).'
+  'Send to TRYBE (Labs): a video dropped in MVP goes to a TRYBE brand you joined, the way TRYBE\'s own upload sends it, out of sight. Includes 1.51.0 (Meta ads gallery), 1.50.2 (quiet jobs for admin to try) and 1.50.1 (TRYBE out of sight, typed search).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -95,6 +95,8 @@ export const SCOUT_QUIET_MIN_VERSION = '1.50.2'
 /** The oldest SCOUT that hands MVP the words of each Meta ad card with the
  *  count (What's working's ads gallery). */
 export const SCOUT_META_CARDS_MIN_VERSION = '1.51.0'
+/** The oldest SCOUT that sends a video to a TRYBE brand (Send to TRYBE, Labs). */
+export const SCOUT_TRYBE_SUBMIT_MIN_VERSION = '1.52.0'
 /** The oldest SCOUT that takes a Page Reel job and reports back from the
  *  background (Clip Factory, Group first). */
 export const SCOUT_FB_REEL_JOB_MIN_VERSION = '1.50.0'

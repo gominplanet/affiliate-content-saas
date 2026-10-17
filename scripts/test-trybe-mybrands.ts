@@ -103,7 +103,8 @@ check('the plan is told to copy the angle, never the words', /Never copy their s
 const bg = read('extension/background.js')
 const allow = bg.slice(bg.indexOf('const TRYBE_API_ALLOW'), bg.indexOf('\n]\n', bg.indexOf('const TRYBE_API_ALLOW')) + 2)
 check('SCOUT reads brand stats, submissions, earnings and scripts', allow.includes('brands\\/stats(') && allow.includes('\\/(submissions|earnings)(') && allow.includes('submissions\\/[A-Za-z0-9-]{6,80}\\/script$/'))
-check('the new SCOUT entries only read (GET)', allow.slice(allow.indexOf('1.46.0 (My brands)')).split('\n').filter(l => /method:/.test(l)).every(l => /method: 'GET'/.test(l)))
+// Up to Send to TRYBE (1.52.0), whose upload calls scripts/test-trybe-submit holds.
+check('the new SCOUT entries only read (GET)', allow.slice(allow.indexOf('1.46.0 (My brands)'), allow.indexOf('1.52.0 SEND TO TRYBE')).split('\n').filter(l => /method:/.test(l)).every(l => /method: 'GET'/.test(l)))
 const manifest = JSON.parse(read('extension/manifest.json'))
 const ver = read('lib/scout-version.ts')
 check('SCOUT version matches what MVP asks for', ver.includes(`SCOUT_LATEST_VERSION = '${manifest.version}'`) && /SCOUT_TRYBE_MYBRANDS_MIN_VERSION = '1\.46\.0'/.test(ver))

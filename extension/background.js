@@ -12448,6 +12448,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_PUT_FILE') {
+    // 1.52.0: one video, or one part of it, from MVP to TRYBE's upload link
+    // (Send to TRYBE). MVP runs the steps around it.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 960000)
+    trybePutFile(msg)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_META_ADS') {
     // 1.45.0: how many active Meta ads mention each brand, read from Meta's
     // public Ad Library in SCOUT's own window. Nothing is pressed.
@@ -14830,6 +14839,20 @@ const TRYBE_API_ALLOW = [
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/analytics(\/submissions)?(\?[\w=&%.,-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/stats(\?[\w=&%.-]*)?$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/(v2\/)?submissions\/[A-Za-z0-9-]{6,80}\/analytics(\?[\w=&%.-]*)?$/ },
+  // 1.52.0 SEND TO TRYBE (Seb, 2026-10-17: "this is for a tribe campaign, I
+  // want to be able to send it to Tribe, and this is the brand"). A video the
+  // creator dropped in MVP goes to a brand they joined the way TRYBE's own
+  // upload sends it: an upload link (one, or one per part for a big file),
+  // then the submission finished with the brand's program, brief angle and
+  // products, then the creator's submissions read back to confirm it is in
+  // review. A half sent one is taken back. MVP runs the steps; the file
+  // itself goes by MVP_TRYBE_PUT_FILE.
+  { method: 'GET', re: /^\/backend\/api\/creator\/v2\/brands\/[A-Za-z0-9-]{6,80}\/products(\/samples)?(\?[\w=&%.-]*)?$/ },
+  { method: 'POST', re: /^\/backend\/api\/creator\/submissions\/upload-url$/ },
+  { method: 'POST', re: /^\/backend\/api\/creator\/submissions\/multipart\/(initiate|part-url|complete|abort)$/ },
+  { method: 'POST', re: /^\/backend\/api\/creator\/submissions\/[A-Za-z0-9-]{6,80}\/complete$/ },
+  { method: 'GET', re: /^\/backend\/api\/creator\/submissions(\?[\w=&%.,-]*)?$/ },
+  { method: 'DELETE', re: /^\/backend\/api\/creator\/submissions\/[A-Za-z0-9-]{6,80}$/ },
 ]
 // SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
 // worker within a minute, and a tab remembered only in memory was then never
@@ -14971,6 +14994,56 @@ async function trybeApiIdleCheck() {
   await trybeHookOff()
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_API_IDLE_ALARM) void trybeApiIdleCheck() }) } catch (e) {}
+
+// ── SEND TO TRYBE: THE FILE (1.52.0) ─────────────────────────────────────────
+// One upload of a video (or one part of it) from MVP's own storage to the
+// upload link TRYBE gave, from SCOUT's TRYBE tab, the way TRYBE's page sends
+// it: a PUT with the file's type, no cookies. A part is read by its byte range.
+// Says what TRYBE's storage answered, with the ETag a part needs.
+async function trybePutFileInPage(fileUrl, uploadUrl, contentType, start, end) {
+  try {
+    const ranged = typeof start === 'number' && typeof end === 'number' && end > start
+    let res
+    try { res = await fetch(fileUrl, { credentials: 'omit', headers: ranged ? { Range: 'bytes=' + start + '-' + (end - 1) } : {} }) } catch (e) { return { ok: false, error: 'file-fetch-blocked', detail: String((e && e.message) || e) } }
+    if (!res.ok) return { ok: false, error: 'file-fetch-' + res.status }
+    let blob = await res.blob()
+    // A store that sends the whole file for a range: the part is cut here.
+    if (ranged && res.status !== 206) blob = blob.slice(start, end)
+    if (ranged && blob.size !== end - start) return { ok: false, error: 'file-size-mismatch', detail: blob.size + ' of ' + (end - start) + ' bytes' }
+    const put = await new Promise((resolve) => {
+      const x = new XMLHttpRequest()
+      x.onload = () => resolve({ status: x.status, etag: x.getResponseHeader('ETag') })
+      x.onerror = () => resolve({ status: 0, error: 'network' })
+      x.ontimeout = () => resolve({ status: 0, error: 'timeout' })
+      x.open('PUT', uploadUrl)
+      x.setRequestHeader('Content-Type', contentType || 'video/mp4')
+      x.timeout = 900000
+      x.withCredentials = false
+      x.send(blob)
+    })
+    const ok = put.status >= 200 && put.status < 300
+    return { ok, status: put.status, etag: put.etag || null, bytes: blob.size, error: ok ? null : (put.error || ('put-' + put.status)) }
+  } catch (e) {
+    return { ok: false, error: 'page-error: ' + (e && e.message ? e.message : String(e)) }
+  }
+}
+async function trybePutFile(o) {
+  if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
+  const fileUrl = String((o && o.fileUrl) || '')
+  const uploadUrl = String((o && o.uploadUrl) || '')
+  if (!/^https:\/\//.test(fileUrl)) return { ok: false, error: 'bad-file-url' }
+  if (!/^https:\/\//.test(uploadUrl)) return { ok: false, error: 'bad-upload-url' }
+  let tabId
+  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'could-not-open-trybe' } }
+  // Kept alive for the whole upload: a big part takes minutes.
+  const ka = startKeepAlive()
+  try {
+    const res = await trybeRun(trybePutFileInPage, [fileUrl, uploadUrl, String(o.contentType || 'video/mp4').slice(0, 80), typeof o.start === 'number' ? o.start : null, typeof o.end === 'number' ? o.end : null], tabId)
+    const kept = await trybeApiTabGet()
+    if (kept) { kept.at = Date.now(); await trybeApiTabSet(kept) }
+    return res || { ok: false, error: 'no-answer-from-page' }
+  } finally { stopKeepAlive(ka) }
+}
 
 // ── META AD LIBRARY COUNTS (1.45.0, Cole's playbook) ────────────────────────
 // A brand that runs many Meta ads is spending, and TRYBE creators are paid out

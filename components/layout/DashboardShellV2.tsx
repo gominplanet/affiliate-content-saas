@@ -45,7 +45,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -688,6 +688,9 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
+        // Drop: finished videos in, one Launch out (Liftoff, blog, TRYBE).
+        // Admin only while it is tested (lib/labs-preview drop).
+        { href: '/drop', icon: <UploadCloud size={15} />, label: 'Drop', gate: isAdmin, badge: 'New' },
       ],
     },
     {
