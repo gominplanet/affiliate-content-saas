@@ -43,6 +43,9 @@ const inbox = read('components/labs/TrybeInbox.tsx')
 check('the chat shows the brand card', /<TrybeBrandCard key=\{openConvo\.id\}/.test(inbox) && !/TrybeLink/.test(inbox))
 const cardSrc = read('components/labs/TrybeBrandCard.tsx')
 check('the card links the brand page and the website', /href=\{page\}/.test(cardSrc) && /href=\{website\}/.test(cardSrc))
+// Seb, 2026-10-17: "next to the website link we should again have the meta
+// ads link". The same Ad Library search as Find brands, after the website.
+check('the card links the brand\u2019s Meta ads, after the website', /href=\{adLibraryUrl\(card\?\.name \|\| brand\.name\)\}/.test(cardSrc) && cardSrc.indexOf('href={adLibraryUrl(') > cardSrc.indexOf('href={website}') && /Meta ads <ExternalLink/.test(cardSrc))
 check('a chat with no brand says so, with a way to find it', /Not matched to a brand/.test(cardSrc))
 check('a name match says it was a name match', /Matched by name/.test(cardSrc))
 const allow = read('extension/background.js')

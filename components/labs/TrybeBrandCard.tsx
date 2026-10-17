@@ -11,10 +11,11 @@
 // search on TRYBE, instead of showing nothing.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Globe, Handshake, Loader2, FileText, ChevronDown, Search } from 'lucide-react'
+import { ExternalLink, Globe, Handshake, Loader2, FileText, ChevronDown, Megaphone, Search } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats } from '@/lib/trybe-mybrands'
 import { brandIdFromChat, brandPageUrl, matchBrand, readBrandCard, type BrandCard, type BrandRef } from '@/lib/trybe-brand-page'
+import { adLibraryUrl } from '@/lib/trybe-pick'
 import { AmazonLine, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
@@ -119,6 +120,12 @@ export default function TrybeBrandCard({ chatName, chatRaw, directory, canStats,
           {website
             ? <a href={website} target="_blank" rel="noopener noreferrer" className={link} style={{ color: PURPLE }}><Globe size={12} /> Website <ExternalLink size={10} /></a>
             : cardRead !== 'reading' && <span className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>No website on TRYBE</span>}
+          {/* The same Meta ads link as on Find brands (Seb, 2026-10-17: "next
+              to the website link we should again have the meta ads link"). */}
+          <a href={adLibraryUrl(card?.name || brand.name)} target="_blank" rel="noopener noreferrer" className={link} style={{ color: PURPLE }}
+            title="Its ads running now in Meta's Ad Library">
+            <Megaphone size={12} /> Meta ads <ExternalLink size={10} />
+          </a>
         </span>
       </div>
       <AmazonLine amazon={amz.brand(brand.id)} />
