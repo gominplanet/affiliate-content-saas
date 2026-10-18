@@ -109,11 +109,23 @@ const noImports = (src: string) => src
   check('the hero names who it is for',
     /For Amazon Influencers/.test(hero),
     'the ads target one audience, so the first screen must repeat that audience back')
-  check('the headline leads with the asset they do not own',
-    /storefront[\s\S]{0,80}rented/i.test(hero),
-    'this is the one claim the storefront tools cannot answer')
-  check('and promises the one they would own',
-    /Build the one you own/.test(hero))
+  // ONE HUB (Seb, 2026-10-18). The headline was "Your Amazon storefront is
+  // rented. Build the one you own." (a fear, about one asset). It is now the
+  // whole product in six words, and the line under it has to back that up by
+  // naming what the hub actually does, or the headline is a slogan.
+  const h1 = hero.slice(hero.indexOf('<h1'), hero.indexOf('</h1>'))
+  check('the headline is the one-hub promise',
+    /Film it once\./.test(h1) && /MVP does/.test(h1) && /everything else\./.test(h1))
+  check('and the line under it names the hub, piece by piece',
+    ['YouTube upload', 'Amazon storefront video', 'blog post', 'Shorts and Reels', 'nine social networks', 'TRYBE'].every((w) => hero.includes(w)),
+    'a "does everything" headline that is not backed on the same screen is a slogan')
+  check('the nine networks are the nine the Pro plan posts to',
+    (PAGE_LIVE.match(/'Auto-post to ([^']+), with your link/)?.[1] ?? '').split(/, | & /).length === 9)
+  check('owning it is still said on the first screen', /stays yours forever/.test(hero))
+  check('the closing section does not repeat the headline',
+    !/Film it once/.test(PAGE_LIVE.slice(PAGE_LIVE.indexOf('function FinalCTASection'), PAGE_LIVE.indexOf('function Nav()'))))
+  check('the hero picture is the hub, one video and every place it goes',
+    /app\.mvpaffiliate\.io\/drop/.test(hero) && (hero.match(/label: '[^']+', x: \d+, y: \d+/g) || []).length === 8)
   check('the old product-first headline is gone',
     !/Everything an Amazon<br \/>affiliate needs/.test(PAGE),
     'it was a claim about us, addressed to people who have never heard of us')

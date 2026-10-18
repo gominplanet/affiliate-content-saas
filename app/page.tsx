@@ -26,8 +26,8 @@ import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guar
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
-  FileText, Image as ImageIcon, Scale, Calendar,
-  Play, Sparkles, ArrowRight, Bookmark,
+  FileText, Calendar,
+  Play, Sparkles, ArrowRight,
   Twitter, Cloud, Send, Linkedin, Facebook, Instagram, AtSign,
   Globe, TrendingUp, Wand2,
   ShieldCheck, Zap, Upload, X as XIcon, Check,
@@ -35,7 +35,7 @@ import {
   Pin,
   Store, Search,
   Radar, Scissors,
-  CloudUpload, Handshake,
+  CloudUpload, Handshake, Youtube,
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
@@ -1222,7 +1222,9 @@ function FinalCTASection() {
           className="text-[44px] sm:text-[64px] font-extrabold tracking-[-0.035em] leading-[1.0] mb-5"
           style={{ color: 'var(--text)' }}
         >
-          Film it once.{' '}
+          {/* Not the hero's line again: the page has already made that promise,
+              so the close turns it into the next step. */}
+          One plan. Every platform.{' '}
           <span
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -1231,7 +1233,7 @@ function FinalCTASection() {
               backgroundClip: 'text',
             }}
           >
-            MVP does the rest.
+            Start with your next video.
           </span>
         </h2>
         <p
@@ -1415,7 +1417,7 @@ function Hero() {
         <div>
           {/* Pill */}
           <div
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] uppercase tracking-[0.16em] font-medium mb-4"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10.5px] sm:text-[11px] uppercase tracking-[0.08em] sm:tracking-[0.16em] font-medium mb-4 whitespace-nowrap"
             style={{
               backgroundColor: 'var(--surface)',
               borderColor: 'var(--border)',
@@ -1423,7 +1425,7 @@ function Hero() {
             }}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
-            For Amazon Influencers
+            For Amazon Influencers &amp; UGC creators
           </div>
 
           {/* Trust strip — lifted to live above the headline. Establishes
@@ -1442,20 +1444,24 @@ function Hero() {
               heard of nobody. This names the buyer, the asset, and the fear they
               already have, and it is the one promise the storefront tools cannot
               make: their whole product optimises a shopfront Amazon owns. */}
+          {/* ONE HUB (Seb, 2026-10-18: "really be impactful and strongly push MVP
+              as the one central hub tool that can do it all"). The headline is
+              the whole promise in six words; the line under it lists the hub,
+              so the claim is backed before the reader scrolls. Three fixed lines
+              so "else." never ends up alone on a phone. */}
           <h1
-            className="text-[40px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
+            className="text-[38px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
             style={{ color: 'var(--text)' }}
           >
-            Your Amazon storefront<br />is rented.{' '}
-            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Build the one you own.
-            </span>
+            <span className="block">Film it once.</span>
+            <span className="block" style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does</span>
+            <span className="block" style={{ background: 'linear-gradient(120deg, #C026D3 0%, #7C3AED 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>everything else.</span>
           </h1>
           <p
-            className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
+            className="mt-6 text-[18px] sm:text-[20px] font-semibold tracking-tight leading-snug max-w-2xl [text-wrap:pretty]"
             style={{ color: 'var(--text-muted)' }}
           >
-            MVP turns the reviews you are already filming into a blog that is yours forever, and writes every word in your real voice.
+            Drop in one video and MVP turns it into your YouTube upload, your Amazon storefront video, a blog post built to rank, Shorts and Reels, and posts on nine social networks, all in your voice. Then it finds the brands on TRYBE that will pay you for the next one.
           </p>
 
           {/* Sub */}
@@ -1463,7 +1469,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself. <span style={{ color: 'var(--text)' }}>Making videos for brands on TRYBE?</span> MVP finds the brands that fit your channel, writes your first message and plans the videos.
+            One login and one plan in place of a stack of tools: the uploads, the thumbnails, the clips, the posts, the brand deals and the research. Your blog sits on <span style={{ color: 'var(--text)' }}>your own domain</span> and stays yours forever. <span style={{ color: 'var(--text)' }}>No video yet? Paste any product link</span> and MVP writes the review itself.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
@@ -1556,25 +1562,51 @@ function Hero() {
  *  radial hub did), with a soft gradient glow and two floating feature chips
  *  for depth. Pure markup (no client JS) so it stays in the Server Component. */
 function ProductMock() {
-  const outputs: Array<{ icon: React.ReactNode; label: string }> = [
-    { icon: <FileText size={13} />, label: 'Blog post' },
-    { icon: <Scale size={13} />, label: 'Comparison' },
-    { icon: <Bookmark size={13} />, label: 'Buying guide' },
-    { icon: <ImageIcon size={13} />, label: 'Thumbnail' },
-    { icon: <Instagram size={13} />, label: 'Instagram' },
-    { icon: <Facebook size={13} />, label: 'Facebook' },
-    { icon: <Pin size={13} />, label: 'Pinterest' },
+  // ONE VIDEO IN THE MIDDLE, EVERY PLACE IT GOES AROUND IT (Seb, 2026-10-18:
+  // "the one central hub"). It used to be a list of nine ticks under a video
+  // card, which reads as a feature list. The hub reads as the claim: one drop,
+  // every destination. Pure markup (no client JS), so it stays server-rendered.
+  // Positions are percentages of the hub, and the lines are drawn in the same
+  // 0 to 100 box, so a node and its line can never drift apart.
+  const nodes: Array<{ icon: React.ReactNode; label: string; x: number; y: number }> = [
+    { icon: <Youtube size={13} />, label: 'YouTube', x: 50, y: 9 },
+    { icon: <Store size={13} />, label: 'Amazon', x: 83, y: 19 },
+    { icon: <FileText size={13} />, label: 'Blog post', x: 87, y: 50 },
+    { icon: <Scissors size={13} />, label: 'Shorts & Reels', x: 82, y: 81 },
+    { icon: <Handshake size={13} />, label: 'TRYBE brand', x: 50, y: 91 },
+    { icon: <Pin size={13} />, label: 'Pinterest', x: 18, y: 81 },
+    { icon: <Facebook size={13} />, label: 'Facebook', x: 13, y: 50 },
+    { icon: <Instagram size={13} />, label: 'Instagram', x: 17, y: 19 },
   ]
-  const chip = (bg: string, border: string, color: string) => ({
-    backgroundColor: bg, border: `1px solid ${border}`, color,
-  })
+  const node = (n: (typeof nodes)[number]) => (
+    <>
+      <span className="inline-flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>{n.icon}</span>
+      <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{n.label}</span>
+      <Check size={12} className="flex-shrink-0" style={{ color: '#10B981' }} />
+    </>
+  )
+  const nodeStyle = { backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 6px 18px -10px rgba(24,24,40,0.35)' } as const
+  const source = (
+    <div className="rounded-2xl p-[1.5px]" style={{ background: 'linear-gradient(135deg,#F97316,#C026D3,#7C3AED)' }}>
+      <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ backgroundColor: 'var(--surface)' }}>
+        <span className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+          <Play size={18} fill="currentColor" className="ml-0.5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-bold leading-tight whitespace-nowrap" style={{ color: 'var(--text)' }}>Best Robot Vacuums</p>
+          <p className="text-[11px] mt-0.5 whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>Filmed once · dropped once</p>
+        </div>
+      </div>
+    </div>
+  )
   return (
-    <div className="relative mx-auto w-full max-w-[540px]">
+    <div className="relative mx-auto w-full max-w-[560px]">
+      <style>{`@keyframes mvpHubFlow { to { stroke-dashoffset: -12 } } @media (prefers-reduced-motion: no-preference) { .mvp-hub-line { animation: mvpHubFlow 1.4s linear infinite } }`}</style>
       {/* Soft glow behind the frame */}
       <div
         aria-hidden
         className="absolute -inset-8 pointer-events-none"
-        style={{ background: 'radial-gradient(55% 55% at 60% 35%, rgba(124,58,237,0.28), transparent 70%)', filter: 'blur(24px)' }}
+        style={{ background: 'radial-gradient(55% 55% at 55% 45%, rgba(124,58,237,0.28), transparent 70%)', filter: 'blur(24px)' }}
       />
 
       {/* Browser frame */}
@@ -1590,49 +1622,35 @@ function ProductMock() {
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#28C840' }} />
           </span>
           <div className="flex-1 ml-2 text-center text-[11px] rounded-md py-1" style={{ background: 'var(--bg)', color: 'var(--text-faint)' }}>
-            app.mvpaffiliate.io/library
+            app.mvpaffiliate.io/drop
           </div>
         </div>
 
-        {/* Body */}
-        <div className="p-4 sm:p-5" style={{ background: 'var(--bg)' }}>
-          {/* Source review card */}
-          <div className="flex items-center gap-3 rounded-xl border p-3" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-            <span className="w-16 h-11 rounded-lg flex items-center justify-center flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
-              <Play size={16} fill="currentColor" className="ml-0.5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>Best Robot Vacuums</p>
-              <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube review · 12:04</p>
-            </div>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 flex-shrink-0" style={chip('rgba(16,185,129,0.12)', 'transparent', '#10B981')}>
-              <Check size={10} /> Published
-            </span>
-          </div>
-
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] mt-4 mb-2" style={{ color: 'var(--text-faint)' }}>
-            Auto-published to 9 places
-          </p>
-
-          {/* Output grid */}
-          <div className="grid grid-cols-2 gap-2">
-            {outputs.map((o, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-lg border px-2.5 py-2" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>{o.icon}</span>
-                <span className="text-[12px] font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>{o.label}</span>
-                <Check size={13} style={{ color: '#10B981' }} />
-              </div>
+        {/* The hub, from a small tablet up */}
+        <div className="relative hidden sm:block h-[380px]" style={{ background: 'var(--bg)' }}>
+          <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+            {nodes.map((n) => (
+              <line key={n.label} x1="50" y1="50" x2={n.x} y2={n.y} className="mvp-hub-line"
+                stroke="rgba(124,58,237,0.45)" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
             ))}
-          </div>
+          </svg>
+          {nodes.map((n) => (
+            <div key={n.label} className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-xl border px-2 py-1.5"
+              style={{ left: `${n.x}%`, top: `${n.y}%`, ...nodeStyle }}>
+              {node(n)}
+            </div>
+          ))}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[262px]">{source}</div>
+        </div>
 
-          {/* Footer stat row */}
-          <div className="flex items-center gap-2 mt-3">
-            <span className="text-[11px] font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1.5" style={chip('rgba(59,130,246,0.1)', 'transparent', '#3B82F6')}>
-              <TrendingUp size={12} /> SEO score 94
-            </span>
-            <span className="text-[11px] font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1.5" style={chip('rgba(124,58,237,0.12)', 'transparent', '#7C3AED')}>
-              <Sparkles size={12} /> Cited by AI
-            </span>
+        {/* On a phone: the same story, stacked */}
+        <div className="sm:hidden p-4 flex flex-col gap-3" style={{ background: 'var(--bg)' }}>
+          {source}
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-center" style={{ color: 'var(--text-faint)' }}>Sent everywhere it belongs</p>
+          <div className="grid grid-cols-2 gap-2">
+            {nodes.map((n) => (
+              <div key={n.label} className="flex items-center gap-1.5 rounded-xl border px-2 py-1.5" style={nodeStyle}>{node(n)}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -1649,12 +1667,6 @@ function ProductMock() {
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
       >
         <Calendar size={13} style={{ color: '#7C3AED' }} /> Scheduled
-      </div>
-      <div
-        className="hidden sm:flex absolute -bottom-3 right-6 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold"
-        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
-      >
-        <Handshake size={13} style={{ color: '#C026D3' }} /> TRYBE brand deals
       </div>
     </div>
   )
