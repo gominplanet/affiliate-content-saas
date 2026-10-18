@@ -22,7 +22,11 @@ const check = (name: string, ok: boolean | undefined, detail?: unknown) => {
 }
 const read = (f: string) => readFileSync(f, 'utf8')
 const R = read('app/api/labs/trybe/route.ts')
-const C = read('components/labs/TrybeHowTheyWin.tsx')
+// The page and the collection pass it shares with the daily run.
+const COLLECT = read('components/labs/trybe-collect.ts')
+const C = read('components/labs/TrybeHowTheyWin.tsx') + '\n' + COLLECT
+const HEAR = read('lib/trybe-top-hear.ts')
+const CRON = read('app/api/cron/trybe-top-hear/route.ts')
 const O = read('components/labs/TrybeOutreach.tsx')
 
 // ── On the page ──────────────────────────────────────────────────────────────
@@ -78,7 +82,37 @@ check('the rewrite is not admin only either, it is what members came for', (() =
 })())
 
 // ── A TRANSCRIPTION IS SPENT ONCE ────────────────────────────────────────────
-const hear = R.slice(R.indexOf("action === 'top_script_hear'"), R.indexOf("action === 'script_rewrite'"))
+// The route's press and the daily job share one listen (lib/trybe-top-hear).
+const hear = R.slice(R.indexOf("action === 'top_script_hear'"), R.indexOf("action === 'script_rewrite'")) + '\n' + HEAR
+check('the press and the daily job listen with the same code', /hearTopVideo\(admin, row\)/.test(R) && /hearTopVideo\(sb, r\)/.test(CRON))
+
+// ── ONCE A DAY, BY ITSELF (Seb, 2026-10-18) ─────────────────────────────────
+// Reading the Top 100 needs a signed in TRYBE, so it runs on the team's first
+// TRYBE visit of the day. Listening needs only the saved file, so the server
+// does it, under a daily cap counted in the same ledger as the team's presses.
+{
+  check('the first team visit of the day collects by itself',
+    /if \(preview \|\| !isAdmin \|\| !canMyBrands \|\| autoCollect\.current\) return/.test(O) && /collectTop100\(\{ listen: false \}\)/.test(O))
+  check('and the day is marked done only after the run finished',
+    O.indexOf("localStorage.setItem(KEY, today)") > O.indexOf('collectTop100({ listen: false })') && /if \(!r\.ok\) \{ toast\.error/.test(O))
+  check('the daily run does not listen in the page; the server does', /const toHear = o\.listen \? \[\.\.\.hear\] : \[\]/.test(COLLECT)
+    && /It does that on its own over the next few hours, up to 25 a day/.test(COLLECT))
+  check('the Collect press still listens', /collectTop100\(\{ listen: true/.test(C))
+  const crons = (JSON.parse(read('vercel.json')).crons ?? []) as Array<{ path: string; schedule: string }>
+  check('the listening job is scheduled', crons.some((c) => c.path === '/api/cron/trybe-top-hear'))
+  check('it needs the cron secret', /CRON_SECRET/.test(CRON))
+  check('it stops at the daily cap, counted with the team\u2019s presses',
+    /const room = Math\.min\(PER_RUN, DAILY_CAP - done\)/.test(CRON) && /const DAILY_CAP = 25/.test(CRON) && /await countListen\(sb\)/.test(HEAR))
+  check('a count it cannot read stops it rather than letting it spend', /if \(error\) return Number\.POSITIVE_INFINITY/.test(HEAR))
+  check('it listens only to fresh files, best placed first, and never retries a failure on its own',
+    /\.gte\('updated_at', new Date\(Date\.now\(\) - FRESH_MS\)/.test(CRON) && /order\('best_rank', \{ ascending: true/.test(CRON)
+      && /!\/\^MVP could not listen to it\/\.test/.test(CRON))
+  check('a listen is counted before it is paid for', HEAR.indexOf('await countListen(sb)') < HEAR.indexOf('await transcribeToCues(url)'))
+  // The report: "nothing was paid for" only when nothing was listened to.
+  const tail = COLLECT.slice(COLLECT.indexOf('else if (toHear.length) lines.push(heard'))
+  check('a run that listened never says nothing was paid for',
+    /\n  else lines\.push\(`Nothing was left with a video file to listen to/.test(tail) && !/if \(stillWaiting\) \{[\s\S]{0,400}\} *\n *else if \(!notConfigured\) lines\.push\(`Nothing was left/.test(COLLECT))
+}
 check('a video that already has words is never paid for again', /row\.state === 'ready'[\s\S]{0,80}already: true/.test(hear))
 check('a video with no file is written off with a reason, not queued for ever',
   /state: 'none', detail: 'TRYBE gave no video file for this one\.'/.test(hear))

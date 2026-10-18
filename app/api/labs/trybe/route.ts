@@ -39,7 +39,8 @@ import {
   cleanScript, toTranscribe, coverageWords, rewriteMissing, rewritePrompt, readRewrite, bestRank,
   readCloseness, tooAlike, SCRIPT_MAX, type TopScript,
 } from '@/lib/trybe-scripts'
-import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { hearTopVideo } from '@/lib/trybe-top-hear'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { NextResponse } from 'next/server'
@@ -2097,31 +2098,11 @@ export async function POST(request: Request) {
     const { data: row, error: rErr } = await admin.from('trybe_top_scripts').select('submission_id,video_url,state').eq('submission_id', id).maybeSingle()
     if (rErr) return NextResponse.json({ error: scriptsMissing(rErr.message) ? setupWords(tier, SCRIPTS_SQL) : rErr.message }, { status: scriptsMissing(rErr.message) ? 409 : 500 })
     if (!row) return NextResponse.json({ error: 'That video is not one MVP has seen in the Top 100.' }, { status: 404 })
-    if (row.state === 'ready') return NextResponse.json({ ok: true, heard: 0, already: true })
-    const url = String(row.video_url || '')
-    if (!/^https:\/\//i.test(url)) {
-      await admin.from('trybe_top_scripts').update({ state: 'none', detail: 'TRYBE gave no video file for this one.', updated_at: now }).eq('submission_id', id)
-      return NextResponse.json({ ok: true, heard: 0, why: 'no video file' })
-    }
-    try {
-      await assertPublicHttpUrl(url)
-      const cues = await transcribeToCues(url)
-      const cleaned = cleanScript(cues.map((c) => c.text).join(' '))
-      if (!cleaned.ok) {
-        await admin.from('trybe_top_scripts').update({ state: 'none', source: 'none', detail: `MVP listened to it and heard ${cleaned.why}.`, updated_at: now }).eq('submission_id', id)
-        return NextResponse.json({ ok: true, heard: 0, why: cleaned.why })
-      }
-      await admin.from('trybe_top_scripts').update({
-        script: cleaned.script, hook: cleaned.hook, source: 'transcribed', state: 'ready', detail: null, updated_at: now,
-      }).eq('submission_id', id)
-      return NextResponse.json({ ok: true, heard: 1 })
-    } catch (e) {
-      const why = e instanceof Error ? e.message : 'the transcription did not finish'
-      // LEFT WAITING, NOT MARKED DONE. A transcription that fell over is not
-      // a video with no words, and the next pass should try it again.
-      await admin.from('trybe_top_scripts').update({ detail: `MVP could not listen to it: ${why}`.slice(0, 400), updated_at: now }).eq('submission_id', id)
-      return NextResponse.json({ error: `MVP could not listen to that video: ${why}` }, { status: 502 })
-    }
+    // One implementation with the daily job (lib/trybe-top-hear): the same
+    // rules, and every listen counted against the same daily ledger.
+    const heard = await hearTopVideo(admin, row)
+    if ('error' in heard) return NextResponse.json({ error: `MVP could not listen to that video: ${heard.error}` }, { status: 502 })
+    return NextResponse.json({ ok: true, ...heard })
   }
 
   if (action === 'script_rewrite') {

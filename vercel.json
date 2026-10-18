@@ -89,6 +89,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/trybe-top-hear",
+      "schedule": "25 */2 * * *"
+    },
+    {
       "path": "/api/cron/refresh-deal-radar",
       "schedule": "0 */6 * * *"
     },

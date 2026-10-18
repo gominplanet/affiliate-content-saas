@@ -27,9 +27,7 @@ import {
   Loader2, Search, Play, Copy, Wand2, AlertTriangle, ChevronDown, ChevronRight,
   Download, Trophy, FileText, Ear, Check,
 } from 'lucide-react'
-import { requestTrybeApi } from '@/lib/extension-frame'
-import { readScript } from '@/lib/trybe-mybrands'
-import { readTopEntries, topEntryFields } from '@/lib/trybe-working'
+import { collectTop100 } from '@/components/labs/trybe-collect'
 import { CLOSENESS, rewriteMissing, type Closeness, type TopScript } from '@/lib/trybe-scripts'
 
 const PURPLE = '#7C3AED'
@@ -144,103 +142,15 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
     setWritten((w) => ({ ...w, [v.submission_id]: { hooks: (r.json.hooks ?? []) as string[], script: String(r.json.script || '') } }))
   }
 
-  /**
-   * The team's collection pass.
-   *
-   * Reads today's Top 100 through SCOUT, files every entry, then fills the
-   * words: TRYBE's own script first because it is free, and only then a
-   * transcription, which costs. Every count that comes back as zero is
-   * reported with the reason it was zero.
-   */
+  /** The team's collection pass (components/labs/trybe-collect), with the
+   *  listening done here because the team pressed for it. */
   async function collect() {
     stop.current = false
-    setStep('Reading TRYBE’s Top 100'); setReport(null)
+    setReport(null)
     try {
-      const top = await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives')
-      if (!top.ok) { toast.error(`MVP could not read the Top 100: ${top.error || 'SCOUT did not answer.'}`); return }
-      const entries = readTopEntries(top.json)
-      if (!entries.length) { toast.error('TRYBE answered, but MVP could not read the Top 100 from it.'); return }
-      const withFile = entries.filter((e) => e.video).length
-
-      // The entry's id goes as submissionId, the name the route files it under.
-      const seen = await post({ action: 'top_scripts_seen', entries: entries.map((e) => ({ ...e, submissionId: e.id })) })
-      if (!seen.ok) { toast.error(String(seen.json.error || 'MVP could not file the Top 100.')); return }
-      // FILED IS WHAT THE ROUTE SAVED, not what the page sent. The page once
-      // said it filed 100 while the route had dropped every one of them.
-      const filed = Number(seen.json.saved) || 0
-      const noId = Number(seen.json.noId) || 0
-      const need = (seen.json.need ?? []) as Array<{ submissionId: string }>
-      const hear = new Set((seen.json.hear ?? []) as string[])
-      const noFile = Number(seen.json.noFile) || 0
-      const waiting = Number(seen.json.waiting) || 0
-      const hearLeft = Number(seen.json.hearLeft) || 0
-
-      // FREE FIRST. TRYBE shares the words for some of them at no cost, and
-      // readScript is what turns its answer into words.
-      let shared = 0, refused = 0, empty = 0
-      for (let i = 0; i < need.length && !stop.current; i++) {
-        setStep(`Asking TRYBE for the words (${i + 1} of ${need.length})`)
-        const id = need[i].submissionId
-        const sr = await requestTrybeApi('GET', `/backend/api/creator/v2/submissions/${encodeURIComponent(id)}/script`).catch(() => null)
-        if (!sr) { refused++; continue }
-        if (!sr.ok) { refused++; continue }
-        const text = readScript(sr.json)
-        const saved = await post({ action: 'top_script_save', submissionId: id, script: text })
-        if (saved.ok && Number(saved.json.saved) === 1) { shared++; hear.delete(id) } else empty++
-      }
-
-      // THEN THE ONES THAT COST, best placed first.
-      const toHear = [...hear]
-      let heard = 0, failed = 0
-      let notConfigured = false
-      // WHY EACH ONE DID NOT COME BACK, counted, so a line saying five did
-      // not come back carries its reason instead of leaving the team to guess.
-      const whyNot = new Map<string, number>()
-      for (let i = 0; i < toHear.length && !stop.current; i++) {
-        setStep(`Listening to the video (${i + 1} of ${toHear.length})`)
-        const h = await post({ action: 'top_script_hear', submissionId: toHear[i] })
-        if (h.ok && Number(h.json.heard) === 1) heard++
-        else {
-          failed++
-          if (/not configured/i.test(String(h.json.error || ''))) { notConfigured = true; break }
-          const why = String(h.json.error || (h.json.why ? `it heard ${h.json.why}` : 'no answer came back'))
-            .replace(/^MVP could not listen to that video:\s*/i, '').slice(0, 140)
-          whyNot.set(why, (whyNot.get(why) ?? 0) + 1)
-        }
-      }
-      const reasons = [...whyNot].sort((a, b) => b[1] - a[1]).slice(0, 2)
-        .map(([why, n]) => (whyNot.size > 1 ? `${n}: ${why}` : why)).join('; ')
-
-      // EVERY ZERO WITH ITS REASON.
-      const lines: string[] = [filed
-        ? `Filed ${filed} of the ${entries.length} videos in today’s Top 100.`
-        : `MVP filed none of the ${entries.length} videos in today’s Top 100.`]
-      if (noId) lines.push(`${noId} came without a video id in TRYBE’s answer, so MVP had nothing to file them under or ask TRYBE about.`)
-      // HOW MANY WERE ASKED, and how many TRYBE turned down, whether or not
-      // some came back. A line saying TRYBE shared 7 hid that 53 were refused.
-      const turnedDown = refused ? `, and refused ${refused} of those outright` : ''
-      if (need.length) lines.push(shared
-        ? `TRYBE shared the words for ${shared} of the ${need.length} MVP asked about${turnedDown}.`
-        : `TRYBE shared the words for none of the ${need.length} MVP asked about${turnedDown}.`)
-      else if (filed) lines.push('Every one of them was already tried on an earlier collection, so MVP did not ask TRYBE again.')
-      if (empty) lines.push(`${empty} came back with nothing MVP could read.`)
-      if (noFile) lines.push(`${noFile} of them have no video file in TRYBE’s answer, so nothing can listen to those.`)
-      if (notConfigured) lines.push('Transcription is not switched on for this deployment, so MVP could not listen to any of them.')
-      else if (toHear.length) lines.push(heard
-        ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back${reasons ? ` (${reasons})` : ''}.` : ''}`
-        : `MVP could not listen to any of the ${toHear.length} it tried${reasons ? ` (${reasons})` : ''}.`)
-      // WHAT IS LEFT, so a board at 23 of 100 reads as a first pass rather
-      // than the whole of it. Listening is capped per collection because it
-      // costs, so the next press does the next ones.
-      const stillWaiting = Math.max(0, waiting - shared - heard)
-      if (stillWaiting) {
-        lines.push(`${stillWaiting} still have no words.${hearLeft ? ` ${hearLeft} of them have a video file MVP has not listened to yet, and Collect again listens to the next ${Math.min(hearLeft, 25)}.` : ''}`)
-      }
-      else if (!notConfigured) lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
-      // WHAT TRYBE DID SEND, when none of it was a video file, so the next
-      // fix is a field name rather than a guess.
-      if (withFile === 0) lines.push(`Each entry TRYBE sent has: ${topEntryFields(top.json)}.`)
-      setReport({ tone: shared + heard > 0 ? 'ok' : 'warn', lines, filed })
+      const r = await collectTop100({ listen: true, onStep: setStep, shouldStop: () => stop.current })
+      if (!r.ok) { toast.error(r.error); return }
+      setReport({ tone: r.report.tone, lines: r.report.lines, filed: r.report.filed })
       await loadStats()
       if (brand) void load(brand)
     } finally {

@@ -37,6 +37,7 @@ import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterA
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeUpload from '@/components/labs/TrybeUpload'
 import TrybeHowTheyWin from '@/components/labs/TrybeHowTheyWin'
+import { collectTop100 } from '@/components/labs/trybe-collect'
 import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
@@ -490,6 +491,26 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.
   const canMyBrands = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)
+  // THE TOP 100, ONCE A DAY, BY ITSELF (Seb, 2026-10-18: "could we not do
+  // this automatically once a day?"). Reading it needs a signed in TRYBE, so
+  // it happens here, on the team's first TRYBE visit of the day, in the
+  // background: filed, and TRYBE asked for the words. Listening, the part
+  // that costs, is left to the server's job (api/cron/trybe-top-hear). The
+  // day is only marked done when the run finished, so a failed run is tried
+  // again on the next visit, and either outcome is said in a toast.
+  const autoCollect = useRef(false)
+  useEffect(() => {
+    if (preview || !isAdmin || !canMyBrands || autoCollect.current) return
+    const KEY = 'mvp:trybe-top100-day'
+    const today = new Date().toISOString().slice(0, 10)
+    try { if (localStorage.getItem(KEY) === today) return } catch { return }
+    autoCollect.current = true
+    void collectTop100({ listen: false }).then((r) => {
+      if (!r.ok) { toast.error(`Today’s Top 100 was not collected: ${r.error}`); return }
+      try { localStorage.setItem(KEY, today) } catch { /* runs again next visit */ }
+      toast[r.report.filed ? 'success' : 'error'](`Today’s Top 100: ${r.report.lines.slice(0, 2).join(' ')}`, { duration: 8000 })
+    }).catch((e) => toast.error(`Today’s Top 100 was not collected: ${e instanceof Error ? e.message : 'no answer'}`))
+  }, [preview, isAdmin, canMyBrands])
   // What changed, read ahead. Read again once SCOUT can read your joined
   // brands, so any brand you joined wrongly listed as left is put right first.
   useEffect(() => { if (preview || access === 'checking') return; fetchChanges(7, canMyBrands).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [access, canMyBrands]) // eslint-disable-line react-hooks/exhaustive-deps
