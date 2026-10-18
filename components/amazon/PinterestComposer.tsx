@@ -16,6 +16,8 @@ import { asinFromAmazonUrl } from '@/lib/asin'
 import { productFields, firstProduct, readProductList, productBoxHint, comparisonNote } from '@/lib/product-list'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { normalizeThumbText } from '@/lib/thumb-text'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
@@ -40,6 +42,8 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
+  // The creator's own words for the design (lib/thumb-text), or '' for MVP's.
+  const [ownText, setOwnText] = useState('')
   const [wear, setWear] = useWearProduct()
   const [expression, setExpression] = useExpression()
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -136,6 +140,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       ...productFields(product),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       headlineStyle: headlineStyleValue(question),
+      ...(normalizeThumbText(ownText) ? { customHeadline: normalizeThumbText(ownText) } : {}),
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
       wearProduct: wear && mode === 'face',
@@ -267,6 +272,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
             {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         )}
+        <ThumbTextInput value={ownText} onChange={setOwnText} disabled={genBusy} compact label="Your own text on the design" />
         <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
         {/* Apparel goes ON the person, not held beside them. */}
         {mode === 'face' && (

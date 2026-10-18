@@ -134,6 +134,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     else for (const r of (frows ?? []) as Array<{ id: string; thumbnail_face: unknown }>) faceById.set(r.id, r.thumbnail_face ?? null)
   }
 
+  // THIS VIDEO'S OWN THUMBNAIL TEXT (migration 440), read on its own: a
+  // database without the column still loads the batch, and the box says why.
+  const thumbTextById = new Map<string, string | null>()
+  let thumbTextAvailable = true
+  {
+    const { data: trows, error: terr } = await sb.from('launch_items').select('id,thumbnail_text').eq('batch_id', id)
+    if (terr) thumbTextAvailable = false
+    else for (const r of (trows ?? []) as Array<{ id: string; thumbnail_text: string | null }>) thumbTextById.set(r.id, r.thumbnail_text ?? null)
+  }
+
   // EACH VIDEO'S PINNED FIRST COMMENT (migration 377), read on its own: a
   // database without the table still loads the batch.
   const firstCommentByVideo = new Map<string, { state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null }>()
@@ -152,6 +162,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     first_comment: firstCommentByVideo.get(String((i as { youtube_video_id?: string | null }).youtube_video_id || '')) ?? null,
     amazon_title: amazonTitleById.get(i.id) ?? null,
     thumbnail_face: faceById.get(i.id) ?? null,
+    thumbnail_text: thumbTextById.get(i.id) ?? null,
     api_disclosures: disclosuresById.get(i.id) ?? null,
     amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
@@ -200,6 +211,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     youtubeChoiceAvailable,
     amazonTitleAvailable,
     faceAvailable,
+    thumbTextAvailable,
     // YouTube through SCOUT (lib/studio-upload): the board says SCOUT uploads
     // in Studio, not that MVP's uploader does through the API.
     studioUpload: await (async () => {

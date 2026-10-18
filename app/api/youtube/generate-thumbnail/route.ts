@@ -23,6 +23,7 @@ import { getOrCreateBriefs } from '@/lib/art-director-cache'
 import { rehostToFal } from '@/lib/thumbnail-generators'
 import { bakeSimpleHeadline, compositeBadgeOnly, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
+import { normalizeThumbText, thumbTextProblem, withOwnThumbText } from '@/lib/thumb-text'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
@@ -1628,7 +1629,15 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         }
       }
     }
-    const lockedHeadline = (customHeadline || '').trim().toUpperCase()
+    // THE CREATOR'S OWN TEXT (lib/thumb-text). Used exactly as typed or not at
+    // all: a text that cannot go on a thumbnail as written is refused here,
+    // with the reason, before anything is spent, rather than trimmed or
+    // swapped for a safer line the creator never wrote.
+    const lockedHeadline = normalizeThumbText(customHeadline)
+    {
+      const why = thumbTextProblem(lockedHeadline)
+      if (why) return NextResponse.json({ error: why, code: 'thumb_text' }, { status: 400 })
+    }
 
     // Ground the thumbnail copy in what the creator ACTUALLY said: pull the
     // cached transcript and distil it to a claims sheet. Kicked off now so it
@@ -1984,7 +1993,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
           productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
         ].filter(Boolean).join('\n').slice(0, 900)
-        const gfxCopiesP = await getOrCreateBriefs({
+        const gfxCopiesP = withOwnThumbText(await getOrCreateBriefs({
           userId: user.id,
           briefKey: sharedBriefKey,
           generate: () => designThumbnailBriefs({
@@ -1999,7 +2008,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             headlineStyle: wantQuestion ? 'question' : 'statement',
             comparison: comparisonShown ? (comparisonNames.length ? comparisonNames : productRefUrls.map((_, i) => `product ${i + 1}`)) : null,
           }),
-        })
+        }), lockedHeadline)
         const productPngsP = await loadProductPngs()
         const productBytesP = productPngsP[0] ?? null
         if (!productBytesP) throw new Error('no product image for product-only graphic')
@@ -2041,7 +2050,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   : `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
-                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
+                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${[line1, line2].filter(Boolean).join(' ')}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
                 `REAL COPY ONLY — every word on the design must be the headline above or a SPECIFIC, true detail about THIS product (its category, a real feature, a spec, a benefit). Do NOT add generic showcase or photography-direction labels such as "HERO SHOT", "FULL DETAILS", "CLOSE-UP REVEAL", "FEATURED PICK", "SPOTLIGHT", "THE PRODUCT", "PRODUCT REVIEW" — those are placeholder filler and must never appear.`,
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
@@ -2082,6 +2091,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           overlayHook: gfxHookP,
           overlayHooks: gfxCopiesP.slice(0, gfxUrlsP.length).map(c => flatCopy(c)),
           headlineLocked: !!lockedHeadline,
+          // What went on the image when it was the creator's own words.
+          ownText: lockedHeadline || null,
           prompt: 'graphic-design-product-only',
           styleBriefApplied: false,
           channelStyle: null,
@@ -2175,7 +2186,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
           productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
         ].filter(Boolean).join('\n').slice(0, 900)
-        const gfxCopies = await getOrCreateBriefs({
+        const gfxCopies = withOwnThumbText(await getOrCreateBriefs({
           userId: user.id,
           briefKey: sharedBriefKey,
           generate: () => designThumbnailBriefs({
@@ -2191,7 +2202,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             fixedExpression: expressionLine ? EXPRESSION_LABEL[expressionKey] : null,
             comparison: comparisonShown ? (comparisonNames.length ? comparisonNames : productRefUrls.map((_, i) => `product ${i + 1}`)) : null,
           }),
-        })
+        }), lockedHeadline)
 
         let photoBytes: Buffer | Uint8Array
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
@@ -2662,7 +2673,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   : `PRODUCT: feature ${productLabel} clearly and recognisably in the scene as the direction implies.`,
                 '',
                 'TEXT OVERLAY:',
-                `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.`,
+                line1 ? `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.` : '  No top line: the main line below is the only text.',
                 `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
                 ...gfxBoostLinesFor(gfxBadge, gfxAccent),
                 `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${gfxBadge ? ' except the starburst badge above' : ''}.`,
@@ -2921,6 +2932,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           overlayHook: gfxHook,
           overlayHooks: gfxCopies.slice(0, gfxUrls.length).map(c => flatCopy(c)),
           headlineLocked: !!lockedHeadline,
+          // What went on the image when it was the creator's own words.
+          ownText: lockedHeadline || null,
           prompt: 'graphic-design-mode',
           styleBriefApplied: false,
           channelStyle: null,

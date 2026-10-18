@@ -26,6 +26,15 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Your own thumbnail text (Seb, 2026-10-18). For everyone who makes thumbnails.
+  {
+    date: '2026-10-18',
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Your own thumbnail text',
+    desc: 'Got a line in mind? Type it in "Your own thumbnail text" and MVP puts exactly those words on the thumbnail instead of writing its own, split over two lines the way the box shows. It is on YouTube Co-Pilot, Video Launchpad, Amazon thumbnails, the social designs, and on each video in Bulk Amazon upload. Leave it empty and MVP writes it, as before.',
+    href: '/co-pilot',
+  },
   // Drop (Labs, admin while it is tested; gated, so members do not see it).
   {
     date: '2026-10-17',

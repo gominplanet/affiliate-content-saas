@@ -226,8 +226,13 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('and it says what they keep, not only what stopped',
     /still yours to download/i.test(over ?? '') && /research/i.test(over ?? ''),
     'an account that refuses to generate and explains nothing reads as broken, not finished')
+  // A FIXED DATE, not "now". Since NO_TRIAL_FROM a signup made today has no
+  // trial at all, so "signed up just now" stopped meaning "inside its month"
+  // on the day the trial ended. An account from before, checked 10 days in:
   check('a trial inside its month is not blocked',
-    freeTrialExpiredBlock({ tier: 'trial', signupISO: new Date().toISOString() }) === null)
+    freeTrialExpiredBlock({ tier: 'trial', signupISO: '2026-10-01T12:00:00.000Z', now: new Date('2026-10-11T12:00:00.000Z') }) === null)
+  check('and an account made since the trial ended is sent to start Pro instead',
+    /start Pro/i.test(freeTrialExpiredBlock({ tier: 'trial', signupISO: '2026-10-20T12:00:00.000Z', now: new Date('2026-10-20T13:00:00.000Z') }) ?? ''))
 
   // Wiring: every route that spends free AI has to honour both halves.
   const { readFileSync } = require('node:fs') as typeof import('node:fs')

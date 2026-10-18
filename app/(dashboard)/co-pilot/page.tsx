@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { thumbTextProblem } from '@/lib/thumb-text'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -2222,6 +2224,8 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
     // closure reads customHeadline, which is what made the route fall back to
     // generic hooks even after the user picked from the modal.
     const headline = ((opts?.lockedHeadline ?? customHeadline).trim()) || undefined
+    // Said here, before anything is captured or sent; the route says the same.
+    { const why = thumbTextProblem(headline); if (why) { setThumbnailError(why); setGeneratingThumbnail(false); return } }
     // SCOUT path (skipFaceModel:true): the person IN the video IS the identity
     // source — we never use the selected face model, even if Seb is auto-matched
     // to a video where Michelle appears. The captured frame carries the right face.
@@ -2407,6 +2411,9 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
       }
       setCapError(null)
       await applyThumbnailResult(data)
+      // WHOSE WORDS: said, so a design with the creator's own text is never
+      // mistaken for one MVP wrote, or the other way round.
+      if (typeof data.ownText === 'string' && data.ownText) toast.success(`Made with your text: ${data.ownText}`)
       // A COMPARISON THAT LOST A PRODUCT says so: a thumbnail showing two of
       // three products looks finished, and nothing else would tell.
       const cmp = data.comparison as { asked: number; shown: number } | null | undefined
@@ -3186,6 +3193,13 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                     )}
 
                     {/* Outfit lives in Fine-tune below (it needs typing). */}
+                  </div>
+
+                  {/* Your own thumbnail text (Seb, 2026-10-18). Empty: MVP writes
+                      it. Typed: these exact words go on every design. */}
+                  <div className="px-1">
+                    <ThumbTextInput value={customHeadline} onChange={setCustomHeadline} disabled={generatingThumbnail}
+                      note={thumbQuestionMode ? 'Your text replaces the Question hook.' : undefined} />
                   </div>
 
                   {/* Quick style — one-tap toggles, zero typing. The AI writes the

@@ -561,6 +561,7 @@ export default function LaunchpadPage() {
       const url = pickUrl(j)
       if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
       setThumbUrl(url)
+      if (typeof j.ownText === 'string' && j.ownText) toast.success(`Made with your text: ${j.ownText}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Thumbnail failed')
     } finally { setThumbBusy(false) }
@@ -1095,6 +1096,7 @@ export default function LaunchpadPage() {
                 <ThumbnailBoostPanel
                   boost={boost}
                   face={facePick !== 'no-human' ? (faceModels.find(m => m.id === facePick) || null) : null}
+                  showOwnText
                 />
               </div>
             </div>
