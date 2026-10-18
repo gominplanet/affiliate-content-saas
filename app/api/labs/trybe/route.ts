@@ -2002,7 +2002,18 @@ export async function POST(request: Request) {
     // it is seen, so a video keeps its best place across days, and the answer
     // says which ones still have no words and which have a file to listen to.
     if (tier !== 'admin') return NextResponse.json({ ok: true, saved: 0, kept: true })
-    const list = (Array.isArray(body.entries) ? body.entries : []).slice(0, 120) as Array<Record<string, unknown>>
+    // THE ID UNDER EITHER NAME. lib/trybe-working reads a Top 100 entry's id
+    // as `id`, and this action read only `submissionId`, so every entry was
+    // dropped before it was saved and the page still said "Filed 100" (Seb,
+    // 2026-10-18). Both names are taken now, and the count of entries that
+    // had neither goes back in the answer.
+    const list = (Array.isArray(body.entries) ? body.entries : []).slice(0, 120)
+      .filter((e: unknown): e is Record<string, unknown> => !!e && typeof e === 'object')
+      .map((e: Record<string, unknown>) => {
+        const sid = [e.submissionId, e.id].find((v) => (typeof v === 'string' && v.trim()) || typeof v === 'number')
+        return { ...e, submissionId: sid == null ? null : String(sid).trim() }
+      }) as Array<Record<string, unknown>>
+    const noId = list.filter((e) => !e.submissionId).length
     const s160 = (v: unknown, n = 160) => (typeof v === 'string' ? v.slice(0, n) : null)
     const rows = list
       .map((e) => ({
@@ -2013,7 +2024,7 @@ export async function POST(request: Request) {
         seconds: Number.isFinite(Number(e.seconds)) && Number(e.seconds) > 0 ? Math.round(Number(e.seconds)) : null,
       }))
       .filter((r) => !!r.submission_id)
-    if (!rows.length) return NextResponse.json({ ok: true, saved: 0, need: [], hear: [] })
+    if (!rows.length) return NextResponse.json({ ok: true, saved: 0, noId, need: [], hear: [] })
     const ids = rows.map((r) => r.submission_id as string)
     const { data: had, error: hadErr } = await admin.from('trybe_top_scripts').select('submission_id,state,best_rank').in('submission_id', ids)
     if (hadErr && scriptsMissing(hadErr.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
@@ -2043,7 +2054,7 @@ export async function POST(request: Request) {
     // guess at.
     const noFile = waiting.filter((e) => !(typeof e.video === 'string' && /^https:\/\//i.test(e.video))).length
     return NextResponse.json({
-      ok: true, saved: fresh.length, waiting: waiting.length, noFile,
+      ok: true, saved: fresh.length, noId, waiting: waiting.length, noFile,
       need: waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null })).slice(0, 60),
       hear: hear.map((h) => h.submissionId),
     })

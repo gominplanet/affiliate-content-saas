@@ -29,7 +29,7 @@ export default function PrivacyPage() {
             social accounts. The App is operated by Gominplanet Holdings Ltd, an exempted company incorporated in
             Anguilla, British West Indies under the Business Companies Act, 2022 (company no. A000003427),
             registered office: The Hansa Bank Building, 1st Floor, PO Box 886, Landsome Road, The Valley, AI-2640,
-            Anguilla, BWI (<a href="mailto:us@gominplanet.com" className={A}>us@gominplanet.com</a>).
+            Anguilla, BWI (<a href="mailto:team@mvpaffiliate.io" className={A}>team@mvpaffiliate.io</a>).
           </p>
         </div>
 
@@ -207,7 +207,7 @@ export default function PrivacyPage() {
           <p>
             We keep your data while your account is active, except YouTube data, which follows the timelines in
             section 3. To delete your account and all associated data, email{' '}
-            <a href="mailto:us@gominplanet.com" className={A}>us@gominplanet.com</a>{' '}
+            <a href="mailto:team@mvpaffiliate.io" className={A}>team@mvpaffiliate.io</a>{' '}
             from the address registered to the account. We delete your account and all associated data, including
             every access token we hold for you, within 30 days of the request.
           </p>
@@ -259,7 +259,7 @@ export default function PrivacyPage() {
           <h2 className={H2}>15. Contact</h2>
           <p>
             For privacy questions, complaints, deletion requests or anything else, contact us at{' '}
-            <a href="mailto:us@gominplanet.com" className={A}>us@gominplanet.com</a>.
+            <a href="mailto:team@mvpaffiliate.io" className={A}>team@mvpaffiliate.io</a>.
           </p>
         </div>
 

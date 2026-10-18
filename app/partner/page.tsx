@@ -45,7 +45,7 @@ const C = {
   night: '#120E1C',
 }
 
-const EMAIL = 'us@gominplanet.com'
+const EMAIL = 'team@mvpaffiliate.io'
 const SITE = 'https://www.mvpaffiliate.io'
 
 type Feature = { title: string; tag?: string; body: React.ReactNode; image?: { src: string; alt: string; w: number; h: number } }

@@ -26,7 +26,7 @@ check('names the AI providers YouTube text is processed by', /processed by\s+the
 check('discloses cookies and device storage', /Cookies and Data Stored on Your Device/.test(text) && /_fbp/.test(text))
 check('says whether third parties serve ads in the App', /does not let third parties serve advertisements/.test(text))
 check('links Google\'s security settings page for revoking access', text.includes('href="https://security.google.com/settings/security/permissions"'))
-check('gives a contact for questions and complaints', /questions, complaints/.test(text) && /mailto:us@gominplanet\.com/.test(text))
+check('gives a contact for questions and complaints', /questions, complaints/.test(text) && /mailto:team@mvpaffiliate\.io/.test(text))
 check('states the Limited Use commitment', /Limited Use requirements/.test(text))
 
 // ── III.E.4: the retention it promises is the retention the code enforces ──

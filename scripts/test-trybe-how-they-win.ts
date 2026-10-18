@@ -14,6 +14,7 @@
 //   drops, and they would be doing it because MVP told them to.
 import { readFileSync, existsSync } from 'node:fs'
 import { bestRank } from '../lib/trybe-scripts'
+import { readTopEntries, topEntryFields } from '../lib/trybe-working'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => {
@@ -79,6 +80,34 @@ check('transcription being switched off is said, not reported as zero videos',
 check('an answer with no video files at all says that in as many words',
   /TRYBE sent no video files at all in this answer/.test(C))
 check('what it did get is still reported per source', /MVP listened to \$\{heard\} of \$\{toHear\.length\}/.test(C))
+
+// ── WHAT WAS FILED IS WHAT WAS SAVED ─────────────────────────────────────────
+// Seb, 2026-10-18, twice: "Filed 100 videos", then "none of the 0 MVP asked
+// about" and "Nothing collected yet". The Top 100 reader calls a video's id
+// `id`, the route filed only `submissionId`, so every entry was dropped before
+// it was saved, and the page counted what it sent rather than what was kept.
+const seenAt = R.indexOf("action === 'top_scripts_seen'")
+const seenBody = R.slice(seenAt, R.indexOf("action === 'top_script_save'"))
+check('the route files a video under its id whichever name it comes in', /\[e\.submissionId, e\.id\]/.test(seenBody))
+check('and says how many came with no id at all', /noId = list\.filter\(\(e\) => !e\.submissionId\)/.test(seenBody) && (seenBody.match(/noId/g) || []).length >= 3)
+check('the page sends the id under the name the route files it by', /entries: entries\.map\(\(e\) => \(\{ \.\.\.e, submissionId: e\.id \}\)\)/.test(C))
+check('"Filed" is the count the route saved, not the count the page sent',
+  /const filed = Number\(seen\.json\.saved\)/.test(C) && /Filed \$\{filed\} of the \$\{entries\.length\}/.test(C) && !/`Filed \$\{entries\.length\}/.test(C))
+check('filing none is said as none, and not shown with a tick', /MVP filed none of the \$\{entries\.length\}/.test(C) && /i === 0 && report\.filed \? <Check/.test(C))
+check('entries with no id are counted with the reason', /came without a video id in TRYBE/.test(C))
+check('asking about none says why, instead of "none of the 0"',
+  /else if \(need\.length\) lines\.push\(`TRYBE shared the words for none/.test(C) && /already tried on an earlier collection/.test(C))
+check('an answer with no video files shows the fields TRYBE did send', /withFile === 0\) lines\.push\(`Each entry TRYBE sent has: \$\{topEntryFields\(top\.json\)\}/.test(C))
+{
+  const nested = readTopEntries({ data: [{ id: 's1', brandName: 'Acme', media: { assets: [{ type: 'video', url: 'https://cdn.example.com/v/a1.mp4?sig=1' }] } }] })
+  check('a video file a few levels down is found', nested[0]?.video === 'https://cdn.example.com/v/a1.mp4?sig=1', nested[0]?.video)
+  const keyed = readTopEntries({ data: [{ id: 's2', brandName: 'Acme', submission: { videoFileUrl: 'https://files.example.com/abc' } }] })
+  check('and so is one under a name only a video file has', keyed[0]?.video === 'https://files.example.com/abc', keyed[0]?.video)
+  const page = readTopEntries({ data: [{ id: 's3', brandName: 'Acme', post: { videoUrl: 'https://www.tiktok.com/@a/video/1' }, cover: { src: 'https://cdn.example.com/t.jpg' } }] })
+  check('a TikTok page or a picture is never taken for a file', page[0]?.video === null, page[0]?.video)
+  const fields = topEntryFields({ data: [{ id: 's1', rank: 1, media: { assets: [], kind: 'x' }, creator: { name: 'a' } }] })
+  check('the field list names nested fields too', /media\.\{assets, kind\}/.test(fields) && /creator\.\{name\}/.test(fields), fields)
+}
 
 // ── A better place is kept ───────────────────────────────────────────────────
 check('a worse day never demotes a video', bestRank(71, 3) === 3 && bestRank(3, 71) === 3)

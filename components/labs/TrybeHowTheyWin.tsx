@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readScript } from '@/lib/trybe-mybrands'
-import { readTopEntries } from '@/lib/trybe-working'
+import { readTopEntries, topEntryFields } from '@/lib/trybe-working'
 import { CLOSENESS, type Closeness, type TopScript } from '@/lib/trybe-scripts'
 
 const PURPLE = '#7C3AED'
@@ -98,7 +98,7 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
   const [product, setProduct] = useState('')
   const [closeness, setCloseness] = useState<Closeness>('similar')
   const [step, setStep] = useState<string | null>(null)
-  const [report, setReport] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null)
+  const [report, setReport] = useState<{ tone: 'ok' | 'warn'; lines: string[]; filed: number } | null>(null)
   const stop = useRef(false)
 
   const loadStats = useCallback(async () => {
@@ -150,8 +150,13 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
       if (!entries.length) { toast.error('TRYBE answered, but MVP could not read the Top 100 from it.'); return }
       const withFile = entries.filter((e) => e.video).length
 
-      const seen = await post({ action: 'top_scripts_seen', entries })
+      // The entry's id goes as submissionId, the name the route files it under.
+      const seen = await post({ action: 'top_scripts_seen', entries: entries.map((e) => ({ ...e, submissionId: e.id })) })
       if (!seen.ok) { toast.error(String(seen.json.error || 'MVP could not file the Top 100.')); return }
+      // FILED IS WHAT THE ROUTE SAVED, not what the page sent. The page once
+      // said "Filed 100" while the route had dropped every one of them.
+      const filed = Number(seen.json.saved) || 0
+      const noId = Number(seen.json.noId) || 0
       const need = (seen.json.need ?? []) as Array<{ submissionId: string }>
       const hear = new Set((seen.json.hear ?? []) as string[])
       const noFile = Number(seen.json.noFile) || 0
@@ -185,14 +190,22 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
       }
 
       // EVERY ZERO WITH ITS REASON.
-      const lines: string[] = [`Filed ${entries.length} videos from today’s Top 100.`]
-      lines.push(shared ? `TRYBE shared the words for ${shared}.` : `TRYBE shared the words for none of the ${need.length} MVP asked about${refused ? `, and refused ${refused} of those outright` : ''}.`)
+      const lines: string[] = [filed
+        ? `Filed ${filed} of the ${entries.length} videos in today’s Top 100.`
+        : `MVP filed none of the ${entries.length} videos in today’s Top 100.`]
+      if (noId) lines.push(`${noId} came without a video id in TRYBE’s answer, so MVP had nothing to file them under or ask TRYBE about.`)
+      if (shared) lines.push(`TRYBE shared the words for ${shared}.`)
+      else if (need.length) lines.push(`TRYBE shared the words for none of the ${need.length} MVP asked about${refused ? `, and refused ${refused} of those outright` : ''}.`)
+      else if (filed) lines.push('Every one of them was already tried on an earlier collection, so MVP did not ask TRYBE again.')
       if (empty) lines.push(`${empty} came back with nothing MVP could read.`)
       if (noFile) lines.push(`${noFile} of them have no video file in TRYBE’s answer, so nothing can listen to those.`)
       if (notConfigured) lines.push('Transcription is not switched on for this deployment, so MVP could not listen to any of them.')
       else if (toHear.length) lines.push(heard ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back.` : ''}` : `MVP could not listen to any of the ${toHear.length} it tried.`)
       else if (!notConfigured) lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
-      setReport({ tone: shared + heard > 0 ? 'ok' : 'warn', lines })
+      // WHAT TRYBE DID SEND, when none of it was a video file, so the next
+      // fix is a field name rather than a guess.
+      if (withFile === 0) lines.push(`Each entry TRYBE sent has: ${topEntryFields(top.json)}.`)
+      setReport({ tone: shared + heard > 0 ? 'ok' : 'warn', lines, filed })
       await loadStats()
       if (brand) void load(brand)
     } finally {
@@ -296,8 +309,8 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
           {report && (
             <ul className="mt-3 space-y-1">
               {report.lines.map((l, i) => (
-                <li key={i} className="text-[12.5px] flex items-start gap-1.5" style={{ color: i === 0 ? 'var(--text)' : report.tone === 'ok' ? GREEN : AMBER }}>
-                  {i === 0 ? <Check size={13} className="mt-0.5 flex-shrink-0" /> : <span className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'currentColor' }} />}
+                <li key={i} className="text-[12.5px] flex items-start gap-1.5" style={{ color: i === 0 && report.filed ? 'var(--text)' : report.tone === 'ok' ? GREEN : AMBER }}>
+                  {i === 0 && report.filed ? <Check size={13} className="mt-0.5 flex-shrink-0" /> : <span className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'currentColor' }} />}
                   <span>{l}</span>
                 </li>
               ))}

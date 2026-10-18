@@ -33,6 +33,43 @@ export interface TopVideoEntry {
   seconds: number | null
 }
 
+// A VIDEO FILE WHEREVER TRYBE PUTS IT. The names above are guesses from
+// TRYBE's page code, and a collection where all 100 came back without a file
+// (Seb, 2026-10-18) means at least one guess is wrong. So when they miss, the
+// entry is searched a few levels down for a link that is plainly a video file
+// (by its ending) or sits under a name only a video file would have. A page
+// link (a TikTok post, a creator's profile) is never taken: it is not a file
+// anything can listen to.
+const VIDEO_FILE = /\.(mp4|mov|m4v|webm|m3u8)(\?|#|$)/i
+const VIDEO_KEY = /^(video|videoUrl|video_url|videoFile|videoFileUrl|playbackUrl|playback_url|mediaUrl|media_url|fileUrl|file_url|downloadUrl|download_url|src|source|hlsUrl|mp4Url|rawVideoUrl|originalUrl)$/i
+const PAGE_HOST = /^https:\/\/(www\.)?(tiktok\.com|instagram\.com|youtube\.com|youtu\.be|facebook\.com|trybe\.one)\//i
+function findVideoFile(o: unknown, depth = 0): string | null {
+  if (depth > 3) return null
+  if (Array.isArray(o)) { for (const v of o.slice(0, 10)) { const f = findVideoFile(v, depth + 1); if (f) return f } return null }
+  if (!isObj(o)) return null
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v !== 'string' || !/^https:\/\//i.test(v) || PAGE_HOST.test(v)) continue
+    if (VIDEO_FILE.test(v) || (VIDEO_KEY.test(k) && !/\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(v))) return v
+  }
+  for (const v of Object.values(o)) { if (typeof v === 'object') { const f = findVideoFile(v, depth + 1); if (f) return f } }
+  return null
+}
+
+/** The field names on TRYBE's first Top 100 entry, nested ones as
+ *  `media.{url, type}`, for the team when no video file could be found in
+ *  any of them. Says what TRYBE sent rather than that nothing was there. Pure. */
+export function topEntryFields(json: unknown): string {
+  const root = isObj(json) && (isObj(json.data) || Array.isArray(json.data)) ? json.data : json
+  const list = Array.isArray(root) ? root
+    : isObj(root) ? ([root.items, root.creatives, root.topCreatives, root.videos, root.submissions, root.data].find(Array.isArray) as unknown[] | undefined) || [] : []
+  const e = list.find(isObj)
+  if (!e) return '(no entries)'
+  return Object.entries(e).slice(0, 30).map(([k, v]) => {
+    const inner = isObj(v) ? v : Array.isArray(v) && isObj(v[0]) ? v[0] : null
+    return inner ? `${k}${Array.isArray(v) ? '[]' : ''}.{${Object.keys(inner).slice(0, 10).join(', ')}}` : k
+  }).join(', ')
+}
+
 /** GET /backend/api/creator/v2/top-creatives, every field MVP can use. A
  *  field TRYBE does not send stays null. Pure. */
 export function readTopEntries(json: unknown): TopVideoEntry[] {
@@ -63,7 +100,7 @@ export function readTopEntries(json: unknown): TopVideoEntry[] {
       creatorAvatar: url(first(raw, ['creatorAvatarUrl', 'creatorImageUrl']) ?? first(creator, ['avatarUrl', 'avatar', 'profileImageUrl', 'profilePictureUrl', 'imageUrl', 'photoUrl', 'image'])),
       creatorSales: str(first(raw, ['creatorGmvBucket', 'creatorSalesBucket', 'gmvBucket']) ?? first(creator, ['gmvBucket', 'gmv30dBucket', 'salesBucket', 'gmvRange', 'estimatedGmvBucket', 'gmvLabel'])).slice(0, 40) || null,
       thumbnail: url(first(raw, ['thumbnailUrl', 'thumbnail_url', 'thumbnail', 'coverUrl', 'posterUrl']) ?? first(meta, ['thumbnailUrl', 'thumbnail', 'coverUrl', 'posterUrl'])),
-      video: url(first(raw, ['videoUrl', 'video_url', 'url', 'mediaUrl']) ?? first(meta, ['videoUrl', 'url', 'playbackUrl'])),
+      video: url(first(raw, ['videoUrl', 'video_url', 'url', 'mediaUrl']) ?? first(meta, ['videoUrl', 'url', 'playbackUrl'])) ?? findVideoFile(raw),
       // Milliseconds when large.
       seconds: secs != null && secs > 0 ? (secs > 1000 ? Math.round(secs / 1000) : Math.round(secs)) : null,
     })
