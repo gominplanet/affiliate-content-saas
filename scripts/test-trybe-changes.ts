@@ -138,10 +138,9 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   // made this fail on the next tab added rather than on a tab left ungrouped,
   // which is what it is for (Upload videos, 2026-10-18).
   const tabCount = (tabsSrc.match(/\{ id: '/g) || []).length
-  check('the menu has three groups, and every tab sits in one of them',
+  check(`the menu has three groups, and every tab sits in one of them (${tabCount} tabs, ${tabGroups.length} with a group)`,
     groupIds.join() === 'create,brands,track' && tabCount >= 9 && tabGroups.length === tabCount
-    && tabGroups.every((g) => groupIds.includes(g)) && groupIds.every((g) => tabGroups.includes(g)),
-    { tabCount, grouped: tabGroups.length })
+    && tabGroups.every((g) => groupIds.includes(g)) && groupIds.every((g) => tabGroups.includes(g)))
   check('the tab you are on says so to a screen reader, with its name and purpose shown under the menu', /aria-current=\{on \? 'page' : undefined\}/.test(ui) && /<h2 className="text-\[20px\] font-bold leading-tight">\{t\.label\}<\/h2>/.test(ui))
   check('a tab name is never cut short on a phone', !/truncate">\{label\}/.test(ui))
 }
