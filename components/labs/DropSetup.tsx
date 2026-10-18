@@ -15,7 +15,7 @@ import ThumbnailPicker from '@/components/launch/ThumbnailPicker'
 import { SlotEditor } from '@/components/launch/LaunchBoard'
 import { PlaceTile, PLACES_OF, TEAL } from '@/components/labs/DropPlaces'
 import { cadenceLabel } from '@/lib/launch-schedule'
-import { setupMissing, type LaunchPlans, type DropSettings, type PlaceId, type DropKind } from '@/lib/drop-plan'
+import { setupMissing, daysLabel, liftoffLabel, ALL_DAYS, type LaunchPlans, type DropSettings, type PlaceId, type DropKind } from '@/lib/drop-plan'
 import type { CtaPreset } from '@/lib/launch-batch'
 import { defaultThumbnailPreset, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 
@@ -103,7 +103,8 @@ export default function DropSetup({ plans, settings, why, onSave, onClose, first
           <div key={kind} className="flex flex-col gap-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>{kind === 'long' ? 'Long videos' : 'Vertical videos'}</p>
             <div className="grid gap-2 grid-cols-2 lg:grid-cols-3">
-              {PLACES_OF[kind].map((p) => <PlaceTile key={p} place={p} on={draft[kind].includes(p)} why={why(p)} onClick={() => flip(kind, p)} />)}
+              {PLACES_OF[kind].map((p) => <PlaceTile key={p} place={p} on={draft[kind].includes(p)} why={why(p)} onClick={() => flip(kind, p)}
+                label={p === 'liftoff' ? liftoffLabel(st) : undefined} />)}
             </div>
           </div>
         ))}
@@ -111,20 +112,22 @@ export default function DropSetup({ plans, settings, why, onSave, onClose, first
 
       {longGoes && (
         <>
-          <Section title="YouTube or Amazon only" hint="Amazon is the US store. Global Storefront shows your US videos in the other countries.">
-            <div className="flex flex-wrap gap-2">
-              {[{ v: true, l: 'YouTube, then Amazon' }, { v: false, l: 'Amazon only, nothing to YouTube' }].map((o) => (
-                <button key={String(o.v)} type="button" aria-pressed={st.sendToYouTube === o.v} onClick={() => set({ sendToYouTube: o.v, amazon: o.v ? st.amazon : true })}
-                  className="rounded-full border px-3 py-1 text-[12px] font-semibold"
-                  style={st.sendToYouTube === o.v ? { borderColor: TEAL, background: 'rgba(14,165,164,0.12)', color: 'var(--text)' } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>
-                  {o.l}
-                </button>
-              ))}
-              {st.sendToYouTube && (
-                <label className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text)' }}>
-                  <input type="checkbox" checked={st.amazon} onChange={(e) => set({ amazon: e.target.checked })} /> Also the US Amazon store
-                </label>
-              )}
+          <Section title="YouTube, Amazon, or both" hint="Amazon means your US storefront. Global Storefront shows your US videos in the other countries too.">
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Where long videos go">
+              {[
+                { yt: true, amz: true, l: 'YouTube, then Amazon' },
+                { yt: true, amz: false, l: 'YouTube only' },
+                { yt: false, amz: true, l: 'Amazon only' },
+              ].map((o) => {
+                const on = st.sendToYouTube === o.yt && st.amazon === o.amz
+                return (
+                  <button key={o.l} type="button" role="radio" aria-checked={on} onClick={() => set({ sendToYouTube: o.yt, amazon: o.amz })}
+                    className="rounded-full border px-3 py-1 text-[12px] font-semibold"
+                    style={on ? { borderColor: TEAL, background: 'rgba(14,165,164,0.12)', color: 'var(--text)' } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>
+                    {o.l}
+                  </button>
+                )
+              })}
             </div>
           </Section>
 
@@ -138,8 +141,41 @@ export default function DropSetup({ plans, settings, why, onSave, onClose, first
 
           {st.sendToYouTube && (
             <>
-              <Section title="When they go public on YouTube" hint={`${cadenceLabel(st.dailySlots)}. Videos go out one per time, per day, in the order you drop them, starting with the next free time. Any video can have its own date and time on its card.`}>
-                <SlotEditor slots={st.dailySlots} disabled={false} onChange={(next) => set({ dailySlots: next })} />
+              <Section title="When they go public on YouTube" hint="Set your times and days once. Every video you drop gets the next free one by itself, after the videos you already have scheduled. To put one video on a particular day, change the date on its card.">
+                <div className="flex flex-col gap-1">
+                  <p className="text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>Times of day</p>
+                  <SlotEditor slots={st.dailySlots} disabled={false} onChange={(next) => set({ dailySlots: next })} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>Days</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days videos go public">
+                    {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                      const on = st.days.includes(d)
+                      const only = on && st.days.length === 1
+                      return (
+                        <button key={d} type="button" aria-pressed={on} disabled={only} title={only ? 'At least one day' : undefined}
+                          onClick={() => set({ days: on ? st.days.filter((x) => x !== d) : [...st.days, d].sort() })}
+                          className="w-11 rounded-lg border py-1 text-[12px] font-semibold disabled:cursor-not-allowed"
+                          style={on ? { borderColor: TEAL, background: 'rgba(14,165,164,0.12)', color: 'var(--text)' } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]}
+                        </button>
+                      )
+                    })}
+                    {st.days.length < 7 && (
+                      <button type="button" onClick={() => set({ days: ALL_DAYS })} className="rounded-lg px-2 py-1 text-[12px] underline" style={{ color: 'var(--text-2)' }}>Every day</button>
+                    )}
+                  </div>
+                </div>
+                <label className="flex flex-col sm:flex-row sm:items-center gap-1.5 text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>
+                  Nothing before
+                  <input type="date" value={st.notBefore ?? ''} onChange={(e) => set({ notBefore: e.target.value || null })}
+                    className="w-full sm:w-auto rounded-lg border px-2.5 py-1.5 text-[12.5px] bg-transparent font-normal" style={fieldStyle} />
+                  {st.notBefore && <button type="button" onClick={() => set({ notBefore: null })} className="self-start sm:self-center font-normal underline">Clear</button>}
+                  <span className="font-normal">{st.notBefore ? '' : 'Empty: from the next free time.'}</span>
+                </label>
+                <p className="text-[12px] rounded-lg px-3 py-2" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}>
+                  {cadenceLabel(st.dailySlots)}, {daysLabel(st.days)}{st.notBefore ? `, from ${new Date(`${st.notBefore}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}` : ''}.
+                </p>
               </Section>
 
               <Section title="Your YouTube channel and playlist" hint="The channel is checked with YouTube for every drop, so videos never go to the wrong one.">

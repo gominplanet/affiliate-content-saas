@@ -107,6 +107,36 @@ export interface DropSettings {
   studioOptions: { disclosures: boolean; monetize: boolean; adRating: boolean; endScreen: boolean }
   /** The US Amazon store, or none. */
   amazon: boolean
+  /** The days a video may go public, 0 Sunday to 6 Saturday. All seven
+   *  unless the creator picked fewer. */
+  days: number[]
+  /** No video goes public before this day (YYYY-MM-DD), or null. */
+  notBefore: string | null
+}
+
+export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
+const cleanDays = (raw: unknown): number[] => {
+  const list = Array.isArray(raw) ? [...new Set(raw.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : []
+  return list.length ? list : ALL_DAYS
+}
+const cleanDate = (raw: unknown): string | null => (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null)
+
+/** The days in words: "every day", "weekdays", "Mon, Wed and Fri". Pure. */
+export function daysLabel(days: number[] | null | undefined): string {
+  const d = cleanDays(days)
+  if (d.length === 7) return 'every day'
+  if (d.join() === '1,2,3,4,5') return 'weekdays'
+  if (d.join() === '0,6') return 'weekends'
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const w = [...d.filter((x) => x !== 0), ...d.filter((x) => x === 0)].map((x) => names[x])
+  return w.length === 1 ? `${w[0]} only` : `${w.slice(0, -1).join(', ')} and ${w[w.length - 1]}`
+}
+
+/** What the long videos' Liftoff place is called for this setup. Pure. */
+export function liftoffLabel(st: Pick<DropSettings, 'sendToYouTube' | 'amazon'>): string | undefined {
+  if (!st.sendToYouTube) return 'Amazon'
+  if (!st.amazon) return 'YouTube'
+  return undefined
 }
 
 const STUDIO_DEFAULT = { disclosures: true, monetize: true, adRating: true, endScreen: true }
@@ -124,6 +154,8 @@ export function settingsFromLast(last: LastBatch | null): DropSettings {
     notifySubscribers: last?.notify_subscribers === true,
     studioOptions: { ...STUDIO_DEFAULT, ...Object.fromEntries(Object.entries(so).filter(([k, v]) => k in STUDIO_DEFAULT && typeof v === 'boolean')) },
     amazon: (last?.markets ?? ['amazon.com']).includes('amazon.com'),
+    days: ALL_DAYS,
+    notBefore: null,
   }
 }
 
@@ -142,6 +174,8 @@ export function readSettings(raw: unknown): DropSettings | null {
     notifySubscribers: o.notifySubscribers === true,
     studioOptions: { ...STUDIO_DEFAULT, ...Object.fromEntries(Object.entries(so).filter(([k, v]) => k in STUDIO_DEFAULT && typeof v === 'boolean')) },
     amazon: o.amazon !== false,
+    days: cleanDays(o.days),
+    notBefore: cleanDate(o.notBefore),
   }
 }
 
@@ -156,6 +190,13 @@ export function settingsBody(st: DropSettings, timezone: string, startOn: string
   if (st.thumbnailChosen) { body.thumbnailChosen = true; body.thumbnail = st.thumbnail ?? null }
   if (st.dailySlots.length) body.dailySlots = st.dailySlots
   return body
+}
+
+/** The first day of a drop's batch: the first day a time is still ahead,
+ *  or the creator's not-before day if that is later. Pure. */
+export function setupStartOn(st: Pick<DropSettings, 'dailySlots' | 'notBefore'>, timezone: string, now: Date = new Date()): string {
+  const first = firstDay(st.dailySlots, timezone, now).startOn
+  return st.notBefore && st.notBefore > first ? st.notBefore : first
 }
 
 /** What the setup still needs before a long video can go, in words. Pure. */
@@ -278,7 +319,9 @@ export function startFor(choice: 'auto' | 'today' | 'tomorrow', slots: string[] 
  * on its card. Pure.
  */
 export function nextFreeSlots(n: number, slots: string[] | null | undefined, timezone: string, taken: number[],
-  now: Date = new Date(), leadMinutes = 90): Array<{ date: string; time: string; at: number }> {
+  now: Date = new Date(), leadMinutes = 90, only: { days?: number[] | null; notBefore?: string | null } = {}): Array<{ date: string; time: string; at: number }> {
+  const days = cleanDays(only.days)
+  const notBefore = cleanDate(only.notBefore)
   const s = normalizeSlots(slots)
   const out: Array<{ date: string; time: string; at: number }> = []
   if (!s.length || n <= 0) return out
@@ -286,13 +329,16 @@ export function nextFreeSlots(n: number, slots: string[] | null | undefined, tim
   for (let day = 0; day < 400 && out.length < n; day++) {
     const dt = new Date(Date.UTC(y, mo - 1, d + day))
     const yy = dt.getUTCFullYear(), mm = dt.getUTCMonth() + 1, dd = dt.getUTCDate()
+    const date = `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+    // Only the creator's days, and nothing before their first day.
+    if (!days.includes(dt.getUTCDay()) || (notBefore && date < notBefore)) continue
     for (const slot of s) {
       const m = parseSlot(slot)
       if (m == null) continue
       const at = zonedTimeToInstant(yy, mm, dd, m, timezone).getTime()
       if (at - now.getTime() < leadMinutes * 60_000) continue
       if (taken.some((t) => Math.abs(t - at) < 60_000) || out.some((o) => o.at === at)) continue
-      out.push({ date: `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`, time: slot, at })
+      out.push({ date, time: slot, at })
       if (out.length >= n) break
     }
   }

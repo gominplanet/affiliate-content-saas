@@ -37,7 +37,7 @@ import { scheduleItems, cadenceLabel } from '@/lib/launch-schedule'
 import { itemProgressLabel, itemProgressTone, OPEN_ITEM_STATES, type ItemState } from '@/lib/launch-batch'
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 import {
-  dropKind, firstDay, readPlans, placeFits, nextFreeSlots, settingsFromLast, settingsBody, setupMissing, isStillPreparing,
+  dropKind, readPlans, placeFits, nextFreeSlots, settingsFromLast, settingsBody, setupMissing, isStillPreparing, setupStartOn, daysLabel, liftoffLabel,
   DROP_MAX, DEFAULT_PLANS, READY_PLACES, PLACE_INFO, EXTRA_PLACES,
   type DropKind, type LastBatch, type LaunchPlans, type PlaceId, type ExtraPlace, type DropSettings,
 } from '@/lib/drop-plan'
@@ -400,7 +400,7 @@ export default function DropBoard() {
         const dropId = await ensureDraft()
         if (!dropId) { batchPromise.current = null; return null }
         const st = settingsRef.current
-        const made = await startDraftBatch({ dropId, name: dropName(), settings: st, timezone, startOn: firstDay(st.dailySlots, timezone).startOn }, browserHttp)
+        const made = await startDraftBatch({ dropId, name: dropName(), settings: st, timezone, startOn: setupStartOn(st, timezone) }, browserHttp)
         if (made.problems.length) toast.error(made.problems[0], { duration: 12000 })
         if (!made.batchId) { batchPromise.current = null; return null }
         batchIdRef.current = made.batchId
@@ -457,7 +457,8 @@ export default function DropBoard() {
       // ITS OWN TIME: the next one on your pattern nobody has yet. Handed out
       // before the call, so two videos added together never share one.
       if (settingsRef.current.sendToYouTube) {
-        const [slot] = nextFreeSlots(1, settingsRef.current.dailySlots, timezone, takenTimes())
+        const st = settingsRef.current
+        const [slot] = nextFreeSlots(1, st.dailySlots, timezone, takenTimes(), new Date(), 90, { days: st.days, notBefore: st.notBefore })
         if (slot) {
           handed.current.push(slot.at)
           const t = await browserHttp(`/api/launch/items/${res.launchItemId}`, { method: 'PATCH', body: { schedule: { date: slot.date, time: slot.time } } })
@@ -628,7 +629,7 @@ export default function DropBoard() {
     const st = saved.settings
     if (bid && st) {
       const lookChanged = JSON.stringify(before?.thumbnail ?? null) !== JSON.stringify(st.thumbnail ?? null)
-      const p = await browserHttp(`/api/launch/batches/${bid}`, { method: 'PATCH', body: { ...settingsBody(st, timezone, firstDay(st.dailySlots, timezone).startOn), ...(lookChanged ? { rebuildThumbnails: true } : {}) } })
+      const p = await browserHttp(`/api/launch/batches/${bid}`, { method: 'PATCH', body: { ...settingsBody(st, timezone, setupStartOn(st, timezone)), ...(lookChanged ? { rebuildThumbnails: true } : {}) } })
       if (!p.ok) toast.error(`Saved, but this drop's Liftoff batch did not take it: ${String(p.json.error || p.status)}`, { duration: 12000 })
       if (st.sendToYouTube && st.channelId) {
         const c = await browserHttp(`/api/launch/batches/${bid}/channel`, { method: 'POST', body: { channelId: st.channelId } })
@@ -797,7 +798,7 @@ export default function DropBoard() {
   // ── render ─────────────────────────────────────────────────────────────────
   const planLine = (kind: DropKind) => {
     const list = plans[kind].filter((p) => !whyNot(p))
-    return list.length ? list.map((p) => (p === 'liftoff' && !toYouTube ? 'Amazon' : PLACE_INFO[p].label)).join(', ') : 'Nowhere yet'
+    return list.length ? list.map((p) => (p === 'liftoff' ? liftoffLabel(settings) ?? PLACE_INFO[p].label : PLACE_INFO[p].label)).join(', ') : 'Nowhere yet'
   }
   const missing = setupMissing(plans.settings ?? null)
   const showSetup = loaded && (setupOpen || !plans.settings)
@@ -831,9 +832,9 @@ export default function DropBoard() {
               <p className="min-w-0 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px]" style={{ color: 'var(--text-2)' }}>
                 <span>CTA: {settings.ctaChosen ? (settings.cta ? 'on every video' : 'none') : 'not picked'}</span>
                 <span>Thumbnail look: {settings.thumbnailChosen ? 'set' : 'not picked'}</span>
-                {toYouTube && <span>{cadenceLabel(settings.dailySlots)}</span>}
+                {toYouTube && <span>{cadenceLabel(settings.dailySlots)}, {daysLabel(settings.days)}{settings.notBefore ? `, nothing before ${new Date(`${settings.notBefore}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}</span>}
                 {toYouTube && <span>Studio steps: {studioOn} of 4</span>}
-                {settings.amazon && <span>US Amazon store</span>}
+                <span>{settings.amazon ? 'US Amazon storefront' : 'No Amazon'}</span>
               </p>
             )}
             {missing.length > 0 && plans.long.includes('liftoff') && (
@@ -943,10 +944,10 @@ export default function DropBoard() {
                 <div className="grid gap-2 grid-cols-2 lg:grid-cols-3" role="group" aria-label="Where this video goes">
                   {PLACES_OF[v.kind].map((place) => {
                     const why = whyNot(place)
-                      || (PLACE_INFO[place].afterYouTube && !has(v, 'liftoff') ? `Needs ${toYouTube ? 'YouTube and Amazon' : 'Amazon'} on` : null)
+                      || (PLACE_INFO[place].afterYouTube && !has(v, 'liftoff') ? `Needs ${liftoffLabel(settings) ?? 'YouTube and Amazon'} on` : null)
                       || (PLACE_INFO[place].withBlog && !has(v, 'blog') ? 'Needs Blog post on' : null)
                     return <PlaceTile key={place} place={place} on={has(v, place)} why={why} onClick={() => flipPlace(v, place)}
-                      label={place === 'liftoff' && !toYouTube ? 'Amazon' : undefined} />
+                      label={place === 'liftoff' ? liftoffLabel(settings) : undefined} />
                   })}
                 </div>
 
@@ -988,7 +989,7 @@ export default function DropBoard() {
                         <p className="text-[12.5px] font-medium inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}><Clock size={12} /> When it goes public on YouTube</p>
                         <p className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>
                           {draftBatch.ownSchedules
-                            ? <>The next free time on your pattern, after your other videos. Pick any day and time instead. Times are yours: {draftBatch.batch.timezone}.</>
+                            ? <>Given the next free time on your setup&apos;s times and days, after your other videos. To use another day, change it here and press Set. Times are yours: {draftBatch.batch.timezone}.</>
                             : <>It follows your daily pattern for now. A time of its own needs a database update (migration 364).</>}
                           {has(v, 'blog') && at ? ` Its blog post goes live ten minutes after it is public.` : ''}
                         </p>
@@ -1066,7 +1067,7 @@ export default function DropBoard() {
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: 'var(--text-2)' }}>
                     <span className="font-semibold" style={{ color: 'var(--text)' }}>{ready.length} video{ready.length === 1 ? '' : 's'}, {sends} send{sends === 1 ? '' : 's'}</span>
                     {[...new Set(ready.flatMap((v) => v.places))].map((pl) => (
-                      <span key={pl} className="inline-flex items-center gap-1"><PlaceIcon place={pl} size={12} />{pl === 'liftoff' && !toYouTube ? 'Amazon' : PLACE_INFO[pl].label}</span>
+                      <span key={pl} className="inline-flex items-center gap-1"><PlaceIcon place={pl} size={12} />{pl === 'liftoff' ? liftoffLabel(settings) ?? PLACE_INFO[pl].label : PLACE_INFO[pl].label}</span>
                     ))}
                     {stillPreparing && <span>· Liftoff is still preparing; it goes once they are ready{bgOn ? ', even with this page closed' : ''}</span>}
                     {toTrybe.length > 0 && <span>· keep this page open while TRYBE sends</span>}

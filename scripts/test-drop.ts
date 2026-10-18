@@ -14,7 +14,7 @@ import {
 import { buildLiftoff, dropSteps, sendDropToTrybe, type Http, type HttpAnswer } from '../lib/drop-run'
 import type { SendDeps, TrybeCall } from '../lib/trybe-submit'
 import { runSend, type SendJob, type SendItem } from '../lib/drop-places'
-import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES, settingsFromLast, readSettings, settingsBody, setupMissing, nextFreeSlots } from '../lib/drop-plan'
+import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES, settingsFromLast, readSettings, settingsBody, setupMissing, nextFreeSlots, daysLabel, liftoffLabel, setupStartOn } from '../lib/drop-plan'
 import { startDraftBatch, addDraftVideo } from '../lib/drop-run'
 import { tiktokBlocker, emptyTikTok } from '../components/labs/DropTikTok'
 
@@ -393,6 +393,17 @@ void (async () => {
     const after = nextFreeSlots(2, ['09:00', '18:00'], 'America/Toronto', [Date.parse('2026-10-17T22:00:00Z')], now)
     check('a time one of your videos already has is skipped, so a new drop follows on', JSON.stringify(after.map((x) => `${x.date} ${x.time}`)) === '["2026-10-18 09:00","2026-10-18 18:00"]')
     check('no times, no slots', nextFreeSlots(3, [], 'UTC', [], now).length === 0 && nextFreeSlots(0, ['09:00'], 'UTC', [], now).length === 0)
+    // Saturday 17 October. Monday, Wednesday and Friday only.
+    const mwf = nextFreeSlots(3, ['09:00'], 'America/Toronto', [], now, 90, { days: [1, 3, 5] })
+    check('only the creator’s days', JSON.stringify(mwf.map((x) => x.date)) === '["2026-10-19","2026-10-21","2026-10-23"]')
+    const later = nextFreeSlots(2, ['09:00'], 'America/Toronto', [], now, 90, { notBefore: '2026-11-03' })
+    check('nothing before the creator’s first day', JSON.stringify(later.map((x) => x.date)) === '["2026-11-03","2026-11-04"]')
+    check('the batch starts on the not-before day when it is later', setupStartOn({ dailySlots: ['09:00'], notBefore: '2026-11-03' }, 'America/Toronto', now) === '2026-11-03'
+      && setupStartOn({ dailySlots: ['09:00'], notBefore: null }, 'America/Toronto', now) === '2026-10-18')
+    check('days are cleaned and said in words', JSON.stringify(readSettings({ days: [5, 1, 1, 9, 'x'] })!.days) === '[1,5]' && readSettings({ days: [] })!.days.length === 7
+      && readSettings({ notBefore: 'soon' })!.notBefore === null && readSettings({ notBefore: '2026-11-03' })!.notBefore === '2026-11-03'
+      && daysLabel([1, 2, 3, 4, 5]) === 'weekdays' && daysLabel([1, 3, 5]) === 'Mon, Wed and Fri' && daysLabel([0, 1, 2, 3, 4, 5, 6]) === 'every day' && daysLabel([0]) === 'Sun only')
+    check('the long videos’ place is named for the setup', liftoffLabel({ sendToYouTube: true, amazon: true }) === undefined && liftoffLabel({ sendToYouTube: true, amazon: false }) === 'YouTube' && liftoffLabel({ sendToYouTube: false, amazon: true }) === 'Amazon')
   }
   {
     const { http, calls } = fakeHttp((url, method) => url === '/api/launch/batches' && method === 'POST' ? ok({ ok: true, id: 'b-d' }) : undefined)
@@ -424,10 +435,14 @@ void (async () => {
     check('the product check is behind the Drop switch and says when Amazon did not show it', /canUsePreview\('drop', intg\?\.tier\)/.test(read('app/api/drop/product/route.ts'))
       && /Amazon did not show this product just now/.test(read('app/api/drop/product/route.ts')) && /Could not check/.test(read('components/labs/DropProduct.tsx')))
     const setup = read('components/labs/DropSetup.tsx')
+    const b2pre = () => read('components/labs/DropBoard.tsx')
+    check('YouTube, Amazon or both is three plain choices, not a tick box', /'YouTube only'/.test(setup) && /'Amazon only'/.test(setup) && !/Also the US Amazon store/.test(setup))
+    check('the setup sets the days and a first day, and each video follows them', /Nothing before/.test(setup) && /aria-label="Days videos go public"/.test(setup)
+      && /\{ days: st\.days, notBefore: st\.notBefore \}/.test(b2pre()))
     check('the setup uses Liftoff’s own CTA, thumbnail and time pickers', /<CtaPicker /.test(setup) && /<ThumbnailPicker /.test(setup) && /<SlotEditor /.test(setup) && /\/api\/youtube\/playlists/.test(setup))
     const b2 = read('components/labs/DropBoard.tsx')
     check('each long video’s card has Liftoff’s own editor and its own time', /<ItemRowEditor /.test(b2) && /<ScheduleRow /.test(b2) && /<DropProduct /.test(b2))
-    check('each video is given the next free time, not the batch pattern', /nextFreeSlots\(1, settingsRef\.current\.dailySlots, timezone, takenTimes\(\)\)/.test(b2) && /schedule: \{ date: slot\.date, time: slot\.time \}/.test(b2))
+    check('each video is given the next free time, not the batch pattern', /nextFreeSlots\(1, st\.dailySlots, timezone, takenTimes\(\)/.test(b2) && /schedule: \{ date: slot\.date, time: slot\.time \}/.test(b2))
     check('Launch waits for Liftoff and says so, and never launches an unsaved time', /Launch when ready/.test(b2) && /has a time you have not set/.test(b2) && /Save your setup first/.test(b2))
     check('the page only restores the drop on its first read', /const first = !restored\.current/.test(b2))
     check('a Liftoff video no card shows is taken out before Launch, or nothing launches', /const strays = \(draftBatch\?\.items \?\? \[\]\)\.filter\(\(i\) => !keep\.has\(i\.id\)\)/.test(b2) && /Nothing was launched\./.test(b2))
