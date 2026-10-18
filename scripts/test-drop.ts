@@ -219,12 +219,19 @@ void (async () => {
 
   // ── wiring ─────────────────────────────────────────────────────────────────
   const route = read('app/api/drop/route.ts')
-  check('the Drop routes are behind its Labs switch', /canUsePreview\('drop', intg\?\.tier\)/.test(route) && /drop: 'admin'/.test(read('lib/labs-preview.ts')))
+  check('the Drop routes are behind its Labs switch', /canUsePreview\('drop', intg\?\.tier\)/.test(route) && /drop: '(admin|labs)'/.test(read('lib/labs-preview.ts')))
+  // One switch opens Drop everywhere: the sidebar entry reads it too, so it is
+  // never shown to somebody the page would turn away, or hidden from somebody
+  // it would let in.
+  check('the sidebar entry follows the same switch',
+    /href: '\/drop'[^\n]*gate: canUsePreview\('drop', effectiveTier\)/.test(read('components/layout/DashboardShellV2.tsx')))
   check('only this creator’s own uploads can be dropped', /instagram-videos\/\$\{g\.userId\}\//.test(route))
   check('a blog post and a TRYBE send are claimed before they run', /eq\('blog_state', 'wanted'\)/.test(route) && /in\('trybe_state', from\)/.test(route))
   check('results are written only from a send that was claimed', /\.eq\('blog_state', 'writing'\)\s*\n?\s*return/.test(route) || /blog_done[\s\S]{0,600}\.eq\('blog_state', 'writing'\)/.test(route))
   const nav = read('components/layout/DashboardShellV2.tsx')
-  check('Drop is in Labs, admin only', /href: '\/drop'[^\n]*gate: isAdmin/.test(nav))
+  // Out of Labs since 2026-10-18 so opening it to Pro is one switch; while
+  // that switch says 'admin', the entry is still admin only.
+  check('the Drop entry is gated by its switch, not left open', /href: '\/drop'[^\n]*gate: canUsePreview\('drop', effectiveTier\)/.test(nav))
   check('the page is behind its switch', /canUsePreview\('drop', tier\)/.test(read('app/(dashboard)/drop/page.tsx')))
   check('SCOUT’s background tab runs the drop steps', /await dropSteps\(browserHttp/.test(read('components/launch/LiftoffRunner.tsx')))
   check('the board is drawn from the results', /placeLines\(it, li,/.test(read('components/labs/DropResults.tsx')))

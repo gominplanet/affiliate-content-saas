@@ -538,6 +538,11 @@ export default function DashboardShellV2({
     {
       label: 'Make videos',
       items: [
+        // Drop: finished videos in, each one sent everywhere it belongs. On
+        // its own switch (lib/labs-preview drop) rather than in Labs, so the
+        // day it opens to Pro is one word there, and the sidebar, the page,
+        // the API, What's new and the sales page card all follow it.
+        { href: '/drop', icon: <UploadCloud size={15} />, label: 'Drop', gate: canUsePreview('drop', effectiveTier), badge: 'New' },
         // The Amazon plan has its six video additions since 2026-10-05 (Seb):
         // one YouTube channel and Co-Pilot, Bulk Amazon upload, Clip Factory
         // with its own allowance, YouTube comments and Amazon Live.
@@ -688,9 +693,6 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Drop: finished videos in, one Launch out (Liftoff, blog, TRYBE).
-        // Admin only while it is tested (lib/labs-preview drop).
-        { href: '/drop', icon: <UploadCloud size={15} />, label: 'Drop', gate: isAdmin, badge: 'New' },
       ],
     },
     {
