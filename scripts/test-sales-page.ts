@@ -124,8 +124,10 @@ const noImports = (src: string) => src
   check('owning it is still said on the first screen', /stays yours forever/.test(hero))
   check('the closing section does not repeat the headline',
     !/Film it once/.test(PAGE_LIVE.slice(PAGE_LIVE.indexOf('function FinalCTASection'), PAGE_LIVE.indexOf('function Nav()'))))
-  check('the hero picture is the hub, one video and every place it goes',
-    /app\.mvpaffiliate\.io\/drop/.test(hero) && (hero.match(/label: '[^']+', x: \d+, y: \d+/g) || []).length === 8)
+  // THE WALKTHROUGH IS THE HERO PICTURE (Seb, 2026-10-18: "this video should
+  // be the hero video instead of the bad design we have on the right").
+  check('the hero picture is the walkthrough video, not a drawing',
+    /<HeroVideo \/>/.test(hero) && !/function ProductMock/.test(PAGE_LIVE) && !/app\.mvpaffiliate\.io\/drop/.test(hero))
   check('the old product-first headline is gone',
     !/Everything an Amazon<br \/>affiliate needs/.test(PAGE),
     'it was a claim about us, addressed to people who have never heard of us')

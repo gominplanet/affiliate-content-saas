@@ -35,10 +35,10 @@ import {
   Pin,
   Store, Search,
   Radar, Scissors,
-  CloudUpload, Handshake, Youtube,
+  CloudUpload, Handshake,
 } from 'lucide-react'
 import NextImage from 'next/image'
-import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
+import { FAQSection, HeroVideo, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -1539,136 +1539,12 @@ function Hero() {
           </div>
         </div>
 
-        {/* ── Right: product mock in a browser frame ────────────────── */}
-        <ProductMock />
+        {/* ── Right: the full walkthrough, ready to play (Seb, 2026-10-18) ── */}
+        <div className="w-full self-center">
+          <HeroVideo />
+        </div>
       </div>
     </section>
-  )
-}
-
-/** The hub diagram: SVG lines drawn between a central node and 8 spoke
- *  nodes, animated on page load (lines draw outward in sequence; spokes
- *  pop in once each line arrives; lines then breathe gently forever).
- *
- *  Layered:
- *    - SVG (z-0): lines + radial pulse rings under center
- *    - HTML (z-10): the 8 spoke nodes
- *    - HTML (z-20): the center video node, drawn last so it covers line
- *                   endpoints
- */
-/** Hero visual — a stylized mock of the product inside a browser frame:
- *  one YouTube review card at the top, then the outputs MVP publishes from it,
- *  each ticked "done". Bounded + padded so nothing crowds the edge (the old
- *  radial hub did), with a soft gradient glow and two floating feature chips
- *  for depth. Pure markup (no client JS) so it stays in the Server Component. */
-function ProductMock() {
-  // ONE VIDEO IN THE MIDDLE, EVERY PLACE IT GOES AROUND IT (Seb, 2026-10-18:
-  // "the one central hub"). It used to be a list of nine ticks under a video
-  // card, which reads as a feature list. The hub reads as the claim: one drop,
-  // every destination. Pure markup (no client JS), so it stays server-rendered.
-  // Positions are percentages of the hub, and the lines are drawn in the same
-  // 0 to 100 box, so a node and its line can never drift apart.
-  const nodes: Array<{ icon: React.ReactNode; label: string; x: number; y: number }> = [
-    { icon: <Youtube size={13} />, label: 'YouTube', x: 50, y: 9 },
-    { icon: <Store size={13} />, label: 'Amazon', x: 83, y: 19 },
-    { icon: <FileText size={13} />, label: 'Blog post', x: 87, y: 50 },
-    { icon: <Scissors size={13} />, label: 'Shorts & Reels', x: 82, y: 81 },
-    { icon: <Handshake size={13} />, label: 'TRYBE brand', x: 50, y: 91 },
-    { icon: <Pin size={13} />, label: 'Pinterest', x: 18, y: 81 },
-    { icon: <Facebook size={13} />, label: 'Facebook', x: 13, y: 50 },
-    { icon: <Instagram size={13} />, label: 'Instagram', x: 17, y: 19 },
-  ]
-  const node = (n: (typeof nodes)[number]) => (
-    <>
-      <span className="inline-flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>{n.icon}</span>
-      <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{n.label}</span>
-      <Check size={12} className="flex-shrink-0" style={{ color: '#10B981' }} />
-    </>
-  )
-  const nodeStyle = { backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 6px 18px -10px rgba(24,24,40,0.35)' } as const
-  const source = (
-    <div className="rounded-2xl p-[1.5px]" style={{ background: 'linear-gradient(135deg,#F97316,#C026D3,#7C3AED)' }}>
-      <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ backgroundColor: 'var(--surface)' }}>
-        <span className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
-          <Play size={18} fill="currentColor" className="ml-0.5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[13.5px] font-bold leading-tight whitespace-nowrap" style={{ color: 'var(--text)' }}>Best Robot Vacuums</p>
-          <p className="text-[11px] mt-0.5 whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>Filmed once · dropped once</p>
-        </div>
-      </div>
-    </div>
-  )
-  return (
-    <div className="relative mx-auto w-full max-w-[560px]">
-      <style>{`@keyframes mvpHubFlow { to { stroke-dashoffset: -12 } } @media (prefers-reduced-motion: no-preference) { .mvp-hub-line { animation: mvpHubFlow 1.4s linear infinite } }`}</style>
-      {/* Soft glow behind the frame */}
-      <div
-        aria-hidden
-        className="absolute -inset-8 pointer-events-none"
-        style={{ background: 'radial-gradient(55% 55% at 55% 45%, rgba(124,58,237,0.28), transparent 70%)', filter: 'blur(24px)' }}
-      />
-
-      {/* Browser frame */}
-      <div
-        className="relative rounded-2xl border overflow-hidden"
-        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 34px 64px -22px rgba(24,24,40,0.4)' }}
-      >
-        {/* Chrome bar */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-          <span className="flex gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#FF5F57' }} />
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#FEBC2E' }} />
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#28C840' }} />
-          </span>
-          <div className="flex-1 ml-2 text-center text-[11px] rounded-md py-1" style={{ background: 'var(--bg)', color: 'var(--text-faint)' }}>
-            app.mvpaffiliate.io/drop
-          </div>
-        </div>
-
-        {/* The hub, from a small tablet up */}
-        <div className="relative hidden sm:block h-[380px]" style={{ background: 'var(--bg)' }}>
-          <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
-            {nodes.map((n) => (
-              <line key={n.label} x1="50" y1="50" x2={n.x} y2={n.y} className="mvp-hub-line"
-                stroke="rgba(124,58,237,0.45)" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-            ))}
-          </svg>
-          {nodes.map((n) => (
-            <div key={n.label} className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-xl border px-2 py-1.5"
-              style={{ left: `${n.x}%`, top: `${n.y}%`, ...nodeStyle }}>
-              {node(n)}
-            </div>
-          ))}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[262px]">{source}</div>
-        </div>
-
-        {/* On a phone: the same story, stacked */}
-        <div className="sm:hidden p-4 flex flex-col gap-3" style={{ background: 'var(--bg)' }}>
-          {source}
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-center" style={{ color: 'var(--text-faint)' }}>Sent everywhere it belongs</p>
-          <div className="grid grid-cols-2 gap-2">
-            {nodes.map((n) => (
-              <div key={n.label} className="flex items-center gap-1.5 rounded-xl border px-2 py-1.5" style={nodeStyle}>{node(n)}</div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Floating feature chips for depth */}
-      <div
-        className="hidden sm:flex absolute -top-3 -right-3 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold text-white"
-        style={{ background: 'linear-gradient(135deg,#F97316,#C026D3)', boxShadow: '0 12px 26px -8px rgba(192,38,211,0.5)' }}
-      >
-        <Zap size={13} /> Deal Radar
-      </div>
-      <div
-        className="hidden sm:flex absolute -bottom-3 -left-3 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold"
-        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
-      >
-        <Calendar size={13} style={{ color: '#7C3AED' }} /> Scheduled
-      </div>
-    </div>
   )
 }
 

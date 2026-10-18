@@ -20,10 +20,16 @@ check('every video is a YouTube id, used once', SALES_VIDEOS.every(v => /^[A-Za-
 check('captions and tags are plain words: no dashes, no year', SALES_VIDEOS.every(v => !/[–—|]| - /.test(v.caption + v.tag) && !/\b20\d\d\b/.test(v.caption)))
 const ISL = read('components/landing/islands.tsx')
 const SEC = ISL.slice(ISL.indexOf('/** WATCH IT WORK'))
-check('nothing from YouTube loads until play is pressed, then from youtube-nocookie', /\{playing \? \(\s*<iframe/.test(SEC) && /youtube-nocookie\.com\/embed\/\$\{id\}/.test(SEC) && /loading="lazy"/.test(SEC))
+check('nothing from YouTube loads until play is pressed, then from youtube-nocookie', /\{playing \? \(\s*<iframe/.test(SEC) && /youtube-nocookie\.com\/embed\/\$\{id\}/.test(SEC) && /'lazy'/.test(SEC))
 const PAGE = read('app/page.tsx')
 check('the section is on the sales page, after the features, and in its navigation', PAGE.indexOf('<SalesVideosSection />') > PAGE.indexOf('<FeaturesGridCondensed />') && PAGE.indexOf('<FeaturesGridCondensed />') > 0 && /\{ label: 'Videos', href: '#videos' \}/.test(PAGE) && /id="videos"/.test(SEC))
+// The walkthrough moved to the hero (Seb, 2026-10-18), so the section below
+// holds the six feature videos and does not show it a second time.
+check('the walkthrough plays in the hero, its cover loaded with the page',
+  /export function HeroVideo\(\) \{\s*return <SalesVideo \{\.\.\.SALES_VIDEOS\[0\]\} big eager \/>/.test(ISL) && /<HeroVideo \/>/.test(PAGE)
+    && /loading=\{eager \? 'eager' : 'lazy'\}/.test(ISL))
+check('and the section below does not repeat it', /const rest = SALES_VIDEOS\.slice\(1\)/.test(SEC) && !/SALES_VIDEOS\[0\]\} big \/>|\{\.\.\.first\} big/.test(SEC.slice(SEC.indexOf('export function SalesVideosSection'))))
 check('a link to the whole channel', /https:\/\/www\.youtube\.com\/@MVPaffiliate\/videos/.test(SEC) && /More on the MVP Affiliate channel/.test(SEC))
 
 if (fails.length) { console.error('sales-videos failed:\n - ' + fails.join('\n - ')); process.exit(1) }
-console.log('✅ sales-videos: the walkthrough and six feature videos on the sales page, click to play, nothing loaded before')
+console.log('✅ sales-videos: the walkthrough in the hero and six feature videos below, click to play, nothing from YouTube loaded before')
