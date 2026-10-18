@@ -189,11 +189,31 @@ if (present) {
   // like, so the shallow bar is measured in SCREENS and SECONDS, never in
   // percent of the document.
   check('the optimization bar is measured in screens, not in percent of the page',
-    /y>=h\.clientHeight\*2/.test(HTML) && /scroll-2-screens/.test(HTML),
+    /travelled>=screen\*2/.test(HTML) && /scroll-2-screens/.test(HTML),
     'a percentage bar on a 65,000px page is a bar almost nobody clears')
   check('and dwelling counts too, but only on a visible tab that scrolled',
-    /dwell-20s/.test(HTML) && /!document\.hidden && scrollY\(\)>0/.test(HTML),
+    /dwell-20s/.test(HTML) && /!document\.hidden && settled && scrollY\(\)>base/.test(HTML),
     'a bare timer would count a backgrounded tab as a reader')
+
+  // AND THE BAR IS MEASURED FROM WHERE THE READER LANDED. The TRYBE ad points
+  // at ?start=trybe#trybe, which drops people on Module 12 at 79% of the page.
+  // Measured from the top of the document, that arrival clears the deep bar
+  // before the reader's thumb has moved: ViewContent AND GuideRead for someone
+  // who read nothing, on every single click the ad buys. ViewContent is what
+  // the ad sets optimize on, so that is the delivery signal poisoned at the
+  // source, and it would look exactly like the ad working.
+  check('depth is measured from where the page put the reader, not from zero',
+    /var travelled=y-base/.test(HTML) && /var runway=max-base/.test(HTML),
+    'a deep link would otherwise score its own landing position as reading')
+  check('and nothing may fire while the page is still placing them',
+    /if\(!settled\) return/.test(HTML) && /settled=true; base=scrollY\(\)/.test(HTML),
+    'the anchor jump happens after load, so an ungated bar is spent before the reader sees the page')
+  check('and a jump re-bases instead of scoring',
+    /Math\.abs\(y-lastY\)>screen\*3/.test(HTML) && /base=y; return/.test(HTML),
+    'the anchor jump arrives as an ordinary scroll event and is only distinguishable by size')
+  check('and both events say where the reader landed',
+    (HTML.match(/landed:landed/g) || []).length >= 2,
+    'ad traffic and organic traffic would otherwise average into one rate that describes neither')
 
   // THE DEEP BAR KEEPS ITS OWN NAME. ads_get_dataset_stats filters by event
   // name and cannot filter by custom parameter, so folding "read a quarter"
