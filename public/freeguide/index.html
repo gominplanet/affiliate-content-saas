@@ -111,10 +111,50 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
   .sitebar nav a{padding:5px 7px;font-size:12.5px}
 }
 @media print{.sitebar{display:none!important}}
-.hero-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,272px);
-  gap:clamp(24px,4vw,48px);align-items:start;margin-top:26px}
-.hero-txt{min-width:0}
-.hero-txt .lede{margin-top:0}
+/* ── The hero, in three bands ──────────────────────────────────────────────
+   WORDMARK AND VIDEO SHARE THE TOP LINE, then the standfirst runs the full
+   width under both, then the facts and the start panel. The old layout ran
+   the video down the right of everything, which made the lede a narrow column
+   next to a tall photo and pushed the updates card into a gutter.
+
+   THE TWO GRIDS SHARE A RIGHT COLUMN WIDTH. --rail is used by the top band
+   and by the band at the bottom, so the video and the start panel line up on
+   the same edge and the hero reads as one grid instead of two guesses. */
+.hero{--rail:clamp(230px,24vw,300px)}
+.hero-top{display:grid;grid-template-columns:minmax(0,1fr) var(--rail);
+  gap:clamp(24px,4vw,56px);align-items:center}
+.hero-rail{display:grid;grid-template-columns:minmax(0,1fr) var(--rail);
+  gap:clamp(24px,4vw,56px);align-items:start;margin-top:26px}
+/* THE STANDFIRST IS A DECK, NOT BODY COPY. It is the only paragraph in the
+   hero, so it carries the weight the old narrow column could not. Capped at
+   34em even at full width, because a 45 word sentence set across 1140px is
+   140 characters a line and nobody finishes it. */
+.hero .lede{max-width:34em;font-size:clamp(19px,2.3vw,27px);line-height:1.38;
+  margin:30px 0 0;color:var(--ink)}
+
+/* THE FACTS. Three, in mono, between hairlines. A spec strip rather than a
+   sentence, because these are the numbers somebody scans for before deciding
+   whether a 153 minute page is worth starting. */
+.hero-facts{display:grid;grid-auto-flow:column;justify-content:start;
+  gap:clamp(26px,6vw,76px);margin-top:30px;padding:16px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.hero-facts div{display:grid;gap:5px}
+.hero-facts b{font-family:var(--display);font-weight:800;text-transform:uppercase;
+  font-size:clamp(26px,3.4vw,38px);line-height:.9;letter-spacing:-.01em;color:var(--ink)}
+.hero-facts span{font:700 11px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted)}
+
+/* THE START PANEL. The free promise, the button and the progress bar in one
+   block on the rail, so the single thing a new reader is meant to DO is not
+   buried three paragraphs into the updates list. */
+.hero-start{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:18px}
+.hero-start .free{margin:0 0 13px;font:700 12px/1.45 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok)}
+.hero-start .btn-ref{display:block;text-align:center;margin:0}
+.hero-start .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.hero-start .prog{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);
+  flex-wrap:wrap;gap:10px}
+.hero-start .prog .bar{flex:1 1 100%}
 .hero-fig{margin:0}
 .hero-fig img{display:block;width:100%;height:auto;border-radius:3px}
 /* No accent bar down the side. A coloured left border on a caption is the
@@ -318,7 +358,17 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 .foot{font-size:13px;color:var(--muted);padding:12px 4px 0}
 
 @media (max-width:900px){
-  .hero-lower{grid-template-columns:1fr;gap:26px}
+  .hero-top,.hero-rail{grid-template-columns:1fr;gap:26px}
+  .hero-top{margin-bottom:4px}
+  /* CENTRED, NOT LEFT WITH A HOLE. The figure keeps its 280px cap on a 350px
+     column, and left-aligning it left 70px of dead space that reads as a
+     mistake rather than as space. */
+  .hero-fig{margin-inline:auto}
+  /* THE CALL TO ACTION CLIMBS ABOVE THE LIST. In one column the source order
+     puts five update bullets between the reader and the only thing the hero
+     asks them to do. On a phone that is 400px of scrolling to reach a button
+     that sits beside the list on a desktop. */
+  .hero-start{order:-1}
   .hero-fig{max-width:280px}
   .layout{grid-template-columns:1fr;gap:20px}
   .toc details{position:static;max-height:none;overflow:visible;
@@ -463,38 +513,46 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 
 <div class="shell">
 <header class="hero">
-  <h1><small class="eyebrow">Free guide · Amazon Influencer Program</small><img class="wordmark" src="/freeguide/logo.webp" width="1672" height="940" fetchpriority="high" decoding="async" alt="There is no shortcut"></h1>
-  <div class="hero-lower">
-  <div class="hero-txt">
+  <p class="eyebrow">Free guide &middot; Amazon Influencer Program</p>
+  <div class="hero-top">
+    <h1><img class="wordmark" src="/freeguide/logo.webp" width="1672" height="940" fetchpriority="high" decoding="async" alt="There is no shortcut"></h1>
+    <figure class="hero-fig">
+      <div class="vwrap">
+        <video id="herovid" playsinline preload="none" poster="/freeguide/hero.jpg"
+               width="790" height="880">
+          <source src="https://gominreviews.com/wp-content/uploads/2026/10/Freeguide-intro-003.mp4" type="video/mp4">
+        </video>
+        <button class="vplay" id="vplay" type="button" aria-label="Play the 57 second introduction to this guide"><span class="disc" aria-hidden="true"></span>Watch first &middot; 57 sec</button>
+      </div>
+      <img class="printonly" src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
+           alt="Seb and Michelle of Gominplanet on a dock in Florida">
+      <figcaption>Seb &amp; Michelle, Gominplanet</figcaption>
+    </figure>
+  </div>
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now, after Amazon's latest rule changes.</p>
-  <div class="meta"><span>15 modules</span><span>~153 min read</span></div>
-  <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 15 modules done</span></div>
-  <div class="new" id="whatsnew">
-    <p class="free">Free to read. No email needed.</p>
-    <p class="cl"><a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a> <span>Your first 30 days, one page, with boxes to tick.</span></p>
-    <p><b>Last updated October 18.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
-    <ul>
-      <li><a href="#youtube">YouTube</a>: why every review should live there too, how we post three to five a day, your links, and when YouTube pays you</li>
-      <li><a href="#trybe">TRYBE</a>: make ad videos for brands that run them with their own ad spend, and how we landed 45 campaigns in a week</li>
-      <li><a href="#facebook">Facebook: Pages, Groups and your deals</a>: the link limit, Meta Verified, the two ways to run it, and filling Group posts with SCOUT</li>
-      <li><a href="#tagging">Tagging</a>, titles that win the row, more rejection reasons, and reading times on every module</li>
-      <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
-    </ul>
-    <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
+  <div class="hero-facts">
+    <div><b>15</b><span>Modules</span></div>
+    <div><b>~153 min</b><span>Start to finish</span></div>
+    <div><b>Oct 18</b><span>Last updated</span></div>
   </div>
-  </div>
-  <figure class="hero-fig">
-    <div class="vwrap">
-      <video id="herovid" playsinline preload="none" poster="/freeguide/hero.jpg"
-             width="790" height="880">
-        <source src="https://gominreviews.com/wp-content/uploads/2026/10/Freeguide-intro-003.mp4" type="video/mp4">
-      </video>
-      <button class="vplay" id="vplay" type="button" aria-label="Play the 57 second introduction to this guide"><span class="disc" aria-hidden="true"></span>Watch first &middot; 57 sec</button>
+  <div class="hero-rail">
+    <div class="new" id="whatsnew">
+      <p><b>What&#x27;s new</b> (and <a href="#updates">get an email when it changes</a>):</p>
+      <ul>
+        <li><a href="#youtube">YouTube</a>: why every review should live there too, how we post three to five a day, your links, and when YouTube pays you</li>
+        <li><a href="#trybe">TRYBE</a>: make ad videos for brands that run them with their own ad spend, and how we landed 45 campaigns in a week</li>
+        <li><a href="#facebook">Facebook: Pages, Groups and your deals</a>: the link limit, Meta Verified, the two ways to run it, and filling Group posts with SCOUT</li>
+        <li><a href="#tagging">Tagging</a>, titles that win the row, more rejection reasons, and reading times on every module</li>
+        <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
+      </ul>
+      <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
     </div>
-    <img class="printonly" src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
-         alt="Seb and Michelle of Gominplanet on a dock in Florida">
-    <figcaption>Seb &amp; Michelle, Gominplanet</figcaption>
-  </figure>
+    <aside class="hero-start">
+      <p class="free">Free to read. No email needed.</p>
+      <a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a>
+      <p class="note">Your first 30 days, one page, with boxes to tick.</p>
+      <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 15 modules done</span></div>
+    </aside>
   </div>
 </header>
 <div class="layout">
