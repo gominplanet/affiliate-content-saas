@@ -339,6 +339,21 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   a{color:var(--ink)}
   .prose h2{break-after:avoid}
 }
+
+/* ── "You landed in the middle of a long guide" ────────────────────────────
+   Only ever rendered when ?start= sent somebody straight to a module, and
+   rendered INSIDE that module rather than floating over the page, so it reads
+   as part of what they came for instead of as a popup to dismiss. It says
+   where they are, because arriving at Module 12 of 16 with no header above it
+   is disorienting in a way the reader blames on the page. */
+.arrived{margin:0 0 28px;padding:14px 18px;border:2px solid var(--ink);
+  background:var(--marker-soft);color:var(--marker-ink);border-radius:10px;
+  font:400 15px/1.5 var(--body)}
+.arrived b{font-weight:700}
+.arrived a{color:inherit;font-weight:700}
+.arrived .from{display:block;font:700 11px/1 var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;opacity:.75;margin:0 0 7px}
+@media print{.arrived{display:none}}
 </style><script>
 /* Meta pixel.
 
@@ -2782,29 +2797,86 @@ questions in public so everyone gets the answer.</p>
   // Depths are measured in PIXELS AND SCREENS, never in percent, because a
   // percentage of a page this long does not mean what it sounds like. That
   // was the whole bug.
+  // ── WHERE THE READER LANDED CHANGES WHAT A DEPTH MEANS ──────────────────
+  //
+  // The TRYBE ad points at /freeguide?start=trybe#trybe, because somebody who
+  // just watched 44 seconds about TRYBE should not have to scroll past twelve
+  // modules to reach it. That deep link breaks every line below if the depths
+  // are still measured from the top of the document.
+  //
+  // Module 12 sits around 80% of the way down. A reader dropped there starts
+  // at y/max = 0.8, which clears the 25% bar before their thumb has moved.
+  // ViewContent and GuideRead would both fire on arrival, for every single
+  // person the ad sends, having read nothing. ViewContent is the event the
+  // other ad sets optimize on, so that is not just a wrong number in a
+  // report: it is the delivery signal poisoned at the source, and it would
+  // look exactly like the ad working.
+  //
+  // So depth is measured FROM WHERE THE PAGE PUT THEM, not from zero, and
+  // every event says which it was. 'top' and 'trybe' stay separable in
+  // reporting instead of averaging into one meaningless rate.
   var started=false, readDeep=false, t0=Date.now();
+  var base=0, settled=false, landed='top';
   function scrollY(){ return window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0 }
   function secs(){ return Math.round((Date.now()-t0)/1000) }
   function markStarted(how){
     if(started) return; started=true;
     if(typeof fbq!=='function') return;
-    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how,seconds:secs()});
+    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how,landed:landed,seconds:secs()});
   }
   function markRead(how){
     if(readDeep) return; readDeep=true;
     if(typeof fbq!=='function') return;
-    fbq('trackCustom','GuideRead',{content_name:'Free guide: No Shortcut Playbook',engagement:how,seconds:secs()});
+    fbq('trackCustom','GuideRead',{content_name:'Free guide: No Shortcut Playbook',engagement:how,landed:landed,seconds:secs()});
   }
+  var lastY=0;
   function onScroll(){
     var h=document.documentElement, y=scrollY(), max=h.scrollHeight-h.clientHeight;
-    if(h.clientHeight>0 && y>=h.clientHeight*2) markStarted('scroll-2-screens');
-    if(max>0 && y/max>=0.25) markRead('scroll-25');
+    var screen=h.clientHeight||1;
+
+    // A JUMP IS NOT READING. The browser's own anchor scroll arrives as an
+    // ordinary scroll event indistinguishable from a thumb, except in size:
+    // it crosses 190 screens in one tick. No hand does that. Any single move
+    // of more than three screens re-bases instead of scoring, which catches
+    // the anchor jump whenever it lands, including after a late font reflow
+    // that no fixed timer would have waited for. It also quietly handles the
+    // reader who drags the scrollbar, which is likewise not reading.
+    if(Math.abs(y-lastY)>screen*3){ lastY=y; base=y; return; }
+    lastY=y;
+    if(!settled) return;
+
+    var travelled=y-base;
+    if(travelled>=screen*2) markStarted('scroll-2-screens');
+    // A quarter of what was actually in front of them. For somebody who
+    // landed at the top that is the old 25% of the page, unchanged, so the
+    // history this number has already built stays comparable.
+    var runway=max-base;
+    if(runway>0 && travelled/runway>=0.25) markRead('scroll-25');
     if(started && readDeep) window.removeEventListener('scroll',onScroll);
   }
+  // NOTHING MAY FIRE UNTIL THE PAGE HAS STOPPED MOVING ON ITS OWN. Until
+  // settled is true every depth is suppressed, so the window in which the
+  // browser is still placing the reader cannot be spent for them.
+  function settle(){
+    if(settled) return;
+    settled=true; base=scrollY(); lastY=base;
+    var h=document.documentElement;
+    if(h.clientHeight>0 && base>h.clientHeight){
+      var id=(location.hash||'').replace('#','');
+      if(id) landed=id;
+    }
+  }
+  if(document.readyState==='complete') setTimeout(settle,500);
+  else window.addEventListener('load',function(){ setTimeout(settle,500) });
+  // A belt for the braces: if load never fires (a stalled image, a blocked
+  // font) the page still starts counting rather than counting nothing at all.
+  setTimeout(settle,4000);
   window.addEventListener('scroll',onScroll,{passive:true});
-  // Twenty seconds counts as started only if they actually scrolled and the
-  // tab is in front. A timer alone would count a background tab as a reader.
-  setTimeout(function(){ if(!document.hidden && scrollY()>0) markStarted('dwell-20s') },20000);
+  // Twenty seconds counts as started only if they actually scrolled past
+  // where they landed and the tab is in front. A timer alone would count a
+  // background tab as a reader, and a base-relative check keeps a deep
+  // arrival from counting its own landing position as movement.
+  setTimeout(function(){ if(!document.hidden && settled && scrollY()>base) markStarted('dwell-20s') },20000);
 
   boxes.forEach(function(b){b.addEventListener('change',function(){
     done[b.dataset.id]=b.checked; try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){} render();
@@ -2861,6 +2933,43 @@ questions in public so everyone gets the answer.</p>
   function fit(){ if(d) d.open = window.innerWidth>900; }
   fit();
   links.forEach(function(a){a.addEventListener('click',function(){ if(window.innerWidth<=900 && d) d.open=false; });});
+
+  // ── ?start=<module> : the ad drops people straight into what it sold ─────
+  //
+  // THE HASH DOES THE SCROLLING when it survives. The query parameter exists
+  // because Meta's link shim rewrites outbound URLs and a fragment is the
+  // first thing to go missing; when that happens the reader would land at
+  // Module 0 having been promised Module 12, which is the kind of failure
+  // that looks like nothing at all went wrong. So the parameter carries the
+  // same instruction a second time and the page honours whichever arrives.
+  function startParam(){
+    var m=/[?&]start=([A-Za-z0-9_-]+)/.exec(location.search);
+    return m ? m[1] : '';
+  }
+  var want=startParam();
+  if(want){
+    var sec=document.getElementById(want);
+    if(sec){
+      // Only scroll ourselves if the hash did not already do it. Scrolling on
+      // top of the browser's own anchor jump fights it and lands short.
+      if((location.hash||'').replace('#','')!==want){
+        try{ sec.scrollIntoView(); }catch(e){ location.hash='#'+want; }
+      }
+      landed=want;
+      // Where they are, and a way back to the start. Written into the module
+      // rather than over it, and only for the people the link sent here.
+      var h2=sec.querySelector('.mod-h h2'), k=sec.querySelector('.mod-h .kicker');
+      var note=document.createElement('div');
+      note.className='arrived';
+      note.innerHTML='<span class="from">You came from the video</span>'+
+        'This is <b>'+((k&&k.textContent.trim())||'a module')+'</b> of a free '+
+        boxes.length+'-module guide'+((h2&&h2.textContent.trim())?': <b>'+h2.textContent.trim()+'</b>':'')+
+        '. Nothing to sign up for, nothing to buy. '+
+        '<a href="#start">Start from the beginning</a> if you would rather.';
+      var pr=sec.querySelector('.prose');
+      if(pr) pr.insertBefore(note, pr.firstChild);
+    }
+  }
   if('IntersectionObserver' in window){
     var io=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){
       links.forEach(function(a){a.classList.toggle('is-active',a.dataset.id===e.target.id);});
