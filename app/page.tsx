@@ -24,6 +24,7 @@ import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guarantee'
 import { TESTIMONIALS } from '@/lib/testimonials'
+import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
   FileText, Image as ImageIcon, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
@@ -34,6 +35,7 @@ import {
   Pin,
   Store, Search,
   Radar, Scissors,
+  CloudUpload, Handshake,
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
@@ -161,6 +163,9 @@ export default function LandingPreview() {
       {TESTIMONIALS.length >= 3 && <TestimonialsSection />}
       <HowItWorks />
       <FeaturesGridCondensed />
+      {/* What MVP does for each job (Seb, 2026-10-18): Drop, TRYBE, Meta Hub
+          and research had no word on the page. */}
+      <RolesSection />
       {/* Watch it work (Seb, 2026-10-17): the walkthrough and one video per
           feature, so a visitor sees what they get. Click to play. */}
       <SalesVideosSection />
@@ -218,7 +223,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
  *  Branding the flow reads as a system that runs the business side, not a set of
  *  generic steps. */
 const LOOP_STEPS = [
-  { n: 'Find', d: 'Research all of Amazon and live Deal Radar for products worth promoting, or just paste any product, brand or Amazon link.' },
+  { n: 'Find', d: 'Research all of Amazon, live Deal Radar and your partner programs for products worth promoting, find brands on TRYBE that pay for videos, or just paste any product link.' },
   { n: 'Create', d: 'MVP writes the review, comparisons and social posts in your real voice, and makes the thumbnail and the Shorts for you.' },
   { n: 'Publish', d: 'It all lands on a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
   { n: 'Earn', d: 'Passport geo-links with no per-click fees and Creator Connections keep every shopper earning, with the commission going to you.' },
@@ -257,10 +262,11 @@ function HowItWorks() {
 const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
   { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
   { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
+  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included in Pro.', isNew: true },
   { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
   { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
-  { icon: <Search size={19} />, title: 'Free product research', desc: 'Filter all of Amazon by sales, rating, price and video competition. Scout Creator Connections, Levanta and PartnerBoost too.' },
+  { icon: <Search size={19} />, title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews and sales rank. Scout Levanta, PartnerBoost, Walmart and Wayward campaigns too.' },
+  { icon: <Handshake size={19} />, title: 'Paid brand deals on TRYBE', desc: 'MVP finds the TRYBE brands that fit your channel, drafts your first message and plans the videos once a brand says yes.', isNew: true },
   { icon: <Store size={19} />, title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
   { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP never uses or sells your personal data. It works from your content, nothing else.' },
 ]
@@ -293,6 +299,124 @@ function FeaturesGridCondensed() {
           <a href="/features" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
             See every feature, by the MVP Loop <ArrowRight size={15} />
           </a>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** WHAT MVP DOES FOR EACH JOB (Seb, 2026-10-18). Drop, the TRYBE integration,
+ *  Meta Hub and the research tools had no word on the sales page. Each card is
+ *  one job a creator would otherwise do by hand or hire for.
+ *
+ *  `gate` ties the badge to the feature's real switch in lib/labs-preview: a
+ *  feature that is not open to Pro yet reads "Coming soon" rather than being
+ *  sold as something a new member can use, and the label flips to "New" the
+ *  day it opens, with no copy change. It is also why this section has the
+ *  #roles id the nav (and the free guide's copy of it) already points at. */
+const ROLES: { gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string }[] = [
+  {
+    gate: 'drop',
+    icon: <CloudUpload size={20} />,
+    role: 'Your upload team',
+    title: 'Drop: film it, drop it, done',
+    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs. It tells your long reviews from your vertical videos by their shape, so there is nothing to sort.`,
+    points: [
+      'Long reviews go to YouTube and your Amazon storefront, with the title, description, thumbnail and links done',
+      'Each one also becomes a blog post, a Pinterest pin, a Facebook Group post and three short clips',
+      'Vertical videos go to TikTok, Instagram Reels, YouTube Shorts, Facebook Reels, Pinterest and your storefront',
+      'Made a video for a TRYBE brand? Send it to that brand from the same screen',
+      'Pick your posting days and times once, and every drop fills the next free slot',
+    ],
+    note: 'Amazon storefront uploads are for US storefronts.',
+  },
+  {
+    gate: 'trybe_outreach',
+    icon: <Handshake size={20} />,
+    role: 'Your brand deal agent',
+    title: 'Land paid brand deals on TRYBE',
+    desc: 'TRYBE is the marketplace where brands pay creators to make videos. MVP finds the brands worth your time, writes your first message, and plans the videos once a brand says yes.',
+    points: [
+      'Every brand on TRYBE, sorted by best fit for your channel, fewest creators, total payouts or newest',
+      'Your first message to each brand drafted in your words, and the requests sent for you a few at a time',
+      'Your TRYBE inbox in one place, with a suggested reply on every conversation',
+      'Ten shooting scripts per brand that follow its brief, each with several hooks to test',
+      'What is working now: how the top videos open, the most active brands and the ads they run on Meta',
+    ],
+    note: 'Works with your own TRYBE account through the SCOUT Chrome extension. TRYBE is a separate service.',
+  },
+  {
+    gate: 'facebook_setup',
+    icon: <Facebook size={20} />,
+    role: 'Your Facebook manager',
+    title: 'Meta Hub: Facebook that actually sells',
+    desc: 'Meta Hub sets up the Facebook system that works for affiliates: your Group holds the link, and your Page points people to it.',
+    points: [
+      'Niche Groups like Kitchen or Automotive, each holding its own product links',
+      'SCOUT fills in every Group post for you, and you press Post',
+      'Every review becomes a Group post plus a Page post that points to it',
+      'Reels cut from your videos with Clip Factory, right inside the hub',
+      'One queue for everything waiting to go to your Groups: reviews, clips, deals and Amazon videos',
+    ],
+    note: 'Group posts use the SCOUT Chrome extension.',
+  },
+  {
+    gate: null,
+    icon: <Radar size={20} />,
+    role: 'Your researcher',
+    title: 'Know what to film before you buy it',
+    desc: 'Search all of Amazon and the partner programs you belong to, then turn the best finds into content in one click.',
+    points: [
+      'Filter the whole Amazon catalogue by category, price, rating, reviews and sales rank',
+      'MVP picks: products with real demand, strong ratings and room for your video',
+      'Deal Radar: live deals checked against price history, so no fake "was" prices',
+      'When a product you already reviewed goes on sale, MVP tells you and updates your pinned comment',
+      'Levanta brands ranked by commission and earnings per click, PartnerBoost by pay per sale, plus Walmart and Wayward',
+    ],
+    note: 'Partner programs use your own Levanta, PartnerBoost, Walmart or Wayward account.',
+  },
+]
+function RolesSection() {
+  return (
+    <section id="roles" className="px-6 lg:px-8 pt-4 pb-16 sm:pb-24 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Every job, covered</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            The team you would otherwise hire
+          </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            Uploading, brand deals, Facebook and research eat a creator&apos;s week. MVP does the heavy part of each, and you decide what goes out.
+          </p>
+        </div>
+        <div className="grid lg:grid-cols-2 gap-5 mt-10">
+          {ROLES.map((r) => {
+            const live = r.gate === null || previewOpenToPro(r.gate)
+            return (
+              <article key={r.role} className="rounded-2xl border p-6 sm:p-7 flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{r.icon}</div>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{r.role}</span>
+                  {r.gate !== null && (live
+                    ? <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>New</span>
+                    : <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full border" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>Coming soon</span>)}
+                </div>
+                <h3 className="text-[21px] sm:text-[23px] font-extrabold tracking-tight leading-tight mt-4" style={{ color: 'var(--text)' }}>{r.title}</h3>
+                <p className="mt-2.5 text-[14.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{r.desc}</p>
+                <ul className="mt-4 flex flex-col gap-2.5">
+                  {r.points.map((pt) => (
+                    <li key={pt} className="flex gap-2.5 text-[14px] leading-snug" style={{ color: 'var(--text)' }}>
+                      <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                      <span>{pt}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-auto pt-5 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
+                  {live ? r.note : `Coming soon to every Pro member. ${r.note}`}
+                </p>
+              </article>
+            )
+          })}
         </div>
       </div>
     </section>

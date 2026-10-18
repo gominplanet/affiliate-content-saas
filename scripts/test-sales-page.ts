@@ -450,6 +450,34 @@ for (const { label, src } of AD_PAGES) {
     'the same Amazon-plan question in a quieter place')
 }
 
+// ── every job MVP does has a word on the page ───────────────────────────────
+//
+// Drop, the TRYBE integration, Meta Hub and the research tools went unmentioned
+// on the homepage while the grid talked about a free plan that no longer
+// exists (Seb, 2026-10-18). The section is pinned to being rendered, to naming
+// all four, and to reading each feature's real switch, so a feature still in
+// testing says "Coming soon" instead of being sold to somebody who cannot open it.
+{
+  const ROLES_SRC = PAGE_LIVE.slice(PAGE_LIVE.indexOf('const ROLES'), PAGE_LIVE.indexOf('function RolesSection'))
+  check('the jobs section is rendered on the homepage',
+    /<RolesSection \/>/.test(PAGE_LIVE) && /<section id="roles"/.test(PAGE_LIVE),
+    'it also gives the nav its #roles target back')
+  for (const name of ['Drop', 'TRYBE', 'Meta Hub', 'Levanta', 'Deal Radar']) {
+    check(`it names ${name}`, ROLES_SRC.includes(name))
+  }
+  check('each card reads its feature switch rather than typing "New"',
+    /gate: 'drop'/.test(ROLES_SRC) && /gate: 'trybe_outreach'/.test(ROLES_SRC) && /gate: 'facebook_setup'/.test(ROLES_SRC)
+      && /previewOpenToPro\(r\.gate\)/.test(PAGE_LIVE),
+    'a feature still in testing must not be sold as ready')
+  check('and a closed one says so on the card',
+    /Coming soon/.test(PAGE_LIVE.slice(PAGE_LIVE.indexOf('function RolesSection'))))
+  check('no research filter is claimed that the finder does not have',
+    !/review ratio/i.test(PAGE) && !/review ratio/i.test(read('app/tour/page.tsx')),
+    'the finder filters by category, price, rating, reviews and sales rank')
+  check('the grid no longer talks about plans that are not sold',
+    !/every paid plan/i.test(PAGE_LIVE) && !/'Free product research'/.test(PAGE_LIVE))
+}
+
 // ── house style on the pages we buy clicks for ──────────────────────────────
 //
 // The homepage copy is checked above. These two are the pages a stranger judges

@@ -20,7 +20,7 @@ import { GUARANTEE_LABEL } from '@/lib/guarantee'
 export const metadata: Metadata = {
   title: 'Product tour',
   description:
-    `Amazon product research that searches the whole catalogue by sales, rating, price, review ratio and video competition, live price-verified deals on Deal Radar, and your Levanta & PartnerBoost campaigns in one place. Then MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
+    `Amazon product research that searches the whole catalogue by category, price, rating, reviews and sales rank, live price-verified deals on Deal Radar, and your Levanta & PartnerBoost campaigns in one place. Then MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
@@ -101,7 +101,7 @@ export default function PublicTourPage() {
           </h1>
           <p className="text-[15px] leading-relaxed max-w-3xl mb-6" style={{ color: 'var(--text-soft)' }}>
             <strong style={{ color: 'var(--text)' }}>Amazon Product Research</strong> filters
-            the entire catalogue by the numbers that matter (sales, rating, price, review ratio, video competition).
+            the entire catalogue by the numbers that matter (category, price, rating, reviews, sales rank).
             <strong style={{ color: 'var(--text)' }}> Deal Radar</strong> shows live, price-verified deals. And the
             <strong style={{ color: 'var(--text)' }}> Levanta &amp; PartnerBoost finders</strong> scout your own connected
             campaigns. Then MVP turns any find (or any review video) into a blog post that ranks, plus
