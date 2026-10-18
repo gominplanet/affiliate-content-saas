@@ -140,8 +140,9 @@ export interface RewriteInput {
   /** Who the creator is, in their words: who they are talking to and why
    *  anyone should believe them. */
   avatar: string
-  /** What actually happened to them with this product. The one thing an AI
-   *  cannot invent and the one thing that makes a video theirs. */
+  /** Anything the creator wants worked in: an angle, a moment with it, what
+   *  the brand asked for. Optional. A TRYBE video is an ad the brand runs, not
+   *  a review (Seb, 2026-10-18), so a script does not wait on a story. */
   experience: string
   closeness: Closeness
   /** The product this video is for. */
@@ -158,7 +159,6 @@ export interface RewriteInput {
 export function rewriteMissing(i: Partial<RewriteInput>): string[] {
   const out: string[] = []
   if (!String(i.reference || '').trim()) out.push('the video to work from')
-  if (String(i.experience || '').trim().length < 12) out.push('one line about your own experience with it')
   if (!String(i.product || '').trim()) out.push('which product it is for')
   return out
 }
@@ -175,7 +175,8 @@ export function rewriteMissing(i: Partial<RewriteInput>): string[] {
 export function rewritePrompt(i: RewriteInput): string {
   const close = CLOSENESS[i.closeness]
   return [
-    `You write short video scripts for a creator making a video for ${i.brand}, about ${i.product}.`,
+    `You write short video ad scripts for a creator making a video for ${i.brand}, about ${i.product}.`,
+    'THIS IS AN AD, NOT A REVIEW. The brand runs it as a paid ad, so write it to stop the scroll and sell the product, spoken by the creator on camera.',
     '',
     'A VIDEO THAT ALREADY WINS FOR THIS BRAND, as a reference for its shape only:',
     `"""${i.reference.slice(0, SCRIPT_MAX)}"""`,
@@ -185,8 +186,13 @@ export function rewritePrompt(i: RewriteInput): string {
     'NEVER reuse its sentences, its phrases or its exact numbers. The brand sees both videos. Copy what it does, not what it says.',
     '',
     `WHO THE CREATOR IS: ${i.avatar.slice(0, 600) || 'not said, so keep it plain and first person'}`,
-    `WHAT ACTUALLY HAPPENED TO THEM: ${i.experience.slice(0, 900)}`,
-    'Their own experience is the only part that cannot be invented. Build the script around it and never state anything about the product they did not say.',
+    ...(i.experience.trim()
+      ? [`WHAT THE CREATOR WANTS WORKED IN: ${i.experience.slice(0, 900)}`, 'Build the script around it.']
+      : ['The creator added nothing of their own, so write it from the product and the angle of the reference.']),
+    // An ad still may not make up facts. What the product does comes from the
+    // brief, the reference or the creator; numbers and promises nobody gave
+    // are what gets an ad rejected and a creator dropped.
+    'Never make up a number, a price, a discount, a health claim or a result that the brief, the reference or the creator did not give.',
     ...(i.brief ? ['', `THE BRAND'S BRIEF (follow it, it is how the video gets approved): ${i.brief.slice(0, 1200)}`] : []),
     ...(i.voice?.length ? ['', 'HOW THIS CREATOR TALKS, from their own messages. Match the rhythm, not the subject:', ...i.voice.slice(0, 3).map((v, n) => `${n + 1}. ${v.slice(0, 400)}`)] : []),
     '',

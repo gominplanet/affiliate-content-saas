@@ -70,11 +70,16 @@ check('a board that is all transcribed does not claim TRYBE shared anything',
   !/shared by TRYBE/.test(coverageWords([row('ready', 'transcribed'), row('ready', 'transcribed')])))
 
 // ── The rewrite ──────────────────────────────────────────────────────────────
-check('a rewrite with nothing of the creator in it is refused',
-  rewriteMissing({ reference: 'a winning script', product: 'Kings Loot Wallet', experience: '' }).join() === 'one line about your own experience with it')
-check('and with no reference and no product it says all three',
-  rewriteMissing({}).length === 3)
-check('a real ask is let through', rewriteMissing({ reference: 'x', product: 'Wallet', experience: 'I carried it for three weeks' }).length === 0)
+// AN AD, NOT A REVIEW (Seb, 2026-10-18): "TRYBE is an advertisement first
+// kind of platform, these videos do not need to be actual reviews". A script
+// no longer waits on the creator's own story; it needs the video and the product.
+check('a rewrite with no story of the creator’s is let through',
+  rewriteMissing({ reference: 'a winning script', product: 'Kings Loot Wallet', experience: '' }).length === 0)
+check('a rewrite with no product is refused, and says so',
+  rewriteMissing({ reference: 'a winning script', product: '', experience: '' }).join() === 'which product it is for')
+check('and with no reference and no product it says both',
+  rewriteMissing({}).length === 2)
+check('a full ask is let through', rewriteMissing({ reference: 'x', product: 'Wallet', experience: 'I carried it for three weeks' }).length === 0)
 check('the dial has three settings and falls back to the middle one',
   readCloseness('loose') === 'loose' && readCloseness('close') === 'close' && readCloseness('whatever') === 'similar' && readCloseness(undefined) === 'similar')
 
@@ -86,8 +91,16 @@ const P = rewritePrompt({
 // COPY THE ANGLE, NEVER THE SENTENCES. This is the line that keeps a creator
 // on the brand, so it is checked rather than assumed.
 check('the prompt forbids reusing the reference words, in as many words', /NEVER reuse its sentences/.test(P) && /Copy what it does, not what it says/.test(P))
-check('the creator’s own experience is in the prompt and marked as the part that cannot be invented',
-  /I carried it every day for three weeks/.test(P) && /cannot be invented/.test(P))
+check('what the creator wants worked in reaches the prompt', /WHAT THE CREATOR WANTS WORKED IN: I carried it every day for three weeks/.test(P))
+check('the prompt writes an ad, not a review', /THIS IS AN AD, NOT A REVIEW/.test(P))
+check('an ad still may not make up numbers, prices, health claims or results',
+  /Never make up a number, a price, a discount, a health claim or a result/.test(P))
+{
+  const bare = rewritePrompt({ reference: 'x'.repeat(50), avatar: '', experience: '', closeness: 'similar', product: 'Wallet', brand: 'Kings Loot' })
+  check('with nothing of the creator’s, it writes from the product and the reference, with no empty heading',
+    /write it from the product and the angle of the reference/.test(bare) && !/WHAT THE CREATOR WANTS WORKED IN/.test(bare)
+      && /Never make up a number/.test(bare))
+}
 check('the dial reaches the prompt', /Close to it/.test(P) && /beat for beat/.test(P))
 check('the brand brief is followed when there is one', /Show the card slots/.test(P) && /how the video gets approved/.test(P))
 check('their own voice goes in as rhythm, not as subject', /Just filmed this one for you/.test(P) && /Match the rhythm, not the subject/.test(P))

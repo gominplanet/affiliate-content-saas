@@ -114,9 +114,11 @@ check('one collection still pays for 25 at most', /const hear = canHear\.slice\(
   const rw = C.slice(C.indexOf('async function rewrite('), C.indexOf("action: 'script_rewrite'"))
   check('an empty box is caught on the page with the route’s own rule, before the request',
     /const missing = rewriteMissing\(\{ reference: v\.script, experience, product \}\)/.test(rw) && /if \(missing\.length\)[\s\S]{0,500}return/.test(rw))
-  check('and the creator is taken to the empty box', /scrollIntoView/.test(rw) && /box\?\.focus\(\)/.test(rw)
-    && /ref=\{productBox\}/.test(C) && /ref=\{experienceBox\}/.test(C))
-  check('and told where the boxes are', /Fill in the boxes above under/.test(rw))
+  check('and the creator is taken to the product box', /scrollIntoView/.test(rw) && /box\?\.focus\(\)/.test(rw) && /ref=\{productBox\}/.test(C))
+  check('and told where it is', /Type which product this is for in the box above under/.test(rw))
+  // An ad, not a review: the other box asks for nothing MVP needs to have.
+  check('the second box is optional and does not ask for a true story',
+    /placeholder="Anything to work in\?[^"]*Optional\."/.test(C) && !/MVP cannot invent/.test(C))
 }
 check('an answer with no video files shows the fields TRYBE did send', /withFile === 0\) lines\.push\(`Each entry TRYBE sent has: \$\{topEntryFields\(top\.json\)\}/.test(C))
 {
@@ -141,7 +143,7 @@ const rw = R.slice(R.indexOf("action === 'script_rewrite'"), R.indexOf("action =
 check('a rewrite too close to the original is refused, not shown with a warning',
   /tooAlike\(reference, out\.script\)/.test(rw) && /status: 409/.test(rw))
 check('and the refusal tells the creator what to change', /Move the dial to Same shape or Just the idea/.test(rw))
-check('the creator must say what happened to them before anything is written', /rewriteMissing\(input\)/.test(rw))
+check('the route still checks the video and the product before anything is written', /rewriteMissing\(input\)/.test(rw))
 check('the spend gate runs before the model does',
   rw.indexOf('spendGate(userId, tier)') > 0 && rw.indexOf('spendGate(userId, tier)') < rw.indexOf('messages.create'))
 check('what it cost is recorded against the creator', /feature: 'trybe_script_rewrite'/.test(rw))

@@ -101,7 +101,6 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
   const [report, setReport] = useState<{ tone: 'ok' | 'warn'; lines: string[]; filed: number } | null>(null)
   const stop = useRef(false)
   const productBox = useRef<HTMLInputElement>(null)
-  const experienceBox = useRef<HTMLTextAreaElement>(null)
 
   const loadStats = useCallback(async () => {
     const r = await post({ action: 'top_scripts_stats' })
@@ -123,14 +122,15 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
 
   async function rewrite(v: TopScript) {
     if (!v.script) return
-    // THE BOXES ARE ABOVE, THE BUTTON IS BELOW. Pressed with either empty, the
-    // refusal used to land under the video, a screen away from what it asked
-    // for (Seb, 2026-10-18). Now it says where, and takes the creator there.
+    // THE BOX IS ABOVE, THE BUTTON IS BELOW. Pressed with the product empty,
+    // the refusal used to land under the video, a screen away from what it
+    // asked for (Seb, 2026-10-18). Now it says where, and takes the creator
+    // there. The other box is optional: a TRYBE video is an ad, not a review.
     const missing = rewriteMissing({ reference: v.script, experience, product })
     if (missing.length) {
-      const box = !product.trim() ? productBox.current : experienceBox.current
+      const box = productBox.current
       box?.scrollIntoView({ behavior: 'smooth', block: 'center' }); box?.focus()
-      setWriteError((e) => ({ ...e, [v.submission_id]: `Fill in the boxes above under ${brand?.name || 'the brand'} first: ${missing.join(' and ')}. Then press Write mine from this again.` }))
+      setWriteError((e) => ({ ...e, [v.submission_id]: `Type which product this is for in the box above under ${brand?.name || 'the brand'}, then press Write mine from this again.` }))
       return
     }
     setWriting(v.submission_id)
@@ -385,8 +385,8 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
                   </button>
                 ))}
               </div>
-              <textarea ref={experienceBox} className={`${field} sm:col-span-2`} style={fieldStyle} rows={2}
-                placeholder="What actually happened to you with it? This is the part MVP cannot invent."
+              <textarea className={`${field} sm:col-span-2`} style={fieldStyle} rows={2}
+                placeholder="Anything to work in? An angle, a moment with it, what the brand asked for. Optional."
                 value={experience} onChange={(e) => setExperience(e.target.value)} />
             </div>
           )}
