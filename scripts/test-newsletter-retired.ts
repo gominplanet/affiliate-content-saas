@@ -83,8 +83,11 @@ async function main() {
         && src.indexOf('await newsletterRetired(') < src.indexOf(".from('newsletter_")
         && (!src.includes('denyNewsletterWrite(user.id)') || src.indexOf('await newsletterRetired(') < src.indexOf('denyNewsletterWrite(user.id)')))
   }
+  // The free guide's own signup route used to be the other half of this
+  // check. It is deleted: the guide promises no email and no longer asks for
+  // one, so there is nothing left of it to read the switch.
   check('MVP\'s own list does not read the switch',
-    !/NEWSLETTER_FOR_MEMBERS|newsletterRetired/.test(r('app/api/freeguide/subscribe/route.ts') + r('app/api/admin/broadcast/route.ts')))
+    !/NEWSLETTER_FOR_MEMBERS|newsletterRetired/.test(r('app/api/admin/broadcast/route.ts')))
   for (const p of ['app/newsletter-confirmed/page.tsx', 'app/newsletter-unsubscribed/page.tsx']) {
     check(`${p} still exists and does not read the switch`, existsSync(p) && !/NEWSLETTER_FOR_MEMBERS/.test(r(p)))
   }

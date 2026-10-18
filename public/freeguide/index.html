@@ -44,6 +44,26 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
   font-size:clamp(56px,11vw,132px);letter-spacing:-.01em;margin:0}
 .hero h1 span{display:block}
 .hero h1 span:last-child{color:var(--accent);font-style:italic;transform:skewX(-6deg);transform-origin:left}
+/* ── The wordmark ──────────────────────────────────────────────────────────
+   THE TITLE IS NOW A PICTURE, SO THE H1 STAYS AND THE PICTURE SITS INSIDE IT.
+   The alt text is the title, word for word, which is what a screen reader and
+   a crawler get. The display rules above are deliberately LEFT IN PLACE as the
+   fallback: if the file ever 404s the browser renders that alt text, and it
+   renders as the same giant condensed type the page used before, rather than
+   as a broken-image icon where the headline was.
+
+   IT IS CAPPED FAR BELOW THE SHELL WIDTH. At the full 1140px this artwork is
+   641px tall, nearly three times the two lines of type it replaces, and it
+   would push the lede, the progress bar and the whole updates card under the
+   fold. 660px keeps it a title instead of a poster.
+
+   NO THEME SWITCH NEEDED. The file carries real alpha and was checked on both
+   backgrounds: the cream and the yellow hold against #0D1017, and the black
+   keyline simply stops being a keyline there, which costs nothing. */
+.hero h1 .wordmark{display:block;width:100%;max-width:min(100%,660px);height:auto;
+  margin-top:-6px}
+@media (max-width:900px){ .hero h1 .wordmark{max-width:100%} }
+
 /* ── Site navigation ───────────────────────────────────────────────────────
    THE GUIDE IS A STATIC FILE, so it never passes through app/layout.tsx and
    never inherited the site's top bar. A reader who arrived from an ad had no
@@ -91,10 +111,50 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
   .sitebar nav a{padding:5px 7px;font-size:12.5px}
 }
 @media print{.sitebar{display:none!important}}
-.hero-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,272px);
-  gap:clamp(24px,4vw,48px);align-items:start;margin-top:26px}
-.hero-txt{min-width:0}
-.hero-txt .lede{margin-top:0}
+/* ── The hero, in three bands ──────────────────────────────────────────────
+   WORDMARK AND VIDEO SHARE THE TOP LINE, then the standfirst runs the full
+   width under both, then the facts and the start panel. The old layout ran
+   the video down the right of everything, which made the lede a narrow column
+   next to a tall photo and pushed the updates card into a gutter.
+
+   THE TWO GRIDS SHARE A RIGHT COLUMN WIDTH. --rail is used by the top band
+   and by the band at the bottom, so the video and the start panel line up on
+   the same edge and the hero reads as one grid instead of two guesses. */
+.hero{--rail:clamp(230px,24vw,300px)}
+.hero-top{display:grid;grid-template-columns:minmax(0,1fr) var(--rail);
+  gap:clamp(24px,4vw,56px);align-items:center}
+.hero-rail{display:grid;grid-template-columns:minmax(0,1fr) var(--rail);
+  gap:clamp(24px,4vw,56px);align-items:start;margin-top:26px}
+/* THE STANDFIRST IS A DECK, NOT BODY COPY. It is the only paragraph in the
+   hero, so it carries the weight the old narrow column could not. Capped at
+   34em even at full width, because a 45 word sentence set across 1140px is
+   140 characters a line and nobody finishes it. */
+.hero .lede{max-width:34em;font-size:clamp(19px,2.3vw,27px);line-height:1.38;
+  margin:30px 0 0;color:var(--ink)}
+
+/* THE FACTS. Three, in mono, between hairlines. A spec strip rather than a
+   sentence, because these are the numbers somebody scans for before deciding
+   whether a 153 minute page is worth starting. */
+.hero-facts{display:grid;grid-auto-flow:column;justify-content:start;
+  gap:clamp(26px,6vw,76px);margin-top:30px;padding:16px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.hero-facts div{display:grid;gap:5px}
+.hero-facts b{font-family:var(--display);font-weight:800;text-transform:uppercase;
+  font-size:clamp(26px,3.4vw,38px);line-height:.9;letter-spacing:-.01em;color:var(--ink)}
+.hero-facts span{font:700 11px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted)}
+
+/* THE START PANEL. The free promise, the button and the progress bar in one
+   block on the rail, so the single thing a new reader is meant to DO is not
+   buried three paragraphs into the updates list. */
+.hero-start{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:18px}
+.hero-start .free{margin:0 0 13px;font:700 12px/1.45 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok)}
+.hero-start .btn-ref{display:block;text-align:center;margin:0}
+.hero-start .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.hero-start .prog{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);
+  flex-wrap:wrap;gap:10px}
+.hero-start .prog .bar{flex:1 1 100%}
 .hero-fig{margin:0}
 .hero-fig img{display:block;width:100%;height:auto;border-radius:3px}
 /* No accent bar down the side. A coloured left border on a caption is the
@@ -125,20 +185,7 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .upd p{margin:0;font-size:14px;color:var(--muted)}
 .upd .free{margin-top:10px;font:700 12px var(--mono);letter-spacing:.06em;
   text-transform:uppercase;color:var(--ok)}
-.upd form{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
-.upd input[type=email]{flex:1 1 190px;min-width:0;font:400 15px var(--body);
-  padding:10px 12px;border:1px solid var(--line);border-radius:9px;
-  background:var(--bg);color:var(--ink)}
-.upd input[type=email]::placeholder{color:var(--muted)}
-.upd input[type=email]:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
-.upd button{font:700 14px var(--body);padding:10px 16px;border:0;border-radius:9px;
-  background:var(--accent);color:#fff;cursor:pointer;transition:filter .15s ease}
-.upd button:hover{filter:brightness(1.08)}
-.upd button:disabled{opacity:.6;cursor:default}
 .upd .hp,.gs .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
-.upd .said{margin-top:10px;font-size:13.5px;line-height:1.45}
-.upd .said.ok{color:var(--ok)}
-.upd .said.bad{color:var(--myth)}
 .upd .fine{margin-top:9px;font-size:12.5px;color:var(--muted)}
 .btn-ref{display:inline-block;background:var(--accent);color:var(--accent-ink)!important;font:700 15px/1 var(--body);text-decoration:none!important;padding:13px 20px;border-radius:10px;margin:4px 0 2px}
 .btn-ref:hover{filter:brightness(1.08)}
@@ -155,8 +202,6 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .log dl{margin:12px 0 0}
 .log dt{font:700 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin-top:12px}
 .log dd{margin:4px 0 0;font-size:14px;color:var(--muted);line-height:1.5}
-.upd .nudge{margin-top:12px;font-size:15px}
-.upd .nudge b{color:var(--ink)}
 @media (max-width:900px){.upd{margin-top:18px}}
 .lede{max-width:40em;font-size:clamp(17px,2vw,20px);margin:22px 0 20px;color:var(--ink)}
 .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 13px/1.3 var(--mono);color:var(--muted)}
@@ -298,7 +343,17 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 .foot{font-size:13px;color:var(--muted);padding:12px 4px 0}
 
 @media (max-width:900px){
-  .hero-lower{grid-template-columns:1fr;gap:26px}
+  .hero-top,.hero-rail{grid-template-columns:1fr;gap:26px}
+  .hero-top{margin-bottom:4px}
+  /* CENTRED, NOT LEFT WITH A HOLE. The figure keeps its 280px cap on a 350px
+     column, and left-aligning it left 70px of dead space that reads as a
+     mistake rather than as space. */
+  .hero-fig{margin-inline:auto}
+  /* THE CALL TO ACTION CLIMBS ABOVE THE LIST. In one column the source order
+     puts five update bullets between the reader and the only thing the hero
+     asks them to do. On a phone that is 400px of scrolling to reach a button
+     that sits beside the list on a desktop. */
+  .hero-start{order:-1}
   .hero-fig{max-width:280px}
   .layout{grid-template-columns:1fr;gap:20px}
   .toc details{position:static;max-height:none;overflow:visible;
@@ -339,6 +394,58 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   a{color:var(--ink)}
   .prose h2{break-after:avoid}
 }
+
+/* ── The hero video ────────────────────────────────────────────────────────
+   IT DOES NOT AUTOPLAY, AND THAT IS THE POINT. The file is 12.6MB serving a
+   272px-wide slot. Autoplaying it would spend all of that on every arrival,
+   on phone data, before the reader has asked for anything, on the one page
+   whose entire job is to be read. preload="none" means not one byte of it
+   moves until somebody presses play.
+
+   THE POSTER IS THE PHOTOGRAPH THAT WAS ALREADY HERE. First paint is
+   identical to before, there is no layout shift, and when the video 404s or
+   its host is down the hero quietly goes back to being a photo instead of a
+   broken box. That is the failure mode worth having.
+
+   object-fit:cover FOR THE LAST 9%. The source is 698x852 (0.819) and this
+   slot is 0.898, so cover scales to the width and takes about nine percent off
+   the height. object-position sits above centre so that nine percent comes off
+   the bottom of frame rather than off the top of a head. Move it if the
+   framing still cuts somebody. */
+.hero-fig .vwrap{position:relative;aspect-ratio:790/880;border-radius:3px;
+  overflow:hidden;background:var(--ink)}
+.hero-fig video{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 38%}
+.hero-fig .vplay{position:absolute;inset:0;width:100%;border:0;padding:0 0 16px;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:14px;
+  background:linear-gradient(to top,rgba(0,0,0,.6),rgba(0,0,0,.05) 60%);
+  color:#fff;font:700 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.hero-fig .vplay .disc{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.94);
+  display:flex;align-items:center;justify-content:center}
+.hero-fig .vplay .disc::after{content:"";width:0;height:0;margin-left:5px;
+  border-left:19px solid #11151D;border-top:12px solid transparent;border-bottom:12px solid transparent}
+.hero-fig .vplay:hover .disc,.hero-fig .vplay:focus-visible .disc{background:#fff;transform:translate(-50%,-50%) scale(1.06)}
+.hero-fig .vplay[hidden]{display:none}
+.hero-fig .printonly{display:none}
+@media print{
+  .hero-fig .vwrap{display:none}
+  .hero-fig .printonly{display:block;width:100%;height:auto;border-radius:3px}
+}
+
+/* ── "You landed in the middle of a long guide" ────────────────────────────
+   Only ever rendered when ?start= sent somebody straight to a module, and
+   rendered INSIDE that module rather than floating over the page, so it reads
+   as part of what they came for instead of as a popup to dismiss. It says
+   where they are, because arriving at Module 12 of 16 with no header above it
+   is disorienting in a way the reader blames on the page. */
+.arrived{margin:0 0 28px;padding:14px 18px;border:2px solid var(--ink);
+  background:var(--marker-soft);color:var(--marker-ink);border-radius:10px;
+  font:400 15px/1.5 var(--body)}
+.arrived b{font-weight:700}
+.arrived a{color:inherit;font-weight:700}
+.arrived .from{display:block;font:700 11px/1 var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;opacity:.75;margin:0 0 7px}
+@media print{.arrived{display:none}}
 </style><script>
 /* Meta pixel.
 
@@ -391,31 +498,46 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 
 <div class="shell">
 <header class="hero">
-  <h1><small class="eyebrow">Free guide · Amazon Influencer Program</small><span>There is</span> <span>no shortcut.</span></h1>
-  <div class="hero-lower">
-  <div class="hero-txt">
+  <p class="eyebrow">Free guide &middot; Amazon Influencer Program</p>
+  <div class="hero-top">
+    <h1><img class="wordmark" src="/freeguide/logo.webp" width="1672" height="940" fetchpriority="high" decoding="async" alt="There is no shortcut"></h1>
+    <figure class="hero-fig">
+      <div class="vwrap">
+        <video id="herovid" playsinline preload="none" poster="/freeguide/hero.jpg"
+               width="790" height="880">
+          <source src="https://gominreviews.com/wp-content/uploads/2026/10/Freeguide-intro-003.mp4" type="video/mp4">
+        </video>
+        <button class="vplay" id="vplay" type="button" aria-label="Play the 57 second introduction to this guide"><span class="disc" aria-hidden="true"></span>Watch first &middot; 57 sec</button>
+      </div>
+      <img class="printonly" src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
+           alt="Seb and Michelle of Gominplanet on a dock in Florida">
+      <figcaption>Seb &amp; Michelle, Gominplanet</figcaption>
+    </figure>
+  </div>
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now, after Amazon's latest rule changes.</p>
-  <div class="meta"><span>15 modules</span><span>~153 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
-  <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 15 modules done</span></div>
-  <div class="new" id="whatsnew">
-    <p class="free">Free to read. No email needed.</p>
-    <p class="cl"><a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a> <span>Your first 30 days, one page, with boxes to tick.</span></p>
-    <p><b>Last updated October 17.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
-    <ul>
-      <li><a href="#youtube">YouTube</a>: why every review should live there too, how we post three to five a day, your links, and when YouTube pays you</li>
-      <li><a href="#trybe">TRYBE</a>: make ad videos for brands that run them with their own ad spend, and how we landed 45 campaigns in a week</li>
-      <li><a href="#facebook">Facebook: Pages, Groups and your deals</a>: the link limit, Meta Verified, the two ways to run it, and filling Group posts with SCOUT</li>
-      <li><a href="#tagging">Tagging</a>, titles that win the row, more rejection reasons, and reading times on every module</li>
-      <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
-    </ul>
-    <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
+  <div class="hero-facts">
+    <div><b>15</b><span>Modules</span></div>
+    <div><b>~153 min</b><span>Start to finish</span></div>
+    <div><b>Oct 18</b><span>Last updated</span></div>
   </div>
-  </div>
-  <figure class="hero-fig">
-    <img src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
-         alt="Seb and Michelle of Gominplanet on a dock in Florida">
-    <figcaption>Seb &amp; Michelle, Gominplanet</figcaption>
-  </figure>
+  <div class="hero-rail">
+    <div class="new" id="whatsnew">
+      <p><b>What&#x27;s new</b> in the guide:</p>
+      <ul>
+        <li><a href="#youtube">YouTube</a>: why every review should live there too, how we post three to five a day, your links, and when YouTube pays you</li>
+        <li><a href="#trybe">TRYBE</a>: make ad videos for brands that run them with their own ad spend, and how we landed 45 campaigns in a week</li>
+        <li><a href="#facebook">Facebook: Pages, Groups and your deals</a>: the link limit, Meta Verified, the two ways to run it, and filling Group posts with SCOUT</li>
+        <li><a href="#tagging">Tagging</a>, titles that win the row, more rejection reasons, and reading times on every module</li>
+        <li><a href="#examples">Watch how we do it</a>: six of our real reviews, playable right in the guide</li>
+      </ul>
+      <p class="more">Looking for something older? See <a href="#changelog">everything that changed</a>, or use the search box above the module list.</p>
+    </div>
+    <aside class="hero-start">
+      <p class="free">Free to read. No email needed.</p>
+      <a class="btn-ref" href="/freeguide/checklist.html">Print the one-page checklist</a>
+      <p class="note">Your first 30 days, one page, with boxes to tick.</p>
+      <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 15 modules done</span></div>
+    </aside>
   </div>
 </header>
 <div class="layout">
@@ -1502,7 +1624,16 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <li>Pick 5 campaigns with 3+ months left, a proven sales history, and a price point that passes the Module 4 screen.</li>
 <li>Keep a delivery log: campaign, accepted date, posted date. Aim for 100%.</li>
 </ol>
-</div></div><label class="done"><input type="checkbox" id="done-cc" data-id="cc"> Mark this module done</label></section><section class="mod" id="deals">
+</div><h2 id="cc-mvp">How MVP helps</h2>
+<p>Everything above works from Amazon's own campaigns page, and for your first campaigns it should. We built our side of it because the filtering is the slow part: most campaigns fail the Module 4 screen, and on Amazon you find that out one listing at a time.</p>
+<ul>
+<li><strong>The campaign finder</strong> carries what the Amazon page makes you dig for: the payout, how long the campaign has left, how full it already is, and whether the brand has a history worth your time.</li>
+<li><strong>A daily digest</strong> scores that catalog against what you already review, reweights it by the ones you thumb down, and hands you 25 picked for you instead of thousands sorted by nothing.</li>
+<li><strong>Runway in the open.</strong> End dates sit on the card, so the rule above about 3 months left is something you filter on rather than check by hand.</li>
+<li><strong>Joining stays your press.</strong> SCOUT opens the campaign in your own signed-in Amazon and clicks Accept there. It records what you joined, so the delivery log this module asks you to keep writes itself.</li>
+</ul>
+<p>The campaign finder is not a paid feature. It unlocks once MVP can see you actually have Creator Connections access, on any plan, and messaging brands is unlimited on both. Full disclosure: MVP is our software, and nothing in this module needs it. <a href="#mvp">See the plans</a>.</p>
+</div><label class="done"><input type="checkbox" id="done-cc" data-id="cc"> Mark this module done</label></section><section class="mod" id="deals">
 <header class="mod-h"><p class="kicker">Module 7</p><h2>Paid brand deals and UGC</h2>
 <p class="sum">When brands start messaging you: what to charge, usage rights, pitching, and scams.</p><p class="rt">11 min read</p></header>
 <div class="prose"><p>Your Amazon catalog is a portfolio. Once you have a few hundred solid videos, brands start reaching out, and some of them will pay. This is how you stop depending 100% on Amazon's commission table.</p>
@@ -1700,7 +1831,17 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <li>Pick one platform above, build your profile with your 3 best Amazon videos, and apply to 5 jobs.</li>
 <li>Save a contract checklist in your notes app and use it on every deal.</li>
 </ol>
-</div></div><label class="done"><input type="checkbox" id="done-deals" data-id="deals"> Mark this module done</label></section><section class="mod" id="traffic">
+</div><h2 id="deals-mvp">How MVP helps</h2>
+<p>The pitching, the pricing and the paperwork above are yours, and they should be. Two parts of this module are only typing, and that is the part worth handing over.</p>
+<ul>
+<li><strong>Brand pitches drafted for you</strong>, in your own voice, built from products you have actually reviewed. 15 a month on the Amazon plan, 30 on Pro.</li>
+<li><strong>The brand recap</strong> is the one we use most. Review six of a brand's products across YouTube, your blog and four social platforms and you are holding thirty links for that brand, spread over weeks. The recap gathers every one into a single message and marks what is new since the last one you sent.</li>
+</ul>
+<div class="seb">
+<p><strong>Why the recap earns more than the pitch.</strong> Making it easy for a brand to find and pay you is the whole module. A brand that can see everything you published for them on one screen does not need selling on the second deal, and delivering is the edge this module keeps pointing at.</p>
+</div>
+<p>Full disclosure: MVP is our software. Every deal in this module can be pitched, signed and delivered without it. <a href="#mvp">See the plans</a>.</p>
+</div><label class="done"><input type="checkbox" id="done-deals" data-id="deals"> Mark this module done</label></section><section class="mod" id="traffic">
 <header class="mod-h"><p class="kicker">Module 8</p><h2>Offsite traffic and the calendar</h2>
 <p class="sum">Where your links are allowed, what works on each platform right now, and how to plan around Q4.</p><p class="rt">16 min read</p></header>
 <div class="prose"><p>Onsite videos depend on Amazon showing them. Offsite traffic is the part you control: people who click <em>your</em> links. It also pays standard rates, which are higher than onsite rates.</p>
@@ -2697,6 +2838,8 @@ questions in public so everyone gets the answer.</p>
 <h2 id="logh">What changed, and when</h2>
 <p>Every update to this guide, newest first, so you can see what's different since your last visit.</p>
 <dl>
+<dt>October 18</dt>
+<dd>How MVP helps, on two more modules: <a href="#cc-mvp">Creator Connections</a> (the campaign finder, the daily digest, filtering on how long a campaign has left, and why joining stays your own press) and <a href="#deals-mvp">paid brand deals</a> (pitches drafted in your voice, and the brand recap that gathers every link you published for one brand into a single message). Arriving from a link that points at one module now says which module you landed on, with a way back to the start.</dd>
 <dt>October 17</dt>
 <dd>A new <a href="#youtube">YouTube</a> module: our YouTube story (a dormant channel to monthly AdSense in about eight months), what YouTube does for us (a searchable library that brings brand deals, and now ad revenue), posting every Amazon review there, our title formula, description layout, tags, thumbnails, the Studio settings we use, Shorts from every review, the four things every video needs, your links, the Partner Program levels, and how MVP helps.</dd>
 <dt>October 16</dt>
@@ -2718,17 +2861,7 @@ questions in public so everyone gets the answer.</p>
 <section class="upd upd-end" id="updates" aria-labelledby="updh">
     <h2 id="updh">This guide keeps changing, because the program does.</h2>
     <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
-    <p class="nudge"><b>Liked the guide?</b> Get the next update in your inbox.</p>
-    <form id="updf" novalidate>
-      <label class="hp" for="updhp">Leave this empty</label>
-      <input class="hp" id="updhp" name="hp" type="text" tabindex="-1" autocomplete="off">
-      <label class="hp" for="upde">Your email address</label>
-      <input id="upde" name="email" type="email" required autocomplete="email"
-             placeholder="you@example.com" inputmode="email">
-      <button type="submit">Tell me when it changes</button>
-    </form>
-    <p class="said" id="upds" role="status" aria-live="polite"></p>
-    <p class="fine">Updates to this guide and what is changing in the program. Nothing else, and one click to stop.</p>
+    <p class="fine">Nothing to subscribe to and nothing to join. Bookmark it, or see <a href="#changelog">what changed</a> when you come back.</p>
   </section>
 <footer class="foot"><p>© Gominplanet · Seb &amp; Michelle. This guide is independent and not affiliated with or endorsed by Amazon. As an Amazon Associate we earn from qualifying purchases. Nothing here is legal, tax, or financial advice.</p><p>Presented by <a href="https://mvpaffiliate.io"><b>MVP Affiliate</b></a> (our software). Links marked "paid link" are affiliate links.</p></footer>
 </main>
@@ -2782,29 +2915,86 @@ questions in public so everyone gets the answer.</p>
   // Depths are measured in PIXELS AND SCREENS, never in percent, because a
   // percentage of a page this long does not mean what it sounds like. That
   // was the whole bug.
+  // ── WHERE THE READER LANDED CHANGES WHAT A DEPTH MEANS ──────────────────
+  //
+  // The TRYBE ad points at /freeguide?start=trybe#trybe, because somebody who
+  // just watched 44 seconds about TRYBE should not have to scroll past twelve
+  // modules to reach it. That deep link breaks every line below if the depths
+  // are still measured from the top of the document.
+  //
+  // Module 12 sits around 80% of the way down. A reader dropped there starts
+  // at y/max = 0.8, which clears the 25% bar before their thumb has moved.
+  // ViewContent and GuideRead would both fire on arrival, for every single
+  // person the ad sends, having read nothing. ViewContent is the event the
+  // other ad sets optimize on, so that is not just a wrong number in a
+  // report: it is the delivery signal poisoned at the source, and it would
+  // look exactly like the ad working.
+  //
+  // So depth is measured FROM WHERE THE PAGE PUT THEM, not from zero, and
+  // every event says which it was. 'top' and 'trybe' stay separable in
+  // reporting instead of averaging into one meaningless rate.
   var started=false, readDeep=false, t0=Date.now();
+  var base=0, settled=false, landed='top';
   function scrollY(){ return window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0 }
   function secs(){ return Math.round((Date.now()-t0)/1000) }
   function markStarted(how){
     if(started) return; started=true;
     if(typeof fbq!=='function') return;
-    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how,seconds:secs()});
+    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how,landed:landed,seconds:secs()});
   }
   function markRead(how){
     if(readDeep) return; readDeep=true;
     if(typeof fbq!=='function') return;
-    fbq('trackCustom','GuideRead',{content_name:'Free guide: No Shortcut Playbook',engagement:how,seconds:secs()});
+    fbq('trackCustom','GuideRead',{content_name:'Free guide: No Shortcut Playbook',engagement:how,landed:landed,seconds:secs()});
   }
+  var lastY=0;
   function onScroll(){
     var h=document.documentElement, y=scrollY(), max=h.scrollHeight-h.clientHeight;
-    if(h.clientHeight>0 && y>=h.clientHeight*2) markStarted('scroll-2-screens');
-    if(max>0 && y/max>=0.25) markRead('scroll-25');
+    var screen=h.clientHeight||1;
+
+    // A JUMP IS NOT READING. The browser's own anchor scroll arrives as an
+    // ordinary scroll event indistinguishable from a thumb, except in size:
+    // it crosses 190 screens in one tick. No hand does that. Any single move
+    // of more than three screens re-bases instead of scoring, which catches
+    // the anchor jump whenever it lands, including after a late font reflow
+    // that no fixed timer would have waited for. It also quietly handles the
+    // reader who drags the scrollbar, which is likewise not reading.
+    if(Math.abs(y-lastY)>screen*3){ lastY=y; base=y; return; }
+    lastY=y;
+    if(!settled) return;
+
+    var travelled=y-base;
+    if(travelled>=screen*2) markStarted('scroll-2-screens');
+    // A quarter of what was actually in front of them. For somebody who
+    // landed at the top that is the old 25% of the page, unchanged, so the
+    // history this number has already built stays comparable.
+    var runway=max-base;
+    if(runway>0 && travelled/runway>=0.25) markRead('scroll-25');
     if(started && readDeep) window.removeEventListener('scroll',onScroll);
   }
+  // NOTHING MAY FIRE UNTIL THE PAGE HAS STOPPED MOVING ON ITS OWN. Until
+  // settled is true every depth is suppressed, so the window in which the
+  // browser is still placing the reader cannot be spent for them.
+  function settle(){
+    if(settled) return;
+    settled=true; base=scrollY(); lastY=base;
+    var h=document.documentElement;
+    if(h.clientHeight>0 && base>h.clientHeight){
+      var id=(location.hash||'').replace('#','');
+      if(id) landed=id;
+    }
+  }
+  if(document.readyState==='complete') setTimeout(settle,500);
+  else window.addEventListener('load',function(){ setTimeout(settle,500) });
+  // A belt for the braces: if load never fires (a stalled image, a blocked
+  // font) the page still starts counting rather than counting nothing at all.
+  setTimeout(settle,4000);
   window.addEventListener('scroll',onScroll,{passive:true});
-  // Twenty seconds counts as started only if they actually scrolled and the
-  // tab is in front. A timer alone would count a background tab as a reader.
-  setTimeout(function(){ if(!document.hidden && scrollY()>0) markStarted('dwell-20s') },20000);
+  // Twenty seconds counts as started only if they actually scrolled past
+  // where they landed and the tab is in front. A timer alone would count a
+  // background tab as a reader, and a base-relative check keeps a deep
+  // arrival from counting its own landing position as movement.
+  setTimeout(function(){ if(!document.hidden && settled && scrollY()>base) markStarted('dwell-20s') },20000);
 
   boxes.forEach(function(b){b.addEventListener('change',function(){
     done[b.dataset.id]=b.checked; try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){} render();
@@ -2818,49 +3008,74 @@ questions in public so everyone gets the answer.</p>
     }
   });});
   render();
-  // ── The updates form ──────────────────────────────────────────────────────
-  //
-  // IT SAYS WHAT HAPPENED. The route stores the address before it tries to
-  // send, so "we saved you but the confirmation did not go out" is a real and
-  // different outcome from "check your inbox", and the server returns the
-  // sentence for whichever one it was. Printing a cheerful fixed string here
-  // would throw that away and send somebody to an empty inbox.
-  var uf = document.getElementById('updf');
-  if (uf) uf.addEventListener('submit', function(ev){
-    ev.preventDefault();
-    var say = document.getElementById('upds');
-    var btn = uf.querySelector('button');
-    var email = (document.getElementById('upde') || {}).value || '';
-    var hp = (document.getElementById('updhp') || {}).value || '';
-    if (!email.trim()) { say.className = 'said bad'; say.textContent = 'Put your email in first.'; return; }
-    btn.disabled = true; var was = btn.textContent; btn.textContent = 'Sending…';
-    say.className = 'said'; say.textContent = '';
-    fetch('/api/freeguide/subscribe', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, hp: hp, sourceUrl: location.href })
-    }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; }); })
-      .then(function(res){
-        var j = res.j || {};
-        if (res.ok && j.ok) {
-          say.className = 'said ok';
-          say.textContent = j.message || "You're on the list.";
-          uf.style.display = 'none';
-          if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Free guide updates' });
-        } else {
-          say.className = 'said bad';
-          say.textContent = j.error || 'That did not go through. Try again in a moment.';
-        }
-      })
-      .catch(function(){
-        say.className = 'said bad';
-        say.textContent = 'Could not reach us just now. Try again in a moment.';
-      })
-      .finally(function(){ btn.disabled = false; btn.textContent = was; });
-  });
   var d=document.getElementById('tocd');
   function fit(){ if(d) d.open = window.innerWidth>900; }
   fit();
   links.forEach(function(a){a.addEventListener('click',function(){ if(window.innerWidth<=900 && d) d.open=false; });});
+
+  // ── ?start=<module> : the ad drops people straight into what it sold ─────
+  //
+  // THE HASH DOES THE SCROLLING when it survives. The query parameter exists
+  // because Meta's link shim rewrites outbound URLs and a fragment is the
+  // first thing to go missing; when that happens the reader would land at
+  // Module 0 having been promised Module 12, which is the kind of failure
+  // that looks like nothing at all went wrong. So the parameter carries the
+  // same instruction a second time and the page honours whichever arrives.
+  function startParam(){
+    var m=/[?&]start=([A-Za-z0-9_-]+)/.exec(location.search);
+    return m ? m[1] : '';
+  }
+  var want=startParam();
+  if(want){
+    var sec=document.getElementById(want);
+    if(sec){
+      // Only scroll ourselves if the hash did not already do it. Scrolling on
+      // top of the browser's own anchor jump fights it and lands short.
+      if((location.hash||'').replace('#','')!==want){
+        try{ sec.scrollIntoView(); }catch(e){ location.hash='#'+want; }
+      }
+      landed=want;
+      // Where they are, and a way back to the start. Written into the module
+      // rather than over it, and only for the people the link sent here.
+      var h2=sec.querySelector('.mod-h h2'), k=sec.querySelector('.mod-h .kicker');
+      var note=document.createElement('div');
+      note.className='arrived';
+      note.innerHTML='<span class="from">You came from the video</span>'+
+        'This is <b>'+((k&&k.textContent.trim())||'a module')+'</b> of a free '+
+        boxes.length+'-module guide'+((h2&&h2.textContent.trim())?': <b>'+h2.textContent.trim()+'</b>':'')+
+        '. Nothing to sign up for, nothing to buy. '+
+        '<a href="#start">Start from the beginning</a> if you would rather.';
+      var pr=sec.querySelector('.prose');
+      if(pr) pr.insertBefore(note, pr.firstChild);
+    }
+  }
+
+  // ── The hero video ───────────────────────────────────────────────────────
+  //
+  // PLAY IS A PRESS, NOT AN ARRIVAL. Because the press is a user gesture, the
+  // video can start WITH SOUND, which a muted autoplay never can. That is the
+  // whole reason this reads better as a button than as a background loop: the
+  // thing is 57 seconds of someone talking, and talking with the sound off is
+  // not worth 22.7MB of anybody's data plan.
+  var hv = document.getElementById('herovid'), vb = document.getElementById('vplay');
+  if (hv && vb) {
+    vb.addEventListener('click', function(){
+      hv.play().then(function(){ vb.hidden = true; }).catch(function(){
+        // Autoplay policy, a codec the browser will not take, or a dead host.
+        // Say so on the button rather than leaving a press that did nothing.
+        vb.textContent = 'Could not play here';
+      });
+    });
+    // The controls appear once it is running, so there is a way to pause,
+    // scrub and mute without a second set of hand-built buttons to maintain.
+    hv.addEventListener('play', function(){ hv.controls = true; vb.hidden = true; });
+    hv.addEventListener('ended', function(){ hv.controls = false; vb.hidden = false; });
+    if (typeof fbq === 'function') {
+      // Watching the intro is engagement by any reading, so it satisfies the
+      // shallow bar the same way ticking a module does.
+      hv.addEventListener('play', function(){ markStarted('hero-video'); }, { once: true });
+    }
+  }
   if('IntersectionObserver' in window){
     var io=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){
       links.forEach(function(a){a.classList.toggle('is-active',a.dataset.id===e.target.id);});
