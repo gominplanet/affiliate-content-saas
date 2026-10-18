@@ -187,9 +187,9 @@ export async function POST(request: Request) {
     // monthly cap; admin is unlimited (null limit).
     if (usage.limit === 0) {
       return NextResponse.json({
-        error: 'Photobooth is available on the Amazon and Pro plans. Upgrade to generate headshots.',
+        error: 'Photobooth is available on the Pro plan. Upgrade to generate headshots.',
         limitReached: true, cap: 'photobooth', currentTier: tier,
-        upgrade: { tier: 'creator', label: TIERS.creator.label, limit: TIERS.creator.photoboothPerMonth },
+        upgrade: { tier: 'pro', label: TIERS.pro.label, limit: TIERS.pro.photoboothPerMonth },
       }, { status: 403 })
     }
     // 20 / month for Pro (admin = unlimited). Reject before spending on gpt-image.

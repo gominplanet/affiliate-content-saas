@@ -40,7 +40,7 @@ check('unlimited stays unlimited', effectiveCap('pro', 'thumbnailsPerMonth', nul
 check('an unknown window start gets the current cap', effectiveCap('pro', 'thumbnailsPerMonth', 200, null) === 200)
 
 const SITES: Array<[string, RegExp]> = [
-  ['app/api/youtube/generate-thumbnail/route.ts', /effectiveCap\(tier, 'thumbnailsPerMonth', T\.thumbnailsPerMonth, winStart, cohort\)/],
+  ['app/api/youtube/generate-thumbnail/route.ts', /effectiveCap\(tier, 'thumbnailsPerMonth', T\.thumbnailsPerMonth, winStart, cohort, subscribedAt\)/],
   ['app/api/assistant/chat/route.ts', /effectiveCap\(tier, 'assistantMessagesPerMonth'[\s\S]{0,260}limits_cohort/],
   ['app/api/collaborations/generate/route.ts', /effectiveCap\(tier, 'collabsPerMonth', TIERS\[tier\]\.collabsPerMonth, startISO, /],
   ['lib/x-cap.ts', /effectiveCap\(tier, 'xPostsPerMonth', X_MONTHLY_CAP, startISO, \(data as/],

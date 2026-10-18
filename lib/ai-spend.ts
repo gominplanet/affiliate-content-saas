@@ -21,8 +21,10 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { costOf, type UsageRow } from '@/lib/ai-usage'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
-import { freeTrialWindow, freeTrialExpiredBlock, FREE_TRIAL_OVER_MESSAGE } from '@/lib/free-trial'
+import { freeTrialWindow, freeTrialExpiredBlock, FREE_TRIAL_OVER_MESSAGE, signedUpWithoutTrial } from '@/lib/free-trial'
 import { accountSignupISO } from '@/lib/free-trial-signup'
+import { introCap } from '@/lib/intro-allowance'
+import { getOwnerUserId } from '@/lib/agency'
 
 /** First instant of the current calendar month, UTC, as an ISO string. */
 function startOfMonthUtcIso(): string {
@@ -126,6 +128,21 @@ export interface SpendStatus {
   /** True when a free account's trial window has closed. Counts as exceeded:
    *  an expired trial gets no more free AI from any gated route. */
   trialOver: boolean
+  /** What that account reads: the trial is over, or (made since the trial
+   *  ended) Pro has not been started yet. */
+  trialOverMessage?: string
+}
+
+/** When this member's subscription started (migration 439), or null. Read
+ *  with '*' so a database without the column answers null, not an error. */
+async function subscribedAtFor(userId: string): Promise<string | null> {
+  try {
+    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (admin as any).from('integrations').select('*').eq('user_id', userId).maybeSingle()
+    const v = (data as { subscribed_at?: string | null } | null)?.subscribed_at
+    return typeof v === 'string' && v ? v : null
+  } catch { return null }
 }
 
 /** The tier's monthly AI-spend ceiling, or null if uncapped. */
@@ -141,7 +158,12 @@ export function ceilingForTier(tier: unknown): number | null {
  */
 export async function spendStatus(userId: string, tier: unknown): Promise<SpendStatus> {
   const t = normalizeTier(tier)
-  const ceiling = ceilingForTier(t)
+  let ceiling = ceilingForTier(t)
+  // THE FIRST WEEK RUNS AT A QUARTER, dollars included (lib/intro-allowance):
+  // this ceiling is what bounds what a refunded first week can cost.
+  if (t !== 'trial' && t !== 'admin' && ceiling != null) {
+    ceiling = introCap(ceiling, await subscribedAtFor(userId))
+  }
 
   // THE FREE TRIAL IS ONE WINDOW, NOT A MONTH. Two leaks lived here while the
   // trial ceiling was summed per calendar month and nothing but the thumbnail,
@@ -156,18 +178,27 @@ export async function spendStatus(userId: string, tier: unknown): Promise<SpendS
   // freeTrialWindow promises: a lookup failure must not lock an account.
   let since: string | undefined
   let trialOver = false
+  let trialOverMessage: string | undefined
   if (t === 'trial') {
     const signupISO = await accountSignupISO(userId)
-    if (signupISO) {
+    // A team member joins free and works on the owner's Pro account. With no
+    // trial for accounts made since NO_TRIAL_FROM, their own free window is
+    // zero days, so without this every AI call a new team member made would
+    // read as a trial that had already ended.
+    const teamMember = signupISO != null && signedUpWithoutTrial(signupISO)
+      && (await getOwnerUserId(userId).catch(() => userId)) !== userId
+    if (signupISO && !teamMember) {
       since = freeTrialWindow(signupISO).startISO
-      trialOver = freeTrialExpiredBlock({ tier: t, signupISO }) != null
+      const block = freeTrialExpiredBlock({ tier: t, signupISO })
+      trialOver = block != null
+      trialOverMessage = block ?? undefined
     }
   }
 
   const spent = await monthlyAiSpendUsd(userId, since)
   const exceeded = trialOver || (ceiling != null && spent >= ceiling)
   const fraction = trialOver ? 1 : ceiling != null && ceiling > 0 ? Math.min(1, spent / ceiling) : 0
-  return { spent, ceiling, exceeded, fraction, tier: t, trialOver }
+  return { spent, ceiling, exceeded, fraction, tier: t, trialOver, trialOverMessage }
 }
 
 /**
@@ -192,7 +223,8 @@ export async function checkSpendCeiling(
 export function spendUpgradeFor(tier: unknown): { tier: Tier; label: string; limit: number | null } | null {
   const t = normalizeTier(tier)
   if (t === 'pro' || t === 'admin') return null
-  const to: Tier = t === 'trial' ? 'amazon' : 'pro'
+  // Pro is the one plan on sale (2026-10-18).
+  const to: Tier = 'pro'
   // limit stays null: the ceiling is dollars, and dollars never reach the user.
   return { tier: to, label: TIERS[to].label, limit: null }
 }
@@ -237,7 +269,7 @@ export async function spendGate(userId: string, tier: unknown): Promise<NextResp
   if (status.tier === 'trial') {
     return NextResponse.json({
       error: status.trialOver
-        ? FREE_TRIAL_OVER_MESSAGE
+        ? (status.trialOverMessage ?? FREE_TRIAL_OVER_MESSAGE)
         : `You have used the free AI on this trial. ${next ? `Upgrade to ${next.label} to keep making designs.` : 'Upgrade to keep making designs.'}`,
       limitReached: true,
       cap: status.trialOver ? 'trial' : 'spend',

@@ -139,8 +139,13 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('the signup form and the checkout API agree on the paid tiers',
     norm(formTiers) === norm(apiTiers),
     `form [${norm(formTiers)}] vs api [${norm(apiTiers)}]`)
-  check('and amazon is in them', /amazon/.test(formTiers) && /amazon/.test(apiTiers),
-    'without it "Get Amazon Influencer" silently becomes a free signup')
+  // 2026-10-18: Pro is the one plan sold, and there is no free signup at all:
+  // a link with no plan, or an old ?tier=amazon one, buys Pro.
+  check('and Pro is the only one', norm(formTiers) === 'pro' && norm(apiTiers) === 'pro',
+    'a second plan here is a plan the sales pages no longer offer')
+  check('every signup that is not a team invite is a Pro checkout',
+    /if \(!joiningTeam\) setPaidTier\(t && PAID_SIGNUP_TIERS\.includes\(t\) \? t : 'pro'\)/.test(FORM),
+    'without it a bare /signup would make a free account with nothing to use')
 
   // 1b. A plan with no price env is a fault on our side, and has to be reported
   //     as one. This branch answered "Invalid tier" and paged nobody, while the

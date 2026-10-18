@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Publishing clips to Instagram is part of the Amazon and Pro plans.',
+        error: 'Publishing clips to Instagram is part of the Pro plan.',
         limitReached: true, cap: 'instagram_burner', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

@@ -30,7 +30,8 @@ import { captchaEnforced, turnstileOk, requestIp, signupIpHash, paidSignupThrott
 // Only the two plans MVP sells. Creator and Studio were in this list, so a stale
 // /signup?plan=studio link rendered "Start your Studio plan" and then refused it
 // as "Invalid plan." isSellableTier below would refuse them anyway.
-const PAID_TIERS: Tier[] = ['amazon', 'pro']
+// Pro is the one plan sold (2026-10-18). Mirrors SignupForm's list.
+const PAID_TIERS: Tier[] = ['pro']
 
 export async function POST(request: NextRequest) {
   if (SALES_PAUSED) {

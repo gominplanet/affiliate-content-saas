@@ -22,12 +22,23 @@
 // Terms carry it now, and the window lives here so a page cannot advertise
 // one length while the terms promise another.
 
-/** How long after the first payment a refund can be requested. */
-export const GUARANTEE_DAYS = 30
+// SEVEN DAYS, NO QUESTIONS, ONCE PER CREATOR (Seb, 2026-10-18). The free
+// trial is gone: every new member starts on Pro and gets the whole product
+// on day one. What replaces the trial is a short refund window, short on
+// purpose: with no trial a 30-day refund would be a free month of AI, and the
+// first week runs at a quarter of each allowance (lib/intro-allowance) for the
+// same reason. One refund per creator, matched on the card, the YouTube
+// channel, the Amazon ID and the email, so it cannot be taken twice.
 
-/** The phrase used on the sales pages. Kept here so "30-day" and the clause
- *  in the Terms cannot come apart. */
-export const GUARANTEE_LABEL = `${GUARANTEE_DAYS}-day money-back guarantee`
+/** How long after the first payment a refund can be requested. */
+export const GUARANTEE_DAYS = 7
+
+/** The phrase used on the sales pages. Kept here so "7-day" and the clause in
+ *  the Terms cannot come apart. */
+export const GUARANTEE_LABEL = `${GUARANTEE_DAYS}-day refund, no questions asked`
 
 /** The short form for a feature tile or a badge. */
-export const GUARANTEE_SHORT = `${GUARANTEE_DAYS}-day guarantee`
+export const GUARANTEE_SHORT = `${GUARANTEE_DAYS}-day refund`
+
+/** The whole promise in one sentence, for a line under a checkout button. */
+export const GUARANTEE_SENTENCE = `Not for you? Ask within ${GUARANTEE_DAYS} days of your first payment and you get it all back, no questions asked. One refund per creator.`

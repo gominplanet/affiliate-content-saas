@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Clip Factory is part of the Amazon and Pro plans. Upgrade to turn your long videos into ready-to-post clips.',
+        error: 'Clip Factory is part of the Pro plan. Upgrade to turn your long videos into ready-to-post clips.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

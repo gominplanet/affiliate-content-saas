@@ -19,7 +19,7 @@ import PageHero from '@/components/layout/PageHero'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 
 interface Bucket { key: string; label: string; used: number; limit: number | null; remaining: number | null }
-interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; lifetime: boolean }
+interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; lifetime: boolean; introNote?: string | null }
 interface DailyBucket { key: string; label: string; used: number; limit: number; nextFreeAt: string | null }
 
 const ACCENT = '#7C3AED'
@@ -157,6 +157,14 @@ export default function YourUsage() {
             <p className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
               You are on the admin account, which has no monthly limits. The monthly bars below show the Amazon plan&apos;s limits
               with sample numbers, so you can see the page the way a customer does. The daily limits are your real counts.
+            </p>
+          )}
+
+          {/* THE FIRST WEEK, said up front: a quarter of each allowance until
+              day 8 (lib/intro-allowance), so a low number reads as planned. */}
+          {summary.introNote && (
+            <p className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.06)', color: 'var(--text)' }}>
+              {summary.introNote}
             </p>
           )}
 

@@ -34,6 +34,9 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from './amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from './launch-batch'
+import { GUARANTEE_SENTENCE } from './guarantee'
+import { INTRO_DAYS } from './intro-allowance'
+import { PRICES_BEFORE, NEW_MEMBER_PRICES, newPricesLive } from './price-schedule'
 
 // The member newsletter is retired (lib/feature-flags NEWSLETTER_FOR_MEMBERS),
 // so the assistant is told that instead of how to use it, and never offers it.
@@ -75,7 +78,7 @@ formats them for email.
 ### Legacy Creator grandfathering
 NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
 and no screen offers them. Never suggest either as an upgrade; the only
-plans anyone can buy are Free Trial, Amazon and Pro. This section exists
+plan anyone can buy is Pro. This section exists
 so that if an EXISTING Creator subscriber asks why their numbers differ,
 the answer is right rather than absent.
 Creator users who were paying when the cap was lowered (2026-06-04)
@@ -126,9 +129,10 @@ members may still use it):
 - Help: Ask MVP (formerly MVP Help Desk), Tutorials and support (tabs:
   Tutorials, Contact support, Community).
 
-On the Amazon plan, Pro-only tools are not repeated as locked rows in each
-section; they are listed once in a "More with Pro" section at the bottom of
-the sidebar. Which items a user sees depends on their plan.
+Members on the legacy Amazon plan (no longer sold) do not see Pro-only tools
+as locked rows in each section; those are listed once in a "More with Pro"
+section at the bottom of the sidebar. Which items a user sees depends on their
+plan.
 
 For the exact, always-current list of every page and its route, see the
 "WHERE EVERYTHING LIVES" section at the very END of this guide. When a user
@@ -231,7 +235,7 @@ The flagship feature. Workflow:
 4. User reviews, edits if needed, clicks "Push to YouTube" — title +
    description + tags + thumbnail go live on the video.
 
-### On the Amazon plan
+### On the legacy Amazon plan (existing members only)
 Included: ${AMAZON_YOUTUBE_CHANNELS} YouTube channel and ${AMAZON_COPILOT_RUNS_PER_MONTH} Co-Pilot
 runs a month (titles, descriptions and tags). The Amazon plan has no blog, so
 no blog review is written from the video. Connecting a channel is optional.
@@ -240,10 +244,10 @@ no blog review is written from the video. Connecting a channel is optional.
 The user can pick 1-10 variants per generation. Each variant burns one
 unit from their Generations cap (see TIERS below).
 
-### Face Training (Amazon and Pro)
+### Face Training
 Upload 5-20 selfies → MVP trains a LoRA → next thumbnails put the user's
 real face on them. Done in Your setup → Face models (/photobooth; the old
-/face-training link opens the same page). Up to ${TIERS.pro.maxFaces} faces on Pro and ${TIERS.amazon.maxFaces} on Amazon.
+/face-training link opens the same page). Up to ${TIERS.pro.maxFaces} faces on Pro (${TIERS.amazon.maxFaces} on the legacy Amazon plan).
 
 ### Naming requirement
 Without an ASIN in the video title or filename, the agent can't identify
@@ -320,10 +324,10 @@ a full blog review, publishes to WordPress. ~3-4 min per campaign.
   a cron worker so the user can retry
 
 ### Which plan
-Finding and browsing campaigns is on the Amazon plan and Pro. Generating a
-blog review from a campaign needs the blog, which is Pro only. Amazon Creator
-Connections itself requires Amazon Influencer status, which has its own
-qualifications.
+Finding, browsing and generating from campaigns are all in Pro. Members on the
+legacy Amazon plan can find and browse campaigns but have no blog, so they
+cannot generate a blog review from one. Amazon Creator Connections itself
+requires Amazon Influencer status, which has its own qualifications.
 
 ---
 
@@ -373,10 +377,10 @@ Required for YouTube Co-Pilot. Sign in with the Google account that
 owns the channel. Grants read access to private/draft videos +
 write access to push generated metadata back.
 
-### Other platforms (varies by tier)
-- LinkedIn, Bluesky, Threads — Pro. Pinterest, Facebook — Amazon and Pro
-- Instagram — Amazon and Pro. Telegram — Pro
-- Twitter/X, TikTok — Pro
+### Other platforms
+- Pro: LinkedIn, Bluesky, Threads, Pinterest, Facebook, Instagram, Telegram,
+  Twitter/X and TikTok
+- Legacy Amazon plan (existing members only): Pinterest, Facebook and Instagram
 - (Some platforms are still in app-review phase with their respective
   providers; those show "Coming soon" badges.)
 
@@ -434,7 +438,7 @@ Outputs can be:
 - Used as About-page photos
 - Set as the "primary" face for future thumbnails
 
-Cap is per-month (10 Creator, 15 Studio, 30 Pro).
+Cap is per month: ${TIERS.pro.photoboothPerMonth} on Pro (${TIERS.amazon.photoboothPerMonth} on the legacy Amazon plan).
 
 ---
 
@@ -489,8 +493,8 @@ URL: /amz-finder · Sidebar: Find products → Product research → Catalog sear
 Search the whole Amazon catalogue by keyword, price, rating, review count,
 best-seller rank, and category. Save winners to a buy-to-review shortlist,
 turn one into a review post, or send it to Thumbnails. Research
-is free on every paid plan (Trial can browse but can't take paid actions).
-Turn on "MVP picks" (paid plans) to deep-verify products that have a real
+is included in Pro at no extra cost (an older free-trial account can browse but
+can't take paid actions). Turn on "MVP picks" to deep-verify products that have a real
 video carousel and genuine monthly demand. Amazon-only by design.
 
 ---
@@ -562,7 +566,7 @@ ranking and timing unlock.
 
 ## CLIP FACTORY & SHORTS STUDIO
 
-URL: /clip-factory · Sidebar: Make videos → Clip Factory (Amazon and Pro)
+URL: /clip-factory · Sidebar: Make videos → Clip Factory (Pro, and the legacy Amazon plan)
 
 Turn one long YouTube video into vertical short clips with burned-in animated
 captions. Three steps: Create (pick the moments, or let MVP suggest the best
@@ -571,7 +575,7 @@ clips) → Enhance → Publish. Publishing goes to TikTok and Instagram today.
 verifying our upload permission — set it up, but don't promise it as live yet;
 when it's on, you'll reconnect YouTube once to enable it.)
 
-On the Amazon plan: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month,
+On the legacy Amazon plan: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips a month,
 posted to Instagram Reels and Facebook Reels. TikTok and YouTube Shorts
 publishing are Pro only.
 
@@ -695,11 +699,18 @@ This is separate from affiliate income; it's ad revenue on your traffic.
 
 ---
 
-## THE AMAZON PLAN ($${TIERS.amazon.price} a month)
+## THE LEGACY AMAZON PLAN (existing members only, no longer sold)
 
-For creators who live on their Amazon storefront and socials. No blog and no
-website. YouTube is optional: everything works without a channel, and one can
-be connected. It includes:
+Nobody can buy the Amazon plan any more and you must never offer it,
+recommend it or quote a price for it: new members join Pro. This section is
+here so a member who is ALREADY on the Amazon plan gets the right answer about
+their own account. Their price is whatever their Billing page shows, kept for
+as long as they stay subscribed. If they want something the plan does not
+include, the way up is Pro on /billing.
+
+It was built for creators who live on their Amazon storefront and socials. No
+blog and no website. YouTube is optional: everything works without a channel,
+and one can be connected. It includes:
 - Thumbnails, and Pinterest and Instagram social designs (Facebook reuses
   them), Social Launch Kit, Link in Bio, Passport links.
 - Product research, including Creator Connections campaigns and Deal Radar.
@@ -717,7 +728,7 @@ be connected. It includes:
 - Deal posts: up to ${TIERS.amazon.dealsPerMonth} a month from Deal Radar, to Pinterest, Facebook, an
   Instagram card and Story.
 
-Pro only (not on the Amazon plan): the blog and everything that publishes to
+Pro only (not on the legacy Amazon plan): the blog and everything that publishes to
 it (blog posts, comparisons, buying guides, articles, ended deals, SEO and
 indexing, ads), the partner networks LTK, Levanta, Walmart and Wayward,
 posting to X, Threads, LinkedIn, Bluesky, Telegram and TikTok, Meta Hub, Team
@@ -737,7 +748,7 @@ on a plan that lists a platform but cannot connect it yet, that is why.
 
 ### Shared Generations counter (current)
 Blog posts, YouTube thumbnails, and YouTube metadata all draw from the
-SAME monthly bucket. A Creator who generates 20 thumbnails this month
+SAME monthly bucket. A member who generates 20 thumbnails this month
 has burned all 20 generations and can't also generate 20 blogs. The
 pricing page has always reflected this as one bundle; the enforcement
 matches as of 2026-06-05.
@@ -800,11 +811,26 @@ ${NEWSLETTER_FOR_MEMBERS ? `**"How do I tag subscribers?"** — /newsletter, cli
 add tags. Tags are free-text — anything you want (e.g. "paying", "lead").
 Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 
-` : ''}**"My Trial is over, what now?"** Pick Amazon ($${TIERS.amazon.price} a month) or Pro on
-/billing. Stripe checkout. Tier updates immediately on webhook.
+` : ''}**"Is there a free trial?"** No. There is no free plan and no free trial.
+Every new member starts on Pro (the only plan on sale) and gets every feature
+from the first day. ${GUARANTEE_SENTENCE} To ask for it, email
+us@gominplanet.com. Renewals after the first payment are not refundable,
+except where the law requires it.
+
+**"Why are my allowances smaller right now?"** In a new member's first
+${INTRO_DAYS} days each monthly allowance runs at a quarter of its size. The
+full allowance opens on day ${INTRO_DAYS + 1}, for the same billing month, less
+what they already used. Members who were already subscribed before the free
+trial ended are not affected. Do not work out what they have left; send them to the
+counter on [Plan and billing](/billing).
+
+**"My Trial is over, what now?"** Older accounts made while the free trial
+still existed may be on it. The next step is Pro on /billing: Stripe checkout,
+and the account switches to Pro as soon as the payment goes through. Pro is the
+only plan on sale; never offer another one.
 
 **"Can I connect more than one WordPress site?"** Yes on Pro (up to ${TIERS.pro.sites}).
-On Amazon: no site. Add via the manager view at /setup.
+On the legacy Amazon plan: no site. Add via the manager view at /setup.
 
 **"How does affiliate link routing work?"** — On /brand → Affiliate Link
 Routing. Geniuslink (preferred — geo-targets shoppers to their local
@@ -972,7 +998,7 @@ function plansBlock(): string {
   const plural = (v: number | null | undefined, one: string, many: string): string =>
     v === 1 ? one : many
 
-  const describe = (key: Tier): string => {
+  const describe = (key: Tier, legacy = false): string => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const t = TIERS[key] as any
     const rows = [
@@ -1009,29 +1035,50 @@ function plansBlock(): string {
         `- Deal posts: ${n(t.dealsPerMonth, 'per month')}`,
       ] : []),
     ].filter(Boolean)
+    // A legacy plan is never priced here. Its new-member price is one nobody
+    // can pay (the Amazon plan's moves on January 1 although no one can join
+    // it), and the member asking already pays whatever their Billing page says.
+    if (legacy) return `### ${t.label} (legacy plan, existing members only)\n${rows.join('\n')}`
     const price = t.price === 0 ? 'free' : `$${t.price}/mo`
-    const annual = t.annualPrice ? `, or $${t.annualPrice}/year` : ''
+    const annual = t.annualPrice ? `, or $${t.annualPrice.toLocaleString('en-US')}/year` : ''
     return `### ${t.label} (${price}${annual})\n${rows.join('\n')}`
   }
 
-  const sold = SELLABLE_TIERS.map(describe).join('\n\n')
-  const legacy = (['creator', 'studio'] as Tier[])
+  const sold = SELLABLE_TIERS.map((k) => describe(k)).join('\n\n')
+  // Amazon joined the legacy list on 2026-10-18 (Pro only): its members keep
+  // the plan, so the assistant still needs its numbers to answer them.
+  const legacy = (['amazon', 'creator', 'studio'] as Tier[])
     .filter((k) => !SELLABLE_TIERS.includes(k))
-    .map(describe).join('\n\n')
+    .map((k) => describe(k, true)).join('\n\n')
+
+  // The price, read from the schedule so it turns over on January 1 by itself.
+  const money = (n: number) => `$${n.toLocaleString('en-US')}`
+  const priceLine = newPricesLive()
+    ? `- Price: ${money(NEW_MEMBER_PRICES.pro.month)} a month or ${money(NEW_MEMBER_PRICES.pro.year)} a year for new members. Members who joined before January 1 keep the price they joined at for as long as they stay subscribed.`
+    : `- Price: ${money(PRICES_BEFORE.pro.month)} a month or ${money(PRICES_BEFORE.pro.year)} a year today. From January 1 new members pay ${money(NEW_MEMBER_PRICES.pro.month)} a month or ${money(NEW_MEMBER_PRICES.pro.year)} a year. Anyone who joins before then keeps the price they joined at for as long as they stay subscribed.`
 
   return `Every number below is read from the product's own plan configuration, so
 it is current. If a user's screen disagrees with a number here, the screen is
 right and something needs reporting. Say so rather than explaining the gap away.
 
-### Free Trial (free)
-- 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card required.
-- Ask MVP messages: ${TIERS.trial.assistantMessagesPerMonth} per month${NEWSLETTER_FOR_MEMBERS ? '\n- Newsletter: not on this plan' : ''}
+## HOW JOINING WORKS
 
-## PLANS ON SALE TODAY
+- Pro is the only plan on sale. There is no free plan and no free trial: every new member pays for Pro at checkout, monthly or yearly, and gets every feature from the first day.
+${priceLine}
+- Refund: ${GUARANTEE_SENTENCE} To ask, email us@gominplanet.com. Renewals after the first payment are not refundable, except where the law requires it.
+- First week: in a new member's first ${INTRO_DAYS} days each monthly allowance below runs at a quarter of its size. The full allowance opens on day ${INTRO_DAYS + 1}.
+- Never offer a free trial, a free plan, or any plan other than Pro.
+- Older accounts made while the free trial still existed may still be on it (Ask MVP messages: ${TIERS.trial.assistantMessagesPerMonth} per month). Their next step is Pro on /billing.
+
+## ${SELLABLE_TIERS.length === 1 ? 'THE ONE PLAN ON SALE' : 'PLANS ON SALE TODAY'}
 
 ${sold}
 
 ## LEGACY PLANS (existing subscribers only, not sold to new customers)
+
+Never offer, recommend or price one of these. They are here so a member
+already on one gets the right answer about their own allowances. What they pay
+is on their Billing page, and the way up from any of them is Pro.
 
 ${legacy}
 
@@ -1040,7 +1087,7 @@ ${legacy}
 These two are ENFORCED at these numbers. They are separate from the
 generations bucket.
 
-- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period on Pro; ${AMAZON_CLIPS_PER_MONTH} clips and ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments on the Amazon plan. Only a finished render counts as a clip.
+- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period on Pro; ${AMAZON_CLIPS_PER_MONTH} clips and ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments on the legacy Amazon plan. Only a finished render counts as a clip.
 - X / Twitter posts: ${X_MONTHLY_CAP} per billing period.
 
 ## NEVER CALCULATE SOMEONE'S REMAINING ALLOWANCE

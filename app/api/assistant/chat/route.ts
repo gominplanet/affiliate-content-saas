@@ -116,7 +116,7 @@ export async function POST(request: Request) {
   // A lowered cap lands on the member's NEXT billing window (effectiveCap).
   const cap = effectiveCap(tier, 'assistantMessagesPerMonth', TIERS[tier].assistantMessagesPerMonth,
     billingWindow({ periodStart: (intRow?.subscription_period_start as string | null) ?? null, periodEnd: (intRow?.subscription_period_end as string | null) ?? null }).startISO,
-    (intRow?.limits_cohort as string | null) ?? null)
+    (intRow?.limits_cohort as string | null) ?? null, (intRow?.subscribed_at as string | null) ?? null)
   const capCheck = await checkUsageCap(
     sb, user.id, PRIMARY_FEATURE.assistant, cap,
     (intRow?.subscription_period_start as string | null) ?? null,

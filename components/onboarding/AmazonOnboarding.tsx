@@ -99,7 +99,7 @@ export default function AmazonOnboarding({
         </p>
         <h1 className="text-3xl font-bold tracking-tight">One field, then you are making designs.</h1>
         <p className="mt-3 text-[15px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-          No website, no YouTube channel, no card. Signed in as {email}.
+          No website or YouTube channel needed. Signed in as {email}.
         </p>
 
         {/* ── Required: the Associates tag ───────────────────────────────── */}
@@ -179,7 +179,7 @@ export default function AmazonOnboarding({
             </button>
             {!ready && (
               <p className="mt-2 text-[12.5px] text-[#86868b] dark:text-[#8e8e93]">
-                Save your Associates tag above and this opens up. It is what makes your free designs earn on your account.
+                Save your Associates tag above and this opens up. It is what makes your designs earn on your account.
               </p>
             )}
           </div>
@@ -194,7 +194,7 @@ export default function AmazonOnboarding({
               >
                 Look around first
               </button>
-              . Product research and Deal Radar are free and need no tag. Add the tag in Setup whenever you are ready and your designs unlock.
+              . Product research and Deal Radar need no tag. Add the tag in Setup whenever you are ready and your designs unlock.
             </p>
           )}
         </div>

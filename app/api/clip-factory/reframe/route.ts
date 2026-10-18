@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier)
     if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Reframing uploads is part of the Amazon and Pro plans.',
+        error: 'Reframing uploads is part of the Pro plan.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

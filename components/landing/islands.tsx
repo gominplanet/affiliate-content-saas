@@ -10,8 +10,8 @@
 
 import { useState, useEffect } from 'react'
 import { Play, X as XIcon, Plus, Minus, Sparkles, ArrowRight } from 'lucide-react'
-import { FREE_TRIAL } from '@/lib/free-trial'
 import { TIERS } from '@/lib/tier'
+import { GUARANTEE_LABEL, GUARANTEE_SENTENCE } from '@/lib/guarantee'
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
@@ -67,7 +67,7 @@ export function DemoVideoSection() {
           >
             Why we built MVP.{' '}
             <span style={{ color: 'var(--text-soft)' }}>What it does.</span>{' '}
-            <span style={{ color: 'var(--text-soft)' }}>What&apos;s free when you start.</span>
+            <span style={{ color: 'var(--text-soft)' }}>What you get when you join.</span>
           </h2>
         </div>
 
@@ -182,7 +182,7 @@ export function DemoVideoSection() {
           className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
           style={{ color: 'var(--text-subtle)' }}
         >
-          The story behind MVP: what it does, and what you get free when you start.
+          The story behind MVP: what it does, and what you get when you join.
         </p>
       </div>
 
@@ -250,12 +250,12 @@ export function DemoVideoSection() {
  *
  *  Topics chosen to address the strongest "but…" objections from the
  *  page so far:
- *    1. Trial mechanics (5 lifetime posts, no card)
+ *    1. What if it isn't for me? (the 7-day refund; there is no trial)
  *    2. WordPress ownership (yours forever)
  *    3. Will it sound like me? (LEARN voice profile)
- *    4. Cancel + refund mechanics
+ *    4. Cancel mechanics
  *    5. Fact-grounding guarantee
- *    6. Switching plans
+ *    6. One plan (Pro), nothing to upgrade to
  */
 export function FAQSection() {
   const [openIdx, setOpenIdx] = useState<number | null>(0)
@@ -299,12 +299,12 @@ export function FAQSection() {
 
 const FAQS = [
   {
-    q: 'How does the free trial work?',
-    a: `You get ${FREE_TRIAL.thumbnails} Art Director thumbnails and ${FREE_TRIAL.socialDesigns} designs with your own face on them for your first ${FREE_TRIAL.trialDays} days, plus ${TIERS.trial.lifetimeMax} full posts on the house once you connect a WordPress site. No card required. Generate, download, and see how it fits your workflow. If you decide MVP is for you, pick a plan (Amazon or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.`,
+    q: 'What if MVP isn\'t for me?',
+    a: `${GUARANTEE_SENTENCE} You keep everything you made with it, and you can cancel any time from your billing page.`,
   },
   {
     q: 'Do I need to host my own WordPress site?',
-    a: 'Not on the Amazon plan: it needs no website at all. On Pro, yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
+    a: 'Only for the blog. The Amazon side of MVP (designs, bulk uploads to your storefront, brand campaigns, Deal Radar) needs no website at all. For the blog, yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
   },
   {
     q: 'Will MVP-generated content actually sound like me?',
@@ -319,8 +319,8 @@ const FAQS = [
     a: 'Two layers. First: the generator pulls product specs directly from the product page you reviewed (Amazon, the brand site, wherever the buy link points). It uses those specs verbatim, no model "imagination." Second: every story / experience claim comes from your actual video transcript. If you didn\'t say it on camera, MVP doesn\'t put it in the post.',
   },
   {
-    q: 'Can I switch plans up or down later?',
-    a: 'Anytime. Upgrade and the difference is pro-rated and applied immediately. Downgrade and the new plan kicks in at the next billing cycle (you keep the higher plan\'s features until then). No "annual commitment" trap.',
+    q: 'Is there more than one plan?',
+    a: `No. ${TIERS.pro.label} is the one plan and it includes everything MVP offers, so there is nothing to upgrade to later and nothing held back for a higher tier.`,
   },
   {
     q: 'Will my content actually rank, and how long does it take?',
@@ -371,8 +371,9 @@ function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boo
 }
 
 /** Sticky bottom CTA bar — slim chrome that fades in after the user
- *  scrolls past the hero. Always-visible "Start free trial" while they
- *  read the rest of the page. Dismissible per-session via localStorage
+ *  scrolls past the hero. Always-visible "Start Pro" while they read the
+ *  rest of the page, with the 7-day refund beside it (there is no trial).
+ *  Dismissible per-session via localStorage
  *  so we don't nag users who've already declined once.
  *
  *  Why session-scoped (not permanent): a user who dismisses on Monday
@@ -433,18 +434,18 @@ export function StickyBottomBar() {
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
-            Try MVP free: {FREE_TRIAL.socialDesigns} designs with your face, no card.
+            MVP {TIERS.pro.label}, with a {GUARANTEE_LABEL}.
           </p>
           <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            Free for your first {FREE_TRIAL.trialDays} days. See if it fits before you pay a cent.
+            Every tool in MVP from the first day. One refund per creator.
           </p>
         </div>
         <a
-          href="/signup"
+          href="/signup?tier=pro"
           className="px-3.5 py-2 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap inline-flex items-center gap-1.5"
           style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
         >
-          Start free
+          Start Pro
           <ArrowRight size={12} />
         </a>
         <button

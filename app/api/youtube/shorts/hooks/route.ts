@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (!hasVideoTools(tier)) return NextResponse.json({ error: 'Clip hooks are part of the Amazon and Pro plans.' }, { status: 403 })
+    if (!hasVideoTools(tier)) return NextResponse.json({ error: 'Clip hooks are part of the Pro plan.' }, { status: 403 })
 
     const body = await request.json().catch(() => ({})) as { shortId?: string }
     const shortId = String(body.shortId || '').trim()

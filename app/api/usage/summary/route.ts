@@ -21,6 +21,7 @@
  * buckets are omitted so the meter stays clean. On any DB hiccup we return an
  * empty bucket list — the meter hides rather than showing a wrong number.
  */
+import { introNote } from '@/lib/intro-allowance'
 import { NextResponse } from 'next/server'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
@@ -138,7 +139,8 @@ export async function GET() {
   // The cap in force for THIS window: a cap lowered after the window began
   // still shows (and is enforced at) its old value until the next one.
   const cohort = (ig?.limits_cohort as string | null | undefined) ?? null
-  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO, cohort))
+  const subscribedAt = (ig?.subscribed_at as string | null | undefined) ?? null
+  const ec = (key: SteppedCap, v: number | null) => (isAdminPreview || lifetime ? v : effectiveCap(tier, key, v, startISO, cohort, subscribedAt))
   const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
 
   try {
@@ -163,7 +165,7 @@ export async function GET() {
       // tier (no count cap), and metadata has its OWN cap, shown as its own
       // bucket below. Before, the meter summed all three and over-reported —
       // a user could see "20/20" while the real blog gate still had room.
-      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig?.limits_cohort as string | null | undefined) ?? null)
+      const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO, (ig?.limits_cohort as string | null | undefined) ?? null, subscribedAt)
       const blog = await countRows('blog_posts', 'published_at')
       push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog, genLimit)
       // Thumbnails are their OWN enforced cap on every tier (shared by co-pilot
@@ -234,5 +236,8 @@ export async function GET() {
     buckets,
     resetLabel: lifetime ? null : resetLabel,
     lifetime,
+    // The first-week quarter, said beside the bars so a lower number never
+    // reads as a fault (lib/intro-allowance).
+    introNote: isAdminPreview ? null : introNote(subscribedAt),
   })
 }

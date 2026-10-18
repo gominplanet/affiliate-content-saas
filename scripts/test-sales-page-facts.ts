@@ -67,12 +67,13 @@ const split = strip(SPLIT)
     check(`${name} quotes no stale regular price`, !/\$129\b/.test(src),
       'the struck-through price is regularPrice, which is 179')
   }
-  check('the pricing card reads the price', /\$\{TIERS\.amazon\.price\}/.test(pricing))
-  check('and the struck price', /\$\{TIERS\.amazon\.regularPrice\}/.test(pricing))
-  check('and COMPUTES the saving', /TIERS\.amazon\.regularPrice - TIERS\.amazon\.price/.test(pricing),
+  // PRO ONLY (2026-10-18): one plan, and its price is read from the tier.
+  check('the pricing card reads the price', /price: TIERS\.pro\.price/.test(pricing))
+  check('and the struck price', /regularPrice: TIERS\.pro\.regularPrice/.test(pricing))
+  check('and COMPUTES the saving', /plan\.regularPrice - plan\.price/.test(pricing),
     '"Save $50" was typed next to a real saving of $80; a subtraction cannot be wrong')
-  check('the landing page reads it too', /\$\{TIERS\.amazon\.price\}/.test(landing))
-  check('and so does the audience split', /TIERS\.amazon\.price/.test(split) && /TIERS\.amazon\.regularPrice/.test(split))
+  check('the landing page reads it too', /\$\{TIERS\.pro\.price\}/.test(landing) || /\$\{TIERS\.pro\.price\}|TIERS\.pro\.price/.test(landing))
+  check('and the old two-plan fork is not on the page', !/<AudienceSplit/.test(landing) && split.length > 0)
 }
 
 // ── no cap is typed in ─────────────────────────────────────────────────────
@@ -87,7 +88,6 @@ const split = strip(SPLIT)
     ['igPostsPerMonth', 'Reels'],
     // Facebook designs are no longer a counted allowance (2026-10-05): Facebook
     // reuses the thumbnail or Instagram design, so there is no number to print.
-    ['dealsPerMonth', 'posts published'],
     ['maxFaces', 'face models'],
     ['photoboothPerMonth', 'headshots'],
   ] as const
@@ -97,8 +97,8 @@ const split = strip(SPLIT)
   // limit the product does not enforce. The number is still read on the Pro
   // Brand Deals bullet, which is the feature it actually belongs to.
   for (const [field, what] of reads) {
-    check(`the ${what} cap is read, not typed`, new RegExp(`TIERS\\.amazon\\.${field}`).test(pricing),
-      `it was hardcoded and wrong; TIERS.amazon.${field} is ${String((TIERS.amazon as Record<string, unknown>)[field])}`)
+    check(`the ${what} cap is read, not typed`, new RegExp(`TIERS\\.pro\\.${field}`).test(pricing),
+      `it was hardcoded and wrong; TIERS.pro.${field} is ${String((TIERS.pro as Record<string, unknown>)[field])}`)
   }
   // The specific literals that were on the page. A guard on the source alone
   // would not notice one of them being typed back in beside the read.
@@ -108,43 +108,24 @@ const split = strip(SPLIT)
   }
 }
 
-// ── the free trial is described as what it is ──────────────────────────────
+// ── there is no free trial, and the pages say so ───────────────────────────
 //
-// TWO OFFERS, AND THE FIRST VERSION OF THIS CHECK GOT IT BACKWARDS. It read
-// TIERS.trial.articlesPerMonth === 0 as "the trial has no posts" and asserted
-// the page must not mention any. But lifetimeMax and basePosts are both 5, and
-// lib/free-tier-gate says "the free plan includes 5 lifetime posts" outright,
-// so "5 full posts" was true and acting on that check DELETED a real claim from
-// the sales page. The clock is real as well, but only on the design surfaces:
-// freeTrialExpiredBlock is enforced on face-models, photobooth and
-// generate-thumbnail, and on nothing in the blog path.
+// Pro only, no trial for new signups, a 7-day refund instead (2026-10-18). A
+// page that still offers a trial nobody can get is the fastest way to a
+// support ticket, and the refund is read from lib/guarantee, never typed.
 {
-  check('the post allowance is still five', TIERS.trial.lifetimeMax === 5 && TIERS.trial.basePosts === 5,
-    'the copy states this number, so a change here has to reach the page')
-  check('and the design clock is still real', FREE_TRIAL.trialDays > 0, `${FREE_TRIAL.trialDays} days`)
-  const GATE = readFileSync('lib/free-tier-gate.ts', 'utf8')
-  check('the gate still requires a WordPress site', /Connect a WordPress site/.test(GATE),
-    'the copy now says "once you connect a WordPress site", which it never used to mention')
-
-  check('the posts are stated, and READ', /TIERS\.trial\.lifetimeMax/.test(landing),
-    'they are real; the page should say so, from the constant')
-  // The literal is the regression. A presence check on the read passes while
-  // one of its three uses is typed back in as a number.
   for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
-    check(`${name} types no post count`, !/\b\d+ (full |free )?(posts|published reviews)\b/i.test(src),
-      'the count is TIERS.trial.lifetimeMax; typed beside it, it goes stale the way every price on this page did')
-  }
-  check('the design allowance is read too',
-    /FREE_TRIAL\.thumbnails/.test(landing) && /FREE_TRIAL\.socialDesigns/.test(landing))
-  check('and the window', /FREE_TRIAL\.trialDays/.test(landing))
-  // The one thing that was simply false. The designs stop after trialDays.
-  for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
+    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src),
+      'there is no trial for new signups; every new member starts on Pro')
+    check(`${name} reads the refund from lib/guarantee`, /GUARANTEE_(LABEL|SENTENCE|SHORT)/.test(src),
+      'a typed "7-day" goes stale the way every price on this page did')
     check(`${name} does not claim there is no time limit`, !/no time limit/i.test(src),
-      `freeTrialExpiredBlock cuts the design surfaces off after ${FREE_TRIAL.trialDays} days`)
+      'nothing on these pages should promise an open-ended free period')
   }
   const FAQ = strip(readFileSync('components/landing/islands.tsx', 'utf8'))
   check('nor does the FAQ', !/no time limit/i.test(FAQ),
     'it is the longest-form answer on the site and it said it outright')
+  check('and the FAQ answers the refund question from the same sentence', /GUARANTEE_SENTENCE/.test(FAQ))
 }
 
 // ── the collab cap is on the DRAFTING, not on the outreach ─────────────────
@@ -161,9 +142,9 @@ const split = strip(SPLIT)
 // how many campaigns you can see and how many brands you can approach. It
 // understated the plan in the most expensive place to be wrong.
 {
-  const AMZ_PAGE = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
+  // The Amazon plan's page redirects to the sales page since 2026-10-18.
   const surfaces = [
-    ['landing', LANDING], ['pricing', PRICING], ['amazon page', AMZ_PAGE],
+    ['landing', LANDING], ['pricing', PRICING],
   ] as const
 
   for (const [name, raw] of surfaces) {
@@ -247,21 +228,12 @@ const split = strip(SPLIT)
 // from everyone who has not started one, on a product whose Hostinger flow
 // installs WordPress for them.
 {
-  const cards = trackCards()
-  // Widened to number: TIERS prices are a literal union, so .includes() on the
-  // narrowed array rejects an arbitrary parsed number.
-  const sellablePrices: number[] = SELLABLE_TIERS.map(t => TIERS[t].price as number)
-  for (const c of cards) {
-    const stated = Number(c.price.match(/\$(\d+)/)?.[1] ?? NaN)
-    check(`the ${c.key} card quotes a sellable price`, sellablePrices.includes(stated),
-      `it says $${stated}; the plans anyone can buy are ${sellablePrices.map(p => '$' + p).join(', ')}`)
-  }
-  const ladder = cards.find(c => c.key === 'ladder')!
-  check('the ladder door does not require an existing site',
-    !/I have a blog|publish to a website of your own/i.test(`${ladder.title} ${ladder.tell}`),
-    'MVP installs WordPress for a creator with no site; this door excluded them')
-  check('and says so', /build|set (one )?up/i.test(`${ladder.blurb} ${ladder.tell}`),
-    'the fact that MVP makes the site is the reason the door is open to them')
+  // PRO ONLY (2026-10-18): one plan, so no page asks "which one are you?".
+  // The chooser components stay in the repo, unrendered; rendered, they would
+  // quote the Amazon plan, which is no longer sold.
+  check('no page renders the two-door chooser', !/<TrackPicker|<AudienceSplit/.test(LANDING + PRICING),
+    'it quotes a plan nobody can buy')
+  check('and the plans on sale are Pro alone', SELLABLE_TIERS.length === 1 && SELLABLE_TIERS[0] === 'pro' && trackCards().length > 0)
 }
 
 // ── the claims that are NOT numbers ────────────────────────────────────────

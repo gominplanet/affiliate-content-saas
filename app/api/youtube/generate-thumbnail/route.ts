@@ -1110,7 +1110,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       if (over) {
         return NextResponse.json({
           error: over, code: 'trial_over', capExceeded: true,
-          upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'amazon' }),
+          upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'pro' }),
         }, { status: 403 })
       }
     }
@@ -1579,22 +1579,29 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         // A lowered cap lands on the member's NEXT billing window (effectiveCap).
         const winStart = billingWindow({ periodStart: tierRow?.subscription_period_start ?? null, periodEnd: tierRow?.subscription_period_end ?? null }).startISO
         const cohort = (tierRow as { limits_cohort?: string | null } | null)?.limits_cohort
-        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart, cohort); capFeatures = ['amazon_pin']; capLabel = 'pins' }
-        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart, cohort); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
-        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart, cohort); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
-        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart, cohort); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+        const subscribedAt = (tierRow as { subscribed_at?: string | null } | null)?.subscribed_at
+        if (isPin) { capLimit = effectiveCap(tier, 'pinsPerMonth', T.pinsPerMonth, winStart, cohort, subscribedAt); capFeatures = ['amazon_pin']; capLabel = 'pins' }
+        else if (isIg || isStory) { capLimit = effectiveCap(tier, 'igPostsPerMonth', T.igPostsPerMonth, winStart, cohort, subscribedAt); capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
+        else if (isFb) { capLimit = effectiveCap(tier, 'facebookPostsPerMonth', T.facebookPostsPerMonth, winStart, cohort, subscribedAt); capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
+        else { capLimit = effectiveCap(tier, 'thumbnailsPerMonth', T.thumbnailsPerMonth, winStart, cohort, subscribedAt); capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
       }
       // A ZERO allowance is not a used-up allowance. Creator can now open the
       // Amazon hub (its Thumbnail Generator and Research run on Creator's own
       // limits), and its pin/Instagram/Facebook allowance is 0, so the cap
       // message would have read "You've used all 0 pins on your plan this
       // period" to somebody who had made none. Say what the plan includes and
-      // offer the one that sells this.
+      // offer the one that sells this: Pro, the one plan on sale (2026-10-18).
+      // Only when Pro really has this format. Pro's Facebook allowance is 0
+      // (Facebook reuses another design), so offering Pro there would promise
+      // something it does not include.
       if (capLimit === 0) {
+        const P = TIERS.pro
+        const proLimit = isPin ? P.pinsPerMonth : (isIg || isStory) ? P.igPostsPerMonth : isFb ? P.facebookPostsPerMonth : P.thumbnailsPerMonth
+        const proIncludes = tier !== 'pro' && tier !== 'admin' && proLimit !== 0
         return NextResponse.json({
-          error: `${capLabel.charAt(0).toUpperCase()}${capLabel.slice(1)} are not part of the ${TIERS[tier].label} plan. The Amazon Influencer plan includes them.`,
+          error: `${capLabel.charAt(0).toUpperCase()}${capLabel.slice(1)} are not part of the ${TIERS[tier].label} plan.${proIncludes ? ` The ${P.label} plan includes them.` : ''}`,
           capExceeded: true,
-          upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'amazon' }),
+          upgrade: proIncludes ? nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'pro' }) : null,
         }, { status: 403 })
       }
       if (typeof capLimit === 'number') {
@@ -1611,11 +1618,12 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           // Offer the plan that actually sells what they just ran out of. The
           // default ladder is the BLOG ladder, so a free user out of designs was
           // being pointed at Creator, which has pinsPerMonth: 0 and cannot make
-          // one. An Amazon design cap offers the Amazon plan.
+          // one. Pro is the one plan on sale (2026-10-18), so every cap here
+          // offers Pro, and nextTierFor offers nothing when Pro has no more.
           return NextResponse.json({
             error: `You've used all ${capLimit} ${capLabel} on your plan this period${cap.resetLabel ? ` (resets ${cap.resetLabel})` : ''}.`,
             capExceeded: true,
-            upgrade: nextTierFor(tier, 'thumbnailsPerMonth', isSocialDesign ? { preferTier: 'amazon' } : undefined),
+            upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'pro' }),
           }, { status: 429 })
         }
       }

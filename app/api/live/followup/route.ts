@@ -44,7 +44,7 @@ async function gate(mode: 'read' | 'paid' = 'paid') {
   if (!user) return { error: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of the Amazon and Pro plans.', upgrade: true }, { status: 403 }) }
+  if (!canUsePreview('live_followup', intg?.tier)) return { error: NextResponse.json({ error: 'Live follow-up is part of the Pro plan.', upgrade: true }, { status: 403 }) }
   // The monthly spend ceiling, like every other paid route. Follow-up runs
   // Whisper on the replay and Claude on the moments, and was the one paid
   // feature with no backstop at all. Reads (GET) pass through: they cost nothing.

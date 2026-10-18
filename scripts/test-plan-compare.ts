@@ -206,14 +206,13 @@ const row = (label: string) => rows.find(r => r.label === label)
   const PRICING = readFileSync('app/pricing/page.tsx', 'utf8')
   const SALES = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
 
-  check('the pricing page asks the question first', /<TrackPicker \/>/.test(PRICING))
-  check('and the chooser sits above the plan grid',
-    PRICING.indexOf('<TrackPicker />') < PRICING.indexOf('id="plans"'),
-    'asking after they have already read four cards is asking too late')
+  // PRO ONLY (2026-10-18): one plan, so there is no question to ask and no
+  // two-plan table to show. The pricing page must not bring either back, and
+  // the Amazon plan's own page now redirects to the sales page.
+  check('the pricing page asks no which-plan question', !/<TrackPicker/.test(PRICING))
   check('the ladder has an anchor to jump to', /id="plans"/.test(PRICING))
-  check('the pricing page shows the comparison', /<TrackCompare/.test(PRICING))
-  check('and so does the ad landing page', /<TrackCompare/.test(SALES),
-    'that page is where the traffic is; it is the one that has to make the difference obvious')
+  check('the pricing page shows no two-plan comparison', !/<TrackCompare/.test(PRICING))
+  check('the Amazon plan page redirects to the sales page', /source: '\/amazon-influencer', destination: '\/'/.test(readFileSync('next.config.ts', 'utf8')) && SALES.length > 0)
 }
 
 if (failures.length) {

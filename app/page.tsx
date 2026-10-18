@@ -20,14 +20,9 @@
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
-import {
-  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
-  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
-} from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { GUARANTEE_LABEL } from '@/lib/guarantee'
-import { FREE_TRIAL } from '@/lib/free-trial'
+import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guarantee'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import {
   FileText, Image as ImageIcon, Scale, Calendar,
@@ -37,12 +32,11 @@ import {
   ShieldCheck, Zap, Upload, X as XIcon, Check,
   Crown, Rocket,
   Pin,
-  ShoppingBag, Store, Search,
+  Store, Search,
   Radar, Scissors,
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
-import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -154,7 +148,8 @@ export default function LandingPreview() {
           sections in this file. */}
       <Nav />
       <Hero />
-      <AudienceSplit />
+      {/* ONE PLAN (Seb, 2026-10-18): the "which one are you?" fork offered
+          the Amazon plan, which is no longer sold, so it is gone. */}
       <PlatformBar />
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
@@ -371,7 +366,7 @@ function PricingSection() {
             className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
-            Start free.{' '}
+            One plan.{' '}
             <span
               style={{
                 background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -380,14 +375,14 @@ function PricingSection() {
                 backgroundClip: 'text',
               }}
             >
-              Scale when you&apos;re ready.
+              All of MVP.
             </span>
           </h2>
           <p
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Start on the free trial, then pick the plan that fits. Cancel anytime. Your WordPress site stays yours forever.
+            Every feature opens the day you join. {GUARANTEE_SENTENCE} Cancel anytime, and your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
@@ -400,37 +395,8 @@ function PricingSection() {
           </div>
         </div>
 
-        {/* Trial banner — the no-card "way in" sits ABOVE the cards so it
-            reads as "start here, then pick a tier when you're ready." */}
-        <div
-          className="rounded-2xl border p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6"
-          style={{
-            backgroundColor: 'rgba(16,185,129,0.06)',
-            borderColor: 'rgba(16,185,129,0.25)',
-          }}
-        >
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #10B981, #059669)', color: '#FFFFFF' }}
-          >
-            <Sparkles size={18} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-              Free to start. No card required.
-            </p>
-            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar stay open after your trial ends. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
-            </p>
-          </div>
-          <a
-            href="/signup"
-            className="px-5 py-2.5 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
-            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-          >
-            Start free →
-          </a>
-        </div>
+        {/* The free trial banner that sat here is gone (2026-10-18): there is
+            no trial. The refund promise above replaces it. */}
 
         {/* THE COLUMN COUNT FOLLOWS THE PLANS, and the row narrows with it.
             This was lg:grid-cols-3 from when three plans were sold. The array
@@ -466,7 +432,7 @@ function PricingSection() {
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> Switch plans up or down
+            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours forever
@@ -517,59 +483,18 @@ const LANDING_PLAN_GRID: Record<number, string> = {
 }
 
 const PRICING_TIERS: PricingTier[] = [
-  // TWO PLANS (2026-09-15). Creator and Studio are frozen legacy tiers — five
-  // existing subscribers keep them, nobody new can buy one, and they are no
-  // longer cards here. Studio at $99 gave LESS than Amazon at $79 on
-  // thumbnails, Pinterest, Instagram and collabs: it was not a rung above
-  // Amazon, it was a different product at a higher price.
-  {
-    name: 'Amazon',
-    tagline: 'Best for Amazon storefront and influencer creators.',
-    price: TIERS.amazon.price,
-    regularPrice: TIERS.amazon.regularPrice,
-    highlight: true,
-    icon: <ShoppingBag size={16} />,
-    logo: '/png/mvp-affiliate-amz.png',
-    accent: {
-      grad: 'linear-gradient(135deg, #F59E0B 0%, #EA580C 100%)',
-      solid: '#EA580C',
-      tint: 'rgba(234,88,12,0.12)',
-      ring: 'rgba(234,88,12,0.38)',
-    },
-    features: [
-      '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
-      'Brand campaigns: the Creator Connections finder + a daily picked-for-you digest',
-      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
-      `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
-      `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
-      'Auto-post to Pinterest, Instagram & Facebook with AI captions, your affiliate link, and #ad #sponsored added for you',
-      `${TIERS.amazon.dealsPerMonth} deal posts / month from Deal Radar to Pinterest, Facebook and an Instagram card and Story`,
-      // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
-      // members). Numbers from lib/amazon-plan, the constants the routes enforce.
-      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and YouTube when connected`,
-      `${AMAZON_YOUTUBE_CHANNELS} YouTube channel with YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs / month`,
-      'Pinned and On sale comments on your YouTube videos',
-      `Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`,
-      `Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips / month to Instagram and Facebook Reels`,
-      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots: your face on every design`,
-      `Brand pitches: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
-      `Ask MVP: ${TIERS.amazon.assistantMessagesPerMonth} messages / month`,
-      'Priority generation queue + priority support',
-      // SAY WHAT IT DOES NOT DO, ON THE CARD. At $79 as a side product this was
-      // obvious from context. As one of two headline plans it is not, and
-      // somebody buying a $99 plan expecting a blog churns in week one. The
-      // cheapest refund to prevent is the one you talk a person out of.
-      // "no YouTube" came off on 2026-10-05 (Seb): YouTube is optional now.
-      '✕ No blog or WordPress, and no TikTok, X or Threads. That is Pro',
-    ],
-    cta: 'Start storefront',
-  },
+  // ONE PLAN (Seb, 2026-10-18). Nobody was on the Amazon plan and every member
+  // is on Pro, so Pro is the one plan sold, with the whole product on day one
+  // and a 7-day refund in place of the free trial. Amazon, Creator and Studio
+  // stay in lib/tier.ts for the accounts that have them; none is a card here.
+  // The list is the whole plan, not "Everything in Amazon, plus": there is no
+  // plan underneath it any more.
   {
     name: 'Pro',
-    tagline: 'Best for the serious affiliate marketer. Everything MVP does, with the biggest allowances.',
+    tagline: 'Everything MVP does, for creators who sell on Amazon, YouTube and their own blog.',
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
-    highlight: false,
+    highlight: true,
     icon: <Rocket size={16} />,
     logo: '/png/mvp-affiliate-pro.png',
     accent: {
@@ -579,22 +504,26 @@ const PRICING_TIERS: PricingTier[] = [
       ring: 'rgba(79,70,229,0.35)',
     },
     features: [
-      'Everything in Amazon, plus:',
-      `📝 The blog: ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
+      `📝 Your blog: ${TIERS.pro.postsPerMonth} posts / month on your own WordPress, written in your real voice`,
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
-      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month, posting to TikTok and YouTube Shorts too`,
-      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, and Amazon Live with no monthly show limit`,
-      `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
+      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to YouTube and your Amazon storefront`,
+      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, plus pinned and On sale comments on your videos`,
+      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month to TikTok, Instagram, Facebook Reels and YouTube Shorts`,
+      `${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month, rendered at high quality`,
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
-      'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
-      'Multi-account social + one-click Publish All',
+      'Auto-post to Pinterest, Instagram, Facebook, X, TikTok, LinkedIn, Threads, Bluesky & Telegram, with your link and #ad added for you',
+      '⚡ Amazon Deal Radar + all-deals & full-catalogue research, with deal posts to your socials',
+      'Brand deals: the Creator Connections finder + a daily picked-for-you digest',
       'Partner programs: Levanta, PartnerBoost, Wayward & LTK campaigns turned into posts',
-      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
-      `Up to ${TIERS.pro.youtubeChannels} YouTube channels, one per site, or pull from any`,
+      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
+      'Amazon Live prep and follow-up, with no monthly show limit',
+      `${TIERS.pro.maxFaces} face models, ${TIERS.pro.photoboothPerMonth} Photobooth headshots: your face on every design`,
+      `Up to ${TIERS.pro.sites} WordPress sites, ${TIERS.pro.youtubeChannels} YouTube channels + ${TIERS.pro.vaSeats} Team seats`,
       `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitch emails drafted / month`,
       `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
+      'Priority generation queue + priority support',
     ],
-    cta: 'Go Pro',
+    cta: 'Start Pro',
   },
 ]
 
@@ -608,7 +537,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.15em] text-white z-20 whitespace-nowrap"
           style={{ background: a.grad, boxShadow: `0 6px 18px ${a.ring}` }}
         >
-          ★ Most popular
+          ★ Everything included
         </div>
       )}
       <div
@@ -721,7 +650,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
             {/* CTA. Carries the plan slug so the signup flow lands the user
                 on the right checkout post-signup. */}
             <a
-              href={`/signup?plan=${tier.name.toLowerCase()}`}
+              href={`/signup?tier=${tier.name.toLowerCase()}`}
               className="block w-full px-4 py-3 rounded-xl text-center text-[14px] font-bold transition-all hover:brightness-110"
               style={{
                 background: highlight ? a.grad : 'var(--surface-bright)',
@@ -1159,7 +1088,7 @@ function FinalCTASection() {
           className="text-[44px] sm:text-[64px] font-extrabold tracking-[-0.035em] leading-[1.0] mb-5"
           style={{ color: 'var(--text)' }}
         >
-          Start your{' '}
+          Film it once.{' '}
           <span
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -1168,27 +1097,27 @@ function FinalCTASection() {
               backgroundClip: 'text',
             }}
           >
-            Central Hub.
+            MVP does the rest.
           </span>
         </h2>
         <p
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          {TIERS.trial.lifetimeMax} free posts, plus {FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs for {FREE_TRIAL.trialDays} days. No card. See if MVP fits your workflow before you pay a cent.
+          Pro is ${TIERS.pro.price} a month with every feature open from day one. {GUARANTEE_SENTENCE}
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
         <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-8">
           <a
-            href="/signup"
+            href="/signup?tier=pro"
             className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
               boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
             }}
           >
-            Start your free trial
+            Start Pro
             <ArrowRight size={16} />
           </a>
           <a
@@ -1208,10 +1137,10 @@ function FinalCTASection() {
         {/* Trust strip — matches pricing section's strip for consistency. */}
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> No card required
+            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> {TIERS.trial.lifetimeMax} free posts + {FREE_TRIAL.thumbnails} thumbnails
+            <Check size={12} className="text-[#10B981]" /> Every feature from day one
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
@@ -1286,13 +1215,12 @@ function Nav() {
         >
           Sign in
         </a>
-        {/* Primary CTA — full label on sm+, trimmed to "Start free" on the
-            tightest phones so it never crowds the wordmark. */}
+        {/* Primary CTA, short enough to never crowd the wordmark on a phone. */}
         <a
-          href="/signup"
+          href="/signup?tier=pro"
           className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
         >
-          Start free<span className="hidden sm:inline"> trial</span>
+          Start Pro
         </a>
       </div>
     </nav>
@@ -1368,7 +1296,7 @@ function Hero() {
               credibility BEFORE the bold value claim, so the headline
               lands on a primed visitor. */}
           <p className="mb-6 text-[12px] font-medium" style={{ color: 'var(--text-subtle)' }}>
-            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
+            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. {GUARANTEE_SHORT}, no questions asked.
           </p>
 
           {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).
@@ -1410,10 +1338,10 @@ function Hero() {
           <div className="mt-8">
             <div className="flex flex-wrap items-center gap-3">
               <a
-                href="/signup"
+                href="/signup?tier=pro"
                 className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
               >
-                Start your free trial
+                Start Pro, ${TIERS.pro.price} a month
                 <ArrowRight size={14} />
               </a>
               {/* Secondary CTA — the full public product tour (/tour). No video;
@@ -1844,11 +1772,11 @@ function Footer() {
             </p>
           </div>
           <a
-            href="/signup"
+            href="/signup?tier=pro"
             className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
           >
-            Start free →
+            Start Pro →
           </a>
         </div>
 

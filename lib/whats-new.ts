@@ -81,7 +81,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#0E7490',
     title: 'TRYBE: what each brand pays creators a month',
-    desc: 'Find brands now estimates what a brand pays TRYBE creators a month: its videos approved in the last 30 days times what it pays per video. Sort by Pays creators most, set a monthly minimum, or tap Big creator budgets. Hover a figure to see the math. A brand MVP cannot estimate yet is left out and counted. On the Pro plan, and to browse on the Amazon plan.',
+    desc: 'Find brands now estimates what a brand pays TRYBE creators a month: its videos approved in the last 30 days times what it pays per video. Sort by Pays creators most, set a monthly minimum, or tap Big creator budgets. Hover a figure to see the math. A brand MVP cannot estimate yet is left out and counted. On the Pro plan.',
     href: '/trybe?tab=find',
   },
   // One hashtag engine for everything MVP posts (2026-10-16).
@@ -110,7 +110,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#7C3AED',
     title: 'TRYBE: filter by what a brand sells',
-    desc: 'Find brands now tells physical products, apps, software and services apart, read from TRYBE and each brand\u2019s own website. Pick one under Sells; hover a brand\u2019s chip to see why. A brand MVP cannot tell yet is left out and counted. On the Pro plan, and to browse on the Amazon plan.',
+    desc: 'Find brands now tells physical products, apps, software and services apart, read from TRYBE and each brand\u2019s own website. Pick one under Sells; hover a brand\u2019s chip to see why. A brand MVP cannot tell yet is left out and counted. On the Pro plan.',
     href: '/trybe?tab=find',
   },
   // TRYBE sends keep going when you leave the page (2026-10-16).
@@ -303,7 +303,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#7C3AED',
     title: 'TRYBE: your whole TRYBE business in one place',
-    desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome. On the Amazon plan, Find brands is open to browse.',
+    desc: 'Find brands that fit your channel, message them in your own words, answer them, plan your videos and see what each brand pays you. Three groups in one menu: Create, Get brands and Track. On the Pro plan, under Find products, with SCOUT in Chrome.',
     href: '/trybe',
   },
   {
@@ -321,7 +321,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#16A34A',
     title: 'Find brands: see who you already filmed on Amazon',
-    desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand. Open on the Amazon plan too; messaging brands is on Pro.',
+    desc: 'Each brand says if you already have Amazon videos of its products, if its products are in your storefront, and if it pays Amazon creators on Creator Connections. Rank brands by what matters to you, filter by pay per video, creators, samples and more, and star or pass on any brand. On the Pro plan.',
     href: '/trybe?tab=find',
   },
   {

@@ -433,6 +433,7 @@ export async function POST(request: NextRequest) {
         } else {
           const { error } = await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
           if (error) return releaseAndRetry(admin, event.id, event.type, error)
+          await recordSubscribedAt(admin, sub, { userId })
         }
       } else {
         // Same churn-and-return stale guard, keyed on the customer id (this
@@ -442,6 +443,7 @@ export async function POST(request: NextRequest) {
         } else {
           const { error } = await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
           if (error) return releaseAndRetry(admin, event.id, event.type, error)
+          await recordSubscribedAt(admin, sub, { customer: sub.customer })
         }
       }
     } else {
@@ -529,4 +531,23 @@ export async function POST(request: NextRequest) {
     // Release the claim so the retry re-processes (all writes are idempotent).
     return releaseAndRetry(admin, event.id, event.type, { message: err instanceof Error ? err.message : String(err) })
   }
+}
+
+/**
+ * WHEN THIS SUBSCRIPTION STARTED, from Stripe's own start date, for the
+ * first-week quarter allowances and the 7-day refund (lib/intro-allowance,
+ * lib/creator-refund). Its own write, after the billing fields are saved, so
+ * a database without migration 439 still records everything else and the
+ * event is never retried over this column.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function recordSubscribedAt(admin: any, sub: { start_date?: number | null; created?: number | null }, who: { userId?: string; customer?: unknown }) {
+  const secs = typeof sub.start_date === 'number' ? sub.start_date : typeof sub.created === 'number' ? sub.created : null
+  if (secs == null) return
+  const at = new Date(secs * 1000).toISOString()
+  try {
+    const q = admin.from('integrations').update({ subscribed_at: at })
+    const { error } = who.userId ? await q.eq('user_id', who.userId) : await q.eq('stripe_customer_id', who.customer)
+    if (error && !/subscribed_at/.test(error.message || '')) console.warn('[stripe-webhook] subscribed_at not saved', error.message)
+  } catch { /* the billing fields above are what matters; this never fails the event */ }
 }

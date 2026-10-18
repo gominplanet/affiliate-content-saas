@@ -61,7 +61,7 @@ export const metadata: Metadata = {
 /** The one call to action. Spelled once so all four uses cannot drift, which is
  *  the failure that turns a single-offer page into a page with four offers. */
 const CTA_HREF = '/signup?tier=pro'
-const CTA_LABEL = 'Start free, no card'
+const CTA_LABEL = `Start Pro, $${TIERS.pro.price} a month`
 
 function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
   return (
@@ -82,7 +82,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext() {
   return (
     <p className="mt-3 text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-      No card to start · {TIERS.trial.lifetimeMax} full reviews free · {GUARANTEE_LABEL}
+      Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
     </p>
   )
 }
@@ -144,7 +144,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What if it does not work for me?',
-    a: `Start the free trial with no card. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}, no questions.`,
+    a: `Ask within ${GUARANTEE_DAYS} days of your first payment and you get it all back, no questions asked, and nothing you made is taken away. One refund per creator.`,
   },
   {
     q: 'How much of my time does this take?',
@@ -298,7 +298,7 @@ export default function OwnYourBlogPage() {
               What it costs, and what you get
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
-              Start free with no card if you want to see it work first. If you already know you want it, skip the trial.
+              One plan with every feature open from the day you join, and {GUARANTEE_DAYS} days to change your mind.
             </p>
           </div>
           <AdPricingTable focus="pro" freeHref={CTA_HREF} />
@@ -343,12 +343,12 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start free with no card. Connect a channel, pick a video, and read what it writes before you decide anything. You get {TIERS.trial.lifetimeMax} full published reviews on the free trial to make your mind up with.
+            Start Pro, connect a channel, pick a video, and read what it writes. If it is not for you, ask within {GUARANTEE_DAYS} days and you get every cent back, no questions asked.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
             <p className="mt-3 text-[13px] text-white/55">
-              No card to start · {TIERS.trial.lifetimeMax} full reviews free · {GUARANTEE_LABEL}
+              Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
             </p>
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
@@ -395,7 +395,7 @@ export default function OwnYourBlogPage() {
           the one lie this page cannot afford. */}
       {SALES_PAUSED && (
         <p className="px-6 pb-10 text-center text-[13px] text-black/50">
-          New subscriptions are paused right now. The free trial is still open.
+          New subscriptions are paused right now.
         </p>
       )}
 

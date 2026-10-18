@@ -63,7 +63,7 @@ export async function checkXPostCap(
   const tier = normalizeTier(data?.tier) as Tier
   // A lowered cap lands on the member's NEXT billing window (effectiveCap).
   const winStart = billingWindow({ periodStart: (data?.subscription_period_start as string | null) ?? null, periodEnd: (data?.subscription_period_end as string | null) ?? null }).startISO
-  const limit = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, winStart, (data as { limits_cohort?: string | null } | null)?.limits_cohort)
+  const limit = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, winStart, (data as { limits_cohort?: string | null } | null)?.limits_cohort, (data as { subscribed_at?: string | null } | null)?.subscribed_at)
   const check = await checkUsageCap(
     supabase, userId, PRIMARY_FEATURE.x, limit,
     (data?.subscription_period_start as string | null) ?? null,
@@ -105,7 +105,7 @@ export async function reserveXPost(
     periodStart: (data?.subscription_period_start as string | null) ?? null,
     periodEnd: (data?.subscription_period_end as string | null) ?? null,
   })
-  const cap = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, startISO, (data as { limits_cohort?: string | null } | null)?.limits_cohort)
+  const cap = tier === 'admin' ? null : effectiveCap(tier, 'xPostsPerMonth', X_MONTHLY_CAP, startISO, (data as { limits_cohort?: string | null } | null)?.limits_cohort, (data as { subscribed_at?: string | null } | null)?.subscribed_at)
   try {
     const { data: rid, error } = await supabase.rpc('claim_x_post', {
       p_user_id: userId, p_cap: cap, p_since: startISO, p_tier: tier,

@@ -55,7 +55,7 @@ function Nav() {
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2">
         <a href="/login" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[13px]" style={{ color: 'var(--text-soft)' }}>Sign in</a>
-        <a href="/signup" className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap">Start free<span className="hidden sm:inline"> trial</span></a>
+        <a href="/signup?tier=pro" className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap">Start Pro</a>
       </div>
     </nav>
   )
@@ -87,7 +87,7 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     items: [
       { icon: <Sparkles size={20} />, tag: 'Learns over time', title: 'Writes in your real voice', desc: 'A voice fingerprint learned from your own transcripts and edits feeds every post, per channel if you run more than one. Reviews read like you wrote them, not generic AI.' },
       { icon: <ImageThumb />, title: 'Thumbnails from real frames & your selfies', desc: "SCOUT grabs true frames from your video, and MVP composes a scroll-stopping thumbnail using your own product and, if you add a few selfies, your own face. Never a stranger's, and never guessed from someone else's clip." },
-      { icon: <FileText size={20} />, tag: 'Pro', title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts, all from one product and your transcript, grounded in what you actually said on camera.' },
+      { icon: <FileText size={20} />, title: 'Reviews, comparisons & Shorts', desc: 'A full review post, a head-to-head comparison, and vertical Shorts, all from one product and your transcript, grounded in what you actually said on camera.' },
     ],
   },
   {
@@ -95,11 +95,11 @@ const GROUPS: { id: string; n: string; tag: string; head: string; intro: string;
     intro: 'The same review goes to YouTube, your Amazon storefront, your blog and your socials, each one formatted for where it lands.',
     items: [
       { icon: <Play size={20} />, title: 'YouTube Co-Pilot', desc: 'Titles that earn the click, an AI thumbnail, full metadata, and a real publish, with paid-promotion disclosure and monetization set for you, not left as homework.' },
-      { icon: <Rocket size={20} />, tag: 'Amazon + Pro', title: 'Bulk Amazon upload', desc: `Up to ${LIFTOFF_MAX_VIDEOS} videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed.` },
-      { icon: <Pin size={20} />, tag: 'Amazon + Pro', title: 'Pinned and On sale comments', desc: 'A pinned comment with your product link under each YouTube video. When a product you reviewed goes on sale, the comment says so, and the sale comes out again when it ends.' },
-      { icon: <Radio size={20} />, tag: 'Amazon + Pro', title: 'Amazon Live prep and follow-up', desc: 'The lineup and talking points ready before you go live, then clips and a roundup post drafted from the replay after the show.' },
-      { icon: <Store size={20} />, tag: 'Pro', title: 'Blog & WordPress', desc: 'Publish the review to your own blog network, formatted, illustrated, and linked, so you own an asset that keeps earning past the feed.' },
-      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, post Shorts to Instagram and Facebook Reels (TikTok and YouTube Shorts on Pro), and hand shoppers a Link in Bio storefront that fills itself from what you post. Every social post carries #ad #sponsored and labels where its links go.' },
+      { icon: <Rocket size={20} />, title: 'Bulk Amazon upload', desc: `Up to ${LIFTOFF_MAX_VIDEOS} videos, one press. Upload them, choose your CTA and thumbnail look once, then press Launch. MVP schedules every video on YouTube with its disclosures set, then sends each one to your US Amazon storefront, with a report of where each video landed.` },
+      { icon: <Pin size={20} />, title: 'Pinned and On sale comments', desc: 'A pinned comment with your product link under each YouTube video. When a product you reviewed goes on sale, the comment says so, and the sale comes out again when it ends.' },
+      { icon: <Radio size={20} />, title: 'Amazon Live prep and follow-up', desc: 'The lineup and talking points ready before you go live, then clips and a roundup post drafted from the replay after the show.' },
+      { icon: <Store size={20} />, title: 'Blog & WordPress', desc: 'Publish the review to your own blog network, formatted, illustrated, and linked, so you own an asset that keeps earning past the feed.' },
+      { icon: <LayoutGrid size={20} />, wide: true, title: 'Social Launch Kit, Clip Factory & Link in Bio', desc: 'Stand up a whole social presence in minutes, post Shorts to Instagram, Facebook Reels, TikTok and YouTube Shorts, and hand shoppers a Link in Bio storefront that fills itself from what you post. Every social post carries #ad #sponsored and labels where its links go.' },
     ],
   },
   {
@@ -156,8 +156,8 @@ export default function FeaturesPage() {
             MVP is the workflow built for Amazon Influencers: find the brands that pay, make the review in your real voice, publish it to YouTube and your Amazon storefront, and route every click to the right country&apos;s store with your tag.
           </p>
           <div className="flex flex-wrap gap-3.5 mt-9">
-            <a href="/signup" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>
-              Start free trial <ArrowRight size={17} />
+            <a href="/signup?tier=pro" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>
+              Start Pro <ArrowRight size={17} />
             </a>
             <a href="/pricing" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold transition-transform hover:-translate-y-0.5" style={{ color: '#F6F2FF', border: '1px solid rgba(246,242,255,0.28)' }}>See pricing</a>
           </div>
@@ -246,7 +246,7 @@ export default function FeaturesPage() {
         <h2 className="text-[clamp(30px,4.6vw,50px)] font-extrabold tracking-[-0.03em] max-w-[18ch] mx-auto">Run the loop once. Then watch it compound.</h2>
         <p className="mt-5 text-[18px] leading-relaxed max-w-[46ch] mx-auto" style={{ color: 'var(--text-soft)' }}>Find, create, publish, earn. MVP does the parts that don&apos;t need you, so you can film the next review.</p>
         <div className="flex flex-wrap gap-3.5 justify-center mt-9">
-          <a href="/signup" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>Start free trial <ArrowRight size={17} /></a>
+          <a href="/signup?tier=pro" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>Start Pro <ArrowRight size={17} /></a>
           <a href="/tour" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold" style={{ color: 'var(--text)', border: '1px solid var(--border)' }}>Take the tour</a>
         </div>
         <p className="mt-6 text-[13.5px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}><Zap size={13} /> {GUARANTEE_LABEL}</p>

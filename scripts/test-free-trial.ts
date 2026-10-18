@@ -312,8 +312,10 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('and it covers all three formats',
     /capFeatures = \['amazon_pin', 'amazon_ig', 'amazon_fb'\]/.test(THUMB),
     'one counter across the three is what makes five designs mean five')
-  check('the pricing page reads the same list', /freeTrialHighlights\(\)/.test(PRICING),
-    'three surfaces describing three different free plans is how a refund request starts')
+  // 2026-10-18: no trial for new signups, so the pricing page describes no
+  // free plan at all. It must not promise one either.
+  check('the pricing page promises no free plan', !/freeTrialHighlights\(\)/.test(PRICING) && !/Start free|no card/i.test(PRICING),
+    'a page that sells a trial nobody can get is how a refund request starts')
 
   // The loop has to be REACHABLE. The caps and the qualifier are meaningless if
   // the free user cannot see the Amazon hub in the first place, which was the
@@ -455,9 +457,10 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
   const THUMB2 = rf('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
-  check('the design route passes the preference',
-    /isSocialDesign \? \{ preferTier: 'amazon' \} : undefined/.test(THUMB2),
-    'and only for the design formats, so a YouTube thumbnail cap still walks the blog ladder')
+  // 2026-10-18: Pro is the one plan sold, so every cap points at Pro.
+  check('the design route offers Pro, the plan on sale',
+    /nextTierFor\(tier, 'thumbnailsPerMonth', \{ preferTier: 'pro' \}\)/.test(THUMB2) && !/preferTier: 'amazon'/.test(THUMB2),
+    'never a plan nobody can buy')
 }
 
 if (failures.length) {

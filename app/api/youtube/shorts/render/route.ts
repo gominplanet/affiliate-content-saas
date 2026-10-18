@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!hasVideoTools(tier)) {
       return NextResponse.json({
-        error: 'Rendering clips is part of the Amazon and Pro plans.',
+        error: 'Rendering clips is part of the Pro plan.',
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })

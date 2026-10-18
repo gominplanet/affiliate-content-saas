@@ -127,7 +127,7 @@ export async function POST(request: Request) {
   const link = rawLink || undefined
   const tier = (ig?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
-    return NextResponse.json({ error: 'Pinterest is on the Amazon and Pro plans.' }, { status: 403 })
+    return NextResponse.json({ error: 'Pinterest is on the Pro plan.' }, { status: 403 })
   }
   if (!ig?.pinterest_access_token) {
     return NextResponse.json({ error: "Pinterest isn't connected. Connect it in Integrations first.", reconnectRequired: true }, { status: 412 })
@@ -191,7 +191,7 @@ async function finishPin(supabase: any, userId: string, f: PinFinish) {
   const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', userId).single()
   const ig = decryptIntegrationRow(intRaw)
   const tier = (ig?.tier as Tier) ?? 'trial'
-  if (!tierAllowsSocial(tier, 'pinterest')) return NextResponse.json({ error: 'Pinterest is on the Amazon and Pro plans.' }, { status: 403 })
+  if (!tierAllowsSocial(tier, 'pinterest')) return NextResponse.json({ error: 'Pinterest is on the Pro plan.' }, { status: 403 })
   if (!ig?.pinterest_access_token) return NextResponse.json({ error: "Pinterest isn't connected. Connect it in Integrations first.", reconnectRequired: true }, { status: 412 })
   try {
     const pinterest = new PinterestService(ig.pinterest_access_token)

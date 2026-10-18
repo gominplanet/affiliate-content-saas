@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   if (!isSellableTier(tier)) {
     return NextResponse.json({
       error: TIERS[tier as Tier]
-        ? 'That plan is no longer available. Choose the Amazon or Pro plan.'
+        ? 'That plan is no longer available. Pro is the plan MVP sells now.'
         : 'Invalid tier',
     }, { status: 400 })
   }

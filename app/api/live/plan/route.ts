@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intg?.tier)
   if (!canUsePreview('amazon_live', tier)) {
-    return NextResponse.json({ error: 'Amazon Live Prep is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Amazon Live Prep is part of the Pro plan.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const blocked = await spendGate(user.id, tier)
   if (blocked) return blocked
