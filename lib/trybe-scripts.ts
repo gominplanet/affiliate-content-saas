@@ -90,6 +90,20 @@ export function toTranscribe<T extends { submissionId: string | null; rank: numb
     .slice(0, Math.max(0, max))
 }
 
+/**
+ * The best place a video has reached while we have been watching.
+ *
+ * A LOWER NUMBER IS BETTER AND A WORSE DAY NEVER OVERWRITES A BETTER ONE. A
+ * video that hit number 3 on Monday and 71 today is a number 3 video; filing
+ * today's read over Monday's would quietly demote it and reorder the board a
+ * creator is learning from. Nothing known on either side stays null rather
+ * than becoming 0, which would sort to the top. Pure.
+ */
+export function bestRank(...ranks: Array<number | null | undefined>): number | null {
+  const real = ranks.filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  return real.length ? Math.min(...real) : null
+}
+
 /** What the screen says about its own coverage, so a thin board never reads
  *  as a complete one. Pure. */
 export function coverageWords(rows: Array<{ state: ScriptState; source: ScriptSource }>): string {
