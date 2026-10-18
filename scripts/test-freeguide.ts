@@ -114,6 +114,22 @@ if (present) {
     && /<img[^>]+width=["']\d+["'][^>]+height=["']\d+["']/i.test(HTML),
     'width and height on the tag are what stop the page jumping while it loads')
 
+  // THE HERO VIDEO MUST DEGRADE TO THAT PHOTO. It is hosted off-site, so the
+  // day that host is down or the file is renamed, the hero has to go back to
+  // being a photograph rather than a black box with a broken play button. The
+  // poster attribute is the whole mechanism, and it is one careless edit away
+  // from being dropped.
+  const vid = /<video[^>]*id=["']herovid["'][^>]*>/i.exec(HTML)?.[0] ?? ''
+  check('the hero video falls back to the hero photo',
+    /poster=["'][^"']*hero[^"']*["']/i.test(vid),
+    'without a poster a dead video host leaves an empty box where the hero was')
+  check('and it does not spend the file on arrival',
+    /preload=["']none["']/i.test(vid) && !/\bautoplay\b/i.test(vid),
+    'the file is 22.7MB for a 272px slot, so autoplay would spend it on every visit')
+  check('and the photo still prints',
+    /class=["']printonly["']/i.test(HTML) && /\.hero-fig \.printonly\{display:none\}/.test(HTML),
+    'video does not print, so the figure needs the photo back for paper')
+
   // SELF-CONTAINED. Google Fonts is the one exception and it is named here so
   // a second exception has to be argued for rather than absorbed.
   const externals = [...HTML.matchAll(/(?:src|href)=["'](https?:\/\/[^"']+)["']/gi)]
