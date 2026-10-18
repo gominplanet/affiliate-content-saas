@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   // can't spend an image generation on a pin they can't publish.
   if (!tierAllowsSocial((ig?.tier as Tier) ?? 'trial', 'pinterest')) {
     return NextResponse.json(
-      { error: 'Pinterest is on the Amazon and Pro plans. Upgrade to pin to Pinterest.' },
+      { error: 'Pinterest is on the Pro plan. Upgrade to pin to Pinterest.' },
       { status: 403 },
     )
   }

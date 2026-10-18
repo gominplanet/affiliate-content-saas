@@ -64,7 +64,7 @@ export async function POST(req: Request) {
 
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!hasVideoTools(integ?.tier)) {
-    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Amazon and Pro plans.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Bulk Amazon upload is part of the Pro plan.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   const body = await req.json().catch(() => ({})) as { name?: string; timezone?: string }

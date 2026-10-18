@@ -78,11 +78,11 @@ export async function POST(request: Request) {
   }
   if (maxFaces === 0) {
     return NextResponse.json({
-      error: `Saved faces are available on paid plans. Upgrade to ${TIERS.creator.label} or ${TIERS.pro.label} to put your face in thumbnails and posts.`,
+      error: `Saved faces are available on the ${TIERS.pro.label} plan. Upgrade to ${TIERS.pro.label} to put your face in thumbnails and posts.`,
       limitReached: true,
       cap: 'face_models',
       currentTier: tier,
-      upgrade: { tier: 'creator', label: TIERS.creator.label, limit: TIERS.creator.maxFaces },
+      upgrade: { tier: 'pro', label: TIERS.pro.label, limit: TIERS.pro.maxFaces },
     }, { status: 403 })
   }
 

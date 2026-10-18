@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { TIERS as PLAN_TIERS, SELLABLE_TIERS } from '@/lib/tier'
-import { FREE_TRIAL } from '@/lib/free-trial'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { AFFILIATE_CAMPAIGN, AFFILIATE_RATE } from '@/lib/affiliate-campaign'
 
 // The terms themselves now live in lib/affiliate-campaign.ts, so the in-app
@@ -107,17 +107,21 @@ function Nav() {
 
 function Hero() {
   // Earnings card amounts are computed at the real commission rate from the
-  // real plan prices, so the illustration cannot quote a payout we do not pay.
-  const per = (t: 'amazon' | 'pro') => '+$' + (PLAN_TIERS[t].price * RATE).toFixed(2)
+  // real plan price, so the illustration cannot quote a payout we do not pay.
+  // Pro only (Seb, 2026-10-18): it is the one plan sold, and every new member
+  // pays for it from the first day, so nobody "upgrades" into it.
+  // Every row is a member who joined recently, so each pays today's price and
+  // the commission shown is the one we would really pay on them.
+  const per = '+$' + (PLAN_TIERS.pro.price * RATE).toFixed(2)
   const rows = [
-    { in: 'JM', nm: 'Jordan M.', ac: `Upgraded to ${PLAN_TIERS.pro.label}`, amt: per('pro'), grad: 'linear-gradient(135deg,#3C60F0,#6A3CF0)' },
-    { in: 'AK', nm: 'Aisha K.', ac: `${PLAN_TIERS.amazon.label} plan`, amt: per('amazon'), grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
-    { in: 'TR', nm: 'Theo R.', ac: `Upgraded to ${PLAN_TIERS.pro.label}`, amt: per('pro'), grad: 'linear-gradient(135deg,#2945C9,#3C60F0)' },
+    { in: 'JM', nm: 'Jordan M.', ac: `Joined ${PLAN_TIERS.pro.label}`, amt: per, grad: 'linear-gradient(135deg,#3C60F0,#6A3CF0)' },
+    { in: 'AK', nm: 'Aisha K.', ac: `Joined ${PLAN_TIERS.pro.label} this week`, amt: per, grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
+    { in: 'TR', nm: 'Theo R.', ac: `Joined ${PLAN_TIERS.pro.label} today`, amt: per, grad: 'linear-gradient(135deg,#2945C9,#3C60F0)' },
   ]
   // The total under the card is the SUM OF THE THREE ROWS. Typed as $49.70 it
   // happened to be right; the moment a price moves it becomes three rows that
   // visibly do not add up, on the one card whose job is to look trustworthy.
-  const rowTotal = '$' + ((PLAN_TIERS.pro.price * 2 + PLAN_TIERS.amazon.price) * RATE).toFixed(2)
+  const rowTotal = '$' + ((PLAN_TIERS.pro.price * rows.length) * RATE).toFixed(2)
   return (
     <header className="hero">
       <div className="wrap hero-grid">
@@ -255,7 +259,7 @@ function Deal() {
 }
 
 function Estimator() {
-  const [plan, setPlan] = useState<PlanKey>('Amazon')
+  const [plan, setPlan] = useState<PlanKey>(PLAN_TIERS.pro.label)
   const [n, setN] = useState(10)
   const mo = n * TIERS[plan] * RATE
   return (
@@ -285,7 +289,7 @@ function Product() {
     <><b>The agent pipeline</b> turns a video into a full blog post, social fan-out, thumbnails, and brand-pitch emails, automatically.</>,
     <><b>YouTube autopilot</b> watches a channel and drafts content the moment a new video lands.</>,
     <>A <b>branded review site</b> on Pro: their content, their domain, their links.</>,
-    <>Free for {FREE_TRIAL.trialDays} days: <b>{FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs with their own face on them</b>, no card, nothing to connect. That&apos;s an easy first click for your audience.</>,
+    <>One plan, <b>{PLAN_TIERS.pro.label}</b>, with every feature open from the first day and a <b>{GUARANTEE_LABEL}</b> (one per creator). That makes the first click an easy yes for your audience.</>,
   ]
   return (
     <section className="sec alt">
@@ -334,7 +338,7 @@ function Proof() {
 
 function Faq() {
   const items = [
-    { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Amazon referral is about $${(TIERS.Amazon * RATE).toFixed(2)}/mo and every Pro referral about $${(TIERS.Pro * RATE).toFixed(2)}/mo, for as long as they stay. Use the estimator above to model your own numbers.` },
+    { q: 'How much can I realistically earn?', a: `It depends on your audience. At ${CAMPAIGN.commissionPct}% recurring, every ${PLAN_TIERS.pro.label} referral earns you about $${(PLAN_TIERS.pro.price * RATE).toFixed(2)}/mo for as long as they stay. Use the estimator above to model your own numbers.` },
     { q: 'When and how do I get paid?', a: `Monthly, via ${CAMPAIGN.payoutMethod}, once your balance clears $${CAMPAIGN.payoutThreshold} and the commission passes a ${CAMPAIGN.clearanceDays}-day refund-protection window. You connect your payout account once during onboarding and commissions land automatically after that.` },
     { q: 'Does my audience get anything?', a: `Yes, it's a double-sided deal. Anyone who signs up through your referral link automatically gets ${CAMPAIGN.audienceDiscount}, and the sale is credited to you. Prefer a code? Once you're approved you can mint your own promo codes in your dashboard for places a link won't fit, and each one carries the same discount and credits you.` },
     { q: 'How long does the referral cookie last?', a: `${CAMPAIGN.cookieDays} days. If someone clicks your link and signs up any time in that window, the referral is credited to you, so slow decisions still earn.` },

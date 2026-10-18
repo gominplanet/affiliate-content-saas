@@ -36,10 +36,10 @@ export const metadata: Metadata = {
     default: 'MVP Affiliate',
     template: '%s · MVP Affiliate',
   },
-  description: 'Run your whole Amazon affiliate business, written in your real voice.',
+  description: 'Run your whole Amazon affiliate business and your TRYBE brand deals, written in your real voice.',
   openGraph: {
     title: 'MVP Affiliate',
-    description: 'Run your whole Amazon affiliate business, written in your real voice.',
+    description: 'Run your whole Amazon affiliate business and your TRYBE brand deals, written in your real voice.',
     url: 'https://www.mvpaffiliate.io',
     siteName: 'MVP Affiliate',
     // No images here on purpose. app/opengraph-image.tsx generates the card,
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'MVP Affiliate',
-    description: 'Run your whole Amazon affiliate business, written in your real voice.',
+    description: 'Run your whole Amazon affiliate business and your TRYBE brand deals, written in your real voice.',
     // Same card as Open Graph, from app/opengraph-image.tsx.
   },
   other: {

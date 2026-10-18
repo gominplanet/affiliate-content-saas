@@ -27,7 +27,7 @@
 // wording, only that neither side can exist without the other.
 
 import { readFileSync } from 'node:fs'
-import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '../lib/guarantee'
+import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT, REFUND_EMAIL } from '../lib/guarantee'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -114,6 +114,24 @@ const SELLING = [
   check('both sales pages still make the promise',
     promising.length === SELLING.length,
     `only ${promising.join(', ') || 'none'} — the operator confirmed the guarantee is real, so a page dropping it is a regression, not a fix`)
+}
+
+// ── one inbox for the refund ────────────────────────────────────────────────
+//
+// The Terms say "email us" and Ask MVP answers "where do I send it?". They read
+// one constant so a member is never given two addresses for the same request.
+{
+  const TERMS = read('app/terms/page.tsx')
+  const ASK = read('lib/assistant-features-doc.ts')
+  check('the refund inbox is a real address',
+    /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(REFUND_EMAIL), REFUND_EMAIL)
+  check('the Terms refund clause names the inbox',
+    /email\{' '\}\s*<a href=\{`mailto:\$\{REFUND_EMAIL\}`\}/.test(TERMS))
+  check('Ask MVP gives the same inbox',
+    (ASK.match(/email \$\{REFUND_EMAIL\}|email\n\$\{REFUND_EMAIL\}/g) || []).length >= 2)
+  check('no older refund address survives in either',
+    !/us@gominplanet\.com/.test(TERMS) && !/us@gominplanet\.com/.test(ASK),
+    'the old inbox, replaced on 2026-10-18')
 }
 
 if (failures.length) {

@@ -114,6 +114,13 @@ const nextConfig: NextConfig = {
       // Storefront Sync retired 2026-10-01: Liftoff sends new videos to
       // Amazon, and nothing goes to other countries.
       { source: '/global-sync', destination: '/liftoff', permanent: false },
+      // PRO ONLY (Seb, 2026-10-18). The Amazon plan's pages sold a plan that
+      // is no longer for sale, so an ad or a bookmark that still points at
+      // one lands on the main sales page instead. Not permanent, so a page can
+      // come back without browsers remembering the old answer.
+      { source: '/run-your-storefront', destination: '/', permanent: false },
+      { source: '/amazon-influencer', destination: '/', permanent: false },
+      { source: '/join/amazon', destination: '/', permanent: false },
     ]
   },
   // ── /freeguide → the static file in public/ ───────────────────────────────

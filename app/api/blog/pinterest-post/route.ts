@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const tier = (tierRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json(
-      { error: 'Pinterest auto-publish is on the Amazon and Pro plans. Upgrade to pin to Pinterest.' },
+      { error: 'Pinterest auto-publish is on the Pro plan. Upgrade to pin to Pinterest.' },
       { status: 403 },
     )
   }

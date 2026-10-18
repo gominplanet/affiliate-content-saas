@@ -19,6 +19,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, User, Package, Rocket, Check, AlertCircle, ExternalLink } from 'lucide-react'
 import { productFields, firstProduct, productBoxHint, comparisonNote } from '@/lib/product-list'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { normalizeThumbText } from '@/lib/thumb-text'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
@@ -67,6 +69,8 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   const [faceId, setFaceId] = useState('')
   const [busy, setBusy] = useState(false)
   const [question, setQuestion] = useHeadlineStyle()
+  // The creator's own words for the design (lib/thumb-text), or '' for MVP's.
+  const [ownText, setOwnText] = useState('')
   // "Make me wear it". Only reaches the design when the product turns out to be
   // something a person wears; the server works that out from its name, so this
   // being on for a power bank simply does nothing.
@@ -157,6 +161,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           body: JSON.stringify({
             videoTitle: 'Product spotlight', textMode: 'graphic', format: n.format, briefKey: bk,
             headlineStyle: headlineStyleValue(question),
+      ...(normalizeThumbText(ownText) ? { customHeadline: normalizeThumbText(ownText) } : {}),
             wearProduct: wear && mode === 'face',
             ...(mode === 'face' ? { expression } : {}),
             ...(n.extra || {}), ...designFields, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
@@ -249,6 +254,8 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
       )}
+
+      <ThumbTextInput value={ownText} onChange={setOwnText} disabled={busy} compact label="Your own text on the design" />
 
       <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} compact />
 

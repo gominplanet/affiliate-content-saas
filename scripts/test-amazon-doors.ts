@@ -136,8 +136,8 @@ check('the hub files were found', HUB_FILES.length > 10, `${HUB_FILES.length} fo
     /if \(capLimit === 0\)/.test(THUMB),
     'nothing was consumed, so "you have used all 0" is describing the wrong thing')
   check('and it names the plan that does include it',
-    /capLimit === 0\)[\s\S]{0,400}preferTier: 'amazon'/.test(THUMB),
-    'the default ladder points at Creator, which has 0 pins and cannot make one')
+    /capLimit === 0\)[\s\S]{0,900}preferTier: 'pro'/.test(THUMB),
+    'the default ladder points at Creator, which has 0 pins and cannot make one; Pro is the plan on sale (2026-10-18)')
   check('the zero case is answered before the counter is consulted',
     THUMB.indexOf('if (capLimit === 0)') < THUMB.indexOf('const cap = await checkUsageCap'),
     'a count against a limit of zero can only ever produce the wrong sentence')

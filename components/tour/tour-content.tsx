@@ -25,11 +25,14 @@ import Link from 'next/link'
 // SHAPES ("Studio plan", "Upgrade to Creator", "Creator or Pro") and this
 // page wrote "Creator and Studio offer" and "Studio adds Pinterest", which
 // match none of them.
+//
+// ONE PLAN (Seb, 2026-10-18). Pro is the only plan sold and there is no free
+// trial, so the page describes Pro alone. The Amazon plan comparisons that
+// stood here are gone: the in-app tour is read by members, and a section
+// headed "what Pro adds on top of the Amazon plan" offers a plan nobody can buy.
 import { TIERS } from '@/lib/tier'
-import {
-  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
-  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
-} from '@/lib/amazon-plan'
+import { GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { INTRO_DAYS } from '@/lib/intro-allowance'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import {
@@ -53,9 +56,10 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'linkbio',      label: 'Link in Bio: Shop page ⚡ new' },
   { id: 'clips',        label: 'Clip Factory: Shorts and Reels' },
   { id: 'seo',          label: 'SEO that moves rank' },
+  { id: 'trybe',        label: 'TRYBE brand deals ⚡ new' },
   { id: 'collabs',      label: 'Brand outreach' },
   { id: 'finders',      label: 'Source & Earn: product finders' },
-  { id: 'deals',        label: 'Deals Hub (Pro)' },
+  { id: 'deals',        label: 'Deals Hub' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
   { id: 'vas',          label: 'Team' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
@@ -139,7 +143,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             and adds a hero image. The post lands in your library like any other, ready to schedule or push to socials.
             The whole engine works whether your starting point is a video or a link.
           </p>
-          <h3>What {TIERS.pro.label} adds on top of the {TIERS.amazon.label} plan</h3>
+          <h3>Built for a review business, not a single post</h3>
           <ul>
             <li>
               <strong>Comparison posts.</strong> Drop in 2 to 10 YouTube URLs of different products, MVP scrapes Amazon
@@ -157,10 +161,10 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               picker is built into every generation surface.
             </li>
             <li>
-              <strong>Higher generation caps.</strong> {TIERS.pro.postsPerMonth} posts and{' '}
-              {TIERS.pro.thumbnailsPerMonth} Art Director thumbnails a month, against{' '}
-              {TIERS.amazon.thumbnailsPerMonth} thumbnails and no blog posts on the{' '}
-              {TIERS.amazon.label} plan, which is built for the storefront rather than a site.
+              <strong>Room to publish every day.</strong> {TIERS.pro.postsPerMonth} posts and{' '}
+              {TIERS.pro.thumbnailsPerMonth} Art Director thumbnails a month. In a new member&apos;s first{' '}
+              {INTRO_DAYS} days each monthly allowance runs at a quarter, and the full amount opens on
+              day {INTRO_DAYS + 1}.
             </li>
           </ul>
           <h3>Built into every post, but worth knowing about</h3>
@@ -229,9 +233,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
           </ul>
           <p>
-            <strong>On both plans.</strong> The {TIERS.amazon.label} plan connects {AMAZON_YOUTUBE_CHANNELS} channel with{' '}
-            {AMAZON_COPILOT_RUNS_PER_MONTH} Co-Pilot runs a month; {TIERS.pro.label} connects up to {TIERS.pro.youtubeChannels} channels
-            with {TIERS.pro.metadataGensPerMonth} runs a month.
+            <strong>Channels and runs.</strong> {TIERS.pro.label} connects up to {TIERS.pro.youtubeChannels} YouTube channels
+            with {TIERS.pro.metadataGensPerMonth} Co-Pilot runs a month.
           </p>
           <p>
             The MVP-YOUTUBE Geniuslink group catches every YouTube-description click separately from your blog clicks,
@@ -240,10 +243,10 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           {isApp && <SectionCta href="/co-pilot" label="Open YouTube Co-Pilot" />}
         </Section>
 
-        {/* ── 2a. The video tools both plans share (Seb, 2026-10-05) ──── */}
+        {/* ── 2a. The video tools (Seb, 2026-10-05) ──────────────────── */}
         <Section id="video" icon={<Radio size={18} />} title="Uploads, comments and Amazon Live">
           <p>
-            The work around each video, on the {TIERS.amazon.label} plan and on {TIERS.pro.label}.
+            The work around each video, all of it included in {TIERS.pro.label}.
           </p>
           <ul>
             <li>
@@ -259,8 +262,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
             <li>
               <strong>Amazon Live prep and follow-up.</strong> The lineup and talking points before the show, then clips and
-              a roundup post drafted from the replay. {AMAZON_LIVE_SHOWS_PER_MONTH} shows a month on the {TIERS.amazon.label} plan,
-              no monthly limit on {TIERS.pro.label}.
+              a roundup post drafted from the replay, with no monthly limit on shows.
             </li>
           </ul>
           {isApp && <SectionCta href="/liftoff" label="Open Bulk Amazon upload" />}
@@ -279,9 +281,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             You can fire each post manually from the Social Push tab, or let it ride your publish schedule.
           </p>
           <ul>
-            <li><strong>{TIERS.amazon.label}</strong> auto-posts to Facebook, Pinterest and Instagram, all three from one screen.</li>
-            <li>Every post on every plan carries <strong>#ad #sponsored</strong> and labels where each link goes, so the FTC disclosure is never left to memory.</li>
-            <li><strong>{TIERS.pro.label}</strong> adds the rest: Threads, LinkedIn, Bluesky, Telegram, X (Twitter) and TikTok.</li>
+            <li><strong>{TIERS.pro.label}</strong> posts to every one of those channels.</li>
+            <li>Every post carries <strong>#ad #sponsored</strong> and labels where each link goes, so the FTC disclosure is never left to memory.</li>
           </ul>
           <p>
             TikTok posts your vertical Shorts straight to your feed from Clip Factory. Connect it once under
@@ -296,7 +297,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             The hardest part of deal-posting used to be <em>finding</em> the deal. Deal Radar does it for you: it
             continuously scans Amazon and surfaces the deals actually worth posting, sorted by opportunity, filtered to
             your niche, and <strong>verified against real price history</strong> so you never promote a fake markdown.
-            It&apos;s included on <strong>every paid plan</strong>.
+            It&apos;s included in <strong>{TIERS.pro.label}</strong>.
           </p>
           <ul>
             <li>
@@ -343,7 +344,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <p>
             One clean, branded page at <code>/shop/your-handle</code> that turns your bio link into a storefront. It&apos;s
             the destination your Instagram Stories, TikTok, and every other &quot;link in bio&quot; points to: a Linktree that
-            actually sells. Included on <strong>every paid plan</strong>.
+            actually sells. Included in <strong>{TIERS.pro.label}</strong>.
           </p>
           <ul>
             <li>
@@ -383,9 +384,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <p>
             Clip Factory turns one long review video into vertical Shorts and Reels, in three stages:{' '}
             <strong>create</strong> the clip, <strong>enhance</strong> it with a shoppable CTA, then <strong>publish</strong>.
-            The {TIERS.amazon.label} plan gets {AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and {AMAZON_CLIPS_PER_MONTH} clips a
-            month, posted to Instagram and Facebook Reels. {TIERS.pro.label} gets {SHORTS_MONTHLY_CAP} clips a month and posts to
-            TikTok and YouTube Shorts too.
+            {TIERS.pro.label} gets {SHORTS_MONTHLY_CAP} clips a month, posted to Instagram and Facebook Reels, TikTok and
+            YouTube Shorts.
           </p>
           <ul>
             <li>
@@ -402,8 +402,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               the same Shop Burner engine, built in.
             </li>
             <li>
-              <strong>Publish or download.</strong> Push the finished clip straight to Instagram or Facebook Reels, or to
-              YouTube and TikTok on {TIERS.pro.label}, or just download it, with a caption and hashtags carried over from the clip.
+              <strong>Publish or download.</strong> Push the finished clip straight to Instagram, Facebook Reels, YouTube or
+              TikTok, or just download it, with a caption and hashtags carried over from the clip.
             </li>
           </ul>
           {isApp && <SectionCta href="/clip-factory" label="Open Clip Factory" />}
@@ -443,6 +443,40 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 5. Brand outreach ────────────────────────────────────── */}
+        {/* TRYBE (Seb, 2026-10-18: "it is exploding right now"). Facts only:
+            no promise of what a brand pays, which TRYBE and the brand set. */}
+        <Section id="trybe" icon={<Handshake size={18} />} title="TRYBE brand deals">
+          <p>
+            TRYBE is the marketplace where brands pay creators to make videos. MVP works inside your own TRYBE
+            account through the SCOUT Chrome extension and does the slow parts: choosing brands, pitching them,
+            keeping up with the inbox and planning the videos. Included in {TIERS.pro.label}.
+          </p>
+          <ul>
+            <li>
+              <strong>Every brand, sorted for you.</strong> Best fit for your channel, fewest creators, highest total
+              payouts or newest, with TRYBE&apos;s own score, a link to the brand&apos;s ads on Meta, and two or more
+              brands side by side when you cannot decide.
+            </li>
+            <li>
+              <strong>Pitches drafted and sent.</strong> MVP drafts your first message to each brand in your words,
+              and SCOUT sends the requests for you a few at a time through the day.
+            </li>
+            <li>
+              <strong>Your inbox, answered.</strong> Every TRYBE conversation in one place with a suggested reply,
+              and a board of who answered and what to do next.
+            </li>
+            <li>
+              <strong>Videos planned from the brief.</strong> Ten shooting scripts per brand that follow its brief,
+              each with several hooks to test, and a plan for the week built around the samples you have on hand.
+            </li>
+            <li>
+              <strong>What is working right now.</strong> How the top videos on TRYBE open, which brands are most
+              active this week, and the ads they run on Meta.
+            </li>
+          </ul>
+          <p>TRYBE is a separate service; what each brand pays is set by the brand on TRYBE.</p>
+        </Section>
+
         <Section id="collabs" icon={<Handshake size={18} />} title="Brand outreach / Collaborations">
           <p>
             This is the surface that pays for the whole subscription for most Pro creators.
@@ -455,7 +489,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               listing your reach platforms, attaching your media kit URL.
             </li>
             <li>
-              <strong>{TIERS.pro.collabsPerMonth} pitches per month on {TIERS.pro.label}, {TIERS.amazon.collabsPerMonth} on the {TIERS.amazon.label} plan.</strong>
+              <strong>MVP drafts up to {TIERS.pro.collabsPerMonth} pitches a month for you on {TIERS.pro.label}.</strong>
             </li>
             <li>
               Auto-prefilled from your Brand Profile: every platform you&apos;ve connected or listed shows up as a &quot;your
@@ -479,7 +513,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <p>
             Content is only half the game. You still have to pick WHAT to promote. Source &amp; Earn does the sourcing:
             it sweeps the affiliate programs you&apos;re in and surfaces only the campaigns and products actually worth
-            your time, then hands each one straight to the content engine. Available on every paid plan.
+            your time, then hands each one straight to the content engine. Included in {TIERS.pro.label}.
           </p>
           <ul>
             <li>
@@ -514,7 +548,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}
-        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub: timely deal posts (Pro)">
+        <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub: timely deal posts">
           <p>
             The manual companion to Deal Radar: when you already have a specific deal in hand, paste any Amazon link,
             Geniuslink, or short link and MVP writes a timely deal post with a baked deal-badge thumbnail and your promo
@@ -543,7 +577,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
 
 
         {/* ── 8. Multi-site ────────────────────────────────────────── */}
-        <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress + multi-channel (Pro)">
+        <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress + multi-channel">
           <p>
             If you run more than one review site (a main brand plus a niche-specific spinoff, or a multi-language
             network), Pro is built for you.
@@ -689,19 +723,23 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           }}
         >
           <h2 className="text-xl font-bold mb-3" style={{ color: 'var(--text)' }}>
-            Why Pro, and why now
+            Why Pro
           </h2>
           <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-            The {TIERS.amazon.label} plan gets you the storefront: thumbnails, designs, brand deals, bulk video uploads,
-            Clip Factory Reels and Co-Pilot on one channel. {TIERS.pro.label} gets you all of that and the <em>business</em> on
-            top of it. Multiple sites, a team, a
-            brand-deal pipeline, performance analytics that drive your editorial calendar, the infrastructure
+            {TIERS.pro.label} is the whole of MVP. The storefront work (thumbnails, designs, brand deals, bulk video uploads,
+            Clip Factory and Co-Pilot) and the <em>business</em> on top of it: multiple sites, a team, a
+            brand-deal pipeline, performance analytics that drive your editorial calendar, and the infrastructure
             to run all of it from one dashboard.
           </p>
-          <p className="text-[14px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
+          <p className={`text-[14px] leading-relaxed ${isApp ? 'mb-5' : 'mb-3'}`} style={{ color: 'var(--text-soft)' }}>
             If you&apos;re spending more than 8 hours a week on content operations across multiple tools, Pro is built to
             give you those hours back.
           </p>
+          {!isApp && (
+            <p className="text-[14px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
+              Every new member starts on {TIERS.pro.label} with every feature open from day one. {GUARANTEE_SENTENCE}
+            </p>
+          )}
           {isApp ? (
             <Link
               href="/billing"
@@ -713,18 +751,18 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/signup"
+                href="/signup?tier=pro"
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white"
                 style={{ background: '#7C3AED' }}
               >
-                Start your free trial <ArrowUpRight size={13} />
+                Start Pro <ArrowUpRight size={13} />
               </Link>
               <Link
                 href="/pricing"
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold border"
                 style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
               >
-                Compare plans <ArrowRight size={13} />
+                See pricing <ArrowRight size={13} />
               </Link>
             </div>
           )}

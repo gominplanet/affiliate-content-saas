@@ -551,6 +551,13 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       const own = frErr ? null : parseFacePick(fr?.thumbnail_face)
       if (own) preset = { ...batchPreset, face: own }
     }
+    // THIS VIDEO'S OWN WORDS (migration 440), read on its own for the same
+    // reason: without the column every video gets MVP's headline, as before.
+    let ownText = ''
+    {
+      const { data: tr, error: trErr } = await sb.from('launch_items').select('thumbnail_text').eq('id', it.id).maybeSingle()
+      if (!trErr) ownText = String(tr?.thumbnail_text || '').trim()
+    }
     let usedPlain = false
     // A thumbnail reused from the product's memory rather than rendered now.
     let usedSaved = false
@@ -568,7 +575,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         try {
           // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
           // look.
-          const branded = await styledThumbnail(it.user_id, title, asin, preset)
+          const branded = await styledThumbnail(it.user_id, title, asin, preset, ownText)
           if (branded.url) patch.thumbnail_url = branded.url
           else {
             plainWhy = branded.why
@@ -615,10 +622,12 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       // The fallback keeps its sentence. Clearing `reason` on the way to
       // 'prepared' would erase the one place the creator could read that this
       // thumbnail is not the look they chose.
+      // A fallback never carries the creator's own words, so it says so.
+      const textNote = ownText && (usedSaved || usedPlain) ? ` It does not have your text "${ownText}" on it: fix the reason below and build it again.` : ''
       patch.reason = usedSaved
-        ? `Your chosen look could not be applied, so MVP used the thumbnail it already made for this product instead of making a new one. ${savedLabel} ${plainWhy}`.trim()
+        ? `Your chosen look could not be applied, so MVP used the thumbnail it already made for this product instead of making a new one.${textNote} ${savedLabel} ${plainWhy}`.trim()
         : usedPlain
-        ? `Your chosen look could not be applied, so this is the plain product thumbnail. ${plainWhy}`.trim()
+        ? `Your chosen look could not be applied, so this is the plain product thumbnail.${textNote} ${plainWhy}`.trim()
         : null
       done++
     }
@@ -767,7 +776,7 @@ async function videoMetadata(
  * finishes and says the look did not apply.
  */
 async function styledThumbnail(
-  userId: string, title: string, asin: string, preset: ThumbnailPreset,
+  userId: string, title: string, asin: string, preset: ThumbnailPreset, ownText = '',
 ): Promise<{ url: string | null; why: string; limited?: boolean }> {
   const started = Date.now()
   const secs = () => Math.round((Date.now() - started) / 1000)
@@ -786,6 +795,8 @@ async function styledThumbnail(
         // Filed under Liftoff in the product's image memory.
         memorySurface: 'Liftoff',
         ...presetToRequestFields(preset),
+        // The creator's own words for this video, used exactly (lib/thumb-text).
+        ...(ownText ? { customHeadline: ownText } : {}),
       },
     })
     if (!res.ok) {

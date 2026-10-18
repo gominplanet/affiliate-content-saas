@@ -22,7 +22,7 @@
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -1245,12 +1245,8 @@ export async function POST(request: Request) {
     const newBy = new Map(rows.map(r => [r.brand_id as string, isNewBrand({ joinedAt: statsBy.get(r.brand_id)?.joinedAt, firstSeen: r.first_seen_at, firstEver, now: Date.now() })]))
     // SPENDING ON ADS: Meta ads running, or videos in TRYBE's Top 100. Not
     // read for a brand (no Meta count, Top 100 never read) is not known.
-    const spendingOf = (r: Record<string, any>): boolean | null => { // eslint-disable-line @typescript-eslint/no-explicit-any
-      const ads = typeof r.meta_ads === 'number' && r.meta_ads_checked_at ? r.meta_ads : null
-      const top = r.top100_checked_at ? (r.top100_hits ?? 0) : null
-      if ((ads ?? 0) > 0 || (top ?? 0) > 0) return true
-      return ads == null && top == null ? null : false
-    }
+    // Spending on ads (lib/trybe-finder spendingOf): the Top 100 can only say
+    // yes; only a Meta ad count of 0 says no.
     const crowdBy = new Map(rows.map(r => {
       const st = statsBy.get(r.brand_id)
       return [r.brand_id as string, crowdOf({

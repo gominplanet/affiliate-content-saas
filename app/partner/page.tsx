@@ -9,6 +9,9 @@
 // The prices and counts are read from the plans, never typed, so the letter
 // cannot promise what checkout does not charge. After the price change the
 // "lock it in" paragraph says the current price instead.
+//
+// ONE PLAN (Seb, 2026-10-18): Pro is the only plan sold, with no free trial and
+// a refund window in its place (lib/guarantee), so the letter prices Pro alone.
 
 import type { Metadata } from 'next'
 import NextImage from 'next/image'
@@ -17,6 +20,7 @@ import { ArrowRight, Mail } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, newPricesLive } from '@/lib/price-schedule'
+import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
 
 const serif = Newsreader({ subsets: ['latin'], style: ['normal', 'italic'], weight: ['400', '500', '600'], display: 'swap', variable: '--font-letter' })
 
@@ -48,7 +52,6 @@ type Feature = { title: string; tag?: string; body: React.ReactNode; image?: { s
 
 export default function PartnerLetter() {
   const later = newPricesLive()
-  const amazonNow = later ? NEW_MEMBER_PRICES.amazon.month : PRICES_BEFORE.amazon.month
   const proNow = later ? NEW_MEMBER_PRICES.pro.month : PRICES_BEFORE.pro.month
   const vaSeats = TIERS.pro.vaSeats
 
@@ -78,7 +81,7 @@ export default function PartnerLetter() {
     },
     {
       title: 'Passport links, on our own mvpl.ink domain.',
-      body: <>Every affiliate link sends the shopper to their own country&rsquo;s Amazon with my tag for that country, so a viewer in Germany does not land on the US store and buy nothing. Everyone else charges per click for this and the bill grows as you grow. On MVP it is unlimited links and unlimited clicks, no per click cost, no overage, included on every plan.</>,
+      body: <>Every affiliate link sends the shopper to their own country&rsquo;s Amazon with my tag for that country, so a viewer in Germany does not land on the US store and buy nothing. Everyone else charges per click for this and the bill grows as you grow. On MVP it is unlimited links and unlimited clicks, no per click cost, no overage, included in Pro.</>,
     },
     {
       title: 'Amazon Live.',
@@ -222,23 +225,26 @@ export default function PartnerLetter() {
           <h2 className="pl-display" style={{ color: C.ink, fontSize: 'clamp(24px, 3vw, 30px)', lineHeight: 1.15, fontWeight: 750, margin: 0 }}>Pricing.</h2>
           <div>
             <div className="pl-prices pl-ui">
-              {[
-                { name: 'Amazon', now: amazonNow, next: NEW_MEMBER_PRICES.amazon.month },
-                { name: 'Pro', now: proNow, next: NEW_MEMBER_PRICES.pro.month },
-              ].map((p) => (
-                <div key={p.name} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px' }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.soft }}>{p.name}</p>
-                  <p style={{ margin: '6px 0 0', fontSize: 34, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                    ${p.now}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> a month</span>
-                  </p>
-                  {!later && <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Goes up to ${p.next} on January 1</p>}
-                </div>
-              ))}
+              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px' }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.soft }}>{TIERS.pro.label}</p>
+                <p style={{ margin: '6px 0 0', fontSize: 34, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  ${proNow}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> a month</span>
+                </p>
+                {!later && <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Goes up to ${NEW_MEMBER_PRICES.pro.month} on January 1</p>}
+              </div>
+              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px' }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.soft }}>Refund</p>
+                <p style={{ margin: '6px 0 0', fontSize: 34, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  {GUARANTEE_DAYS}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> days</span>
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>No questions asked, one refund per creator</p>
+              </div>
             </div>
             <p className="pl-letter" style={{ margin: '18px 0 0' }}>
               {later
-                ? <>Amazon at ${amazonNow} a month, Pro at ${proNow} a month.</>
-                : <>Both go up on January 1, to ${NEW_MEMBER_PRICES.amazon.month} and ${NEW_MEMBER_PRICES.pro.month}. Anyone who joins before January 1 keeps the lower price for as long as they stay subscribed, so there is a real reason to move this month.</>}
+                ? <>One plan, {TIERS.pro.label}, at ${proNow} a month.</>
+                : <>One plan, {TIERS.pro.label}. It goes up to ${NEW_MEMBER_PRICES.pro.month} a month on January 1. Anyone who joins before that keeps ${proNow} for as long as they stay subscribed, so there is a real reason to move now.</>}
+              {' '}Every member pays from the first day and gets the whole product, and if it is not for them, there is a {GUARANTEE_LABEL}.
             </p>
           </div>
         </article>

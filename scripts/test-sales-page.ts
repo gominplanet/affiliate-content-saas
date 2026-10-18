@@ -23,7 +23,7 @@
 // the product does not keep. A sales page is the one surface where being wrong
 // is not a bug report, it is a refund and a chargeback.
 import { readFileSync } from 'node:fs'
-import { GUARANTEE_LABEL } from '../lib/guarantee'
+import { GUARANTEE_LABEL, GUARANTEE_DAYS } from '../lib/guarantee'
 import { join } from 'node:path'
 import { TIERS } from '../lib/tier'
 
@@ -76,8 +76,10 @@ const noImports = (src: string) => src
   check('and it reads it from lib/guarantee rather than typing one',
     /const GUARANTEE: string \| null = GUARANTEE_LABEL/.test(PAGE_LIVE),
     'a typed string here is how the homepage and /features disagreed the first time')
-  check('and it is the 30 days we settled on',
-    /\b30-day\b/.test(homepage), homepage)
+  // 30 days while there was a free trial; 7 with no trial (Seb, 2026-10-18),
+  // because the refund IS the trial now and a month of Pro is a lot to hand back.
+  check('and it is the 7 days we settled on',
+    GUARANTEE_DAYS === 7 && new RegExp(`\\b${GUARANTEE_DAYS}-day\\b`).test(homepage), homepage)
   check('/features states the same one',
     /\{GUARANTEE_LABEL\}/.test(FEATURES),
     `homepage says "${homepage}"`)
@@ -115,9 +117,16 @@ const noImports = (src: string) => src
   check('the old product-first headline is gone',
     !/Everything an Amazon<br \/>affiliate needs/.test(PAGE),
     'it was a claim about us, addressed to people who have never heard of us')
-  check('the hero still says the trial needs no card',
-    /No card to start/.test(hero),
-    'the single biggest objection on a cold click')
+  // There is no trial to start without a card any more (Seb, 2026-10-18), so
+  // the hero answers the same objection with the refund instead.
+  check('the hero states the refund',
+    /GUARANTEE_SHORT/.test(hero) && /\{GUARANTEE\}/.test(hero),
+    'the single biggest objection on a cold click, now that there is no free way in')
+  check('and no longer promises a start with no card',
+    !/No card to start|Start free/i.test(hero),
+    'there is no free start; a promise of one is a bait and switch')
+  check('the hero button starts Pro and names its price',
+    /href="\/signup\?tier=pro"/.test(hero) && /Start Pro, \$\{TIERS\.pro\.price\} a month/.test(hero))
 }
 
 // ── the transformation section exists and is honest ─────────────────────────
@@ -311,9 +320,8 @@ for (const { label, src } of AD_PAGES) {
     'a landing page that cannot be bought from is one that banks on a second visit')
   check(`${label} highlights its own tier`,
     /focus="(amazon|pro)"/.test(src))
-  check(`${label} keeps the free path beside it`,
-    /freeHref=\{CTA_HREF\}/.test(src),
-    'the ad promised no card; removing that door would be a bait and switch')
+  check(`${label} sends its signups to a page that exists`,
+    /freeHref=\{CTA_HREF\}/.test(src))
 }
 
 // ── the pricing table quotes the product ───────────────────────────────────
@@ -355,13 +363,18 @@ for (const { label, src } of AD_PAGES) {
   check('the billing choice reaches signup',
     /billing=\$\{showYear \? 'annual' : 'monthly'\}/.test(CARD),
     'a toggle that does not change where the button goes is decoration')
-  check('both paid plans are shown, not only the page\'s own',
-    /\['amazon', 'pro'\] as PaidTier\[\]\)\.map/.test(CARD),
-    'a reader who landed on the wrong page should find the right plan rather than bounce')
-  // Renamed "Free trial": it lasts FREE_TRIAL.trialDays, and "Free" sat above "/forever".
-  check('the free column is there too',
-    /name="Free trial"/.test(CARD),
-    'it is what the ad promised, and it is the lowest-risk way in')
+  // ONE PLAN (Seb, 2026-10-18): Pro alone. The Amazon column and the free
+  // trial column are gone, and the refund sentence stands where the trial was.
+  check('only Pro is shown',
+    /const pro = paid\('pro'\)/.test(CARD) && !/paid\('amazon'\)/.test(CARD)
+      && (CARD.match(/<PlanCard/g) || []).length === 1,
+    'MVP sells one plan; a second card is a plan nobody can buy')
+  check('there is no free column',
+    !/name="Free/.test(CARD),
+    'there is no free trial to offer')
+  check('the refund is stated under the price',
+    /\{GUARANTEE_SENTENCE\}/.test(CARD),
+    'the refund is the way in now, so it sits where the trial was')
   check('the toggle hides itself when nothing is sold yearly',
     /bestPct > 0 && \(/.test(CARD),
     'a toggle that flips to an option that does not exist is worse than no toggle')
@@ -419,34 +432,76 @@ for (const { label, src } of AD_PAGES) {
     /TIERS\.amazon\.thumbnailsPerMonth/.test(AD2_LIVE) && /TIERS\.amazon\.price/.test(AD2_LIVE))
 }
 
-// ── the homepage offers the same two doors ──────────────────────────────────
+// ── the homepage sells one plan ─────────────────────────────────────────────
 //
-// The whole point of two landing pages is two ads. A visitor who arrives on the
-// homepage instead should get the same choice rather than one generic pitch, so
-// the fork is rendered, not merely defined. It sat in the tree DEFINED AND
-// UNRENDERED for months and rotted there: it advertised Pro at $49 against a
-// real $199, and its CTA pointed at an anchor that no longer existed. Nobody
-// saw either, because nothing rendered it.
+// It used to offer two doors, an Amazon plan and Pro, through AudienceSplit.
+// MVP sells Pro alone now (Seb, 2026-10-18), so a fork on the homepage would
+// send half its readers to a plan they cannot buy. The storefront ad page that
+// sold the Amazon plan is redirected home rather than left reachable.
 {
-  const SPLIT = live(read('components/landing/AudienceSplit.tsx'))
-  check('the audience fork is actually rendered on the homepage',
-    /<AudienceSplit \/>/.test(PAGE_LIVE) && /import AudienceSplit from/.test(PAGE_LIVE),
-    'an unrendered component is a component whose copy nobody is checking')
-  check('and it is above the feature grid',
-    PAGE_LIVE.indexOf('<AudienceSplit />') < PAGE_LIVE.indexOf('<FeaturesGridCondensed />'),
-    'the choice has to come before the pitch it chooses between')
-  check('each door goes to that tier own landing page',
-    /href: '\/run-your-storefront'/.test(SPLIT) && /href: '\/own-your-blog'/.test(SPLIT),
-    'otherwise the homepage and the ads argue for the same plan in two different ways')
-  check('both panel prices are read, not typed',
-    /\$\{TIERS\.amazon\.price\}/.test(SPLIT) && /\$\{TIERS\.pro\.price\}/.test(SPLIT),
-    'the Pro panel said $49 against a real $199 for exactly as long as nothing rendered it')
-  check('no dead in-page anchor survives in the fork',
-    !/href: '#/.test(SPLIT),
-    '#free-research was a link to nowhere; a fork with a broken door is worse than no fork')
-  check('the slim Amazon strip is not rendered beside it',
+  check('the audience fork is no longer rendered on the homepage',
+    !/<AudienceSplit \/>/.test(PAGE_LIVE),
+    'one of its two doors is a plan MVP no longer sells')
+  check('the Amazon plan ad page is redirected home',
+    /source: '\/run-your-storefront',\s*destination: '\/'/.test(read('next.config.ts')),
+    'a reachable page selling a plan that checkout refuses is a dead end we paid for')
+  check('the slim Amazon strip is not rendered either',
     !/<AmazonRouter variant="strip" \/>/.test(PAGE_LIVE),
-    'the same question asked twice, and the quiet version wins the click')
+    'the same Amazon-plan question in a quieter place')
+}
+
+// ── every job MVP does has a word on the page ───────────────────────────────
+//
+// Drop, the TRYBE integration, Meta Hub and the research tools went unmentioned
+// on the homepage while the grid talked about a free plan that no longer
+// exists (Seb, 2026-10-18). The section is pinned to being rendered, to naming
+// all four, and to reading each feature's real switch, so a feature still in
+// testing says "Coming soon" instead of being sold to somebody who cannot open it.
+{
+  const ROLES_SRC = PAGE_LIVE.slice(PAGE_LIVE.indexOf('const ROLES'), PAGE_LIVE.indexOf('function RolesSection'))
+  check('the jobs section is rendered on the homepage',
+    /<RolesSection \/>/.test(PAGE_LIVE) && /<section id="roles"/.test(PAGE_LIVE),
+    'it also gives the nav its #roles target back')
+  for (const name of ['Drop', 'TRYBE', 'Meta Hub', 'Levanta', 'Deal Radar']) {
+    check(`it names ${name}`, ROLES_SRC.includes(name))
+  }
+  check('each card reads its feature switch rather than typing "New"',
+    /gate: 'drop'/.test(ROLES_SRC) && /gate: 'trybe_outreach'/.test(ROLES_SRC) && /gate: 'facebook_setup'/.test(ROLES_SRC)
+      && /previewOpenToPro\(r\.gate\)/.test(PAGE_LIVE),
+    'a feature still in testing must not be sold as ready')
+  check('and a closed one says so on the card',
+    /Coming soon/.test(PAGE_LIVE.slice(PAGE_LIVE.indexOf('function RolesSection'))))
+  check('no research filter is claimed that the finder does not have',
+    !/review ratio/i.test(PAGE) && !/review ratio/i.test(read('app/tour/page.tsx')),
+    'the finder filters by category, price, rating, reviews and sales rank')
+  check('the grid no longer talks about plans that are not sold',
+    !/every paid plan/i.test(PAGE_LIVE) && !/'Free product research'/.test(PAGE_LIVE))
+}
+
+// ── TRYBE is said where a buyer looks ───────────────────────────────────────
+//
+// Seb, 2026-10-18: "it is exploding right now". So it is in the hero, the old
+// way / new way table, the comparison table, the Pro card and the FAQ, not only
+// in one card further down. And none of those lines promises what a brand pays:
+// TRYBE and the brand set that, and an estimate MVP shows is for choosing
+// brands, not a figure to sell with.
+{
+  const ISLANDS = live(read('components/landing/islands.tsx'))
+  const hero = PAGE_LIVE.slice(PAGE_LIVE.indexOf('function Hero()'), PAGE_LIVE.indexOf('function PlatformBar'))
+  const spots: Array<[string, boolean]> = [
+    ['the hero', /TRYBE/.test(hero)],
+    ['the old way / new way table', /function OldWayNewWay[\s\S]*?TRYBE[\s\S]*?return \(/.test(PAGE_LIVE)],
+    ['the comparison table', /label: 'TRYBE brand deals/.test(PAGE_LIVE)],
+    ['the Pro card', /'🤝 TRYBE brand deals/.test(PAGE_LIVE)],
+    ['the FAQ', /q: 'Does MVP work with TRYBE\?'/.test(ISLANDS)],
+    ['the footer', /href: '#trybe'/.test(PAGE_LIVE)],
+  ]
+  for (const [where, ok] of spots) check(`TRYBE is named in ${where}`, ok)
+  check('the TRYBE card has an anchor the hero and footer can land on',
+    /id: 'trybe'/.test(PAGE_LIVE) && /id=\{r\.id\}/.test(PAGE_LIVE))
+  const trybeLines = [...PAGE_LIVE.matchAll(/[^\n]*TRYBE[^\n]*/g), ...ISLANDS.matchAll(/[^\n]*TRYBE[^\n]*/g)].map((m) => m[0])
+  const promise = trybeLines.find((l) => /\$\d|\bearn(s|ing)? up to\b|\bguarantee/i.test(l))
+  check('no TRYBE line promises what a brand pays', !promise, promise)
 }
 
 // ── house style on the pages we buy clicks for ──────────────────────────────
@@ -475,6 +530,15 @@ for (const { label, src } of AD_PAGES) {
   let named = ''
   try { named = execSync('grep -rliwE "kalya|behdad|amazon told us|off the record" app components lib --exclude-dir=pdf-brand --include=*.ts --include=*.tsx', { encoding: 'utf8' }).trim() } catch { named = '' }
   check('the source is never named in the product', named === '', named)
+}
+
+// A LINE THE PLAN DOES NOT INCLUDE IS CROSSED, NOT TICKED. "No blog or
+// WordPress" wore the same green tick as the features above it.
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  const home = rf('app/page.tsx', 'utf8')
+  check('an excluded line on a plan card gets a cross and loses its ✕ prefix', /const excluded = f\.startsWith\('✕'\)/.test(home)
+    && /excluded\s*\?\s*<XIcon/.test(home) && /f\.replace\(\/\^✕\\s\*\/, ''\)/.test(home))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

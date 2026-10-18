@@ -15,8 +15,12 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
 import { safeNextPath } from '@/lib/safe-next'
+import { GUARANTEE_DAYS } from '@/lib/guarantee'
 
-const PAID_SIGNUP_TIERS = ['amazon', 'pro']
+// PRO ONLY, NO TRIAL (Seb, 2026-10-18): every signup is a Pro checkout. A
+// link that still says ?tier=amazon or carries no plan at all buys Pro, and
+// only an invited team member joins without paying.
+const PAID_SIGNUP_TIERS = ['pro']
 
 export default function SignupForm() {
   const router = useRouter()
@@ -91,7 +95,9 @@ export default function SignupForm() {
     // FREE flow instead. They confirmed an email and landed in onboarding having
     // never seen a checkout. The API has always accepted the tier; only this
     // list did not.
-    if (t && PAID_SIGNUP_TIERS.includes(t)) setPaidTier(t)
+    const next = safeNextPath(sp.get('next'))
+    const joiningTeam = !!next && next.startsWith('/agency/accept/')
+    if (!joiningTeam) setPaidTier(t && PAID_SIGNUP_TIERS.includes(t) ? t : 'pro')
     setAnnual(sp.get('billing') === 'annual')
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
@@ -222,7 +228,7 @@ export default function SignupForm() {
           We sent a confirmation link to <strong>{email}</strong>.{' '}
           {invited
             ? 'Click it and you go straight back to your team invite to accept it.'
-            : <>Click it to unlock {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'}. No card required, and your free trial runs 30 days.</>}
+            : <>Click it to finish signing in.</>}
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
@@ -234,20 +240,12 @@ export default function SignupForm() {
       {/* The pitch has to match the door they came through. Promising a branded
           review site and a YouTube autopilot to someone who clicked an Amazon
           ad describes a product they did not come for and cannot use. */}
-      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier
-        ? `Start your ${tierLabel} plan`
-        : invited
-          ? 'Create your account to join the team'
-        : path === 'amazon'
-          ? 'Start your 30-day free trial: designs with your face on them'
-          : 'Start your 30-day free trial: 5 reviews on the house'}</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
-        ? `Create your account, then continue to secure checkout. You go straight to ${tierLabel}, no free trial.`
-        : invited
-          ? 'Confirm your email and you come straight back to the invite to accept it.'
-        : path === 'amazon'
-          ? 'No credit card, no website, no YouTube channel. Confirm your email and you are one Amazon product link away from a finished design you can download.'
-          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site, unlocked the moment you confirm your email.'}</p>
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{invited
+        ? 'Create your account to join the team'
+        : `Start ${tierLabel || 'Pro'}`}</h2>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{invited
+        ? 'Confirm your email and you come straight back to the invite to accept it.'
+        : `Create your account, then continue to secure checkout. Everything in MVP opens today, and you have ${GUARANTEE_DAYS} days to ask for a full refund, no questions asked.`}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -309,14 +307,12 @@ export default function SignupForm() {
             ? 'Verifying…'
             : loading
             ? (paidTier ? 'Starting checkout…' : 'Creating account…')
-            : (paidTier ? 'Continue to payment →' : invited ? 'Create my account' : 'Create my free account')}
+            : (paidTier ? 'Continue to payment →' : 'Create my account')}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
-          {paidTier
-            ? 'Secure checkout by Stripe · Cancel anytime'
-            : invited
-              ? 'No credit card needed to join a team'
-              : 'No credit card · 30 days free · 5 free reviews to try the full workflow'}
+          {invited
+            ? 'No credit card needed to join a team'
+            : `Secure checkout by Stripe · ${GUARANTEE_DAYS}-day refund · Cancel anytime`}
         </p>
       </form>
 

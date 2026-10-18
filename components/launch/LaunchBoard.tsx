@@ -42,6 +42,8 @@ import StepCard from './StepCard'
 import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { normalizeThumbText, thumbTextProblem } from '@/lib/thumb-text'
 import AmazonProgress from './AmazonProgress'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
@@ -65,6 +67,8 @@ export interface Item {
   amazon_title?: string | null
   /** This video's own face, or null to follow the batch (migration 371). */
   thumbnail_face?: { kind: string; faceId?: string } | null
+  /** This video's own thumbnail text, or null for MVP's (migration 440). */
+  thumbnail_text?: string | null
   thumbnail_url: string | null
   /** 'styled' (the batch look applied), 'plain' (it did not), 'saved' (the
    *  product's earlier thumbnail was reused instead of rendering), 'creator'. */
@@ -2990,6 +2994,9 @@ export function ItemRowEditor({
   // the creator's storefront voice. Left empty, MVP writes one before the
   // video goes to Amazon, so nobody has to touch this box.
   const [amazonTitle, setAmazonTitle] = useState(item.amazon_title ?? '')
+  // THIS VIDEO'S OWN THUMBNAIL TEXT (lib/thumb-text): saved on its own, and a
+  // change builds its thumbnails again, like a new face.
+  const [thumbText, setThumbText] = useState(item.thumbnail_text ?? '')
   const [amzOptions, setAmzOptions] = useState<string[]>([])
   const [writingAmz, setWritingAmz] = useState(false)
 
@@ -3222,6 +3229,30 @@ export function ItemRowEditor({
 
       {/* ── this video's thumbnail: MVP's, or the creator's own ──────────── */}
       <ItemThumbnail item={item} onReload={onReload} />
+
+      {/* ── this video's own thumbnail text ───────────────────────────────── */}
+      {item.thumbnail_source !== 'creator' && (
+        <div className="flex items-start gap-2">
+          <span className="w-5" />
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <ThumbTextInput compact value={thumbText} onChange={setThumbText} disabled={busy || faceLocked}
+              note={faceLocked ? 'This one is queued for YouTube or on it, so its thumbnail is set.' : 'Only this video.'} />
+            {normalizeThumbText(thumbText) !== normalizeThumbText(item.thumbnail_text) && !faceLocked && (
+              <div className="flex items-center gap-2">
+                <button type="button" disabled={busy || !!thumbTextProblem(thumbText)}
+                  onClick={() => void onSave(item.id, { thumbnailText: normalizeThumbText(thumbText) || null })}
+                  className="px-3 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-40"
+                  style={{ background: '#7C3AED' }}>
+                  {normalizeThumbText(thumbText) ? 'Use my text' : 'Let MVP write it'}
+                </button>
+                <span className="text-[11px]" style={muted}>
+                  {item.thumbnail_url ? 'Builds this video\'s thumbnail again with it.' : 'Used when its thumbnail is built.'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── this video's own face ─────────────────────────────────────────── */}
       {faceAvailable && (

@@ -320,14 +320,14 @@ export default function OnboardingFunnel({
         )}
 
         {/* Brand-new user with nothing connected: a big, obvious way into the
-            FREE research tools without any setup. The dashboard lets un-onboarded
+            research tools without any setup. The dashboard lets un-onboarded
             users use the RESEARCH group; the moment they try a content feature
             they're routed back here to connect WordPress + YouTube. */}
         {!status.ytConnected && !status.wpConnected && (
           <div className="mb-6 rounded-2xl border p-5 flex items-center justify-between gap-4 flex-wrap"
             style={{ borderColor: 'rgba(124,58,237,0.45)', background: 'rgba(124,58,237,0.10)' }}>
             <div className="min-w-0">
-              <p className="font-semibold text-[15px]" style={{ color: '#f5f5f7' }}>Just want the free tools? Skip setup.</p>
+              <p className="font-semibold text-[15px]" style={{ color: '#f5f5f7' }}>Just want to look around first? Skip setup.</p>
               <p className="text-sm text-[#c7c7cc] mt-0.5">
                 Use our Amazon product research and Deal Radar right now: no WordPress or YouTube needed.
                 You’ll connect those later, only when you want to publish content.
@@ -338,7 +338,7 @@ export default function OnboardingFunnel({
               className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
               style={{ background: ACCENT }}
             >
-              <Sparkles size={16} /> Browse free research →
+              <Sparkles size={16} /> Open product research →
             </button>
           </div>
         )}
@@ -1016,7 +1016,7 @@ function YouTubeStep({ connected, required }: { connected: boolean; required: bo
           the skip is genuinely there. */}
       {required ? (
         <p className="text-xs text-[#6e6e73] mt-4">
-          This is the one step we need before your 5 free posts. No channel? Take the
+          This is the one step we need before MVP can write posts from your videos. No channel? Take the
           {' '}<a href="/onboarding?for=amazon" className="underline" style={{ color: '#FB923C' }}>Amazon Influencer setup</a>{' '}
           instead.
         </p>

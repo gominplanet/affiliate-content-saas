@@ -1,7 +1,9 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// TrialResearchRow — the "Free research — start here" row shown at the top of the
-// dashboard for Free Trial users (the reason they're here). It's a CLIENT
+// TrialResearchRow — the "Research: start here" row shown at the top of the
+// dashboard for accounts still on the old Free Trial tier (the reason they're
+// here). There is no trial for new signups (2026-10-18), so the copy promises
+// nothing free and no "no card"; it only points at the research tools. It's a CLIENT
 // component so it honors the admin "View as" override via useEffectiveTier: it
 // renders for a real trial user AND when an admin previews trial, but not for
 // paid tiers. The server dashboard can't see the view-as override (localStorage),
@@ -25,8 +27,8 @@ export default function TrialResearchRow() {
   if (tier !== 'trial') return null
   return (
     <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.20)' }}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-1" style={{ color: '#7C3AED' }}>Free research: start here</p>
-      <p className="text-sm mb-3" style={{ color: 'var(--text-soft)' }}>Find products worth reviewing. No card, no setup.</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-1" style={{ color: '#7C3AED' }}>Research: start here</p>
+      <p className="text-sm mb-3" style={{ color: 'var(--text-soft)' }}>Find products worth reviewing.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {TOOLS.map((t) => (
           <Link

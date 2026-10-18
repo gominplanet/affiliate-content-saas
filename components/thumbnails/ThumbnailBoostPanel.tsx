@@ -11,6 +11,12 @@
 //   Fine-tune    — collapsed: pose with the product, outfit (saved to the face),
 //                  custom badge text, custom red word, describe the scene.
 //
+// Your own text — the exact words for the thumbnail (lib/thumb-text). Shown
+//                  only where one thumbnail is being made (showOwnText): a
+//                  batch look applies to every video, and one line on ten
+//                  thumbnails is not what anybody means. Not remembered either:
+//                  a headline belongs to one video.
+//
 // `useThumbnailBoost()` owns the state + localStorage persistence (same keys Co-Pilot
 // uses, so a preference set on one page is the default on the other) and returns
 // `requestFields()` — spread it into the /api/youtube/generate-thumbnail body.
@@ -23,6 +29,8 @@ import { normalizeExpression, type ExpressionKey } from '@/lib/face-expression'
 import { toast } from 'sonner'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { normalizeThumbText } from '@/lib/thumb-text'
 
 export type ThumbPose = 'auto' | 'hold' | 'wear' | 'use' | 'point' | 'thumbs'
 
@@ -67,6 +75,8 @@ export interface ThumbnailBoost {
   badgeText: string; setBadgeText: (s: string) => void
   accentWord: string; setAccentWord: (s: string) => void
   scenePrompt: string; setScenePrompt: (s: string) => void
+  /** The creator's own words for the thumbnail, or '' for MVP's. */
+  ownText: string; setOwnText: (s: string) => void
   /** Spread into the generate-thumbnail request body. */
   requestFields: () => Record<string, unknown>
 }
@@ -84,6 +94,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
   const [badgeText, setBadgeText] = useState('')
   const [accentWord, setAccentWord] = useState('')
   const [scenePrompt, setScenePrompt] = useState('')
+  const [ownText, setOwnText] = useState('')
 
   const [savedStyles, setSavedStyles] = useState<SavedStyle[]>([])
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null)
@@ -184,13 +195,15 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
     ...((accentWord.trim() || autoAccent) ? { accentColor: '#FF2D2D' } : {}),
     styleReferenceUrl: styleReferenceUrl || undefined,
     scenePrompt: scenePrompt.trim() || undefined,
-  }), [question, effects, autoBadge, autoAccent, pose, wear, expression, badgeText, accentWord, styleReferenceUrl, scenePrompt])
+    customHeadline: normalizeThumbText(ownText) || undefined,
+  }), [question, effects, autoBadge, autoAccent, pose, wear, expression, badgeText, accentWord, styleReferenceUrl, scenePrompt, ownText])
 
   return {
     question, setQuestion, effects, setEffects, autoBadge, setAutoBadge, autoAccent, setAutoAccent,
     savedStyles, styleReferenceUrl, loadedPresetId, styleRefUploading, savingPreset,
     applyPreset, clearStyle, uploadStyleRef, saveCurrentAsPreset, deletePreset,
     pose, setPose, wear, setWear, expression, setExpression, badgeText, setBadgeText, accentWord, setAccentWord, scenePrompt, setScenePrompt,
+    ownText, setOwnText,
     requestFields,
   }
 }
@@ -202,12 +215,14 @@ const label = { color: 'var(--text)' } as const
  * The panel. Pass the face whose outfit should be editable (or null for
  * product-only); the outfit is saved to that face and applies everywhere.
  */
-export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestionToggle = true }: {
+export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestionToggle = true, showOwnText = false }: {
   boost: ThumbnailBoost
   face?: { id: string; name: string } | null
   disabled?: boolean
   /** Hide the Question hook chip when the host page forces it. */
   showQuestionToggle?: boolean
+  /** Offer "your own thumbnail text". Only where ONE thumbnail is made. */
+  showOwnText?: boolean
 }) {
   // Outfit — per face, saved to the face record.
   const [outfit, setOutfit] = useState('')
@@ -241,6 +256,10 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
 
   return (
     <div className="flex flex-col gap-3">
+      {showOwnText && (
+        <ThumbTextInput value={boost.ownText} onChange={boost.setOwnText} disabled={disabled}
+          note={boost.question && showQuestionToggle ? 'Your text replaces the Question hook.' : undefined} />
+      )}
       {/* Quick style */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={muted}>Quick style</span>

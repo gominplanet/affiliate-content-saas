@@ -116,13 +116,30 @@ export interface FreeTrialWindow {
   endLabel: string
 }
 
+/**
+ * NO TRIAL FOR ACCOUNTS MADE FROM HERE ON (Seb, 2026-10-18). Every new member
+ * starts on Pro, with a 7-day refund (lib/guarantee) in place of the trial.
+ * An account made after this moment that is still on the free tier is one
+ * that has not paid yet (an abandoned checkout), and its free window is
+ * already closed: nothing free to spend, only the button to start Pro.
+ * Accounts made before it keep their 30 days.
+ */
+export const NO_TRIAL_FROM = '2026-10-18T06:00:00.000Z'
+
+/** Made after the trial ended, so there is no free window at all. Pure. */
+export function signedUpWithoutTrial(signupISO: string | null | undefined): boolean {
+  const t = Date.parse(String(signupISO ?? ''))
+  return Number.isFinite(t) && t >= Date.parse(NO_TRIAL_FROM)
+}
+
 export function freeTrialWindow(signupISO: string | null | undefined, now: Date = new Date()): FreeTrialWindow {
   const start = new Date(String(signupISO ?? ''))
   const usable = !isNaN(start.getTime())
   // No readable signup date: behave as if the month started now, so nothing is
   // blocked and the counter still has a window to count in.
   const from = usable ? start : now
-  const end = new Date(from.getTime() + FREE_TRIAL.trialDays * 24 * 60 * 60 * 1000)
+  const days = signedUpWithoutTrial(signupISO) ? 0 : FREE_TRIAL.trialDays
+  const end = new Date(from.getTime() + days * 24 * 60 * 60 * 1000)
   const msLeft = end.getTime() - now.getTime()
   return {
     startISO: from.toISOString(),
@@ -148,8 +165,12 @@ export function freeTrialExpiredBlock(opts: {
   if (opts.tier !== 'trial') return null
   const w = freeTrialWindow(opts.signupISO, opts.now)
   if (!w.expired) return null
-  return FREE_TRIAL_OVER_MESSAGE
+  return signedUpWithoutTrial(opts.signupISO) ? START_PRO_MESSAGE : FREE_TRIAL_OVER_MESSAGE
 }
+
+/** What an account that has not started Pro reads, from whichever route
+ *  stopped it. Not "your trial is over": there was never one. */
+export const START_PRO_MESSAGE = `MVP starts when you start Pro. Open Billing to start it: you have 7 days to ask for a full refund, no questions asked.`
 
 /** The one sentence an expired trial reads, from whichever route stopped it
  *  (the image routes here, every other gated route through lib/ai-spend). */

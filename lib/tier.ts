@@ -40,6 +40,7 @@
 //   - API access + White-label: still Pro-only but HIDDEN from nav until
 //     real demand surfaces (route + page stay alive).
 //   - Priority queue + Discord priority support: Studio + Pro.
+import { introCap } from '@/lib/intro-allowance'
 import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
 
 export type Tier ='trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
@@ -729,7 +730,8 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
  *  MINIMUM tier that includes the social, and their own tier's `socials` list
  *  is what actually gates them. */
 export function minTierForSocial(social: Social): Tier | null {
-  const order: Tier[] = ['trial', 'amazon', 'pro']
+  // Only plans on sale (and the free account) are offered as the way in.
+  const order: Tier[] = ['trial', 'pro']
   for (const t of order) {
     if (TIERS[t].socials.includes(social)) return t
   }
@@ -758,7 +760,10 @@ export function tierLabel(tier: Tier): string {
  * 'trial' is not sellable because it is what you get for free, and 'admin' is
  * internal staff.
  */
-export const SELLABLE_TIERS: readonly Tier[] = ['amazon', 'pro'] as const
+// PRO ONLY (Seb, 2026-10-18): nobody was on Amazon and every member is on
+// Pro, so Pro is the one plan sold. Amazon stays a tier, like Creator and
+// Studio, so its code paths keep resolving; nothing offers it any more.
+export const SELLABLE_TIERS: readonly Tier[] = ['pro'] as const
 
 /** Can a new subscription be started on this plan? Checkout's gate. */
 export function isSellableTier(raw: unknown): boolean {
@@ -857,6 +862,16 @@ export const LEGACY_PRO_COHORT = 'pro-before-2026-10-06'
 export function effectiveCap(
   tier: Tier, key: SteppedCap, current: number | null,
   windowStartISO: string | null | undefined, cohort?: string | null,
+  /** integrations.subscribed_at (migration 439): a member in their first
+   *  7 days gets a quarter of the cap (lib/intro-allowance). */
+  subscribedAtISO?: string | null,
+): number | null {
+  return introCap(steppedCap(tier, key, current, windowStartISO, cohort), subscribedAtISO)
+}
+
+function steppedCap(
+  tier: Tier, key: SteppedCap, current: number | null,
+  windowStartISO: string | null | undefined, cohort?: string | null,
 ): number | null {
   if (current === null) return null
   const t = normalizeTier(tier)
@@ -868,9 +883,9 @@ export function effectiveCap(
 }
 
 /** The generation cap in force (see effectiveCap). */
-export function effectivePostCap(tier: Tier, windowStartISO: string, cohort?: string | null): number | null {
+export function effectivePostCap(tier: Tier, windowStartISO: string, cohort?: string | null, subscribedAtISO?: string | null): number | null {
   const t = normalizeTier(tier)
-  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO, cohort)
+  return effectiveCap(t, 'postsPerMonth', TIERS[t].postsPerMonth, windowStartISO, cohort, subscribedAtISO)
 }
 
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
@@ -1116,7 +1131,7 @@ export async function checkUsageLimit(
   })
 
   // Lowered caps: current Pro members keep theirs, others from next window.
-  const monthlyCap = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
+  const monthlyCap = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort, (ig as { subscribed_at?: string | null } | null)?.subscribed_at)
 
   // The RPC's bigint params can't be null; null in our tier config means
   // "no cap" (admin). Coerce to a number bigger than any real monthly
@@ -1417,7 +1432,7 @@ export async function checkGenerationLimit(
 
   // A lowered cap lands on the next billing window, never mid-cycle (see
   // effectiveCap).
-  const limit = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort)
+  const limit = effectivePostCap(tier, startISO, (ig as { limits_cohort?: string | null } | null)?.limits_cohort, (ig as { subscribed_at?: string | null } | null)?.subscribed_at)
   // null = unlimited (admin only — handled above; this is a safety net).
   if (limit === null) return { allowed: true }
 

@@ -407,6 +407,23 @@ export interface FinderFilters {
   /** TRYBE's payout tier for it went up in the last 30 days (MVP's changes log). */
   tierUp?: boolean
 }
+/** Is this brand spending on ads: true, false, or null when MVP cannot say.
+ *
+ *  NOT IN THE TOP 100 IS NOT "NOT SPENDING" (Seb, 2026-10-18: GentGolfers,
+ *  with about 2,100 Meta ads running, was hidden by "Spending on ads"). Reading
+ *  TRYBE's Top 100 stamps every brand, and the hundreds outside it get 0 hits.
+ *  Taking that 0 as a no hid every brand MVP had not yet counted Meta ads for,
+ *  which is most of them, because that count is read 25 brands at a time. The
+ *  Top 100 can only say yes. A no takes a Meta Ad Library read that found no
+ *  ads; anything else is not known, and is listed after the brands that pass.
+ *  Pure. */
+export function spendingOf(r: { meta_ads?: unknown; meta_ads_checked_at?: unknown; top100_hits?: unknown; top100_checked_at?: unknown }): boolean | null {
+  const ads = typeof r.meta_ads === 'number' && r.meta_ads_checked_at ? r.meta_ads : null
+  const top = r.top100_checked_at && typeof r.top100_hits === 'number' ? r.top100_hits : null
+  if ((ads ?? 0) > 0 || (top ?? 0) > 0) return true
+  return ads === 0 ? false : null
+}
+
 /** "Decides fast": members' middle figure at or under this many days. */
 export const FAST_REVIEW_DAYS = 5
 

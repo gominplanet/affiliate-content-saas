@@ -51,8 +51,8 @@ export async function POST(request: Request) {
     // "nobody ever got this far". See lib/paywall-signal.ts.
     reportPaywallReached({ userId: user.id, email: user.email, surface: 'publish-pinterest', tier })
     return NextResponse.json({
-      error: 'Pinterest posting is on the Amazon and Pro plans.',
-      code: 'upgrade_required', upgrade: { tier: 'amazon' },
+      error: 'Pinterest posting is on the Pro plan.',
+      code: 'upgrade_required', upgrade: { tier: 'pro' },
     }, { status: 403 })
   }
   if (!intRow?.pinterest_access_token) {

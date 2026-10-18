@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       // it and did not pay" stop looking identical. See lib/paywall-signal.ts.
       reportPaywallReached({ userId: user.id, email: user.email, surface: 'brand-pitch', tier })
       return NextResponse.json({
-        error: 'Brand-collab pitch emails are a paid feature. Upgrade to Amazon or Pro to start landing deals.',
+        error: 'Brand-collab pitch emails are a paid feature. Upgrade to Pro to start landing deals.',
         currentTier: tier,
         code: 'tier_not_allowed',
       }, { status: 403 })
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
     })
     // A lowered cap lands on the member's NEXT billing window (effectiveCap).
-    const collabCap = effectiveCap(tier, 'collabsPerMonth', TIERS[tier].collabsPerMonth, startISO, (intRow as Record<string, unknown> | null)?.limits_cohort as string | null)
+    const collabCap = effectiveCap(tier, 'collabsPerMonth', TIERS[tier].collabsPerMonth, startISO, (intRow as Record<string, unknown> | null)?.limits_cohort as string | null, (intRow as Record<string, unknown> | null)?.subscribed_at as string | null)
     if (collabCap !== null) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { count } = await supabase

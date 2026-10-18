@@ -27,10 +27,9 @@
 import { useState } from 'react'
 import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
-import { FREE_TRIAL } from '@/lib/free-trial'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { GUARANTEE_LABEL } from '@/lib/guarantee'
+import { GUARANTEE_SENTENCE } from '@/lib/guarantee'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -155,7 +154,10 @@ function PlanCard({
   )
 }
 
-export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; freeHref: string }) {
+// focus and freeHref are kept so the pages that pass them still compile; with
+// one plan and no trial there is nothing left for them to choose.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; freeHref?: string }) {
   const [yearly, setYearly] = useState(false)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,7 +168,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
   // The biggest honest saving across the plans that offer one, as a percentage,
   // so the toggle can say what it is worth without naming a figure for a plan
   // the reader has not picked yet.
-  const pcts = (['amazon', 'pro'] as PaidTier[])
+  const pcts = (['pro'] as PaidTier[])
     .map((k) => { const a = annualOf(k); return a ? Math.round((1 - a / (priceOf(k) * 12)) * 100) : 0 })
     .filter((p) => p > 0)
   const bestPct = pcts.length ? Math.max(...pcts) : 0
@@ -193,7 +195,6 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
     }
   }
 
-  const amazon = paid('amazon')
   const pro = paid('pro')
 
   return (
@@ -227,54 +228,25 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
         </div>
       )}
 
-      <div className="grid md:grid-cols-3 gap-5 items-stretch">
-        {/* A trial, not a free plan: the allowances stop after
-            FREE_TRIAL.trialDays (lib/free-trial). This card said "/forever"
-            on both ad landing pages. Designs first, because that is the loop
-            the trial is built around; the posts need a WordPress site. */}
+      {/* ONE PLAN (Seb, 2026-10-18): Pro alone, no free trial card and no
+          Amazon card. The refund line below replaces the trial. */}
+      <div className="max-w-md mx-auto">
         <PlanCard
-          name="Free trial"
-          blurb="See it work before you decide"
-          price={`$${TIERS.trial.price}`}
-          priceSuffix={`for ${FREE_TRIAL.trialDays} days`}
-          note="No card required"
-          features={[
-            `${FREE_TRIAL.thumbnails} art-directed thumbnails`,
-            `${FREE_TRIAL.socialDesigns} ready-to-post designs`,
-            `${FREE_TRIAL.faces} face model, ${FREE_TRIAL.photobooth} headshots`,
-            `${TIERS.trial.lifetimeMax} full published reviews once you connect a WordPress site`,
-          ]}
-          ctaLabel="Start free, no card"
-          ctaHref={freeHref}
-          highlight={false}
-          ribbon={null}
+          name={pro.name}
+          blurb="Everything MVP does, open from day one"
+          price={pro.price}
+          priceSuffix={pro.priceSuffix}
+          note={pro.note}
+          features={pro.features}
+          ctaLabel={`Start ${pro.name}`}
+          ctaHref={pro.ctaHref}
+          highlight={true}
+          ribbon="Everything included"
         />
-        {/* The page's own tier is the highlighted one. The other paid plan is
-            still shown: a reader who arrived on the wrong page should find the
-            right plan here rather than bounce. */}
-        {(['amazon', 'pro'] as PaidTier[]).map((k) => {
-          const d = k === 'amazon' ? amazon : pro
-          const isFocus = k === focus
-          return (
-            <PlanCard
-              key={k}
-              name={d.name}
-              blurb={d.blurb}
-              price={d.price}
-              priceSuffix={d.priceSuffix}
-              note={d.note}
-              features={d.features}
-              ctaLabel={d.ctaLabel}
-              ctaHref={d.ctaHref}
-              highlight={isFocus}
-              ribbon={isFocus ? 'Recommended' : null}
-            />
-          )
-        })}
       </div>
 
       <p className="mt-7 text-center text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-        {GUARANTEE_LABEL} on every paid plan. Cancel any time, and everything you have already made stays yours.
+        {GUARANTEE_SENTENCE} Cancel any time, and everything you have already made stays yours.
       </p>
     </div>
   )

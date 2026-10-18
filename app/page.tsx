@@ -20,15 +20,11 @@
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
-import {
-  AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
-  AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
-} from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { GUARANTEE_LABEL } from '@/lib/guarantee'
-import { FREE_TRIAL } from '@/lib/free-trial'
+import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guarantee'
 import { TESTIMONIALS } from '@/lib/testimonials'
+import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
   FileText, Image as ImageIcon, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
@@ -37,12 +33,12 @@ import {
   ShieldCheck, Zap, Upload, X as XIcon, Check,
   Crown, Rocket,
   Pin,
-  ShoppingBag, Store, Search,
+  Store, Search,
   Radar, Scissors,
+  CloudUpload, Handshake,
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
-import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -154,7 +150,8 @@ export default function LandingPreview() {
           sections in this file. */}
       <Nav />
       <Hero />
-      <AudienceSplit />
+      {/* ONE PLAN (Seb, 2026-10-18): the "which one are you?" fork offered
+          the Amazon plan, which is no longer sold, so it is gone. */}
       <PlatformBar />
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
@@ -166,6 +163,9 @@ export default function LandingPreview() {
       {TESTIMONIALS.length >= 3 && <TestimonialsSection />}
       <HowItWorks />
       <FeaturesGridCondensed />
+      {/* What MVP does for each job (Seb, 2026-10-18): Drop, TRYBE, Meta Hub
+          and research had no word on the page. */}
+      <RolesSection />
       {/* Watch it work (Seb, 2026-10-17): the walkthrough and one video per
           feature, so a visitor sees what they get. Click to play. */}
       <SalesVideosSection />
@@ -223,7 +223,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
  *  Branding the flow reads as a system that runs the business side, not a set of
  *  generic steps. */
 const LOOP_STEPS = [
-  { n: 'Find', d: 'Research all of Amazon and live Deal Radar for products worth promoting, or just paste any product, brand or Amazon link.' },
+  { n: 'Find', d: 'Research all of Amazon, live Deal Radar and your partner programs for products worth promoting, find brands on TRYBE that pay for videos, or just paste any product link.' },
   { n: 'Create', d: 'MVP writes the review, comparisons and social posts in your real voice, and makes the thumbnail and the Shorts for you.' },
   { n: 'Publish', d: 'It all lands on a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
   { n: 'Earn', d: 'Passport geo-links with no per-click fees and Creator Connections keep every shopper earning, with the commission going to you.' },
@@ -262,10 +262,11 @@ function HowItWorks() {
 const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
   { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
   { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
+  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included in Pro.', isNew: true },
   { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
   { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
-  { icon: <Search size={19} />, title: 'Free product research', desc: 'Filter all of Amazon by sales, rating, price and video competition. Scout Creator Connections, Levanta and PartnerBoost too.' },
+  { icon: <Search size={19} />, title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews and sales rank. Scout Levanta, PartnerBoost, Walmart and Wayward campaigns too.' },
+  { icon: <Handshake size={19} />, title: 'Paid brand deals on TRYBE', desc: 'MVP finds the TRYBE brands that fit your channel, drafts your first message and plans the videos once a brand says yes.', isNew: true },
   { icon: <Store size={19} />, title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
   { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP never uses or sells your personal data. It works from your content, nothing else.' },
 ]
@@ -298,6 +299,128 @@ function FeaturesGridCondensed() {
           <a href="/features" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
             See every feature, by the MVP Loop <ArrowRight size={15} />
           </a>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** WHAT MVP DOES FOR EACH JOB (Seb, 2026-10-18). Drop, the TRYBE integration,
+ *  Meta Hub and the research tools had no word on the sales page. Each card is
+ *  one job a creator would otherwise do by hand or hire for.
+ *
+ *  `gate` ties the badge to the feature's real switch in lib/labs-preview: a
+ *  feature that is not open to Pro yet reads "Coming soon" rather than being
+ *  sold as something a new member can use, and the label flips to "New" the
+ *  day it opens, with no copy change. It is also why this section has the
+ *  #roles id the nav (and the free guide's copy of it) already points at. */
+const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string }[] = [
+  {
+    id: 'drop',
+    gate: 'drop',
+    icon: <CloudUpload size={20} />,
+    role: 'Your upload team',
+    title: 'Drop: film it, drop it, done',
+    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs. It tells your long reviews from your vertical videos by their shape, so there is nothing to sort.`,
+    points: [
+      'Long reviews go to YouTube and your Amazon storefront, with the title, description, thumbnail and links done',
+      'Each one also becomes a blog post, a Pinterest pin, a Facebook Group post and three short clips',
+      'Vertical videos go to TikTok, Instagram Reels, YouTube Shorts, Facebook Reels, Pinterest and your storefront',
+      'Made a video for a TRYBE brand? Send it to that brand from the same screen',
+      'Pick your posting days and times once, and every drop fills the next free slot',
+    ],
+    note: 'Amazon storefront uploads are for US storefronts.',
+  },
+  {
+    id: 'trybe',
+    gate: 'trybe_outreach',
+    icon: <Handshake size={20} />,
+    role: 'Your brand deal agent',
+    title: 'Land paid brand deals on TRYBE',
+    desc: 'TRYBE is the marketplace where brands pay creators to make videos. MVP finds the brands worth your time, writes your first message, and plans the videos once a brand says yes.',
+    points: [
+      'Every brand on TRYBE, sorted by best fit for your channel, fewest creators, total payouts or newest',
+      'Your first message to each brand drafted in your words, and the requests sent for you a few at a time',
+      'Your TRYBE inbox in one place, with a suggested reply on every conversation',
+      'Ten shooting scripts per brand that follow its brief, each with several hooks to test',
+      'What is working now: how the top videos open, the most active brands and the ads they run on Meta',
+    ],
+    note: 'Works with your own TRYBE account through the SCOUT Chrome extension. TRYBE is a separate service.',
+  },
+  {
+    id: 'meta-hub',
+    gate: 'facebook_setup',
+    icon: <Facebook size={20} />,
+    role: 'Your Facebook manager',
+    title: 'Meta Hub: Facebook that actually sells',
+    desc: 'Meta Hub sets up the Facebook system that works for affiliates: your Group holds the link, and your Page points people to it.',
+    points: [
+      'Niche Groups like Kitchen or Automotive, each holding its own product links',
+      'SCOUT fills in every Group post for you, and you press Post',
+      'Every review becomes a Group post plus a Page post that points to it',
+      'Reels cut from your videos with Clip Factory, right inside the hub',
+      'One queue for everything waiting to go to your Groups: reviews, clips, deals and Amazon videos',
+    ],
+    note: 'Group posts use the SCOUT Chrome extension.',
+  },
+  {
+    id: 'research',
+    gate: null,
+    icon: <Radar size={20} />,
+    role: 'Your researcher',
+    title: 'Know what to film before you buy it',
+    desc: 'Search all of Amazon and the partner programs you belong to, then turn the best finds into content in one click.',
+    points: [
+      'Filter the whole Amazon catalogue by category, price, rating, reviews and sales rank',
+      'MVP picks: products with real demand, strong ratings and room for your video',
+      'Deal Radar: live deals checked against price history, so no fake "was" prices',
+      'When a product you already reviewed goes on sale, MVP tells you and updates your pinned comment',
+      'Levanta brands ranked by commission and earnings per click, PartnerBoost by pay per sale, plus Walmart and Wayward',
+    ],
+    note: 'Partner programs use your own Levanta, PartnerBoost, Walmart or Wayward account.',
+  },
+]
+function RolesSection() {
+  return (
+    <section id="roles" className="px-6 lg:px-8 pt-4 pb-16 sm:pb-24 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Every job, covered</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            The team you would otherwise hire
+          </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            Uploading, brand deals, Facebook and research eat a creator&apos;s week. MVP does the heavy part of each, and you decide what goes out.
+          </p>
+        </div>
+        <div className="grid lg:grid-cols-2 gap-5 mt-10">
+          {ROLES.map((r) => {
+            const live = r.gate === null || previewOpenToPro(r.gate)
+            return (
+              <article key={r.role} id={r.id} className="rounded-2xl border p-6 sm:p-7 flex flex-col scroll-mt-24" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{r.icon}</div>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{r.role}</span>
+                  {r.gate !== null && (live
+                    ? <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>New</span>
+                    : <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full border" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>Coming soon</span>)}
+                </div>
+                <h3 className="text-[21px] sm:text-[23px] font-extrabold tracking-tight leading-tight mt-4" style={{ color: 'var(--text)' }}>{r.title}</h3>
+                <p className="mt-2.5 text-[14.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{r.desc}</p>
+                <ul className="mt-4 flex flex-col gap-2.5">
+                  {r.points.map((pt) => (
+                    <li key={pt} className="flex gap-2.5 text-[14px] leading-snug" style={{ color: 'var(--text)' }}>
+                      <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                      <span>{pt}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-auto pt-5 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
+                  {live ? r.note : `Coming soon to every Pro member. ${r.note}`}
+                </p>
+              </article>
+            )
+          })}
         </div>
       </div>
     </section>
@@ -371,7 +494,7 @@ function PricingSection() {
             className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
-            Start free.{' '}
+            One plan.{' '}
             <span
               style={{
                 background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -380,14 +503,14 @@ function PricingSection() {
                 backgroundClip: 'text',
               }}
             >
-              Scale when you&apos;re ready.
+              All of MVP.
             </span>
           </h2>
           <p
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Start on the free trial, then pick the plan that fits. Cancel anytime. Your WordPress site stays yours forever.
+            Every feature opens the day you join. {GUARANTEE_SENTENCE} Cancel anytime, and your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
@@ -400,37 +523,8 @@ function PricingSection() {
           </div>
         </div>
 
-        {/* Trial banner — the no-card "way in" sits ABOVE the cards so it
-            reads as "start here, then pick a tier when you're ready." */}
-        <div
-          className="rounded-2xl border p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6"
-          style={{
-            backgroundColor: 'rgba(16,185,129,0.06)',
-            borderColor: 'rgba(16,185,129,0.25)',
-          }}
-        >
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #10B981, #059669)', color: '#FFFFFF' }}
-          >
-            <Sparkles size={18} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-              Free to start. No card required.
-            </p>
-            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar stay open after your trial ends. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
-            </p>
-          </div>
-          <a
-            href="/signup"
-            className="px-5 py-2.5 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
-            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-          >
-            Start free →
-          </a>
-        </div>
+        {/* The free trial banner that sat here is gone (2026-10-18): there is
+            no trial. The refund promise above replaces it. */}
 
         {/* THE COLUMN COUNT FOLLOWS THE PLANS, and the row narrows with it.
             This was lg:grid-cols-3 from when three plans were sold. The array
@@ -466,7 +560,7 @@ function PricingSection() {
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> Switch plans up or down
+            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours forever
@@ -517,59 +611,18 @@ const LANDING_PLAN_GRID: Record<number, string> = {
 }
 
 const PRICING_TIERS: PricingTier[] = [
-  // TWO PLANS (2026-09-15). Creator and Studio are frozen legacy tiers — five
-  // existing subscribers keep them, nobody new can buy one, and they are no
-  // longer cards here. Studio at $99 gave LESS than Amazon at $79 on
-  // thumbnails, Pinterest, Instagram and collabs: it was not a rung above
-  // Amazon, it was a different product at a higher price.
-  {
-    name: 'Amazon',
-    tagline: 'Best for Amazon storefront and influencer creators.',
-    price: TIERS.amazon.price,
-    regularPrice: TIERS.amazon.regularPrice,
-    highlight: true,
-    icon: <ShoppingBag size={16} />,
-    logo: '/png/mvp-affiliate-amz.png',
-    accent: {
-      grad: 'linear-gradient(135deg, #F59E0B 0%, #EA580C 100%)',
-      solid: '#EA580C',
-      tint: 'rgba(234,88,12,0.12)',
-      ring: 'rgba(234,88,12,0.38)',
-    },
-    features: [
-      '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
-      'Brand campaigns: the Creator Connections finder + a daily picked-for-you digest',
-      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
-      `${TIERS.amazon.thumbnailsPerMonth} Art Director thumbnails / month`,
-      `${TIERS.amazon.pinsPerMonth} Pinterest & ${TIERS.amazon.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
-      'Auto-post to Pinterest, Instagram & Facebook with AI captions, your affiliate link, and #ad #sponsored added for you',
-      `${TIERS.amazon.dealsPerMonth} deal posts / month from Deal Radar to Pinterest, Facebook and an Instagram card and Story`,
-      // THE SIX VIDEO ADDITIONS (Seb, 2026-10-05, for current and new Amazon
-      // members). Numbers from lib/amazon-plan, the constants the routes enforce.
-      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to your storefront, and YouTube when connected`,
-      `${AMAZON_YOUTUBE_CHANNELS} YouTube channel with YouTube Co-Pilot: ${AMAZON_COPILOT_RUNS_PER_MONTH} runs / month`,
-      'Pinned and On sale comments on your YouTube videos',
-      `Amazon Live prep and follow-up: ${AMAZON_LIVE_SHOWS_PER_MONTH} shows / month`,
-      `Clip Factory: ${AMAZON_FIND_MOMENTS_PER_MONTH} Find moments and ${AMAZON_CLIPS_PER_MONTH} clips / month to Instagram and Facebook Reels`,
-      `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots: your face on every design`,
-      `Brand pitches: ${TIERS.amazon.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,
-      `Ask MVP: ${TIERS.amazon.assistantMessagesPerMonth} messages / month`,
-      'Priority generation queue + priority support',
-      // SAY WHAT IT DOES NOT DO, ON THE CARD. At $79 as a side product this was
-      // obvious from context. As one of two headline plans it is not, and
-      // somebody buying a $99 plan expecting a blog churns in week one. The
-      // cheapest refund to prevent is the one you talk a person out of.
-      // "no YouTube" came off on 2026-10-05 (Seb): YouTube is optional now.
-      '✕ No blog or WordPress, and no TikTok, X or Threads. That is Pro',
-    ],
-    cta: 'Start storefront',
-  },
+  // ONE PLAN (Seb, 2026-10-18). Nobody was on the Amazon plan and every member
+  // is on Pro, so Pro is the one plan sold, with the whole product on day one
+  // and a 7-day refund in place of the free trial. Amazon, Creator and Studio
+  // stay in lib/tier.ts for the accounts that have them; none is a card here.
+  // The list is the whole plan, not "Everything in Amazon, plus": there is no
+  // plan underneath it any more.
   {
     name: 'Pro',
-    tagline: 'Best for the serious affiliate marketer. Everything MVP does, with the biggest allowances.',
+    tagline: 'Everything MVP does, for creators who sell on Amazon, YouTube and their own blog.',
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
-    highlight: false,
+    highlight: true,
     icon: <Rocket size={16} />,
     logo: '/png/mvp-affiliate-pro.png',
     accent: {
@@ -579,22 +632,27 @@ const PRICING_TIERS: PricingTier[] = [
       ring: 'rgba(79,70,229,0.35)',
     },
     features: [
-      'Everything in Amazon, plus:',
-      `📝 The blog: ${TIERS.pro.postsPerMonth} generations / month, written in your real voice`,
+      `📝 Your blog: ${TIERS.pro.postsPerMonth} posts / month on your own WordPress, written in your real voice`,
       'Video-to-Blog + Blog-to-Social, Comparison posts + Buying Guides',
-      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month, posting to TikTok and YouTube Shorts too`,
-      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, and Amazon Live with no monthly show limit`,
-      `${TIERS.pro.thumbnailsPerMonth} thumbnails / month, rendered at high quality`,
+      `Bulk Amazon upload: up to ${BULK_UPLOAD_MAX_VIDEOS} review videos at once to YouTube and your Amazon storefront`,
+      `YouTube Co-Pilot: ${TIERS.pro.metadataGensPerMonth} runs / month, plus pinned and On sale comments on your videos`,
+      `🎬 Clip Factory: ${SHORTS_MONTHLY_CAP} clips / month to TikTok, Instagram, Facebook Reels and YouTube Shorts`,
+      `${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month, rendered at high quality`,
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
-      'X (Twitter), TikTok, LinkedIn, Threads, Bluesky & Telegram auto-post',
-      'Multi-account social + one-click Publish All',
+      'Auto-post to Pinterest, Instagram, Facebook, X, TikTok, LinkedIn, Threads, Bluesky & Telegram, with your link and #ad added for you',
+      '⚡ Amazon Deal Radar + all-deals & full-catalogue research, with deal posts to your socials',
+      '🤝 TRYBE brand deals: best-fit brands, first messages drafted, inbox replies and 10 shooting scripts per brand',
+      'Brand deals: the Creator Connections finder + a daily picked-for-you digest',
       'Partner programs: Levanta, PartnerBoost, Wayward & LTK campaigns turned into posts',
-      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Team seats`,
-      `Up to ${TIERS.pro.youtubeChannels} YouTube channels, one per site, or pull from any`,
+      'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
+      'Amazon Live prep and follow-up, with no monthly show limit',
+      `${TIERS.pro.maxFaces} face models, ${TIERS.pro.photoboothPerMonth} Photobooth headshots: your face on every design`,
+      `Up to ${TIERS.pro.sites} WordPress sites, ${TIERS.pro.youtubeChannels} YouTube channels + ${TIERS.pro.vaSeats} Team seats`,
       `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitch emails drafted / month`,
       `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
+      'Priority generation queue + priority support',
     ],
-    cta: 'Go Pro',
+    cta: 'Start Pro',
   },
 ]
 
@@ -608,7 +666,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.15em] text-white z-20 whitespace-nowrap"
           style={{ background: a.grad, boxShadow: `0 6px 18px ${a.ring}` }}
         >
-          ★ Most popular
+          ★ Everything included
         </div>
       )}
       <div
@@ -669,16 +727,21 @@ function PricingCard({ tier }: { tier: PricingTier }) {
                   </li>
                 )
               }
+              // WHAT THE PLAN DOES NOT INCLUDE gets a cross, not a check. The
+              // "No blog" line wore a green tick, which read as a feature.
+              const excluded = f.startsWith('✕')
               return (
                 <li key={i} className="flex items-start gap-2.5">
                   <span
                     className="inline-flex items-center justify-center w-4 h-4 rounded-full flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: a.tint }}
+                    style={{ backgroundColor: excluded ? 'var(--surface-hover)' : a.tint }}
                   >
-                    <Check size={11} strokeWidth={3} style={{ color: a.solid }} />
+                    {excluded
+                      ? <XIcon size={11} strokeWidth={3} style={{ color: 'var(--text-faint)' }} />
+                      : <Check size={11} strokeWidth={3} style={{ color: a.solid }} />}
                   </span>
-                  <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                    {f}
+                  <span className="text-[13px] leading-relaxed" style={{ color: excluded ? 'var(--text-faint)' : 'var(--text-muted)' }}>
+                    {excluded ? f.replace(/^✕\s*/, '') : f}
                   </span>
                 </li>
               )
@@ -716,7 +779,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
             {/* CTA. Carries the plan slug so the signup flow lands the user
                 on the right checkout post-signup. */}
             <a
-              href={`/signup?plan=${tier.name.toLowerCase()}`}
+              href={`/signup?tier=${tier.name.toLowerCase()}`}
               className="block w-full px-4 py-3 rounded-xl text-center text-[14px] font-bold transition-all hover:brightness-110"
               style={{
                 background: highlight ? a.grad : 'var(--surface-bright)',
@@ -800,6 +863,11 @@ function OldWayNewWay() {
     {
       old: 'A video gets filmed, uploaded, and that is the end of its life.',
       mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
+    },
+    {
+      // TRYBE (Seb, 2026-10-18: "it is exploding right now").
+      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it and writing every pitch from scratch.',
+      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, drafts your first message in your words, and writes the shooting scripts once a brand says yes.',
     },
     {
       old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
@@ -1154,7 +1222,7 @@ function FinalCTASection() {
           className="text-[44px] sm:text-[64px] font-extrabold tracking-[-0.035em] leading-[1.0] mb-5"
           style={{ color: 'var(--text)' }}
         >
-          Start your{' '}
+          Film it once.{' '}
           <span
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -1163,27 +1231,27 @@ function FinalCTASection() {
               backgroundClip: 'text',
             }}
           >
-            Central Hub.
+            MVP does the rest.
           </span>
         </h2>
         <p
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          {TIERS.trial.lifetimeMax} free posts, plus {FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs for {FREE_TRIAL.trialDays} days. No card. See if MVP fits your workflow before you pay a cent.
+          Pro is ${TIERS.pro.price} a month with every feature open from day one. {GUARANTEE_SENTENCE}
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
         <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-8">
           <a
-            href="/signup"
+            href="/signup?tier=pro"
             className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
               boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
             }}
           >
-            Start your free trial
+            Start Pro
             <ArrowRight size={16} />
           </a>
           <a
@@ -1203,10 +1271,10 @@ function FinalCTASection() {
         {/* Trust strip — matches pricing section's strip for consistency. */}
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> No card required
+            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> {TIERS.trial.lifetimeMax} free posts + {FREE_TRIAL.thumbnails} thumbnails
+            <Check size={12} className="text-[#10B981]" /> Every feature from day one
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
@@ -1281,13 +1349,12 @@ function Nav() {
         >
           Sign in
         </a>
-        {/* Primary CTA — full label on sm+, trimmed to "Start free" on the
-            tightest phones so it never crowds the wordmark. */}
+        {/* Primary CTA, short enough to never crowd the wordmark on a phone. */}
         <a
-          href="/signup"
+          href="/signup?tier=pro"
           className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
         >
-          Start free<span className="hidden sm:inline"> trial</span>
+          Start Pro
         </a>
       </div>
     </nav>
@@ -1363,7 +1430,7 @@ function Hero() {
               credibility BEFORE the bold value claim, so the headline
               lands on a primed visitor. */}
           <p className="mb-6 text-[12px] font-medium" style={{ color: 'var(--text-subtle)' }}>
-            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
+            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. {GUARANTEE_SHORT}, no questions asked.
           </p>
 
           {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).
@@ -1396,7 +1463,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself.
+            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself. <span style={{ color: 'var(--text)' }}>Making videos for brands on TRYBE?</span> MVP finds the brands that fit your channel, writes your first message and plans the videos.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
@@ -1405,10 +1472,10 @@ function Hero() {
           <div className="mt-8">
             <div className="flex flex-wrap items-center gap-3">
               <a
-                href="/signup"
+                href="/signup?tier=pro"
                 className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
               >
-                Start your free trial
+                Start Pro, ${TIERS.pro.price} a month
                 <ArrowRight size={14} />
               </a>
               {/* Secondary CTA — the full public product tour (/tour). No video;
@@ -1446,7 +1513,7 @@ function Hero() {
             {/* New-feature ribbon — ties the hero to the flagship new work in the
                 features grid below (voice + Shorts). */}
             <a
-              href="#features"
+              href="#trybe"
               className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
               style={{
                 background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(192,38,211,0.14))',
@@ -1455,11 +1522,11 @@ function Hero() {
               }}
             >
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)', color: '#fff' }}>
-                <Sparkles size={14} />
+                <Handshake size={14} />
               </span>
               <span>
-                <span className="font-semibold">New.</span>{' '}
-                <span style={{ color: 'var(--text-soft)' }}>MVP now writes in your real voice, learned from your own videos, and posts your Shorts to TikTok and Instagram.</span>
+                <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
               </span>
               <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#F97316' }} />
             </a>
@@ -1583,6 +1650,12 @@ function ProductMock() {
       >
         <Calendar size={13} style={{ color: '#7C3AED' }} /> Scheduled
       </div>
+      <div
+        className="hidden sm:flex absolute -bottom-3 right-6 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold"
+        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
+      >
+        <Handshake size={13} style={{ color: '#C026D3' }} /> TRYBE brand deals
+      </div>
     </div>
   )
 }
@@ -1611,6 +1684,7 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Auto-syndicate every post to all your socials (FB, IG, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest)', mvp: true, others: 'partial' },
   { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
   { label: 'Creator Connections: a daily brand-deal digest auto-matched to your content, plus accept & message', mvp: true, others: 'no' },
+  { label: 'TRYBE brand deals: best-fit brands, pitches drafted, inbox replies and shooting scripts', mvp: true, others: 'no' },
   { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
   { label: 'Turn one long video into vertical Reels, TikToks & YouTube Shorts', mvp: true, others: 'no' },
   { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
@@ -1839,11 +1913,11 @@ function Footer() {
             </p>
           </div>
           <a
-            href="/signup"
+            href="/signup?tier=pro"
             className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
           >
-            Start free →
+            Start Pro →
           </a>
         </div>
 
@@ -1853,6 +1927,7 @@ function Footer() {
             title="Product"
             links={[
               { label: 'Roles', href: '#roles' },
+              { label: 'TRYBE brand deals', href: '#trybe' },
               { label: 'Workflow', href: '#how-it-works' },
               { label: 'Videos', href: '#videos' },
               { label: 'Product tour', href: '/tour' },

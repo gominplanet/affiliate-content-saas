@@ -1783,6 +1783,16 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </p>
             )}
             {live && <FinderFilterNote hiddenBy={live.hiddenBy} blankBy={live.blankBy} unknownBy={live.unknownBy} />}
+            {/* SPENDING ON ADS NEEDS THE COUNT: offered right where it is
+                missing, not only under Best bets. */}
+            {live && filters.spending && (live.unknownBy?.spending ?? 0) > 0 && canPlaybook && (
+              <p className="text-[12px] mt-1.5" style={soft}>
+                <button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
+                  {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : 'Count their Meta ads now (25 at a time, through SCOUT)'}
+                </button>
+                {signalNote && <span className="block mt-1" style={{ color: signalNote.tone === 'ok' ? GREEN : signalNote.tone === 'warn' ? AMBER : RED }}>{signalNote.text}</span>}
+              </p>
+            )}
             {/* Said whenever the list leans on it, or when no brand on it has a figure. */}
             {live?.spendKnown && (sortBy === 'spend' || !!filters.minSpend || live.spendKnown.recent + live.spendKnown.lifetime === 0) && <SpendNote known={live.spendKnown} windowDays={live.crowdDays} />}
             {live && live.matched > live.brands.length && (

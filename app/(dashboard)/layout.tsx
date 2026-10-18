@@ -3,6 +3,8 @@ import { headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { canSeeNav } from '@/lib/feature-access'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { signedUpWithoutTrial } from '@/lib/free-trial'
+import { getOwnerUserId } from '@/lib/agency'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import LastSeenHeartbeat from '@/components/layout/LastSeenHeartbeat'
 import CcRecipeSync from '@/components/scout/CcRecipeSync'
@@ -58,6 +60,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // single-site content-only onboarders are covered (migration 144). Multi-site
   // users with a mix of modes keep the full nav.
   const contentOnly = (intRow as { content_only?: boolean } | null)?.content_only === true
+
+  // ── No trial: an account made since the trial ended starts on Pro ──────────
+  // (Seb, 2026-10-18). One still on the free tier has not paid yet (a checkout
+  // left half way), so every page but Billing and Settings sends it to start
+  // Pro. Accounts made before keep their free month. A team member joins free
+  // and works on the owner's account, so they are never sent to pay.
+  if (normalizeTier(tier) === 'trial' && signedUpWithoutTrial(user.created_at)
+    && (await getOwnerUserId(user.id).catch(() => user.id)) === user.id) {
+    const pathname = (await headers()).get('x-pathname') || ''
+    const open = ['/billing', '/settings', '/help'].some((r) => pathname === r || pathname.startsWith(r + '/'))
+    // An unread path never redirects: a loop on Billing would lock them out.
+    if (pathname && !open) redirect('/billing?plan=pro&start=1')
+  }
 
   // ── Onboarding funnel hard gate ─────────────────────────────────────────────
   // The hard requirement to enter the app is now a connected YOUTUBE channel, NOT

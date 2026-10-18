@@ -15,16 +15,17 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { Compass, ArrowUpRight, ArrowRight } from 'lucide-react'
 import { TourBody } from '@/components/tour/tour-content'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 
 export const metadata: Metadata = {
   title: 'Product tour',
   description:
-    'Free Amazon product research, no card, no setup: search the whole catalogue by sales, rating, price, review ratio and video competition, watch live price-verified deals on Deal Radar, and scout your Levanta & PartnerBoost campaigns. Then, when you want it, MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. The full tour of what ships today.',
+    `Amazon product research that searches the whole catalogue by category, price, rating, reviews and sales rank, live price-verified deals on Deal Radar, your Levanta & PartnerBoost campaigns and TRYBE brand deals in one place. Then MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      'Free Amazon product research, no card, no setup: filter the whole catalogue, watch live deals, and scout your Levanta & PartnerBoost campaigns. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, brand outreach, all in your voice. The full tour of what ships today.',
+      `Filter the whole Amazon catalogue, watch live deals, scout your Levanta & PartnerBoost campaigns and land TRYBE brand deals. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, brand outreach, all in your voice. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
     url: '/tour',
     type: 'website',
   },
@@ -77,10 +78,10 @@ export default function PublicTourPage() {
             Sign in
           </Link>
           <Link
-            href="/signup"
+            href="/signup?tier=pro"
             className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors"
           >
-            Start free
+            Start Pro
           </Link>
         </div>
       </header>
@@ -96,31 +97,33 @@ export default function PublicTourPage() {
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4" style={{ color: 'var(--text)' }}>
-            Research the whole Amazon catalogue, free
+            Research the whole Amazon catalogue, then publish everywhere
           </h1>
           <p className="text-[15px] leading-relaxed max-w-3xl mb-6" style={{ color: 'var(--text-soft)' }}>
-            Start free, no card, nothing to set up. <strong style={{ color: 'var(--text)' }}>Amazon Product Research</strong> filters
-            the entire catalogue by the numbers that matter (sales, rating, price, review ratio, video competition).
+            <strong style={{ color: 'var(--text)' }}>Amazon Product Research</strong> filters
+            the entire catalogue by the numbers that matter (category, price, rating, reviews, sales rank).
             <strong style={{ color: 'var(--text)' }}> Deal Radar</strong> shows live, price-verified deals. And the
             <strong style={{ color: 'var(--text)' }}> Levanta &amp; PartnerBoost finders</strong> scout your own connected
-            campaigns. Then, when you want it, MVP turns any find (or any review video) into a blog post that ranks, plus
+            campaigns, and <strong style={{ color: 'var(--text)' }}>TRYBE brand deals</strong> sorts every brand on TRYBE
+            by fit for your channel and drafts your pitch. Then MVP turns any find (or any review video) into a blog post that ranks, plus
             comparisons, buying guides, a thumbnail and brand pitches, all in your voice, published to a
-            blog you own. This is the full tour of what ships right now. No roadmap, no &quot;coming soon.&quot;
+            blog you own. It all comes in one plan, Pro, with a {GUARANTEE_LABEL}. This is the full tour of
+            what ships right now. No roadmap, no &quot;coming soon.&quot;
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href="/signup"
+              href="/signup?tier=pro"
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white"
               style={{ background: '#7C3AED' }}
             >
-              Start free trial <ArrowUpRight size={13} />
+              Start Pro <ArrowUpRight size={13} />
             </Link>
             <Link
               href="/pricing"
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold border"
               style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
             >
-              Compare plans <ArrowRight size={13} />
+              See pricing <ArrowRight size={13} />
             </Link>
           </div>
         </header>
@@ -143,7 +146,7 @@ export default function PublicTourPage() {
             <Link href="/privacy" className="hover:opacity-80">Privacy</Link>
             <Link href="/terms" className="hover:opacity-80">Terms</Link>
             <Link href="/login" className="hover:opacity-80">Sign in</Link>
-            <Link href="/signup" className="font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">Start free →</Link>
+            <Link href="/signup?tier=pro" className="font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">Start Pro →</Link>
           </nav>
         </div>
       </footer>

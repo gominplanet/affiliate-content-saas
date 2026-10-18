@@ -46,10 +46,16 @@ describing it.
 
 ## Facts to get right
 
-MVP sells exactly TWO plans: **Amazon at $99/month** and **Pro at $199/month**.
-There is no free plan, no Creator plan and no Studio plan to quote. Older tier
-names still exist in `lib/tier.ts` for legacy accounts; never present them as
-plans in reports, comparisons, copy or answers.
+MVP sells exactly ONE plan: **Pro at $199/month** ($1,999/year). From
+January 1, 2027 new members pay $299/month ($2,990/year); anyone who joined
+before keeps their price for as long as they stay subscribed.
+
+There is no free trial for new signups (since 2026-10-18): every new member
+starts on Pro with a **7-day refund, no questions asked, one refund per
+creator**, and their first 7 days run at a quarter of each monthly allowance.
+There is no free plan, and no Amazon, Creator or Studio plan to quote. Those
+tier names still exist in `lib/tier.ts` for legacy accounts; never present
+them as plans in reports, comparisons, copy or answers.
 
 ## Writing style
 

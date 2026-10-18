@@ -45,8 +45,8 @@ export async function POST(request: Request) {
     // "nobody ever got this far". See lib/paywall-signal.ts.
     reportPaywallReached({ userId: user.id, email: user.email, surface: 'publish-facebook', tier })
     return NextResponse.json({
-      error: 'Facebook posting is on the Amazon and Pro plans.',
-      code: 'upgrade_required', upgrade: { tier: 'amazon' },
+      error: 'Facebook posting is on the Pro plan.',
+      code: 'upgrade_required', upgrade: { tier: 'pro' },
     }, { status: 403 })
   }
   if (!intRow?.facebook_page_id || !intRow?.facebook_page_access_token) {

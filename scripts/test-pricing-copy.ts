@@ -40,7 +40,7 @@ const BILLING = readFileSync('app/(dashboard)/billing/page.tsx', 'utf8')
 const PRICING_PAGE = readFileSync('app/pricing/page.tsx', 'utf8')
 
 /** The feature-list block on the homepage: the only part that quotes numbers. */
-const cards = HOME.slice(HOME.indexOf('const PRICING_TIERS'), HOME.indexOf('cta: \'Go Pro\'') + 200)
+const cards = HOME.slice(HOME.indexOf('const PRICING_TIERS'), HOME.indexOf('cta: \'Start Pro\'') + 200)
 check('the homepage pricing block was found', cards.length > 1000, `${cards.length} chars`)
 
 // ── the copy reads the allowances instead of restating them ─────────────────
@@ -148,8 +148,9 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
   check('/pricing sells only the two plans',
     !/tier: 'creator'/.test(PRICING_PAGE) && !/tier: 'studio'/.test(PRICING_PAGE),
     'a frozen plan with a live Buy button creates a subscriber on a plan we decided not to support')
-  check('and still offers the Amazon plan', /tier="amazon"/.test(PRICING_PAGE),
-    'the $99 plan is half the product; a pricing page without it is a pricing page for Pro')
+  // PRO ONLY (2026-10-18): the Amazon plan is no longer sold.
+  check('and offers Pro alone', !/tier="amazon"/.test(PRICING_PAGE) && !/tier: 'amazon'/.test(PRICING_PAGE) && /tier: 'pro'/.test(PRICING_PAGE),
+    'a Buy button for a plan that is no longer sold creates a member on a plan we stopped supporting')
   check('nothing on /pricing still sells LoRA retrains', !/LoRA/i.test(PRICING_PAGE),
     'retired 2026-05-22; there is no retrain to sell')
 }

@@ -18,6 +18,7 @@ import { readStudioRun } from '@/lib/studio-finish'
 import { releaseHeld, HELD_FOR_PAID_PROMOTION, type ReleaseResult } from '@/lib/launch-release'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseFacePick } from '@/lib/thumbnail-preset'
+import { normalizeThumbText, thumbTextProblem } from '@/lib/thumb-text'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -44,6 +45,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     amazonTitle?: string
     /** This video's own face (migration 371), or null to follow the batch. */
     thumbnailFace?: unknown
+    /** This video's own thumbnail text (migration 440), or null for MVP's. */
+    thumbnailText?: string | null
   }
 
   // ── WHAT SCOUT REPORTED, AND NOTHING ELSE ─────────────────────────────────
@@ -276,6 +279,43 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (faceErr) return NextResponse.json({ error: faceErr.message }, { status: 500 })
     }
     if (Object.keys(body).every((k) => k === 'thumbnailFace')) return NextResponse.json({ ok: true })
+  }
+
+  // ── ITS OWN THUMBNAIL TEXT ────────────────────────────────────────────────
+  //
+  // The exact words for this video's thumbnail (lib/thumb-text), checked here
+  // with the same rules the generator uses, so a text that would be refused at
+  // build time is refused now, with the reason. Like a new face, new words
+  // mean new thumbnails: the ones already built are cleared and made again.
+  if ('thumbnailText' in body) {
+    if (onYouTube || item.planned_publish_at || item.state === 'amazon_only') {
+      return NextResponse.json({
+        error: 'This one is already queued for YouTube or on it, so its thumbnail is set. Change it in YouTube Studio.',
+      }, { status: 409 })
+    }
+    const text = normalizeThumbText(body.thumbnailText) || null
+    const why = thumbTextProblem(text)
+    if (why) return NextResponse.json({ error: why }, { status: 400 })
+    const { data: cur, error: readErr } = await sb.from('launch_items').select('thumbnail_text').eq('id', id).maybeSingle()
+    if (readErr) {
+      return NextResponse.json({
+        error: /thumbnail_text/.test(readErr.message) ? 'Your own thumbnail text needs migration 440 in the database first. Nothing was saved.' : readErr.message,
+      }, { status: /thumbnail_text/.test(readErr.message) ? 503 : 500 })
+    }
+    if ((cur?.thumbnail_text ?? null) !== text) {
+      const rebuild = !ownThumb && (item.state === 'preparing' || item.state === 'prepared'
+        || (item.state === 'blocked' && !!item.rendered_url))
+      const { error: textErr } = await sb.from('launch_items').update({
+        thumbnail_text: text,
+        ...(rebuild ? {
+          state: 'preparing', reason: null,
+          thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0,
+          updated_at: new Date().toISOString(),
+        } : {}),
+      }).eq('id', id).eq('user_id', user.id)
+      if (textErr) return NextResponse.json({ error: textErr.message }, { status: 500 })
+    }
+    if (Object.keys(body).every((k) => k === 'thumbnailText')) return NextResponse.json({ ok: true })
   }
 
   // ── ITS OWN DATE AND TIME ─────────────────────────────────────────────────

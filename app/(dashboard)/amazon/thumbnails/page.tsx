@@ -14,6 +14,8 @@ import { Sparkles, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-rea
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import ThumbTextInput from '@/components/thumbnails/ThumbTextInput'
+import { normalizeThumbText, thumbTextProblem } from '@/lib/thumb-text'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 import FramingPicker, { useFraming } from '@/components/thumbnails/FramingPicker'
@@ -38,6 +40,8 @@ export default function AmazonThumbnailsPage() {
    *  from the output alone. */
   const [result, setResult] = useState<{
     url: string; hook: string
+    /** The hook is the creator's own words, not MVP's. */
+    ownText?: boolean
     /** Several products pasted: how many made it in, said when not all. */
     cmpShown?: number; cmpNote?: string | null
     sourceTitle?: string | null; sourceImage?: string | null
@@ -103,6 +107,7 @@ export default function AmazonThumbnailsPage() {
     const raw = product.trim()
     if (!raw) { setError('Paste an Amazon product link or ASIN first.'); return }
     if (mode === 'face' && !faceId) { setError('Pick a face, or switch to Product only.'); return }
+    { const why = thumbTextProblem(headline); if (why) { setError(why); return } }
 
     setBusy(true); setError(null); setResult(null); setStatus('Designing your thumbnail…')
     await saveOutfitIfDirty()
@@ -115,7 +120,7 @@ export default function AmazonThumbnailsPage() {
       memorySurface: 'Thumbnail Generator',
       ...productFields(raw),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
-      ...(headline.trim() ? { customHeadline: headline.trim() } : {}),
+      ...(normalizeThumbText(headline) ? { customHeadline: normalizeThumbText(headline) } : {}),
       headlineStyle: headlineStyleValue(question),
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
@@ -142,7 +147,7 @@ export default function AmazonThumbnailsPage() {
       if (!url) throw new Error('No thumbnail came back. Try again.')
       const cmp = data.comparison as { asked?: number; shown?: number } | null | undefined
       setResult({
-        url, hook: (data.overlayHook as string) || '',
+        url, hook: (data.overlayHook as string) || '', ownText: typeof data.ownText === 'string' && !!data.ownText,
         cmpShown: cmp?.shown, cmpNote: comparisonNote(cmp),
         sourceTitle: (data.sourceProductTitle as string | null) ?? null,
         sourceImage: (data.sourceProductImageUrl as string | null) ?? null,
@@ -299,16 +304,9 @@ export default function AmazonThumbnailsPage() {
           )}
         </div>
 
-        {/* Optional headline */}
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Headline <span className="font-normal" style={{ color: 'var(--text-soft)' }}>(optional, leave blank and the Art Director writes it)</span></span>
-          <input
-            value={headline}
-            onChange={e => setHeadline(e.target.value)}
-            placeholder="e.g. NO MORE GYM FEES"
-            className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]"
-          />
-        </label>
+        {/* Your own thumbnail text: the same box and rules as every other
+            thumbnail surface (lib/thumb-text). */}
+        <ThumbTextInput value={headline} onChange={setHeadline} disabled={busy} />
 
         {/* Headline style — Polished (default) vs Question hook (curiosity
             question + matching face). Only meaningful when the Art Director
@@ -361,7 +359,7 @@ export default function AmazonThumbnailsPage() {
                 saved a file on desktop: it opened a tab. The image is fetched
                 and saved from a blob now, and says so when it cannot. */}
             <DownloadDesign url={result.url} filename="mvp-thumbnail.jpg" />
-            {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.hook}</span>}
+            {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.ownText ? 'Your text: ' : 'MVP wrote: '}{result.hook}</span>}
             {result.reused && <span className="text-xs text-[#86868b]">Reused, nothing new was made: {result.reused}</span>}
             {!result.cmpNote && (result.cmpShown ?? 0) >= 2 && <span className="text-xs text-[#16a34a] font-medium">All {result.cmpShown} products are in it</span>}
           </div>

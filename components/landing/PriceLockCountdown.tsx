@@ -11,6 +11,9 @@
 // moment lib/price-schedule turns the prices over, and disappears at that
 // moment by itself. The numbers come from lib/price-schedule, never typed here.
 //
+// PRO ONLY (Seb, 2026-10-18): Pro is the one plan sold, so only its row shows.
+// The Amazon plan's prices stay in lib/price-schedule for its existing members.
+//
 // The countdown is filled in after mount, so the server and the first client
 // render agree; until then the explanation shows on its own. Pages render it
 // only while !newPricesLive(), decided on the server.
@@ -18,14 +21,13 @@
 import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange } from '@/lib/price-schedule'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 
 // THE OFFER, IN NUMBERS. Today's price next to the January price and the
 // monthly difference, so "lock in" means something concrete. Honest about
 // the one condition: the lock lasts while the membership does.
-const plans = [
-  { name: 'Amazon', now: PRICES_BEFORE.amazon.month, later: NEW_MEMBER_PRICES.amazon.month },
-  { name: 'Pro', now: PRICES_BEFORE.pro.month, later: NEW_MEMBER_PRICES.pro.month },
-].map((pl) => ({ ...pl, saved: pl.later - pl.now }))
+const pro = { name: 'Pro', now: PRICES_BEFORE.pro.month, later: NEW_MEMBER_PRICES.pro.month }
+const proSaved = pro.later - pro.now
 
 type Left = NonNullable<ReturnType<typeof timeUntilPriceChange>>
 
@@ -80,7 +82,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
           <p className={`mt-2 text-sm leading-relaxed ${soft}`}>
             On January 1, MVP moves to its full price. Join before then and today&apos;s price is
             {' '}<strong className={strong}>locked for as long as you stay subscribed</strong>.
-            Every feature we add is included at that price, and it stays yours if you switch plans.
+            Every feature we add is included at that price.
           </p>
         </div>
         <div className="sm:w-[260px] flex-shrink-0">
@@ -98,24 +100,20 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {plans.map((pl) => (
-          <div key={pl.name} className={`rounded-xl border px-4 py-3 ${cell}`}>
-            <p className={`text-[11px] font-semibold uppercase tracking-wider ${soft}`}>{pl.name} plan</p>
-            <p className="mt-1 flex items-baseline gap-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
-              <span className={`text-2xl font-bold ${strong}`}>${pl.now}</span>
-              <span className={`text-sm ${soft}`}>a month</span>
-              <span className={`ml-auto text-sm line-through ${soft}`} aria-label={`${pl.later} dollars from January 1`}>${pl.later}</span>
-            </p>
-            <p className="mt-1 text-[12.5px] font-medium text-[#10B981]">You save ${pl.saved} every month</p>
-          </div>
-        ))}
+      <div className={`mt-5 rounded-xl border px-4 py-3 ${cell}`}>
+        <p className={`text-[11px] font-semibold uppercase tracking-wider ${soft}`}>{pro.name}</p>
+        <p className="mt-1 flex items-baseline gap-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <span className={`text-2xl font-bold ${strong}`}>${pro.now}</span>
+          <span className={`text-sm ${soft}`}>a month</span>
+          <span className={`ml-auto text-sm line-through ${soft}`} aria-label={`${pro.later} dollars from January 1`}>${pro.later}</span>
+        </p>
+        <p className="mt-1 text-[12.5px] font-medium text-[#10B981]">You save ${proSaved} every month</p>
       </div>
 
       <p className={`mt-4 text-[12px] leading-relaxed ${soft}`}>
-        No catch, and you can cancel anytime. The lock lasts while your membership is active, so if you cancel
-        and come back after January 1, you join at the price of the day. From January 1, new members pay
-        {' '}${NEW_MEMBER_PRICES.amazon.month} for Amazon and ${NEW_MEMBER_PRICES.pro.month} for Pro.
+        No catch: a {GUARANTEE_LABEL}, and you can cancel anytime. The lock lasts while your membership is
+        active, so if you cancel and come back after January 1, you join at the price of the day. From January 1,
+        new members pay ${NEW_MEMBER_PRICES.pro.month} a month for Pro.
       </p>
     </section>
   )

@@ -309,7 +309,7 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     '',
     productLine(input),
     '',
-    `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${input.line1} ${input.line2}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
+    `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${[input.line1, input.line2].filter(Boolean).join(' ')}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
     '',
     'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
     'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',

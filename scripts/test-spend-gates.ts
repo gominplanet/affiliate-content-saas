@@ -32,7 +32,14 @@ check('a trial sums its spend from signup, not the calendar month',
 check('an expired trial counts as exceeded, so every gated route stops',
   /const exceeded = trialOver \|\|/.test(SPEND))
 check('an unreadable signup date never expires an account',
-  /if \(signupISO\) \{[\s\S]{0,200}trialOver =/.test(SPEND))
+  /if \(signupISO(?: && !teamMember)?\) \{[\s\S]{0,200}trialOver =/.test(SPEND))
+// No trial since NO_TRIAL_FROM means a zero-day free window, and a team member
+// joins free to work on the owner's Pro account. Without this they would read
+// as a trial that ended the moment they signed up.
+check('a team member made since the trial ended is not read as an expired trial',
+  /const teamMember = [\s\S]{0,160}getOwnerUserId\(userId\)/.test(SPEND) && /if \(signupISO && !teamMember\)/.test(SPEND))
+check('and the dashboard never sends a team member to pay',
+  /signedUpWithoutTrial\(user\.created_at\)\s*&& \(await getOwnerUserId\(user\.id\)/.test(read('app/(dashboard)/layout.tsx')))
 check('the expired-trial sentence is the same one the image routes show',
   freeTrialExpiredBlock({ tier: 'trial', signupISO: '2020-01-01T00:00:00Z' }) === FREE_TRIAL_OVER_MESSAGE
   && /FREE_TRIAL_OVER_MESSAGE/.test(SPEND))
@@ -40,7 +47,7 @@ check('a trial is never told its free AI "resets on the 1st"',
   /if \(status\.tier === 'trial'\) \{[\s\S]{0,600}\}, \{ status: 403 \}\)\s*\}\s*return NextResponse\.json\(\{\s*error:\s*`Generation is paused on this account for now\. It resets on the 1st/.test(SPEND))
 const gateBody = SPEND.slice(SPEND.indexOf('export async function spendGate'))
 check('no dash in any spend-gate message', !/error:[^\n]*[–—]/.test(gateBody) && !/`[^`\n]*[–—][^`\n]*`/.test(gateBody))
-check('the pause offers only plans on sale: free goes to Amazon', spendUpgradeFor('trial')?.tier === 'amazon')
+check('the pause offers only the plan on sale: free goes to Pro (Pro only since 2026-10-18)', spendUpgradeFor('trial')?.tier === 'pro')
 check('legacy plans go to Pro, never Studio', spendUpgradeFor('creator')?.tier === 'pro' && spendUpgradeFor('studio')?.tier === 'pro' && spendUpgradeFor('amazon')?.tier === 'pro')
 check('Pro has nowhere to go', spendUpgradeFor('pro') === null && spendUpgradeFor('admin') === null)
 check('the upgrade object never carries the dollar ceiling', spendUpgradeFor('trial')?.limit === null)
