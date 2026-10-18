@@ -9,6 +9,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
+import { GUARANTEE_DAYS } from '@/lib/guarantee'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
@@ -139,8 +140,13 @@ export default function BillingPage() {
   // asked for instead of a generic picker.
   const planPickerRef = useRef<HTMLDivElement>(null)
   const [highlightPlan, setHighlightPlan] = useState<string | null>(null)
+  // ?start=1: the dashboard sent an account made since the trial ended here
+  // because it has not started Pro yet (app/(dashboard)/layout.tsx). Without a
+  // line saying so, it lands on a page that calls it "Free" and says nothing.
+  const [mustStart, setMustStart] = useState(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('start') === '1') setMustStart(true)
     const p = new URLSearchParams(window.location.search).get('plan')
     if (p && (SELLABLE_TIERS as readonly string[]).includes(p)) {
       setHighlightPlan(p)
@@ -392,6 +398,15 @@ export default function BillingPage() {
               <PartyPopper size={18} className="text-[#34c759] flex-shrink-0" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
                 You&apos;re on the <strong>{currentTier.label}</strong> plan. Welcome aboard!
+              </p>
+            </div>
+          )}
+
+          {mustStart && realTier === 'trial' && !awaitingWebhook && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/25">
+              <Zap size={18} className="text-[#7C3AED] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Your account is ready. MVP opens when you start Pro below, and you have {GUARANTEE_DAYS} days to ask for a full refund, no questions asked.
               </p>
             </div>
           )}
