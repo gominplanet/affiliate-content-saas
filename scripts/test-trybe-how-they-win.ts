@@ -65,8 +65,20 @@ check('no transcription is attempted where it is not configured', /transcription
 check('the page asks TRYBE for the words before paying to listen',
   C.indexOf("action: 'top_script_save'") < C.indexOf("action: 'top_script_hear'"))
 check('and only pays for the ones TRYBE had nothing for', /hear\.delete\(id\)/.test(C))
-check('the collection says what it actually did, per source',
-  /TRYBE shared the words for \$\{fromTrybe\}\. MVP listened to \$\{heard\}/.test(C))
+// EVERY ZERO CARRIES ITS REASON. The first collection reported "TRYBE
+// shared 0, MVP listened to 0" and said nothing about why, which is the
+// failure this codebase keeps producing: a screen reporting the plan rather
+// than the result.
+check('a collection that got nothing from TRYBE says how many it asked',
+  /TRYBE shared the words for none of the \$\{need\.length\} MVP asked about/.test(C))
+check('and says how many TRYBE refused outright', /refused \$\{refused\} of those outright/.test(C))
+check('a video TRYBE gave no file for is counted and named as the reason nothing listened',
+  /\$\{noFile\} of them have no video file/.test(C) && /noFile/.test(R))
+check('transcription being switched off is said, not reported as zero videos',
+  /Transcription is not switched on for this deployment/.test(C) && /not configured/i.test(C))
+check('an answer with no video files at all says that in as many words',
+  /TRYBE sent no video files at all in this answer/.test(C))
+check('what it did get is still reported per source', /MVP listened to \$\{heard\} of \$\{toHear\.length\}/.test(C))
 
 // ── A better place is kept ───────────────────────────────────────────────────
 check('a worse day never demotes a video', bestRank(71, 3) === 3 && bestRank(3, 71) === 3)
@@ -85,14 +97,18 @@ check('the spend gate runs before the model does',
 check('what it cost is recorded against the creator', /feature: 'trybe_script_rewrite'/.test(rw))
 check('a model that answers with prose is a message, not a crash', /did not get a script back it could use/.test(rw))
 
+check('TRYBE\u2019s answer is parsed into words before it is saved',
+  /readScript\(sr\.json\)/.test(C) || /readScript\(body\.script\)/.test(R))
+check('and the route parses it too, whatever the page sends', /typeof body\.script === 'string' \? body\.script : readScript\(body\.script\)/.test(R))
+
 // ── WHAT THE BOARD ADMITS ────────────────────────────────────────────────────
 // Four openings out of twenty five asked is the normal case. A board that
 // hides that sends a creator to copy the wrong thing.
-check('the board prints its own coverage', /\{coverage \|\| coverageWords\(videos\)\}/.test(C))
+check('the board prints its own coverage', /\{coverage\}/.test(C) && /coverage: coverageWords\(rows\)/.test(R))
 check('each card says which source answered, and they are different sentences',
-  /TRYBE shared these words\./.test(C) && /MVP listened to the video for these words\./.test(C))
+  /TRYBE shared these words/.test(C) && /MVP listened to the video for these words/.test(C))
 check('a video with no words is shown saying so, not left out',
-  /Nothing read from this one yet\./.test(C) && /Waiting on the words/.test(C))
+  /Nothing read from this one yet/.test(C) && /v\.detail \|\| 'Nothing read from this one yet'/.test(C))
 check('a video with no opening line says that too', /No opening line yet\./.test(C))
 check('the server sends the coverage line rather than the page inventing one', /coverage: coverageWords\(rows\)/.test(R))
 
