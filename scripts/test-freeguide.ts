@@ -344,6 +344,14 @@ check('and so does the footer',
   check('and posts to no signup endpoint',
     !/freeguide\/subscribe/.test(HTML),
     'the capture is gone, so nothing on this page should still be calling its route')
+  // AND THE ENDPOINT ITSELF IS GONE. A route with no caller is not harmless
+  // when it is a public POST that writes rows: it is a collection point for a
+  // page that promises it collects nothing, reachable by anyone who ever saw
+  // the old markup.
+  check('and the endpoint it used no longer exists',
+    !existsSync('app/api/freeguide/subscribe/route.ts')
+    && !/api\/freeguide\/subscribe/.test(read('middleware.ts')),
+    'an uncalled public endpoint still accepts addresses from anyone who kept the URL')
   check('and nothing is painted over the reading',
     !/\.upd[^{]*\{[^}]*position:\s*fixed/.test(HTML)
     && !/\.upd[^{]*\{[^}]*(?:z-index:\s*9|inset:\s*0)/.test(HTML),
