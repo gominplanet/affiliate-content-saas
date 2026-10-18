@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -80,6 +80,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // SCOUT). Opened to Pro 2026-10-18 for the first creator to test it, who was
   // being told to upgrade to the plan he already pays for.
   drop: 'labs',
+  // QR codes burned into the YouTube cut, for viewers watching on a
+  // television who cannot click a description link (docs/qr-on-youtube-plan).
+  // Admin while it is tested: a published video cannot be reburned, so a
+  // mistake here is permanent in somebody else's work.
+  video_qr: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

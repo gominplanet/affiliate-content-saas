@@ -9,6 +9,11 @@ const publicPaths = [
   // The short domain (mvpl.ink) rewrites /<code> → /go/<code> in middleware below;
   // this also keeps the app-domain fallback (mvpaffiliate.io/go/<code>) public.
   '/go',
+  // A QR burned into a YouTube video, scanned off a television by somebody
+  // with no account and no session. It resolves to the creator's own page and
+  // never to Amazon (lib/video-codes), and it keeps resolving for ever, long
+  // after the creator who burned it has stopped paying.
+  '/v',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
   // SCOUT's answer for a Page Reel job, from Chrome's background with no
   // session: the job's own one-time key is checked by the route
