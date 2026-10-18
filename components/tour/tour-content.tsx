@@ -56,6 +56,7 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'linkbio',      label: 'Link in Bio: Shop page ⚡ new' },
   { id: 'clips',        label: 'Clip Factory: Shorts and Reels' },
   { id: 'seo',          label: 'SEO that moves rank' },
+  { id: 'trybe',        label: 'TRYBE brand deals ⚡ new' },
   { id: 'collabs',      label: 'Brand outreach' },
   { id: 'finders',      label: 'Source & Earn: product finders' },
   { id: 'deals',        label: 'Deals Hub' },
@@ -442,6 +443,40 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 5. Brand outreach ────────────────────────────────────── */}
+        {/* TRYBE (Seb, 2026-10-18: "it is exploding right now"). Facts only:
+            no promise of what a brand pays, which TRYBE and the brand set. */}
+        <Section id="trybe" icon={<Handshake size={18} />} title="TRYBE brand deals">
+          <p>
+            TRYBE is the marketplace where brands pay creators to make videos. MVP works inside your own TRYBE
+            account through the SCOUT Chrome extension and does the slow parts: choosing brands, pitching them,
+            keeping up with the inbox and planning the videos. Included in {TIERS.pro.label}.
+          </p>
+          <ul>
+            <li>
+              <strong>Every brand, sorted for you.</strong> Best fit for your channel, fewest creators, highest total
+              payouts or newest, with TRYBE&apos;s own score, a link to the brand&apos;s ads on Meta, and two or more
+              brands side by side when you cannot decide.
+            </li>
+            <li>
+              <strong>Pitches drafted and sent.</strong> MVP drafts your first message to each brand in your words,
+              and SCOUT sends the requests for you a few at a time through the day.
+            </li>
+            <li>
+              <strong>Your inbox, answered.</strong> Every TRYBE conversation in one place with a suggested reply,
+              and a board of who answered and what to do next.
+            </li>
+            <li>
+              <strong>Videos planned from the brief.</strong> Ten shooting scripts per brand that follow its brief,
+              each with several hooks to test, and a plan for the week built around the samples you have on hand.
+            </li>
+            <li>
+              <strong>What is working right now.</strong> How the top videos on TRYBE open, which brands are most
+              active this week, and the ads they run on Meta.
+            </li>
+          </ul>
+          <p>TRYBE is a separate service; what each brand pays is set by the brand on TRYBE.</p>
+        </Section>
+
         <Section id="collabs" icon={<Handshake size={18} />} title="Brand outreach / Collaborations">
           <p>
             This is the surface that pays for the whole subscription for most Pro creators.

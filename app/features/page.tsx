@@ -17,7 +17,7 @@ import NextImage from 'next/image'
 import {
   Search, Rocket, Globe, Radar, Sparkles, Store, Play,
   FileText, Zap, ShieldCheck, TrendingUp, ArrowRight, Check,
-  Mail, LayoutGrid, MapPin, BarChart3, Users, Pin, Radio,
+  Mail, LayoutGrid, MapPin, BarChart3, Users, Pin, Radio, Handshake,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -73,10 +73,11 @@ type Feat = { icon: React.ReactNode; title: string; desc: string; tag?: string; 
 const GROUPS: { id: string; n: string; tag: string; head: string; intro: string; items: Feat[] }[] = [
   {
     id: 'find', n: '01', tag: 'Find the money', head: 'The paying opportunities, not a wall of products.',
-    intro: "MVP reads Amazon's Creator Connections and deal feeds directly, so you spend time on brands that convert, not on scrolling.",
+    intro: "MVP reads Amazon's Creator Connections, TRYBE and the deal feeds directly, so you spend time on brands that convert, not on scrolling.",
     items: [
       { icon: <Search size={20} />, wide: true, title: 'Creator Connections campaign finder', desc: "Every live campaign with the numbers that matter: commission, estimated dollars per sale, spots left, days remaining, and whether the brand actually pays out. Filter by commission, open spots, days left, or brands you've already joined." },
       { icon: <Mail size={20} />, flagship: true, title: 'Bulk brand outreach', desc: 'Tick up to 100 brands, and MVP joins each campaign and sends a message drafted from your profile, in the background, one at a time so the burst is never flagged. Same-brand duplicates fold into one thread; replies surface automatically.' },
+      { icon: <Handshake size={20} />, flagship: true, title: 'TRYBE brand deals', desc: 'Every brand on TRYBE sorted by fit for your channel, your first message drafted in your words, a suggested reply on every inbox conversation, and ten shooting scripts per brand from its brief. Works with your own TRYBE account through SCOUT.' },
       { icon: <Radar size={20} />, title: 'Amazon Deal Radar', desc: 'Live deals verified against real price history, with no fake "was" prices, so a drop you post is a drop that happened. MVP turns the genuine ones into posts and a shoppable bio.' },
       { icon: <Users size={20} />, wide: true, title: "Brands you've worked with, remembered", desc: 'MVP keeps a portfolio of the content you made per brand (receipts you can hand a brand when you pitch the next collab), pulled from your storefront and posts, not manual logging.' },
     ],

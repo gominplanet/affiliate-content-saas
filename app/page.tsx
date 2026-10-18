@@ -314,8 +314,9 @@ function FeaturesGridCondensed() {
  *  sold as something a new member can use, and the label flips to "New" the
  *  day it opens, with no copy change. It is also why this section has the
  *  #roles id the nav (and the free guide's copy of it) already points at. */
-const ROLES: { gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string }[] = [
+const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string }[] = [
   {
+    id: 'drop',
     gate: 'drop',
     icon: <CloudUpload size={20} />,
     role: 'Your upload team',
@@ -331,6 +332,7 @@ const ROLES: { gate: PreviewFeature | null; icon: React.ReactNode; role: string;
     note: 'Amazon storefront uploads are for US storefronts.',
   },
   {
+    id: 'trybe',
     gate: 'trybe_outreach',
     icon: <Handshake size={20} />,
     role: 'Your brand deal agent',
@@ -346,6 +348,7 @@ const ROLES: { gate: PreviewFeature | null; icon: React.ReactNode; role: string;
     note: 'Works with your own TRYBE account through the SCOUT Chrome extension. TRYBE is a separate service.',
   },
   {
+    id: 'meta-hub',
     gate: 'facebook_setup',
     icon: <Facebook size={20} />,
     role: 'Your Facebook manager',
@@ -361,6 +364,7 @@ const ROLES: { gate: PreviewFeature | null; icon: React.ReactNode; role: string;
     note: 'Group posts use the SCOUT Chrome extension.',
   },
   {
+    id: 'research',
     gate: null,
     icon: <Radar size={20} />,
     role: 'Your researcher',
@@ -393,7 +397,7 @@ function RolesSection() {
           {ROLES.map((r) => {
             const live = r.gate === null || previewOpenToPro(r.gate)
             return (
-              <article key={r.role} className="rounded-2xl border p-6 sm:p-7 flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <article key={r.role} id={r.id} className="rounded-2xl border p-6 sm:p-7 flex flex-col scroll-mt-24" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{r.icon}</div>
                   <span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{r.role}</span>
@@ -637,6 +641,7 @@ const PRICING_TIERS: PricingTier[] = [
       `${TIERS.pro.pinsPerMonth} Pinterest & ${TIERS.pro.igPostsPerMonth} Instagram designs / month, posted to Facebook too`,
       'Auto-post to Pinterest, Instagram, Facebook, X, TikTok, LinkedIn, Threads, Bluesky & Telegram, with your link and #ad added for you',
       '⚡ Amazon Deal Radar + all-deals & full-catalogue research, with deal posts to your socials',
+      '🤝 TRYBE brand deals: best-fit brands, first messages drafted, inbox replies and 10 shooting scripts per brand',
       'Brand deals: the Creator Connections finder + a daily picked-for-you digest',
       'Partner programs: Levanta, PartnerBoost, Wayward & LTK campaigns turned into posts',
       'Shoppable Link in Bio page + Passport geo-links, unlimited clicks',
@@ -858,6 +863,11 @@ function OldWayNewWay() {
     {
       old: 'A video gets filmed, uploaded, and that is the end of its life.',
       mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
+    },
+    {
+      // TRYBE (Seb, 2026-10-18: "it is exploding right now").
+      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it and writing every pitch from scratch.',
+      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, drafts your first message in your words, and writes the shooting scripts once a brand says yes.',
     },
     {
       old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
@@ -1453,7 +1463,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself.
+            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself. <span style={{ color: 'var(--text)' }}>Making videos for brands on TRYBE?</span> MVP finds the brands that fit your channel, writes your first message and plans the videos.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
@@ -1503,7 +1513,7 @@ function Hero() {
             {/* New-feature ribbon — ties the hero to the flagship new work in the
                 features grid below (voice + Shorts). */}
             <a
-              href="#features"
+              href="#trybe"
               className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
               style={{
                 background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(192,38,211,0.14))',
@@ -1512,11 +1522,11 @@ function Hero() {
               }}
             >
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)', color: '#fff' }}>
-                <Sparkles size={14} />
+                <Handshake size={14} />
               </span>
               <span>
-                <span className="font-semibold">New.</span>{' '}
-                <span style={{ color: 'var(--text-soft)' }}>MVP now writes in your real voice, learned from your own videos, and posts your Shorts to TikTok and Instagram.</span>
+                <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
               </span>
               <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#F97316' }} />
             </a>
@@ -1640,6 +1650,12 @@ function ProductMock() {
       >
         <Calendar size={13} style={{ color: '#7C3AED' }} /> Scheduled
       </div>
+      <div
+        className="hidden sm:flex absolute -bottom-3 right-6 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold"
+        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
+      >
+        <Handshake size={13} style={{ color: '#C026D3' }} /> TRYBE brand deals
+      </div>
     </div>
   )
 }
@@ -1668,6 +1684,7 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Auto-syndicate every post to all your socials (FB, IG, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest)', mvp: true, others: 'partial' },
   { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
   { label: 'Creator Connections: a daily brand-deal digest auto-matched to your content, plus accept & message', mvp: true, others: 'no' },
+  { label: 'TRYBE brand deals: best-fit brands, pitches drafted, inbox replies and shooting scripts', mvp: true, others: 'no' },
   { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
   { label: 'Turn one long video into vertical Reels, TikToks & YouTube Shorts', mvp: true, others: 'no' },
   { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
@@ -1910,6 +1927,7 @@ function Footer() {
             title="Product"
             links={[
               { label: 'Roles', href: '#roles' },
+              { label: 'TRYBE brand deals', href: '#trybe' },
               { label: 'Workflow', href: '#how-it-works' },
               { label: 'Videos', href: '#videos' },
               { label: 'Product tour', href: '/tour' },

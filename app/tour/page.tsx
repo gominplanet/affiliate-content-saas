@@ -20,12 +20,12 @@ import { GUARANTEE_LABEL } from '@/lib/guarantee'
 export const metadata: Metadata = {
   title: 'Product tour',
   description:
-    `Amazon product research that searches the whole catalogue by category, price, rating, reviews and sales rank, live price-verified deals on Deal Radar, and your Levanta & PartnerBoost campaigns in one place. Then MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
+    `Amazon product research that searches the whole catalogue by category, price, rating, reviews and sales rank, live price-verified deals on Deal Radar, your Levanta & PartnerBoost campaigns and TRYBE brand deals in one place. Then MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails and brand pitches, all in your voice, published to a blog you own. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      `Filter the whole Amazon catalogue, watch live deals, and scout your Levanta & PartnerBoost campaigns. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, brand outreach, all in your voice. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
+      `Filter the whole Amazon catalogue, watch live deals, scout your Levanta & PartnerBoost campaigns and land TRYBE brand deals. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, brand outreach, all in your voice. One plan, Pro, with a ${GUARANTEE_LABEL}. The full tour of what ships today.`,
     url: '/tour',
     type: 'website',
   },
@@ -104,7 +104,8 @@ export default function PublicTourPage() {
             the entire catalogue by the numbers that matter (category, price, rating, reviews, sales rank).
             <strong style={{ color: 'var(--text)' }}> Deal Radar</strong> shows live, price-verified deals. And the
             <strong style={{ color: 'var(--text)' }}> Levanta &amp; PartnerBoost finders</strong> scout your own connected
-            campaigns. Then MVP turns any find (or any review video) into a blog post that ranks, plus
+            campaigns, and <strong style={{ color: 'var(--text)' }}>TRYBE brand deals</strong> sorts every brand on TRYBE
+            by fit for your channel and drafts your pitch. Then MVP turns any find (or any review video) into a blog post that ranks, plus
             comparisons, buying guides, a thumbnail and brand pitches, all in your voice, published to a
             blog you own. It all comes in one plan, Pro, with a {GUARANTEE_LABEL}. This is the full tour of
             what ships right now. No roadmap, no &quot;coming soon.&quot;

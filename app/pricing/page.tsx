@@ -132,6 +132,7 @@ const plans: PlanExt[] = [
     features: [
       `${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Instagram designs / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month at high quality, Creator Connections brand deals`,
       'Amazon Product Research across the whole catalogue, live Deal Radar, and your Levanta and PartnerBoost campaigns',
+      'TRYBE brand deals: every brand sorted by fit for your channel, first messages drafted in your words, inbox replies and 10 shooting scripts per brand',
       `${TIERS.pro.postsPerMonth} full reviews per month (blog + thumbnail + metadata bundle)`,
       '⚡ Publish from Deal Radar to your blog too: deal posts, roundups & the weekly digest, plus the shoppable Link-in-Bio page and auto Instagram Stories',
       // TikTok is live (lib/feature-flags LIVE_SOCIAL), not waiting on a review.

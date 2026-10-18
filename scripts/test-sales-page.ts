@@ -478,6 +478,32 @@ for (const { label, src } of AD_PAGES) {
     !/every paid plan/i.test(PAGE_LIVE) && !/'Free product research'/.test(PAGE_LIVE))
 }
 
+// ── TRYBE is said where a buyer looks ───────────────────────────────────────
+//
+// Seb, 2026-10-18: "it is exploding right now". So it is in the hero, the old
+// way / new way table, the comparison table, the Pro card and the FAQ, not only
+// in one card further down. And none of those lines promises what a brand pays:
+// TRYBE and the brand set that, and an estimate MVP shows is for choosing
+// brands, not a figure to sell with.
+{
+  const ISLANDS = live(read('components/landing/islands.tsx'))
+  const hero = PAGE_LIVE.slice(PAGE_LIVE.indexOf('function Hero()'), PAGE_LIVE.indexOf('function PlatformBar'))
+  const spots: Array<[string, boolean]> = [
+    ['the hero', /TRYBE/.test(hero)],
+    ['the old way / new way table', /function OldWayNewWay[\s\S]*?TRYBE[\s\S]*?return \(/.test(PAGE_LIVE)],
+    ['the comparison table', /label: 'TRYBE brand deals/.test(PAGE_LIVE)],
+    ['the Pro card', /'🤝 TRYBE brand deals/.test(PAGE_LIVE)],
+    ['the FAQ', /q: 'Does MVP work with TRYBE\?'/.test(ISLANDS)],
+    ['the footer', /href: '#trybe'/.test(PAGE_LIVE)],
+  ]
+  for (const [where, ok] of spots) check(`TRYBE is named in ${where}`, ok)
+  check('the TRYBE card has an anchor the hero and footer can land on',
+    /id: 'trybe'/.test(PAGE_LIVE) && /id=\{r\.id\}/.test(PAGE_LIVE))
+  const trybeLines = [...PAGE_LIVE.matchAll(/[^\n]*TRYBE[^\n]*/g), ...ISLANDS.matchAll(/[^\n]*TRYBE[^\n]*/g)].map((m) => m[0])
+  const promise = trybeLines.find((l) => /\$\d|\bearn(s|ing)? up to\b|\bguarantee/i.test(l))
+  check('no TRYBE line promises what a brand pays', !promise, promise)
+}
+
 // ── house style on the pages we buy clicks for ──────────────────────────────
 //
 // The homepage copy is checked above. These two are the pages a stranger judges

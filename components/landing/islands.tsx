@@ -303,6 +303,11 @@ const FAQS = [
     a: `${GUARANTEE_SENTENCE} You keep everything you made with it, and you can cancel any time from your billing page.`,
   },
   {
+    // TRYBE (Seb, 2026-10-18). What a buyer asks first; no promise of pay.
+    q: 'Does MVP work with TRYBE?',
+    a: 'Yes. TRYBE is the marketplace where brands pay creators to make videos. With your own TRYBE account and the SCOUT Chrome extension, MVP sorts every brand by fit for your channel, drafts your first message in your words and sends the requests for you a few at a time, suggests a reply on every conversation in your TRYBE inbox, and writes ten shooting scripts per brand from its brief. TRYBE is a separate service, and what each brand pays is set by the brand on TRYBE.',
+  },
+  {
     q: 'Do I need to host my own WordPress site?',
     a: 'Only for the blog. The Amazon side of MVP (designs, bulk uploads to your storefront, brand campaigns, Deal Radar) needs no website at all. For the blog, yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
   },
