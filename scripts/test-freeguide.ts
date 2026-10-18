@@ -312,92 +312,57 @@ check('and so does the footer',
   (HOME.match(/\{ label: 'Free Guide', href: '\/freeguide' \}/g) ?? []).length >= 2,
   'the nav link alone means it disappears the moment somebody scrolls')
 
-// ── the signup is an offer, never a toll ───────────────────────────────────
+// ── the guide asks for nothing ─────────────────────────────────────────────
 //
-// THE PROMISE IS ALREADY IN MARKET. The ad creatives for this page say "FREE.
-// NO EMAIL. NO SIGNUP." in as many words, and until this card existed the page
-// never said it anywhere, so an arrival from the ad had no confirmation. The
-// capture only works if the page keeps that promise out loud beside it: a
-// field with "free to read, no email needed" above it reads as an offer, and
-// the same field without that line reads as a gate on a page that promised
-// there wasn't one.
+// THE PROMISE IS IN MARKET. The ad creatives for this page say FREE. NO EMAIL.
+// NO SIGNUP. in as many words, and the hero repeats it.
+//
+// There used to be a capture at the foot of the page, defended here as an
+// offer rather than a toll because the promise sat beside it. That defence was
+// always a little thin, and it is retired: a page that says no email needed
+// and then asks for an email is arguing with itself, and the reader only has
+// to scroll to catch it. The address field, its form, its JavaScript and its
+// styles are gone.
+//
+// So the invariant flipped. It is no longer "the capture is honest about
+// itself", it is "there is no capture", and these checks exist to stop one
+// drifting back in.
 {
   // This block sits outside the `if (present)` scope above, so it reads the
   // file again rather than borrowing a const it cannot see.
   const HTML = present ? read(FILE) : ''
-  const ROUTE = read('app/api/freeguide/subscribe/route.ts')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n').filter((l) => !/^\s*(?:\/\/|\*)/.test(l)).join('\n')
-  const MW2 = read('middleware.ts')
 
   check('the page says what the ad promised',
     /Free to read\. No email needed\./.test(HTML),
-    'the one sentence that turns a form into an offer instead of a toll')
-  // A GATE WOULD LOOK LIKE THIS: an overlay that covers the page until the
-  // form is answered. The guide is a static file so the words are always in
-  // the source; what would make it a toll is something painted over them.
-  check('the form never covers the page',
+    'the one sentence the ad creatives make, said on the page the ad lands on')
+
+  // WHAT WOULD BREAK IT, in the order it would happen: somebody adds a field,
+  // somebody wires it to the old endpoint, somebody paints it over the page.
+  check('and asks for no address anywhere on it',
+    !/<input[^>]+type=["']email["']/i.test(HTML) && !/<form\b/i.test(HTML),
+    'a page promising no email that contains an email field is arguing with itself')
+  check('and posts to no signup endpoint',
+    !/freeguide\/subscribe/.test(HTML),
+    'the capture is gone, so nothing on this page should still be calling its route')
+  check('and nothing is painted over the reading',
     !/\.upd[^{]*\{[^}]*position:\s*fixed/.test(HTML)
     && !/\.upd[^{]*\{[^}]*(?:z-index:\s*9|inset:\s*0)/.test(HTML),
     'an overlay on a page whose ads promise no signup would break that promise on arrival')
-  check('and the modules are readable without answering it',
+  check('and the modules are readable with nothing answered',
     /<section class="mod" id="start">/.test(HTML) && /<section class="mod" id="mvp">/.test(HTML),
-    'the content has to be in the page for a reader who never touches the field')
+    'the content has to be in the page for a reader who gives nothing at all')
 
-  check('the form posts to the guide’s own endpoint',
-    /fetch\('\/api\/freeguide\/subscribe'/.test(HTML),
-    'the newsletter route is for a creator’s blog and carries rules written for it')
-  // THE ENTRY, NOT THE NOTE ABOVE IT. The comment explaining why this path
-  // needs its own line quotes the path, so a check on the raw block passed
-  // with the entry deleted and only the explanation left.
-  const mwList = MW2.slice(MW2.indexOf('const publicPaths'), MW2.indexOf('\n]', MW2.indexOf('const publicPaths')))
-    .split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
-  check('and a logged-out reader can actually reach that endpoint',
-    /'\/api\/freeguide\/subscribe'/.test(mwList),
-    'isPublic matches on segment boundaries, so the /freeguide entry does NOT cover it and every signup would 307 to /login')
-
-  check('there is a honeypot',
-    /name="hp"/.test(HTML) && /body\.hp \|\| ''/.test(ROUTE),
-    'the cheapest filter there is, and it only works while it looks like success')
-
-  // THE ORDER IS THE POINT. This page is about to take an ad campaign's worth
-  // of traffic, and an address lost to an unverified sending domain is an
-  // address nobody ever knows existed.
-  check('the address is stored before the email is attempted',
-    ROUTE.indexOf(".insert({") > -1
-    && ROUTE.indexOf(".insert({") < ROUTE.indexOf('await sendEmail('),
-    'sending first means a send failure costs the lead, and it looks exactly like nobody signing up')
-  check('and a failed send says so rather than pointing at an empty inbox',
-    /did not go out, so we will pick this up ourselves/.test(ROUTE),
-    '"check your inbox" about an email that never sent is the plan reported as the result')
-
-  // THE CONFIRMATION HAS TO LOOK LIKE IT CAME FROM THE PAGE THEY WERE ON.
-  // Deriving the sender from this account's newsletter_settings, the way the
-  // blog shortcode does, would have sent it as "Gomin Reviews
-  // <newsletter@mail.gominreviews.com>" to somebody who had just been reading
-  // mvpaffiliate.io. On a double opt-in an unrecognised sender is not a
-  // cosmetic problem: it does not get opened, the link never gets clicked, and
-  // the row stays pending forever.
-  check('the confirmation sends as MVP, not as the blog',
-    !/deriveFromAddress/.test(ROUTE) && !/newsletter_settings/.test(ROUTE),
-    'that settings row belongs to another product, and its enabled flag is false today')
-
-  check('an unset owner refuses loudly instead of guessing',
-    /FREEGUIDE_OWNER_USER_ID/.test(ROUTE) && /Signups are not switched on yet/.test(ROUTE),
-    'writing rows onto whichever account sorted first is worse than collecting nothing')
-
-  check('the page prints the server’s sentence, not a fixed cheerful one',
-    /j\.message \|\| /.test(HTML) && /j\.error \|\| /.test(HTML),
-    'the route knows which of four things happened and the reader needs the right one')
-
-  // THE REASON TO COME BACK, and it is a promise about what we will do rather
-  // than a list of what we have done. An invented changelog was written here
-  // first and removed: the page was two days old and every date would have
-  // been fiction.
-  check('the page says it keeps changing',
+  // THE REASON TO COME BACK SURVIVED THE CAPTURE. It was the paragraph above
+  // the form rather than the form itself, and without it the page loses the
+  // only argument it makes for a second visit.
+  check('the page still says it keeps changing',
     /This guide keeps changing, because the program does\./.test(HTML)
     && /Worth coming back to/.test(HTML),
     'nothing else on the page gives a reader a reason to return')
+  check('and tells them how to come back without joining anything',
+    /Nothing to subscribe to and nothing to join/.test(HTML)
+    && /#changelog/.test(HTML),
+    'removing the field leaves a dead end unless the page says what to do instead')
 }
 
 // ── the guide is part of the site, and says so ─────────────────────────────
