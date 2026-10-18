@@ -5,31 +5,41 @@
 // The Race): every Top 100 video MVP has seen for a brand, what was actually
 // said in it, and one press to turn a winner into a script in your voice.
 //
-// WHY THE SCRIPTS ARE WORTH ANYTHING. A brand that keeps putting new videos
-// in TRYBE's Top 100 is a brand spending on ads and paying creators. The
-// videos it picked are the shape of video it approves. Copying that shape is
-// the fastest way to get approved by it; copying its sentences is the fastest
-// way to be dropped by it, which is why the rewrite refuses to hand the
-// original back (lib/trybe-scripts tooAlike).
+// WHY THESE VIDEOS ARE WORTH ANYTHING. A brand that keeps landing new videos
+// in TRYBE's Top 100 is spending on ads and paying creators, and the videos
+// it picked are the shape of video it approves. Copying that shape is the
+// fast way to be approved by it. Copying its sentences is the fast way to be
+// dropped by it, which is why the rewrite refuses to hand the original back
+// (lib/trybe-scripts tooAlike).
 //
-// THE BOARD SAYS HOW THIN IT IS. One read of TRYBE's own script endpoint kept
-// 4 openings out of 25 asked, so a brand with two scripts and eleven videos
-// is normal. The coverage line is not decoration: without it a creator reads
-// two videos and believes they have seen how that brand wins.
+// IT LEADS WITH WHAT IT HAS, NOT WITH AN EMPTY LIST. The page opens on one
+// sentence of its own state and four counts, so a board holding nothing says
+// so before a creator clicks a brand and finds out.
+//
+// AND IT SAYS WHY A COLLECTION GOT NOTHING. "TRYBE shared 0, MVP listened to
+// 0" with no reason is the failure this codebase keeps producing: a screen
+// reporting the plan rather than the result. Every zero here carries its
+// cause.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Search, Play, Copy, Wand2, AlertTriangle, ChevronDown, ChevronRight, Ear, Download } from 'lucide-react'
+import {
+  Loader2, Search, Play, Copy, Wand2, AlertTriangle, ChevronDown, ChevronRight,
+  Download, Trophy, FileText, Ear, Check,
+} from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
+import { readScript } from '@/lib/trybe-mybrands'
 import { readTopEntries } from '@/lib/trybe-working'
-import { CLOSENESS, coverageWords, type Closeness, type TopScript } from '@/lib/trybe-scripts'
+import { CLOSENESS, type Closeness, type TopScript } from '@/lib/trybe-scripts'
 
 const PURPLE = '#7C3AED'
-const card = 'rounded-2xl border p-4'
+const GREEN = '#15803D'
+const AMBER = '#B45309'
+const RED = '#B91C1C'
+const card = 'rounded-2xl border'
 const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
 const soft = { color: 'var(--text-soft)' }
-const field = 'w-full rounded-lg border px-3 py-2 text-[13px] bg-transparent'
+const field = 'w-full rounded-xl border px-3 py-2.5 text-[13px] bg-transparent'
 const fieldStyle = { borderColor: 'var(--border)', color: 'var(--text)' }
 
 async function post(body: Record<string, unknown>): Promise<{ ok: boolean; json: Record<string, unknown> }> {
@@ -46,38 +56,61 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; json:
 }
 
 interface Written { hooks: string[]; script: string }
+interface BrandRow { id: string | null; name: string; videos: number; words: number }
+interface Stats { videos: number; words: number; heard: number; shared: number; brands: BrandRow[]; collectedAt: string | null }
+
+const ago = (iso: string | null): string => {
+  if (!iso) return 'never collected'
+  const ms = Date.now() - Date.parse(iso)
+  if (!Number.isFinite(ms)) return 'never collected'
+  const mins = Math.round(ms / 60_000)
+  if (mins < 2) return 'collected just now'
+  if (mins < 60) return `collected ${mins} minutes ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `collected ${hrs} ${hrs === 1 ? 'hour' : 'hours'} ago`
+  const days = Math.round(hrs / 24)
+  return `collected ${days} ${days === 1 ? 'day' : 'days'} ago`
+}
+
+function Stat({ n, label, note, tone }: { n: number | string; label: string; note?: string; tone?: string }) {
+  return (
+    <div className="px-4 py-3">
+      <p className="text-[26px] font-bold leading-none" style={{ color: tone || 'var(--text)' }}>{n}</p>
+      <p className="text-[12.5px] font-semibold mt-1.5">{label}</p>
+      {note && <p className="text-[11.5px] mt-0.5" style={soft}>{note}</p>}
+    </div>
+  )
+}
 
 export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean; isAdmin: boolean }) {
-  const [brands, setBrands] = useState<MyBrand[] | null>(null)
-  const [brandsError, setBrandsError] = useState<string | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [statsError, setStatsError] = useState<string | null>(null)
   const [brand, setBrand] = useState<{ id: string | null; name: string } | null>(null)
   const [typed, setTyped] = useState('')
   const [videos, setVideos] = useState<TopScript[] | null>(null)
-  const [coverage, setCoverage] = useState<string>('')
+  const [coverage, setCoverage] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  // The rewrite, per video.
   const [writing, setWriting] = useState<string | null>(null)
   const [written, setWritten] = useState<Record<string, Written>>({})
   const [writeError, setWriteError] = useState<Record<string, string>>({})
   const [experience, setExperience] = useState('')
   const [product, setProduct] = useState('')
   const [closeness, setCloseness] = useState<Closeness>('similar')
-  // Admin collection.
-  const [collecting, setCollecting] = useState<string | null>(null)
-  const [collected, setCollected] = useState<string | null>(null)
+  const [step, setStep] = useState<string | null>(null)
+  const [report, setReport] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null)
   const stop = useRef(false)
 
-  useEffect(() => {
-    if (!canRead) return
-    requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').then((r) => {
-      if (!r.ok) { setBrandsError(`TRYBE did not answer${r.status ? ` (${r.status})` : ''}. Sign in to TRYBE in this Chrome, then reload.`); return }
-      setBrands(readBrandStats(r.json))
-    }).catch((e) => setBrandsError(e instanceof Error ? e.message : 'SCOUT did not answer.'))
-  }, [canRead])
+  const loadStats = useCallback(async () => {
+    const r = await post({ action: 'top_scripts_stats' })
+    if (!r.ok) { setStatsError(String(r.json.error || 'MVP could not read what it has saved.')); return }
+    setStatsError(null)
+    setStats(r.json as unknown as Stats)
+  }, [])
+  useEffect(() => { void loadStats() }, [loadStats])
 
   const load = useCallback(async (b: { id: string | null; name: string }) => {
-    setBrand(b); setVideos(null); setLoadError(null); setWritten({}); setWriteError({})
+    setBrand(b); setVideos(null); setLoadError(null); setWritten({}); setWriteError({}); setOpen({})
     const r = await post({ action: 'top_scripts', brandId: b.id || undefined, brandName: b.name })
     if (!r.ok) { setLoadError(String(r.json.error || 'MVP could not read that brand’s videos.')); return }
     setVideos((r.json.videos ?? []) as TopScript[])
@@ -100,47 +133,70 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
   }
 
   /**
-   * The team's collection pass, in the open.
+   * The team's collection pass.
    *
    * Reads today's Top 100 through SCOUT, files every entry, then fills the
    * words: TRYBE's own script first because it is free, and only then a
-   * transcription, which costs. Every step says what it actually did.
+   * transcription, which costs. Every count that comes back as zero is
+   * reported with the reason it was zero.
    */
   async function collect() {
     stop.current = false
-    setCollecting('Reading TRYBE’s Top 100'); setCollected(null)
+    setStep('Reading TRYBE’s Top 100'); setReport(null)
     try {
       const top = await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives')
-      if (!top.ok) { setCollecting(null); toast.error(`MVP could not read the Top 100: ${top.error || 'SCOUT did not answer.'}`); return }
+      if (!top.ok) { toast.error(`MVP could not read the Top 100: ${top.error || 'SCOUT did not answer.'}`); return }
       const entries = readTopEntries(top.json)
-      if (!entries.length) { setCollecting(null); toast.error('TRYBE answered, but MVP could not read the Top 100 from it.'); return }
+      if (!entries.length) { toast.error('TRYBE answered, but MVP could not read the Top 100 from it.'); return }
+      const withFile = entries.filter((e) => e.video).length
+
       const seen = await post({ action: 'top_scripts_seen', entries })
-      if (!seen.ok) { setCollecting(null); toast.error(String(seen.json.error || 'MVP could not file the Top 100.')); return }
+      if (!seen.ok) { toast.error(String(seen.json.error || 'MVP could not file the Top 100.')); return }
       const need = (seen.json.need ?? []) as Array<{ submissionId: string }>
       const hear = new Set((seen.json.hear ?? []) as string[])
-      let fromTrybe = 0, heard = 0, nothing = 0
-      // FREE FIRST. TRYBE shares the words for some of them, and those cost
-      // nothing but a request.
+      const noFile = Number(seen.json.noFile) || 0
+
+      // FREE FIRST. TRYBE shares the words for some of them at no cost, and
+      // readScript is what turns its answer into words.
+      let shared = 0, refused = 0, empty = 0
       for (let i = 0; i < need.length && !stop.current; i++) {
-        setCollecting(`Asking TRYBE for the words (${i + 1} of ${need.length})`)
+        setStep(`Asking TRYBE for the words (${i + 1} of ${need.length})`)
         const id = need[i].submissionId
         const sr = await requestTrybeApi('GET', `/backend/api/creator/v2/submissions/${encodeURIComponent(id)}/script`).catch(() => null)
-        const saved = await post({ action: 'top_script_save', submissionId: id, script: sr?.ok ? (sr.json as Record<string, unknown>) : null })
-        if (saved.ok && Number(saved.json.saved) === 1) { fromTrybe++; hear.delete(id) }
+        if (!sr) { refused++; continue }
+        if (!sr.ok) { refused++; continue }
+        const text = readScript(sr.json)
+        const saved = await post({ action: 'top_script_save', submissionId: id, script: text })
+        if (saved.ok && Number(saved.json.saved) === 1) { shared++; hear.delete(id) } else empty++
       }
-      // THEN THE ONES THAT COST. Best placed first, and only the ones TRYBE
-      // had nothing for.
+
+      // THEN THE ONES THAT COST, best placed first.
       const toHear = [...hear]
+      let heard = 0, failed = 0
+      let notConfigured = false
       for (let i = 0; i < toHear.length && !stop.current; i++) {
-        setCollecting(`Listening to the video (${i + 1} of ${toHear.length})`)
+        setStep(`Listening to the video (${i + 1} of ${toHear.length})`)
         const h = await post({ action: 'top_script_hear', submissionId: toHear[i] })
         if (h.ok && Number(h.json.heard) === 1) heard++
-        else nothing++
+        else {
+          failed++
+          if (/not configured/i.test(String(h.json.error || ''))) { notConfigured = true; break }
+        }
       }
-      setCollected(`Filed ${entries.length} videos. TRYBE shared the words for ${fromTrybe}. MVP listened to ${heard}.${nothing ? ` ${nothing} had nothing MVP could read.` : ''}`)
+
+      // EVERY ZERO WITH ITS REASON.
+      const lines: string[] = [`Filed ${entries.length} videos from today’s Top 100.`]
+      lines.push(shared ? `TRYBE shared the words for ${shared}.` : `TRYBE shared the words for none of the ${need.length} MVP asked about${refused ? `, and refused ${refused} of those outright` : ''}.`)
+      if (empty) lines.push(`${empty} came back with nothing MVP could read.`)
+      if (noFile) lines.push(`${noFile} of them have no video file in TRYBE’s answer, so nothing can listen to those.`)
+      if (notConfigured) lines.push('Transcription is not switched on for this deployment, so MVP could not listen to any of them.')
+      else if (toHear.length) lines.push(heard ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back.` : ''}` : `MVP could not listen to any of the ${toHear.length} it tried.`)
+      else if (!notConfigured) lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
+      setReport({ tone: shared + heard > 0 ? 'ok' : 'warn', lines })
+      await loadStats()
       if (brand) void load(brand)
     } finally {
-      setCollecting(null)
+      setStep(null)
     }
   }
 
@@ -148,75 +204,135 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
 
   if (!canRead) {
     return (
-      <div className={card} style={cardStyle}>
+      <div className={`${card} p-5`} style={cardStyle}>
         <p className="text-[15px] font-semibold">How they win needs SCOUT on TRYBE</p>
         <p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the videos TRYBE picked for them.</p>
       </div>
     )
   }
 
+  const empty = !!stats && stats.videos === 0
+  const brands = stats?.brands ?? []
+
   return (
     <div className="space-y-4">
-      <div className={card} style={cardStyle}>
-        <h3 className="text-[15px] font-semibold">How they win</h3>
-        <p className="text-[13.5px] mt-1" style={soft}>
-          The videos TRYBE picked for its Top 100, brand by brand, with what was said in them. A brand that keeps landing new videos there is spending on ads and paying creators, and these are the videos it approves.
-        </p>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(brands ?? []).slice(0, 14).map((b) => (
-            <button key={b.id} type="button" onClick={() => void load({ id: b.id, name: b.name })}
-              className="rounded-full border px-3 py-1.5 text-[12.5px] font-semibold"
-              style={{ borderColor: brand?.id === b.id ? PURPLE : 'var(--border)', color: brand?.id === b.id ? PURPLE : 'var(--text)' }}>
-              {b.name}
-            </button>
-          ))}
+      {/* THE SENTENCE FIRST. What the board holds, before any list. */}
+      <div className={card} style={{ ...cardStyle, borderTop: `4px solid ${PURPLE}` }}>
+        <div className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${PURPLE}1F`, color: PURPLE }}>
+              <Trophy size={19} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-[17px] font-bold leading-tight">
+                {empty
+                  ? 'Nothing collected yet'
+                  : stats
+                    ? `${stats.words} ${stats.words === 1 ? 'video' : 'videos'} you can read, across ${brands.filter((b) => b.words > 0).length} ${brands.filter((b) => b.words > 0).length === 1 ? 'brand' : 'brands'}`
+                    : 'Reading what MVP has saved'}
+              </h3>
+              <p className="text-[13.5px] mt-1" style={soft}>
+                A brand that keeps landing new videos in TRYBE&rsquo;s Top 100 is spending on ads and paying creators. These are the videos it approved, and what was said in them.
+              </p>
+            </div>
+          </div>
         </div>
-        {brandsError && <p className="text-[12.5px] mt-2" style={{ color: '#B45309' }}>{brandsError}</p>}
-
-        <div className="mt-3 flex gap-2">
-          <input className={field} style={fieldStyle} placeholder="Or type any brand on TRYBE" value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && typed.trim()) void load({ id: null, name: typed.trim() }) }} />
-          <button type="button" onClick={() => typed.trim() && void load({ id: null, name: typed.trim() })}
-            className="inline-flex items-center gap-1.5 rounded-xl border px-4 text-[13px] font-semibold" style={{ borderColor: 'var(--border)' }}>
-            <Search size={14} /> Look
-          </button>
-        </div>
-
-        {isAdmin && (
-          <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-            <button type="button" onClick={() => void collect()} disabled={!!collecting}
-              className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
-              {collecting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              {collecting || 'Collect today’s Top 100'}
-            </button>
-            <p className="text-[11.5px] mt-2" style={soft}>
-              Admin. Files today’s Top 100 for every member, asks TRYBE for the words first because that is free, then pays to listen to the ones it had none for.
-            </p>
-            {collected && <p className="text-[12.5px] mt-1.5" style={{ color: '#15803D' }}>{collected}</p>}
+        {stats && !empty && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 border-t divide-x" style={{ borderColor: 'var(--border)' }}>
+            <Stat n={stats.videos} label="Videos filed" note={ago(stats.collectedAt)} />
+            <Stat n={stats.words} label="With the words" note={`of ${stats.videos}`} tone={stats.words ? GREEN : undefined} />
+            <Stat n={stats.shared} label="TRYBE shared" note="free to read" />
+            <Stat n={stats.heard} label="MVP listened" note="paid for once" />
           </div>
         )}
       </div>
 
-      {brand && !videos && !loadError && (
-        <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading {brand.name}’s videos...</p>
+      {statsError && <div className={`${card} p-4`} style={cardStyle}><p className="text-[13px]" style={{ color: RED }}>{statsError}</p></div>}
+
+      {/* Pick a brand */}
+      {!empty && (
+        <div className={`${card} p-4`} style={cardStyle}>
+          {brands.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {brands.slice(0, 18).map((b) => {
+                const on = brand?.name === b.name
+                return (
+                  <button key={b.id || b.name} type="button" onClick={() => void load({ id: b.id, name: b.name })}
+                    className="rounded-full border px-3 py-1.5 text-[12.5px] font-semibold inline-flex items-center gap-1.5"
+                    style={{ borderColor: on ? PURPLE : 'var(--border)', color: on ? PURPLE : 'var(--text)', background: on ? `${PURPLE}0F` : 'transparent' }}>
+                    {b.name}
+                    <span className="text-[11px] font-bold" style={{ color: b.words ? GREEN : 'var(--text-soft)' }}>{b.words || b.videos}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <div className="mt-3 flex gap-2">
+            <input className={field} style={fieldStyle} placeholder="Or type any brand on TRYBE" value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && typed.trim()) void load({ id: null, name: typed.trim() }) }} />
+            <button type="button" onClick={() => typed.trim() && void load({ id: null, name: typed.trim() })}
+              className="inline-flex items-center gap-1.5 rounded-xl border px-4 text-[13px] font-semibold" style={{ borderColor: 'var(--border)' }}>
+              <Search size={14} /> Look
+            </button>
+          </div>
+        </div>
       )}
-      {loadError && <div className={card} style={cardStyle}><p className="text-[13px]" style={{ color: '#B91C1C' }}>{loadError}</p></div>}
+
+      {/* The collection, and what it actually did */}
+      {isAdmin && (
+        <div className={`${card} p-4`} style={cardStyle}>
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => void collect()} disabled={!!step}
+              className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+              {step ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {step || (empty ? 'Collect today’s Top 100' : 'Collect again')}
+            </button>
+            {step && <button type="button" onClick={() => { stop.current = true }} className="text-[12.5px] font-semibold" style={soft}>Stop</button>}
+          </div>
+          <p className="text-[11.5px] mt-2" style={soft}>
+            Admin only. Files today&rsquo;s Top 100 for every member, asks TRYBE for the words first because that costs nothing, then pays to listen to the ones it had none for.
+          </p>
+          {report && (
+            <ul className="mt-3 space-y-1">
+              {report.lines.map((l, i) => (
+                <li key={i} className="text-[12.5px] flex items-start gap-1.5" style={{ color: i === 0 ? 'var(--text)' : report.tone === 'ok' ? GREEN : AMBER }}>
+                  {i === 0 ? <Check size={13} className="mt-0.5 flex-shrink-0" /> : <span className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'currentColor' }} />}
+                  <span>{l}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {empty && !isAdmin && (
+        <div className={`${card} p-5`} style={cardStyle}>
+          <p className="text-[13.5px]" style={soft}>MVP has not collected TRYBE&rsquo;s Top 100 yet. It arrives for everybody at once, so there is nothing for you to do here.</p>
+        </div>
+      )}
+
+      {/* The brand */}
+      {brand && !videos && !loadError && (
+        <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading {brand.name}&rsquo;s videos...</p>
+      )}
+      {loadError && <div className={`${card} p-4`} style={cardStyle}><p className="text-[13px]" style={{ color: RED }}>{loadError}</p></div>}
 
       {videos && (
-        <div className={card} style={cardStyle}>
-          <p className="text-[13.5px] font-semibold">{brand?.name}</p>
-          {/* HOW THIN IT IS, SAID. Two scripts out of eleven videos is normal. */}
-          <p className="text-[12.5px] mt-0.5" style={soft}>{coverage || coverageWords(videos)}</p>
+        <div className={`${card} p-4`} style={cardStyle}>
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <p className="text-[15px] font-bold">{brand?.name}</p>
+            {/* HOW THIN IT IS, SAID. Two scripts out of eleven videos is normal. */}
+            <p className="text-[12.5px]" style={soft}>{coverage}</p>
+          </div>
           {ready.length > 0 && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 pt-3 border-t grid gap-2 sm:grid-cols-2" style={{ borderColor: 'var(--border)' }}>
               <input className={field} style={fieldStyle} placeholder="Which product do you have?" value={product} onChange={(e) => setProduct(e.target.value)} />
               <div className="flex gap-1.5">
                 {(Object.keys(CLOSENESS) as Closeness[]).map((c) => (
                   <button key={c} type="button" onClick={() => setCloseness(c)} title={CLOSENESS[c].says}
-                    className="flex-1 rounded-lg border px-2 py-2 text-[12px] font-semibold"
-                    style={{ borderColor: closeness === c ? PURPLE : 'var(--border)', color: closeness === c ? PURPLE : 'var(--text)' }}>
+                    className="flex-1 rounded-xl border px-2 py-2 text-[12px] font-semibold"
+                    style={{ borderColor: closeness === c ? PURPLE : 'var(--border)', color: closeness === c ? PURPLE : 'var(--text)', background: closeness === c ? `${PURPLE}0F` : 'transparent' }}>
                     {CLOSENESS[c].label}
                   </button>
                 ))}
@@ -233,26 +349,28 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
         const isOpen = !!open[v.submission_id]
         const w = written[v.submission_id]
         return (
-          <div key={v.submission_id} className={card} style={cardStyle}>
+          <div key={v.submission_id} className={`${card} p-4`} style={cardStyle}>
             <div className="flex items-start gap-3">
-              {v.thumbnail && (
-                <a href={v.video_url || v.thumbnail} target="_blank" rel="noopener noreferrer" title="Watch it"
-                  className="relative shrink-0 w-[70px] rounded-xl overflow-hidden border" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)' }}>
-                  { /* eslint-disable-next-line @next/next/no-img-element */ }
-                  <img src={v.thumbnail} alt="" className="w-full h-full object-cover" />
-                </a>
-              )}
+              <a href={v.video_url || v.thumbnail || '#'} target="_blank" rel="noopener noreferrer" title="Watch it"
+                className="relative shrink-0 w-[72px] rounded-xl overflow-hidden border" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)', background: 'rgba(0,0,0,0.05)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {v.thumbnail && <img src={v.thumbnail} alt="" className="w-full h-full object-cover" />}
+                {v.best_rank && (
+                  <span className="absolute top-1 left-1 rounded-lg px-1.5 py-0.5 text-[10.5px] font-bold text-white" style={{ background: 'rgba(0,0,0,0.65)' }}>#{v.best_rank}</span>
+                )}
+              </a>
               <div className="min-w-0 flex-1">
-                <p className="text-[12px]" style={soft}>
-                  {v.best_rank ? `TRYBE #${v.best_rank}` : 'In the Top 100'}{v.creator ? ` · ${v.creator}` : ''}{v.seconds ? ` · ${v.seconds}s` : ''}
+                <p className="text-[11.5px]" style={soft}>
+                  {v.creator || 'A creator'}{v.seconds ? ` · ${v.seconds}s` : ''}{v.category ? ` · ${v.category}` : ''}
                 </p>
                 {v.hook
-                  ? <p className="text-[14px] font-semibold mt-0.5 leading-snug">&ldquo;{v.hook}&rdquo;</p>
-                  : <p className="text-[13px] mt-0.5" style={soft}>No opening line yet.</p>}
-                <p className="text-[11.5px] mt-1" style={soft}>
+                  ? <p className="text-[14.5px] font-semibold mt-1 leading-snug">&ldquo;{v.hook}&rdquo;</p>
+                  : <p className="text-[13.5px] mt-1" style={soft}>No opening line yet.</p>}
+                <p className="text-[11.5px] mt-1.5 inline-flex items-center gap-1" style={{ color: v.state === 'ready' ? GREEN : AMBER }}>
+                  {v.state === 'ready' ? <Check size={11} /> : <Ear size={11} />}
                   {v.state === 'ready'
-                    ? (v.source === 'trybe' ? 'TRYBE shared these words.' : 'MVP listened to the video for these words.')
-                    : v.detail || 'Nothing read from this one yet.'}
+                    ? (v.source === 'trybe' ? 'TRYBE shared these words' : 'MVP listened to the video for these words')
+                    : v.detail || 'Nothing read from this one yet'}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   {v.video_url && <a href={v.video_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: PURPLE }}><Play size={12} /> Watch it</a>}
@@ -268,36 +386,38 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
                       {writing === v.submission_id ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Write mine from this
                     </button>
                   )}
-                  {v.state !== 'ready' && !v.script && <span className="inline-flex items-center gap-1 text-[12px]" style={soft}><Ear size={12} /> Waiting on the words</span>}
                 </div>
               </div>
             </div>
 
             {isOpen && v.script && (
-              <p className="mt-3 pt-3 border-t text-[13px] leading-relaxed whitespace-pre-wrap" style={{ borderColor: 'var(--border)' }}>{v.script}</p>
+              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-[11.5px] font-semibold inline-flex items-center gap-1" style={soft}><FileText size={11} /> What was said</p>
+                <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap">{v.script}</p>
+              </div>
             )}
 
             {writeError[v.submission_id] && (
-              <p className="mt-3 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#B45309' }}>
+              <p className="mt-3 text-[12.5px] flex items-start gap-1.5" style={{ color: AMBER }}>
                 <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" /> <span>{writeError[v.submission_id]}</span>
               </p>
             )}
 
             {w && (
               <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-[12px] font-semibold" style={soft}>Three openings to pick from</p>
-                <ul className="mt-1 space-y-1">
+                <p className="text-[11.5px] font-semibold" style={soft}>Three openings to pick from</p>
+                <ul className="mt-1.5 space-y-1.5">
                   {w.hooks.map((h, i) => (
                     <li key={i} className="text-[13px] flex items-start gap-2">
-                      <span style={{ color: PURPLE }}>{i + 1}.</span>
+                      <span className="font-bold" style={{ color: PURPLE }}>{i + 1}</span>
                       <button type="button" onClick={() => copy(h)} className="text-left hover:underline">{h}</button>
                     </li>
                   ))}
                   {!w.hooks.length && <li className="text-[12.5px]" style={soft}>MVP wrote the script but no openings came back with it.</li>}
                 </ul>
-                <p className="mt-2 text-[13px] leading-relaxed whitespace-pre-wrap">{w.script}</p>
+                <p className="mt-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{w.script}</p>
                 <button type="button" onClick={() => copy(`${w.hooks[0] ? `${w.hooks[0]}\n\n` : ''}${w.script}`)}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}>
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}>
                   <Copy size={12} /> Copy the script
                 </button>
               </div>

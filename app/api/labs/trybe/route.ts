@@ -29,7 +29,7 @@ import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
-import { winnersForPlan, winnersBlock } from '@/lib/trybe-mybrands'
+import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
@@ -1972,6 +1972,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, videos: rows, coverage: coverageWords(rows) })
   }
 
+  if (action === 'top_scripts_stats') {
+    // What the store actually holds, so the page can lead with a sentence
+    // rather than with an empty brand list. Read by any member.
+    const { data, error } = await admin.from('trybe_top_scripts')
+      .select('brand_id,brand_name,state,source,updated_at').limit(4000)
+    if (error) {
+      if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    const rows = (data ?? []) as Array<{ brand_id: string | null; brand_name: string | null; state: string; source: string; updated_at: string }>
+    const by = new Map<string, { id: string | null; name: string; videos: number; words: number }>()
+    let words = 0, heard = 0, shared = 0, last = ''
+    for (const r of rows) {
+      const name = r.brand_name || 'A brand'
+      const k = r.brand_id || `name:${name.toLowerCase()}`
+      const cur = by.get(k) ?? { id: r.brand_id, name, videos: 0, words: 0 }
+      cur.videos++
+      if (r.state === 'ready') { cur.words++; words++; if (r.source === 'transcribed') heard++; if (r.source === 'trybe') shared++ }
+      by.set(k, cur)
+      if (r.updated_at > last) last = r.updated_at
+    }
+    const brands = [...by.values()].sort((a, b) => b.words - a.words || b.videos - a.videos || a.name.localeCompare(b.name))
+    return NextResponse.json({ ok: true, videos: rows.length, words, heard, shared, brands: brands.slice(0, 60), collectedAt: last || null })
+  }
+
   if (action === 'top_scripts_seen') {
     // The team's Top 100 read, filed. Each entry becomes a row the first time
     // it is seen, so a video keeps its best place across days, and the answer
@@ -2013,8 +2038,12 @@ export async function POST(request: Request) {
       waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null, video: typeof e.video === 'string' ? e.video : null })),
       done, 25,
     )
+    // A video TRYBE gave no file for can never be listened to, so the count
+    // of those is part of the answer rather than an absence the page has to
+    // guess at.
+    const noFile = waiting.filter((e) => !(typeof e.video === 'string' && /^https:\/\//i.test(e.video))).length
     return NextResponse.json({
-      ok: true, saved: fresh.length,
+      ok: true, saved: fresh.length, waiting: waiting.length, noFile,
       need: waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null })).slice(0, 60),
       hear: hear.map((h) => h.submissionId),
     })
@@ -2025,7 +2054,12 @@ export async function POST(request: Request) {
     if (tier !== 'admin') return NextResponse.json({ ok: true, saved: 0, kept: true })
     const id = typeof body.submissionId === 'string' ? body.submissionId.slice(0, 120) : ''
     if (!id) return NextResponse.json({ error: 'No video.' }, { status: 400 })
-    const cleaned = cleanScript(body.script)
+    // TRYBE ANSWERS WITH JSON, NOT A STRING. readScript (lib/trybe-mybrands)
+    // is what turns its shapes into words, and skipping it meant every save
+    // measured the length of "[object Object]" and refused it. Done here so
+    // the route works whatever the page sends.
+    const words = typeof body.script === 'string' ? body.script : readScript(body.script)
+    const cleaned = cleanScript(words)
     // NOT A GAP, A ROW THAT SAYS SO. A video TRYBE had no words for is
     // recorded as tried, with the reason, so the board can show it and the
     // transcription pass knows to pick it up.
