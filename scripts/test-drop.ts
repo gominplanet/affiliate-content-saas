@@ -17,6 +17,7 @@ import { runSend, type SendJob, type SendItem } from '../lib/drop-places'
 import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES, settingsFromLast, readSettings, settingsBody, setupMissing, nextFreeSlots, daysLabel, liftoffLabel, setupStartOn } from '../lib/drop-plan'
 import { startDraftBatch, addDraftVideo } from '../lib/drop-run'
 import { tiktokBlocker, emptyTikTok } from '../components/labs/DropTikTok'
+import { canUsePreview, previewOpenToPro } from '../lib/labs-preview'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -194,7 +195,7 @@ void (async () => {
     check('no post for a video YouTube never took, and it says why', done?.body.ok === false && /did not reach YouTube/.test(done.body.detail) && !calls.some((c) => c.url === '/api/blog/schedule-publish'))
   }
   {
-    const { http, calls } = fakeHttp((url) => (url === '/api/drop' ? { ok: false, status: 403, json: { error: 'Drop is still being tested.' } } : undefined))
+    const { http, calls } = fakeHttp((url) => (url === '/api/drop' ? { ok: false, status: 403, json: { error: 'Drop is part of Pro.' } } : undefined))
     const r = await dropSteps(http)
     check('an account without Drop does nothing and asks nothing back', calls.length === 1 && !r.more && r.signature === '')
   }
@@ -220,6 +221,11 @@ void (async () => {
   // ── wiring ─────────────────────────────────────────────────────────────────
   const route = read('app/api/drop/route.ts')
   check('the Drop routes are behind its Labs switch', /canUsePreview\('drop', intg\?\.tier\)/.test(route) && /drop: '(admin|labs)'/.test(read('lib/labs-preview.ts')))
+  // OPEN TO PRO (2026-10-18). A Pro member was shown "Upgrade to Pro" on a
+  // plan he already paid for, because the switch still said admin.
+  check('Drop is open to Pro, and to the owner', previewOpenToPro('drop') && canUsePreview('drop', 'pro') && canUsePreview('drop', 'admin'))
+  check('no Pro member is told Drop is still being tested', ['app/api/drop/route.ts', 'app/api/drop/product/route.ts', 'app/(dashboard)/drop/page.tsx']
+    .every((f) => !/still being tested|Not open yet/.test(read(f))))
   // One switch opens Drop everywhere: the sidebar entry reads it too, so it is
   // never shown to somebody the page would turn away, or hidden from somebody
   // it would let in.

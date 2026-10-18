@@ -77,10 +77,14 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   hashtag_trends: 'admin',
   // Drop: drop finished videos, say once where each goes, press one Launch
   // (Liftoff for YouTube and Amazon, the blog after the video, TRYBE through
-  // SCOUT). Admin while it is tested (Seb, 2026-10-17: "start phase one
-  // behind labs").
-  drop: 'admin',
+  // SCOUT). Opened to Pro 2026-10-18 for the first creator to test it, who was
+  // being told to upgrade to the plan he already pays for.
+  drop: 'labs',
 }
+
+/** Every preview feature. A check can then ask which are still admin only
+ *  instead of naming one, which goes stale the moment that one graduates. */
+export const PREVIEW_FEATURES = Object.keys(OPEN_TO) as PreviewFeature[]
 
 /** Pro features the AMAZON plan has too (Seb, 2026-10-05: "add all six",
  *  for current and new Amazon members): pinned comments, On sale comments,

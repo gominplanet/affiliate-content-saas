@@ -35,7 +35,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     desc: 'Got a line in mind? Type it in "Your own thumbnail text" and MVP puts exactly those words on the thumbnail instead of writing its own, split over two lines the way the box shows. It is on YouTube Co-Pilot, Video Launchpad, Amazon thumbnails, the social designs, and on each video in Bulk Amazon upload. Leave it empty and MVP writes it, as before.',
     href: '/co-pilot',
   },
-  // Drop (Labs, admin while it is tested; gated, so members do not see it).
+  // Drop (open to Pro 2026-10-18; gated on 'drop', so it follows that switch).
   {
     date: '2026-10-17',
     gate: 'drop',

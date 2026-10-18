@@ -1,5 +1,5 @@
 /**
- * /drop — Drop (LABS, admin while it is tested). Drop finished videos, say
+ * /drop — Drop (open to Pro since 2026-10-18). Drop finished videos, say
  * where each goes, press one Launch: Liftoff for YouTube and Amazon, the blog
  * after the video, TRYBE through SCOUT. See lib/drop-plan.ts.
  */
@@ -29,7 +29,7 @@ export default function DropPage() {
     )
   }
   // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="Drop" body="Drop sends your finished videos to YouTube, Amazon, your blog and TRYBE from one Launch button. It is still being tested." />
+  if (tier !== null) return <ProUpgradePanel feature="Drop" body="Drop sends your finished videos to YouTube, Amazon, your blog and TRYBE from one Launch button." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

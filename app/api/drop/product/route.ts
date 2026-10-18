@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('drop', intg?.tier)) return NextResponse.json({ error: 'Drop is still being tested.' }, { status: 403 })
+  if (!canUsePreview('drop', intg?.tier)) return NextResponse.json({ error: 'Drop is part of Pro.' }, { status: 403 })
 
   const raw = (new URL(req.url).searchParams.get('asin') || '').trim()
   const asin = isAsin(raw.toUpperCase()) ? raw.toUpperCase() : asinInText(raw)

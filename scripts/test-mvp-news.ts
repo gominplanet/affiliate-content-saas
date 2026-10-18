@@ -13,7 +13,8 @@
 // news, and whenever SCOUT has news not yet seen; one card, so the SCOUT news
 // and the daily news never stack; the three buttons and MVP's referral link.
 import { readFileSync } from 'node:fs'
-import { WHATS_NEW, recentNews, NEWS_DAYS, opensToday } from '../lib/whats-new'
+import { WHATS_NEW, recentNews, NEWS_DAYS, opensToday, newsGateOpen } from '../lib/whats-new'
+import { PREVIEW_FEATURES, previewOpenToPro } from '../lib/labs-preview'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -27,7 +28,12 @@ const pro = recentNews('pro', at('2026-10-17T12:00:00Z'))
 check('newest first', pro.every((u, i) => i === 0 || pro[i - 1].date >= u.date))
 const trial = recentNews('trial', at('2026-10-17T12:00:00Z'))
 check('a plan without TRYBE does not see TRYBE news', !trial.some(u => u.gate === 'trybe') && pro.some(u => u.gate === 'trybe'))
-check('a feature still admin only in Labs is not news for Pro', WHATS_NEW.some(u => u.gate === 'drop') && !pro.some(u => u.gate === 'drop') && recentNews('admin', at('2026-10-17T12:00:00Z')).some(u => u.gate === 'drop'))
+check('Drop is news for Pro now that Pro has Drop', WHATS_NEW.some(u => u.gate === 'drop') && pro.some(u => u.gate === 'drop'))
+// The gate still hides a feature the owner is testing. Read from the switches
+// rather than naming one, so graduating it does not quietly turn this off.
+const adminOnly = PREVIEW_FEATURES.filter(f => !previewOpenToPro(f))
+check('a feature still admin only is news for the owner and nothing for Pro',
+  adminOnly.length > 0 && adminOnly.every(f => !newsGateOpen(f, 'pro') && newsGateOpen(f, 'admin')), adminOnly)
 
 // ── When it opens ──
 const POP = read('components/dashboard/MvpNews.tsx')

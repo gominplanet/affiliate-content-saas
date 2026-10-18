@@ -6,7 +6,8 @@
 // POST /api/drop — { action } — make a drop, link it to the Liftoff batch it
 //                  built, move its state, and record each blog and TRYBE result.
 //
-// Drop (Labs, admin while it is tested; lib/drop-plan). This route only keeps
+// Drop (open to Pro; the switch is lib/labs-preview, the plan lib/drop-plan).
+// This route only keeps
 // the record. The work goes through the routes that already do it: Liftoff's
 // batch routes, /api/blog/schedule-publish, and SCOUT for TRYBE. Each result
 // is written after that route or SCOUT answered, never before.
@@ -51,7 +52,7 @@ async function gate() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   const { data: intg } = await (supabase as Sb).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('drop', intg?.tier)) return { error: NextResponse.json({ error: 'Drop is still being tested.' }, { status: 403 }) }
+  if (!canUsePreview('drop', intg?.tier)) return { error: NextResponse.json({ error: 'Drop is part of Pro.' }, { status: 403 }) }
   return { userId: user.id as string, sb: supabase as Sb }
 }
 
