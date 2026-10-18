@@ -130,6 +130,20 @@ if (present) {
     /class=["']printonly["']/i.test(HTML) && /\.hero-fig \.printonly\{display:none\}/.test(HTML),
     'video does not print, so the figure needs the photo back for paper')
 
+  // THE H1 HAS NO TEXT OF ITS OWN ANY MORE. The title is artwork now, so the
+  // alt attribute is the only place the page says its own name to a screen
+  // reader or a crawler. Drop it and the document silently loses its heading
+  // while looking completely normal on screen, which is the exact shape of bug
+  // this file keeps being written to catch.
+  const h1 = /<h1[^>]*>[\s\S]*?<\/h1>/i.exec(HTML)?.[0] ?? ''
+  check('the wordmark carries the title as alt text',
+    /<img[^>]+class=["']wordmark["'][^>]*>/i.test(h1)
+    && /alt=["']There is no shortcut["']/i.test(h1),
+    'with the title set as a picture, alt is the only heading text the page has')
+  check('and the wordmark file is shipped',
+    existsSync('public/freeguide/logo.webp'),
+    'a missing wordmark leaves the hero showing alt text where the title was')
+
   // SELF-CONTAINED. Google Fonts is the one exception and it is named here so
   // a second exception has to be argued for rather than absorbed.
   const externals = [...HTML.matchAll(/(?:src|href)=["'](https?:\/\/[^"']+)["']/gi)]
