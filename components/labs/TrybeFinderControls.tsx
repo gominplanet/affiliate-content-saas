@@ -217,10 +217,15 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     }
     return `${n.toLocaleString()} by ${FILTER_WORDS[f]}`
   }
+  // AD SPEND IS NOT TRYBE'S TO GIVE: it comes from Meta's Ad Library, read
+  // by SCOUT, so its "not known" says that, apart from TRYBE's own blanks.
+  const spendUnknown = unk.find(([f]) => f === 'spending')?.[1] ?? 0
+  const trybeUnk = unk.filter(([f]) => f !== 'spending')
   return (
     <p className="text-[12px] mt-3" style={soft}>
       {hid.length > 0 && <>Hidden by your filters: {hid.map(hidWords).join(', ')}. </>}
-      {unk.length > 0 && <>TRYBE&rsquo;s list does not give {unk.map(([f, n]) => `the ${FILTER_WORDS[f]} of ${n.toLocaleString()} brand${n === 1 ? '' : 's'}`).join(', ')}, so {unk.length === 1 && unk[0][1] === 1 ? 'it is' : 'they are'} listed after the ones that pass. Open a brand on TRYBE to check.</>}
+      {spendUnknown > 0 && <>MVP has not counted Meta ads for {spendUnknown.toLocaleString()} brand{spendUnknown === 1 ? '' : 's'} yet, so {spendUnknown === 1 ? 'it is' : 'they are'} listed after the ones it knows are spending. </>}
+      {trybeUnk.length > 0 && <>TRYBE&rsquo;s list does not give {trybeUnk.map(([f, n]) => `the ${FILTER_WORDS[f]} of ${n.toLocaleString()} brand${n === 1 ? '' : 's'}`).join(', ')}, so {trybeUnk.length === 1 && trybeUnk[0][1] === 1 ? 'it is' : 'they are'} listed after the ones that pass. Open a brand on TRYBE to check.</>}
     </p>
   )
 }

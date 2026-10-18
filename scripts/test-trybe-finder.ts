@@ -11,7 +11,7 @@ import { pickScore, weighScore, readPriorities, DEFAULT_PRIORITIES, FACTORS } fr
 import { payPasses, readPay } from '../lib/trybe-outreach'
 import type { Judged, MyBrand } from '../lib/trybe-mybrands'
 import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '../lib/labs-preview'
-import { productOnAmazon, productWords, filmedProducts } from '../lib/trybe-finder'
+import { productOnAmazon, productWords, filmedProducts, spendingOf } from '../lib/trybe-finder'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -167,6 +167,30 @@ check('Make videos step 3 says when you already filmed the product on Amazon', /
   const C = read('components/labs/TrybeFinderControls.tsx')
   check('the list shows the ASIN to copy, the Amazon page and your videos', /ASIN \{asin\}/.test(C) && /Amazon page/.test(C) && /Your video/.test(C))
   for (const f of ['components/labs/TrybeCreate.tsx', 'components/labs/TrybeBrandCard.tsx', 'components/labs/TrybeAfterAccept.tsx']) check(`${f} shows the products you filmed`, /<AmazonFilmedList /.test(read(f)))
+}
+
+// ── SPENDING ON ADS ─────────────────────────────────────────────────────────
+// Seb, 2026-10-18: GentGolfers had about 2,100 Meta ads running and the
+// "Spending on ads" filter hid it. Reading TRYBE's Top 100 gives every brand
+// outside it 0 hits, and that 0 was taken as "not spending" for every brand
+// whose Meta ads had not been counted yet. The Top 100 can only say yes.
+{
+  const at = '2026-10-18T00:00:00Z'
+  check('outside the Top 100 with no Meta count is not known, not a no',
+    spendingOf({ top100_hits: 0, top100_checked_at: at, meta_ads: null, meta_ads_checked_at: null }) === null)
+  check('in the Top 100 is spending', spendingOf({ top100_hits: 2, top100_checked_at: at }) === true)
+  check('Meta ads counted is spending', spendingOf({ meta_ads: 2100, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }) === true)
+  check('only a Meta read that found none is a no', spendingOf({ meta_ads: 0, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }) === false)
+  check('a count with no read date is not trusted', spendingOf({ meta_ads: 0, meta_ads_checked_at: null }) === null)
+  check('nothing read is not known', spendingOf({}) === null)
+  const R = read('app/api/labs/trybe/route.ts')
+  check('the finder uses that one rule', /spending: spendingOf\(x\.r\)/.test(R) && !/const spendingOf = /.test(R))
+  const C = read('components/labs/TrybeFinderControls.tsx')
+  check('a brand not counted yet is said as not counted, not as TRYBE leaving it blank',
+    /MVP has not counted Meta ads for/.test(C))
+  const O = read('components/labs/TrybeOutreach.tsx')
+  check('and the count is offered right there with the filter on',
+    /filters\.spending && \(live\.unknownBy\?\.spending \?\? 0\) > 0 && canPlaybook[\s\S]{0,200}checkMetaAds\(\)/.test(O))
 }
 
 if (failed) { console.error(`\n${failed} TRYBE finder check(s) failed`); process.exit(1) }
