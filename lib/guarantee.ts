@@ -33,6 +33,10 @@
 /** How long after the first payment a refund can be requested. */
 export const GUARANTEE_DAYS = 7
 
+/** Where a member writes to ask for the refund (Seb, 2026-10-18). The Terms
+ *  and Ask MVP both read it, so they cannot name two different inboxes. */
+export const REFUND_EMAIL = 'team@mvpaffiliate.io'
+
 /** The phrase used on the sales pages. Kept here so "7-day" and the clause in
  *  the Terms cannot come apart. */
 export const GUARANTEE_LABEL = `${GUARANTEE_DAYS}-day refund, no questions asked`

@@ -1,4 +1,4 @@
-import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
+import { GUARANTEE_DAYS, GUARANTEE_LABEL, REFUND_EMAIL } from '@/lib/guarantee'
 
 export const metadata = {
   title: 'Terms of Service',
@@ -124,7 +124,9 @@ export default function TermsPage() {
           </p>
           <p>
             <strong>{GUARANTEE_LABEL[0].toUpperCase() + GUARANTEE_LABEL.slice(1)}.</strong> If you subscribe and MVP Affiliate is not
-            for you, email us within {GUARANTEE_DAYS} days of your first payment and we will refund it in full and
+            for you, email{' '}
+            <a href={`mailto:${REFUND_EMAIL}`} className="text-[#7C3AED] hover:underline">{REFUND_EMAIL}</a>{' '}
+            within {GUARANTEE_DAYS} days of your first payment and we will refund it in full and
             cancel the subscription. No questions, and nothing you made with it is taken away. The
             guarantee covers your first payment on a subscription; renewals after that are not
             refundable except where required by law, and neither are one-off purchases such as
@@ -218,7 +220,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">16. Contact</h2>
           <p>
             Questions about these Terms? Contact us at{' '}
-            <a href="mailto:us@gominplanet.com" className="text-[#7C3AED] hover:underline">us@gominplanet.com</a>.
+            <a href={`mailto:${REFUND_EMAIL}`} className="text-[#7C3AED] hover:underline">{REFUND_EMAIL}</a>.
           </p>
         </div>
 

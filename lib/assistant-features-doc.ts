@@ -34,7 +34,7 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from './amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from './launch-batch'
-import { GUARANTEE_SENTENCE } from './guarantee'
+import { GUARANTEE_SENTENCE, REFUND_EMAIL } from './guarantee'
 import { INTRO_DAYS } from './intro-allowance'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, newPricesLive } from './price-schedule'
 
@@ -814,7 +814,7 @@ Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 ` : ''}**"Is there a free trial?"** No. There is no free plan and no free trial.
 Every new member starts on Pro (the only plan on sale) and gets every feature
 from the first day. ${GUARANTEE_SENTENCE} To ask for it, email
-us@gominplanet.com. Renewals after the first payment are not refundable,
+${REFUND_EMAIL}. Renewals after the first payment are not refundable,
 except where the law requires it.
 
 **"Why are my allowances smaller right now?"** In a new member's first
@@ -1065,7 +1065,7 @@ right and something needs reporting. Say so rather than explaining the gap away.
 
 - Pro is the only plan on sale. There is no free plan and no free trial: every new member pays for Pro at checkout, monthly or yearly, and gets every feature from the first day.
 ${priceLine}
-- Refund: ${GUARANTEE_SENTENCE} To ask, email us@gominplanet.com. Renewals after the first payment are not refundable, except where the law requires it.
+- Refund: ${GUARANTEE_SENTENCE} To ask, email ${REFUND_EMAIL}. Renewals after the first payment are not refundable, except where the law requires it.
 - First week: in a new member's first ${INTRO_DAYS} days each monthly allowance below runs at a quarter of its size. The full allowance opens on day ${INTRO_DAYS + 1}.
 - Never offer a free trial, a free plan, or any plan other than Pro.
 - Older accounts made while the free trial still existed may still be on it (Ask MVP messages: ${TIERS.trial.assistantMessagesPerMonth} per month). Their next step is Pro on /billing.
