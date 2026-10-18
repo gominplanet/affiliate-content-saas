@@ -125,7 +125,7 @@ if (present) {
     'without a poster a dead video host leaves an empty box where the hero was')
   check('and it does not spend the file on arrival',
     /preload=["']none["']/i.test(vid) && !/\bautoplay\b/i.test(vid),
-    'the file is 22.7MB for a 272px slot, so autoplay would spend it on every visit')
+    'the file is 12.6MB for a 272px slot, so autoplay would spend it on every visit')
   check('and the photo still prints',
     /class=["']printonly["']/i.test(HTML) && /\.hero-fig \.printonly\{display:none\}/.test(HTML),
     'video does not print, so the figure needs the photo back for paper')

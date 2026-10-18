@@ -341,7 +341,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 }
 
 /* ── The hero video ────────────────────────────────────────────────────────
-   IT DOES NOT AUTOPLAY, AND THAT IS THE POINT. The file is 22.7MB serving a
+   IT DOES NOT AUTOPLAY, AND THAT IS THE POINT. The file is 12.6MB serving a
    272px-wide slot. Autoplaying it would spend all of that on every arrival,
    on phone data, before the reader has asked for anything, on the one page
    whose entire job is to be read. preload="none" means not one byte of it
@@ -352,12 +352,14 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
    its host is down the hero quietly goes back to being a photo instead of a
    broken box. That is the failure mode worth having.
 
-   object-fit:cover BECAUSE THE SOURCE IS 16:9 AND THIS SLOT IS 9:10. Cover
-   scales the video to the box height and crops the sides, keeping the middle.
-   Move object-position if the framing cuts somebody out of shot. */
+   object-fit:cover FOR THE LAST 9%. The source is 698x852 (0.819) and this
+   slot is 0.898, so cover scales to the width and takes about nine percent off
+   the height. object-position sits above centre so that nine percent comes off
+   the bottom of frame rather than off the top of a head. Move it if the
+   framing still cuts somebody. */
 .hero-fig .vwrap{position:relative;aspect-ratio:790/880;border-radius:3px;
   overflow:hidden;background:var(--ink)}
-.hero-fig video{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 50%}
+.hero-fig video{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 38%}
 .hero-fig .vplay{position:absolute;inset:0;width:100%;border:0;padding:0 0 16px;
   display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:14px;
   background:linear-gradient(to top,rgba(0,0,0,.6),rgba(0,0,0,.05) 60%);
@@ -465,7 +467,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
     <div class="vwrap">
       <video id="herovid" playsinline preload="none" poster="/freeguide/hero.jpg"
              width="790" height="880">
-        <source src="https://gominreviews.com/wp-content/uploads/2026/10/freeguide-intro-web.mp4" type="video/mp4">
+        <source src="https://gominreviews.com/wp-content/uploads/2026/10/Freeguide-intro-003.mp4" type="video/mp4">
       </video>
       <button class="vplay" id="vplay" type="button" aria-label="Play the 57 second introduction to this guide"><span class="disc" aria-hidden="true"></span>Watch first &middot; 57 sec</button>
     </div>
