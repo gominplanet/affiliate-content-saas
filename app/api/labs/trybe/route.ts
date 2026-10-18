@@ -2045,10 +2045,14 @@ export async function POST(request: Request) {
     // placed first, and only ones nothing has been tried on.
     const done = new Set([...before].filter(([, r]) => r.state !== 'waiting').map(([id]) => id))
     const waiting = list.filter((e) => typeof e.submissionId === 'string' && !done.has(e.submissionId))
-    const hear = toTranscribe(
+    // Listening costs, so one collection pays for 25 at most. The rest with a
+    // file are counted, so the page can say a press of Collect again does more.
+    const canHear = toTranscribe(
       waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null, video: typeof e.video === 'string' ? e.video : null })),
-      done, 25,
+      done, 1000,
     )
+    const hear = canHear.slice(0, 25)
+    const hearLeft = canHear.length - hear.length
     // A video TRYBE gave no file for can never be listened to, so the count
     // of those is part of the answer rather than an absence the page has to
     // guess at.
@@ -2056,7 +2060,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true, saved: fresh.length, noId, waiting: waiting.length, noFile,
       need: waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null })).slice(0, 60),
-      hear: hear.map((h) => h.submissionId),
+      hear: hear.map((h) => h.submissionId), hearLeft,
     })
   }
 

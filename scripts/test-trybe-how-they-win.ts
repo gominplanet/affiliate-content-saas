@@ -96,7 +96,28 @@ check('"Filed" is the count the route saved, not the count the page sent',
 check('filing none is said as none, and not shown with a tick', /MVP filed none of the \$\{entries\.length\}/.test(C) && /i === 0 && report\.filed \? <Check/.test(C))
 check('entries with no id are counted with the reason', /came without a video id in TRYBE/.test(C))
 check('asking about none says why, instead of "none of the 0"',
-  /else if \(need\.length\) lines\.push\(`TRYBE shared the words for none/.test(C) && /already tried on an earlier collection/.test(C))
+  /if \(need\.length\) lines\.push\(shared/.test(C) && /else if \(filed\) lines\.push\('Every one of them was already tried on an earlier collection/.test(C))
+// The second collection (Seb, 2026-10-18) read "TRYBE shared the words for
+// 7" and "5 did not come back": 53 refusals and five reasons, all unsaid.
+check('a collection that got some words still says how many were asked and refused',
+  /TRYBE shared the words for \$\{shared\} of the \$\{need\.length\} MVP asked about\$\{turnedDown\}/.test(C)
+    && /const turnedDown = refused \? `, and refused \$\{refused\} of those outright`/.test(C))
+check('a video that did not come back says why', /whyNot\.set\(why/.test(C) && /did not come back\$\{reasons \? ` \(\$\{reasons\}\)` : ''\}/.test(C))
+check('what is left is said, and that Collect again does the next ones',
+  /const stillWaiting = Math\.max\(0, waiting - shared - heard\)/.test(C) && /Collect again listens to the next/.test(C)
+    && /const hearLeft = canHear\.length - hear\.length/.test(seenBody) && /hearLeft,/.test(seenBody))
+check('one collection still pays for 25 at most', /const hear = canHear\.slice\(0, 25\)/.test(seenBody))
+// Write mine from this, pressed with the boxes empty (Seb, 2026-10-18): the
+// page checks first with the route's own rule, says where the boxes are, and
+// takes the creator to the empty one, before anything is spent.
+{
+  const rw = C.slice(C.indexOf('async function rewrite('), C.indexOf("action: 'script_rewrite'"))
+  check('an empty box is caught on the page with the route’s own rule, before the request',
+    /const missing = rewriteMissing\(\{ reference: v\.script, experience, product \}\)/.test(rw) && /if \(missing\.length\)[\s\S]{0,500}return/.test(rw))
+  check('and the creator is taken to the empty box', /scrollIntoView/.test(rw) && /box\?\.focus\(\)/.test(rw)
+    && /ref=\{productBox\}/.test(C) && /ref=\{experienceBox\}/.test(C))
+  check('and told where the boxes are', /Fill in the boxes above under/.test(rw))
+}
 check('an answer with no video files shows the fields TRYBE did send', /withFile === 0\) lines\.push\(`Each entry TRYBE sent has: \$\{topEntryFields\(top\.json\)\}/.test(C))
 {
   const nested = readTopEntries({ data: [{ id: 's1', brandName: 'Acme', media: { assets: [{ type: 'video', url: 'https://cdn.example.com/v/a1.mp4?sig=1' }] } }] })
@@ -146,7 +167,9 @@ check('a database without migration 442 says which migration', /How they win nee
 check('and says it on reading, not only on writing', /scriptsMissing\(error\.message\)[\s\S]{0,160}needsMigration: true/.test(R))
 
 // ── House style ──────────────────────────────────────────────────────────────
-const copy = (C.match(/"[^"]{12,}"|>[^<>{}\n]{14,}</g) ?? []).join(' ')
+// One line at a time: a quoted string a creator reads never spans lines, and
+// pairing quotes across lines read the code between two attributes as copy.
+const copy = (C.match(/"[^"\n]{12,}"|>[^<>{}\n]{14,}</g) ?? []).join(' ')
 check('no dashes in anything a creator reads', !/[–—]| - /.test(copy), (copy.match(/[–—]| - /g) ?? []).slice(0, 3))
 check('no year typed into the copy', !/\b20\d\d\b/.test(copy))
 

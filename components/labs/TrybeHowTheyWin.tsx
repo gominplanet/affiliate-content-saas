@@ -30,7 +30,7 @@ import {
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readScript } from '@/lib/trybe-mybrands'
 import { readTopEntries, topEntryFields } from '@/lib/trybe-working'
-import { CLOSENESS, type Closeness, type TopScript } from '@/lib/trybe-scripts'
+import { CLOSENESS, rewriteMissing, type Closeness, type TopScript } from '@/lib/trybe-scripts'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#15803D'
@@ -100,6 +100,8 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
   const [step, setStep] = useState<string | null>(null)
   const [report, setReport] = useState<{ tone: 'ok' | 'warn'; lines: string[]; filed: number } | null>(null)
   const stop = useRef(false)
+  const productBox = useRef<HTMLInputElement>(null)
+  const experienceBox = useRef<HTMLTextAreaElement>(null)
 
   const loadStats = useCallback(async () => {
     const r = await post({ action: 'top_scripts_stats' })
@@ -121,6 +123,16 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
 
   async function rewrite(v: TopScript) {
     if (!v.script) return
+    // THE BOXES ARE ABOVE, THE BUTTON IS BELOW. Pressed with either empty, the
+    // refusal used to land under the video, a screen away from what it asked
+    // for (Seb, 2026-10-18). Now it says where, and takes the creator there.
+    const missing = rewriteMissing({ reference: v.script, experience, product })
+    if (missing.length) {
+      const box = !product.trim() ? productBox.current : experienceBox.current
+      box?.scrollIntoView({ behavior: 'smooth', block: 'center' }); box?.focus()
+      setWriteError((e) => ({ ...e, [v.submission_id]: `Fill in the boxes above under ${brand?.name || 'the brand'} first: ${missing.join(' and ')}. Then press Write mine from this again.` }))
+      return
+    }
     setWriting(v.submission_id)
     setWriteError((e) => { const n = { ...e }; delete n[v.submission_id]; return n })
     const r = await post({
@@ -154,12 +166,14 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
       const seen = await post({ action: 'top_scripts_seen', entries: entries.map((e) => ({ ...e, submissionId: e.id })) })
       if (!seen.ok) { toast.error(String(seen.json.error || 'MVP could not file the Top 100.')); return }
       // FILED IS WHAT THE ROUTE SAVED, not what the page sent. The page once
-      // said "Filed 100" while the route had dropped every one of them.
+      // said it filed 100 while the route had dropped every one of them.
       const filed = Number(seen.json.saved) || 0
       const noId = Number(seen.json.noId) || 0
       const need = (seen.json.need ?? []) as Array<{ submissionId: string }>
       const hear = new Set((seen.json.hear ?? []) as string[])
       const noFile = Number(seen.json.noFile) || 0
+      const waiting = Number(seen.json.waiting) || 0
+      const hearLeft = Number(seen.json.hearLeft) || 0
 
       // FREE FIRST. TRYBE shares the words for some of them at no cost, and
       // readScript is what turns its answer into words.
@@ -179,6 +193,9 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
       const toHear = [...hear]
       let heard = 0, failed = 0
       let notConfigured = false
+      // WHY EACH ONE DID NOT COME BACK, counted, so a line saying five did
+      // not come back carries its reason instead of leaving the team to guess.
+      const whyNot = new Map<string, number>()
       for (let i = 0; i < toHear.length && !stop.current; i++) {
         setStep(`Listening to the video (${i + 1} of ${toHear.length})`)
         const h = await post({ action: 'top_script_hear', submissionId: toHear[i] })
@@ -186,21 +203,39 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
         else {
           failed++
           if (/not configured/i.test(String(h.json.error || ''))) { notConfigured = true; break }
+          const why = String(h.json.error || (h.json.why ? `it heard ${h.json.why}` : 'no answer came back'))
+            .replace(/^MVP could not listen to that video:\s*/i, '').slice(0, 140)
+          whyNot.set(why, (whyNot.get(why) ?? 0) + 1)
         }
       }
+      const reasons = [...whyNot].sort((a, b) => b[1] - a[1]).slice(0, 2)
+        .map(([why, n]) => (whyNot.size > 1 ? `${n}: ${why}` : why)).join('; ')
 
       // EVERY ZERO WITH ITS REASON.
       const lines: string[] = [filed
         ? `Filed ${filed} of the ${entries.length} videos in today’s Top 100.`
         : `MVP filed none of the ${entries.length} videos in today’s Top 100.`]
       if (noId) lines.push(`${noId} came without a video id in TRYBE’s answer, so MVP had nothing to file them under or ask TRYBE about.`)
-      if (shared) lines.push(`TRYBE shared the words for ${shared}.`)
-      else if (need.length) lines.push(`TRYBE shared the words for none of the ${need.length} MVP asked about${refused ? `, and refused ${refused} of those outright` : ''}.`)
+      // HOW MANY WERE ASKED, and how many TRYBE turned down, whether or not
+      // some came back. A line saying TRYBE shared 7 hid that 53 were refused.
+      const turnedDown = refused ? `, and refused ${refused} of those outright` : ''
+      if (need.length) lines.push(shared
+        ? `TRYBE shared the words for ${shared} of the ${need.length} MVP asked about${turnedDown}.`
+        : `TRYBE shared the words for none of the ${need.length} MVP asked about${turnedDown}.`)
       else if (filed) lines.push('Every one of them was already tried on an earlier collection, so MVP did not ask TRYBE again.')
       if (empty) lines.push(`${empty} came back with nothing MVP could read.`)
       if (noFile) lines.push(`${noFile} of them have no video file in TRYBE’s answer, so nothing can listen to those.`)
       if (notConfigured) lines.push('Transcription is not switched on for this deployment, so MVP could not listen to any of them.')
-      else if (toHear.length) lines.push(heard ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back.` : ''}` : `MVP could not listen to any of the ${toHear.length} it tried.`)
+      else if (toHear.length) lines.push(heard
+        ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back${reasons ? ` (${reasons})` : ''}.` : ''}`
+        : `MVP could not listen to any of the ${toHear.length} it tried${reasons ? ` (${reasons})` : ''}.`)
+      // WHAT IS LEFT, so a board at 23 of 100 reads as a first pass rather
+      // than the whole of it. Listening is capped per collection because it
+      // costs, so the next press does the next ones.
+      const stillWaiting = Math.max(0, waiting - shared - heard)
+      if (stillWaiting) {
+        lines.push(`${stillWaiting} still have no words.${hearLeft ? ` ${hearLeft} of them have a video file MVP has not listened to yet, and Collect again listens to the next ${Math.min(hearLeft, 25)}.` : ''}`)
+      }
       else if (!notConfigured) lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
       // WHAT TRYBE DID SEND, when none of it was a video file, so the next
       // fix is a field name rather than a guess.
@@ -340,7 +375,7 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
           </div>
           {ready.length > 0 && (
             <div className="mt-3 pt-3 border-t grid gap-2 sm:grid-cols-2" style={{ borderColor: 'var(--border)' }}>
-              <input className={field} style={fieldStyle} placeholder="Which product do you have?" value={product} onChange={(e) => setProduct(e.target.value)} />
+              <input ref={productBox} className={field} style={fieldStyle} placeholder="Which product do you have?" value={product} onChange={(e) => setProduct(e.target.value)} />
               <div className="flex gap-1.5">
                 {(Object.keys(CLOSENESS) as Closeness[]).map((c) => (
                   <button key={c} type="button" onClick={() => setCloseness(c)} title={CLOSENESS[c].says}
@@ -350,7 +385,7 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
                   </button>
                 ))}
               </div>
-              <textarea className={`${field} sm:col-span-2`} style={fieldStyle} rows={2}
+              <textarea ref={experienceBox} className={`${field} sm:col-span-2`} style={fieldStyle} rows={2}
                 placeholder="What actually happened to you with it? This is the part MVP cannot invent."
                 value={experience} onChange={(e) => setExperience(e.target.value)} />
             </div>
