@@ -1,0 +1,113 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// HOW THEY WIN, wired up (components/labs/TrybeHowTheyWin, the top_scripts
+// actions in app/api/labs/trybe, migration 442).
+//
+// The two things that cost real money or real trust:
+//
+//   A transcription is spent once, by the team, on a video nothing else could
+//   read. Spent twice, or spent per member, and the Top 100 costs a hundred
+//   times what it should.
+//
+//   A rewrite never hands the reference back. A creator who posts another
+//   creator's words to the same brand in the same month is the one that brand
+//   drops, and they would be doing it because MVP told them to.
+import { readFileSync, existsSync } from 'node:fs'
+import { bestRank } from '../lib/trybe-scripts'
+
+const fails: string[] = []
+const check = (name: string, ok: boolean | undefined, detail?: unknown) => {
+  if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`)
+}
+const read = (f: string) => readFileSync(f, 'utf8')
+const R = read('app/api/labs/trybe/route.ts')
+const C = read('components/labs/TrybeHowTheyWin.tsx')
+const O = read('components/labs/TrybeOutreach.tsx')
+
+// ── On the page ──────────────────────────────────────────────────────────────
+check('the component exists', existsSync('components/labs/TrybeHowTheyWin.tsx'))
+check('How they win is a tab in Create', /\{ id: 'win', label: 'How they win', icon: Trophy, group: 'create'/.test(O))
+check('and it renders, rather than being a label with nothing behind it',
+  /type Tab = [^\n]*'win'/.test(O) && /\{tab === 'win' && <TrybeHowTheyWin canRead=\{canMyBrands\} isAdmin=\{isAdmin\} \/>\}/.test(O))
+check('it sits with Make videos and Upload videos, not off in Track',
+  O.indexOf("id: 'win'") > O.indexOf("id: 'create', label: 'Make videos'") && O.indexOf("id: 'win'") < O.indexOf("id: 'week'"))
+
+// ── WHO MAY SPEND MONEY ──────────────────────────────────────────────────────
+// Collecting is the team's. A member reading is free; a member transcribing
+// the Top 100 would be the same hundred videos paid for again per person.
+for (const action of ['top_scripts_seen', 'top_script_save', 'top_script_hear']) {
+  const at = R.indexOf(`action === '${action}'`)
+  const body = R.slice(at, at + 500)
+  check(`${action} is the team's alone`, at > 0 && /tier !== 'admin'/.test(body), body.slice(0, 120))
+}
+check('reading a brand’s videos is not admin only', (() => {
+  const at = R.indexOf("action === 'top_scripts'")
+  return at > 0 && !/tier !== 'admin'/.test(R.slice(at, at + 400))
+})())
+check('the rewrite is not admin only either, it is what members came for', (() => {
+  const at = R.indexOf("action === 'script_rewrite'")
+  return at > 0 && !/tier !== 'admin'/.test(R.slice(at, at + 600))
+})())
+
+// ── A TRANSCRIPTION IS SPENT ONCE ────────────────────────────────────────────
+const hear = R.slice(R.indexOf("action === 'top_script_hear'"), R.indexOf("action === 'script_rewrite'"))
+check('a video that already has words is never paid for again', /row\.state === 'ready'[\s\S]{0,80}already: true/.test(hear))
+check('a video with no file is written off with a reason, not queued for ever',
+  /state: 'none', detail: 'TRYBE gave no video file for this one\.'/.test(hear))
+// A transcription that fell over is not a video with no words. Marking it
+// 'none' would retire a perfectly good video on one network hiccup.
+const hearCatch = hear.slice(hear.indexOf('} catch (e) {'))
+check('a transcription that failed leaves the video waiting, not written off',
+  hearCatch.length > 40 && /could not listen to it/.test(hearCatch) && !/state:/.test(hearCatch))
+check('the video URL is checked before MVP fetches it', /assertPublicHttpUrl\(url\)/.test(hear))
+check('no transcription is attempted where it is not configured', /transcriptionConfigured\(\)/.test(hear))
+// Free first. TRYBE shares the words for some of them at no cost.
+check('the page asks TRYBE for the words before paying to listen',
+  C.indexOf("action: 'top_script_save'") < C.indexOf("action: 'top_script_hear'"))
+check('and only pays for the ones TRYBE had nothing for', /hear\.delete\(id\)/.test(C))
+check('the collection says what it actually did, per source',
+  /TRYBE shared the words for \$\{fromTrybe\}\. MVP listened to \$\{heard\}/.test(C))
+
+// ── A better place is kept ───────────────────────────────────────────────────
+check('a worse day never demotes a video', bestRank(71, 3) === 3 && bestRank(3, 71) === 3)
+check('a first sighting stands on its own', bestRank(12, undefined) === 12 && bestRank(null, 12) === 12)
+check('nothing known stays nothing, never zero', bestRank(null, undefined) === null && bestRank(0, null) === null)
+check('the route keeps the best place rather than today’s', /bestRank\(r\.best_rank, was\?\.best_rank\)/.test(R))
+
+// ── THE CHECK THAT PROTECTS THE CREATOR ──────────────────────────────────────
+const rw = R.slice(R.indexOf("action === 'script_rewrite'"), R.indexOf("action === 'script_rewrite'") + 3000)
+check('a rewrite too close to the original is refused, not shown with a warning',
+  /tooAlike\(reference, out\.script\)/.test(rw) && /status: 409/.test(rw))
+check('and the refusal tells the creator what to change', /Move the dial to Same shape or Just the idea/.test(rw))
+check('the creator must say what happened to them before anything is written', /rewriteMissing\(input\)/.test(rw))
+check('the spend gate runs before the model does',
+  rw.indexOf('spendGate(userId, tier)') > 0 && rw.indexOf('spendGate(userId, tier)') < rw.indexOf('messages.create'))
+check('what it cost is recorded against the creator', /feature: 'trybe_script_rewrite'/.test(rw))
+check('a model that answers with prose is a message, not a crash', /did not get a script back it could use/.test(rw))
+
+// ── WHAT THE BOARD ADMITS ────────────────────────────────────────────────────
+// Four openings out of twenty five asked is the normal case. A board that
+// hides that sends a creator to copy the wrong thing.
+check('the board prints its own coverage', /\{coverage \|\| coverageWords\(videos\)\}/.test(C))
+check('each card says which source answered, and they are different sentences',
+  /TRYBE shared these words\./.test(C) && /MVP listened to the video for these words\./.test(C))
+check('a video with no words is shown saying so, not left out',
+  /Nothing read from this one yet\./.test(C) && /Waiting on the words/.test(C))
+check('a video with no opening line says that too', /No opening line yet\./.test(C))
+check('the server sends the coverage line rather than the page inventing one', /coverage: coverageWords\(rows\)/.test(R))
+
+// ── Migration missing is said, not swallowed ─────────────────────────────────
+check('a database without migration 442 says which migration', /How they win needs migration 442 in Supabase first\./.test(R))
+check('and says it on reading, not only on writing', /scriptsMissing\(error\.message\)[\s\S]{0,160}needsMigration: true/.test(R))
+
+// ── House style ──────────────────────────────────────────────────────────────
+const copy = (C.match(/"[^"]{12,}"|>[^<>{}\n]{14,}</g) ?? []).join(' ')
+check('no dashes in anything a creator reads', !/[–—]| - /.test(copy), (copy.match(/[–—]| - /g) ?? []).slice(0, 3))
+check('no year typed into the copy', !/\b20\d\d\b/.test(copy))
+
+if (fails.length) {
+  console.error(`\n❌ trybe-how-they-win: ${fails.length} failure(s)\n`)
+  for (const f of fails) console.error(`   • ${f}`)
+  process.exit(1)
+}
+console.log('✅ trybe-how-they-win: the team pays for a transcription once, the board admits how thin it is, and a rewrite that copies the original is refused')
