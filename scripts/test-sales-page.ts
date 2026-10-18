@@ -477,6 +477,15 @@ for (const { label, src } of AD_PAGES) {
   check('the source is never named in the product', named === '', named)
 }
 
+// A LINE THE PLAN DOES NOT INCLUDE IS CROSSED, NOT TICKED. "No blog or
+// WordPress" wore the same green tick as the features above it.
+{
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  const home = rf('app/page.tsx', 'utf8')
+  check('an excluded line on a plan card gets a cross and loses its ✕ prefix', /const excluded = f\.startsWith\('✕'\)/.test(home)
+    && /excluded\s*\?\s*<XIcon/.test(home) && /f\.replace\(\/\^✕\\s\*\/, ''\)/.test(home))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

@@ -669,16 +669,21 @@ function PricingCard({ tier }: { tier: PricingTier }) {
                   </li>
                 )
               }
+              // WHAT THE PLAN DOES NOT INCLUDE gets a cross, not a check. The
+              // "No blog" line wore a green tick, which read as a feature.
+              const excluded = f.startsWith('✕')
               return (
                 <li key={i} className="flex items-start gap-2.5">
                   <span
                     className="inline-flex items-center justify-center w-4 h-4 rounded-full flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: a.tint }}
+                    style={{ backgroundColor: excluded ? 'var(--surface-hover)' : a.tint }}
                   >
-                    <Check size={11} strokeWidth={3} style={{ color: a.solid }} />
+                    {excluded
+                      ? <XIcon size={11} strokeWidth={3} style={{ color: 'var(--text-faint)' }} />
+                      : <Check size={11} strokeWidth={3} style={{ color: a.solid }} />}
                   </span>
-                  <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                    {f}
+                  <span className="text-[13px] leading-relaxed" style={{ color: excluded ? 'var(--text-faint)' : 'var(--text-muted)' }}>
+                    {excluded ? f.replace(/^✕\s*/, '') : f}
                   </span>
                 </li>
               )
