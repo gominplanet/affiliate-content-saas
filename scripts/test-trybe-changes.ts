@@ -133,7 +133,15 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   const tabsSrc = ui.slice(ui.indexOf('const TABS:'), ui.indexOf(']', ui.indexOf('const TABS:') + 20))
   const groupIds = Array.from(ui.slice(ui.indexOf('const TAB_GROUPS'), ui.indexOf('const TABS:')).matchAll(/\{ id: '(\w+)', label: '([^']+)'/g)).map((m) => m[1])
   const tabGroups = Array.from(tabsSrc.matchAll(/group: '(\w+)'/g)).map((m) => m[1])
-  check('the menu has three groups, and every tab sits in one of them', groupIds.join() === 'create,brands,track' && (tabsSrc.match(/\{ id: '/g) || []).length === 9 && tabGroups.length === 9 && tabGroups.every((g) => groupIds.includes(g)))
+  // COUNTED AGAINST ITSELF, not against a number typed here. The invariant is
+  // that every tab carries a group and every group has tabs; a literal count
+  // made this fail on the next tab added rather than on a tab left ungrouped,
+  // which is what it is for (Upload videos, 2026-10-18).
+  const tabCount = (tabsSrc.match(/\{ id: '/g) || []).length
+  check('the menu has three groups, and every tab sits in one of them',
+    groupIds.join() === 'create,brands,track' && tabCount >= 9 && tabGroups.length === tabCount
+    && tabGroups.every((g) => groupIds.includes(g)) && groupIds.every((g) => tabGroups.includes(g)),
+    { tabCount, grouped: tabGroups.length })
   check('the tab you are on says so to a screen reader, with its name and purpose shown under the menu', /aria-current=\{on \? 'page' : undefined\}/.test(ui) && /<h2 className="text-\[20px\] font-bold leading-tight">\{t\.label\}<\/h2>/.test(ui))
   check('a tab name is never cut short on a phone', !/truncate">\{label\}/.test(ui))
 }
