@@ -308,10 +308,13 @@ const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string }> = [
   { id: 'brands', label: 'Get brands', says: 'Reach out and reply' },
   { id: 'track', label: 'Track', says: 'Pay and news' },
 ]
-const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
+const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string; teamOnly?: boolean }> = [
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
-  { id: 'win', label: 'How they win', icon: Trophy, group: 'create', says: 'Every Top 100 video for a brand, what was said in it, and one press to write yours from a winner.' },
+  // TEAM ONLY (Seb, 2026-10-18: "how they win may not be very helpful" as its
+  // own tab). A member's help is in Make videos, where Their best videos now
+  // carries the words collected here. The team keeps this to collect them.
+  { id: 'win', label: 'Top 100 words', icon: Trophy, group: 'create', teamOnly: true, says: 'Team only. Collect TRYBE’s Top 100 and their words. Members see them in Make videos, under Their best videos for each brand.' },
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
@@ -1363,7 +1366,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{g.says}</span>
             </p>
             <div className="grid grid-cols-2 md:grid-cols-1 gap-1">
-              {TABS.filter((t) => t.group === g.id).map(({ id, label, icon: Icon }) => {
+              {TABS.filter((t) => t.group === g.id && (!t.teamOnly || isAdmin)).map(({ id, label, icon: Icon }) => {
                 const n = preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
                 const on = (lockedTab ?? tab) === id
                 const locked = preview && id !== 'find'
@@ -1412,7 +1415,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {tab === 'upload' && <TrybeUpload />}
 
-      {tab === 'win' && <TrybeHowTheyWin canRead={canMyBrands} isAdmin={isAdmin} />}
+      {tab === 'win' && isAdmin && <TrybeHowTheyWin canRead={canMyBrands} isAdmin={isAdmin} />}
 
       {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (

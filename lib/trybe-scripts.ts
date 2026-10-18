@@ -235,3 +235,50 @@ export const TOO_ALIKE = 0.6
 export function tooAlike(reference: string, written: string): boolean {
   return likeness(reference, written) >= TOO_ALIKE
 }
+
+// ── The team's words, where the creator plans ───────────────────────────────
+
+/**
+ * A brand's best videos in Make videos, with the words the team's Top 100
+ * collection already holds (Seb, 2026-10-18: How they win is "not as useful
+ * as we think where it is"; the help belongs "inside of the brands that have
+ * already accepted to work with users, under Make a video").
+ *
+ * Make videos reads a brand's best videos live and asks TRYBE for the words
+ * of the first three. Any of them TRYBE gave no words for, the collection may
+ * have: shared by TRYBE on an earlier day, or listened to by MVP. Then the
+ * brand's other Top 100 videos with words are added after them, best placed
+ * first, up to `max`. Every video says where its words came from, so a script
+ * MVP listened to is never passed off as one TRYBE shared. Pure.
+ */
+export type WordsFrom = 'trybe' | 'top100_trybe' | 'top100_listened' | null
+export interface WinnerVideo { id: string; thumbnail: string | null; video: string | null; caption: string | null; words: string | null; from: WordsFrom }
+
+export function withTeamWords(
+  live: Array<{ id: string; thumbnail: string | null; video: string | null; caption: string | null; words: string | null }>,
+  team: Array<Pick<TopScript, 'submission_id' | 'script' | 'state' | 'source' | 'best_rank' | 'thumbnail' | 'video_url'>>,
+  max: number,
+): { videos: WinnerVideo[]; fromTeam: number } {
+  const ready = new Map(team
+    .filter((t) => t.state === 'ready' && typeof t.script === 'string' && t.script.trim().length >= SCRIPT_MIN)
+    .map((t) => [t.submission_id, t]))
+  const fromOf = (t: { source: ScriptSource }): WordsFrom => (t.source === 'transcribed' ? 'top100_listened' : 'top100_trybe')
+  let fromTeam = 0
+  const out: WinnerVideo[] = live.map((v) => {
+    if (v.words) return { ...v, from: 'trybe' as const }
+    const t = ready.get(v.id)
+    if (!t) return { ...v, from: null }
+    fromTeam++
+    return { ...v, words: t.script, from: fromOf(t) }
+  })
+  const have = new Set(out.map((v) => v.id))
+  const more = [...ready.values()]
+    .filter((t) => !have.has(t.submission_id))
+    .sort((a, b) => (a.best_rank ?? 999) - (b.best_rank ?? 999))
+  for (const t of more) {
+    if (out.length >= max) break
+    out.push({ id: t.submission_id, thumbnail: t.thumbnail, video: t.video_url, caption: null, words: t.script, from: fromOf(t) })
+    fromTeam++
+  }
+  return { videos: out, fromTeam }
+}

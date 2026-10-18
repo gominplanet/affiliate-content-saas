@@ -19,6 +19,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, type VideoPlan } from '@/lib/trybe-playbook'
 import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
+import { withTeamWords, type WinnerVideo } from '@/lib/trybe-scripts'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -26,7 +27,18 @@ const AMBER = '#B45309'
 
 export type SavedPlan = (VideoPlan & { onSale?: string[]; products?: string[] }) | null
 
-interface Winners { videos: Array<TopVideo & { words: string | null }>; wordsRead: number; wordsTried: number; note: string | null }
+interface Winners { videos: WinnerVideo[]; wordsRead: number; wordsTried: number; fromTeam: number; note: string | null }
+
+/** The brand's Top 100 videos the team already collected, with their words
+ *  (How they win's store). Nothing collected, or no answer, is an empty list:
+ *  the live read still stands on its own. */
+async function teamWords(brandId: string): Promise<Parameters<typeof withTeamWords>[1]> {
+  try {
+    const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'top_scripts', brandId }), signal: AbortSignal.timeout(20_000) })
+    const d = await r.json().catch(() => ({}))
+    return r.ok && Array.isArray(d.videos) ? d.videos : []
+  } catch { return [] }
+}
 
 // Read once per brand per visit: the best videos change slowly.
 const winnersCache = new Map<string, { at: number; w: Winners }>()
@@ -41,16 +53,14 @@ async function loadWinners(brandId: string, isAdmin: boolean): Promise<Winners> 
   const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${id}/details`)
   let videos = d.ok ? readTopVideos(d.json) : []
   let seen = d.ok ? `details: ${keysOf(d.json)}` : ''
+  let readNote: string | null = null
   if (!videos.length) {
     const f = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${id}/top-formats`)
     if (f.ok) { videos = readTopVideos(f.json); seen += `${seen ? '; ' : ''}top-formats: ${keysOf(f.json)}` }
-    else if (!d.ok) return { videos: [], wordsRead: 0, wordsTried: 0, note: `MVP could not read this brand's best videos: ${apiWords(d.error || f.error)}${d.status ? ` (TRYBE answered ${d.status})` : ''}` }
-  }
-  if (!videos.length) {
-    return { videos: [], wordsRead: 0, wordsTried: 0, note: `TRYBE shows no top videos for this brand yet.${isAdmin && seen ? ` (TRYBE sent ${seen})` : ''}` }
+    else if (!d.ok) readNote = `MVP could not read this brand's best videos: ${apiWords(d.error || f.error)}${d.status ? ` (TRYBE answered ${d.status})` : ''}`
   }
   // Their words, for the first three, one at a time.
-  const out: Winners['videos'] = []
+  const out: Array<TopVideo & { words: string | null }> = []
   let wordsRead = 0
   const top = videos.slice(0, 6)
   for (let i = 0; i < top.length; i++) {
@@ -62,7 +72,15 @@ async function loadWinners(brandId: string, isAdmin: boolean): Promise<Winners> 
     }
     out.push({ ...top[i], words })
   }
-  const w: Winners = { videos: out, wordsRead, wordsTried: Math.min(3, top.length), note: null }
+  // THE TEAM'S TOP 100 WORDS, here where the creator plans (Seb, 2026-10-18).
+  // Fills the videos TRYBE gave no words for and adds the brand's other Top
+  // 100 videos that have words, so "Plan videos like their winners" has more
+  // than three to learn from.
+  const merged = withTeamWords(out, await teamWords(brandId), 9)
+  if (!merged.videos.length) {
+    return { videos: [], wordsRead: 0, wordsTried: 0, fromTeam: 0, note: readNote || `TRYBE shows no top videos for this brand yet.${isAdmin && seen ? ` (TRYBE sent ${seen})` : ''}` }
+  }
+  const w: Winners = { videos: merged.videos, wordsRead, wordsTried: Math.min(3, top.length), fromTeam: merged.fromTeam, note: readNote }
   winnersCache.set(brandId, { at: Date.now(), w })
   return w
 }
@@ -206,7 +224,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
     if (winners) { setWinOpen((v) => !v); return }
     setWinOpen(true); setWinLoading(true)
     try { setWinners(await loadWinners(brandId, isAdmin)) }
-    catch (e) { setWinners({ videos: [], wordsRead: 0, wordsTried: 0, note: e instanceof Error ? e.message : 'MVP could not read the best videos.' }) }
+    catch (e) { setWinners({ videos: [], wordsRead: 0, wordsTried: 0, fromTeam: 0, note: e instanceof Error ? e.message : 'MVP could not read the best videos.' }) }
     finally { setWinLoading(false) }
   }
 
@@ -322,12 +340,20 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                     <span className="absolute top-1.5 left-1.5 rounded-full px-1.5 text-[10px] font-bold" style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>#{i + 1}</span>
                   </a>
                   {(v.words || v.caption) && <p className="mt-1 text-[11px] line-clamp-4" title={v.words || v.caption || ''}>{v.words || v.caption}</p>}
+                  {/* WHERE THE WORDS CAME FROM, per video: what MVP heard is
+                      never passed off as what TRYBE shared. */}
+                  {v.from && v.from !== 'trybe' && (
+                    <p className="mt-0.5 text-[10.5px]" style={soft}>{v.from === 'top100_listened' ? 'From the Top 100: MVP listened to it' : 'From the Top 100: TRYBE shared it'}</p>
+                  )}
                 </div>
               ))}
             </div>
-            <p className="mt-1.5 text-[11px]" style={winners.wordsRead ? { color: GREEN } : soft}>
-              {winners.wordsRead
-                ? `TRYBE shared the words of ${winners.wordsRead} of these. ${plan ? 'Press New ideas' : 'Plan videos'} to build hooks from them.`
+            <p className="mt-1.5 text-[11px]" style={winners.wordsRead || winners.fromTeam ? { color: GREEN } : soft}>
+              {winners.wordsRead || winners.fromTeam
+                ? `${[
+                  winners.wordsRead ? `TRYBE shared the words of ${winners.wordsRead} of these` : '',
+                  winners.fromTeam ? `MVP has the words of ${winners.fromTeam}${winners.wordsRead ? ' more' : ' of these'} from TRYBE’s Top 100` : '',
+                ].filter(Boolean).join(', and ')}. ${plan ? 'Press New ideas' : 'Plan videos'} to build hooks from them.`
                 : `TRYBE did not share the words of ${winners.wordsTried === 1 ? 'this video' : 'these videos'}. Watch them, then plan: note the first 2 seconds and what they show.`}
             </p>
           </>)}

@@ -13,7 +13,7 @@
 //   creator's words to the same brand in the same month is the one that brand
 //   drops, and they would be doing it because MVP told them to.
 import { readFileSync, existsSync } from 'node:fs'
-import { bestRank } from '../lib/trybe-scripts'
+import { bestRank, withTeamWords } from '../lib/trybe-scripts'
 import { readTopEntries, topEntryFields } from '../lib/trybe-working'
 
 const fails: string[] = []
@@ -27,9 +27,36 @@ const O = read('components/labs/TrybeOutreach.tsx')
 
 // ── On the page ──────────────────────────────────────────────────────────────
 check('the component exists', existsSync('components/labs/TrybeHowTheyWin.tsx'))
-check('How they win is a tab in Create', /\{ id: 'win', label: 'How they win', icon: Trophy, group: 'create'/.test(O))
-check('and it renders, rather than being a label with nothing behind it',
-  /type Tab = [^\n]*'win'/.test(O) && /\{tab === 'win' && <TrybeHowTheyWin canRead=\{canMyBrands\} isAdmin=\{isAdmin\} \/>\}/.test(O))
+// TEAM ONLY (Seb, 2026-10-18: "how they win may not be very helpful" as its
+// own tab; the help belongs in Make videos). The team keeps the tab to collect.
+check('the collection is a team only tab in Create', /\{ id: 'win', label: 'Top 100 words', icon: Trophy, group: 'create', teamOnly: true/.test(O))
+check('members never see it in the menu', /TABS\.filter\(\(t\) => t\.group === g\.id && \(!t\.teamOnly \|\| isAdmin\)\)/.test(O))
+check('and it renders for the team only, rather than being a label with nothing behind it',
+  /type Tab = [^\n]*'win'/.test(O) && /\{tab === 'win' && isAdmin && <TrybeHowTheyWin canRead=\{canMyBrands\} isAdmin=\{isAdmin\} \/>\}/.test(O))
+
+// ── WHERE A MEMBER SEES IT: Make videos, Their best videos ───────────────────
+{
+  const V = read('components/labs/TrybeVideoIdeas.tsx')
+  check('Their best videos reads the team’s Top 100 words for the brand', /action: 'top_scripts', brandId/.test(V) && /withTeamWords\(out, await teamWords\(brandId\), 9\)/.test(V))
+  check('and a brand with no live top videos still shows its Top 100 ones', V.indexOf('withTeamWords(out') < V.indexOf("TRYBE shows no top videos for this brand yet"))
+  check('each video says where its words came from', /From the Top 100: MVP listened to it/.test(V) && /From the Top 100: TRYBE shared it/.test(V))
+  check('and the line under them counts both sources', /MVP has the words of \$\{winners\.fromTeam\}/.test(V))
+  const live = [
+    { id: 'a', thumbnail: null, video: null, caption: null, words: 'TRYBE shared these words live today' },
+    { id: 'b', thumbnail: null, video: null, caption: null, words: null },
+    { id: 'c', thumbnail: null, video: null, caption: null, words: null },
+  ]
+  const row = (id: string, rank: number, source: 'trybe' | 'transcribed', state: 'ready' | 'waiting' = 'ready') =>
+    ({ submission_id: id, script: state === 'ready' ? `${id} `.repeat(30) : null, state, source, best_rank: rank, thumbnail: null, video_url: null })
+  const m = withTeamWords(live, [row('b', 4, 'transcribed'), row('z', 9, 'trybe'), row('y', 2, 'transcribed'), row('c', 1, 'trybe', 'waiting')], 9)
+  check('a live video TRYBE gave no words for gets the team’s, marked as listened', m.videos[1].words?.startsWith('b ') === true && m.videos[1].from === 'top100_listened')
+  check('a video with no words anywhere stays without, and says nothing', m.videos[2].words === null && m.videos[2].from === null)
+  check('live words are kept and marked as TRYBE’s', m.videos[0].words === 'TRYBE shared these words live today' && m.videos[0].from === 'trybe')
+  check('the brand’s other Top 100 videos with words follow, best placed first',
+    m.videos.slice(3).map((v) => v.id).join() === 'y,z' && m.videos[4].from === 'top100_trybe', m.videos.map((v) => v.id))
+  check('the count is what came from the team', m.fromTeam === 3, m.fromTeam)
+  check('and the list stops at the cap', withTeamWords(live, [row('y', 2, 'trybe'), row('z', 9, 'trybe')], 4).videos.length === 4)
+}
 check('it sits with Make videos and Upload videos, not off in Track',
   O.indexOf("id: 'win'") > O.indexOf("id: 'create', label: 'Make videos'") && O.indexOf("id: 'win'") < O.indexOf("id: 'week'"))
 

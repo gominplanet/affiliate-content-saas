@@ -253,7 +253,7 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
   if (!canRead) {
     return (
       <div className={`${card} p-5`} style={cardStyle}>
-        <p className="text-[15px] font-semibold">How they win needs SCOUT on TRYBE</p>
+        <p className="text-[15px] font-semibold">Top 100 words needs SCOUT on TRYBE</p>
         <p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the videos TRYBE picked for them.</p>
       </div>
     )
