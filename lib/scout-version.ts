@@ -90,6 +90,11 @@ export const SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION = '1.41.7'
 /** The oldest SCOUT that runs Send all by itself (1.48.0): MVP hands it the
  *  list and its tab can close; nothing takes the screen during the run. */
 export const SCOUT_TRYBE_RUNNER_MIN_VERSION = '1.48.0'
+/** Sending to TRYBE from SCOUT's hidden window. Before 1.52.3 the page there
+ *  was never drawn, so every send failed with "brand-not-found ... no search
+ *  box" (Alejandro, Oct 18 and 19, on 1.52.0 and 1.52.2). MVP refuses to start
+ *  a send from an older SCOUT and says to update, rather than fail each one. */
+export const SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION = '1.52.3'
 /** The oldest SCOUT that reads hashtag trends (TikTok Creative Center and
  *  Instagram's tag counts, Labs). */
 export const SCOUT_HASHTAG_TRENDS_MIN_VERSION = '1.49.0'

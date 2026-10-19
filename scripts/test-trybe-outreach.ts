@@ -312,6 +312,15 @@ check('no search box names the page it saw', /steps\.push\(`no search box \(\$\{
 
 // Seb, 2026-10-07: opening a conversation clears its count on TRYBE, and the
 // page does not jump.
+// Alejandro, Oct 19: every send on SCOUT 1.52.2 failed "brand-not-found ...
+// no search box", the bug 1.52.3 fixed. An old SCOUT is told to update, once.
+{
+  const SV = readFileSync('lib/scout-version.ts', 'utf8')
+  check('sending needs the SCOUT that draws its hidden page', /SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION = '1\.52\.3'/.test(SV))
+  check('Send all and Send now stop on an older SCOUT and say how to update, before anything is claimed',
+    /async function sendAll\(\) \{\n    const old = oldScoutWords\(\)\n    if \(old\)/.test(UI) && /const old = oldScoutWords\(\)\n    if \(old\) \{ toast\.error\('Update SCOUT first'\); say\(b\.name, old, 'bad'\); return \}\n    await runSends\(\[b\], 'Send now'\)/.test(UI)
+      && /chrome:\/\/extensions, turn on Developer mode, press Update/.test(UI))
+}
 check('opening an unread conversation tells TRYBE it was read, then reads the count back', /if \(c\.unread > 0 \|\| c\.stuckOnTrybe\) await markRead\(c, list\)/.test(INBOX) && /requestTrybeApi\('POST', path, \{ messageId: lastId \}\)/.test(INBOX) && /const fresh = await loadList\(\)/.test(INBOX) && /TRYBE still counts/.test(INBOX))
 // Seb, 2026-10-19: an announcement TRYBE kept counting unread after it was
 // opened, on MVP and on TRYBE's own phone app. Read here, it is read here.
@@ -350,7 +359,7 @@ check('Open chat opens that conversation in the inbox', /setOpenChat\(o => \(\{ 
 check('Message writes one brand straight into Ready to send', /void draftPicked\(\[b\.brand_id\]\)/.test(UI) && /async function draftPicked\(only\?: string\[\]\)/.test(UI))
 check('Send now waits for the save and never sends after a failed one', /onSendNow=\{t => void saveDraft\(b, t\)\.then\(ok => \{ if \(ok\) void sendOne\(\{ \.\.\.b, draft: t \}\) \}\)\}/.test(UI) && /const inFlight = pendingSave\.current\.get\(b\.brand_id\)/.test(UI))
 // SCOUT 1.48.0: Send all goes to SCOUT's own run when it can (scripts/test-trybe-runner).
-check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{\s*const list = queue\.slice\(0, remaining\)\s*if \(usesRunner\) \{ await startRunner\(list, 'Send all'\); return \}\s*await runSends\(list, 'Send all'\)/.test(UI) && /if \(!remaining\) \{ toast\.error\(`All \$\{savedCap\} sends of the last 24 hours are used\. \$\{opensWords\(freeAt\)\}`\); return \}/.test(UI))
+check('Send now and Send all share one runner and the daily cap', /async function sendAll\(\) \{\s*const old = oldScoutWords\(\)\s*if \(old\) \{[^\n]*\}\s*const list = queue\.slice\(0, remaining\)\s*if \(usesRunner\) \{ await startRunner\(list, 'Send all'\); return \}\s*await runSends\(list, 'Send all'\)/.test(UI) && /if \(!remaining\) \{ toast\.error\(`All \$\{savedCap\} sends of the last 24 hours are used\. \$\{opensWords\(freeAt\)\}`\); return \}/.test(UI))
 {
   const n = (s: string) => s
   void n

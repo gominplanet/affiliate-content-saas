@@ -30,7 +30,7 @@ import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/co
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
@@ -1119,7 +1119,17 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     await load()
   }
 
+  // AN OLD SCOUT CANNOT SEND (Alejandro, Oct 19: every send on SCOUT 1.52.2
+  // failed "brand-not-found ... no search box", the bug 1.52.3 fixed). Said
+  // once, before anything starts, instead of a failed row per brand.
+  function oldScoutWords(): string | null {
+    if (!scoutVersion || scoutAtLeast(scoutVersion, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION)) return null
+    return `Your SCOUT is ${scoutVersion}, and sending to TRYBE needs ${SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION} or newer: on ${scoutVersion} every send fails with "brand-not-found". Chrome updates SCOUT by itself within a day. To do it now, open chrome://extensions, turn on Developer mode, press Update, then reload this page. Nothing was sent.`
+  }
+
   async function sendAll() {
+    const old = oldScoutWords()
+    if (old) { toast.error('Update SCOUT first'); say('Send all', old, 'bad'); return }
     const list = queue.slice(0, remaining)
     if (usesRunner) { await startRunner(list, 'Send all'); return }
     await runSends(list, 'Send all')
@@ -1144,6 +1154,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     // One at a time on TRYBE: a Send now waits for SCOUT's own run.
     if (scoutRun?.on) { toast.message('SCOUT is sending your list right now. Press Send now again when it finishes.'); return }
     if (!remaining) { toast.error(`All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}`); return }
+    const old = oldScoutWords()
+    if (old) { toast.error('Update SCOUT first'); say(b.name, old, 'bad'); return }
     await runSends([b], 'Send now')
   }
 
