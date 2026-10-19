@@ -131,6 +131,11 @@ const publicPaths = [
   // is born: a landing page is the one route where being logged out is the
   // normal case, so the default (gate it) is exactly backwards.
   '/run-your-storefront',
+  // Staging slot for the redesigned sales page, shared by link so Seb can
+  // compare it against the live homepage. Public so the link just opens (logged
+  // in or out) instead of 307ing to /login, and noindex on the page itself so
+  // it stays out of search while it is a work in progress.
+  '/landing-preview',
   // A letter from Seb to the communities he wants to partner with, sent by
   // hand to people who are not signed in. Kept out of the sitemap and
   // marked noindex on the page itself.

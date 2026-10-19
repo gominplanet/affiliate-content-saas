@@ -67,7 +67,6 @@ function routes(dir: string, url = ''): string[] {
 // "private" is a decision and this list is where it is recorded.
 const INTENTIONALLY_PRIVATE: Record<string, string> = {
   '/onboarding': 'post-signup setup; there is no account to set up until they have one',
-  '/landing-preview': 'internal preview of a marketing layout, not linked publicly',
 }
 
 const found = routes('app').sort()
