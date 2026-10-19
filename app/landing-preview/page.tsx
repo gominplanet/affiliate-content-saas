@@ -127,13 +127,13 @@ function Hero() {
   return (
     <section className="px-5 sm:px-8 lg:px-12 pt-20 sm:pt-28 pb-14 sm:pb-20">
       <div className="max-w-4xl mx-auto text-center">
-        <Eyebrow>For Amazon influencers</Eyebrow>
+        <Eyebrow>For content creators</Eyebrow>
         <h1 className="text-[48px] sm:text-[68px] lg:text-[80px] font-extrabold tracking-[-0.03em] leading-[0.98] mt-8" style={{ ...DISPLAY, color: C.text }}>
-          Your storefront is rented.{' '}
-          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Build the one you own.</span>
+          You create it.{' '}
+          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does everything next.</span>
         </h1>
         <p className="mt-7 text-[18px] sm:text-[22px] leading-relaxed max-w-2xl mx-auto" style={{ color: C.muted }}>
-          MVP turns the reviews you already film into a blog that is yours forever, written in your real voice, then publishes it everywhere and cuts it into shoppable clips. No video? Drop any product link and it writes the review itself.
+          Publish it everywhere, cut it into clips, find the brands that pay, and make every click earn. MVP is the hub for everything that happens after you hit record.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3.5">
           <a href="/signup?plan=pro" className="px-8 py-4 rounded-full text-[17px] font-bold text-white inline-flex items-center gap-2 transition-transform hover:-translate-y-px" style={{ backgroundColor: C.accent, boxShadow: C.glow }}>
@@ -402,8 +402,8 @@ function FinalCTA() {
     <section className="px-5 sm:px-8 lg:px-12 py-20 sm:py-28" style={{ backgroundColor: C.band, borderTop: `1px solid ${C.borderSoft}` }}>
       <div className="max-w-2xl mx-auto text-center">
         <h2 className="text-[40px] sm:text-[56px] lg:text-[64px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ ...DISPLAY, color: C.text }}>
-          Build the business{' '}
-          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>you own.</span>
+          Everything your content does next,{' '}
+          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>in one place.</span>
         </h2>
         <p className="mt-6 text-[18px] leading-relaxed" style={{ color: C.muted }}>
           Every feature unlocked, free for {FREE_WEEK_DAYS} days. Cancel before day {FREE_WEEK_DAYS + 1} and you pay nothing. See if MVP fits before you spend a cent.
