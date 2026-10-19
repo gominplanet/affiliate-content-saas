@@ -1,12 +1,14 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// POST /api/scout/seen  { version, install, background }
+// POST /api/scout/seen  { version, install, background, copies }
 //
 // What the dashboard found about SCOUT in this member's Chrome
 // (components/layout/ScoutRequired.tsx): which version, from the Web Store or
 // an old manual copy, and whether its background work is on. Kept on the
 // member's integrations row (migration 414) so admin can see who has SCOUT
 // and who does not. A database without that migration loses only this.
+// `copies` is every SCOUT that answered on the page (migration 446): two of
+// them is why TRYBE kept asking to be allowed (lib/scout-copies).
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await req.json().catch(() => ({})) as { version?: unknown; install?: unknown; background?: unknown }
+  const body = await req.json().catch(() => ({})) as { version?: unknown; install?: unknown; background?: unknown; copies?: unknown }
   const version = typeof body.version === 'string' && /^\d{1,3}(\.\d{1,4}){1,3}$/.test(body.version) ? body.version : null
   const install = body.install === 'store' || body.install === 'sideload' || body.install === 'none' ? body.install : null
   if (!install) return NextResponse.json({ ok: false, error: 'What was found?' }, { status: 400 })
@@ -31,5 +33,18 @@ export async function POST(req: Request) {
   // Said, not hidden: the banner works either way, but a missing column is
   // why the admin list would stay empty.
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  // Apart, so a database without migration 446 still keeps the rest.
+  const copies = Array.isArray(body.copies)
+    ? body.copies.slice(0, 5).flatMap((c) => {
+        const o = (c && typeof c === 'object' ? c : {}) as { id?: unknown; version?: unknown; store?: unknown }
+        if (typeof o.id !== 'string' || !/^[a-p]{32}$/.test(o.id)) return []
+        return [{ id: o.id, version: typeof o.version === 'string' && /^\d{1,3}(\.\d{1,4}){1,3}$/.test(o.version) ? o.version : null, store: o.store === true }]
+      })
+    : null
+  if (copies) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: copiesError } = await (createAdminClient() as any).from('integrations').update({ scout_copies: copies }).eq('user_id', user.id)
+    if (copiesError) return NextResponse.json({ ok: true, copies: `not kept: ${copiesError.message}` })
+  }
   return NextResponse.json({ ok: true })
 }

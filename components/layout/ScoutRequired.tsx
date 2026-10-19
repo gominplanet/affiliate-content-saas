@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, ArrowRight, Handshake, RefreshCw, X } from 'lucide-react'
-import { getScoutInstallKind, setLiftoffAuto, requestTrybeAccess } from '@/lib/extension-frame'
+import { getScoutInstallKind, setLiftoffAuto, requestTrybeAccess, SCOUT_STORE_EXTENSION_ID } from '@/lib/extension-frame'
+import { twoCopiesWords, type ScoutCopy } from '@/lib/scout-copies'
 import { SCOUT_STORE_LISTING_URL, SCOUT_COMMENT_POST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { usesStudioUpload } from '@/lib/studio-upload'
 
@@ -39,6 +40,8 @@ type Phase =
   | { kind: 'bg-failed'; why: string }
   /** Working, but not yet allowed on TRYBE (an optional permission). */
   | { kind: 'trybe' }
+  /** More than one SCOUT in this Chrome (lib/scout-copies). */
+  | { kind: 'copies'; words: string }
 
 const HIDE_KEY = 'mvp_scout_required_hidden'
 const ARMED_KEY = 'mvp_scout_armed_at'
@@ -48,16 +51,17 @@ function sessionGet(k: string): string | null { try { return window.sessionStora
 function sessionSet(k: string, v: string) { try { window.sessionStorage.setItem(k, v) } catch { /* this page only */ } }
 
 /** Tell MVP what this Chrome has, at most once an hour per tab session. */
-function reportSeen(install: 'store' | 'sideload' | 'none', version: string | null, background: boolean | null) {
+function reportSeen(install: 'store' | 'sideload' | 'none', version: string | null, background: boolean | null, found: ScoutCopy[] = []) {
   const last = Number(sessionGet(SEEN_KEY) || 0)
-  const sig = `${install}|${version}|${background}`
+  const copies = found.map((c) => ({ id: c.id, version: c.version, store: c.id === SCOUT_STORE_EXTENSION_ID }))
+  const sig = `${install}|${version}|${background}|${copies.length}`
   if (Date.now() - last < 3_600_000 && sessionGet(`${SEEN_KEY}_sig`) === sig) return
   // MARKED SENT ONLY ONCE SAVED. Marked before, a save that failed (the
   // columns not there yet, a dropped connection) kept this tab quiet for an
   // hour, and every member read "not seen yet" while using MVP in Chrome.
   void fetch('/api/scout/seen', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ install, version, background }),
+    body: JSON.stringify({ install, version, background, copies }),
   }).then((r) => {
     if (r.ok) { sessionSet(SEEN_KEY, String(Date.now())); sessionSet(`${SEEN_KEY}_sig`, sig) }
   }).catch(() => { /* the banner does not depend on it; the next look tries again */ })
@@ -101,16 +105,16 @@ export default function ScoutRequired({ tier }: { tier: string }) {
         return
       }
       if (!scoutAtLeast(found.version, SCOUT_COMMENT_POST_MIN_VERSION)) {
-        reportSeen(found.kind, found.version, null)
+        reportSeen(found.kind, found.version, null, found.copies)
         setPhase({ kind: 'old', version: found.version, sideload: found.kind === 'sideload' })
         return
       }
       let off = false
       try { off = window.localStorage.getItem('mvp_liftoff_bg') === 'off' } catch { /* default on */ }
-      if (off) { reportSeen(found.kind, found.version, false); setPhase({ kind: 'bg-off' }); return }
+      if (off) { reportSeen(found.kind, found.version, false, found.copies); setPhase({ kind: 'bg-off' }); return }
       const st = await setLiftoffAuto(true)
       if (!st || !st.ok || !st.on || !st.hasAlarms) {
-        reportSeen(found.kind, found.version, false)
+        reportSeen(found.kind, found.version, false, found.copies)
         const why = !st ? 'SCOUT did not answer'
           : st.error === 'bad-origin' ? 'SCOUT does not recognise this address'
           : st.error === 'no-reply' ? 'SCOUT did not answer'
@@ -119,8 +123,11 @@ export default function ScoutRequired({ tier }: { tier: string }) {
         setPhase({ kind: 'bg-failed', why })
         return
       }
-      reportSeen(found.kind, found.version, true)
+      reportSeen(found.kind, found.version, true, found.copies)
       void armForDueComments()
+      // Two copies answer in turn: said before anything they would confuse.
+      const two = twoCopiesWords(found.copies, SCOUT_STORE_EXTENSION_ID)
+      if (two) { setPhase({ kind: 'copies', words: two }); return }
       // TRYBE, ASKED ONCE OF EVERY SCOUT USER (Seb, 2026-10-07: "every scout
       // user to approve TRYBE"). Kept an optional permission: made required,
       // Chrome would switch SCOUT off for every current user until they
@@ -197,6 +204,9 @@ export default function ScoutRequired({ tier }: { tier: string }) {
   } else if (phase.kind === 'bg-off') {
     text = <><b>SCOUT&rsquo;s background work is off in this Chrome.</b> Your bulk uploads and first comments only go out while Liftoff is open, and comments post up to three hours late.</>
     action = <button onClick={turnOn} disabled={busy} className={btn} style={{ background: accent }}>Turn it on <ArrowRight size={12} /></button>
+  } else if (phase.kind === 'copies') {
+    text = <><b>{phase.words}</b> Open Chrome&rsquo;s Extensions page (chrome://extensions), keep the SCOUT from the Chrome Web Store, and remove the other one. MVP uses the newest copy until then.</>
+    action = <button onClick={again} disabled={busy} className={quiet} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><RefreshCw size={12} className={busy ? 'animate-spin' : ''} /> I removed it</button>
   } else if (phase.kind === 'trybe') {
     text = <><b>One more step: allow SCOUT on TRYBE.</b> TRYBE is a free marketplace where brands pay creators for videos. With this allowed, MVP can find TRYBE brands that fit your niche and SCOUT can send your requests. One click, once; Chrome asks you to confirm.</>
     action = <button onClick={allowTrybe} disabled={busy} className={btn} style={{ background: accent }}>Allow SCOUT on TRYBE <ArrowRight size={12} /></button>

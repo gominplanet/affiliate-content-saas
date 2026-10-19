@@ -13,6 +13,7 @@
  * chrome://extensions).
  */
 
+import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
 import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
@@ -53,14 +54,20 @@ const SCOUT_EXTENSION_IDS = Array.from(
 // Safety: additive only (the hardcoded ids are always kept) + strict id-shape
 // validation, so a page script can't spoof us into dropping a real id — at worst
 // it makes us also try a dead id, which just no-ops.
-let discoveredScoutId: string | null = null
+//
+// EVERY COPY, NOT THE LAST TO SPEAK (lib/scout-copies). With two copies
+// installed, keeping only the last one to announce sent each visit's checks
+// and sends to a different copy. All are kept with their versions; the newest
+// answers.
+const discoveredScouts = new Map<string, string | null>()
 const SCOUT_ID_RE = /^[a-p]{32}$/ // Chrome extension ids are 32 chars, a–p
 if (typeof window !== 'undefined') {
   window.addEventListener('message', (ev: MessageEvent) => {
     if (ev.source !== window) return
     const d = ev.data
     if (d && d.source === 'MVP_SCOUT' && d.type === 'SCOUT_HELLO' && typeof d.extensionId === 'string' && SCOUT_ID_RE.test(d.extensionId)) {
-      discoveredScoutId = d.extensionId
+      const v = typeof d.version === 'string' && /^\d{1,3}(\.\d{1,4}){1,3}$/.test(d.version) ? d.version : null
+      discoveredScouts.set(d.extensionId, v ?? discoveredScouts.get(d.extensionId) ?? null)
     }
   })
   // Prompt an announcement in case the bridge shouted before this listener
@@ -68,12 +75,36 @@ if (typeof window !== 'undefined') {
   try { window.postMessage({ source: 'MVP_APP', type: 'SCOUT_WHO' }, window.location.origin) } catch { /* ignore */ }
 }
 
-/** Ids to try, discovered-first (it's the build actually installed), then the
- *  hardcoded env/store/sideload ids. Deduped. */
+/** Ids to try: the copies that announced themselves, newest first (the Web
+ *  Store copy between equals), then the hardcoded env/store/sideload ids.
+ *  Deduped. */
 function effectiveScoutIds(): string[] {
-  return discoveredScoutId
-    ? Array.from(new Set([discoveredScoutId, ...SCOUT_EXTENSION_IDS]))
-    : SCOUT_EXTENSION_IDS
+  const found = rankScoutCopies(scoutCopiesFound(), SCOUT_STORE_EXTENSION_ID).map((c) => c.id)
+  return Array.from(new Set([...found, ...SCOUT_EXTENSION_IDS]))
+}
+
+/** Every SCOUT copy that announced itself on this page, with its version. */
+export function scoutCopiesFound(): ScoutCopy[] {
+  return Array.from(discoveredScouts, ([id, version]) => ({ id, version }))
+}
+
+/** Ask every copy to announce itself, give them a moment, then keep only the
+ *  ones that still answer: a copy removed since it spoke is dropped, so "I
+ *  removed it" is believed only once it is true. */
+export async function findScoutCopies(waitMs = 700): Promise<ScoutCopy[]> {
+  if (typeof window === 'undefined') return []
+  try { window.postMessage({ source: 'MVP_APP', type: 'SCOUT_WHO' }, window.location.origin) } catch { /* ignore */ }
+  await new Promise((r) => setTimeout(r, waitMs))
+  const all = scoutCopiesFound()
+  if (all.length < 2) return all
+  const live = await Promise.all(all.map(async (c) => {
+    const r = await sendToOneId<{ ok?: boolean; version?: string }>(c.id, { type: 'MVP_PING' }, 1500)
+    if (!r.reached) { discoveredScouts.delete(c.id); return null }
+    const version = typeof r.value?.version === 'string' ? r.value.version : c.version
+    discoveredScouts.set(c.id, version)
+    return { id: c.id, version }
+  }))
+  return live.filter((c): c is ScoutCopy => !!c)
 }
 
 // chrome.runtime is injected into mvpaffiliate.io pages only when the
@@ -961,17 +992,29 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
  *  ping the STORE id first (the destination); only if that's absent do we check
  *  the sideload id — so a user who already has the store build reads as 'store'
  *  even if the old copy is still lying around. */
-export async function getScoutInstallKind(): Promise<{ kind: 'store' | 'sideload' | 'none'; version: string | null }> {
-  if (!chromeRuntime()?.sendMessage) return { kind: 'none', version: null }
+//
+// THE COPY MVP TALKS TO (lib/scout-copies). With more than one copy
+// installed, what is reported is the copy every check and send goes to, the
+// newest, and `copies` lists them all so the banner can say so.
+export async function getScoutInstallKind(): Promise<{ kind: 'store' | 'sideload' | 'none'; version: string | null; copies: ScoutCopy[] }> {
+  if (!chromeRuntime()?.sendMessage) return { kind: 'none', version: null, copies: [] }
+  const copies = await findScoutCopies()
+  const top = rankScoutCopies(copies, SCOUT_STORE_EXTENSION_ID)[0]
+  if (top?.version) {
+    const one = await sendToOneId<{ ok?: boolean; version?: string }>(top.id, { type: 'MVP_PING' }, 1500)
+    if (one.reached && one.value?.ok) {
+      return { kind: top.id === SCOUT_STORE_EXTENSION_ID ? 'store' : 'sideload', version: typeof one.value.version === 'string' ? one.value.version : top.version, copies }
+    }
+  }
   const store = await sendToOneId<{ ok?: boolean; version?: string }>(SCOUT_STORE_EXTENSION_ID, { type: 'MVP_PING' }, 1500)
   if (store.reached && store.value?.ok) {
-    return { kind: 'store', version: typeof store.value.version === 'string' ? store.value.version : null }
+    return { kind: 'store', version: typeof store.value.version === 'string' ? store.value.version : null, copies }
   }
   const side = await sendToOneId<{ ok?: boolean; version?: string }>(KNOWN_SIDELOAD_EXTENSION_ID, { type: 'MVP_PING' }, 1500)
   if (side.reached && side.value?.ok) {
-    return { kind: 'sideload', version: typeof side.value.version === 'string' ? side.value.version : null }
+    return { kind: 'sideload', version: typeof side.value.version === 'string' ? side.value.version : null, copies }
   }
-  return { kind: 'none', version: null }
+  return { kind: 'none', version: null, copies }
 }
 
 /**
