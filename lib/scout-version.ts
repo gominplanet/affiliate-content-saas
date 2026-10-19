@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.2'
+export const SCOUT_LATEST_VERSION = '1.53.3'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: everything goes through the TRYBE tab you leave open, and requests are sent the way TRYBE\'s own button sends them, so SCOUT opens no window. Includes 1.53.1 (allowed stays allowed).'
+  'TRYBE: everything goes through the TRYBE tab you leave open, and each request is sent the way TRYBE\'s own button sends it, with the brand\'s program, so SCOUT opens no window. Includes 1.53.2 and 1.53.1.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

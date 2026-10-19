@@ -15545,6 +15545,24 @@ function trybeBrandIdOf(url) {
 function trybeSentHas(json, brandId) {
   try { return JSON.stringify(json == null ? '' : json).includes('"' + brandId + '"') } catch (e) { return false }
 }
+// THE BRAND'S PROGRAM (1.53.3; Seb's test, 2026-10-19: "TRYBE turned the
+// request down (400: programId is required)"). TRYBE's button sends the
+// program the creator is joining. The brand's own details list its programs
+// (the answer Send to TRYBE reads, lib/trybe-submit): the one TRYBE marks as
+// its default, else the first, is sent and named in the report. A brand with
+// only an old-style program ("legacy:") is sent with none, as TRYBE does.
+function trybeProgramOf(json) {
+  try {
+    const d = json && typeof json === 'object' && json.data && typeof json.data === 'object' && !Array.isArray(json.data) ? json.data : json
+    const list = Array.isArray(d && d.programs) ? d.programs : []
+    const all = list.filter((p) => p && typeof p === 'object').map((p) => ({
+      id: String(p.programId || p.id || ''),
+      name: String(p.programName || p.name || 'its program').slice(0, 60),
+      main: p.isDefault === true || p.default === true || p.isPrimary === true || p.primary === true,
+    })).filter((p) => /^[A-Za-z0-9-]{6,80}$/.test(p.id))
+    return all.find((p) => p.main) || all[0] || null
+  } catch (e) { return null }
+}
 /** TRYBE's own words for an answer, short. */
 function trybeSaid(r) {
   const j = r && r.json
@@ -15567,24 +15585,28 @@ async function trybeSend({ url, name, message }) {
     if (before.error === 'trybe-not-open') return { outcome: 'failed', error: 'trybe-not-open', steps: [] }
     if (before.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps: ['sent list'] }
     if (before.ok && trybeSentHas(before.json, brandId)) return { outcome: 'already', steps: ['sent list', 'already asked'] }
+    const details = await trybeApi({ method: 'GET', path: `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details` })
+    const program = details.ok ? trybeProgramOf(details.json) : null
+    const steps = [program ? `program: ${program.name}` : details.ok ? 'no program listed' : `programs not read (${details.status || details.error || 'no answer'})`]
     asked = true
-    const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body: { brandId, message: String(message) } })
+    const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body: program ? { brandId, programId: program.id, message: String(message) } : { brandId, message: String(message) } })
     const said = trybeSaid(r)
+    steps.push('asked TRYBE')
     if (r.ok) {
       await _sleep(1500)
       const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
-      return { outcome: 'sent', steps: ['asked TRYBE', after.ok && trybeSentHas(after.json, brandId) ? 'in your sent requests' : 'accepted by TRYBE'] }
+      return { outcome: 'sent', steps: steps.concat(after.ok && trybeSentHas(after.json, brandId) ? 'in your sent requests' : 'accepted by TRYBE') }
     }
-    if (r.status === 409) return { outcome: 'already', steps: ['asked TRYBE', `already asked${said ? ` (${said})` : ''}`] }
-    if (r.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps: ['asked TRYBE'] }
+    if (r.status === 409) return { outcome: 'already', steps: steps.concat(`already asked${said ? ` (${said})` : ''}`) }
+    if (r.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps }
     if (r.error === 'trybe-not-open') return { outcome: 'failed', error: 'trybe-not-open', steps: [] }
     // Turned down: nothing went to the brand.
-    if (r.status >= 400 && r.status < 500) return { outcome: 'failed', error: `trybe-refused (${r.status}${said ? `: ${said}` : ''})`, steps: ['asked TRYBE'] }
+    if (r.status >= 400 && r.status < 500) return { outcome: 'failed', error: `trybe-refused (${r.status}${said ? `: ${said}` : ''})`, steps }
     // No clear answer: looked for, never sent again.
     await _sleep(2500)
     const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
-    if (after.ok && trybeSentHas(after.json, brandId)) return { outcome: 'sent', steps: ['asked TRYBE', 'in your sent requests'] }
-    return { outcome: 'unconfirmed', error: `TRYBE did not answer clearly (${r.status || r.error || 'no answer'}${said ? `: ${said}` : ''}), so SCOUT cannot tell whether it was sent.`, steps: ['asked TRYBE'] }
+    if (after.ok && trybeSentHas(after.json, brandId)) return { outcome: 'sent', steps: steps.concat('in your sent requests') }
+    return { outcome: 'unconfirmed', error: `TRYBE did not answer clearly (${r.status || r.error || 'no answer'}${said ? `: ${said}` : ''}), so SCOUT cannot tell whether it was sent.`, steps }
   } catch (e) {
     const why = e && e.message ? e.message : 'exception'
     return asked ? { outcome: 'unconfirmed', error: `SCOUT lost TRYBE after asking it (${why}).` } : { outcome: 'failed', error: why }

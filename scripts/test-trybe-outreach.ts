@@ -297,11 +297,13 @@ check('SCOUT has no way left to bring its window up or pull a page forward', !/s
 const sendRun = (async () => {
   const src = BG.slice(BG.indexOf("const TRYBE_JOIN_PATH = "), BG.indexOf('\n}\n', BG.indexOf('async function trybeSend(')) + 2)
   type Ans = { ok?: boolean; status?: number; json?: unknown; error?: string; text?: string | null }
-  const run = async (answers: { before: Ans; post?: Ans; after?: Ans }) => {
+  const oneProgram = { ok: true, status: 200, json: { data: { programs: [{ programId: 'prog-123456', programName: 'UGC Program' }] } } }
+  const run = async (answers: { before: Ans; post?: Ans; after?: Ans; details?: Ans }) => {
     const posts: unknown[] = []
     let gets = 0
     const trybeApi = async (r: { method: string; path: string; body?: unknown }) => {
       if (r.method === 'POST') { posts.push(r.body); return answers.post || { ok: true, status: 200, json: {} } }
+      if (r.path === '/backend/api/creator/v2/brands/brand-123456/details') return answers.details || oneProgram
       gets++
       return gets === 1 ? answers.before : (answers.after || { ok: true, status: 200, json: { data: [] } })
     }
@@ -315,7 +317,14 @@ const sendRun = (async () => {
   const a = await run({ before: listed })
   check('a brand already in TRYBE\'s sent list is not sent again', a.res.outcome === 'already' && a.posts.length === 0)
   const b = await run({ before: empty, post: { ok: true, status: 201, json: {} }, after: listed })
-  check('a send is TRYBE\'s own request with the brand and message, confirmed in the sent list', b.res.outcome === 'sent' && b.posts.length === 1 && JSON.stringify(b.posts[0]) === JSON.stringify({ brandId: 'brand-123456', message: 'Hello' }) && b.res.steps.includes('in your sent requests'))
+  check('a send is TRYBE\'s own request with the brand, its program and the message, confirmed in the sent list', b.res.outcome === 'sent' && b.posts.length === 1 && JSON.stringify(b.posts[0]) === JSON.stringify({ brandId: 'brand-123456', programId: 'prog-123456', message: 'Hello' }) && b.res.steps.includes('in your sent requests') && b.res.steps.includes('program: UGC Program'))
+  // 1.53.3 (Seb's test: "400: programId is required"). The brand's own details say its program.
+  const two = await run({ before: empty, after: listed, details: { ok: true, status: 200, json: { data: { programs: [{ programId: 'prog-aaaaaa', programName: 'Affiliate' }, { programId: 'prog-bbbbbb', programName: 'UGC', isDefault: true }] } } } })
+  check('of several programs, the one TRYBE marks as default is sent', JSON.stringify(two.posts[0]) === JSON.stringify({ brandId: 'brand-123456', programId: 'prog-bbbbbb', message: 'Hello' }))
+  const legacy = await run({ before: empty, after: listed, details: { ok: true, status: 200, json: { data: { programName: 'Old program' } } } })
+  check('a brand with only an old-style program is sent with none, as TRYBE does', JSON.stringify(legacy.posts[0]) === JSON.stringify({ brandId: 'brand-123456', message: 'Hello' }) && legacy.res.steps.includes('no program listed'))
+  const unread = await run({ before: empty, after: listed, details: { ok: false, status: 404 } })
+  check('details TRYBE did not give are said, and the request still goes once', unread.posts.length === 1 && unread.res.steps.includes('programs not read (404)'))
   const c = await run({ before: empty, post: { ok: false, status: 400, json: { error: 'programId is required' } } })
   check('a request TRYBE turns down is failed with TRYBE\'s own words, sent once', c.res.outcome === 'failed' && c.res.error === 'trybe-refused (400: programId is required)' && c.posts.length === 1)
   const d = await run({ before: empty, post: { ok: false, status: 502 }, after: empty })
