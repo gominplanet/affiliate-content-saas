@@ -18,6 +18,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { shortenBitly } from '@/lib/bitly'
+import { storeOf } from '@/lib/store-name'
 
 const REL = 'nofollow sponsored noopener'
 
@@ -29,6 +30,9 @@ export interface MultiProductOpts {
    *  from the extras so we don't double-link it. */
   primaryName: string | null
   primaryUrl: string | null
+  /** The store the primary link goes to (Walmart when the post sells there),
+   *  named on its row. Worked out from the link when not given. */
+  primaryStore?: string | null
   amazonTag?: string | null
   geniuslinkKey?: string | null
   geniuslinkSecret?: string | null
@@ -159,12 +163,15 @@ async function resolveLink(
 
 /** "Shop everything in this video" recap — every product as a tidy row with its
  *  own buy link. Primary first, then the extras. Gutenberg-safe block markup. */
-function renderShopEverything(primary: { name: string; url: string } | null, extras: LinkedProduct[]): string {
+function renderShopEverything(primary: { name: string; url: string; store: string | null } | null, extras: LinkedProduct[]): string {
   const rows: string[] = []
-  const row = (label: string, url: string) =>
-    `<!-- wp:paragraph --><p style="margin:6px 0">🛍️ <strong>${esc(label)}</strong>: <a href="${url}" target="_blank" rel="${REL}">check price on Amazon →</a></p><!-- /wp:paragraph -->`
-  if (primary) rows.push(row(primary.name, primary.url))
-  for (const e of extras) rows.push(row(e.name, e.url))
+  // EACH ROW NAMES ITS OWN STORE (Seb, 2026-10-19: every link says where it
+  // goes). Every row said Amazon, the primary one too when the post sells on
+  // Walmart. The extras are Amazon searches, so they say Amazon.
+  const row = (label: string, url: string, store: string | null) =>
+    `<!-- wp:paragraph --><p style="margin:6px 0">🛍️ <strong>${esc(label)}</strong>: <a href="${url}" target="_blank" rel="${REL}">${store ? `check price on ${esc(store)}` : 'check today\u2019s price'} →</a></p><!-- /wp:paragraph -->`
+  if (primary) rows.push(row(primary.name, primary.url, primary.store))
+  for (const e of extras) rows.push(row(e.name, e.url, 'Amazon'))
   if (rows.length === 0) return ''
   return (
     `\n<!-- wp:heading --><h2>🛍️ Shop everything in this video</h2><!-- /wp:heading -->\n` +
@@ -232,7 +239,7 @@ export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<M
   // Inline-link the first mention of each, then append the recap.
   let out = content
   for (const p of resolved) out = linkFirstMention(out, p.shortName || p.name, p.url)
-  out += renderShopEverything(primaryName && primaryUrl ? { name: primaryName, url: primaryUrl } : null, resolved)
+  out += renderShopEverything(primaryName && primaryUrl ? { name: primaryName, url: primaryUrl, store: opts.primaryStore ?? storeOf(primaryUrl) } : null, resolved)
   return {
     content: out,
     productsLinked: resolved.length,

@@ -1764,6 +1764,9 @@ async function handleGenerate(request: Request) {
       videoTitle: rawTitle,
       primaryName: (generated as { productName?: string | null }).productName || null,
       primaryUrl: productUrl || null,
+      // The store its row names: Walmart when the post sells there, Amazon for
+      // an ASIN or an Amazon link, else what the link itself shows.
+      primaryStore: retailerLabel || (effectiveAsin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl || '') ? 'Amazon' : null),
       amazonTag: wp?.amazon_associates_tag ?? null,
       geniuslinkKey: geniuslinkCreds(mpStyle, wp)?.key ?? null,
       geniuslinkSecret: geniuslinkCreds(mpStyle, wp)?.secret ?? null,

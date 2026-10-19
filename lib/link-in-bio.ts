@@ -55,6 +55,16 @@ const RETAILER_HOSTS: Array<[RegExp, string]> = [
   [/ulta\./i, 'Ulta'],
   [/nike\./i, 'Nike'],
   [/newegg\./i, 'Newegg'],
+  // Added with lib/store-name (Seb, 2026-10-19: every link says where it goes).
+  [/shop\.tiktok\.com|tiktok\.com\/(view\/product|shop)/i, 'TikTok Shop'],
+  [/shopltk\.com|liketk\.it|ltk\.app/i, 'LTK'],
+  [/kohls\./i, "Kohl's"],
+  [/samsclub\./i, "Sam's Club"],
+  [/nordstrom\./i, 'Nordstrom'],
+  [/rei\.com/i, 'REI'],
+  [/dickssportinggoods\./i, "Dick's Sporting Goods"],
+  [/zappos\./i, 'Zappos'],
+  [/iherb\./i, 'iHerb'],
 ]
 
 export function retailerForItem(it: { url?: string | null; asin?: string | null; source?: string | null }): string | null {

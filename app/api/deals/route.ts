@@ -70,6 +70,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { storeOf } from '@/lib/store-name'
 
 export const maxDuration = 300
 
@@ -1009,6 +1010,9 @@ export async function POST(req: Request) {
     affiliateUrl: dealAffiliateUrl,
     disclaimer: affiliateDisclaimer,
     priceSnapshot,
+    // Where the buttons lead: the creator's TikTok Shop, a promo link's own
+    // store, or Amazon.
+    store: dealDestination.kind === 'showcase' ? 'TikTok Shop' : (promoUrl ? storeOf(promoUrl, null) : 'Amazon'),
   })
 
   // ── Title + slug ──────────────────────────────────────────────────────
@@ -1501,6 +1505,9 @@ interface InjectBodyImagesOpts {
   /** Visual "price check" block — injected under the first H2 (the deal-at-a-
    *  glance section). Empty when there's no usable price history. */
   priceSnapshot?: string
+  /** The store the buttons lead to, named on them (lib/store-name). Null when
+   *  a promo link hides it. */
+  store?: string | null
 }
 
 /** Splice the WP-uploaded body images into the HTML at sensible H2
@@ -1568,6 +1575,9 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
   if (opts.promoCode) bannerAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
   // ALWAYS pass a URL — the banner CTA is the post's primary buy button.
   bannerAtts.push(`url="${escapeAttr(effectiveUrl)}"`)
+  // THE STORE, NAMED ON EVERY BUTTON (Seb, 2026-10-19: every link says where
+  // it goes). The plugin said Amazon by itself, even on a TikTok Shop deal.
+  if (opts.store) bannerAtts.push(`store="${escapeAttr(opts.store)}"`)
   // FTC affiliate disclosure, injected right under the banner so it's visible
   // near the top before any affiliate link — always present, never model-
   // dependent. Escaped as text.
@@ -1585,6 +1595,13 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
   ctaAtts.push(`url="${escapeAttr(effectiveUrl)}"`)
   if (opts.promoCode) ctaAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
   if (opts.badgeLabel) ctaAtts.push(`badge="${escapeAttr(opts.badgeLabel)}"`)
+  // The label says the store: a plugin older than 1.1.3 shows the label as it
+  // is, so even an old copy stops calling a TikTok Shop deal an Amazon one.
+  const ctaLabel = opts.store
+    ? (opts.promoCode ? `Apply code ${opts.promoCode} on ${opts.store}` : (opts.store === 'TikTok Shop' ? 'Shop it in my TikTok Shop' : `Get this deal on ${opts.store}`))
+    : (opts.promoCode ? `Apply code ${opts.promoCode}` : 'Get this deal')
+  ctaAtts.push(`label="${escapeAttr(ctaLabel)}"`)
+  if (opts.store) ctaAtts.push(`store="${escapeAttr(opts.store)}"`)
   out = out + `\n\n[mvp_deal_cta ${ctaAtts.join(' ')}]\n`
 
   // 5. Price-check visual under the first H2 (the deal-at-a-glance section).

@@ -295,6 +295,10 @@ Return ONLY the caption text.` }],
       // Passport on → each platform's own MVP-<CHANNEL> geo link; off → the
       // per-platform Geniuslink map (or the shared tagged fallback via `link`).
       link, links: platformLinks, baseCaption: cap, disclaimer, platforms,
+      // THE STORE THE LINK GOES TO (Seb, 2026-10-19: every link says where it
+      // goes). A showcase post links to the creator's TikTok Shop, and said
+      // "Grab it on Amazon" because no store was passed.
+      retailerLabel: destination.kind === 'showcase' ? 'TikTok Shop' : 'Amazon',
       // A scheduled deal post is one nobody is there for.
       queueSource: requireLiveDeal ? 'deal_scheduled' : 'deal',
     })

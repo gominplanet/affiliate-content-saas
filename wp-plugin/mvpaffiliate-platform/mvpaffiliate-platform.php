@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -4300,12 +4300,17 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
             // 1.0.97+: MVP sets ended="1" when a price check shows the sale is
             // over on a post that never had an end date to count down to.
             'ended'    => '',
+            // 1.1.3+: the store the button leads to, named on it (every link
+            // says where it goes). Amazon when MVP did not say.
+            'store'    => '',
         ], $atts, 'mvp_deal_banner');
 
         $end_date = trim((string) $atts['end_date']);
         $badge    = trim((string) $atts['badge']);
         $code     = trim((string) $atts['code']);
         $url      = trim((string) $atts['url']);
+        $store    = trim((string) $atts['store']);
+        if ($store === '') $store = 'Amazon';
 
         // Validate the URL early; if it's not http(s) drop it so we don't
         // emit a junk <a href>. Empty URL is also fine.
@@ -4383,7 +4388,7 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
       <?php endif; ?>
     </div>
     <?php if ($url !== ''): ?>
-    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:18px 32px;border-radius:14px;background:#ffffff;color:#7C3AED;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;box-shadow:0 6px 16px rgba(0,0,0,0.18);">See the deal →</a>
+    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:18px 32px;border-radius:14px;background:#ffffff;color:#7C3AED;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;box-shadow:0 6px 16px rgba(0,0,0,0.18);">See the deal on <?php echo esc_html($store); ?> →</a>
     <?php endif; ?>
   </div>
 </div>
@@ -4482,12 +4487,17 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
             'label' => '', // optional override for the button text
             'end_date' => '',
             'ended' => '',
+            // 1.1.3+: the store the button leads to (every link says where it
+            // goes). Amazon when MVP did not say.
+            'store' => '',
         ], $atts, 'mvp_deal_cta');
 
         $url   = trim((string) $atts['url']);
         $code  = trim((string) $atts['code']);
         $badge = trim((string) $atts['badge']);
         $label = trim((string) $atts['label']);
+        $store = trim((string) $atts['store']);
+        if ($store === '') $store = 'Amazon';
 
         // Drop non-http URLs to avoid emitting a broken anchor.
         if ($url !== '' && !preg_match('#^https?://#i', $url)) {
@@ -4522,7 +4532,7 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
             ?>
 <div class="mvp-deal-cta-block mvp-deal-cta-block--ended" style="margin:32px 0;padding:28px;border-radius:16px;background:#f5f3ff;color:#1f1b2e;border:1px solid rgba(124,58,237,0.25);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;">
   <div style="font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;">Still thinking about it?</div>
-  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.85;max-width:520px;margin-left:auto;margin-right:auto;">The deal has ended, but prices change often. Check today&apos;s price on Amazon before you buy.</p>
+  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.85;max-width:520px;margin-left:auto;margin-right:auto;">The deal has ended, but prices change often. Check today&apos;s price on <?php echo esc_html($store); ?> before you buy.</p>
   <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" style="display:inline-block;padding:18px 38px;border-radius:14px;background:#7C3AED;color:#ffffff;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.4px;">Check today&apos;s price on Amazon →</a>
 </div>
             <?php
@@ -4531,7 +4541,7 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
 
         $btn_label = $label !== ''
             ? $label
-            : ($code !== '' ? 'Apply code ' . $code . ' on Amazon' : 'Get this deal on Amazon');
+            : ($code !== '' ? 'Apply code ' . $code . ' on ' . $store : 'Get this deal on ' . $store);
 
         ob_start();
         ?>
@@ -4540,7 +4550,7 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
   <div style="display:inline-block;padding:6px 14px;border-radius:999px;background:#ffffff;color:#7C3AED;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:14px;"><?php echo esc_html($badge); ?></div>
   <?php endif; ?>
   <div style="font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;">Ready to grab the deal?</div>
-  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.92;max-width:520px;margin-left:auto;margin-right:auto;">Tap the button to go straight to the live offer on Amazon. Pricing can change without notice while it&apos;s active.</p>
+  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.92;max-width:520px;margin-left:auto;margin-right:auto;">Tap the button to go straight to the live offer on <?php echo esc_html($store); ?>. Pricing can change without notice while it&apos;s active.</p>
   <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" style="display:inline-block;padding:18px 38px;border-radius:14px;background:#ffffff;color:#7C3AED;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.4px;box-shadow:0 6px 16px rgba(0,0,0,0.20);"><?php echo esc_html($btn_label); ?> →</a>
   <?php if ($code !== ''): ?>
   <div style="margin-top:14px;font-size:13px;opacity:0.9;">

@@ -30,7 +30,9 @@ export const WP_VERSIONS = {
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {
-    version: '1.1.2',
+    // 1.1.3 (2026-10-19): the deal banner and button name the store MVP passes
+    // (TikTok Shop, a promo link's store, Amazon), so every link says where it goes.
+    version: '1.1.3',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate.zip',
   },
 } as const
