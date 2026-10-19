@@ -30,6 +30,12 @@ import NextImage from 'next/image'
 // Re-rendered every 10 minutes so the November 1 price change shows without a deploy.
 export const revalidate = 600
 
+// Public (see middleware) but kept out of search while it is a staging page.
+export const metadata = {
+  title: 'MVP Affiliate',
+  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
+}
+
 // ── Minimal, light palette. One restrained violet accent; everything else is
 //    near-monochrome with hairline borders. No gradient text, almost no shadow. ──
 const C = {
