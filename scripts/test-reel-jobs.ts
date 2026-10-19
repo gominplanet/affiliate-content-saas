@@ -63,8 +63,8 @@ check('a minute alarm picks the watch back up after Chrome puts SCOUT to sleep',
 // expect users to keep these facebook pages open") ─────────────────────────────
 {
   const W = BG.slice(BG.indexOf('function watchGroupPost('), BG.indexOf('// ── TRYBE outreach (Labs)'))
-  check('a closed Facebook tab with a Reel job hands over to a search of the Group, not the end',
-    /if \(!tab\) \{[\s\S]{0,300}if \(ctx\.job && ctx\.groupUrl\) \{\s*ctx\.mode = 'search'/.test(W))
+  check('a closed Facebook tab hands over to a search of the Group, not the end',
+    /if \(!tab\) \{[\s\S]{0,300}if \(ctx\.groupUrl\) \{\s*ctx\.mode = 'search'\s*ctx\.searchWhy = 'closed'/.test(W))
   check('the search looks in the Group itself, out of sight, newest first',
     /async function findGroupPostQuietly\(groupUrl, snippet, linkKey\)/.test(BG) && /sorting_setting', 'CHRONOLOGICAL'/.test(BG)
       && /tab = await openWorkTab\(u\.toString\(\)\)/.test(BG) && /func: readGroupPostState, args: \[snippet, linkKey \|\| ''\]/.test(BG.slice(BG.indexOf('async function findGroupPostQuietly'))))
@@ -74,6 +74,11 @@ check('a minute alarm picks the watch back up after Chrome puts SCOUT to sleep',
     /ctx\.searchUntil = ctx\.pressed \? 0 : Date\.now\(\) \+ FB_SEARCH_UNSURE_MS/.test(W) && /return await save\(\{ state: ctx\.pressed \? 'not_seen' : 'closed' \}\)/.test(W))
   check('a frozen tab cannot hang the watch: every read has a deadline', (W.match(/withTimeoutNull\(chrome\.scripting\.executeScript/g) || []).length >= 1 && /withTimeoutNull\(chrome\.scripting\.executeScript/.test(BG.slice(BG.indexOf('async function findGroupPostQuietly'))))
   check('a tab Chrome put to sleep is woken, at most every five minutes', /if \(tab\.discarded && Date\.now\(\) - reloadedAt > 5 \* 60 \* 1000\)/.test(W))
+  // 1.52.2 (Seb: "i had to refresh my facebook page"): an open tab that never
+  // redraws is not waited on for ever.
+  check('pressed, four minutes on and not shown in the tab: a fresh copy of the Group is checked',
+    /const FB_STALE_TAB_MS = 4 \* 60 \* 1000/.test(BG) && /ctx\.pressed && ctx\.pressedAt && !r\.seen && Date\.now\(\) - ctx\.pressedAt > FB_STALE_TAB_MS\) \{\s*ctx\.mode = 'search'\s*ctx\.searchWhy = 'stale'/.test(W))
+  check('the moment Post was pressed is kept', /if \(!ctx\.pressedAt\) ctx\.pressedAt = dialogGoneAt/.test(W) && /pressedAt: was\.pressedAt \|\| 0/.test(W))
   check('the watch keeps what it was doing across a SCOUT restart', /mode: was\.mode === 'search' \? 'search' : 'tab'/.test(W) && /groupUrl: was\.groupUrl \|\| groupUrl/.test(W))
   check('what it last saw is kept for the page', /const see = \(what\) => \{ ctx\.seeing = \{ \.\.\.what, at: Date\.now\(\) \} \}/.test(W))
   const RD = read('components/clip-factory/ReelDestinations.tsx')
@@ -104,6 +109,8 @@ check('an older SCOUT or no migration: the page posts it as before', /if \(h\.st
   check('a closed tab says SCOUT is looking in the Group, how often, and when next', /looking for your post in the Group itself/.test(search) && /looked 3 times/.test(search) && /about 4 minutes/.test(search))
   check('an older SCOUT that says nothing more gets nothing more', watchSays({ state: 'watching' }, t0) === null && watchSays({ state: 'watching', ctx: { started: t0 } }, t0) === null)
   check('the four are four different sentences', new Set([open, proc, slept, search]).size === 4)
+  const stale = watchSays({ state: 'watching', ctx: { mode: 'search', searchWhy: 'stale', started: t0, seeing: { searching: true, why: 'stale', searches: 0, nextAt: t0 + 15 * 60_000 } } }, t0 + 15 * 60_000) || ''
+  check('a stale open tab is said as that, not as a closed tab', /does not update by itself/.test(stale) && !/Facebook tab is closed/.test(stale))
 }
 
 if (fails.length) { console.error('reel-jobs failed:\n - ' + fails.join('\n - ')); process.exit(1) }

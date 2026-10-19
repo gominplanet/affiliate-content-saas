@@ -22,14 +22,21 @@ export function watchSays(st: FacebookGroupPostStatus | null | undefined, now: n
   if (!see) return null
   const since = c.started ? ` (${clockWords(now - c.started)} since the post was filled)` : ''
   if (c.mode === 'search') {
+    // Why it is looking, said first: the three are not the same news.
+    const why = see.why || c.searchWhy || (see.tabClosed ? 'closed' : see.notInTab ? 'not_in_tab' : 'closed')
+    const opener = why === 'stale'
+      ? 'Facebook has your post, but the open Facebook tab does not update by itself, so SCOUT is checking a fresh copy of the Group for it. You can close the Facebook tab.'
+      : why === 'not_in_tab'
+        ? 'Your post did not show in the Facebook tab, so SCOUT is looking for it in the Group itself (a Group that approves posts first shows it once approved).'
+        : 'The Facebook tab is closed, so SCOUT is looking for your post in the Group itself.'
     if (see.foundNoLink) return 'SCOUT found your post in the Group and is reading its link. Nothing to do here.'
-    if (see.error) return `The Facebook tab is closed, so SCOUT is looking for your post in the Group itself. Its last look did not work (${see.error}). It tries again by itself.`
+    if (see.error) return `${opener} Its last look did not work (${see.error}). It tries again by itself.`
     const n = see.searches ?? c.searches ?? 0
     const next = see.nextAt ? Math.max(0, Math.round((see.nextAt - now) / 60000)) : null
     const when = next === null ? '' : next <= 1 ? ' Next look in about a minute.' : ` Next look in about ${next} minutes.`
     return n
-      ? `The Facebook tab is closed, so SCOUT is looking for your post in the Group itself. It has looked ${n} ${n === 1 ? 'time' : 'times'} and not found it yet${since}.${when} Nothing to do here: once it is up, MVP posts the Reel.`
-      : `The Facebook tab is closed, so SCOUT will look for your post in the Group itself.${when} Nothing to do here.`
+      ? `${opener} It has looked ${n} ${n === 1 ? 'time' : 'times'} and not found it yet${since}.${when} Nothing to do here: once it is up, MVP posts the Reel.`
+      : `${opener}${when} Nothing to do here.`
   }
   if ((see.readFails ?? 0) >= 3) {
     return see.asleep

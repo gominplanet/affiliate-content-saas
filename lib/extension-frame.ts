@@ -1245,12 +1245,13 @@ export interface FacebookGroupPostStatus {
    *  is looking in the Group itself. */
   ctx?: {
     mode?: 'tab' | 'search'
+    searchWhy?: 'closed' | 'stale' | 'not_in_tab' | ''
     started?: number
     searches?: number
     seeing?: {
       at?: number; dialog?: boolean; processing?: boolean; seen?: boolean; created?: boolean
       readFails?: number; asleep?: boolean; searching?: boolean; searches?: number; tabClosed?: boolean
-      notInTab?: boolean; foundNoLink?: boolean; error?: string | null; nextAt?: number
+      notInTab?: boolean; foundNoLink?: boolean; error?: string | null; nextAt?: number; why?: 'closed' | 'stale' | 'not_in_tab'
     } | null
   }
 }

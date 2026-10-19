@@ -14045,6 +14045,13 @@ const FB_SEARCH_LATER_MS = 5 * 60 * 1000
 // A tab closed before SCOUT saw Post pressed may never have been posted: it is
 // looked for a while, not for the job's whole three hours.
 const FB_SEARCH_UNSURE_MS = 45 * 60 * 1000
+// 1.52.2 (Seb, 2026-10-19: "it finally worked.. but i had to refresh my
+// facebook page"). An open Facebook tab does not redraw itself once Facebook
+// has processed the video, and can keep showing "Processing video" long after,
+// so a post that was pressed could wait for ever in a tab that never changes.
+// Four minutes after Post, SCOUT checks a fresh copy of the Group as well,
+// which is what the refresh did.
+const FB_STALE_TAB_MS = 4 * 60 * 1000
 const withTimeoutNull = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))])
 async function findGroupPostQuietly(groupUrl, snippet, linkKey) {
   let tab = null
@@ -14098,7 +14105,10 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
     mode: was.mode === 'search' ? 'search' : 'tab',
     searchUntil: was.searchUntil || 0, searches: was.searches || 0, nextSearchAt: was.nextSearchAt || 0,
     // Post was pressed: the composer closed, or Facebook answered the create.
-    pressed: !!was.pressed,
+    pressed: !!was.pressed, pressedAt: was.pressedAt || 0,
+    // Why it is searching: 'closed' (tab gone), 'stale' (tab open but not
+    // showing the post), 'not_in_tab' (composer closed, post never drawn).
+    searchWhy: was.searchWhy || '',
     seeing: was.seeing || null,
   }
   void (async () => {
@@ -14128,7 +14138,7 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
           ctx.searches++
           ctx.nextSearchAt = Date.now() + (ctx.searches < 5 ? FB_SEARCH_FIRST_MS : FB_SEARCH_LATER_MS)
           if (found && found.url) return await save({ state: 'posted', url: found.url, via: 'search' })
-          see({ searching: true, searches: ctx.searches, foundNoLink: !!(found && found.seen), error: (found && found.error) || null, nextAt: ctx.nextSearchAt })
+          see({ searching: true, why: ctx.searchWhy, searches: ctx.searches, foundNoLink: !!(found && found.seen), error: (found && found.error) || null, nextAt: ctx.nextSearchAt })
           await save({ state: 'watching' })
           continue
         }
@@ -14139,12 +14149,13 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
         if (!tab) {
           // 1.52.1: with a Reel job to finish and the Group's address, the
           // closed tab hands over to the search instead of ending the watch.
-          if (ctx.job && ctx.groupUrl) {
+          if (ctx.groupUrl) {
             ctx.mode = 'search'
+            ctx.searchWhy = 'closed'
             ctx.searchUntil = ctx.pressed ? 0 : Date.now() + FB_SEARCH_UNSURE_MS
             // A first look soon: a post that was pressed is often up already.
             ctx.nextSearchAt = Date.now() + 60000
-            see({ searching: true, searches: 0, tabClosed: true, nextAt: ctx.nextSearchAt })
+            see({ searching: true, why: 'closed', searches: 0, tabClosed: true, nextAt: ctx.nextSearchAt })
             await save({ state: 'watching' })
             continue
           }
@@ -14176,7 +14187,7 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
         }
         readFails = 0
         if (Array.isArray(r.log)) log = r.log
-        if (r.created) ctx.pressed = true
+        if (r.created) { ctx.pressed = true; if (!ctx.pressedAt) ctx.pressedAt = Date.now() }
         see({ dialog: !!r.dialog, processing: !!r.processing, seen: !!r.seen, created: !!r.created, readFails: 0 })
         // The page reloaded and took the listener with it: put it back, but
         // without marking posts old, since the new one may already be there.
@@ -14184,6 +14195,17 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
         if (!ctx.groupUrl && r.slug) ctx.groupUrl = 'https://www.facebook.com/groups/' + r.slug + '/'
         const url = (r.net && r.net.url) || r.feedUrl
         if (url) return await save({ state: 'posted', url, via: r.net ? r.net.via : 'feed' })
+        // 1.52.2: pressed, four minutes on, and this tab still does not show
+        // the post: a fresh copy of the Group is checked instead.
+        if (ctx.groupUrl && ctx.pressed && ctx.pressedAt && !r.seen && Date.now() - ctx.pressedAt > FB_STALE_TAB_MS) {
+          ctx.mode = 'search'
+          ctx.searchWhy = 'stale'
+          ctx.searchUntil = 0
+          ctx.nextSearchAt = Date.now()
+          see({ searching: true, why: 'stale', searches: 0, nextAt: ctx.nextSearchAt })
+          await save({ state: 'watching' })
+          continue
+        }
         if (r.seen || r.created) {
           if (!seenAt) seenAt = Date.now()
           // Give the timestamp link time to fill in before giving up on it. A
@@ -14206,16 +14228,17 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
         if (!r.dialog) {
           if (!dialogGoneAt) dialogGoneAt = Date.now()
           // The composer closed: Post was pressed (or the box was closed).
-          if (Date.now() - dialogGoneAt > 3000) ctx.pressed = true
+          if (Date.now() - dialogGoneAt > 3000) { ctx.pressed = true; if (!ctx.pressedAt) ctx.pressedAt = dialogGoneAt }
           if (!seenAt && Date.now() - dialogGoneAt > 45000) {
             // 1.52.1: with a Reel job, a post not seen in the tab is looked for
             // in the Group instead of given up on: a Group that approves posts
             // first, or a feed that has not drawn it yet.
-            if (ctx.job && ctx.groupUrl) {
+            if (ctx.groupUrl) {
               ctx.mode = 'search'
+              ctx.searchWhy = 'not_in_tab'
               ctx.searchUntil = Date.now() + FB_SEARCH_UNSURE_MS
               ctx.nextSearchAt = Date.now() + FB_SEARCH_FIRST_MS
-              see({ searching: true, searches: 0, notInTab: true, nextAt: ctx.nextSearchAt })
+              see({ searching: true, why: 'not_in_tab', searches: 0, notInTab: true, nextAt: ctx.nextSearchAt })
               await save({ state: 'watching' })
               continue
             }
