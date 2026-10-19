@@ -22,7 +22,10 @@ export type FilledVideo = { title: string; description: string; thumbnailUrl: st
 
 /** Fills title, description and thumbnail for these videos where MVP has
  *  none, from YouTube, and returns what it found by video id. */
-export async function fillMissingVideoDetails(sb: Db, userId: string, ids: string[]): Promise<Map<string, FilledVideo>> {
+/** `asked`, when given, collects every id YouTube answered for (found or not),
+ *  so a caller can tell "YouTube has no such video" from "YouTube was not
+ *  asked". */
+export async function fillMissingVideoDetails(sb: Db, userId: string, ids: string[], asked?: Set<string>): Promise<Map<string, FilledVideo>> {
   const found = new Map<string, FilledVideo>()
   const want = Array.from(new Set(ids.filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)))).slice(0, 100)
   if (!want.length) return found
@@ -38,6 +41,7 @@ export async function fillMissingVideoDetails(sb: Db, userId: string, ids: strin
     if (!left.length) break
     let got: Awaited<ReturnType<YouTubeOAuthService['getVideoSnippets']>> = {}
     try { got = await new YouTubeOAuthService(token).getVideoSnippets(left) } catch { continue }
+    if (asked) for (const id of left) asked.add(id)
     for (const [id, v] of Object.entries(got)) found.set(id, { title: v.title, description: v.description, thumbnailUrl: v.thumbnailUrl, channelId: v.channelId, channelTitle: v.channelTitle })
   }
   // Only what was missing is written: a title or description MVP already

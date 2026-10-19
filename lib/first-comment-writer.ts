@@ -6,7 +6,7 @@
 // call failed, and the result says which it was.
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { cleanFirstComment, fallbackFirstComment, withLinkDisclosure } from '@/lib/first-comment-text'
+import { cleanFirstComment, fallbackFirstComment, withLinkDisclosure, isWriterRefusal } from '@/lib/first-comment-text'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -15,6 +15,9 @@ export async function writeFirstComment(input: {
   title: string | null; description?: string | null; link: string | null
 }): Promise<{ text: string; written: 'ai' | 'plain' }> {
   const link = input.link
+  // Nothing to write from (a video YouTube no longer has): the plain comment,
+  // never a model asked to invent one.
+  if (!String(input.title || '').trim() && !String(input.description || '').trim()) return { text: fallbackFirstComment(input.title, link), written: 'plain' }
   try {
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
@@ -37,6 +40,8 @@ ${link ? `- include the product link exactly as given, followed by "(paid link)"
     recordAnthropicUsage(msg, { userId: input.userId, tier: input.tier ?? null, feature: 'first_comment_writer', model: MODEL })
     const block = msg.content.find((c) => c.type === 'text') as { type: 'text'; text: string } | undefined
     let text = cleanFirstComment(block?.text)
+    // A reply asking for details is not a comment (lib/first-comment-text).
+    if (isWriterRefusal(text)) throw new Error('writer asked instead of writing')
     // A comment that dropped the link it was given is not the comment asked for.
     if (link && !text.includes(link)) text = `${text}\n\n${link} (paid link)`.trim()
     text = withLinkDisclosure(text, link)

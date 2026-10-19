@@ -45,6 +45,19 @@ export function fallbackFirstComment(title: string | null | undefined, link: str
   return `Thanks for watching! ${ask}`
 }
 
+// A WRITER THAT ASKED INSTEAD OF WROTE (Seb, 2026-10-19: pinned comments
+// reading "I need the video title and description to write an authentic
+// pinned comment ... Could you please share those details?"). Videos YouTube
+// no longer had gave the writer no title or description, and its request for
+// them was kept as the comment. Such a reply is never a comment.
+const WRITER_REFUSAL = /\b(I (need|don'?t have|do not have|don'?t see|do not see|can'?t|cannot|notice)[^.?!]{0,80}\b(title|description|details|information)|could you (please )?(share|provide)|please (share|provide)|once you share|I'?d be happy to help)\b/i
+
+/** True when what the writer returned asks for details instead of being a
+ *  comment. Pure. */
+export function isWriterRefusal(text: string | null | undefined): boolean {
+  return WRITER_REFUSAL.test(String(text || ''))
+}
+
 /** Tidy what a model returned: one comment, no quotes around it, capped. */
 export function cleanFirstComment(raw: string | null | undefined): string {
   let t = String(raw || '').trim()

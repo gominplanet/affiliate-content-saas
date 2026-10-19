@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs'
 import { firstCommentDue, statusBatches } from '../lib/first-comments'
-import { productLinkIn, withLinkDisclosure, fallbackFirstComment } from '../lib/first-comment-text'
+import { productLinkIn, withLinkDisclosure, fallbackFirstComment, isWriterRefusal } from '../lib/first-comment-text'
 import { canUsePreview } from '../lib/labs-preview'
 
 const failures: string[] = []
@@ -188,10 +188,32 @@ check('a deleted video keeps its row when anything was made from it',
   const POST = read('app/api/youtube/first-comment/route.ts')
   const UI = read('components/first-comments/OlderVideos.tsx')
   const FILL = read('lib/video-details-fill.ts')
-  check('a video known only by id gets its real title and description before it is listed', /fillMissingVideoDetails\(createAdminClient\(\), user\.id, bare\)/.test(LIST) && /descriptionKnown: v\.description != null/.test(LIST))
+  check('a video known only by id gets its real title and description before it is listed', /fillMissingVideoDetails\(createAdminClient\(\), user\.id, bare, asked\)/.test(LIST) && /descriptionKnown: v\.description != null/.test(LIST))
   check('a comment is never written from a description MVP never read', /if \(!text && vid && \(!String\(vid\.title \|\| ''\)\.trim\(\) \|\| vid\.description == null\)\)/.test(POST) && /fillMissingVideoDetails\(admin, g\.user\.id, \[videoId\]\)/.test(POST))
   check('the list never claims "no product link" about an unread description', /v\.descriptionKnown === false \? 'MVP could not read/.test(UI))
   check('filling only adds what was missing, never replaces a title or description', /if \(!String\(row\.title \|\| ''\)\.trim\(\) && v\.title\) patch\.title = v\.title/.test(FILL) && /row\.description == null \|\| \(!String\(row\.description\)\.trim\(\) && v\.description\)/.test(FILL))
+}
+
+// ── HIDE WHAT YOU DO NOT WANT LISTED (Seb, 2026-10-19: videos YouTube no
+// longer has, listed by id with a cancelled draft that asked for a title) ──
+{
+  const LIST = read('app/api/youtube/first-comment/videos/route.ts')
+  const UI = read('components/first-comments/OlderVideos.tsx')
+  const WRITER = read('lib/first-comment-writer.ts')
+  const MIG = read('supabase/migrations/447_first_comment_hidden.sql')
+  check('a writer that asked for details is never a comment', isWriterRefusal('I need the video title and description to write an authentic pinned comment in the creator\'s voice. Could you please share those details?')
+    && isWriterRefusal("I'd be happy to help, but I notice the video title and description weren't included in your request.")
+    && isWriterRefusal("I don't have the video title or description to reference."))
+  check('a real comment is not taken for one', !isWriterRefusal("Here's my go-to freezer tray for meal prep because the flexible silicone makes it easy. Check out today's price on Amazon here: https://www.mvpl.ink/w7y596q (paid link) What's your biggest frustration with storage containers?"))
+  check('nothing to write from gives the plain comment, with no model asked', inOrder(WRITER, "if (!String(input.title || '').trim() && !String(input.description || '').trim()) return { text: fallbackFirstComment(input.title, link), written: 'plain' }", 'anthropic.messages.create'))
+  check('a refusal from the writer falls back to the plain comment', /if \(isWriterRefusal\(text\)\) throw new Error/.test(WRITER))
+  check('hidden videos are left out of the list and its counts, and listed apart under Hidden', /let list = all\.filter\(\(v\) => hidden\.has\(v\.youtube_video_id\) === onlyHidden\)/.test(LIST) && /hiddenCount,/.test(LIST) && /qs\.set\('hidden', '1'\)/.test(UI))
+  check('hiding and showing again change only the list', /export async function POST/.test(LIST) && /update\(\{ first_comment_hidden: next \}\)/.test(LIST) && !/from\('(youtube_videos|video_first_comments)'\)\.delete/.test(LIST))
+  check('a video YouTube was asked about and does not show is said as gone', /if \(asked\.has\(id\) && !filled\.has\(id\)\) gone\.add\(id\)/.test(LIST) && /YouTube no longer shows this video/.test(UI) && /Hide the \{goneShown\.length\} YouTube no longer shows/.test(UI))
+  check('each video can be hidden, the ticked ones together, and shown again', /\{showHidden \? 'Show again' : 'Hide'\}/.test(UI) && /Hide the \{selected\.size\} ticked/.test(UI))
+  check('a refusal kept from before is not shown as a comment', /isWriterRefusal\(fc\.text\)/.test(UI) && /MVP&apos;s writer had no title or description to go on/.test(UI))
+  check('without migration 447 hiding says so instead of failing quietly', /hidingMissing: hiddenRead\.missing/.test(LIST) && /Hiding videos needs migration 447/.test(UI) && /Nothing was hidden\./.test(LIST))
+  check('migration 447 is safe to run twice', /add column if not exists first_comment_hidden/.test(MIG))
 }
 
 if (failures.length) {

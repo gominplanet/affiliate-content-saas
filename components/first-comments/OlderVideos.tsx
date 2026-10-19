@@ -10,11 +10,18 @@
 // the pinned badge: pinned, posted but not pinned (and why), waiting until the
 // video is public, or not posted (and why). A run that hits YouTube's daily
 // limit stops and says so rather than marking the rest failed.
+//
+// HIDE WHAT YOU DO NOT WANT LISTED (Seb, 2026-10-19: videos YouTube no longer
+// has, listed by id with a cancelled draft). Any video can be hidden, one or
+// the ticked ones, and those YouTube does not show are named and hidden in
+// one go. Hidden ones wait under Hidden, to be shown again. Nothing on
+// YouTube or in MVP is deleted.
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, Pin, Search } from 'lucide-react'
 import { pinFirstComment } from '@/lib/first-comment-pins'
+import { isWriterRefusal } from '@/lib/first-comment-text'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import PageHero from '@/components/layout/PageHero'
 import { PinnedCommentsGuide } from '@/components/guide/tool-guides'
@@ -29,6 +36,8 @@ type FirstComment = {
 type Video = {
   youtubeVideoId: string; title: string | null; thumbnailUrl: string | null
   publishedAt: string | null; views: number | null; productLink: string | null; descriptionKnown?: boolean
+  /** YouTube was asked and does not show it: deleted, or private elsewhere. */
+  gone?: boolean
   firstComment: FirstComment | null
 }
 type Counts = { videos: number; pinned: number; postedNotPinned: number; waiting: number; none: number }
@@ -58,6 +67,11 @@ export default function OlderVideos() {
   const [running, setRunning] = useState(false)
   const [runNote, setRunNote] = useState<string | null>(null)
   const stop = useRef(false)
+  const [showHidden, setShowHidden] = useState(false)
+  const [hiddenCount, setHiddenCount] = useState(0)
+  const [hidingMissing, setHidingMissing] = useState(false)
+  const [hideNote, setHideNote] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
+  const [hideBusy, setHideBusy] = useState(false)
 
   const load = useCallback(async (offset = 0) => {
     setLoading(true); setLoadError(null)
@@ -65,19 +79,44 @@ export default function OlderVideos() {
       const qs = new URLSearchParams({ offset: String(offset), limit: String(PAGE) })
       if (onlyMissing) qs.set('missing', '1')
       if (query.trim()) qs.set('q', query.trim())
+      if (showHidden) qs.set('hidden', '1')
       const r = await fetchWithTimeout(`/api/youtube/first-comment/videos?${qs}`, { timeoutMs: 30_000 })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { setLoadError(j.error || `Could not load your videos (HTTP ${r.status}).`); return }
       setMissingTable(!!j.missingTable)
+      setHiddenCount(Number(j.hiddenCount || 0))
+      setHidingMissing(!!j.hidingMissing)
       setCounts(j.counts ?? null)
       setTotal(Number(j.total || 0))
       setVideos((prev) => offset === 0 ? (j.videos ?? []) : [...prev, ...(j.videos ?? [])])
     } catch {
       setLoadError('Could not reach MVP to load your videos.')
     } finally { setLoading(false) }
-  }, [onlyMissing, query])
+  }, [onlyMissing, query, showHidden])
 
   useEffect(() => { void load(0) }, [load])
+
+  /** Hide these videos from the list, or show them again. Says what happened. */
+  async function setHidden(ids: string[], hide: boolean) {
+    if (!ids.length) return
+    setHideBusy(true); setHideNote(null)
+    try {
+      const r = await fetchWithTimeout('/api/youtube/first-comment/videos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hide ? { hide: ids } : { unhide: ids }), timeoutMs: 20_000,
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setHideNote({ tone: 'bad', text: j.error || `Not saved (HTTP ${r.status}).` }); return }
+      const gone = new Set(ids)
+      setVideos((vs) => vs.filter((v) => !gone.has(v.youtubeVideoId)))
+      setTotal((t) => Math.max(0, t - ids.length))
+      setHiddenCount((n) => Math.max(0, n + (hide ? ids.length : -ids.length)))
+      setSelected((sel) => { const n = new Set(sel); for (const id of ids) n.delete(id); return n })
+      setHideNote({ tone: 'ok', text: hide ? `${ids.length} hidden. They are under Hidden if you want any back.` : `${ids.length} back on the list.` })
+    } catch {
+      setHideNote({ tone: 'bad', text: 'Could not reach MVP. Nothing was hidden.' })
+    } finally { setHideBusy(false) }
+  }
 
   const pickable = useMemo(() => videos.filter(needsOne), [videos])
   const toPin = useMemo(() => videos.filter((v) => v.firstComment?.state === 'posted' && v.firstComment.commentId && v.firstComment.pinned !== true), [videos])
@@ -159,6 +198,7 @@ export default function OlderVideos() {
   }
 
   const chosen = pickable.filter((v) => selected.has(v.youtubeVideoId)).length
+  const goneShown = videos.filter((v) => v.gone).map((v) => v.youtubeVideoId)
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -206,6 +246,27 @@ export default function OlderVideos() {
         {running && <button type="button" onClick={() => { stop.current = true }} className="text-[12px] text-[#ff3b30]">Stop after this one</button>}
       </div>
 
+      {!hidingMissing && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {!showHidden && selected.size > 0 && !running && (
+            <button type="button" disabled={hideBusy} onClick={() => void setHidden(Array.from(selected), true)} className="btn-secondary text-[12px] disabled:opacity-40">Hide the {selected.size} ticked</button>
+          )}
+          {!showHidden && goneShown.length > 0 && !running && (
+            <button type="button" disabled={hideBusy} onClick={() => void setHidden(goneShown, true)} className="btn-secondary text-[12px] disabled:opacity-40">Hide the {goneShown.length} YouTube no longer shows</button>
+          )}
+          {(hiddenCount > 0 || showHidden) && (
+            <button type="button" disabled={running} onClick={() => { setSelected(new Set()); setShowHidden((h) => !h) }} className="text-[12px] underline text-[#6e6e73] dark:text-[#aeaeb2]">
+              {showHidden ? 'Back to the list' : `Hidden (${hiddenCount.toLocaleString()})`}
+            </button>
+          )}
+          {hideNote && <span className="text-[12px]" style={{ color: hideNote.tone === 'ok' ? '#16a34a' : '#d70015' }}>{hideNote.text}</span>}
+        </div>
+      )}
+      {hidingMissing && (
+        <div className="card p-3 mb-3 text-[12.5px] border border-[#ff9500]/40 text-[#c93400]">Hiding videos needs migration 447, so every video still shows here.</div>
+      )}
+      {showHidden && <p className="text-[12px] mb-2 text-[#6e6e73] dark:text-[#aeaeb2]">Hidden videos. Nothing about them was changed on YouTube or in MVP; Show again puts one back on the list.</p>}
+
       {run && <RunProgress items={run} running={running} note={runNote} />}
 
       {loadError && <div className="card p-3 mb-3 text-[12.5px] text-[#d70015]">{loadError}</div>}
@@ -234,11 +295,18 @@ export default function OlderVideos() {
                 <span className="block text-[11.5px] text-[#86868b] tabular-nums">
                   {v.publishedAt ? new Date(v.publishedAt).toLocaleDateString() : 'Date unknown'}
                   {v.views != null ? ` · ${v.views.toLocaleString()} views` : ''}
-                  {' · '}{v.productLink ? 'the comment carries the product link in its description' : v.descriptionKnown === false ? 'MVP could not read this video\'s description from YouTube yet; it reads it again when posting' : 'no product link in its description, so the comment has none'}
+                  {' · '}{v.gone ? 'YouTube no longer shows this video (deleted, or private on a channel MVP cannot see)' : v.productLink ? 'the comment carries the product link in its description' : v.descriptionKnown === false ? 'MVP could not read this video\'s description from YouTube yet; it reads it again when posting' : 'no product link in its description, so the comment has none'}
                 </span>
                 {status && <span className="block text-[11.5px] mt-0.5" style={{ color: status.c }}>{status.t}</span>}
-                {fc?.text && fc.state !== 'failed' && <span className="block text-[11.5px] mt-0.5 text-[#6e6e73] dark:text-[#aeaeb2] line-clamp-2">&ldquo;{fc.text}&rdquo;</span>}
+                {fc?.text && fc.state !== 'failed' && (isWriterRefusal(fc.text)
+                  // The writer asked for details instead of writing: never a comment.
+                  ? <span className="block text-[11.5px] mt-0.5 text-[#86868b]">No comment here: MVP&apos;s writer had no title or description to go on, and nothing was posted. Posting it writes a new one.</span>
+                  : <span className="block text-[11.5px] mt-0.5 text-[#6e6e73] dark:text-[#aeaeb2] line-clamp-2">&ldquo;{fc.text}&rdquo;</span>)}
               </div>
+              {!hidingMissing && (
+                <button type="button" disabled={hideBusy || running} onClick={() => void setHidden([v.youtubeVideoId], !showHidden)}
+                  className="shrink-0 text-[11.5px] text-[#86868b] hover:underline disabled:opacity-40">{showHidden ? 'Show again' : 'Hide'}</button>
+              )}
             </li>
           )
         })}
