@@ -91,6 +91,12 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('an ended deal is never shown, and the sort is by discount', f.length === 2 && f[0].asin === live.asin)
   check('upcoming only and live only', filterDeals([upcoming, live], { when: 'upcoming' }, 'best', now)[0].asin === upcoming.asin && filterDeals([upcoming, live], { when: 'live' }, 'best', now)[0].asin === live.asin)
   check('a better discount scores higher', dealScore(mk(1, 'X', 40)) > dealScore(mk(1, 'X', 10)))
+  // Seb, 2026-10-19: Best deals first was all OLEVS watches at 91% off.
+  const flood = [0, 1, 2, 3, 4, 5].map((i) => ({ ...mk(100 + i, 'Watches', 91), title: `OLEVS Watch ${i}`, brand: null }))
+  const other = { ...mk(200, 'Watches', 60), title: 'Timex Classic', brand: null }
+  const mixed = filterDeals([...flood, other], {}, 'best', now)
+  check('Best deals first mixes brands: one brand\'s flood does not fill the top', mixed.slice(0, 3).some((d) => d.asin === other.asin) && mixed.length === 7, mixed.map((d) => d.title).join(' | '))
+  check('the other sorts keep their own order', filterDeals([...flood, other], {}, 'discount', now)[6].asin === other.asin)
 }
 
 // ── the page: in the browser, never uploaded, one picked deal at a time ─────

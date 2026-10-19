@@ -381,8 +381,25 @@ export function filterDeals(deals: HubDeal[], f: HubFilter, sort: HubSort = 'bes
     reviews: (a, b) => (b.reviews ?? 0) - (a.reviews ?? 0),
     soonest: (a, b) => (a.startsAt ?? 0) - (b.startsAt ?? 0),
   }
-  return out.sort(by[sort])
+  if (sort !== 'best') return out.sort(by[sort])
+  // A MIX OF BRANDS (Seb, 2026-10-19: Best deals first was six OLEVS watches,
+  // all 91% off). Each further deal from the same brand ranks a little lower,
+  // so the top of the list is a spread, and one brand's flood is still there
+  // further down. Without a brand column, the title's first word stands in.
+  const seen = new Map<string, number>()
+  return out.sort(by.best)
+    .map((d) => {
+      const k = (d.brand || d.title.trim().split(/\s+/)[0] || d.asin).toLowerCase()
+      const n = seen.get(k) ?? 0
+      seen.set(k, n + 1)
+      return { d, s: dealScore(d) - n * BRAND_REPEAT_PENALTY }
+    })
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.d)
 }
+
+/** How much lower each further deal from one brand ranks in Best deals first. */
+export const BRAND_REPEAT_PENALTY = 25
 
 /** How many deal posts one batch may write: picked, not mass imported (the
  *  June importer's posts were rarely looked at again). */
