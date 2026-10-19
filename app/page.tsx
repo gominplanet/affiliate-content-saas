@@ -1118,16 +1118,13 @@ function ProofSection() {
             className="text-[36px] sm:text-[46px] font-extrabold tracking-[-0.03em] leading-[1.05] mb-4"
             style={{ color: 'var(--text)' }}
           >
-            The system behind a $3M/year affiliate business.
+            Real revenue, not a pitch deck.
           </h2>
           <p
             className="text-[16px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Gominplanet grew this affiliate business past $3M a year in revenue, and it&apos;s a big reason brands want to work with us. We built MVP to run our own business. Now it runs yours, in your voice.
-          </p>
-          <p className="mt-4 text-[13px] font-semibold" style={{ color: '#0C6E6B' }}>
-            Seb and Michelle, Gominplanet
+            Every part of MVP earns its place in a business that really runs on it, and that track record is a big reason brands want to work with the creators who use it.
           </p>
         </div>
 
