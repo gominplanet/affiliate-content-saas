@@ -1456,12 +1456,12 @@ function Hero() {
               so the claim is backed before the reader scrolls. Three fixed lines
               so "else." never ends up alone on a phone. */}
           <h1
-            className="text-[38px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
+            className="text-[38px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[1.04]"
             style={{ color: 'var(--text)' }}
           >
             <span className="block">Film it once.</span>
-            <span className="block" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #2DD4BF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does</span>
-            <span className="block" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #008080 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>everything else.</span>
+            <span className="block pb-[0.12em]" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #2DD4BF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does</span>
+            <span className="block pb-[0.12em]" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #008080 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>everything else.</span>
           </h1>
           <p
             className="mt-6 text-[18px] sm:text-[20px] font-semibold tracking-tight leading-snug max-w-2xl [text-wrap:pretty]"
