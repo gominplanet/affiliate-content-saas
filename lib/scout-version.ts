@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.52.0'
+export const SCOUT_LATEST_VERSION = '1.52.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -97,6 +97,10 @@ export const SCOUT_QUIET_MIN_VERSION = '1.50.2'
 export const SCOUT_META_CARDS_MIN_VERSION = '1.51.0'
 /** The oldest SCOUT that sends a video to a TRYBE brand (Send to TRYBE, Labs). */
 export const SCOUT_TRYBE_SUBMIT_MIN_VERSION = '1.52.0'
+/** 1.52.1: the Facebook tab can close once Post is pressed. A handed-off Reel
+ *  job carries on by looking in the Group itself, out of sight, and the watch
+ *  says what it last saw (Seb, 2026-10-19). */
+export const SCOUT_FB_GROUP_SEARCH_MIN_VERSION = '1.52.1'
 /** The oldest SCOUT that takes a Page Reel job and reports back from the
  *  background (Clip Factory, Group first). */
 export const SCOUT_FB_REEL_JOB_MIN_VERSION = '1.50.0'

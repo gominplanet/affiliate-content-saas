@@ -11,6 +11,7 @@
 // disclaimer, #ad #sponsored, the caption, three clean tags). SCOUT answers
 // only MVP's own server, keeps watching for 3 hours, picks the watch back up
 // after Chrome puts it to sleep, and says why when there is no link.
+import { watchSays } from '../lib/fb-group-watch'
 import { readFileSync } from 'node:fs'
 import { reelDescription, reelLinkOk, hashKey, newKey, MISSED_WORDS } from '../lib/reel-jobs'
 import { pageReelCaption } from '../lib/reel-group-caption'
@@ -57,7 +58,28 @@ check('migration 435 is safe to run twice', /create table if not exists public\.
 const BG = read('extension/background.js')
 check('SCOUT answers only the server of the MVP page that asked', /const readyUrl = origin \+ '\/api\/clip-factory\/reel-job\/ready'/.test(BG) && /if \(!\/\^https:\\\/\\\/\(www\\\.\)\?mvpaffiliate\\\.io\$\|\^http:\\\/\\\/localhost:3000\$\/\.test\(origin\)/.test(BG))
 check('a handed-off watch runs for 3 hours, not 30 minutes', /const REEL_JOB_HOURS = 3/.test(BG) && /while \(Date\.now\(\) < \(ctx\.until \|\| started \+ 30 \* 60 \* 1000\)\)/.test(BG) && /st\.ctx\.until = \(st\.ctx\.started \|\| Date\.now\(\)\) \+ REEL_JOB_HOURS \* 3600 \* 1000/.test(BG))
-check('a minute alarm picks the watch back up after Chrome puts SCOUT to sleep', /chrome\.alarms\.create\(reelJobAlarm\(watchId\), \{ periodInMinutes: 1 \}\)/.test(BG) && /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ id, started: c\.started, until: c\.until, job: c\.job \}\)/.test(BG))
+check('a minute alarm picks the watch back up after Chrome puts SCOUT to sleep', /chrome\.alarms\.create\(reelJobAlarm\(watchId\), \{ periodInMinutes: 1 \}\)/.test(BG) && /watchGroupPost\(c\.tabId, c\.snippet \|\| '', c\.linkKey \|\| '', \{ \.\.\.c, id \}\)/.test(BG))
+// ── THE FACEBOOK TAB CAN CLOSE (SCOUT 1.52.1; Seb, 2026-10-19: "we cannot
+// expect users to keep these facebook pages open") ─────────────────────────────
+{
+  const W = BG.slice(BG.indexOf('function watchGroupPost('), BG.indexOf('// ── TRYBE outreach (Labs)'))
+  check('a closed Facebook tab with a Reel job hands over to a search of the Group, not the end',
+    /if \(!tab\) \{[\s\S]{0,300}if \(ctx\.job && ctx\.groupUrl\) \{\s*ctx\.mode = 'search'/.test(W))
+  check('the search looks in the Group itself, out of sight, newest first',
+    /async function findGroupPostQuietly\(groupUrl, snippet, linkKey\)/.test(BG) && /sorting_setting', 'CHRONOLOGICAL'/.test(BG)
+      && /tab = await openWorkTab\(u\.toString\(\)\)/.test(BG) && /func: readGroupPostState, args: \[snippet, linkKey \|\| ''\]/.test(BG.slice(BG.indexOf('async function findGroupPostQuietly'))))
+  check('the search tab is always closed again', /finally \{\s*if \(tab\) \{ try \{ quietTabIds\.delete\(tab\.id\); await chrome\.tabs\.remove\(tab\.id\)/.test(BG))
+  check('a post found by the search goes to the job like any other', /if \(found && found\.url\) return await save\(\{ state: 'posted', url: found\.url, via: 'search' \}\)/.test(W))
+  check('a tab closed before Post was pressed is looked for a while, not three hours',
+    /ctx\.searchUntil = ctx\.pressed \? 0 : Date\.now\(\) \+ FB_SEARCH_UNSURE_MS/.test(W) && /return await save\(\{ state: ctx\.pressed \? 'not_seen' : 'closed' \}\)/.test(W))
+  check('a frozen tab cannot hang the watch: every read has a deadline', (W.match(/withTimeoutNull\(chrome\.scripting\.executeScript/g) || []).length >= 1 && /withTimeoutNull\(chrome\.scripting\.executeScript/.test(BG.slice(BG.indexOf('async function findGroupPostQuietly'))))
+  check('a tab Chrome put to sleep is woken, at most every five minutes', /if \(tab\.discarded && Date\.now\(\) - reloadedAt > 5 \* 60 \* 1000\)/.test(W))
+  check('the watch keeps what it was doing across a SCOUT restart', /mode: was\.mode === 'search' \? 'search' : 'tab'/.test(W) && /groupUrl: was\.groupUrl \|\| groupUrl/.test(W))
+  check('what it last saw is kept for the page', /const see = \(what\) => \{ ctx\.seeing = \{ \.\.\.what, at: Date\.now\(\) \} \}/.test(W))
+  const RD = read('components/clip-factory/ReelDestinations.tsx')
+  check('the page says what SCOUT sees while the job waits', /watchSays\(await getFacebookGroupPostStatus\(scoutWatch\)/.test(RD) && /await followJob\(jobId, res\.watchId\)/.test(RD))
+  check('closing the Facebook tab is offered only to a SCOUT that can', /say\(\{ tone: 'ok', text: res\.canSearch/.test(RD) && /canSearch = canWatch && scoutAtLeast\(status\.version, SCOUT_FB_GROUP_SEARCH_MIN_VERSION\)/.test(read('lib/extension-frame.ts')))
+}
 check('however the watch ends, the job hears it', /if \(st\.state !== 'watching' && ctx\.job\) \{[\s\S]{0,140}await reportReelJob\(ctx\.job, st\) \}/.test(BG) && /body = st\.state === 'posted' && st\.url \? \{ id: job\.id, token: job\.token, url: st\.url \} : \{ id: job\.id, token: job\.token, state: st\.state \}/.test(BG))
 check('a post that went up before the hand-off is still reported', /\/\/ Already over \(the post went up before MVP handed the job over\): say it now\.\n\s*void reportReelJob\(job, st\)/.test(BG))
 
@@ -66,6 +88,23 @@ const PAGE = read('components/clip-factory/ReelDestinations.tsx')
 check('the page hands the watch its job and says the tab can be closed', /const jobId = await startReelJob\(res\.watchId\)/.test(PAGE) && /You can close this tab\./.test(PAGE) && /Keep the Facebook tab open until it is up\./.test(PAGE))
 check('every way of posting from the page goes through the job once there is one', /if \(jobRef\.current\) \{ await jobManual\(link, how\); return \}/.test(PAGE))
 check('an older SCOUT or no migration: the page posts it as before', /if \(h\.state !== 'handed'\) \{/.test(PAGE) && /if \(!j\.ok \|\| !j\.id \|\| !j\.token\) return null/.test(PAGE))
+
+// What the page says while it waits (lib/fb-group-watch): each state its own
+// sentence, so a working wait never reads like a stuck one.
+{
+  const t0 = 1_000_000
+  const w = (seeing: Record<string, unknown>, mode: 'tab' | 'search' = 'tab') => watchSays({ state: 'watching', ctx: { mode, started: t0, seeing } }, t0 + 15 * 60_000)
+  const open = w({ dialog: true }) || ''
+  const proc = w({ processing: true, created: true }) || ''
+  const slept = w({ readFails: 4 }) || ''
+  const search = w({ searching: true, searches: 3, nextAt: t0 + 15 * 60_000 + 4 * 60_000 }, 'search') || ''
+  check('a post box still open says press Post, with the time', /Press Post there/.test(open) && /15 min 00 s/.test(open))
+  check('a video still processing says so, and that the tab can close', /still processing your video/.test(proc) && /You can close the Facebook tab now/.test(proc))
+  check('a tab SCOUT cannot read says so', /has not been able to read the Facebook tab/.test(slept))
+  check('a closed tab says SCOUT is looking in the Group, how often, and when next', /looking for your post in the Group itself/.test(search) && /looked 3 times/.test(search) && /about 4 minutes/.test(search))
+  check('an older SCOUT that says nothing more gets nothing more', watchSays({ state: 'watching' }, t0) === null && watchSays({ state: 'watching', ctx: { started: t0 } }, t0) === null)
+  check('the four are four different sentences', new Set([open, proc, slept, search]).size === 4)
+}
 
 if (fails.length) { console.error('reel-jobs failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ reel-jobs: the Page Reel posts itself once SCOUT sees the Group post, once, with the job’s key, with the caption the page built; MVP’s tab can close')

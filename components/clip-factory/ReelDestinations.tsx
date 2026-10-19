@@ -14,6 +14,8 @@ export { pageReelCaption }
 import { Loader2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import type { FacebookGroupPostStatus } from '@/lib/extension-frame'
+import { watchSays } from '@/lib/fb-group-watch'
+import { SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
 
 export type ReelPage = { id: string; name: string; isDefault: boolean }
 export type ReelGroup = { name: string; url: string; niche?: string | null; keywords?: string | null }
@@ -210,12 +212,21 @@ export function ReelGroupFirst(p: {
 
   // While this page is open it shows where the job stands; closed, the job
   // carries on without it.
-  async function followJob(id: string) {
+  async function followJob(id: string, scoutWatch?: string) {
     const what = longClip ? 'video' : 'Reel'
     const end = Date.now() + 4 * 3600_000
     let last = ''
+    let round = 0
+    // WHAT SCOUT SEES, said while the job waits (SCOUT 1.52.1, lib/fb-group-watch):
+    // a wait that is working never reads like one that is stuck.
+    const { getFacebookGroupPostStatus } = await import('@/lib/extension-frame')
+    let lastSaid = ''
     while (mounted.current && Date.now() < end) {
       await new Promise((r) => setTimeout(r, 5000))
+      if (scoutWatch && last !== 'posting' && round++ % 3 === 0) {
+        const said = watchSays(await getFacebookGroupPostStatus(scoutWatch).catch(() => null), Date.now())
+        if (said && said !== lastSaid) { lastSaid = said; sayLive({ tone: 'wait', text: said }) }
+      }
       type JobRow = { status?: string; note?: string | null; page_post_url?: string | null; group_post_url?: string | null }
       let job: JobRow | null = null
       try {
@@ -319,10 +330,15 @@ export function ReelGroupFirst(p: {
     if (jobId) {
       jobRef.current = jobId
       pageStarted.current = true
-      say({ tone: 'ok', text: `You can close this tab. After you press Post, Facebook processes the video (often several minutes), and MVP then posts the ${longClip ? 'video' : 'Reel'} on ${p.pageName || 'your Page'} by itself, linking to that Group post. Keep the Facebook tab open until it is up.` })
+      // THE FACEBOOK TAB CAN CLOSE TOO (SCOUT 1.52.1; Seb, 2026-10-19: "we
+      // cannot expect users to keep these facebook pages open"). Said only to a
+      // SCOUT that does it: an older one still needs the tab.
+      say({ tone: 'ok', text: res.canSearch
+        ? `Press Post in the Facebook tab once the clip has finished uploading. After that you can close both tabs and carry on: SCOUT finds your post in the Group by itself, even while Facebook is still processing the video, and MVP then posts the ${longClip ? 'video' : 'Reel'} on ${p.pageName || 'your Page'}, linking to it. Chrome itself needs to stay open.`
+        : `You can close this tab. After you press Post, Facebook processes the video (often several minutes), and MVP then posts the ${longClip ? 'video' : 'Reel'} on ${p.pageName || 'your Page'} by itself, linking to that Group post. Keep the Facebook tab open until it is up. (Once Chrome updates SCOUT to ${SCOUT_FB_GROUP_SEARCH_MIN_VERSION}, the Facebook tab can close too.)` })
       say({ tone: 'wait', text: 'Waiting for your Group post. Posted and nothing is happening after a while? Paste the post\'s link below, or post linking to your Group.' })
       setManual({ link: '' })
-      await followJob(jobId)
+      await followJob(jobId, res.watchId)
       return
     }
     say({ tone: 'wait', text: 'Waiting for you to press Post. Keep this tab open: after you post, Facebook processes the video first, which can take several minutes, and MVP carries on by itself. Posted and nothing is happening? Paste the post\'s link below, or post linking to your Group.' })

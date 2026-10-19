@@ -13471,7 +13471,7 @@ async function prefillFacebookGroup({ groupUrl, text, media }) {
     try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [true] }) } catch (e) {}
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: fillGroupComposerInPage, args: [body, hero] })
     const out = (results && results[0] && results[0].result) || { ok: false, filled: false, error: 'SCOUT got no answer from the Facebook page.' }
-    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body), groupLinkKey(body))
+    if (out.filled) out.watchId = watchGroupPost(tabId, groupSnippet(body), groupLinkKey(body), null, url)
     return out
   } catch (e) {
     return { ok: false, filled: false, error: e && e.message ? e.message : 'SCOUT could not open the Group.' }
@@ -13970,7 +13970,9 @@ async function readGroupWatch(id) {
   if (st.state === 'watching') {
     const c = st.ctx
     if (c && c.tabId && Date.now() < (c.until || (c.started || 0) + 30 * 60 * 1000)) {
-      watchGroupPost(c.tabId, c.snippet || '', c.linkKey || '', { id, started: c.started, until: c.until, job: c.job })
+      // 1.52.1: the whole of what it was doing, including a search it had
+      // moved on to after the Facebook tab was closed.
+      watchGroupPost(c.tabId, c.snippet || '', c.linkKey || '', { ...c, id })
       return { state: 'watching', resumed: true }
     }
     // Ended while SCOUT was asleep: said once, and a handed-off job hears why.
@@ -14028,16 +14030,83 @@ async function handOffReelJob(watchId, job) {
   return { ok: true, state: st.state }
 }
 
-function watchGroupPost(tabId, snippet, linkKey, resume) {
+// ── THE FACEBOOK TAB CAN CLOSE (1.52.1; Seb, 2026-10-19: "we cannot expect
+// users to keep these facebook pages open ... have mvp and scout deal with it
+// on their own time, after the user has clicked Post"). The watch reads the
+// Group post's link from the tab it was made in. A video post only shows in
+// the Group once Facebook has processed it, often many minutes, and the tab
+// had to stay open all that time. Now, once a Reel job is handed over, a
+// closed Facebook tab is not the end: SCOUT opens the Group itself, out of
+// sight in its own minimized window, every few minutes, and finds the post
+// there by its text or its product link, the same way it does in the tab.
+// Only fresh posts count (a time stamp in hours or days is never the new one).
+const FB_SEARCH_FIRST_MS = 2 * 60 * 1000
+const FB_SEARCH_LATER_MS = 5 * 60 * 1000
+// A tab closed before SCOUT saw Post pressed may never have been posted: it is
+// looked for a while, not for the job's whole three hours.
+const FB_SEARCH_UNSURE_MS = 45 * 60 * 1000
+const withTimeoutNull = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))])
+async function findGroupPostQuietly(groupUrl, snippet, linkKey) {
+  let tab = null
+  try {
+    let u = null
+    try { u = new URL(groupUrl) } catch (e) { return { error: 'no group address' } }
+    // Newest first, so a post made minutes ago is near the top.
+    u.searchParams.set('sorting_setting', 'CHRONOLOGICAL')
+    tab = await openWorkTab(u.toString())
+    quietTabIds.add(tab.id)
+    void quietShim(tab.id)
+    const end = Date.now() + 75000
+    let seen = false
+    let read = false
+    while (Date.now() < end) {
+      await _sleep(4000)
+      let r = null
+      try {
+        const res = await withTimeoutNull(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: readGroupPostState, args: [snippet, linkKey || ''] }), 8000)
+        r = res && res[0] && res[0].result
+      } catch (e) {}
+      if (!r) continue
+      read = true
+      if (r.feedUrl) return { url: r.feedUrl }
+      if (r.seen) seen = true
+      // Nothing yet: nudge the feed so the next few posts load.
+      try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => { try { window.scrollBy(0, 900) } catch (e) {} } }) } catch (e) {}
+    }
+    return { seen, read }
+  } catch (e) {
+    return { error: e && e.message ? e.message : 'could not open the Group' }
+  } finally {
+    if (tab) { try { quietTabIds.delete(tab.id); await chrome.tabs.remove(tab.id) } catch (e) {} }
+  }
+}
+
+function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
   const id = (resume && resume.id) || ('w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7))
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const ka = startKeepAlive()
-  // What the watch needs to pick itself back up after a restart.
-  const ctx = { tabId, snippet, linkKey, started: (resume && resume.started) || Date.now(), until: (resume && resume.until) || 0, job: (resume && resume.job) || null }
+  // What the watch needs to pick itself back up after a restart, and what it
+  // last saw, so MVP's page can say it rather than "waiting" for a quarter of
+  // an hour (1.52.1).
+  const was = resume || {}
+  const ctx = {
+    tabId, snippet, linkKey,
+    groupUrl: was.groupUrl || groupUrl || '',
+    started: was.started || Date.now(), until: was.until || 0, job: was.job || null,
+    // 'tab': reading the Facebook tab. 'search': the tab is gone, so SCOUT
+    // looks in the Group itself.
+    mode: was.mode === 'search' ? 'search' : 'tab',
+    searchUntil: was.searchUntil || 0, searches: was.searches || 0, nextSearchAt: was.nextSearchAt || 0,
+    // Post was pressed: the composer closed, or Facebook answered the create.
+    pressed: !!was.pressed,
+    seeing: was.seeing || null,
+  }
   void (async () => {
     const started = ctx.started
     let dialogGoneAt = 0
     let seenAt = 0
+    let readFails = 0
+    let reloadedAt = 0
     // What Facebook sent, as last read (see installGroupPostHook). Kept in
     // every answer so the creator can copy it whatever the outcome.
     let log = null
@@ -14046,28 +14115,73 @@ function watchGroupPost(tabId, snippet, linkKey, resume) {
       // A handed-off Reel job hears how the watch ended (1.50.0).
       if (st.state !== 'watching' && ctx.job) { try { chrome.alarms.clear(reelJobAlarm(id)) } catch (e) {} ; await reportReelJob(ctx.job, st) }
     }
+    const see = (what) => { ctx.seeing = { ...what, at: Date.now() } }
     try {
       await saveGroupWatch(id, { state: 'watching', ctx })
       while (Date.now() < (ctx.until || started + 30 * 60 * 1000)) {
+        // ── THE TAB IS GONE: LOOK IN THE GROUP ITSELF ─────────────────────
+        if (ctx.mode === 'search') {
+          if (ctx.searchUntil && Date.now() > ctx.searchUntil) return await save({ state: ctx.pressed ? 'not_seen' : 'closed' })
+          const wait = Math.max(0, (ctx.nextSearchAt || 0) - Date.now())
+          if (wait > 0) { await sleep(Math.min(wait, 30000)); continue }
+          const found = await findGroupPostQuietly(ctx.groupUrl, snippet, linkKey)
+          ctx.searches++
+          ctx.nextSearchAt = Date.now() + (ctx.searches < 5 ? FB_SEARCH_FIRST_MS : FB_SEARCH_LATER_MS)
+          if (found && found.url) return await save({ state: 'posted', url: found.url, via: 'search' })
+          see({ searching: true, searches: ctx.searches, foundNoLink: !!(found && found.seen), error: (found && found.error) || null, nextAt: ctx.nextSearchAt })
+          await save({ state: 'watching' })
+          continue
+        }
         // A handed-off job is a long wait: look every 10 seconds, not 2.
         await sleep(ctx.job ? 10000 : 2000)
         let tab = null
         try { tab = await chrome.tabs.get(tabId) } catch (e) {}
-        if (!tab) return await save({ state: 'closed' })
+        if (!tab) {
+          // 1.52.1: with a Reel job to finish and the Group's address, the
+          // closed tab hands over to the search instead of ending the watch.
+          if (ctx.job && ctx.groupUrl) {
+            ctx.mode = 'search'
+            ctx.searchUntil = ctx.pressed ? 0 : Date.now() + FB_SEARCH_UNSURE_MS
+            // A first look soon: a post that was pressed is often up already.
+            ctx.nextSearchAt = Date.now() + 60000
+            see({ searching: true, searches: 0, tabClosed: true, nextAt: ctx.nextSearchAt })
+            await save({ state: 'watching' })
+            continue
+          }
+          return await save({ state: 'closed' })
+        }
         const onPost = String(tab.url || '').match(FB_GROUP_POST_RE)
         if (onPost) return await save({ state: 'posted', url: onPost[0].replace(/^https:\/\/(web|m)\./, 'https://www.') + '/', via: 'tab' })
         const onReel = String(tab.url || '').match(/^https:\/\/(?:www|web|m)\.facebook\.com\/reel\/(\d{6,})/)
         if (onReel) return await save({ state: 'posted', url: 'https://www.facebook.com/reel/' + onReel[1] + '/', via: 'tab reel' })
+        // A tab Chrome put to sleep to save memory cannot be read. Woken by a
+        // reload, which is what clicking on it does, never more than every
+        // five minutes.
+        if (tab.discarded && Date.now() - reloadedAt > 5 * 60 * 1000) {
+          reloadedAt = Date.now()
+          try { await chrome.tabs.reload(tabId) } catch (e) {}
+        }
         let r = null
         try {
-          const res = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet, linkKey || ''] })
+          // 1.52.1: a frozen tab never answers, and the watch waited on it for
+          // ever. Given eight seconds, then counted as a read that failed.
+          const res = await withTimeoutNull(chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readGroupPostState, args: [snippet, linkKey || ''] }), 8000)
           r = res && res[0] && res[0].result
         } catch (e) {}
-        if (!r) continue
+        if (!r) {
+          readFails++
+          see({ ...(ctx.seeing || {}), readFails, asleep: !!tab.discarded })
+          await save({ state: 'watching' })
+          continue
+        }
+        readFails = 0
         if (Array.isArray(r.log)) log = r.log
+        if (r.created) ctx.pressed = true
+        see({ dialog: !!r.dialog, processing: !!r.processing, seen: !!r.seen, created: !!r.created, readFails: 0 })
         // The page reloaded and took the listener with it: put it back, but
         // without marking posts old, since the new one may already be there.
         if (!r.hook) { try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: installGroupPostHook, args: [false] }) } catch (e) {} }
+        if (!ctx.groupUrl && r.slug) ctx.groupUrl = 'https://www.facebook.com/groups/' + r.slug + '/'
         const url = (r.net && r.net.url) || r.feedUrl
         if (url) return await save({ state: 'posted', url, via: r.net ? r.net.via : 'feed' })
         if (r.seen || r.created) {
@@ -14091,7 +14205,22 @@ function watchGroupPost(tabId, snippet, linkKey, resume) {
         }
         if (!r.dialog) {
           if (!dialogGoneAt) dialogGoneAt = Date.now()
-          if (!seenAt && Date.now() - dialogGoneAt > 45000) return await save({ state: 'not_seen' })
+          // The composer closed: Post was pressed (or the box was closed).
+          if (Date.now() - dialogGoneAt > 3000) ctx.pressed = true
+          if (!seenAt && Date.now() - dialogGoneAt > 45000) {
+            // 1.52.1: with a Reel job, a post not seen in the tab is looked for
+            // in the Group instead of given up on: a Group that approves posts
+            // first, or a feed that has not drawn it yet.
+            if (ctx.job && ctx.groupUrl) {
+              ctx.mode = 'search'
+              ctx.searchUntil = Date.now() + FB_SEARCH_UNSURE_MS
+              ctx.nextSearchAt = Date.now() + FB_SEARCH_FIRST_MS
+              see({ searching: true, searches: 0, notInTab: true, nextAt: ctx.nextSearchAt })
+              await save({ state: 'watching' })
+              continue
+            }
+            return await save({ state: 'not_seen' })
+          }
         } else {
           dialogGoneAt = 0
         }

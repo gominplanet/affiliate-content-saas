@@ -112,7 +112,7 @@ check('without the post\'s own link, the Reel waits for it or links to the Group
 {
   const BG = readFileSync('extension/background.js', 'utf8')
   check('SCOUT also finds the new Group post by its product link code',
-    /function groupLinkKey\(text\)/.test(BG) && /watchGroupPost\(tabId, groupSnippet\(body\), groupLinkKey\(body\)\)/.test(BG)
+    /function groupLinkKey\(text\)/.test(BG) && /watchGroupPost\(tabId, groupSnippet\(body\), groupLinkKey\(body\), null, url\)/.test(BG)
     && /function readGroupPostState\(snippet, linkKey\)/.test(BG) && /args: \[snippet, linkKey \|\| ''\]/.test(BG))
   check('the way on by hand shows from the start, and only one Page post ever goes',
     /Posted and nothing is happening\?/.test(reel) && /const pageStarted = useRef\(false\)/.test(reel)

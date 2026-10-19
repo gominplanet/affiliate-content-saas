@@ -13,7 +13,7 @@
  * chrome://extensions).
  */
 
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -998,7 +998,7 @@ export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boo
  * pins the comment and reports whether the pinned badge actually showed.
  * Resolves, never throws; `pinned` is only true when the badge was seen.
  */
-export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** A clip was asked for: whether the dialog showed the video. */ clipAttached?: boolean; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean }
+export interface FacebookGroupPrefillResult { ok: boolean; filled: boolean; error?: string; steps?: string; /** A clip was asked for: whether the dialog showed the video. */ clipAttached?: boolean; /** What happened to the hero, in a sentence: attached, or why not. */ media?: string; /** Set when SCOUT is watching for the post to go up. */ watchId?: string; /** True when this SCOUT will report the post going up. */ canWatch?: boolean; /** 1.52.1: true when this SCOUT carries on with the Facebook tab closed. */ canSearch?: boolean }
 export type FacebookGroupMedia = { kind: 'thumbnail' | 'video' | 'clip'; url: string } | null
 
 /**
@@ -1034,7 +1034,9 @@ export async function requestFacebookGroupPrefill(groupUrl: string, text: string
   // canWatch says whether this SCOUT will report the post going up, so an
   // older one shows "paste the link" instead of a wait that never ends.
   const canWatch = scoutAtLeast(status.version, SCOUT_FB_GROUP_WATCH_MIN_VERSION) && !!res?.watchId
-  return res ? { ...res, canWatch } : { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
+  // canSearch: this SCOUT carries on with the Facebook tab closed (1.52.1).
+  const canSearch = canWatch && scoutAtLeast(status.version, SCOUT_FB_GROUP_SEARCH_MIN_VERSION)
+  return res ? { ...res, canWatch, canSearch } : { ok: false, filled: false, error: 'SCOUT did not answer, so nothing was filled. The post is copied: paste it in the Group yourself.' }
 }
 
 /** Is SCOUT allowed on Facebook (Facebook setup, step 3). ask: show the Allow
@@ -1238,6 +1240,19 @@ export interface FacebookGroupPostStatus {
    *  each request's name and any post numbers or post addresses in its answer,
    *  never its contents. Copied by the creator for support. */
   log?: FacebookRequestNote[]
+  /** SCOUT 1.52.1+: what the watch is doing and what it last saw, so a long
+   *  wait says why. mode 'search' means the Facebook tab is closed and SCOUT
+   *  is looking in the Group itself. */
+  ctx?: {
+    mode?: 'tab' | 'search'
+    started?: number
+    searches?: number
+    seeing?: {
+      at?: number; dialog?: boolean; processing?: boolean; seen?: boolean; created?: boolean
+      readFails?: number; asleep?: boolean; searching?: boolean; searches?: number; tabClosed?: boolean
+      notInTab?: boolean; foundNoLink?: boolean; error?: string | null; nextAt?: number
+    } | null
+  }
 }
 
 export interface FacebookRequestNote {

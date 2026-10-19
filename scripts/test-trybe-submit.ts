@@ -107,7 +107,7 @@ function fake(opts: { listHas?: boolean; failPartAt?: number; refuseComplete?: b
   const writes = sendPart.split('\n').filter((l) => /method: '(POST|DELETE)'/.test(l))
   check('Send to TRYBE writes only the creator\'s own submissions: 3 upload POSTs and 1 DELETE', writes.length === 4
     && writes.every((l) => l.includes('\\/backend\\/api\\/creator\\/submissions\\/')) && writes.filter((l) => /DELETE/.test(l)).length === 1)
-  check('SCOUT is 1.52.0', JSON.parse(read('extension/manifest.json')).version === '1.52.0' && /SCOUT_TRYBE_SUBMIT_MIN_VERSION = '1\.52\.0'/.test(read('lib/scout-version.ts')))
+  check('SCOUT is 1.52.0 or newer', (() => { const v = String(JSON.parse(read('extension/manifest.json')).version).split('.').map(Number); return v[0] > 1 || (v[0] === 1 && (v[1] > 52 || (v[1] === 52 && v[2] >= 0))) })() && /SCOUT_TRYBE_SUBMIT_MIN_VERSION = '1\.52\.0'/.test(read('lib/scout-version.ts')))
 
   if (failures.length) { console.error('❌ trybe submit guard failed:\n  - ' + failures.join('\n  - ')); process.exit(1) }
   console.log('✓ trybe submit guard passed')
