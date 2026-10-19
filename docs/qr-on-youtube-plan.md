@@ -220,3 +220,28 @@ becomes a claim no competitor can make.
 The reason to ask first rather than after: if this is wrong, MVP does not lose
 a feature. Customers lose the income their Associates account represents, and
 they lose it because the software told them it was fine.
+
+---
+
+## Associates support's answer (Seb, 2026-10-19)
+
+Seb asked Associates support about QR codes and had a written reply:
+
+> Yes, you can use a QR code to direct customers to your sites as long as it
+> doesn't contain any product links.
+
+with the Operating Agreement and the Participation Requirements linked.
+
+**What it settles.** A QR is allowed when it leads to the creator's own site
+and carries no product link. That is this design exactly: the QR holds only
+`/v/<code>` on MVP's own origin, the code resolves to the creator's own blog
+post or their declared shop page, and `neverAmazon` (tested in
+scripts/test-video-qr.ts) stops it ever resolving to Amazon, an Amazon
+shortener or a Passport link. Nothing in this design needs to change.
+
+**What it does not say.** The reply does not mention televisions, so whether
+it covers Section 7(b) depends on the question it answered. If the question
+named YouTube watched on a TV, it is covered; if not, one follow-up naming it
+closes the last open point above. The shop page also counts as "your site"
+only once the creator has declared it in their Associates website list, which
+is why the setup flow requires that tick before the first burn.
