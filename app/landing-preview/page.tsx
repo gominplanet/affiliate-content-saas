@@ -402,8 +402,8 @@ function FinalCTA() {
     <section className="px-5 sm:px-8 lg:px-12 py-20 sm:py-28" style={{ backgroundColor: C.band, borderTop: `1px solid ${C.borderSoft}` }}>
       <div className="max-w-2xl mx-auto text-center">
         <h2 className="text-[40px] sm:text-[56px] lg:text-[64px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ ...DISPLAY, color: C.text }}>
-          Build the business{' '}
-          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>you own.</span>
+          Everything your content does next,{' '}
+          <span style={{ background: C.grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>in one place.</span>
         </h2>
         <p className="mt-6 text-[18px] leading-relaxed" style={{ color: C.muted }}>
           Every feature unlocked, free for {FREE_WEEK_DAYS} days. Cancel before day {FREE_WEEK_DAYS + 1} and you pay nothing. See if MVP fits before you spend a cent.
