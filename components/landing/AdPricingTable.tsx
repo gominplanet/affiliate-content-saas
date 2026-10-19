@@ -29,7 +29,7 @@ import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE, FREE_WEEK_CTA } from '@/lib/guarantee'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -190,7 +190,8 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
         ? `Saves $${saving.toLocaleString('en-US')} against monthly`
         : (annual ? `Or $${annual.toLocaleString('en-US')} a year` : null),
       features: [...capsFor(k), ...EXTRAS[k]],
-      ctaLabel: `Get ${t.label}`,
+      // The free week is monthly only, so only the monthly button offers it.
+      ctaLabel: showYear ? `Start ${t.label} yearly` : FREE_WEEK_CTA,
       ctaHref: `/signup?tier=${k}&plan=paid&billing=${showYear ? 'annual' : 'monthly'}`,
     }
   }
@@ -238,7 +239,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
           priceSuffix={pro.priceSuffix}
           note={pro.note}
           features={pro.features}
-          ctaLabel={`Start ${pro.name}`}
+          ctaLabel={pro.ctaLabel}
           ctaHref={pro.ctaHref}
           highlight={true}
           ribbon="Everything included"

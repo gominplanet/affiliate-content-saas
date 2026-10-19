@@ -40,7 +40,7 @@ const BILLING = readFileSync('app/(dashboard)/billing/page.tsx', 'utf8')
 const PRICING_PAGE = readFileSync('app/pricing/page.tsx', 'utf8')
 
 /** The feature-list block on the homepage: the only part that quotes numbers. */
-const cards = HOME.slice(HOME.indexOf('const PRICING_TIERS'), HOME.indexOf('cta: \'Start Pro\'') + 200)
+const cards = HOME.slice(HOME.indexOf('const PRICING_TIERS'), HOME.indexOf('cta: FREE_WEEK_CTA') + 200)
 check('the homepage pricing block was found', cards.length > 1000, `${cards.length} chars`)
 
 // ── the copy reads the allowances instead of restating them ─────────────────

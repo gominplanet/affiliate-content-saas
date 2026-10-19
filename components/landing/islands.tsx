@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Play, X as XIcon, Plus, Minus, Sparkles, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
-import { FREE_WEEK_LABEL, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_SENTENCE, FREE_WEEK_CTA_SHORT, freeWeekUnderButton } from '@/lib/guarantee'
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
@@ -376,8 +376,8 @@ function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boo
 }
 
 /** Sticky bottom CTA bar — slim chrome that fades in after the user
- *  scrolls past the hero. Always-visible "Start Pro" while they read the
- *  rest of the page, with the 7-day refund beside it (there is no trial).
+ *  scrolls past the hero. Always-visible "Try free for 7 days" while they
+ *  read the rest of the page, with what the card pays beside it.
  *  Dismissible per-session via localStorage
  *  so we don't nag users who've already declined once.
  *
@@ -442,7 +442,7 @@ export function StickyBottomBar() {
             MVP {TIERS.pro.label}, with {FREE_WEEK_LABEL}.
           </p>
           <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            Every tool in MVP from the first day. One refund per creator.
+            {freeWeekUnderButton(TIERS.pro.price)}
           </p>
         </div>
         <a
@@ -450,7 +450,8 @@ export function StickyBottomBar() {
           className="px-3.5 py-2 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap inline-flex items-center gap-1.5"
           style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
         >
-          Start Pro
+          <span className="hidden sm:inline">{FREE_WEEK_CTA_SHORT}</span>
+          <span className="sm:hidden">Try free</span>
           <ArrowRight size={12} />
         </a>
         <button

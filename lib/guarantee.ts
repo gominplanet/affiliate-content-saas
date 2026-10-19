@@ -46,6 +46,45 @@ export const FREE_WEEK_SHORT = `${FREE_WEEK_DAYS} days free`
 /** The whole promise in one sentence, for a line under a checkout button. */
 export const FREE_WEEK_SENTENCE = `On the monthly plan your first ${FREE_WEEK_DAYS} days are free: your card is not charged until day ${FREE_WEEK_DAYS + 1}, and if you cancel before then you pay nothing. One free week per creator. The yearly plan is charged when you join.`
 
+/** THE BUTTON THAT STARTS IT (Seb, 2026-10-19: "a button that says try MVP
+ *  Affiliate for free for seven days, on us"). Only on links to the monthly
+ *  signup: the yearly plan has no free week, so a yearly button never says it. */
+export const FREE_WEEK_CTA = `Try MVP Affiliate free for ${FREE_WEEK_DAYS} days`
+
+/** The same button, short enough for a nav bar on a phone. */
+export const FREE_WEEK_CTA_SHORT = `Try free for ${FREE_WEEK_DAYS} days`
+
+/** The line beside the button. */
+export const FREE_WEEK_ON_US = 'Your first week is on us'
+
+/** The line under the button: what happens to the card, before they wonder.
+ *  The price is passed in from lib/tier, never typed beside it. */
+export function freeWeekUnderButton(monthlyUsd: number): string {
+  return `$0 today, then $${monthlyUsd} a month from day ${FREE_WEEK_DAYS + 1}. Cancel before then and you pay nothing.`
+}
+
+/** What a repeat creator is told before they pay, at checkout and in the
+ *  steps: a card or email that had a free week is charged on the day it joins
+ *  (app/api/stripe/webhook freeWeekAtSignup). Said up front so a charge after a
+ *  "$0 today" checkout is never a surprise. */
+export const FREE_WEEK_ONCE = 'One free week per creator: if your card or email already had one, your first month is charged the day you join.'
+
+/** Said on Stripe's own checkout page, beside the pay button, so the card
+ *  form itself says what the card pays and when (custom_text.submit). */
+export const FREE_WEEK_CHECKOUT_NOTE = `You pay $0 today. Your first month is charged on day ${FREE_WEEK_DAYS + 1} unless you cancel before then from Billing in MVP. ${FREE_WEEK_ONCE}`
+
+/** The free week step by step, the same on every page that explains it
+ *  (components/landing/FreeWeekSteps, the signup form). The price is passed in
+ *  from lib/tier so it is never typed beside it. */
+export function freeWeekSteps(monthlyUsd: number): Array<{ when: string; charge: string; what: string }> {
+  return [
+    { when: 'Today', charge: '$0', what: 'Add your card at secure checkout. Nothing is charged.' },
+    { when: `Days 1 to ${FREE_WEEK_DAYS}`, charge: '$0', what: `Every Pro feature is open. Each monthly allowance runs at a quarter until day ${FREE_WEEK_DAYS + 1}.` },
+    { when: `Before day ${FREE_WEEK_DAYS + 1}`, charge: '$0', what: 'Not for you? Cancel from Billing in MVP and you pay nothing at all.' },
+    { when: `Day ${FREE_WEEK_DAYS + 1}`, charge: `$${monthlyUsd}`, what: 'Your first month is charged, and Pro renews monthly until you cancel.' },
+  ]
+}
+
 /** THE FREE GUIDE STILL PROMISES THE 7-DAY REFUND, and its guard
  *  (scripts/test-freeguide.ts) reads this line to check the guide's number.
  *  The guide belongs to another session, which updates it to the free week;

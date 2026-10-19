@@ -7,7 +7,7 @@
 import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { FREE_WEEK_SHORT } from '@/lib/guarantee'
+import { FREE_WEEK_CTA_SHORT } from '@/lib/guarantee'
 
 export const runtime = 'nodejs'
 export const alt = 'MVP Affiliate product tour: everything the platform does today'
@@ -137,10 +137,10 @@ export default async function Image() {
                   display: 'flex',
                 }}
               >
-                Start Pro →
+                {`${FREE_WEEK_CTA_SHORT} →`}
               </div>
               <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '15px', display: 'flex' }}>
-                {`${FREE_WEEK_SHORT} · mvpaffiliate.io/tour`}
+                mvpaffiliate.io/tour
               </span>
             </div>
           </div>

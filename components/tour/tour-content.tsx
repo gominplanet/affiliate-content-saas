@@ -31,7 +31,7 @@ import Link from 'next/link'
 // stood here are gone: the in-app tour is read by members, and a section
 // headed "what Pro adds on top of the Amazon plan" offers a plan nobody can buy.
 import { TIERS } from '@/lib/tier'
-import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE, FREE_WEEK_CTA } from '@/lib/guarantee'
 import { INTRO_DAYS } from '@/lib/intro-allowance'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
@@ -755,7 +755,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white"
                 style={{ background: '#7C3AED' }}
               >
-                Start Pro <ArrowUpRight size={13} />
+                {FREE_WEEK_CTA} <ArrowUpRight size={13} />
               </Link>
               <Link
                 href="/pricing"

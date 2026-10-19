@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
-import { FREE_WEEK_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_CHECKOUT_NOTE } from '@/lib/guarantee'
 import { priceMismatch } from '@/lib/price-guard'
 import { couponToApply } from '@/lib/coupon-guard'
 import type { Tier } from '@/lib/tier'
@@ -191,6 +191,8 @@ export async function POST(request: NextRequest) {
       mode: 'subscription',
       payment_method_types: ['card'],
       ...(freeWeek ? { payment_method_collection: 'always' as const } : {}),
+      // The card form itself says what the card pays and when.
+      ...(freeWeek ? { custom_text: { submit: { message: FREE_WEEK_CHECKOUT_NOTE } } } : {}),
       line_items: [{ price: priceId, quantity: 1 }],
       customer_email: cleanEmail,
       // Stamp BOTH the session and the subscription with user_id + tier so the

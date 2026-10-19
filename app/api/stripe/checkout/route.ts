@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
 import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, planChangeTarget, type BillingInterval } from '@/lib/stripe'
-import { FREE_WEEK_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_CHECKOUT_NOTE } from '@/lib/guarantee'
 import { priceMismatch } from '@/lib/price-guard'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -358,6 +358,8 @@ export async function POST(request: NextRequest) {
     mode: 'subscription',
     payment_method_types: ['card'],
     ...(freeWeek ? { payment_method_collection: 'always' as const } : {}),
+    // The card form itself says what the card pays and when.
+    ...(freeWeek ? { custom_text: { submit: { message: FREE_WEEK_CHECKOUT_NOTE } } } : {}),
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
     // fbp/fbc ride along so the webhook can attach them to the server-side

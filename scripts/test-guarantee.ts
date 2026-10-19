@@ -15,7 +15,7 @@
 // that makes it true to the same days and the same rules.
 
 import { readFileSync } from 'node:fs'
-import { FREE_WEEK_DAYS, FREE_WEEK_FROM, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, LEGACY_REFUND_DAYS, SUPPORT_EMAIL } from '../lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_FROM, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, FREE_WEEK_CTA, FREE_WEEK_CTA_SHORT, FREE_WEEK_CHECKOUT_NOTE, FREE_WEEK_ONCE, LEGACY_REFUND_DAYS, SUPPORT_EMAIL, freeWeekSteps, freeWeekUnderButton } from '../lib/guarantee'
 import { refundCheck } from '../lib/creator-refund'
 
 const failures: string[] = []
@@ -74,6 +74,42 @@ for (const f of SELLING) {
   check('the status written is the subscription’s own, never an assumed active', /subscription_status: week\.status/.test(HOOK))
   check('a free week is reported as a trial, and the first real charge as the purchase', /eventName: 'StartTrial'/.test(HOOK) && /purchaseAfterFreeWeek\(stripe, subId/.test(HOOK))
   check('migration 444 is safe to run twice', /create table if not exists public\.creator_trials/.test(read('supabase/migrations/444_creator_trials.sql')))
+}
+
+// ── the button says it, and every place that explains it says the same ────
+// Seb, 2026-10-19: "a button that says try MVP Affiliate for free for seven
+// days, on us". Every monthly signup button on a live sales page reads the
+// one label; the yearly ones never offer it.
+check('the button names the product and the days', FREE_WEEK_CTA === `Try MVP Affiliate free for ${FREE_WEEK_DAYS} days` && FREE_WEEK_CTA_SHORT.includes(String(FREE_WEEK_DAYS)))
+{
+  const steps = freeWeekSteps(199)
+  check('the steps run today, the week, before day 8, day 8', steps.length === 4 && steps[0].when === 'Today' && steps[3].when === `Day ${FREE_WEEK_DAYS + 1}`, JSON.stringify(steps.map((x) => x.when)))
+  check('every step but day 8 charges $0, and day 8 charges the price passed in', steps.slice(0, 3).every((x) => x.charge === '$0') && steps[3].charge === '$199')
+  check('the week says the allowances run at a quarter', /quarter/.test(steps[1].what))
+  check('the line under the button gives $0 today and the monthly price from day 8', /^\$0 today, then \$199 a month from day 8\./.test(freeWeekUnderButton(199)), freeWeekUnderButton(199))
+  check('checkout says $0 today, day 8, and one per creator', /\$0 today/.test(FREE_WEEK_CHECKOUT_NOTE) && /day 8/.test(FREE_WEEK_CHECKOUT_NOTE) && FREE_WEEK_CHECKOUT_NOTE.includes(FREE_WEEK_ONCE) && FREE_WEEK_CHECKOUT_NOTE.length < 1200)
+}
+const LIVE_BUTTONS = ['app/page.tsx', 'app/features/page.tsx', 'app/tour/page.tsx', 'components/tour/tour-content.tsx', 'components/landing/islands.tsx', 'app/own-your-blog/page.tsx']
+for (const f of LIVE_BUTTONS) {
+  const src = body(read(f))
+  check(`${f} offers the free week on its signup buttons`, /FREE_WEEK_CTA/.test(src))
+  check(`${f} has no "Start Pro" button left`, !/>\s*Start Pro\b|'Start Pro'|`Start Pro, /.test(src))
+}
+check('the home page shows the steps under the price', /<FreeWeekSteps \/>/.test(body(read('app/page.tsx'))))
+{
+  const PRICING = body(read('app/pricing/page.tsx'))
+  check('pricing: the monthly button offers the free week, the yearly one does not', /ctaLabel=\{annual \? `\$\{plan\.ctaLabel\} yearly` : FREE_WEEK_CTA\}/.test(PRICING))
+  check('pricing: the monthly view shows the steps, the yearly view says it has none', /<FreeWeekSteps cta=\{false\} \/>/.test(PRICING) && /The yearly plan has no free week/.test(PRICING))
+  check('the blog sales page table: yearly never offers the free week', /ctaLabel: showYear \? `Start \$\{t\.label\} yearly` : FREE_WEEK_CTA/.test(read('components/landing/AdPricingTable.tsx')))
+  check('the blog sales page shows the steps', /<FreeWeekSteps tone="light"/.test(body(read('app/own-your-blog/page.tsx'))))
+  const SIGNUP = body(read('components/auth/SignupForm.tsx'))
+  check('signup: monthly is headed with the free week and shows the steps, yearly is not', /annual \? `Start \$\{tierLabel \|\| 'Pro'\} yearly` : FREE_WEEK_CTA/.test(SIGNUP) && /!invited && !annual && \(/.test(SIGNUP) && /<FreeWeekSteps compact \/>/.test(SIGNUP))
+  for (const f of ['app/api/auth/signup-paid/route.ts', 'app/api/stripe/checkout/route.ts']) {
+    check(`${f}: Stripe's checkout page says it beside the pay button`, /\.\.\.\(freeWeek \? \{ custom_text: \{ submit: \{ message: FREE_WEEK_CHECKOUT_NOTE \} \} \} : \{\}\)/.test(read(f)))
+  }
+  const BILLING = body(read('app/(dashboard)/billing/page.tsx'))
+  check('billing says when a signup got no free week, and why', /freeWeekRefused &&/.test(BILLING) && /No free week on this account/.test(BILLING) && /freeWeekRefused/.test(read('app/api/stripe/plan-status/route.ts')))
+  check('billing never promises a free week to a returning customer', /freeWeekOffered === false/.test(BILLING))
 }
 
 // ── one inbox ───────────────────────────────────────────────────────────────

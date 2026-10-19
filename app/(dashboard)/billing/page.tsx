@@ -9,7 +9,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
-import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE, FREE_WEEK_CTA_SHORT } from '@/lib/guarantee'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
@@ -25,6 +25,10 @@ export default function BillingPage() {
   const [upgraded, setUpgraded] = useState(false)
   // THE FREE WEEK (lib/guarantee): when the card is charged, from Stripe.
   const [freeWeek, setFreeWeek] = useState<{ chargeAt: number; amountUsd: number | null; cancelled: boolean } | null>(null)
+  // null while unknown (plan-status not read): then the rule is described, not
+  // promised to this account.
+  const [freeWeekOffered, setFreeWeekOffered] = useState<boolean | null>(null)
+  const [freeWeekRefused, setFreeWeekRefused] = useState<string | null>(null)
   // The plan Stripe's success URL says they just bought, and how many times we
   // have re-read the row waiting for the webhook to grant it (see below).
   const [boughtPlan, setBoughtPlan] = useState<Tier | null>(null)
@@ -98,6 +102,8 @@ export default function BillingPage() {
         setPendingDowngrade(ps?.pendingDowngrade ?? null)
         setPaying(ps?.paying ?? null)
         setFreeWeek(ps?.freeWeek ?? null)
+        setFreeWeekOffered(typeof ps?.freeWeekOffered === 'boolean' ? ps.freeWeekOffered : null)
+        setFreeWeekRefused(ps?.freeWeekRefused ?? null)
       } catch { /* non-fatal — just don't show the note */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
@@ -421,11 +427,25 @@ export default function BillingPage() {
             </div>
           )}
 
+          {/* NO FREE WEEK, said with why: a card or email that had one before
+              is charged on the day it joins, after a checkout that showed $0. */}
+          {freeWeekRefused && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#ff9500]/10 border border-[#ff9500]/30">
+              <Zap size={18} className="text-[#ff9500] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                No free week on this account: {freeWeekRefused} One free week per creator, so your first month was charged when you joined.
+              </p>
+            </div>
+          )}
+
           {mustStart && realTier === 'trial' && !awaitingWebhook && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/25">
               <Zap size={18} className="text-[#7C3AED] flex-shrink-0" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                Your account is ready. MVP opens when you start Pro below. {FREE_WEEK_SENTENCE}
+                Your account is ready. MVP opens when you start Pro below.{' '}
+                {freeWeekOffered === false
+                  ? 'This account had a subscription before, so Pro is charged when you start.'
+                  : FREE_WEEK_SENTENCE}
               </p>
             </div>
           )}
@@ -539,7 +559,7 @@ export default function BillingPage() {
                       >
                         {previewLoading === plan.tier
                           ? <><Loader2 size={11} className="animate-spin" /> Checking…</>
-                          : <><CheckCircle size={11} /> Select</>}
+                          : <><CheckCircle size={11} /> {!isPaid && freeWeekOffered ? FREE_WEEK_CTA_SHORT : 'Select'}</>}
                       </button>
                     </div>
 

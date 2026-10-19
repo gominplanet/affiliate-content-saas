@@ -42,7 +42,8 @@ import {
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
-import { FREE_WEEK_DAYS, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, FREE_WEEK_CTA, freeWeekUnderButton } from '@/lib/guarantee'
+import FreeWeekSteps from '@/components/landing/FreeWeekSteps'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -61,7 +62,7 @@ export const metadata: Metadata = {
 /** The one call to action. Spelled once so all four uses cannot drift, which is
  *  the failure that turns a single-offer page into a page with four offers. */
 const CTA_HREF = '/signup?tier=pro'
-const CTA_LABEL = `Start Pro, $${TIERS.pro.price} a month`
+const CTA_LABEL = FREE_WEEK_CTA
 
 function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
   return (
@@ -77,12 +78,12 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
   )
 }
 
-/** Reassurance under every CTA. The three objections that stop a cold click,
- *  answered before they are asked, in six words each. */
+/** Reassurance under every CTA: what the card pays, and when, answered
+ *  before it is asked. */
 function CtaSubtext() {
   return (
     <p className="mt-3 text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-      Every feature from day one · {FREE_WEEK_LABEL} · Cancel anytime
+      {freeWeekUnderButton(TIERS.pro.price)}
     </p>
   )
 }
@@ -302,6 +303,9 @@ export default function OwnYourBlogPage() {
             </p>
           </div>
           <AdPricingTable focus="pro" freeHref={CTA_HREF} />
+          <div className="mt-10 max-w-5xl mx-auto">
+            <FreeWeekSteps tone="light" href={CTA_HREF} />
+          </div>
         </div>
       </section>
 
@@ -343,12 +347,12 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start Pro, connect a channel, pick a video, and read what it writes. On the monthly plan your first {FREE_WEEK_DAYS} days are free, and if it is not for you, cancel before day {FREE_WEEK_DAYS + 1} and you pay nothing.
+            Start your free week, connect a channel, pick a video, and read what it writes. On the monthly plan your first {FREE_WEEK_DAYS} days are free, and if it is not for you, cancel before day {FREE_WEEK_DAYS + 1} and you pay nothing.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
             <p className="mt-3 text-[13px] text-white/55">
-              Every feature from day one · {FREE_WEEK_LABEL} · Cancel anytime
+              {freeWeekUnderButton(TIERS.pro.price)}
             </p>
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">

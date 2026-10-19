@@ -14,7 +14,8 @@
 import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
-import { FREE_WEEK_LABEL, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_LABEL, FREE_WEEK_SENTENCE, FREE_WEEK_CTA } from '@/lib/guarantee'
+import FreeWeekSteps from '@/components/landing/FreeWeekSteps'
 import { CheckCircle, Zap } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
@@ -365,10 +366,25 @@ export default async function PricingPage({
               interval={annual ? 'year' : 'month'}
               highlight={plan.highlight}
               salesPaused={SALES_PAUSED}
-              ctaLabel={plan.ctaLabel}
+              ctaLabel={annual ? `${plan.ctaLabel} yearly` : FREE_WEEK_CTA}
             />
           </div>
         ))}
+      </div>
+
+      {/* THE FREE WEEK, day by day, under the button that starts it. Monthly
+          only: the yearly view says it has none, and where the free week is. */}
+      <div className="mt-10 w-full max-w-5xl">
+        {annual ? (
+          <p className="text-center text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+            The yearly plan has no free week and is charged when you join. Want to try MVP first?{' '}
+            <a href="/pricing#plans" className="font-semibold text-[#7C3AED] hover:underline">Choose monthly</a>{' '}
+            and your first {FREE_WEEK_DAYS} days are free.
+          </p>
+        ) : (
+          // No button of its own: the plan card's button is just above it.
+          <FreeWeekSteps cta={false} />
+        )}
       </div>
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">

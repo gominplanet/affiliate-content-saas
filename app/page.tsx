@@ -22,7 +22,8 @@ import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, FREE_WEEK_CTA, FREE_WEEK_CTA_SHORT, freeWeekUnderButton } from '@/lib/guarantee'
+import FreeWeekSteps from '@/components/landing/FreeWeekSteps'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
@@ -524,7 +525,7 @@ function PricingSection() {
         </div>
 
         {/* The free trial banner that sat here is gone (2026-10-18): there is
-            no trial. The refund promise above replaces it. */}
+            no trial. The free week line above replaces it. */}
 
         {/* THE COLUMN COUNT FOLLOWS THE PLANS, and the row narrows with it.
             This was lg:grid-cols-3 from when three plans were sold. The array
@@ -536,6 +537,11 @@ function PricingSection() {
           {PRICING_TIERS.map(tier => (
             <PricingCard key={tier.name} tier={tier} />
           ))}
+        </div>
+
+        {/* THE FREE WEEK, day by day, right under the price it leads to. */}
+        <div className="mt-8 max-w-5xl mx-auto">
+          <FreeWeekSteps />
         </div>
 
         {/* The Amazon band that used to sit here is gone. It pitched "No blog?
@@ -652,7 +658,7 @@ const PRICING_TIERS: PricingTier[] = [
       `Ask MVP: ${TIERS.pro.assistantMessagesPerMonth} messages / month`,
       'Priority generation queue + priority support',
     ],
-    cta: 'Start Pro',
+    cta: FREE_WEEK_CTA,
   },
 ]
 
@@ -1253,7 +1259,7 @@ function FinalCTASection() {
               boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
             }}
           >
-            Start Pro
+            {FREE_WEEK_CTA}
             <ArrowRight size={16} />
           </a>
           <a
@@ -1356,7 +1362,10 @@ function Nav() {
           href="/signup?tier=pro"
           className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
         >
-          Start Pro
+          {/* The whole offer from sm up; on a phone the short form keeps the
+              wordmark clear. */}
+          <span className="hidden sm:inline">{FREE_WEEK_CTA_SHORT}</span>
+          <span className="sm:hidden">Try free</span>
         </a>
       </div>
     </nav>
@@ -1481,7 +1490,7 @@ function Hero() {
                 href="/signup?tier=pro"
                 className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
               >
-                Start Pro, ${TIERS.pro.price} a month
+                {FREE_WEEK_CTA}
                 <ArrowRight size={14} />
               </a>
               {/* Secondary CTA — the full public product tour (/tour). No video;
@@ -1499,7 +1508,11 @@ function Hero() {
                 <ArrowRight size={13} />
               </a>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            {/* What the button costs, said beside it before anyone wonders. */}
+            <p className="mt-3 text-[13px] font-medium" style={{ color: 'var(--text-soft)' }}>
+              {freeWeekUnderButton(TIERS.pro.price)}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-[#10B981]" />
                 Keep your WordPress site forever.
@@ -1508,12 +1521,6 @@ function Hero() {
                 <ShieldCheck size={13} style={{ color: '#10B981' }} />
                 We never use or sell your personal data.
               </span>
-              {GUARANTEE && (
-                <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
-                  <Check size={13} style={{ color: '#10B981' }} />
-                  {GUARANTEE}.
-                </span>
-              )}
             </div>
 
             {/* New-feature ribbon — ties the hero to the flagship new work in the
@@ -1805,7 +1812,7 @@ function Footer() {
             className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
           >
-            Start Pro →
+            {FREE_WEEK_CTA_SHORT} →
           </a>
         </div>
 

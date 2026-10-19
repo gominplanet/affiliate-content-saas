@@ -11,7 +11,8 @@
  * capability changes, update this page too.
  */
 import type { Metadata } from 'next'
-import { FREE_WEEK_LABEL } from '@/lib/guarantee'
+import { FREE_WEEK_CTA, FREE_WEEK_CTA_SHORT, freeWeekUnderButton } from '@/lib/guarantee'
+import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as LIFTOFF_MAX_VIDEOS } from '@/lib/launch-batch'
 import NextImage from 'next/image'
 import {
@@ -55,7 +56,7 @@ function Nav() {
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2">
         <a href="/login" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[13px]" style={{ color: 'var(--text-soft)' }}>Sign in</a>
-        <a href="/signup?tier=pro" className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap">Start Pro</a>
+        <a href="/signup?tier=pro" className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"><span className="hidden sm:inline">{FREE_WEEK_CTA_SHORT}</span><span className="sm:hidden">Try free</span></a>
       </div>
     </nav>
   )
@@ -158,10 +159,11 @@ export default function FeaturesPage() {
           </p>
           <div className="flex flex-wrap gap-3.5 mt-9">
             <a href="/signup?tier=pro" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>
-              Start Pro <ArrowRight size={17} />
+              {FREE_WEEK_CTA} <ArrowRight size={17} />
             </a>
             <a href="/pricing" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold transition-transform hover:-translate-y-0.5" style={{ color: '#F6F2FF', border: '1px solid rgba(246,242,255,0.28)' }}>See pricing</a>
           </div>
+          <p className="mt-3.5 text-[13.5px]" style={{ color: '#CFC4E4' }}>{freeWeekUnderButton(TIERS.pro.price)}</p>
           <div className="flex flex-wrap gap-9 mt-14">
             {[[String(LIFTOFF_MAX_VIDEOS), 'videos in one bulk upload'], ['100', 'brands messaged in one batch'], ['1', 'press from YouTube to your storefront']].map(([n, l]) => (
               <div key={l}>
@@ -247,10 +249,10 @@ export default function FeaturesPage() {
         <h2 className="text-[clamp(30px,4.6vw,50px)] font-extrabold tracking-[-0.03em] max-w-[18ch] mx-auto">Run the loop once. Then watch it compound.</h2>
         <p className="mt-5 text-[18px] leading-relaxed max-w-[46ch] mx-auto" style={{ color: 'var(--text-soft)' }}>Find, create, publish, earn. MVP does the parts that don&apos;t need you, so you can film the next review.</p>
         <div className="flex flex-wrap gap-3.5 justify-center mt-9">
-          <a href="/signup?tier=pro" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>Start Pro <ArrowRight size={17} /></a>
+          <a href="/signup?tier=pro" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>{FREE_WEEK_CTA} <ArrowRight size={17} /></a>
           <a href="/tour" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold" style={{ color: 'var(--text)', border: '1px solid var(--border)' }}>Take the tour</a>
         </div>
-        <p className="mt-6 text-[13.5px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}><Zap size={13} /> {FREE_WEEK_LABEL}</p>
+        <p className="mt-6 text-[13.5px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}><Zap size={13} /> {freeWeekUnderButton(TIERS.pro.price)}</p>
       </section>
 
       <footer className="border-t py-8 text-center text-[13.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-faint)' }}>

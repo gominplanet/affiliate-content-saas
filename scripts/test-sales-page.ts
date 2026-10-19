@@ -80,8 +80,9 @@ const noImports = (src: string) => src
   // 7-day refund.
   check('and it is the 7 days free on the monthly plan',
     FREE_WEEK_DAYS === 7 && new RegExp(`\\b${FREE_WEEK_DAYS} days free on the monthly plan\\b`).test(homepage), homepage)
+  // Its buttons offer the free week and say what the card pays (2026-10-19).
   check('/features states the same one',
-    /\{FREE_WEEK_LABEL\}/.test(FEATURES),
+    /FREE_WEEK_CTA/.test(FEATURES) && /freeWeekUnderButton\(TIERS\.pro\.price\)/.test(FEATURES),
     `homepage says "${homepage}"`)
   check('no 14-day guarantee survives anywhere on the marketing pages',
     !/14-day money-back/.test(PAGE) && !/14-day money-back/.test(FEATURES),
@@ -134,13 +135,15 @@ const noImports = (src: string) => src
   // There is no start without a card (Seb, 2026-10-18), so the hero answers
   // the same objection with the free week (2026-10-19).
   check('the hero states the free week',
-    /FREE_WEEK_SHORT/.test(hero) && /\{GUARANTEE\}/.test(hero),
+    /FREE_WEEK_SHORT/.test(hero) && /freeWeekUnderButton\(TIERS\.pro\.price\)/.test(hero),
     'the single biggest objection on a cold click, now that there is no free way in')
   check('and no longer promises a start with no card',
     !/No card to start|Start free/i.test(hero),
     'there is no free start; a promise of one is a bait and switch')
-  check('the hero button starts Pro and names its price',
-    /href="\/signup\?tier=pro"/.test(hero) && /Start Pro, \$\{TIERS\.pro\.price\} a month/.test(hero))
+  // Seb, 2026-10-19: "a button that says try MVP Affiliate for free for seven
+  // days". The price moved from the button to the line right under it.
+  check('the hero button offers the free week and the price sits under it',
+    /href="\/signup\?tier=pro"/.test(hero) && /\{FREE_WEEK_CTA\}/.test(hero) && /freeWeekUnderButton\(TIERS\.pro\.price\)/.test(hero))
 }
 
 // ── the transformation section exists and is honest ─────────────────────────
@@ -270,7 +273,7 @@ for (const { label, src } of AD_PAGES) {
   // four different things. Still checked against the LIVE source, because the
   // first version of this passed on the phrase appearing in a header comment.
   check(`${label} states the guarantee in the copy, not only in a comment`,
-    /FREE_WEEK_LABEL/.test(noImports(label.includes('own-your-blog') ? AD_LIVE : AD2_LIVE)),
+    /FREE_WEEK_(LABEL|SENTENCE|SHORT)/.test(noImports(label.includes('own-your-blog') ? AD_LIVE : AD2_LIVE)),
     'two different guarantees across two pages is the drift that already happened once')
   check(`${label} carries the Amazon disclaimer`,
     /not affiliated with, endorsed by, or sponsored by Amazon/.test(src))

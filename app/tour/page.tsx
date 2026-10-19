@@ -15,7 +15,8 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { Compass, ArrowUpRight, ArrowRight } from 'lucide-react'
 import { TourBody } from '@/components/tour/tour-content'
-import { FREE_WEEK_LABEL } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_CTA, FREE_WEEK_CTA_SHORT, freeWeekUnderButton } from '@/lib/guarantee'
+import { TIERS } from '@/lib/tier'
 
 export const metadata: Metadata = {
   title: 'Product tour',
@@ -79,9 +80,10 @@ export default function PublicTourPage() {
           </Link>
           <Link
             href="/signup?tier=pro"
-            className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors"
+            className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
           >
-            Start Pro
+            <span className="hidden sm:inline">{FREE_WEEK_CTA_SHORT}</span>
+            <span className="sm:hidden">Try free</span>
           </Link>
         </div>
       </header>
@@ -116,7 +118,7 @@ export default function PublicTourPage() {
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white"
               style={{ background: '#7C3AED' }}
             >
-              Start Pro <ArrowUpRight size={13} />
+              {FREE_WEEK_CTA} <ArrowUpRight size={13} />
             </Link>
             <Link
               href="/pricing"
@@ -126,6 +128,7 @@ export default function PublicTourPage() {
               See pricing <ArrowRight size={13} />
             </Link>
           </div>
+          <p className="mt-3 text-[13px]" style={{ color: 'var(--text-soft)' }}>{freeWeekUnderButton(TIERS.pro.price)}</p>
         </header>
 
         <TourBody ctaMode="public" />
@@ -146,7 +149,7 @@ export default function PublicTourPage() {
             <Link href="/privacy" className="hover:opacity-80">Privacy</Link>
             <Link href="/terms" className="hover:opacity-80">Terms</Link>
             <Link href="/login" className="hover:opacity-80">Sign in</Link>
-            <Link href="/signup?tier=pro" className="font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">Start Pro →</Link>
+            <Link href="/signup?tier=pro" className="font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">{FREE_WEEK_CTA_SHORT} →</Link>
           </nav>
         </div>
       </footer>
