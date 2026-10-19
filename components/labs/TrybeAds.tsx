@@ -22,7 +22,7 @@ import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCir
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
 import { useTrybeSubmissions } from '@/components/labs/useTrybeSubmissions'
 import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
-import { addCounts, approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
+import { approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -78,8 +78,11 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const stalled = full && read && !brand ? notRunning(read.videos, days) : []
   const remix = full && read && !brand ? remixOf(read.videos) : null
   const nothingRead = full && !brand && t && Object.values(t).every((v) => v == null)
-  const subRows = subs.read ? (brand ? subs.read.brands.filter((b) => b.id === brand.id) : subs.read.brands) : []
-  const counts = subRows.reduce((a, b) => addCounts(a, b.counts), { ...NO_COUNTS })
+  // All: TRYBE's own totals when its analytics answer carried them; one
+  // brand: that brand's totals for the period (useTrybeSubmissions).
+  const counts = subs.read
+    ? (brand ? (subs.read.brands.find((b) => b.id === brand.id)?.counts ?? { ...NO_COUNTS }) : subs.read.all)
+    : { ...NO_COUNTS }
   const rate = approvalRateOf(counts)
 
   return (
@@ -142,6 +145,9 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
         {subs.error && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{subs.error}</p>}
         {subs.read && subs.read.notRead > 0 && (
           <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>{subs.read.notRead} brand{subs.read.notRead === 1 ? '' : 's'} could not be read, so these counts may be low. Press Read again.</p>
+        )}
+        {isAdmin && subs.read && (
+          <p className="text-[11px] mt-1.5" style={soft}>Counted from {subs.read.source === 'analytics' ? 'TRYBE\u2019s analytics totals' : subs.read.source === 'brand totals' ? 'your brand totals for the period' : 'each brand\u2019s submissions list'}. What TRYBE sent: {subs.read.keys}</p>
         )}
       </div>
 

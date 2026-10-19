@@ -14,7 +14,7 @@
 // reads for My brands), and the brand filter. Pure, tested in
 // scripts/test-trybe-analytics.
 
-import { subStatus } from '@/lib/trybe-mybrands'
+import { subStatus, type MyBrand } from '@/lib/trybe-mybrands'
 import { fillTotals, NO_TOTALS, type AdTotals, type AdVideo } from '@/lib/trybe-ads'
 
 export type AnalyticsStatus = 'approved' | 'pending' | 'revision' | 'rejected' | 'other'
@@ -75,4 +75,79 @@ export function sameBrand(v: { brandId: string | null; brand: string | null }, b
 export function brandAdTotals(videos: AdVideo[], b: { id: string; name: string }): { totals: AdTotals; videos: AdVideo[] } {
   const mine = videos.filter((v) => sameBrand(v, b))
   return { totals: fillTotals({ ...NO_TOTALS }, mine), videos: mine }
+}
+
+// ── TRYBE'S OWN TOTALS FIRST (Seb, 2026-10-19: one submission pending on
+// TRYBE's app, zero in MVP). Counting each brand's list read only the 25
+// brands that had earned the most, and a creator with hundreds of brands had
+// the pending one further down. TRYBE's analytics answer and its per-brand
+// totals for the period are what its own screen shows, so they come first;
+// the lists are the last resort. ─────────────────────────────────────────
+
+type Obj = Record<string, unknown>
+const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
+const num = (v: unknown): number | null => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v)
+  if (isObj(v)) return num(v.count ?? v.total ?? v.value)
+  return null
+}
+
+const SUB_KEYS: Record<'total' | 'approved' | 'pending' | 'revision' | 'rejected', string[]> = {
+  total: ['totalSubmissions', 'total_submissions', 'submissionsTotal', 'submissionCount', 'submissionsCount', 'submissions_count', 'totalSubmissionCount'],
+  approved: ['approvedSubmissions', 'approved_submissions', 'approvedCount', 'approved'],
+  pending: ['pendingSubmissions', 'pending_submissions', 'pendingCount', 'inReviewSubmissions', 'pending', 'inReview', 'underReview'],
+  revision: ['revisionSubmissions', 'revision_submissions', 'revisionRequestedSubmissions', 'revisionCount', 'revisions', 'revision', 'needsRevision', 'changesRequested'],
+  rejected: ['rejectedSubmissions', 'rejected_submissions', 'rejectedCount', 'declinedSubmissions', 'rejected', 'declined'],
+}
+// Where a dashboard answer keeps its counts: the answer itself, or an object
+// named for submissions or statuses, one or two levels in.
+const HOLDERS = /submission|status|summary|totals|overview|stats|kpis|counts/i
+
+function holders(root: Obj): Obj[] {
+  const out: Obj[] = [root]
+  for (const [k, v] of Object.entries(root)) {
+    if (!isObj(v) || !HOLDERS.test(k)) continue
+    out.push(v)
+    for (const [k2, v2] of Object.entries(v)) if (isObj(v2) && HOLDERS.test(k2)) out.push(v2)
+  }
+  return out
+}
+
+/** Submission counts in TRYBE's analytics answer, or null when it carries
+ *  none MVP knows (then the brand totals are used). A nested "submissions"
+ *  object may name its counts plainly: total, approved, pending. Pure. */
+export function readSubmissionTotals(json: unknown): SubmissionCounts | null {
+  const root = isObj(json) && isObj(json.data) ? json.data : json
+  if (!isObj(root)) return null
+  const places = holders(root)
+  const find = (keys: string[], plain?: string[]) => {
+    for (const p of places) for (const k of keys) {
+      const hit = Object.keys(p).find((n) => n.toLowerCase() === k.toLowerCase())
+      if (hit && num(p[hit]) != null) return num(p[hit])
+    }
+    for (const p of places.slice(1)) for (const k of plain || []) if (num(p[k]) != null) return num(p[k])
+    return null
+  }
+  const c = {
+    total: find(SUB_KEYS.total, ['total', 'count', 'all']),
+    approved: find(SUB_KEYS.approved),
+    pending: find(SUB_KEYS.pending),
+    revision: find(SUB_KEYS.revision),
+    rejected: find(SUB_KEYS.rejected),
+  }
+  if (Object.values(c).every((v) => v == null)) return null
+  const known = (c.approved ?? 0) + (c.pending ?? 0) + (c.revision ?? 0) + (c.rejected ?? 0)
+  const total = c.total ?? known
+  return { total, approved: c.approved ?? 0, pending: c.pending ?? 0, revision: c.revision ?? 0, rejected: c.rejected ?? 0, other: Math.max(0, total - known) }
+}
+
+/** One brand's counts from its totals for the period, or null when TRYBE
+ *  gave none. Pure. */
+export function brandCounts(b: Pick<MyBrand, 'submitted' | 'approved' | 'pending' | 'rejected' | 'revision'>): SubmissionCounts | null {
+  if ([b.submitted, b.approved, b.pending, b.rejected, b.revision].every((v) => v == null)) return null
+  const approved = b.approved ?? 0, pending = b.pending ?? 0, rejected = b.rejected ?? 0, revision = b.revision ?? 0
+  const known = approved + pending + rejected + revision
+  const total = b.submitted ?? known
+  return { total, approved, pending, revision, rejected, other: Math.max(0, total - known) }
 }

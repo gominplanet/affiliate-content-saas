@@ -51,6 +51,8 @@ export interface MyBrand {
   /** From the brand's submissions when read; null when not read. */
   pending: number | null
   rejected: number | null
+  /** Sent back for changes, when TRYBE's totals say (Analytics, 2026-10-19). */
+  revision?: number | null
   enrolledAt: string | null
   programs: string[]
 }
@@ -91,6 +93,7 @@ export function readBrandStats(json: unknown): MyBrand[] {
       approved: num(pick(raw, ['approvedSubmissions', 'approved_submissions', 'approved'])),
       pending: num(pick(raw, ['pendingSubmissions', 'pending_submissions', 'inReviewSubmissions'])),
       rejected: num(pick(raw, ['rejectedSubmissions', 'rejected_submissions', 'declinedSubmissions'])),
+      revision: num(pick(raw, ['revisionSubmissions', 'revision_submissions', 'revisionRequestedSubmissions', 'needsRevisionSubmissions', 'changesRequestedSubmissions', 'inRevisionSubmissions'])),
       enrolledAt, programs,
     })
   }

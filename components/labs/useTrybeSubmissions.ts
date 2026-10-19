@@ -1,54 +1,109 @@
 'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// YOUR SUBMISSIONS PER BRAND, for TRYBE Analytics (lib/trybe-analytics). The
-// brands come from your brand totals, then each brand's own submissions list
-// is read through SCOUT (the same addresses My brands reads) and counted for
-// the period: approved, pending, revision, rejected. Kept for this visit (five
-// minutes). A brand whose list could not be read is counted as not read and
-// said, so a low total never passes for a real one.
+// YOUR SUBMISSIONS, for TRYBE Analytics (lib/trybe-analytics), read through
+// SCOUT and kept for this visit (five minutes).
+//
+// TRYBE'S OWN TOTALS FIRST (Seb, 2026-10-19: one submission pending on
+// TRYBE's app, zero here). The first version counted each brand's list for
+// the 25 brands that had earned the most, and a creator with hundreds of
+// brands had the pending one further down. Now, in order:
+//   1. TRYBE's analytics answer for the period, when it carries the counts
+//      (what TRYBE's own Analytics screen shows), for All;
+//   2. TRYBE's totals per brand for the period, for each brand chip;
+//   3. a brand's own submissions list only where its totals do not say which
+//      row a submission is in (pending, say, is not in every answer).
+// Which one the numbers came from is kept, and an admin sees it with the
+// keys TRYBE sent, so a wrong count can be traced instead of guessed at.
 
 import { useCallback, useEffect, useState } from 'react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, readSubmissions } from '@/lib/trybe-mybrands'
-import { countSubmissions, NO_COUNTS, type SubmissionCounts } from '@/lib/trybe-analytics'
+import { readBrandStats, readSubmissions, keysOf, type MyBrand } from '@/lib/trybe-mybrands'
+import { countSubmissions, readSubmissionTotals, brandCounts, addCounts, NO_COUNTS, type SubmissionCounts } from '@/lib/trybe-analytics'
 import { PERIOD_DAYS, type AdPeriod } from '@/lib/trybe-ads'
 
+export type SubsSource = 'analytics' | 'brand totals' | 'brand lists'
 export interface BrandSubs { id: string; name: string; logo: string | null; counts: SubmissionCounts; read: boolean }
-export interface SubsRead { period: AdPeriod; brands: BrandSubs[]; notRead: number; at: number }
+export interface SubsRead {
+  period: AdPeriod
+  brands: BrandSubs[]
+  /** All brands together: TRYBE's own totals when its analytics answer had
+   *  them, else the brands added up. */
+  all: SubmissionCounts
+  source: SubsSource
+  notRead: number
+  /** For an admin: what TRYBE's answers carried. */
+  keys: string
+  at: number
+}
 
 const TTL = 5 * 60_000
-const MAX_BRANDS = 25
+const MAX_LISTS = 25
 const cache = new Map<AdPeriod, SubsRead>()
 
 const words = (error?: string, status?: number) =>
   status === 401 || status === 403 ? 'TRYBE says you are signed out. Sign in to TRYBE in this browser, then press Read again.'
     : `MVP could not read your submissions from TRYBE just now${error ? ` (${error}${status ? `, TRYBE answered ${status}` : ''})` : ''}.`
 
-async function brandSubs(id: string, period: AdPeriod) {
+async function listCounts(id: string, period: AdPeriod): Promise<SubmissionCounts | null> {
   const base = `/backend/api/creator/v2/brands/${encodeURIComponent(id)}/submissions?page=1&limit=100`
   let r = await requestTrybeApi('GET', `${base}&period=${period}`)
-  // A period TRYBE does not take here: everything, counted by date below.
+  // A period TRYBE does not take here: everything, counted by date.
   if (!r.ok && (r.status === 400 || r.status === 422)) r = await requestTrybeApi('GET', `${base}&period=all`)
-  return r.ok ? readSubmissions(r.json) : null
+  return r.ok ? countSubmissions(readSubmissions(r.json), PERIOD_DAYS[period]) : null
 }
+
+/** A brand's totals say which row each submission is in. */
+const settled = (c: SubmissionCounts | null): c is SubmissionCounts => !!c && (c.total === 0 || c.other === 0)
 
 export async function readSubs(period: AdPeriod, fresh = false): Promise<{ read: SubsRead | null; error: string | null }> {
   const kept = cache.get(period)
   if (!fresh && kept && Date.now() - kept.at < TTL) return { read: kept, error: null }
-  const s = await requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all')
-  if (!s.ok) return { read: null, error: words(s.error, s.status) }
-  const list = readBrandStats(s.json).slice(0, MAX_BRANDS)
+  const [a, s] = await Promise.all([
+    requestTrybeApi('GET', `/backend/api/creator/v2/analytics?period=${period}`),
+    requestTrybeApi('GET', `/backend/api/creator/v2/brands/stats?period=${period}`),
+  ])
+  const fromAnalytics = a.ok ? readSubmissionTotals(a.json) : null
+  let brands: MyBrand[] = s.ok ? readBrandStats(s.json) : []
+  let listed = false
+  // No totals for the period: the brands TRYBE knows you by, all time.
+  if (!s.ok || !brands.length) {
+    const all = await requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all')
+    if (!all.ok && !fromAnalytics) return { read: null, error: words(all.error ?? s.error, all.status ?? s.status) }
+    brands = all.ok ? readBrandStats(all.json) : []
+    listed = true
+  }
+
   const out: BrandSubs[] = []
-  // Four at a time: quick for a few brands, gentle on TRYBE for many.
-  for (let i = 0; i < list.length; i += 4) {
-    const part = await Promise.all(list.slice(i, i + 4).map(async (b) => {
-      const subs = await brandSubs(b.id, period).catch(() => null)
-      return { id: b.id, name: b.name, logo: b.logo, read: subs != null, counts: subs ? countSubmissions(subs, PERIOD_DAYS[period]) : { ...NO_COUNTS } }
+  const unsettled: MyBrand[] = []
+  for (const b of brands) {
+    const c = listed ? null : brandCounts(b)
+    if (settled(c)) out.push({ id: b.id, name: b.name, logo: b.logo, counts: c, read: true })
+    else unsettled.push(b)
+  }
+  // Only where the totals leave a submission unplaced, or there are none:
+  // the brand's own list, four at a time, the most active first.
+  const when = (b: MyBrand) => Date.parse(b.enrolledAt || '') || 0
+  unsettled.sort((x, y) => (y.submitted ?? 0) - (x.submitted ?? 0) || when(y) - when(x))
+  const toList = unsettled.slice(0, MAX_LISTS)
+  for (let i = 0; i < toList.length; i += 4) {
+    const part = await Promise.all(toList.slice(i, i + 4).map(async (b) => {
+      const c = await listCounts(b.id, period).catch(() => null)
+      const fallback = listed ? null : brandCounts(b)
+      return { id: b.id, name: b.name, logo: b.logo, read: c != null || fallback != null, counts: c ?? fallback ?? { ...NO_COUNTS } }
     }))
     out.push(...part)
   }
-  const read: SubsRead = { period, brands: out, notRead: out.filter((b) => !b.read).length, at: Date.now() }
+  const notRead = out.filter((b) => !b.read).length + Math.max(0, unsettled.length - toList.length)
+  const summed = out.reduce((acc, b) => addCounts(acc, b.counts), { ...NO_COUNTS })
+  const read: SubsRead = {
+    period, brands: out,
+    all: fromAnalytics ?? summed,
+    source: fromAnalytics ? 'analytics' : listed || toList.length ? 'brand lists' : 'brand totals',
+    notRead: fromAnalytics ? 0 : notRead,
+    keys: `analytics: ${a.ok ? keysOf(a.json) : `not read (${a.status ?? a.error ?? '?'})`}; brand totals: ${s.ok ? keysOf(s.json) : `not read (${s.status ?? s.error ?? '?'})`}`,
+    at: Date.now(),
+  }
   cache.set(period, read)
   return { read, error: null }
 }
