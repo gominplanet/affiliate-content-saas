@@ -287,9 +287,17 @@ check('SCOUT has no way left to bring its window up or pull a page forward', !/s
   const loud = hidden.filter(h => BG.indexOf(h) < 0 || /active: true(?!, lastFocusedWindow)|focused: true|windows\.update\(|state: 'normal'/.test(fnOf(h).replace("chrome.tabs.create({ windowId, url, active: true })", '')))
   check(`every TRYBE job works hidden: no tab made active in the creator's window, no window focused or restored${loud.length ? ` (not hidden: ${loud.join(', ')})` : ''}`, loud.length === 0)
 }
-check('a send is tried once more, hidden, from a fresh page only when Send Request was never pressed', /res\.outcome === 'failed' && !pressed && TRYBE_RETRY_HIDDEN\.includes\(res\.error\) && \(behind \|\| Date\.now\(\) - startedAt < 40000\)\) \{\s*await chrome\.tabs\.reload\(tabId\)/.test(SENDER) && !/'not-signed-in'/.test(BG.slice(BG.indexOf('const TRYBE_RETRY_HIDDEN'), BG.indexOf('const TRYBE_RETRY_HIDDEN') + 300)))
+check('a send is tried once more, hidden, from a fresh page only when Send Request was never pressed', /res\.outcome === 'failed' && !pressed && TRYBE_RETRY_HIDDEN\.includes\(res\.error\) && \(behind \|\| Date\.now\(\) - startedAt < 40000\)\) \{[\s\S]{0,500}?await chrome\.tabs\.reload\(tabId\)/.test(SENDER) && !/'not-signed-in'/.test(BG.slice(BG.indexOf('const TRYBE_RETRY_HIDDEN'), BG.indexOf('const TRYBE_RETRY_HIDDEN') + 300)))
 check('after a press, the box is only looked at again, hidden, never pressed again', (SENDER.match(/trybeRun\(trybeSendInPage/g) || []).length === 2 && /if \(res\.outcome === 'unconfirmed' && pressed\) \{\s*\/\/[^\n]*\n\s*await _sleep\(3000\)\s*const open = await trybeRun\(trybeBoxStillOpenInPage/.test(SENDER))
-check('a lost answer on the fresh page try is unconfirmed too, never failed', /: \{ outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent\.', steps: \['first try: ' \+ res\.error, 'fresh page'\] \}/.test(SENDER))
+check('a lost answer on the fresh page try is unconfirmed too, never failed', /: \{ outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent\.', steps: \[first, 'fresh page'\] \}/.test(SENDER))
+// 1.52.3 (Alejandro, Oct 18 to 19: every send found no search box on a fresh
+// page). The hidden page is told it is on screen so it draws, on the first
+// load and the fresh page alike; the search box is found by more than one
+// label; and a brand SCOUT cannot reach says which page it saw.
+check('the send tab is told it is on screen, on every load', /quietTabIds\.add\(tabId\)\s*void quietShim\(tabId\)\s*await waitForTabLoad\(tabId, 30000\)\s*await quietShim\(tabId\)/.test(SENDER) && /await chrome\.tabs\.reload\(tabId\)\s*await waitForTabLoad\(tabId, 30000\)\s*await quietShim\(tabId\)/.test(SENDER))
+check('the first try says how far it got', /const first = 'first try: ' \+ res\.error \+ \(Array\.isArray\(res\.steps\) && res\.steps\.length \? ` after \$\{res\.steps\[res\.steps\.length - 1\]\}` : ''\)/.test(SENDER))
+check('the search box is found by search, find or brand, or its type', /i\.type === 'search' \|\| i\.getAttribute\('role'\) === 'searchbox' \|\| \/search\|find\|brand\/i\.test/.test(BG) && !/find\(\(i\) => visible\(i\) && \/search\/i\.test/.test(BG))
+check('no search box names the page it saw', /steps\.push\(`no search box \(\$\{pageSays\(\)\}\)`\)/.test(BG) && /const pageSays = \(\) => `page \$\{location\.pathname\}/.test(BG))
 {
   const fn = BG.slice(BG.indexOf('function trybeBoxStillOpenInPage('), BG.indexOf('\n}\n', BG.indexOf('function trybeBoxStillOpenInPage(')) + 2)
   const g = globalThis as any // eslint-disable-line @typescript-eslint/no-explicit-any

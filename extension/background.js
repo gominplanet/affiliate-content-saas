@@ -14585,7 +14585,7 @@ async function trybeListRowsInPage(knownNames, want) {
 async function trybeSearchInPage(term) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
-  const box = Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test((i.placeholder || '') + ' ' + (i.getAttribute('aria-label') || '')))
+  const box = Array.from(document.querySelectorAll('input, [role=searchbox]')).find((i) => visible(i) && !i.closest('[role=dialog], [aria-modal=true]') && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`)))
   if (!box) return false
   // Typed key by key (1.50.1), as in trybeSendInPage: a value set in one go
   // left TRYBE's list as it was.
@@ -15451,6 +15451,16 @@ async function trybeSendInPage(name, message) {
   const seenRows = () => Array.from(document.querySelectorAll('[role=button]')).filter(visible)
     .map((el) => String(el.innerText || '').split('\n').map((t) => t.trim()).filter((t) => t.length > 2)[0]).filter((t) => t && !/^\d[\d,]*\+?$/.test(t)).slice(0, 5)
 
+  // TRYBE'S SEARCH BOX, by more than one name (1.52.3). Only a box labelled
+  // "search" counted, and from Oct 18 Alejandro's every send found none. Any
+  // search-type box, or one whose label says search, find or brand, counts.
+  const searchBox = () => Array.from(document.querySelectorAll('input, [role=searchbox]')).find((i) => visible(i)
+    && !i.closest('[role=dialog], [aria-modal=true]')
+    && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`)))
+  // WHAT THE PAGE WAS, when nothing on it could be used, so the next report
+  // says which page TRYBE showed and whether it had drawn at all.
+  const pageSays = () => `page ${location.pathname}, ${Array.from(document.querySelectorAll('input')).filter(visible).length} boxes, ${String((document.body && document.body.innerText) || '').trim().length} characters`
+
   // The deep link usually opens the brand's popup. If not, find its row.
   let dialog = await waitFor(popupFor, 9000)
   if (!dialog) {
@@ -15460,14 +15470,14 @@ async function trybeSendInPage(name, message) {
   }
   if (!dialog) {
     // Not on screen: type the name into TRYBE's own Search Brand box.
-    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 6000)
+    const search = await waitFor(searchBox, 10000)
     if (search) {
       await typeInto(search, name)
       steps.push('searched')
       let hit = await waitFor(rowFor, 8000)
       if (!hit) { pressEnter(search); steps.push('enter'); hit = await waitFor(rowFor, 8000) }
       if (hit) { hit.scrollIntoView({ block: 'center' }); await sleep(300); hit.click(); steps.push('found'); dialog = await waitFor(popupFor, 9000) }
-    } else steps.push('no search box')
+    } else steps.push(`no search box (${pageSays()})`)
   }
   if (!dialog) { const seen = seenRows(); return { ...fail('brand-not-found'), seen } }
   steps.push('popup')
@@ -15559,7 +15569,8 @@ async function trybeOpenBrandInPage(name) {
   if (await waitFor(popupOpen, 2500)) return { ok: true, via: 'link' }
   let row = rowFor()
   if (!row) {
-    const search = await waitFor(() => Array.from(document.querySelectorAll('input')).find((i) => visible(i) && /search/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`)), 8000)
+    // Same box finder as the send (1.52.3).
+    const search = await waitFor(() => Array.from(document.querySelectorAll('input, [role=searchbox]')).find((i) => visible(i) && !i.closest('[role=dialog], [aria-modal=true]') && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`))), 8000)
     if (!search) return { ok: false, error: 'search-not-found' }
     await typeInto(search, name)
     row = await waitFor(rowFor, 8000)
@@ -15633,20 +15644,32 @@ async function trybeSend({ url, name, message }, callerTabId, opts) {
   try {
     const tab = await openWorkTab(safe)
     tabId = tab.id
+    // DRAWN, NOT ONLY LOADED (1.52.3). In SCOUT's minimized window Chrome
+    // stops drawing the page, so TRYBE's list and search box could stay
+    // unbuilt: from Oct 18 every one of Alejandro's sends found no search box
+    // on a fresh page. The page is told it is on screen, the same shim the
+    // other hidden jobs use, again on every load (the fresh page try too).
+    quietTabIds.add(tabId)
+    void quietShim(tabId)
     await waitForTabLoad(tabId, 30000)
+    await quietShim(tabId)
     await _sleep(1500)
     asked = true
     let res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
     if (!res) res = { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: [] }
     let pressed = pressedIn(res)
     if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_HIDDEN.includes(res.error) && (behind || Date.now() - startedAt < 40000)) {
+      // The first try's last step goes in the report too: it was dropped,
+      // and a fresh page that failed differently hid how the first one did.
+      const first = 'first try: ' + res.error + (Array.isArray(res.steps) && res.steps.length ? ` after ${res.steps[res.steps.length - 1]}` : '')
       await chrome.tabs.reload(tabId)
       await waitForTabLoad(tabId, 30000)
+      await quietShim(tabId)
       await _sleep(1500)
       const again = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
       res = again
-        ? { ...again, steps: ['first try: ' + res.error, 'fresh page'].concat(again.steps || []) }
-        : { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: ['first try: ' + res.error, 'fresh page'] }
+        ? { ...again, steps: [first, 'fresh page'].concat(again.steps || []) }
+        : { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: [first, 'fresh page'] }
       pressed = pressedIn(res)
     }
     if (res.outcome === 'unconfirmed' && pressed) {
