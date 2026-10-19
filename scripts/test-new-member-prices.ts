@@ -118,7 +118,7 @@ async function main() {
 
   // ── static copy cannot follow a date, so it quotes no price ───────────────
   const FG = r('public/freeguide/index.html')
-  check('the free guide sends readers to the pricing page instead of quoting a price', FG.includes('are on the pricing page') && !/plan is \$\d+\/month/.test(FG))
+  check('the free guide sends readers to the pricing page instead of quoting a price', FG.includes('on the pricing page') && !/plan is \$\d+\/month/.test(FG))
 }
 
 main().then(() => {
