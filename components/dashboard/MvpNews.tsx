@@ -202,9 +202,18 @@ export default function MvpNews({ tier }: { tier: string }) {
           <div className="md:max-h-[64vh] md:overflow-y-auto md:pr-1 flex flex-col gap-2">
             {plan && scoutWords && (
               <div className="rounded-xl border p-3" style={{ borderColor: 'rgba(255,149,0,0.40)', background: 'rgba(255,149,0,0.06)' }}>
-                <div className="flex items-center gap-2">
+                {/* GET SCOUT, ALWAYS, at the top of the box (Seb, 2026-10-19:
+                    "we also need a get scout button on the top left of this
+                    window inside the orangey box"). It was only at the bottom,
+                    and only when SCOUT was missing or an old copy, so a member
+                    whose Chrome had just updated it had no way to the store,
+                    say for another computer. */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${SCOUT} 0%, #E8590C 100%)` }}><Telescope size={13} className="text-white" /></span>
                   <p className={`text-[12px] font-bold uppercase tracking-wider ${EYEBROW}`}>{scoutWords.title}</p>
+                  <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" onClick={gotIt} className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white" style={{ background: SCOUT_BUTTON }}>
+                    Get SCOUT <ExternalLink size={12} />
+                  </a>
                 </div>
                 <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>{scoutWords.sub}</p>
                 <ul className="mt-2 flex flex-col gap-1.5">
@@ -215,11 +224,6 @@ export default function MvpNews({ tier }: { tier: string }) {
                     </li>
                   ))}
                 </ul>
-                {plan.mode !== 'updated' && (
-                  <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" onClick={gotIt} className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white" style={{ background: SCOUT_BUTTON }}>
-                    {plan.mode === 'get' ? 'Get SCOUT' : 'Add SCOUT from the Chrome Web Store'} <ExternalLink size={12} />
-                  </a>
-                )}
               </div>
             )}
             {updates.map((u: WhatsNewItem, i) => {

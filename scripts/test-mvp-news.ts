@@ -56,5 +56,13 @@ check('one card on every dashboard page, by the plan being looked at', /<MvpNews
 const words = (POP.match(/>[^<>{}\n]{3,}</g) || []).join(' ') + (POP.match(/'[^'\n]{12,}'/g) || []).join(' ') + (POP.match(/`[^`\n]{12,}`/g) || []).join(' ')
 check('the words on the card have no dashes', !/[–—]| - /.test(words))
 
+// Seb, 2026-10-19: "we also need a get scout button on the top left of this
+// window inside the orangey box". In the box's top row, whatever SCOUT's state.
+{
+  const box = POP.slice(POP.indexOf('{plan && scoutWords && ('), POP.indexOf('{updates.map('))
+  check('the SCOUT box has Get SCOUT in its top row, for every member who sees it',
+    /\{scoutWords\.title\}<\/p>\s*<a href=\{SCOUT_STORE_LISTING_URL\}[^>]*className="ml-auto[^"]*"[^>]*>\s*Get SCOUT/.test(box) && !/plan\.mode !== 'updated' && \(/.test(box))
+}
+
 if (fails.length) { console.error('mvp-news failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ mvp-news: once a day, the last 7 days of updates for this plan on the left and the latest videos on the right, with Join TRYBE, Subscribe and the Facebook group')
