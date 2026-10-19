@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
@@ -107,7 +107,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
+type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -320,6 +320,10 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
   { id: 'sent', label: 'Sent', icon: Check, group: 'brands', says: 'Who you asked, who answered, and what to do next with each brand.' },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', says: 'Your TRYBE chats, each with a suggested reply.' },
+  // ANALYTICS, like TRYBE's own (Seb, 2026-10-19): submissions, earnings and
+  // how your videos do as ads, for all brands or one. Was "Your ads, live"
+  // at the top of My brands, where it was not found.
+  { id: 'analytics', label: 'Analytics', icon: BarChart3, group: 'track', says: 'Your submissions, earnings and how your videos do as ads, for all your brands or one, like TRYBE\u2019s Analytics.' },
   { id: 'brands', label: 'My brands', icon: Star, group: 'track', says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
   { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
 ]
@@ -595,7 +599,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   }, [inbox])
   // The Today list and the menu count link straight to the Inbox tab.
   useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (preview) { if (t && t !== 'find') setLockedTab(t as Tab) } else if (t === 'inbox' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (preview) { if (t && t !== 'find') setLockedTab(t as Tab) } else if (t === 'inbox' || t === 'analytics' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
   }, [])
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
@@ -1978,7 +1982,14 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
         directory={inboxDirectory} />}
 
-      {tab === 'brands' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
+      {tab === 'analytics' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
+      {tab === 'analytics' && !canMyBrands && (
+        <p className="text-[13px] rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
+          {access === 'granted'
+            ? 'Analytics needs a newer SCOUT. Chrome updates it by itself within a day; to do it now, open chrome://extensions, turn on Developer mode and press Update, then reload this page.'
+            : 'Analytics is read from your own TRYBE through SCOUT. Allow SCOUT on TRYBE at the top of this page, and your numbers show here.'}
+        </p>
+      )}
       {tab === 'brands' && canMyBrands && <TrybeRetainers canRead={canMyBrands} scoutOpens={scoutOpens} />}
       {tab === 'brands' && (
         <TrybeMyBrands canRead={canMyBrands} canSend={canInbox} convos={inbox ? inbox.convos : null} me={inbox?.me || []} myName={inbox?.myName || ''}

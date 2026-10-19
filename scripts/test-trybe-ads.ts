@@ -67,7 +67,7 @@ check('an older SCOUT still shows what you earned, from your brand totals', /bra
 const ui = read('components/labs/TrybeAds.tsx')
 check('a number not sent reads "not sent", and an answer with none says so', /\{v \?\? 'not sent'\}/.test(ui) && /Nothing is shown as zero/.test(ui))
 check('an older SCOUT shows only Earned, never a row of empty tiles', /TILES\.filter\(\(x\) => full \|\| x\.key === 'earned'\)/.test(ui))
-check('My brands opens with Your ads, live, and the stage reads ad winners', /<TrybeAds canRead=\{canMyBrands\}/.test(read('components/labs/TrybeOutreach.tsx')) && /stageOf\(judgeBrands\(readBrandStats\(r\.json\)\), ads\)/.test(read('components/labs/TrybeStage.tsx')))
+check('the Analytics tab shows your ad results, and the stage reads ad winners', /tab === 'analytics' && canMyBrands && <TrybeAds canRead=\{canMyBrands\}/.test(read('components/labs/TrybeOutreach.tsx')) && /stageOf\(judgeBrands\(readBrandStats\(r\.json\)\), ads\)/.test(read('components/labs/TrybeStage.tsx')))
 
 if (failed) { console.error(`\n${failed} TRYBE ads check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

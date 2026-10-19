@@ -9,11 +9,20 @@
 // SCOUT (components/labs/useTrybeAds); MVP keeps none of it. A number TRYBE
 // did not send says so. An older SCOUT shows what you earned and says what
 // the update adds, so it never looks like a full read.
+//
+// ANALYTICS, LIKE TRYBE'S (Seb, 2026-10-19, with TRYBE's Analytics screen:
+// "this is what we can get from Trybe and should also be showing inside of
+// MVP"). Its own tab now, laid out as TRYBE lays it out: All or one brand,
+// Total submissions (approved, pending, revision, rejected, approval rate),
+// then the same tiles under TRYBE's names, then the top earning videos. One
+// brand's ad numbers are added up from its own videos, and say so.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle } from 'lucide-react'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
+import { useTrybeSubmissions } from '@/components/labs/useTrybeSubmissions'
 import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
+import { addCounts, approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -26,38 +35,60 @@ const money = (n: number) => `$${n >= 1000 ? Math.round(n).toLocaleString('en-US
 const count = (n: number) => n >= 10_000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}K` : Math.round(n).toLocaleString('en-US')
 
 type Tile = { key: keyof AdTotals; label: string; show: (t: AdTotals) => string | null; sub?: (t: AdTotals) => string | null; says: string }
+// TRYBE's own names and order, so the two screens read the same.
 const TILES: Tile[] = [
-  { key: 'earned', label: 'Earned', show: (t) => (t.earned == null ? null : money(t.earned)), says: 'What TRYBE says you earned in this period.' },
-  { key: 'liveAds', label: 'Live ads', show: (t) => (t.liveAds == null ? null : count(t.liveAds)), says: 'Your videos running as ads now.' },
-  { key: 'impressions', label: 'Impressions', show: (t) => (t.impressions == null ? null : count(t.impressions)), says: 'Times your ads were shown.' },
-  { key: 'clicks', label: 'Link clicks', show: (t) => (t.clicks == null ? null : count(t.clicks)), says: 'People who clicked through to the brand.' },
+  { key: 'earned', label: 'Total earnings', show: (t) => (t.earned == null ? null : money(t.earned)), says: 'What TRYBE says you earned in this period.' },
+  { key: 'avgWatchSec', label: 'Avg watch time', show: (t) => (t.avgWatchSec == null ? null : `${t.avgWatchSec.toFixed(1)}s`), sub: (t) => (t.avgWatchPct == null ? null : `${t.avgWatchPct.toFixed(0)}% of the video`), says: 'How long people watch, on average.' },
+  { key: 'liveAds', label: 'Active ads', show: (t) => (t.liveAds == null ? null : count(t.liveAds)), says: 'Your videos running as ads now.' },
   { key: 'hookRate', label: 'Hook rate', show: (t) => (t.hookRate == null ? null : `${t.hookRate.toFixed(1)}%`), says: 'Viewers who watched past the first seconds (TRYBE calls it thumbstop rate). Your hook decides this.' },
-  { key: 'ctr', label: 'Link CTR', show: (t) => (t.ctr == null ? null : `${t.ctr.toFixed(2)}%`), says: 'Clicks out of impressions.' },
-  { key: 'avgWatchSec', label: 'Avg watch', show: (t) => (t.avgWatchSec == null ? null : `${t.avgWatchSec.toFixed(1)}s`), sub: (t) => (t.avgWatchPct == null ? null : `${t.avgWatchPct.toFixed(0)}% of the video`), says: 'How long people watch, on average.' },
+  { key: 'impressions', label: 'Impressions', show: (t) => (t.impressions == null ? null : count(t.impressions)), says: 'Times your ads were shown.' },
+  { key: 'ctr', label: 'Click through', show: (t) => (t.ctr == null ? null : `${t.ctr.toFixed(2)}%`), says: 'Clicks out of impressions.' },
+  { key: 'clicks', label: 'Link clicks', show: (t) => (t.clicks == null ? null : count(t.clicks)), says: 'People who clicked through to the brand.' },
   { key: 'spend', label: 'Ad spend', show: (t) => (t.spend == null ? null : money(t.spend)), says: 'What brands spent running your videos as ads.' },
 ]
+
+const SUB_ROWS = [
+  { key: 'approved', label: 'Approved', color: '#16A34A' },
+  { key: 'pending', label: 'Pending', color: '#3B82F6' },
+  { key: 'revision', label: 'Revision', color: '#EAB308' },
+  { key: 'rejected', label: 'Rejected', color: '#DC2626' },
+] as const
 
 export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolean; isAdmin?: boolean; onPlan?: () => void }) {
   const [period, setPeriod] = useState<AdPeriod>('7d')
   const { read, week, month, problem, loading, reload, days } = useTrybeAds(canRead, period)
+  const subs = useTrybeSubmissions(canRead, period)
+  // ALL OR ONE BRAND, as TRYBE's chips: the brands with a submission or an ad
+  // in the period, the busiest first.
+  const [brandId, setBrandId] = useState<string | null>(null)
+  const chips = useMemo(() => {
+    const list = (subs.read?.brands || []).map((b) => ({ id: b.id, name: b.name, logo: b.logo, n: b.counts.total + (read?.videos || []).filter((v) => sameBrand(v, b)).length }))
+    return list.filter((b) => b.n > 0).sort((a, b) => b.n - a.n)
+  }, [subs.read, read])
+  const brand = chips.find((b) => b.id === brandId) || null
   if (!canRead) return null
-  const t = read?.totals
   const full = read?.source === 'full'
-  const pace = paceOf(week?.earned ?? null, month?.earned ?? null)
-  const brands = full && read ? adBrands(read.videos) : []
+  const one = brand && read ? brandAdTotals(read.videos, brand) : null
+  const t = one ? one.totals : read?.totals
+  const shownVideos = one ? one.videos : (read?.videos || [])
+  const pace = brand ? null : paceOf(week?.earned ?? null, month?.earned ?? null)
+  const brands = full && read && !brand ? adBrands(read.videos) : []
   const winners = full ? adWinners(brands, days) : []
-  const best = full && read ? bestVideos(read.videos) : []
-  const stalled = full && read ? notRunning(read.videos, days) : []
-  const remix = full && read ? remixOf(read.videos) : null
-  const nothingRead = full && t && Object.values(t).every((v) => v == null)
+  const best = full ? bestVideos(shownVideos) : []
+  const stalled = full && read && !brand ? notRunning(read.videos, days) : []
+  const remix = full && read && !brand ? remixOf(read.videos) : null
+  const nothingRead = full && !brand && t && Object.values(t).every((v) => v == null)
+  const subRows = subs.read ? (brand ? subs.read.brands.filter((b) => b.id === brand.id) : subs.read.brands) : []
+  const counts = subRows.reduce((a, b) => addCounts(a, b.counts), { ...NO_COUNTS })
+  const rate = approvalRateOf(counts)
 
   return (
-    <section className="rounded-xl border p-3.5 mb-4" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }} aria-label="Your ads, live">
+    <section className="rounded-xl border p-3.5 mb-4" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }} aria-label="Analytics">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Megaphone size={16} /></span>
         <div className="min-w-[12rem] flex-1">
-          <p className="text-[14.5px] font-bold leading-tight">Your ads, live</p>
-          <p className="text-[12px]" style={soft}>What your videos do as ads on TRYBE. Read from your TRYBE just now; MVP keeps none of it.</p>
+          <p className="text-[14.5px] font-bold leading-tight">Analytics</p>
+          <p className="text-[12px]" style={soft}>Your submissions and how your videos do as ads, the same numbers as TRYBE&rsquo;s Analytics. Read from your TRYBE just now; MVP keeps none of it.</p>
         </div>
         <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-2)' }} role="group" aria-label="Period">
           {AD_PERIODS.map((p) => (
@@ -65,9 +96,53 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
               style={period === p ? { background: PURPLE, color: '#fff' } : { color: 'var(--text-2)' }}>{PERIOD_LABEL[p]}</button>
           ))}
         </div>
-        <button onClick={reload} disabled={loading} className="text-[12px] font-semibold inline-flex items-center gap-1 underline disabled:opacity-50" style={{ color: PURPLE }}>
-          {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Read again
+        <button onClick={() => { reload(); subs.reload() }} disabled={loading || subs.loading} className="text-[12px] font-semibold inline-flex items-center gap-1 underline disabled:opacity-50" style={{ color: PURPLE }}>
+          {loading || subs.loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Read again
         </button>
+      </div>
+
+      {chips.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3" role="group" aria-label="Brand">
+          {[{ id: null as string | null, name: 'All', logo: null as string | null }, ...chips].map((b) => {
+            const on = (b.id ?? null) === (brand?.id ?? null)
+            return (
+              <button key={b.id ?? 'all'} onClick={() => setBrandId(b.id)} aria-pressed={on}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-semibold"
+                style={on ? { borderColor: PURPLE, background: 'rgba(124,58,237,0.10)', color: PURPLE } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
+                {b.logo && <img src={b.logo} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />}
+                {b.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* TOTAL SUBMISSIONS, as TRYBE splits them, with its approval rate. */}
+      <div className="rounded-lg px-3 py-2.5 mb-3" style={{ background: 'var(--surface-2)' }}>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div>
+            <p className="text-[10.5px] font-bold uppercase tracking-wider" style={soft}>Total submissions{brand ? `, ${brand.name}` : ''}</p>
+            {subs.read
+              ? <p className="text-[24px] font-extrabold tabular-nums leading-tight">{counts.total}</p>
+              : <p className="text-[13px] font-semibold" style={soft}>{subs.loading ? 'Reading...' : 'not read'}</p>}
+            {subs.read && <p className="text-[11.5px]" style={soft}>Approval rate <b style={{ color: rate ? GREEN : 'var(--text-2)' }}>{rate == null ? 'none yet' : `${Math.round(rate * 100)}%`}</b></p>}
+          </div>
+          {subs.read && (
+            <ul className="flex flex-wrap gap-x-5 gap-y-1">
+              {SUB_ROWS.map((r) => (
+                <li key={r.key} className="inline-flex items-center gap-1.5 text-[12.5px]">
+                  <span className="w-1 h-4 rounded-full" style={{ background: r.color }} />
+                  <b className="tabular-nums">{counts[r.key]}</b><span style={soft}>{r.label}</span>
+                </li>
+              ))}
+              {counts.other > 0 && <li className="text-[12px]" style={soft}>{counts.other} with a status MVP could not place</li>}
+            </ul>
+          )}
+        </div>
+        {subs.error && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{subs.error}</p>}
+        {subs.read && subs.read.notRead > 0 && (
+          <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>{subs.read.notRead} brand{subs.read.notRead === 1 ? '' : 's'} could not be read, so these counts may be low. Press Read again.</p>
+        )}
       </div>
 
       {problem && (
@@ -77,7 +152,14 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
       )}
       {loading && !read && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your ad results from TRYBE...</p>}
 
-      {t && (
+      {brand && one && (
+        <p className="text-[12px] mb-2" style={soft}>
+          {one.videos.length
+            ? `${brand.name}: added up from your ${one.videos.length} video${one.videos.length === 1 ? '' : 's'} with them in the last ${days} days.`
+            : `None of your ${brand.name} videos ran as ads in the last ${days} days.`}
+        </p>
+      )}
+      {t && (!one || one.videos.length > 0) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {TILES.filter((x) => full || x.key === 'earned').map((x) => {
             const v = x.show(t)
@@ -134,7 +216,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
 
       {best.length > 0 && (
         <div className="mt-3">
-          <p className="text-[12px] font-bold mb-1.5">Your best videos as ads: make more like these</p>
+          <p className="text-[12px] font-bold mb-1.5">Top earning{brand ? `, ${brand.name}` : ''}: make more like these</p>
           <div className="space-y-1.5">
             {best.map((v) => (
               <div key={v.id} className="flex items-center gap-2.5">

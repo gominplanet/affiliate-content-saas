@@ -36,6 +36,16 @@ export const WHATS_NEW: WhatsNewItem[] = [
     desc: 'Amazon\u2019s Black Friday deals are out in the Deals Hub of your Amazon Associates account, so Deals Hub in MVP is open again. Paste the deal\u2019s Amazon link and MVP writes the deal post for your blog, with the price, a countdown to when the deal ends and, if you have one, your promo code in every button. Amazon lists deals before they start: schedule the post for the deal\u2019s start time and it goes live by itself, badged for the sale it belongs to, so you are ready without posting early.',
     href: '/deals',
   },
+  // TRYBE's Analytics, in its own tab (Seb, 2026-10-19).
+  {
+    date: '2026-10-19',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'TRYBE: Analytics, like TRYBE\u2019s own',
+    desc: 'A new Analytics tab under Track shows what TRYBE\u2019s Analytics shows: your submissions approved, pending, in revision and rejected with your approval rate, then total earnings, watch time, active ads, hook rate, impressions, click through and link clicks, and your top earning videos. Pick All or one brand, and 7, 14 or 30 days.',
+    href: '/trybe?tab=analytics',
+  },
   // A TRYBE chat read on MVP stays read (Seb, 2026-10-19).
   {
     date: '2026-10-19',
