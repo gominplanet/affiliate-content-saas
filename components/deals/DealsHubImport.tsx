@@ -272,7 +272,7 @@ export default function DealsHubImport({ onPosted, pinterestEnabled = false, ins
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Import your Deals Hub file</h2>
           <p className="text-[13px] mt-1 max-w-2xl leading-relaxed" style={soft}>
             Download the deals list from the Deals Hub in your Amazon Associates account, then open it here.
-            It is read on this computer and never uploaded, however big it is. Pick the deals you want and MVP writes a post for each, scheduled for the moment the deal starts on Amazon.
+            It is read on this computer and never uploaded, however big it is. Pick the deals you want and MVP posts each one to your socials when its deal starts on Amazon, never before.
           </p>
         </div>
         {phase !== 'reading' && (
@@ -385,7 +385,12 @@ export default function DealsHubImport({ onPosted, pinterestEnabled = false, ins
           {/* SOCIAL FIRST: where the picked deals go, and how far apart. */}
           <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Post the picked deals to social</p>
-            <p className="text-[12px] mt-0.5" style={faint}>Each one goes out when its deal starts on Amazon, never before, with a deal card and a caption written when it posts. A deal that has ended by then is skipped.</p>
+            {/* WHEN IT POSTS, said before the press (Seb, 2026-10-19: "I want to
+                know if that post will be sent when they click on post the deals
+                to social, or is MVP looking at the start date and time"). */}
+            <p className="text-[12px] mt-0.5" style={faint}>
+              <b style={{ color: 'var(--text)' }}>Nothing is posted when you press the button.</b> MVP reads each deal&apos;s start date and time from your file and queues its post for then, spaced apart. A deal that is already live goes out within a few minutes. Each post gets a deal card and a caption written when it goes out, and a deal that has ended by its turn is skipped.
+            </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {networkOptions.map((n) => {
                 const on = networks.has(n.key)

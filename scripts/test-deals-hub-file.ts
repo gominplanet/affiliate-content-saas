@@ -111,7 +111,10 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   const ROUTE = readFileSync('app/api/deals/route.ts', 'utf8')
   check('the deals route takes the deal prices from the member’s own file', /dealPrices\?: \{ sale\?: number; was\?: number; pct\?: number \}/.test(ROUTE) && /fileDealPrices\(body\.dealPrices\)/.test(ROUTE))
   const PAGE = readFileSync('app/(dashboard)/deals/page.tsx', 'utf8')
-  check('the importer is behind Labs while it is tested', /canUsePreview\('deals_import', tier\)/.test(PAGE) && /<DealsHubImport/.test(PAGE))
+  check('the importer follows its one switch, open to Pro', /canUsePreview\('deals_import', tier\)/.test(PAGE) && /<DealsHubImport/.test(PAGE) && /deals_import: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')))
+  // Seb, 2026-10-19: "I want to know if that post will be sent when they click
+  // on post the deals to social, or is MVP looking at the start date and time".
+  check('the panel says nothing posts on the press, each deal waits for its own start', /Nothing is posted when you press the button\./.test(UI) && /queues its post for then/.test(UI))
 }
 
 // ── social first (Seb, 2026-10-19: "we should really focus on social media
@@ -144,7 +147,7 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the queue is Deal Radar\'s own, each row carrying the file\'s deal', /from\('deal_scheduled_posts'\)\.insert\(rows\)/.test(ROUTE) && /deal_known: \{/.test(ROUTE) && /hubSchedule\(deals, intervalMins\)/.test(ROUTE))
   check('a missing migration 445 says so instead of a generic error', /migration 445/.test(ROUTE))
   check('the daily spam cap applies', /DAILY_SCHEDULE_CAP = 50/.test(ROUTE))
-  check('it is Labs only on the server too', /canUsePreview\('deals_import', tier\)/.test(ROUTE))
+  check('the server follows the same switch', /canUsePreview\('deals_import', tier\)/.test(ROUTE))
   check('only a post not yet sent can be cancelled', /\.eq\('status', 'pending'\)\.select\('id'\)/.test(ROUTE))
   check('migration 445 is safe to run twice', /add column if not exists deal_known jsonb/.test(readFileSync('supabase/migrations/445_deal_known.sql', 'utf8')))
   const UI = readFileSync('components/deals/DealsHubImport.tsx', 'utf8')

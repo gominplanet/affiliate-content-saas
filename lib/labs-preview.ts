@@ -86,9 +86,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // mistake here is permanent in somebody else's work.
   video_qr: 'admin',
   // Deals Hub file import: the member's own Deals Hub list, read in their
-  // browser and never uploaded, turned into deal posts scheduled for each
-  // deal's start (Seb, 2026-10-19). Admin while Seb tries it on his own file.
-  deals_import: 'admin',
+  // browser and never uploaded, posted to social as each deal starts (Seb,
+  // 2026-10-19). Opened to Pro the same day, after Seb's 494 MB Black Friday
+  // file read (Seb: "make sure that the Deals Hub works for users").
+  deals_import: 'labs',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

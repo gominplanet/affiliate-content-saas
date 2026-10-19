@@ -26,6 +26,16 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Import your Deals Hub file, then post the deals to social (2026-10-19).
+  {
+    date: '2026-10-19',
+    gate: 'deals_import',
+    badge: 'NEW',
+    tone: '#DB2777',
+    title: 'Deals Hub: import Amazon\u2019s whole deals list, post to social',
+    desc: 'Download the deals list from the Deals Hub in your Amazon Associates account and open it at the top of Deals Hub in MVP. It is read on your computer, never uploaded, even at 500 MB. Filter by category, discount, commission and below this year\u2019s low, tick up to 30 deals, pick your networks and press Post to social. Nothing posts when you press it: each deal is queued for its own start time on Amazon, spaced apart, and skipped if it has ended.',
+    href: '/deals#deals-import',
+  },
   // Deals Hub reopened for Black Friday (Seb, 2026-10-19: "make this something
   // that people can be aware of in the pop-up update when people log in").
   {
