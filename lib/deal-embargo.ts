@@ -26,8 +26,11 @@ import type { DealOccasionSlug } from '@/lib/deal-occasion'
 /** When each event's DATES may first be named publicly.
  *
  *  Keyed by occasion because that is what a post puts in its title and badge.
- *  An event that is not listed has no announcement embargo. Black Friday's
- *  day is no secret, but Amazon's own Black Friday event dates are (below).
+ *  An event that is not listed has no announcement embargo, which is the normal
+ *  case: Black Friday's date is not a secret (Seb, 2026-10-19: "Black Friday
+ *  is never a secret"). Amazon's own sale window for it is, until the date the
+ *  Deals Hub names, but a deal post only goes out once its deal is live on
+ *  amazon.com (the per-deal rule below), which is after that date anyway.
  *
  *  Add a line here when Amazon announces the next one. An absent entry means
  *  "no embargo", so forgetting to add one fails open, which is why the
@@ -35,11 +38,6 @@ import type { DealOccasionSlug } from '@/lib/deal-occasion'
 export const EVENT_ANNOUNCE_EMBARGO: Partial<Record<DealOccasionSlug, string>> = {
   // "communicated only after September 14, 2026 at 10:00 PM PDT" (UTC-7).
   prime_big_deal_days: '2026-09-15T05:00:00.000Z',
-  // Seb, 2026-10-19, from the Deals Hub: the event dates "are confidential and
-  // can be communicated only after November 9th, 2026 at 10 p.m. PST" (UTC-8).
-  // The Deals Hub's Black Friday deals run to December 1, so Cyber Monday too.
-  black_friday: '2026-11-10T06:00:00.000Z',
-  cyber_monday: '2026-11-10T06:00:00.000Z',
 }
 
 export type DealBlockReason = 'deal-not-live' | 'event-not-announced'

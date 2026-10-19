@@ -569,8 +569,8 @@ export async function POST(req: Request) {
   // moment the embargo lifts, which is what the creator wanted anyway and what
   // the scheduling path below already knows how to do.
   {
-    // The occasion the post will carry, picked or auto: auto can now name
-    // Black Friday from the scheduled date, and that name is embargoed too.
+    // The occasion the post will carry, picked or auto: auto can now name the
+    // sale from the scheduled date, so an embargoed one is caught either way.
     const verdict = dealEmbargo({
       dealStartsAt: body.dealStartsAt,
       occasion: requestedOccasion !== 'none' ? requestedOccasion : null,
