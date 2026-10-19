@@ -14317,7 +14317,19 @@ function watchGroupPost(tabId, snippet, linkKey, resume, groupUrl) {
 const TRYBE_ORIGINS = ['https://jointrybe.com/*', 'https://*.jointrybe.com/*']
 const TRYBE_DISCOVER = 'https://jointrybe.com/creator/discover'
 
+// ONE ALLOW WINDOW AT A TIME (1.53.1): a second ask while one is open brings
+// that one up instead of opening another.
+let trybeAsking = null
+let trybeAskWin = null
 function askTrybeAccess() {
+  if (trybeAsking) {
+    if (trybeAskWin != null) { try { void chrome.windows.update(trybeAskWin, { focused: true }).catch(() => {}) } catch (e) {} }
+    return trybeAsking
+  }
+  trybeAsking = askTrybeAccessOnce().finally(() => { trybeAsking = null; trybeAskWin = null })
+  return trybeAsking
+}
+function askTrybeAccessOnce() {
   return new Promise((resolve) => {
     let done = false
     let winId = null
@@ -14333,14 +14345,22 @@ function askTrybeAccess() {
     chrome.runtime.onMessage.addListener(onMsg)
     chrome.windows.onRemoved.addListener(onClosed)
     chrome.windows.create({ url: chrome.runtime.getURL('trybe-allow.html'), type: 'popup', width: 480, height: 340, focused: true })
-      .then((w) => { winId = w && w.id })
+      .then((w) => { winId = w && w.id; trybeAskWin = winId })
       .catch(() => finish(false))
     setTimeout(() => finish(false), 180000)
   })
 }
 
+// THE ADDRESS SCOUT WORKS ON (1.53.1; Alejandro, 2026-10-19: "every time
+// [it] ask[s] me to allow on Trybe and opens a new window completely"). Both
+// addresses were required, so a Chrome that kept jointrybe.com but not its
+// sub-addresses (a Site access choice of "On specific sites" does that) read
+// as not allowed on every visit, though every send went through. Everything
+// SCOUT opens and asks is on jointrybe.com itself, so that is what counts;
+// the Allow window still asks for both.
+const TRYBE_WORK_ORIGIN = ['https://jointrybe.com/*']
 async function hasTrybeAccess() {
-  try { return await chrome.permissions.contains({ origins: TRYBE_ORIGINS }) } catch (e) { return false }
+  try { return await chrome.permissions.contains({ origins: TRYBE_WORK_ORIGIN }) } catch (e) { return false }
 }
 
 function trybeSafeUrl(raw) {
@@ -15489,7 +15509,7 @@ async function trybeSendInPage(name, message) {
     && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`)))
   // WHAT THE PAGE WAS, when nothing on it could be used, so the next report
   // says which page TRYBE showed and whether it had drawn at all.
-  const pageSays = () => `page ${location.pathname}, ${Array.from(document.querySelectorAll('input')).filter(visible).length} boxes, ${String((document.body && document.body.innerText) || '').trim().length} characters`
+  const pageSays = () => `page ${location.pathname}, ${window.innerWidth}x${window.innerHeight}, ${Array.from(document.querySelectorAll('input')).filter(visible).length} boxes, ${String((document.body && document.body.innerText) || '').trim().length} characters`
 
   // The deep link usually opens the brand's popup. If not, find its row.
   let dialog = await waitFor(popupFor, 9000)

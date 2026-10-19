@@ -54,6 +54,13 @@ export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
  *  manual: at most 110 characters), plain words, no dashes. */
 export const SCOUT_RELEASES: ScoutRelease[] = [
   {
+    version: '1.53.1',
+    date: '2026-10-19',
+    notes: [
+      { text: 'TRYBE: SCOUT stops asking to be allowed again once you have allowed it, and opens one Allow window at most.', href: '/trybe', gate: 'trybe_outreach' },
+    ],
+  },
+  {
     version: '1.53.0',
     date: '2026-10-19',
     notes: [

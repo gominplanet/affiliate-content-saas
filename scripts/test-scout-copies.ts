@@ -37,6 +37,12 @@ check('the version reported is the copy MVP talks to', /const top = rankScoutCop
 check('the banner says when there are two', /kind: 'copies'/.test(BANNER) && /twoCopiesWords\(found\.copies/.test(BANNER))
 check('what was found includes the copies', /body: JSON\.stringify\(\{ install, version, background, copies \}\)/.test(BANNER) && /scout_copies/.test(ROUTE))
 check('a database without migration 446 still keeps the rest', ROUTE.indexOf('scout_copies') > ROUTE.indexOf('scout_seen_at'))
+const BG = readFileSync('extension/background.js', 'utf8')
+// SCOUT 1.53.1: allowed is allowed, one Allow window, and a miss says its size.
+check('allowed on jointrybe.com counts as allowed', /const TRYBE_WORK_ORIGIN = \['https:\/\/jointrybe\.com\/\*'\]/.test(BG) && /permissions\.contains\(\{ origins: TRYBE_WORK_ORIGIN \}\)/.test(BG))
+check('one Allow window at a time', /if \(trybeAsking\) \{/.test(BG) && /trybeAskWin = winId/.test(BG))
+check('a send that finds no search box says how big the page was drawn', /\$\{window\.innerWidth\}x\$\{window\.innerHeight\}, \$\{Array\.from\(document\.querySelectorAll\('input'\)\)/.test(BG))
+
 const MIG = existsSync('supabase/migrations/446_scout_copies.sql') ? readFileSync('supabase/migrations/446_scout_copies.sql', 'utf8') : ''
 check('migration 446 is safe to run twice', /add column if not exists scout_copies jsonb/.test(MIG))
 

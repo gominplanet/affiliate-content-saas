@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.0'
+export const SCOUT_LATEST_VERSION = '1.53.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Send to TRYBE (Labs): a video dropped in MVP goes to a TRYBE brand you joined, the way TRYBE\'s own upload sends it, out of sight. Includes 1.51.0 (Meta ads gallery), 1.50.2 (quiet jobs for admin to try) and 1.50.1 (TRYBE out of sight, typed search).'
+  'TRYBE: allowed on jointrybe.com counts as allowed, one Allow window at a time, and a send that fails says how big the page was drawn. Includes 1.53.0 (new Creator Connections campaigns daily).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
