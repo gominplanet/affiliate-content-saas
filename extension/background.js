@@ -12419,8 +12419,25 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     (async () => {
       let has = await hasTrybeAccess()
       if (!has && msg.ask) has = await askTrybeAccess()
+      if (has) await trybeHookOn()
       return { granted: !!has }
     })().then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_TRYBE_TAB') {
+    // 1.53.2: is a TRYBE tab open in this Chrome for SCOUT to work through,
+    // and is it signed in. Nothing is opened.
+    (async () => {
+      if (!(await hasTrybeAccess())) return { open: false, allowed: false }
+      const id = await trybeOwnTab()
+      if (id == null) return { open: false, allowed: true }
+      let state = 'loading'
+      for (let i = 0; i < 8 && state === 'loading'; i++) {
+        try { state = await trybeRun(trybeSignedInPage, [], id) } catch (e) { state = null }
+        if (state === 'loading') await _sleep(600)
+      }
+      return { open: true, allowed: true, signedIn: state !== 'signin' }
+    })().then(sendResponse).catch(() => sendResponse({ open: false }))
     return true // async
   }
   if (msg.type === 'MVP_HASHTAG_ACCESS') {
@@ -12453,6 +12470,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // 1.41.5: one TRYBE request from the creator's own signed-in TRYBE, for
     // MVP's TRYBE inbox. Locked to TRYBE's chat and brand-list addresses.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
+    // A request to a brand goes only through trybeSend (1.53.2).
+    if (String(msg.method || '').toUpperCase() !== 'GET' && TRYBE_SEND_ONLY.test(String(msg.path || ''))) { clearTimeout(timeout); sendResponse({ ok: false, error: 'not-allowed' }); return true }
     trybeApi({ method: msg.method, path: msg.path, body: msg.body })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
@@ -12531,7 +12550,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_TRYBE_SEND') {
     // Past the press, a late answer is 'unconfirmed', never 'failed'.
     const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 150000)
-    trybeSend({ url: msg.url, name: msg.name, message: msg.message }, sender && sender.tab ? sender.tab.id : null)
+    trybeSend({ url: msg.url, name: msg.name, message: msg.message })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ outcome: 'failed', error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -14535,6 +14554,11 @@ async function scoutWorkIdleCheck() {
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === SCOUT_WORK_IDLE_ALARM) void scoutWorkIdleCheck() }) } catch (e) {}
 
 // In page: is this TRYBE's discover screen, a sign-in screen, or still loading?
+// In page: is the creator's TRYBE tab (any TRYBE page) signed in (1.53.2).
+function trybeSignedInPage() {
+  if (/log ?in|sign ?in|auth/i.test(location.pathname || '') || document.querySelector('input[type=password]')) return 'signin'
+  return document.readyState === 'complete' && String((document.body && document.body.innerText) || '').trim().length > 100 ? 'ready' : 'loading'
+}
 function trybePageStateInPage() {
   const path = location.pathname || ''
   const text = (document.body && document.body.innerText) || ''
@@ -14637,7 +14661,7 @@ async function trybeSearchInPage(term) {
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
   const box = Array.from(document.querySelectorAll('input, [role=searchbox]')).find((i) => visible(i) && !i.closest('[role=dialog], [aria-modal=true]') && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`)))
   if (!box) return false
-  // Typed key by key (1.50.1), as in trybeSendInPage: a value set in one go
+  // Typed key by key (1.50.1), as sends were until 1.53.2: a value set in one go
   // left TRYBE's list as it was.
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
   box.focus(); box.click()
@@ -14980,28 +15004,25 @@ async function trybeHarvestInPage(fromPage, count, withCategories) {
 }
 
 const TRYBE_HOOK_ID = 'mvp-trybe-hook'
-// COUNTED, so the collection and the inbox can both use the watcher: it is
-// only removed when the last one is done with it, never from under the other.
-let trybeHookUsers = 0
+// IN EVERY TRYBE TAB (1.53.2). SCOUT works through the TRYBE tab the creator
+// opened, so the sign-in watcher is kept registered while SCOUT is allowed on
+// TRYBE, and Chrome keeps it across restarts. It notes the sign-in and
+// changes nothing on the page (trybe-hook.js).
 async function trybeHookOn() {
-  trybeHookUsers++
   try {
     const have = await chrome.scripting.getRegisteredContentScripts({ ids: [TRYBE_HOOK_ID] })
-    if (have && have.length) return true
+    if (have && have.length && have[0].persistAcrossSessions) return true
+    if (have && have.length) await chrome.scripting.unregisterContentScripts({ ids: [TRYBE_HOOK_ID] })
   } catch (e) {}
   try {
-    await chrome.scripting.registerContentScripts([{ id: TRYBE_HOOK_ID, matches: TRYBE_ORIGINS, js: ['trybe-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: false }])
+    await chrome.scripting.registerContentScripts([{ id: TRYBE_HOOK_ID, matches: TRYBE_WORK_ORIGIN, js: ['trybe-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: true }])
     return true
   } catch (e) {
-    // Registered meanwhile by the other user: that is on, too.
     try { const have = await chrome.scripting.getRegisteredContentScripts({ ids: [TRYBE_HOOK_ID] }); return !!(have && have.length) } catch (e2) { return false }
   }
 }
-async function trybeHookOff() {
-  trybeHookUsers = Math.max(0, trybeHookUsers - 1)
-  if (trybeHookUsers > 0) return
-  try { await chrome.scripting.unregisterContentScripts({ ids: [TRYBE_HOOK_ID] }) } catch (e) {}
-}
+// When SCOUT starts: on, once SCOUT is allowed on TRYBE.
+void (async () => { try { if (await hasTrybeAccess()) await trybeHookOn() } catch (e) {} })()
 
 // ── TRYBE INBOX (1.41.5) ─────────────────────────────────────────────────────
 // MVP reads and answers the creator's TRYBE conversations. SCOUT makes each
@@ -15055,20 +15076,62 @@ const TRYBE_API_ALLOW = [
   { method: 'POST', re: /^\/backend\/api\/creator\/submissions\/[A-Za-z0-9-]{6,80}\/complete$/ },
   { method: 'GET', re: /^\/backend\/api\/creator\/submissions(\?[\w=&%.,-]*)?$/ },
   { method: 'DELETE', re: /^\/backend\/api\/creator\/submissions\/[A-Za-z0-9-]{6,80}$/ },
+  // 1.53.2 REQUEST TO JOIN, the one request TRYBE's own button sends:
+  // { brandId, message }. Sent by trybeSend only, on MVP's daily limit and
+  // pacing; MVP's page cannot send it through MVP_TRYBE_API (TRYBE_SEND_ONLY).
+  { method: 'POST', re: /^\/backend\/api\/discovery\/creators\/me\/requests$/ },
 ]
-// SCOUT's inbox tab, KEPT IN SESSION STORAGE: Chrome stops an idle service
-// worker within a minute, and a tab remembered only in memory was then never
-// closed, nor the sign-in watcher removed. { id, at, opened }.
-const TRYBE_API_TAB_KEY = 'mvpTrybeApiTab'
-const TRYBE_API_IDLE_ALARM = 'mvp-trybe-api-idle'
-async function trybeApiTabGet() {
-  try { const got = await chrome.storage.session.get(TRYBE_API_TAB_KEY); return got && got[TRYBE_API_TAB_KEY] ? got[TRYBE_API_TAB_KEY] : null } catch (e) { return null }
+/** Requests only SCOUT's own send makes, never one asked for by a page. */
+const TRYBE_SEND_ONLY = /^\/backend\/api\/discovery\/creators\/me\/requests$/
+// THE CREATOR'S OWN TRYBE TAB (1.53.2; Seb, 2026-10-19: "click here to open
+// and log into your account. And then leave that in the background ... As
+// long as nothing pops up, we're good"). TRYBE's sign-in lives in a TRYBE
+// page, so everything SCOUT does on TRYBE goes through the TRYBE tab the
+// creator opened from MVP and left open: requests, the inbox, the brand list,
+// sends. SCOUT opens no window and no tab for TRYBE, and never closes or
+// moves the creator's. With no TRYBE tab open, SCOUT does nothing and says so
+// ('trybe-not-open'); MVP's TRYBE page has the button that opens one.
+// (Until 1.53.1 SCOUT opened its own TRYBE tab in a minimized window, which
+// Chrome on Windows draws at next to no size, and the creator could see.)
+async function trybeOwnTab() {
+  let tabs = []
+  try { tabs = await chrome.tabs.query({ url: TRYBE_WORK_ORIGIN }) } catch (e) {}
+  if (!tabs.length) return null
+  // One Chrome has not put to sleep first, then the one used last.
+  tabs.sort((a, b) => Number(!!a.discarded) - Number(!!b.discarded) || (b.lastAccessed || 0) - (a.lastAccessed || 0))
+  const t = tabs[0]
+  // Kept awake: Memory Saver puts a quiet background tab to sleep.
+  if (t.autoDiscardable !== false) { try { await chrome.tabs.update(t.id, { autoDiscardable: false }) } catch (e) {} }
+  if (t.discarded) {
+    try { await chrome.tabs.reload(t.id) } catch (e) {}
+    await waitForTabLoad(t.id, 30000)
+    await _sleep(1500)
+  } else if (t.status !== 'complete') {
+    await waitForTabLoad(t.id, 20000)
+  }
+  // The watcher, in a tab that was open before SCOUT registered it.
+  try { await chrome.scripting.executeScript({ target: { tabId: t.id }, world: 'MAIN', files: ['trybe-hook.js'] }) } catch (e) {}
+  return t.id
 }
-async function trybeApiTabSet(v) {
-  try { if (v) await chrome.storage.session.set({ [TRYBE_API_TAB_KEY]: v }); else await chrome.storage.session.remove(TRYBE_API_TAB_KEY) } catch (e) {}
+/** The tab SCOUT makes TRYBE requests from: the creator's own. */
+async function trybeApiTabId() {
+  const id = await trybeOwnTab()
+  if (id == null) throw new Error('trybe-not-open')
+  return id
 }
-// One opening at a time: two calls together share it rather than opening two.
-let trybeApiTabOpening = null
+/** Signed out on the last request: the creator's TRYBE tab is reloaded so
+ *  TRYBE's page signs in afresh, unless the creator is looking at it. */
+async function trybeOwnTabRefresh(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId)
+    const w = await chrome.windows.get(t.windowId)
+    if (t.active && w.focused) return false
+    await chrome.tabs.reload(tabId)
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2000)
+    return true
+  } catch (e) { return false }
+}
 
 // In page, alone (Chrome copies only this function): one request, signed in.
 async function trybeApiInPage(method, path, body) {
@@ -15145,58 +15208,6 @@ async function trybeApiInPage(method, path, body) {
   }
 }
 
-// SCOUT'S OWN TRYBE TAB to make requests from, opened behind with the sign-in
-// watcher loaded before TRYBE's code, closed after five quiet minutes. Never
-// the creator's own TRYBE tab (1.41.5 borrowed it: no watcher there, so only
-// the stale stored sign-in, and TRYBE refused it).
-async function trybeApiTabId() {
-  if (trybeApiTabOpening) return trybeApiTabOpening
-  trybeApiTabOpening = (async () => {
-    const kept = await trybeApiTabGet()
-    if (kept) {
-      try {
-        const t = await chrome.tabs.get(kept.id)
-        if (t && /^https:\/\/([a-z0-9-]+\.)?jointrybe\.com\//.test(t.url || '')) {
-          // Open over 45 minutes: reloaded, so TRYBE's page signs in afresh.
-          if (Date.now() - (kept.opened || 0) > 45 * 60000) {
-            await chrome.tabs.reload(kept.id)
-            await waitForTabLoad(kept.id, 30000)
-            await _sleep(1500)
-            kept.opened = Date.now()
-          }
-          kept.at = Date.now()
-          await trybeApiTabSet(kept)
-          return kept.id
-        }
-        // Still open but off TRYBE (navigated away): closed, so it does not
-        // keep SCOUT's window open for good.
-        if (t) { try { await chrome.tabs.remove(kept.id) } catch (e) {} }
-      } catch (e) {}
-      // Gone: its watcher use ends with it.
-      await trybeApiTabSet(null)
-      await trybeHookOff()
-    }
-    await trybeHookOn()
-    const tab = await openWorkTab(TRYBE_DISCOVER)
-    await trybeApiTabSet({ id: tab.id, at: Date.now(), opened: Date.now() })
-    await waitForTabLoad(tab.id, 30000)
-    await _sleep(1500)
-    try { chrome.alarms.create(TRYBE_API_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {}
-    return tab.id
-  })()
-  try { return await trybeApiTabOpening } finally { trybeApiTabOpening = null }
-}
-
-async function trybeApiIdleCheck() {
-  const kept = await trybeApiTabGet()
-  if (!kept) return
-  if (Date.now() - (kept.at || 0) < 4.5 * 60000) { try { chrome.alarms.create(TRYBE_API_IDLE_ALARM, { delayInMinutes: 5 }) } catch (e) {} return }
-  try { await chrome.tabs.remove(kept.id) } catch (e) {}
-  await trybeApiTabSet(null)
-  await trybeHookOff()
-}
-try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_API_IDLE_ALARM) void trybeApiIdleCheck() }) } catch (e) {}
-
 // ── SEND TO TRYBE: THE FILE (1.52.0) ─────────────────────────────────────────
 // One upload of a video (or one part of it) from MVP's own storage to the
 // upload link TRYBE gave, from SCOUT's TRYBE tab, the way TRYBE's page sends
@@ -15236,13 +15247,11 @@ async function trybePutFile(o) {
   if (!/^https:\/\//.test(fileUrl)) return { ok: false, error: 'bad-file-url' }
   if (!/^https:\/\//.test(uploadUrl)) return { ok: false, error: 'bad-upload-url' }
   let tabId
-  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'could-not-open-trybe' } }
+  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'trybe-not-open' } }
   // Kept alive for the whole upload: a big part takes minutes.
   const ka = startKeepAlive()
   try {
     const res = await trybeRun(trybePutFileInPage, [fileUrl, uploadUrl, String(o.contentType || 'video/mp4').slice(0, 80), typeof o.start === 'number' ? o.start : null, typeof o.end === 'number' ? o.end : null], tabId)
-    const kept = await trybeApiTabGet()
-    if (kept) { kept.at = Date.now(); await trybeApiTabSet(kept) }
     return res || { ok: false, error: 'no-answer-from-page' }
   } finally { stopKeepAlive(ka) }
 }
@@ -15379,10 +15388,13 @@ async function trybeApi({ method, path, body }) {
   if (m === 'GET' && body != null) return { ok: false, error: 'not-allowed' }
   if (body != null && JSON.stringify(body).length > 20000) return { ok: false, error: 'too-long' }
   let tabId
-  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'could-not-open-trybe' } }
-  const res = await trybeRun(trybeApiInPage, [m, p, body == null ? null : body], tabId)
-  const kept = await trybeApiTabGet()
-  if (kept) { kept.at = Date.now(); await trybeApiTabSet(kept) }
+  try { tabId = await trybeApiTabId() } catch (e) { return { ok: false, error: 'trybe-not-open' } }
+  let res = await trybeRun(trybeApiInPage, [m, p, body == null ? null : body], tabId)
+  // Signed out (an old sign-in): asked once more after TRYBE's page renews it.
+  if (res && res.status === 401 && (await trybeOwnTabRefresh(tabId))) {
+    try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: ['trybe-hook.js'] }) } catch (e) {}
+    res = await trybeRun(trybeApiInPage, [m, p, body == null ? null : body], tabId)
+  }
   return res || { ok: false, error: 'no-answer-from-page' }
 }
 
@@ -15390,18 +15402,15 @@ async function trybeHarvest({ maxPages }, callerTabId) {
   if (!(await hasTrybeAccess())) return { ok: false, error: 'no-access' }
   const ka = startKeepAlive()
   let tabId = null
-  // The sign-in watcher goes in before the tab opens, so it is there before
-  // TRYBE's own code makes its first request. Removed again in finally.
   const hooked = await trybeHookOn()
   try {
-    // In SCOUT's own window: this only reads TRYBE's data, nothing on screen.
-    const tab = await openWorkTab(TRYBE_DISCOVER)
-    tabId = tab.id
-    await waitForTabLoad(tabId, 30000)
+    // In the creator's own TRYBE tab (1.53.2): this only reads TRYBE's data.
+    tabId = await trybeOwnTab()
+    if (tabId == null) return { ok: false, error: 'trybe-not-open', hooked }
     let state = 'loading'
     for (let i = 0; i < 20 && state === 'loading'; i++) {
-      await _sleep(750)
-      state = await trybeRun(trybePageStateInPage, [], tabId)
+      state = await trybeRun(trybeSignedInPage, [], tabId)
+      if (state === 'loading') await _sleep(750)
     }
     if (state === 'signin') return { ok: false, error: 'not-signed-in', hooked }
     // Ten pages a time, so no one answer from the page carries thousands of
@@ -15427,144 +15436,9 @@ async function trybeHarvest({ maxPages }, callerTabId) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
-    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    await trybeHookOff()
+    // The creator's tab is theirs: left open, as it was.
     stopKeepAlive(ka)
   }
-}
-
-// In page: one Request to Join, start to finish.
-async function trybeSendInPage(name, message) {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const norm = (s) => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
-  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
-  const byText = (re, root) => Array.from((root || document).querySelectorAll('button, a, [role=button]')).find((b) => visible(b) && re.test(String(b.innerText || b.textContent || '').trim()))
-  const steps = []
-  const want = norm(name)
-  const fail = (error) => ({ outcome: 'failed', error, steps })
-
-  const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
-  // TYPED, NOT SET (1.50.1). Setting the box's value and firing an input
-  // event left TRYBE's list as it was: every brand not on the first screen
-  // came back not found, even with TRYBE in front, while the same name typed
-  // by hand found it (Alejandro's run, Oct 17: Bomber Eyewear). So the name
-  // goes in one key at a time, the way a keyboard does, and Enter is pressed
-  // if the list has not narrowed.
-  const typeInto = async (input, text) => {
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    input.focus(); input.click()
-    set.call(input, ''); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
-    for (const ch of String(text)) {
-      const k = { key: ch, bubbles: true, cancelable: true }
-      input.dispatchEvent(new KeyboardEvent('keydown', k))
-      input.dispatchEvent(new KeyboardEvent('keypress', k))
-      const before = input.value.length
-      let typed = false
-      try { typed = document.execCommand('insertText', false, ch) && input.value.length === before + ch.length } catch (e) {}
-      if (!typed) { set.call(input, input.value + ch); input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })) }
-      input.dispatchEvent(new KeyboardEvent('keyup', k))
-      await sleep(30)
-    }
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  }
-  const pressEnter = (input) => { for (const t of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true })) }
-  // THE BRAND'S OWN POPUP, NEVER THE WHOLE PAGE (1.41.4). "Pending Requests"
-  // on the page itself matched the requested words, the page body passed for
-  // the popup, and a brand was recorded as already requested with nothing
-  // sent. Only the exact requested words count, and only inside a real
-  // dialog that names this brand.
-  const REQUESTED = /^(requested|request sent|cancel request|withdraw( request)?)$/i
-  const popupFor = () => {
-    const anchor = byText(/^request to join/i) || byText(REQUESTED)
-    if (!anchor) return null
-    let d = anchor.closest('[role=dialog], [aria-modal=true]')
-    if (!d) { let el = anchor; while (el && el !== document.body) { if (getComputedStyle(el).position === 'fixed') { d = el; break } el = el.parentElement } }
-    if (!d || d === document.body) return null
-    const lines = String(d.innerText || '').split('\n').map(norm)
-    return lines.includes(want) ? d : null
-  }
-
-  if (/log ?in|sign ?in|auth/i.test(location.pathname) || document.querySelector('input[type=password]')) return fail('not-signed-in')
-
-  // A BRAND'S ROW (1.47.1). TRYBE's list (Oct 15) shows the logo as a
-  // picture only when the brand has one, else its initials as text, and puts
-  // a bookmark button beside each row. So no picture is required, the name
-  // may be any of the row's first lines (or the logo's alt text), and the
-  // clickable row itself (role=button) is preferred.
-  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height }
-  const rowFor = () => Array.from(document.querySelectorAll('[role=button], a, li, button, div')).filter((el) => {
-    if (!visible(el) || el.closest('[role=dialog], [aria-modal=true]')) return false
-    const lines = String(el.innerText || '').split('\n').map(norm).filter(Boolean).slice(0, 4)
-    return lines.includes(want) || Array.from(el.querySelectorAll('img[alt]')).some((i) => norm(i.alt) === want)
-  }).sort((a, b) => Number(b.getAttribute('role') === 'button') - Number(a.getAttribute('role') === 'button') || area(a) - area(b))[0]
-  // What TRYBE listed, for the error when the brand is not among them.
-  const seenRows = () => Array.from(document.querySelectorAll('[role=button]')).filter(visible)
-    .map((el) => String(el.innerText || '').split('\n').map((t) => t.trim()).filter((t) => t.length > 2)[0]).filter((t) => t && !/^\d[\d,]*\+?$/.test(t)).slice(0, 5)
-
-  // TRYBE'S SEARCH BOX, by more than one name (1.52.3). Only a box labelled
-  // "search" counted, and from Oct 18 Alejandro's every send found none. Any
-  // search-type box, or one whose label says search, find or brand, counts.
-  const searchBox = () => Array.from(document.querySelectorAll('input, [role=searchbox]')).find((i) => visible(i)
-    && !i.closest('[role=dialog], [aria-modal=true]')
-    && (i.type === 'search' || i.getAttribute('role') === 'searchbox' || /search|find|brand/i.test(`${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`)))
-  // WHAT THE PAGE WAS, when nothing on it could be used, so the next report
-  // says which page TRYBE showed and whether it had drawn at all.
-  const pageSays = () => `page ${location.pathname}, ${window.innerWidth}x${window.innerHeight}, ${Array.from(document.querySelectorAll('input')).filter(visible).length} boxes, ${String((document.body && document.body.innerText) || '').trim().length} characters`
-
-  // The deep link usually opens the brand's popup. If not, find its row.
-  let dialog = await waitFor(popupFor, 9000)
-  if (!dialog) {
-    const row = rowFor()
-    if (row) { row.scrollIntoView({ block: 'center' }); await sleep(300); row.click(); steps.push('row') }
-    dialog = await waitFor(popupFor, 9000)
-  }
-  if (!dialog) {
-    // Not on screen: type the name into TRYBE's own Search Brand box.
-    const search = await waitFor(searchBox, 10000)
-    if (search) {
-      await typeInto(search, name)
-      steps.push('searched')
-      let hit = await waitFor(rowFor, 8000)
-      if (!hit) { pressEnter(search); steps.push('enter'); hit = await waitFor(rowFor, 8000) }
-      if (hit) { hit.scrollIntoView({ block: 'center' }); await sleep(300); hit.click(); steps.push('found'); dialog = await waitFor(popupFor, 9000) }
-    } else steps.push(`no search box (${pageSays()})`)
-  }
-  if (!dialog) { const seen = seenRows(); return { ...fail('brand-not-found'), seen } }
-  steps.push('popup')
-
-  const join = byText(/^request to join/i, dialog)
-  if (!join) {
-    // Already requested only when TRYBE says so in this brand's popup.
-    if (byText(REQUESTED, dialog)) { steps.push('already'); return { outcome: 'already', steps } }
-    return fail('request-button-not-found')
-  }
-  join.click()
-  steps.push('join')
-
-  const box = await waitFor(() => Array.from(document.querySelectorAll('textarea')).find(visible), 10000)
-  const sendBtn = await waitFor(() => byText(/^send request/i), 10000)
-  if (!box || !sendBtn) return fail(box ? 'send-button-not-found' : 'message-box-not-found')
-
-  // React keeps its own copy of the value: set it the way a keystroke would.
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  box.focus()
-  setter.call(box, message)
-  box.dispatchEvent(new Event('input', { bubbles: true }))
-  box.dispatchEvent(new Event('change', { bubbles: true }))
-  await sleep(700)
-  if (String(box.value).trim() !== String(message).trim()) return fail('message-did-not-take')
-  steps.push('typed')
-  // A beat before pressing, like someone rereading it.
-  await sleep(1500 + Math.round(Math.random() * 2000))
-  if (sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true') return fail('send-disabled')
-  sendBtn.click()
-  steps.push('pressed')
-
-  // Sent means the message box went away. Anything else is unconfirmed.
-  const gone = await waitFor(() => !document.body.contains(box) || !visible(box), 15000)
-  if (gone) { steps.push('closed'); return { outcome: 'sent', steps } }
-  const err = Array.from(document.querySelectorAll('[role=alert], [class*=toast], [class*=error]')).map((e) => String(e.innerText || '').trim()).filter(Boolean)[0] || null
-  return { outcome: 'unconfirmed', error: err || 'TRYBE did not close the request box.', steps }
 }
 
 // In page, alone (1.41.8): bring up one brand's popup on TRYBE's Discover
@@ -15647,94 +15521,74 @@ async function trybeOpenBrand({ brandId, name }) {
   }
 }
 
-// In page, alone: is a box still holding this message? Used only to settle a
-// send whose box did not close while the tab was hidden. It presses nothing.
-function trybeBoxStillOpenInPage(message) {
-  const want = String(message || '').trim()
-  return Array.from(document.querySelectorAll('textarea')).some((t) => {
-    const r = t.getBoundingClientRect()
-    return r.width > 0 && r.height > 0 && String(t.value || '').trim() === want
-  })
+// ── REQUEST TO JOIN, SENT THE WAY TRYBE'S OWN BUTTON SENDS IT (1.53.2) ─────
+// Every send used to drive TRYBE's screen: find the search box, open the
+// brand's popup, type, press. A screen has to be drawn for that, and Chrome on
+// Windows draws a minimized window's page at next to no size, so from the day
+// sends moved into SCOUT's minimized window every one of Alejandro's found
+// TRYBE's page with text but "0 boxes" (2026-10-19). Seb, the same evening:
+// "Do we need a window at all? ... I don't want people to even see it."
+// TRYBE's Request to join button sends one request, { brandId, message } to
+// discovery/creators/me/requests. SCOUT sends that same request from the
+// creator's own TRYBE tab and sign-in, as it reads the inbox and sends video
+// submissions. Nothing is drawn, typed or pressed.
+// TRYBE's list of sent requests is read first (already asked: nothing is
+// sent) and again after (the send is confirmed there). A request TRYBE turns
+// down sent nothing, and its words go in the report. An unclear answer is
+// looked for in the sent list and never sent again.
+const TRYBE_JOIN_PATH = '/backend/api/discovery/creators/me/requests'
+const TRYBE_SENT_PATH = '/backend/api/discovery/creators/me/sent-requests'
+function trybeBrandIdOf(url) {
+  try { const id = new URL(url).searchParams.get('brand') || ''; return /^[A-Za-z0-9-]{6,80}$/.test(id) ? id : null } catch (e) { return null }
+}
+/** True when TRYBE's sent list holds this brand. */
+function trybeSentHas(json, brandId) {
+  try { return JSON.stringify(json == null ? '' : json).includes('"' + brandId + '"') } catch (e) { return false }
+}
+/** TRYBE's own words for an answer, short. */
+function trybeSaid(r) {
+  const j = r && r.json
+  const w = (j && (j.error || j.message || (j.data && (j.data.error || j.data.message)))) || (r && r.text) || ''
+  return String(typeof w === 'string' ? w : JSON.stringify(w)).replace(/\s+/g, ' ').trim().slice(0, 160)
 }
 
-/** Codes from before Send Request was pressed: nothing went to the brand, so
- *  the send can be tried again safely. */
-// Never 'no-answer-from-page': a lost answer says nothing about whether Send
-// Request was pressed, so it is 'unconfirmed', never tried again.
-const TRYBE_RETRY_HIDDEN = ['brand-not-found', 'request-button-not-found', 'message-box-not-found', 'send-button-not-found', 'message-did-not-take', 'send-disabled']
-
-// NEVER ON SCREEN (1.50.1; Seb, 2026-10-17: "Make sure we don't have any
-// pop-up windows or Scout being brought into the foreground while people are
-// trying to work. Everything that Scout needs to do, especially on Tribe,
-// sending messages and all that stuff, needs to be done in the background").
-// Every send, Send all and Send now alike, runs in SCOUT's minimized window
-// and never comes to the front. Chrome holds back animation in a hidden page,
-// so a popup can stall there; the two fallbacks stay hidden too, and neither
-// can send twice:
-//  - a stop BEFORE Send Request was pressed is tried once more, hidden, from
-//    a fresh page;
-//  - a box that did not close AFTER the press is only looked at again, a few
-//    seconds later. Send is never pressed again.
-// A brand SCOUT still cannot reach is reported with the steps it got through,
-// and stays in Ready to send.
-async function trybeSend({ url, name, message }, callerTabId, opts) {
-  // A run SCOUT does by itself has no MVP page waiting on the answer, so its
-  // fresh page try is not held to MVP's 40 seconds.
-  const behind = !!(opts && opts.behind)
+async function trybeSend({ url, name, message }) {
   if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
   const safe = trybeSafeUrl(url)
   if (!safe) return { outcome: 'failed', error: 'bad-url' }
   if (!name || !message || !String(message).trim()) return { outcome: 'failed', error: 'no-message' }
+  const brandId = trybeBrandIdOf(safe)
+  if (!brandId) return { outcome: 'failed', error: 'bad-url', steps: ['no brand in the link'] }
   const ka = startKeepAlive()
-  const startedAt = Date.now()
-  let tabId = null
-  // Once the page has been asked to send, an error is no longer "not sent".
+  // Once the request has gone, an error is no longer "not sent".
   let asked = false
-  const pressedIn = (r) => !!(r && Array.isArray(r.steps) && r.steps.includes('pressed'))
   try {
-    const tab = await openWorkTab(safe)
-    tabId = tab.id
-    // DRAWN, NOT ONLY LOADED (1.52.3). In SCOUT's minimized window Chrome
-    // stops drawing the page, so TRYBE's list and search box could stay
-    // unbuilt: from Oct 18 every one of Alejandro's sends found no search box
-    // on a fresh page. The page is told it is on screen, the same shim the
-    // other hidden jobs use, again on every load (the fresh page try too).
-    quietTabIds.add(tabId)
-    void quietShim(tabId)
-    await waitForTabLoad(tabId, 30000)
-    await quietShim(tabId)
-    await _sleep(1500)
+    const before = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
+    if (before.error === 'trybe-not-open') return { outcome: 'failed', error: 'trybe-not-open', steps: [] }
+    if (before.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps: ['sent list'] }
+    if (before.ok && trybeSentHas(before.json, brandId)) return { outcome: 'already', steps: ['sent list', 'already asked'] }
     asked = true
-    let res = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
-    if (!res) res = { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: [] }
-    let pressed = pressedIn(res)
-    if (res.outcome === 'failed' && !pressed && TRYBE_RETRY_HIDDEN.includes(res.error) && (behind || Date.now() - startedAt < 40000)) {
-      // The first try's last step goes in the report too: it was dropped,
-      // and a fresh page that failed differently hid how the first one did.
-      const first = 'first try: ' + res.error + (Array.isArray(res.steps) && res.steps.length ? ` after ${res.steps[res.steps.length - 1]}` : '')
-      await chrome.tabs.reload(tabId)
-      await waitForTabLoad(tabId, 30000)
-      await quietShim(tabId)
+    const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body: { brandId, message: String(message) } })
+    const said = trybeSaid(r)
+    if (r.ok) {
       await _sleep(1500)
-      const again = await trybeRun(trybeSendInPage, [String(name), String(message)], tabId)
-      res = again
-        ? { ...again, steps: [first, 'fresh page'].concat(again.steps || []) }
-        : { outcome: 'unconfirmed', error: 'The TRYBE page stopped answering, so SCOUT cannot tell whether it was sent.', steps: [first, 'fresh page'] }
-      pressed = pressedIn(res)
+      const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
+      return { outcome: 'sent', steps: ['asked TRYBE', after.ok && trybeSentHas(after.json, brandId) ? 'in your sent requests' : 'accepted by TRYBE'] }
     }
-    if (res.outcome === 'unconfirmed' && pressed) {
-      // Looked at where it is, hidden: a closed box is a sent request.
-      await _sleep(3000)
-      const open = await trybeRun(trybeBoxStillOpenInPage, [String(message)], tabId)
-      if (open === false) res = { outcome: 'sent', steps: (res.steps || []).concat('closed behind') }
-    }
-    if (res.outcome === 'sent') await _sleep(1200)
-    return res
+    if (r.status === 409) return { outcome: 'already', steps: ['asked TRYBE', `already asked${said ? ` (${said})` : ''}`] }
+    if (r.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps: ['asked TRYBE'] }
+    if (r.error === 'trybe-not-open') return { outcome: 'failed', error: 'trybe-not-open', steps: [] }
+    // Turned down: nothing went to the brand.
+    if (r.status >= 400 && r.status < 500) return { outcome: 'failed', error: `trybe-refused (${r.status}${said ? `: ${said}` : ''})`, steps: ['asked TRYBE'] }
+    // No clear answer: looked for, never sent again.
+    await _sleep(2500)
+    const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
+    if (after.ok && trybeSentHas(after.json, brandId)) return { outcome: 'sent', steps: ['asked TRYBE', 'in your sent requests'] }
+    return { outcome: 'unconfirmed', error: `TRYBE did not answer clearly (${r.status || r.error || 'no answer'}${said ? `: ${said}` : ''}), so SCOUT cannot tell whether it was sent.`, steps: ['asked TRYBE'] }
   } catch (e) {
     const why = e && e.message ? e.message : 'exception'
-    return asked ? { outcome: 'unconfirmed', error: `SCOUT lost the TRYBE page after asking it to send (${why}).` } : { outcome: 'failed', error: why }
+    return asked ? { outcome: 'unconfirmed', error: `SCOUT lost TRYBE after asking it (${why}).` } : { outcome: 'failed', error: why }
   } finally {
-    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     stopKeepAlive(ka)
   }
 }
@@ -15817,6 +15671,8 @@ async function trybeRunTick() {
     }
     if (st.idx >= st.ids.length) { await trybeRunEnd(st, `Done: ${st.sent} sent.`, st.sent ? 'ok' : 'warn'); return }
     if (st.nextAt && Date.now() < st.nextAt - 500) { trybeRunWake(st.nextAt); return }
+    // Nothing is claimed without a TRYBE tab to send from (1.53.2).
+    if ((await trybeOwnTab()) == null) { await trybeRunEnd(st, `Stopped: TRYBE is not open in this Chrome. Open it from MVP's TRYBE page, leave the tab open, then press Send all again. ${st.sent || 0} sent.`, 'bad'); return }
     const id = st.ids[st.idx]
     const c = await trybeRunApi(st.origin, { action: 'claim', brandId: id })
     if (!c.reached) {
@@ -15837,9 +15693,9 @@ async function trybeRunTick() {
       st.idx++; st.nextAt = Date.now() + 3000; await trybeRunSave(st); trybeRunWake(st.nextAt); return
     }
     st.current = { id, name: d.name || id }; st.busyAt = Date.now(); st.usedToday = d.usedToday
-    trybeRunSay(st, st.current.name, 'SCOUT is sending it on TRYBE, out of sight.', 'info')
+    trybeRunSay(st, st.current.name, 'SCOUT is sending it through your TRYBE tab.', 'info')
     await trybeRunSave(st)
-    const res = await trybeSend({ url: d.url, name: d.name, message: d.message }, null, { behind: true })
+    const res = await trybeSend({ url: d.url, name: d.name, message: d.message })
     const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
     // The last few steps (1.50.1): "not brought forward" alone hid whether
     // SCOUT had searched at all.
@@ -15848,7 +15704,7 @@ async function trybeRunTick() {
     // Read again: a Stop pressed during the send is kept.
     st = (await trybeRunState()) || st
     const who = st.current ? st.current.name : id
-    if (res.outcome === 'sent') trybeRunSay(st, who, 'Sent. TRYBE closed the request box.', 'ok')
+    if (res.outcome === 'sent') trybeRunSay(st, who, (res.steps || []).includes('in your sent requests') ? 'Sent. It is in your TRYBE sent requests.' : 'Sent. TRYBE accepted it.', 'ok')
     else if (res.outcome === 'already') trybeRunSay(st, who, 'TRYBE already shows a request to this brand.', 'warn')
     else if (res.outcome === 'failed') trybeRunSay(st, who, `Not sent: ${err || 'SCOUT could not send it'}.`, 'bad')
     else trybeRunSay(st, who, `Not confirmed: ${err || 'TRYBE did not show the box closing'}. Check TRYBE’s Pending Requests.`, 'warn')

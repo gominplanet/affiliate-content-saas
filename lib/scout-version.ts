@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.1'
+export const SCOUT_LATEST_VERSION = '1.53.2'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: allowed on jointrybe.com counts as allowed, one Allow window at a time, and a send that fails says how big the page was drawn. Includes 1.53.0 (new Creator Connections campaigns daily).'
+  'TRYBE: everything goes through the TRYBE tab you leave open, and requests are sent the way TRYBE\'s own button sends them, so SCOUT opens no window. Includes 1.53.1 (allowed stays allowed).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -56,6 +56,10 @@ export function isScoutOutdated(installed: string | null | undefined): boolean {
 /** SCOUT that can pull Amazon's newest Creator Connections campaigns (the
  *  "early access" grid) for the team's daily pull. */
 export const SCOUT_CC_NEW_MIN_VERSION = '1.53.0'
+
+/** SCOUT works on TRYBE only through the creator's own open TRYBE tab, and
+ *  sends requests the way TRYBE's own button does (lib/trybe-tab). */
+export const SCOUT_TRYBE_OWN_TAB_MIN_VERSION = '1.53.2'
 
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 

@@ -41,7 +41,8 @@ const BG = readFileSync('extension/background.js', 'utf8')
 // SCOUT 1.53.1: allowed is allowed, one Allow window, and a miss says its size.
 check('allowed on jointrybe.com counts as allowed', /const TRYBE_WORK_ORIGIN = \['https:\/\/jointrybe\.com\/\*'\]/.test(BG) && /permissions\.contains\(\{ origins: TRYBE_WORK_ORIGIN \}\)/.test(BG))
 check('one Allow window at a time', /if \(trybeAsking\) \{/.test(BG) && /trybeAskWin = winId/.test(BG))
-check('a send that finds no search box says how big the page was drawn', /\$\{window\.innerWidth\}x\$\{window\.innerHeight\}, \$\{Array\.from\(document\.querySelectorAll\('input'\)\)/.test(BG))
+// 1.53.2: sends no longer use TRYBE's screen at all (scripts/test-trybe-outreach).
+check('a send is TRYBE\'s own request, so no page has to be drawn', /const TRYBE_JOIN_PATH = '\/backend\/api\/discovery\/creators\/me\/requests'/.test(BG))
 
 const MIG = existsSync('supabase/migrations/446_scout_copies.sql') ? readFileSync('supabase/migrations/446_scout_copies.sql', 'utf8') : ''
 check('migration 446 is safe to run twice', /add column if not exists scout_copies jsonb/.test(MIG))

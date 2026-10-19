@@ -103,7 +103,8 @@ function fake(opts: { listHas?: boolean; failPartAt?: number; refuseComplete?: b
   check('SCOUT allows only the upload calls it needs', /submissions\\\/upload-url\$\//.test(bg) && /multipart\\\/\(initiate\|part-url\|complete\|abort\)\$\//.test(bg) && /\{ method: 'DELETE', re: /.test(bg))
   check('SCOUT copies the file from MVP with no cookies, by byte range for a part', /async function trybePutFileInPage\(fileUrl, uploadUrl, contentType, start, end\)/.test(bg) && /credentials: 'omit', headers: ranged \? \{ Range: 'bytes=' \+ start/.test(bg) && /x\.withCredentials = false/.test(bg) && /getResponseHeader\('ETag'\)/.test(bg))
   check('SCOUT answers MVP_TRYBE_PUT_FILE', /msg\.type === 'MVP_TRYBE_PUT_FILE'/.test(bg) && /requestTrybePutFile/.test(read('lib/extension-frame.ts')))
-  const sendPart = bg.slice(bg.indexOf('1.52.0 SEND TO TRYBE'), bg.indexOf('\n]\n', bg.indexOf('1.52.0 SEND TO TRYBE')))
+  // Up to the next entry's own section (1.53.2 Request to join, held by test-trybe-outreach).
+  const sendPart = bg.slice(bg.indexOf('1.52.0 SEND TO TRYBE'), bg.indexOf('1.53.2 REQUEST TO JOIN', bg.indexOf('1.52.0 SEND TO TRYBE')))
   const writes = sendPart.split('\n').filter((l) => /method: '(POST|DELETE)'/.test(l))
   check('Send to TRYBE writes only the creator\'s own submissions: 3 upload POSTs and 1 DELETE', writes.length === 4
     && writes.every((l) => l.includes('\\/backend\\/api\\/creator\\/submissions\\/')) && writes.filter((l) => /DELETE/.test(l)).length === 1)

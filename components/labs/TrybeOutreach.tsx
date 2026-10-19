@@ -23,14 +23,15 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, type LucideIcon } from 'lucide-react'
-import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { requestTrybeTab, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
@@ -198,6 +199,9 @@ const SEND_WORDS: Record<string, string> = {
   'no-message': 'The draft is empty',
   'no-answer-from-page': 'The TRYBE page did not answer',
   'request-button-not-found': 'TRYBE showed the brand but no Request to Join button',
+  [TRYBE_NOT_OPEN]: TRYBE_NOT_OPEN_WORDS,
+  // SCOUT 1.53.2 sends TRYBE's own request; TRYBE's words follow in brackets.
+  'trybe-refused': 'TRYBE turned the request down',
 }
 const sendWords = (e: string | null | undefined): string => {
   const raw = String(e || '')
@@ -489,6 +493,20 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     })
   }, [load])
   useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
+  // THE TRYBE TAB SCOUT WORKS THROUGH (SCOUT 1.53.2, lib/trybe-tab): looked at
+  // again whenever the creator comes back to this page, and every half minute
+  // while it is not open, so closing it shows here instead of as failed sends.
+  const ownTab = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION)
+  const [trybeTab, setTrybeTab] = useState<TrybeTabState | 'checking'>('checking')
+  useEffect(() => {
+    if (preview || !ownTab) return
+    let gone = false
+    const look = () => { void requestTrybeTab().then((t) => { if (!gone) setTrybeTab(t) }) }
+    look()
+    window.addEventListener('focus', look)
+    const every = window.setInterval(look, 30_000)
+    return () => { gone = true; window.removeEventListener('focus', look); window.clearInterval(every) }
+  }, [preview, ownTab])
   const canInbox = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.
@@ -1251,7 +1269,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     busy,
     sendBlocked: access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page).' : null,
   }
-  const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.' : !remaining ? `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}` : !queue.length ? 'Nothing drafted yet.' : null
+  const sendBlocked = access !== 'granted' ? 'Allow SCOUT on TRYBE first.'
+    : ownTab && trybeTab === 'closed' ? 'Open TRYBE first (top of this page) and leave that tab open: SCOUT sends through it.'
+    : ownTab && trybeTab === 'signed-out' ? 'Your TRYBE tab is signed out. Sign in there first.'
+    : !remaining ? `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}` : !queue.length ? 'Nothing drafted yet.' : null
 
   const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
   const sentRows = history.map(b => {
@@ -1337,10 +1358,14 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           { done: access !== 'no-scout' && access !== 'old', title: 'SCOUT up to date', ok: scoutVersion ? `Version ${scoutVersion}.` : 'Up to date.', todo: 'Chrome updates SCOUT by itself within a day. To do it now, open chrome://extensions, turn on Developer mode and press Update.' },
           { done: access === 'granted', title: 'SCOUT allowed on TRYBE', ok: 'Allowed.', todo: 'Chrome asks you once to let SCOUT read and act on jointrybe.com.',
             action: access === 'not-granted' ? <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button> : undefined },
-          // Counted as signed in until a read of TRYBE fails, so the card does not
-          // flash while the inbox is still being read.
-          { done: access === 'granted' && !inboxError, title: 'Signed in to TRYBE', ok: 'MVP can read your TRYBE.', todo: inboxError ? `TRYBE did not answer: ${inboxError}. Open jointrybe.com in this Chrome and sign in.` : 'Open jointrybe.com in this Chrome and sign in.',
-            action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className={btn} style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
+          ownTab
+            // SCOUT 1.53.2: the TRYBE tab SCOUT works through, open and signed in.
+            ? { done: trybeTab === 'open' || trybeTab === 'checking', title: 'TRYBE open in this Chrome', ok: trybeTabWords('open').ok, todo: trybeTabWords(trybeTab === 'checking' ? 'closed' : trybeTab).todo,
+                action: <a href={TRYBE_OPEN_URL} target="_blank" rel="noopener noreferrer" className={btn} style={{ background: PURPLE, color: '#fff' }}>Open TRYBE <ExternalLink size={12} /></a> }
+            // Counted as signed in until a read of TRYBE fails, so the card does not
+            // flash while the inbox is still being read.
+            : { done: access === 'granted' && !inboxError, title: 'Signed in to TRYBE', ok: 'MVP can read your TRYBE.', todo: inboxError ? `TRYBE did not answer: ${inboxError}. Open jointrybe.com in this Chrome and sign in.` : 'Open jointrybe.com in this Chrome and sign in.',
+                action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className={btn} style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
           { done: !!saved?.core.trim(), title: 'Your core message', ok: 'Written.', todo: 'What every brand reads, in your words. Write it once in Find brands.',
             action: <button onClick={() => { setTab('find'); setEditingCore(true) }} className={btn} style={{ border: '1px solid var(--border)' }}>Write it</button> },
           // No niche step (Seb, 2026-10-14: "niche should not be in there.. since

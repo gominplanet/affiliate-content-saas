@@ -14,6 +14,7 @@
  */
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
+import { trybeTabError, type TrybeTabState } from '@/lib/trybe-tab'
 import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
@@ -1110,6 +1111,15 @@ export async function requestFacebookAccess(ask: boolean): Promise<{ state: 'gra
   return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
 }
 
+/** SCOUT 1.53.2+: is a TRYBE tab open in this Chrome for SCOUT to work
+ *  through, and signed in (lib/trybe-tab). Opens nothing. Resolves, never
+ *  throws. */
+export async function requestTrybeTab(): Promise<TrybeTabState> {
+  const res = await sendToExtension<{ open?: boolean; signedIn?: boolean }>({ type: 'MVP_TRYBE_TAB' }, 20_000)
+  if (!res) return 'unknown'
+  return !res.open ? 'closed' : res.signedIn === false ? 'signed-out' : 'open'
+}
+
 /** TRYBE outreach (Labs). Is SCOUT allowed on TRYBE; ask: show Chrome's
  *  Allow window now when it is not. Resolves, never throws. */
 export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
@@ -1191,7 +1201,7 @@ export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; 
  *  throws. */
 export async function requestTrybeApi(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<TrybeApiResult> {
   const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
-  return res || { ok: false, error: 'SCOUT did not answer.' }
+  return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
 }
 
 export interface TrybePutResult { ok: boolean; status?: number; etag?: string | null; bytes?: number; error?: string | null; detail?: string }
@@ -1201,7 +1211,7 @@ export interface TrybePutResult { ok: boolean; status?: number; etag?: string | 
  *  Up to 16 minutes: a big part on a slow line takes a while. */
 export async function requestTrybePutFile(o: { fileUrl: string; uploadUrl: string; contentType: string; start?: number; end?: number }): Promise<TrybePutResult> {
   const res = await sendToExtension<TrybePutResult>({ type: 'MVP_TRYBE_PUT_FILE', ...o }, 970_000)
-  return res || { ok: false, error: 'SCOUT did not answer.' }
+  return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
 }
 
 export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ brandId: string; name: string; text: string | null; error: string | null
@@ -1232,7 +1242,7 @@ export interface TrybeHarvestResult {
  *  in a background tab. Nothing is pressed or sent. */
 export async function requestTrybeHarvest(maxPages = 120): Promise<TrybeHarvestResult> {
   const res = await sendToExtension<TrybeHarvestResult>({ type: 'MVP_TRYBE_HARVEST', maxPages }, 600_000)
-  return res || { ok: false, error: 'SCOUT did not answer.' }
+  return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
 }
 
 export interface TrybeSendResult {

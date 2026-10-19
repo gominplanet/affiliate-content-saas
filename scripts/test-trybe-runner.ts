@@ -27,10 +27,12 @@ const SENDER = BG.slice(BG.indexOf('async function trybeSend('), BG.indexOf('\n}
 // ── Pacing: SCOUT waits exactly as MVP's page did ──
 check('SCOUT paces sends with MVP\'s numbers', new RegExp(`shortUnder: ${OUT.SHORT_RUN_UNDER}, shortMs: ${OUT.SHORT_GAP_MS}, minMs: ${OUT.MIN_GAP_MS}, maxMs: ${OUT.MAX_GAP_MS}, breakEvery: ${OUT.BREAK_EVERY}, breakMs: \\[${OUT.BREAK_MS[0]}, ${OUT.BREAK_MS[1]}\\]`).test(RUNNER))
 
-// ── Behind only: a run never takes the screen ──
-// 1.50.1: no send comes forward at all, Send now included (Seb, 2026-10-17).
-check('a run SCOUT does alone never comes forward', !/showWorkTab|forward\(\)|cameForward/.test(SENDER) && /if \(res\.outcome === 'unconfirmed' && pressed\) \{[\s\S]{0,200}trybeBoxStillOpenInPage/.test(SENDER))
-check('the runner sends with behind on and no MVP tab to bring back', /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message \}, null, \{ behind: true \}\)/.test(RUNNER))
+// ── Nothing opens: a run sends through the creator's own TRYBE tab ──
+// 1.53.2 (Seb, 2026-10-19: "As long as nothing pops up, we're good"): a send is
+// TRYBE's own request from the TRYBE tab the creator left open. No window, no
+// tab, nothing brought forward.
+check('a send opens nothing and brings nothing forward', !/openWorkTab|tabs\.create|windows\.(create|update)|showWorkTab|forward\(\)/.test(SENDER) && /trybeApi\(\{ method: 'POST', path: TRYBE_JOIN_PATH/.test(SENDER))
+check('the runner sends with no MVP tab to bring back', /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message \}\)/.test(RUNNER))
 
 type Store = Record<string, unknown>
 async function sim(opts: {
@@ -38,6 +40,8 @@ async function sim(opts: {
   claim?: (id: string, n: number) => Record<string, unknown> | 'unreached'
   send?: (id: string) => { outcome: string; error?: string; steps?: string[] }
   stopAfter?: number
+  /** No TRYBE tab open in this Chrome. */
+  noTab?: boolean
 }) {
   const store: Store = {}
   const results: Array<{ brandId: string; outcome: string; error: string | null }> = []
@@ -65,8 +69,8 @@ async function sim(opts: {
     if (body.action === 'result') { results.push({ brandId: body.brandId, outcome: body.outcome, error: body.error ?? null }); return { ok: true, status: 200, json: async () => ({ ok: true }) } }
     return { ok: false, status: 400, json: async () => ({}) }
   }
-  const trybeSend = async (a: { url: string }, caller: unknown, o: { behind?: boolean }) => {
-    sends.push({ url: a.url, behind: !!o?.behind, at: clock })
+  const trybeSend = async (a: { url: string }) => {
+    sends.push({ url: a.url, behind: true, at: clock })
     if (opts.stopAfter != null && sends.length === opts.stopAfter) {
       const st = store.mvpTrybeRun as { on: boolean }
       store.mvpTrybeRun = { ...st, on: false }
@@ -74,9 +78,9 @@ async function sim(opts: {
     const id = a.url.split('/').pop() as string
     return opts.send ? opts.send(id) : { outcome: 'sent', steps: ['pressed'] }
   }
-  const fn = new Function('chrome', 'fetch', 'trybeSend', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick, trybeRunSave, trybeRunState }`)
+  const fn = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick, trybeRunSave, trybeRunState }`)
   const FakeDate = { now: () => clock } as unknown as DateConstructor
-  const api = fn(chrome, fetchFake, trybeSend, /^https:\/\/(www\.)?mvpaffiliate\.io$/, FakeDate, () => 0)
+  const api = fn(chrome, fetchFake, trybeSend, async () => (opts.noTab ? null : 7), /^https:\/\/(www\.)?mvpaffiliate\.io$/, FakeDate, () => 0)
   await api.trybeRunSave({ on: true, origin: 'https://www.mvpaffiliate.io', ids: opts.ids, idx: 0, sent: 0, failStreak: 0, misses: 0, current: null, busyAt: null, nextAt: 0, startedAt: clock, log: [] })
   // Each tick, then the clock moves to the next wake.
   for (let i = 0; i < 400; i++) {
@@ -94,6 +98,11 @@ async function main() {
     const r = await sim({ ids: ['a', 'b', 'c'] })
     check('a run sends each brand once, in order, and ends Done', r.claims.join() === 'a,b,c' && r.results.map(x => `${x.brandId}:${x.outcome}`).join() === 'a:sent,b:sent,c:sent' && !r.st.on && /Done: 3 sent/.test(r.st.ended || ''), JSON.stringify(r.st.ended))
     check('every send is out of sight', r.sends.length === 3 && r.sends.every(s => s.behind))
+  }
+  {
+    // 1.53.2: no TRYBE tab, nothing claimed, the run says why and stops.
+    const r = await sim({ ids: ['a', 'b'], noTab: true })
+    check('with no TRYBE tab open nothing is claimed or sent, and the run says to open TRYBE', r.claims.length === 0 && r.sends.length === 0 && /TRYBE is not open in this Chrome\. Open it from MVP's TRYBE page, leave the tab open/.test(r.st.ended || ''))
   }
   {
     const r = await sim({ ids: ['a', 'b', 'c'], claim: (id, n) => n === 1 ? { capped: true, dailyCap: 80, nextFreeAt: '2026-10-17T10:00:00Z' } : { ok: true, name: id, url: `https://jointrybe.com/x/${id}`, message: 'Hi' } })
@@ -134,7 +143,7 @@ async function main() {
     const chrome = { storage: { local: { get: async (k: string) => ({ [k]: JSON.parse(JSON.stringify(store[k])) }), set: async (o: Store) => { Object.assign(store, JSON.parse(JSON.stringify(o))) } } }, alarms: { create: () => {}, clear: () => {}, onAlarm: { addListener: () => {} } }, runtime: { onStartup: { addListener: () => {} } } }
     const fetchFake = async (_u: string, init: { body: string }) => { const b = JSON.parse(init.body); if (b.action === 'result') results.push({ brandId: b.brandId, outcome: b.outcome }); return { ok: true, status: 200, json: async () => (b.action === 'claim' ? { ok: true, name: b.brandId, url: `https://jointrybe.com/x/${b.brandId}`, message: 'Hi' } : { ok: true }) } }
     const send = async (a: { url: string }) => { sent.push(a.url.split('/').pop() as string); return { outcome: 'sent', steps: ['pressed'] } }
-    const api = new Function('chrome', 'fetch', 'trybeSend', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick }`)(chrome, fetchFake, send, /^https:\/\/(www\.)?mvpaffiliate\.io$/, { now: () => 10_000_000 }, () => 0)
+    const api = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick }`)(chrome, fetchFake, send, async () => 7, /^https:\/\/(www\.)?mvpaffiliate\.io$/, { now: () => 10_000_000 }, () => 0)
     await api.trybeRunTick()
     check('a send cut off by a restart is not confirmed, and the next brand goes', results[0]?.brandId === 'a' && results[0]?.outcome === 'unconfirmed' && sent.join() === 'b', JSON.stringify({ results, sent }))
   }
