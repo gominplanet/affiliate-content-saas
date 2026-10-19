@@ -61,6 +61,18 @@ There is no free plan, and no Amazon, Creator or Studio plan to quote. Those
 tier names still exist in `lib/tier.ts` for legacy accounts; never present
 them as plans in reports, comparisons, copy or answers.
 
+## Links say where they go
+
+Every link a customer can see and click names where it leads (Seb,
+2026-10-19). An Amazon link says Amazon in its visible words ("Check today's
+price on Amazon", "See it on Amazon"); a Walmart, Best Buy, Target, TikTok
+Shop or brand store link names that store. A short or cloaked link (Passport,
+Geniuslink, Bitly) hides the store in its address, so its words or the
+sentence around it must name the store. Never a bare "Buy now", "Click here"
+or "Shop now" when the store is known. A QR code holds no product link; it
+leads to the creator's own page, and that page names the store on every link
+and carries the disclosure.
+
 ## Writing style
 
 No em-dashes, en-dashes, or spaced-hyphen sentence breaks in anything
