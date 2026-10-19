@@ -605,6 +605,10 @@ export default function DashboardShellV2({
       items: [
         // The "Published Posts & Social Push" tab of /content.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push', alsoActiveOn: ['/content?tab=scheduled'] },
+        // ONE DEALS HUB, NEAR THE TOP OF SHARE (Seb, 2026-10-19: "We only need
+        // one. I don't need it in the labs. I need deals hub under share"). Its
+        // page holds the file import too; the separate Labs link is gone.
+        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : 'Live' },
         // Was Social Influencer: pins, Instagram posts and stories for a product.
         { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social designs', gate: canAmazonHub, onAmazon: 'included' },
         { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders, onAmazon: 'included' },
@@ -619,7 +623,6 @@ export default function DashboardShellV2({
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier), onAmazon: 'included' },
         // The Amazon plan includes Passport (lib/feature-access NAV_ACCESS.passport).
         { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier), onAmazon: 'included' },
-        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
       ],
     },
     {
@@ -693,10 +696,6 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Deals Hub import: the member's own Deals Hub file, read in the
-        // browser, posted to social as each deal starts (lib/labs-preview
-        // deals_import). It lives on the Deals Hub page; this goes straight to it.
-        { href: '/deals#deals-import', icon: <UploadCloud size={15} />, label: 'Deals Hub import', gate: isAdmin, badge: 'New' },
       ],
     },
     {

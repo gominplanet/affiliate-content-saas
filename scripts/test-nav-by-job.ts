@@ -114,6 +114,26 @@ for (const p of ['app/pricing/page.tsx', 'app/page.tsx', 'components/tour/tour-c
 const labels = Array.from(nav.matchAll(/label: '([^']*)'/g)).map((m) => m[1])
 check('no dash punctuation in menu names', labels.every((l) => !/[—–]| - /.test(l)), labels.filter((l) => /[—–]| - /.test(l)).join(', '))
 
+// ONE DEALS HUB, IN SHARE (Seb, 2026-10-19: "We only need one. I don't need
+// it in the labs. I need deals hub under share"). The import is on its page.
+{
+  const share = nav.slice(nav.indexOf("label: 'Share',"), nav.indexOf("label: 'Work with brands',"))
+  check('Deals Hub sits in Share, right after Social Push', share.indexOf("label: 'Deals Hub'") > share.indexOf("label: 'Social Push'") && share.indexOf("label: 'Deals Hub'") < share.indexOf("label: 'Social designs'"))
+  check('there is one Deals Hub link, with no separate Labs import', (nav.match(/href: '\/deals[#']/g) || []).length === 1 && !/Deals Hub import/.test(nav))
+  check('Deals Hub says Live in season', /label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED \? 'Seasonal' : 'Live'/.test(nav))
+}
+// WHAT DO YOU WANT TO DO, AT THE TOP OF THE DASHBOARD (Seb, 2026-10-19: "I
+// think drop should be right there to start everything").
+{
+  const D = readFileSync('app/(dashboard)/dashboard/page.tsx', 'utf8')
+  const H = readFileSync('components/dashboard/StartHere.tsx', 'utf8')
+  check('the dashboard asks what you want to do right under the welcome', D.indexOf('<StartHere ') > D.indexOf('Welcome back, {firstName}.') && D.indexOf('<StartHere ') < D.indexOf('<FirstWinChecklist'))
+  check('Upload with Drop leads, then make and promote', H.indexOf('Upload finished videos') < H.indexOf('Make a video') && H.indexOf('Make a video') < H.indexOf('Promote a product') && /canDrop \? \{ href: '\/drop', label: 'Start with Drop' \}/.test(H))
+  check('each choice shows only what the plan opens', /canDrop=\{canUsePreview\('drop', tier\)\}/.test(D) && /videoTools=\{hasVideoTools\(tier\)\}/.test(D) && /deals=\{canSeeNav\('deals', tier\)\}/.test(D))
+  check('the question is asked once', (D.match(/What do you want to do\?<\/p>/g) || []).length === 0 && /More ways to start/.test(D))
+  check('no dashes in what the creator reads', !/[–—]| - /.test(H.split('\n').filter((l) => !l.trim().startsWith('//')).join(' ')))
+}
+
 if (failures.length) {
   console.error(`\n❌ nav-by-job: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

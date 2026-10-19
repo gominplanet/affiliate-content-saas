@@ -47,6 +47,9 @@ import DashboardTierGate from '@/components/dashboard/DashboardTierGate'
 import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
+import StartHere from '@/components/dashboard/StartHere'
+import { canUsePreview } from '@/lib/labs-preview'
+import { hasVideoTools } from '@/lib/amazon-plan'
 import {
   PlaySquare, FileText, Layers, Gauge,
   Facebook,
@@ -236,6 +239,12 @@ export default async function DashboardPage() {
             </div>
           )}
         </div>
+        {/* What do you want to do? Upload (Drop) leads, then make and promote
+            (Seb, 2026-10-19: "I think drop should be right there to start
+            everything"). */}
+        <div className="relative px-6 sm:px-8 -mt-4 pb-10">
+          <StartHere canDrop={canUsePreview('drop', tier)} videoTools={hasVideoTools(tier)} deals={canSeeNav('deals', tier)} encore={canUsePreview('on_sale', tier)} />
+        </div>
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
@@ -279,7 +288,8 @@ export default async function DashboardPage() {
             YouTube + social setup) knows exactly where to go for each task.
             Sit just under the hero so the page is "action-first". */}
         <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.18)' }}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>What do you want to do?</p>
+          {/* The question itself is asked at the top now (StartHere); these are the rest. */}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>More ways to start</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Community first — most valuable "next thing to do" for a creator:
                 support, what's-working tips, and member-only offers. Opens the
