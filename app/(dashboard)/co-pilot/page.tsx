@@ -31,7 +31,7 @@ import { readComparisonSlots, productLinksInText, type ComparisonSlotInput } fro
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus,
+  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus, EyeOff,
 } from 'lucide-react'
 
 /** Walkthrough shown beside the page title. */
@@ -681,8 +681,11 @@ function FirstCommentsToPin() {
   )
 }
 
-function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null, onApplied, isShort = null }: {
+function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null, onApplied, onHide, isShort = null }: {
   video: DraftVideo
+  /** HIDE FROM CO-PILOT (Seb, 2026-10-19): the creator never wants this video
+   *  on the list again. The parent keeps it hidden and offers it back. */
+  onHide?: (videoId: string) => void
   userTier: Tier
   /** Why the playlist list is empty, when it is: still loading, could not be
    *  read (and why), or the channel has none. Null when playlists loaded. */
@@ -2788,6 +2791,13 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                 {shortMode ? 'Short' : isShort === null ? 'Short?' : 'Not a Short'}
               </button>
             )}
+            {onHide && (
+              <button type="button" onClick={() => onHide(video.youtubeVideoId)}
+                className="ml-auto flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] hover:bg-gray-100 dark:hover:bg-white/10"
+                title="Take this video off your Co-Pilot list. Nothing changes on YouTube, and you can bring it back.">
+                <EyeOff size={10} /> Hide
+              </button>
+            )}
             {cardAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
                 <Tag size={9} /> ASIN: {cardAsin}
@@ -4321,6 +4331,11 @@ const VideoStudioCard = React.memo(VideoStudioCardImpl)
 export default function StudioPage() {
   const supabase = createBrowserClient()
   const [drafts, setDrafts] = useState<DraftVideo[]>([])
+  // HIDDEN FROM CO-PILOT (migration 443): videos the creator took off the
+  // list. Kept on the server so they stay off on every device and reload.
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
+  const hiddenRef = useRef(hidden)
+  hiddenRef.current = hidden
   // SHORT MODE (Labs): which listed videos YouTube says are Shorts.
   const [shortsMap, setShortsMap] = useState<Record<string, boolean | null>>({})
   const [loading, setLoading] = useState(true)
@@ -4433,6 +4448,10 @@ export default function StudioPage() {
   // fresh too (it fetches /api/youtube/calendar keyed off this nonce).
   const [calRefreshNonce, setCalRefreshNonce] = useState(0)
 
+  // A hidden video is gone from every tab, every count and every search.
+  const shownDrafts = useMemo(() => (hidden.size ? drafts.filter((v) => !hidden.has(v.youtubeVideoId)) : drafts), [drafts, hidden])
+  const hiddenHere = useMemo(() => (hidden.size ? drafts.filter((v) => hidden.has(v.youtubeVideoId)).length : 0), [drafts, hidden])
+
   // Bucket the current drafts list into the 4 workflow tabs. Recomputes
   // whenever drafts change — cheap (just regex per video). Search bypasses
   // tab filtering: search results show across all categories.
@@ -4441,13 +4460,13 @@ export default function StudioPage() {
       'todo': [],
       'shipped': [],
     }
-    for (const v of drafts) buckets[classifyVideo(v)].push(v)
+    for (const v of shownDrafts) buckets[classifyVideo(v)].push(v)
     for (const k of Object.keys(buckets) as VideoTab[]) buckets[k].sort(byNewestUpload)
     return buckets
-  }, [drafts])
+  }, [shownDrafts])
   // Search results also newest-first.
   const visibleDrafts = activeQuery
-    ? [...drafts].sort(byNewestUpload)
+    ? [...shownDrafts].sort(byNewestUpload)
     : tabbed[activeTab]
 
   // On first load, if the default tab ('todo') is empty, jump to the
@@ -4706,7 +4725,7 @@ export default function StudioPage() {
         cursor = data.nextPageToken as string | undefined
         setNextPageToken(cursor)
         // Stop as soon as this batch surfaced a real to-do draft.
-        if (incoming.some(v => classifyVideo(v) === 'todo')) break
+        if (incoming.some(v => classifyVideo(v) === 'todo' && !hiddenRef.current.has(v.youtubeVideoId))) break
         if (!cursor) break
       }
     } catch {
@@ -4745,6 +4764,51 @@ export default function StudioPage() {
   // SEARCH AND FILTER ON SCREEN: a bare load() here listed the new channel's
   // drafts under the old search label, with Include published still ticked.
   useEffect(() => { void load({ query: activeQuery, includePublished }) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The hidden list, read once. Without migration 443 nothing is hidden and
+  // the Hide button says why when pressed.
+  useEffect(() => {
+    let alive = true
+    fetch('/api/youtube/drafts/hidden').then((r) => r.json()).then((d) => {
+      if (alive && Array.isArray(d?.ids)) setHidden(new Set(d.ids as string[]))
+    }).catch(() => { /* the list shows everything, as before */ })
+    return () => { alive = false }
+  }, [])
+  const saveHidden = useCallback(async (body: Record<string, unknown>): Promise<string | null> => {
+    try {
+      const r = await fetch('/api/youtube/drafts/hidden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) return String(d.error || `MVP could not save that (${r.status}).`)
+      if (Array.isArray(d.ids)) setHidden(new Set(d.ids as string[]))
+      return null
+    } catch { return 'Could not reach MVP. Nothing was hidden.' }
+  }, [])
+  const unhideVideo = useCallback(async (videoId: string) => {
+    setHidden((h) => { const n = new Set(h); n.delete(videoId); return n })
+    const why = await saveHidden({ videoId, hidden: false })
+    if (why) { setHidden((h) => new Set(h).add(videoId)); toast.error(why) }
+  }, [saveHidden])
+  // Stable, so the memoised cards do not re-render. Off the list at once,
+  // saved, and put back with the reason if the save did not happen.
+  const hideVideo = useCallback(async (videoId: string) => {
+    setHidden((h) => new Set(h).add(videoId))
+    const why = await saveHidden({ videoId, hidden: true })
+    if (why) {
+      setHidden((h) => { const n = new Set(h); n.delete(videoId); return n })
+      toast.error(why)
+      return
+    }
+    toast.success('Hidden from Co-Pilot. It will not come back on this list.', {
+      action: { label: 'Undo', onClick: () => { void unhideVideo(videoId) } },
+    })
+  }, [saveHidden, unhideVideo])
+  const unhideAll = useCallback(async () => {
+    const before = hiddenRef.current
+    setHidden(new Set())
+    const why = await saveHidden({ clearAll: true })
+    if (why) { setHidden(before); toast.error(why) }
+    else toast.success('Every hidden video is back on the list.')
+  }, [saveHidden])
 
   // Stable, so the memoised cards do not all re-render when this page does.
   const markApplied = useCallback((videoId: string) => {
@@ -5110,6 +5174,12 @@ export default function StudioPage() {
                       ? <>Generate metadata on a video (or schedule/publish it on YouTube). Handled videos land here.</>
                       : <>Switch tabs above to see your other videos.</>}
                   </p>
+                  {hiddenHere > 0 && (
+                    <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-2">
+                      {hiddenHere} {hiddenHere === 1 ? 'video is' : 'videos are'} hidden from this list.{' '}
+                      <button type="button" onClick={() => void unhideAll()} className="underline font-semibold text-[#7C3AED]">Show {hiddenHere === 1 ? 'it' : 'them'} again</button>
+                    </p>
+                  )}
                 </>
               ) : (
                 <>
@@ -5136,9 +5206,17 @@ export default function StudioPage() {
                     playlists={playlists}
                     playlistsNote={playlistsNote}
                     onApplied={markApplied}
+                    onHide={hideVideo}
                   />
                 ))}
               </div>
+              {/* WHAT IS HIDDEN IS SAID, and can come back. */}
+              {hiddenHere > 0 && (
+                <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-4">
+                  {hiddenHere} {hiddenHere === 1 ? 'video is' : 'videos are'} hidden from this list.{' '}
+                  <button type="button" onClick={() => void unhideAll()} className="underline font-semibold text-[#7C3AED]">Show {hiddenHere === 1 ? 'it' : 'them'} again</button>
+                </p>
+              )}
 
               {/* Load all drafts — one click walks the rest of the
                   uploads playlist until the cursor is exhausted. The API
