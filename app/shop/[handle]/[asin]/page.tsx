@@ -17,7 +17,7 @@ import { shopTileImage, healShopTiles } from '@/lib/tile-image'
 import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { themeFor, shopCtaLabel, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
+import { themeFor, shopCtaLabel, retailerForItem, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
 import { blogPostUrlForAsin } from '@/lib/pinterest-pin-dest-server'
 
 export const runtime = 'nodejs'
@@ -107,7 +107,13 @@ export default async function ProductOnBioPage({ params }: { params: Promise<{ h
           <a href={`/shop/${encodeURIComponent(page.handle)}`} style={secondary}>See everything I recommend</a>
         </div>
 
+        {/* THE ASSOCIATES STATEMENT, HERE TOO (Seb, 2026-10-19). This page is
+            where a QR on a YouTube video lands when there is no blog post
+            (lib/video-codes), and Associates support's rule is that the QR
+            leads to the creator's own site, with the links and the disclosure
+            on that site. The shop's main page said it; this one did not. */}
         <p style={{ fontSize: 11, color: t.sub, opacity: 0.75, margin: '18px auto 0', maxWidth: 440, lineHeight: 1.5, textAlign: 'center' }}>
+          {retailerForItem(item) === 'Amazon' && <>As an Amazon Associate, {who.replace(/^@/, '')} earns from qualifying purchases. </>}
           When you purchase through the links on this page, I may earn a commission at no cost to you.
         </p>
       </div>

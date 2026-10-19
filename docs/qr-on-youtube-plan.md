@@ -239,6 +239,13 @@ post or their declared shop page, and `neverAmazon` (tested in
 scripts/test-video-qr.ts) stops it ever resolving to Amazon, an Amazon
 shortener or a Passport link. Nothing in this design needs to change.
 
+**Seb's decision (2026-10-19): settled.** "The QR code directs customers to
+my site is okay. And then on the site end, we can have clear, visible links
+with the proper disclaimer." No follow-up question is sent. The page a scan
+lands on carries the links, marked sponsored, a button that names the store
+("Buy now from Amazon"), and the Associates statement; the single product
+page gained that statement the same day.
+
 **What it does not say.** The reply does not mention televisions, so whether
 it covers Section 7(b) depends on the question it answered. If the question
 named YouTube watched on a TV, it is covered; if not, one follow-up naming it

@@ -145,6 +145,16 @@ check('nothing in the migration drops a table or deletes a row', !/drop table|de
 // code away when a subscription ends.
 check('a code outlives the row it was burned from', /launch_item_id uuid references public\.launch_items\(id\) on delete set null/.test(sql))
 
+// Seb, 2026-10-19, after Associates support's answer (a QR may lead to your
+// own site if it holds no product link): the page a scan lands on carries the
+// links and the disclosure. The single product page did not say the
+// Associates statement; it does now, beside a button naming the store.
+{
+  const P = read('app/shop/[handle]/[asin]/page.tsx')
+  check('the QR landing page names the store, marks the link sponsored and says the Associates statement',
+    /\{shopCtaLabel\(item\)\}/.test(P) && /rel="nofollow sponsored noopener"/.test(P) && /As an Amazon Associate, \{who\.replace\(\/\^@\/, ''\)\} earns from qualifying purchases\./.test(P))
+}
+
 if (fails.length) {
   console.error(`\n❌ video-qr: ${fails.length} failure(s)\n`)
   for (const f of fails) console.error(`   • ${f}`)
