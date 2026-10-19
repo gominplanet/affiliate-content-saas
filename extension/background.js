@@ -1689,10 +1689,13 @@ function ccListMyCampaignsInPage(opts) {
             if (o.filterOptions && typeof o.filterOptions === 'object') o.filterOptions.campaignType = null
             // Apply the keyword search (or clear it) on the replayed query.
             o.searchOptions = searchOptionsFor()
+            // NEW CAMPAIGNS ONLY (1.53.0): Amazon's own "early access" filter,
+            // which holds a campaign's first week. The control probe leaves it off.
+            if (o.filterOptions && typeof o.filterOptions === 'object') o.filterOptions.earlyAccessOnly = v.control ? null : (opts.earlyAccessOnly ? true : o.filterOptions.earlyAccessOnly)
             return JSON.stringify(o)
           } catch (e) { /* fall through to synthetic body */ }
         }
-        const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE)
+        const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE, opts.earlyAccessOnly && !v.control ? { earlyAccessOnly: true } : {})
         const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber: nextToken ? 1 : pageNumber, pageSize: 30, creatorId }
         if (!v.omitSearch) b.searchOptions = kw ? searchOptionsFor() : (v.searchOptions || [])
         return JSON.stringify(b)
@@ -1791,6 +1794,20 @@ function ccListMyCampaignsInPage(opts) {
           diag.variants.push({ label: v.label, status: first.status, ads: first.ads.length, err: first.errText || undefined })
           if (first.ads.length) {
             if (v.diagOnly) { tallyStatuses(first.ads); continue }
+            // DID AMAZON TAKE THE FILTER (1.53.0)? The same query without it is
+            // asked once; the same total both ways means the filter was ignored,
+            // and the whole catalogue is not paged through by mistake.
+            if (opts.earlyAccessOnly) {
+              try {
+                const ctl = await runPage({ ...v, control: true }, 1, null)
+                diag.controlTotal = ctl.total
+                diag.earlyTotal = first.total
+                if (typeof ctl.total === 'number' && typeof first.total === 'number' && first.total >= ctl.total) {
+                  diag.filterIgnored = true
+                  return { ok: true, campaigns: [], creatorId, total: first.total, hasMore: false, filterIgnored: true, diag }
+                }
+              } catch (e) { diag.controlErr = (e && e.message) || 'exception' }
+            }
             picked = v
             collect(first.ads)
             if (first.total != null) diag.total = first.total
@@ -1887,6 +1904,7 @@ async function listMyCampaignsApi(params) {
         capturedHeaders: useHeaders,
         keyword,
         maxPages,
+        earlyAccessOnly: !!(params && params.earlyAccessOnly),
       }],
     })
     const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
@@ -12649,6 +12667,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // of the creator's joined campaigns is findable — even at 100k+ — without
     // pulling them all. maxPages caps the fetch for a responsive live search.
     listMyCampaignsApi({ keyword: msg.keyword || '', maxPages: msg.maxPages })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_NEW_CAMPAIGNS') {
+    // AMAZON'S NEWEST CAMPAIGNS, for the team's daily pull (1.53.0; Seb,
+    // 2026-10-19: new campaigns should reach MVP without anyone uploading, and
+    // never from members). The opportunity grid with Amazon's own "early
+    // access" filter, which holds each campaign's first week. Paged in the
+    // background; a filter Amazon ignored is caught and said, not paged through.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 6 * 60 * 1000)
+    listMyCampaignsApi({ keyword: '', opportunities: true, earlyAccessOnly: true, maxPages: Math.min(Number(msg.maxPages) || 200, 300) })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

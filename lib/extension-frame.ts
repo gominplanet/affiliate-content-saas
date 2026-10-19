@@ -576,6 +576,23 @@ export async function requestCcBrandSearch(keyword: string, opts?: { maxPages?: 
   return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, error: resp.error, diag: resp.diag }
 }
 
+/**
+ * Amazon's newest Creator Connections campaigns, for the team's daily pull
+ * (SCOUT 1.53.0): the opportunity grid with Amazon's own "early access" filter,
+ * which holds each campaign's first week. `filterIgnored` is SCOUT saying the
+ * same query without the filter gave the same total, so nothing was paged.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestCcNewCampaigns(opts?: { maxPages?: number }): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; total?: number; hasMore?: boolean; filterIgnored?: boolean; error?: string; diag?: Record<string, unknown> }> {
+  if (!(await isExtensionAvailable())) return { ok: false, campaigns: [], error: 'not-installed' }
+  const resp = await sendToExtension<{
+    ok?: boolean; campaigns?: MyCcCampaign[]; total?: number; hasMore?: boolean; filterIgnored?: boolean; error?: string
+    diag?: Record<string, unknown>
+  }>({ type: 'MVP_CC_NEW_CAMPAIGNS', maxPages: opts?.maxPages }, 6 * 60 * 1000 + 5000)
+  if (!resp) return { ok: false, campaigns: [], error: 'timeout' }
+  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, filterIgnored: !!resp.filterIgnored, error: resp.error, diag: resp.diag }
+}
+
 export interface EpcApiLoadProgress { loaded: number; total: number | null; pages: number; addedTotal: number }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface EpcApiLoadResult { ok: boolean; loaded: number; total: number | null; addedTotal: number; error?: string; sample?: string | null; canceled?: boolean; diag?: any }

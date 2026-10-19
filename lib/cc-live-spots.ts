@@ -67,3 +67,19 @@ export function liveCheckWords(r: LiveSpotsResult): string {
   ].filter(Boolean)
   return `Checked ${on} live on Amazon: found ${r.found.toLocaleString()}. ${parts.length ? `${parts.join('; ')}.` : 'Nothing about them changed.'}`
 }
+
+/** The team's daily pull of Amazon's newest campaigns, in words (SCOUT 1.53.0;
+ *  Seb, 2026-10-19: new campaigns reach MVP without anyone uploading, and only
+ *  through the team). What happened, never what was meant to. Pure. */
+export function newCampaignsWords(r: { ok: boolean; error?: string; filterIgnored?: boolean; found: number; added: number; saved: number; missingFields: number; failed: number }): { tone: 'ok' | 'warn'; text: string } {
+  if (!r.ok) return { tone: 'warn', text: `Amazon’s new campaigns were not pulled today: ${r.error === 'not-installed' ? 'SCOUT is not connected' : r.error === 'timeout' ? 'Amazon took too long' : r.error || 'no answer'}. MVP tries again on your next visit.` }
+  if (r.filterIgnored) return { tone: 'warn', text: 'Amazon ignored the early access filter, so MVP did not pull anything (it would have been the whole catalogue). The weekly import still covers new campaigns.' }
+  if (!r.found) return { tone: 'ok', text: 'Amazon has no campaigns in early access right now, so there was nothing new to add.' }
+  const parts = [
+    `${r.added.toLocaleString()} new to MVP added for everyone`,
+    r.saved ? `${r.saved.toLocaleString()} MVP already had, refreshed` : '',
+    r.missingFields ? `${r.missingFields.toLocaleString()} came without a name, commission or end date and wait for the weekly import` : '',
+    r.failed ? `${r.failed.toLocaleString()} could not be saved` : '',
+  ].filter(Boolean)
+  return { tone: r.failed || (!r.added && r.missingFields) ? 'warn' : 'ok', text: `Amazon’s new campaigns (early access): found ${r.found.toLocaleString()}. ${parts.join('; ')}.` }
+}

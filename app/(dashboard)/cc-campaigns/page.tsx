@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { acceptCampaignViaScout, recordAccept } from '@/lib/accept-campaign'
 import { campaignRunway } from '@/lib/campaign-runway'
-import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe, requestCcNewCampaigns, getScoutStatus } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
@@ -31,7 +31,8 @@ import FavoriteBrandsPanel from '@/components/campaigns/FavoriteBrandsPanel'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import { ccProofIds } from '@/lib/cc-access'
-import { refreshLiveSpots, liveSpotTerms, liveCheckWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
+import { refreshLiveSpots, liveSpotTerms, liveCheckWords, newCampaignsWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
+import { scoutAtLeast, SCOUT_CC_NEW_MIN_VERSION } from '@/lib/scout-version'
 import { brandsToRecheck, spotAgeWords } from '@/lib/cc-spot-freshness'
 
 // Max campaigns selectable for one bulk-message run.
@@ -837,6 +838,39 @@ export default function CcCampaignsPage() {
       if (r.saved > 0 || r.added > 0) void fetchPage(1, false)
     }).catch(() => setLiveCheck(null)).finally(() => { liveBusy.current = false })
   }, [joinedOnly, locked, loading, campaigns, q, sort, minCommission, payingOnly, hasSpots, fetchPage])
+
+  // AMAZON'S NEW CAMPAIGNS, ONCE A DAY, BY THE TEAM (SCOUT 1.53.0; Seb,
+  // 2026-10-19: new campaigns should reach MVP without anyone uploading, and
+  // never from members). The team's first visit of the day asks Amazon for its
+  // early access campaigns (each one's first week) and the team's live write
+  // adds the ones MVP does not have. The day is only marked done once the run
+  // finished, and the outcome is said either way.
+  const newPull = useRef(false)
+  useEffect(() => {
+    if (tier !== 'admin' || locked || newPull.current) return
+    const KEY = 'mvp:cc-new-day'
+    const today = new Date().toISOString().slice(0, 10)
+    try { if (localStorage.getItem(KEY) === today) return } catch { return }
+    newPull.current = true
+    void (async () => {
+      const scout = await getScoutStatus().catch(() => ({ installed: false, version: null as string | null }))
+      if (!scout.installed || !scoutAtLeast(scout.version, SCOUT_CC_NEW_MIN_VERSION)) return
+      const got = await requestCcNewCampaigns({ maxPages: 200 })
+      const tally = { ok: got.ok, error: got.error, filterIgnored: got.filterIgnored, found: got.campaigns.length, added: 0, saved: 0, missingFields: 0, failed: 0 }
+      if (got.ok && !got.filterIgnored) {
+        for (let i = 0; i < got.campaigns.length; i += 1000) {
+          const w = await fetch('/api/campaigns/ingest-live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: got.campaigns.slice(i, i + 1000) }) })
+          const d = await w.json().catch(() => null) as { added?: number; upserted?: number; unknown?: number; failed?: number } | null
+          if (!w.ok || !d) { tally.failed += Math.min(1000, got.campaigns.length - i); continue }
+          tally.added += d.added ?? 0; tally.saved += d.upserted ?? 0; tally.missingFields += d.unknown ?? 0; tally.failed += d.failed ?? 0
+        }
+      }
+      if (got.ok) { try { localStorage.setItem(KEY, today) } catch { /* runs again next visit */ } }
+      const said = newCampaignsWords(tally)
+      if (said.tone === 'warn') toast.warning(said.text, { duration: 12000 }); else toast.success(said.text, { duration: 8000 })
+      if (tally.added > 0) void fetchPage(1, false)
+    })()
+  }, [tier, locked, fetchPage])
 
   // Joined-only is a LIVE SCOUT search — each run opens an Amazon tab, so it must
   // ONLY re-run on the keyword (fetchJoinedLive depends on q) and the toggle. The

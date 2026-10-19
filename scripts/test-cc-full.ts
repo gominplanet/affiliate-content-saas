@@ -77,6 +77,23 @@ check('a live check sends every campaign Amazon returned, not only those with a 
   check('the team adding them is said', /3 new to MVP added to the list for everyone/.test(liveCheckWords({ ...base, notInMvp: 0, added: 3 })))
   check('none on Amazon is said as none', /Amazon has no open campaigns for it right now/.test(liveCheckWords({ ...base, found: 0, notInMvp: 0 })))
 }
+// AMAZON'S NEW CAMPAIGNS, ONCE A DAY, BY THE TEAM (SCOUT 1.53.0; Seb,
+// 2026-10-19: no uploads, and never from members).
+{
+  const BG = read('extension/background.js')
+  const P = read('app/(dashboard)/cc-campaigns/page.tsx')
+  check('SCOUT asks Amazon for its early access grid, and only the team runs it',
+    /type === 'MVP_CC_NEW_CAMPAIGNS'/.test(BG) && /earlyAccessOnly: true, maxPages/.test(BG) && /if \(tier !== 'admin' \|\| locked \|\| newPull\.current\) return/.test(P))
+  check('a filter Amazon ignored is caught before the whole catalogue is paged',
+    /const ctl = await runPage\(\{ \.\.\.v, control: true \}, 1, null\)/.test(BG) && /first\.total >= ctl\.total/.test(BG) && /filterIgnored: true/.test(BG))
+  check('once a day, marked done only after it ran, and the outcome is said either way',
+    /const KEY = 'mvp:cc-new-day'/.test(P) && P.indexOf("localStorage.setItem(KEY, today)") > P.indexOf('await requestCcNewCampaigns') && /newCampaignsWords\(tally\)/.test(P))
+  const { newCampaignsWords } = require('../lib/cc-live-spots') as typeof import('../lib/cc-live-spots')
+  const base = { ok: true, found: 40, added: 12, saved: 28, missingFields: 0, failed: 0 }
+  check('what it added is counted', /found 40\. 12 new to MVP added for everyone; 28 MVP already had, refreshed\./.test(newCampaignsWords(base).text))
+  check('an ignored filter is a warning, not a quiet zero', newCampaignsWords({ ...base, filterIgnored: true }).tone === 'warn')
+  check('a failed pull says it tries again', /MVP tries again on your next visit/.test(newCampaignsWords({ ...base, ok: false, error: 'timeout' }).text))
+}
 // The search page names the keyword its list was fetched for, drops a slower
 // answer that arrives after a newer one, and says when a search failed.
 {

@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.52.3'
+export const SCOUT_LATEST_VERSION = '1.53.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -53,6 +53,10 @@ export function isScoutOutdated(installed: string | null | undefined): boolean {
  * for every creator until Chrome pulled the new build, which on the Web Store
  * waits for review first. Raise this only when the page needs something an
  * older SCOUT cannot do. */
+/** SCOUT that can pull Amazon's newest Creator Connections campaigns (the
+ *  "early access" grid) for the team's daily pull. */
+export const SCOUT_CC_NEW_MIN_VERSION = '1.53.0'
+
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 
 /** The oldest SCOUT that can pin a comment MVP posted (On sale now). */
