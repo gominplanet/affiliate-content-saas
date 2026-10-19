@@ -69,6 +69,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { injectPriceStrip } from '@/lib/price-strip'
 import { enrichMultiProductLinks, multiProductFallbackNote } from '@/lib/multi-product'
+import { storeOf } from '@/lib/store-name'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { scoreAio } from '@/lib/aio-score'
@@ -711,7 +712,6 @@ async function handleGenerate(request: Request) {
   // that leads with a Walmart link sells on Walmart: the post links there and
   // its buttons say Walmart, even when the title carries an Amazon ASIN.
   const walmartLead = leadingWalmartLink(rawDescription, site.wordpress_url ?? null)
-  const retailerLabel: string | null = walmartLead ? 'Walmart' : null
   if (walmartLead) {
     destination = walmartLead
   } else if (titleAsin || descAsin) {
@@ -804,6 +804,15 @@ async function handleGenerate(request: Request) {
       }
     }
   }
+
+  // THE STORE THE BUTTONS NAME (Seb, 2026-10-19: "they need to know where
+  // they're going to end up"). A creator's own store or brand link got "Get
+  // the best price today", which names nowhere. The destination says it now:
+  // Walmart, Best Buy, or the brand's site by its address. Amazon keeps the
+  // Amazon path (its disclosure hangs on it), and a link that still hides its
+  // store names none rather than a wrong one.
+  const destinationStore = walmartLead ? 'Walmart' : asinOverride ? null : storeOf(destination)
+  const retailerLabel: string | null = destinationStore && destinationStore !== 'Amazon' ? destinationStore : null
 
   // Step 2 — turn the destination into the link used throughout the post.
   // If the user has Geniuslink connected, wrap ANY destination with it

@@ -25,6 +25,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
+import { storeOf } from '@/lib/store-name'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
@@ -538,11 +539,15 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   bodyHtml += `<!-- wp:group {"style":{"color":{"background":"#fffbe6"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#FFC200","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#FFC200;border-left-width:4px;background-color:#fffbe6;padding:16px 20px"><!-- wp:paragraph {"style":{"typography":{"fontSize":"13px"}}} --><p style="font-size:13px">${disclosureHtml}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
   bodyHtml += `${scrub(parsed.intro_html)}\n`
 
+  // THE STORE THE BUTTONS NAME (lib/store-name): a reader knows where the
+  // button goes before pressing it.
+  const linkStore = tiktokProductId ? 'TikTok Shop' : asin ? 'Amazon' : storeOf(finalUrl || link)
   // Top CTA button (if we have an affiliate link).
   const ctaButton = (label: string) => affiliateUrl
     ? `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">${scrub(label)}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
     : ''
-  bodyHtml += ctaButton(`Check price → ${(pn.canonical || productName).split(',')[0].slice(0, 45)}`)
+  const ctaName = (pn.canonical || productName).split(',')[0].slice(0, 45)
+  bodyHtml += ctaButton(linkStore ? `See ${ctaName} on ${linkStore} →` : `Check price → ${ctaName}`)
 
   bodyHtml += `${scrub(parsed.body_html)}\n`
 
@@ -570,7 +575,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   if (wantVerdict && parsed.verdict) {
     bodyHtml += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(parsed.verdict)}</em></p><!-- /wp:paragraph -->\n`
   }
-  bodyHtml += ctaButton(`See it on the store →`)
+  bodyHtml += ctaButton(linkStore ? `See it on ${linkStore} →` : `See it on the store →`)
 
   // FAQ — honor the FAQ toggle.
   if (wantFaq && Array.isArray(parsed.faq) && parsed.faq.length) {

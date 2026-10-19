@@ -383,6 +383,10 @@ SPECS AND NUMBERS (applies to every section, not one of them)
   const ctaButton  = retailerLabel
     ? `Get the best price on ${retailerLabel} →`
     : (isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →')
+  // The store the body's own links name (Seb, 2026-10-19: a reader knows
+  // where a link goes before pressing it). Unknown stays unnamed: the wrong
+  // store is worse than none.
+  const linkStoreWord = retailerLabel || (isAmazon ? 'Amazon' : null)
 
   // CTA button color — paint the in-post "Get the best price" button with the
   // brand's SECONDARY color so every site's buy button matches its brand (was
@@ -671,6 +675,9 @@ CRITICAL RULES — FOLLOW STRICTLY
 4. AFFILIATE LINK — Use the Geniuslink/affiliate URL from the video description.
    Wrap all links with: target="_blank" rel="noopener sponsored nofollow"
    Must appear: intro paragraph + naturally 2–3× in body + final CTA.
+   ${linkStoreWord
+     ? `The words of every link say it opens ${linkStoreWord}: "see it on ${linkStoreWord}", "check today's price on ${linkStoreWord}". Never a bare "click here", "buy now", "shop now" or "this link".`
+     : `The words of every link say what it opens ("see the price", "check the listing"). Never a bare "click here" or "this link". Do not name a store: this link's store is not known.`}
 
 5. LENGTH — Aim for the target range above, but the HARD CEILING and the source
    material always win. Earn every word with real substance (specs, comparisons,

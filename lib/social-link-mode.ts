@@ -11,6 +11,8 @@
 // only", etc. Retailer wording is neutral unless we can confirm Amazon, and the
 // disclosure adds the Amazon-Associate line only when an Amazon link is in play.
 
+import { storeOf } from '@/lib/store-name'
+
 export const LINK_MODE_PLATFORMS = ['facebook', 'linkedin', 'bluesky'] as const
 export type LinkModePlatform = typeof LINK_MODE_PLATFORMS[number]
 
@@ -94,9 +96,12 @@ export function effectiveDisclosure(base: string, affiliateLink: string | null, 
  * caller passes what it KNOWS. It always knows: it started from an ASIN.
  */
 export function productCtaLine(link: string, amazonDestination: boolean): string {
-  return (amazonDestination || isAmazonLink(link))
-    ? `🛒 Grab it on Amazon 👉 ${link}`
-    : `🛒 Get it here 👉 ${link}`
+  if (amazonDestination || isAmazonLink(link)) return `🛒 Grab it on Amazon 👉 ${link}`
+  // Any other store a plain address names (lib/store-name). A short link that
+  // hides it stays "Get it here", and the social disclaimer names its store
+  // once it is confirmed (lib/link-store).
+  const store = storeOf(link)
+  return store ? `🛒 Get it on ${store} 👉 ${link}` : `🛒 Get it here 👉 ${link}`
 }
 function blogCtaLine(url: string, label: string): string { return `🔗 ${label}: ${url}` }
 function videoCtaLine(url: string): string { return `🎬 Want to see it in action? Watch the full review 👉 ${url}` }

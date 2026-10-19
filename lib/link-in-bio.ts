@@ -3,6 +3,8 @@
 // Shared types + helpers for the Link in Bio ("Shop Grid") feature: a public,
 // hosted affiliate storefront page at /shop/<handle>.
 
+import { storeOf } from '@/lib/store-name'
+
 export interface LinkPage {
   id: string
   user_id: string
@@ -76,9 +78,11 @@ export function retailerForItem(it: { url?: string | null; asin?: string | null;
   return null
 }
 
-/** The product-tile CTA label: "Buy now from Amazon" etc., else "Shop now". */
+/** The product-tile CTA label: "Buy now from Amazon" etc. A store page this
+ *  list does not know names its own site ("Buy now from brand.com"); only a
+ *  short link that hides its store, with no ASIN, is "Shop now". */
 export function shopCtaLabel(it: { url?: string | null; asin?: string | null; source?: string | null }): string {
-  const r = retailerForItem(it)
+  const r = retailerForItem(it) || storeOf(it.url, it.asin)
   return r ? `Buy now from ${r}` : 'Shop now'
 }
 

@@ -5,6 +5,7 @@
 // (/api/amazon/pin), the copy pre-fill endpoint (/api/amazon/pin-copy), and the
 // scheduler cron (process-amazon-schedules). Points the Pin straight at the
 // creator's geni.us affiliate link (not a blog post).
+import { storeOf } from '@/lib/store-name'
 import { trackPost } from '@/lib/reach-pulse'
 import { hashtagsFor } from '@/lib/hashtag-data'
 import { writerTags, withTags } from '@/lib/hashtag-engine'
@@ -251,6 +252,11 @@ export async function writePinCopy(opts: {
     description = scrubBanned(String(j.description || '').trim())
   } catch { /* fall back below */ }
   if (!title) title = (productTitle || 'Great find').slice(0, 100)
+  // WHERE THE PIN GOES, IN WORDS (lib/store-name): a pin's link can be a short
+  // one that hides its store, so the description says it.
+  const store = asin ? 'Amazon' : storeOf(opts.productUrl)
+  const base = description || productTitle || ''
+  if (store && !base.toLowerCase().includes(store.toLowerCase())) description = `${base.replace(/\s+$/, '')}${base ? ' ' : ''}See it on ${store}.`
   // THE HASHTAG ENGINE picks the tags; then the disclosure + #ad #sponsored,
   // guaranteed no matter what the model returned.
   const pick = await hashtagsFor({ platform: 'pinterest', text: productTitle || opts.productUrl || '', brand: productTitle || null, writer: writerTags(description), userId: opts.userId })

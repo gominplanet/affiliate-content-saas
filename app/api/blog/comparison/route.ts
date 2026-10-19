@@ -22,6 +22,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
+import { storeOf, priceCta } from '@/lib/store-name'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { deriveProductName } from '@/lib/product-name'
@@ -65,6 +66,9 @@ interface ResolvedProduct {
   bullets: string[]
   transcript: string
   affiliateUrl: string | null
+  /** The store affiliateUrl opens, for the buttons (lib/store-name): Amazon
+   *  for an ASIN, else the store page's own name. Null when not known. */
+  store: string | null
   /** True when the source video is the MVP user's OWN upload (synced library
    *  row, or a channel that matches one of their connected channels). False =
    *  a public/third-party video the user is curating — write it third-person
@@ -472,6 +476,7 @@ export async function POST(request: Request) {
       let bullets: string[] = []
       let affiliateUrl: string | null = null
       let asin: string | null = null
+      let store: string | null = null
       let matched = false
 
       const titleAsin = extractAsin((videoTitle || '').toUpperCase())
@@ -519,6 +524,7 @@ export async function POST(request: Request) {
                 ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
                 : `https://www.amazon.com/dp/${asin}`)
             }
+            if (affiliateUrl) store = 'Amazon'
             break
           }
         } else if (!matched && identity) {
@@ -544,6 +550,7 @@ export async function POST(request: Request) {
                 // with Geniuslink keys, and dropping to null loses the click.
                 affiliateUrl = await cmpBitly(stripTrackingParams(finalUrl))
               }
+              if (affiliateUrl) store = storeOf(finalUrl)
               matched = true
               break
             }
@@ -566,6 +573,7 @@ export async function POST(request: Request) {
             ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
             : `https://www.amazon.com/dp/${titleAsin}`)
         }
+        if (affiliateUrl) store = 'Amazon'
       }
 
       // LAST RESORT: no specific product URL/ASIN could be resolved (e.g. a
@@ -582,6 +590,7 @@ export async function POST(request: Request) {
         if (!affiliateUrl && wp?.amazon_associates_tag) {
           affiliateUrl = await cmpBitly(`${searchUrl}&tag=${wp.amazon_associates_tag}`)
         }
+        if (affiliateUrl) store = 'Amazon'
       }
 
       // Nothing in the description matched this video's product. We still KNOW
@@ -589,7 +598,7 @@ export async function POST(request: Request) {
       // alone — but never attach a wrong link. Drop only if we know nothing.
       if (!matched && !identity) return null
 
-      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl, isOwn, sourceChannelName, sourceChannelUrl, imageUrl: productImageUrl }
+      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl, store: affiliateUrl ? store : null, isOwn, sourceChannelName, sourceChannelUrl, imageUrl: productImageUrl }
     } catch {
       return null
     }
@@ -753,7 +762,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       const wName = scrub(wItem.short_name || wProd.productName.split(',')[0] || wProd.productName)
       const wWhy = scrub(parsed.winner_blurb || wItem.verdict || '')
       const wBtn = wProd.affiliateUrl
-        ? ` <a href="${wProd.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener"><strong>Check price →</strong></a>`
+        ? ` <a href="${wProd.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener"><strong>${scrub(priceCta(wProd.store))} →</strong></a>`
         : ''
       body += `<!-- wp:group {"style":{"color":{"background":"#f0f7ff"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#7C3AED","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#7C3AED;border-left-width:4px;background-color:#f0f7ff;padding:16px 20px"><!-- wp:paragraph --><p>🏆 <strong>Our #1 pick: ${wName}.</strong> ${wWhy}${wBtn}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
     }
@@ -798,7 +807,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     if (p.affiliateUrl || ownReviewUrl) {
       const btnName = scrub(item.short_name || p.productName.split(',')[0] || p.productName).slice(0, 40)
       const buyBtn = p.affiliateUrl
-        ? `<!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${btnName}</a></div><!-- /wp:button -->`
+        ? `<!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">${p.store ? `See ${btnName} on ${scrub(p.store)} →` : `Check price → ${btnName}`}</a></div><!-- /wp:button -->`
         : ''
       const readBtn = ownReviewUrl
         ? `<!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="${ownReviewUrl}">Read the full review →</a></div><!-- /wp:button -->`
@@ -849,7 +858,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   if (recProduct?.affiliateUrl) {
     const recItem = parsed.products.find(p => p.index === recIdx)
     const recName = scrub(recItem?.short_name || recProduct.productName.split(',')[0] || recProduct.productName).slice(0, 48)
-    body += `<!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->\n<div class="wp-block-buttons" style="justify-content:center"><!-- wp:button {"backgroundColor":"vivid-amber","style":{"typography":{"fontSize":"18px"},"spacing":{"padding":{"top":"14px","bottom":"14px","left":"32px","right":"32px"}}}} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${recProduct.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">👉 Check today's price on ${recName}</a></div><!-- /wp:button --></div>\n<!-- /wp:buttons -->\n`
+    body += `<!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->\n<div class="wp-block-buttons" style="justify-content:center"><!-- wp:button {"backgroundColor":"vivid-amber","style":{"typography":{"fontSize":"18px"},"spacing":{"padding":{"top":"14px","bottom":"14px","left":"32px","right":"32px"}}}} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${recProduct.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">👉 Check today's price for ${recName}${recProduct.store ? ` on ${scrub(recProduct.store)}` : ''}</a></div><!-- /wp:button --></div>\n<!-- /wp:buttons -->\n`
   }
 
   // FAQ

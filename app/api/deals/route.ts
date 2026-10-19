@@ -1399,6 +1399,12 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     return lines.join(' ')
   })()
   const ctaHref = p.promoUrl || fallbackUrl
+  // The anchor's words say where it goes (Seb, 2026-10-19): the store, or the
+  // creator's own TikTok Shop. A promo link that hides its store names none.
+  const anchorStore = p.destinationKind === 'showcase' ? 'my TikTok Shop' : p.promoUrl ? storeOf(p.promoUrl, null) : 'Amazon'
+  const anchorWords = anchorStore
+    ? ` The anchor's words name where it goes: "grab it on ${anchorStore}", "check today's price on ${anchorStore}". Never a bare "click here", "buy now" or "shop now".`
+    : ' The anchor\'s words say what it opens ("see the deal"). Never a bare "click here".'
 
   return `You are ${p.reviewerName}, writing a deal post for ${p.year}. The post is for the "Deals Hub" section of an affiliate review site.
 
@@ -1425,7 +1431,7 @@ STRUCTURE (target ~800 words):
 3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Confident, direct product commentary. Use the spec bullets above as known facts about the product, not as something you're citing ("The 6500 RPM motor handles X" — NOT "the listing claims a 6500 RPM motor"). Talk about who this fits and who it doesn't. Never claim hands-on time. Never cite the listing as a source.
 4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features. Concise. State them directly. No marketing fluff. No "the listing says" framing.
 5. <h2>Before you buy</h2> — One <p> of grounded caveats: shipping windows for the occasion, return policy considerations, the kinds of buyer this would NOT fit. Keep it real.
-6. <p> Final CTA paragraph: occasion-aware nudge + a clean one-line outro that ends with a single anchor to the deal. Anchor href is the same as step 2.
+6. <p> Final CTA paragraph: occasion-aware nudge + a clean one-line outro that ends with a single anchor to the deal. Anchor href is the same as step 2.${anchorWords}
 
 VOICE / STYLE
 - First person throughout. Match how ${p.reviewerName} writes.
