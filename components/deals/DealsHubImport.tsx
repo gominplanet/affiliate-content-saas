@@ -5,20 +5,28 @@
 // list they downloaded from the Deals Hub in their own Amazon Associates
 // account. This browser reads it a piece at a time (lib/deals-hub-file), so a
 // 500 MB file never leaves the computer: MVP keeps the best deals in each
-// category, the member picks a few, and each one becomes a deal post through
-// /api/deals, scheduled for the moment its deal starts on Amazon, with the
-// deal's own prices and end time from the file.
+// category and the member picks some.
+//
+// SOCIAL FIRST (Seb: "I don't think people want to write a hundred blog posts
+// based on these deals ... we should really focus on social media pushes").
+// The picks are queued for Pinterest, Facebook, Instagram and the rest
+// (/api/deals/hub-socials), each going out when its deal starts on Amazon,
+// spaced apart. A blog post per deal is the smaller second option, through
+// /api/deals, scheduled the same way with the deal's own prices.
 //
 // What happened is what is shown: how much of the file was read, how many
 // deals could not be, the columns it found when it could not read one, and
 // for each picked deal the time it was scheduled for, or why it was not.
 
-import { useMemo, useRef, useState } from 'react'
-import { FileUp, Loader2, X, Check, AlertTriangle, CalendarClock } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FileUp, Loader2, X, Check, AlertTriangle, CalendarClock, Share2, FileText } from 'lucide-react'
 import {
   CsvStream, mapColumns, readDeal, DealPool, filterDeals, MAX_PER_BATCH, FIELD_WORDS,
   type ColumnMap, type HubDeal, type HubFilter, type HubSort,
 } from '@/lib/deals-hub-file'
+import { HUB_INTERVALS, HUB_MAX_BATCH } from '@/lib/deals-hub-socials'
+import { QUICK_PLATFORMS } from '@/components/deal/QuickPostModal'
+import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
 
 const PURPLE = '#7C3AED'
 const RED = '#DC2626'
@@ -29,12 +37,25 @@ const PAGE = 60
 type Phase = 'idle' | 'reading' | 'ready' | 'error'
 interface Progress { bytes: number; total: number; rows: number; kept: number; noAsin: number; noStart: number; ended: number }
 type RowState = { state: 'waiting' | 'writing' | 'scheduled' | 'published' | 'duplicate' | 'failed' | 'stopped'; text: string; url?: string | null }
+interface QueuedPost { id: string; asin: string; title: string | null; platforms: string[] | null; story: boolean | null; scheduled_at: string; status: string; error_message: string | null; results: Array<{ platform: string; ok: boolean; url?: string; error?: string }> | null }
+const STATUS_WORDS: Record<string, { text: string; color: string }> = {
+  pending: { text: 'Waiting for its time', color: 'var(--text-soft)' },
+  processing: { text: 'Posting now', color: '#7C3AED' },
+  completed: { text: 'Posted', color: '#047857' },
+  failed: { text: 'Failed', color: '#DC2626' },
+  skipped: { text: 'Not sent', color: '#B45309' },
+}
 
 const mb = (n: number) => `${(n / 1_048_576).toFixed(n < 10_485_760 ? 1 : 0)} MB`
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 
-export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) {
+export default function DealsHubImport({ onPosted, pinterestEnabled = false, instagramEnabled = false }: {
+  onPosted?: () => void
+  /** What the plan allows; the connections decide what is ticked. */
+  pinterestEnabled?: boolean
+  instagramEnabled?: boolean
+}) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [fileName, setFileName] = useState('')
   const [progress, setProgress] = useState<Progress | null>(null)
@@ -49,6 +70,24 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
   const [rows, setRows] = useState<Record<string, RowState>>({})
   const [running, setRunning] = useState(false)
   const [batchNote, setBatchNote] = useState<{ tone: 'ok' | 'bad' | 'warn'; text: string } | null>(null)
+  // Social posts: where, how far apart, and what is queued already.
+  const networkOptions = useMemo(() => [
+    ...(pinterestEnabled ? [{ key: 'pinterest', label: 'Pinterest' }] : []),
+    ...QUICK_PLATFORMS,
+    ...(instagramEnabled ? [{ key: 'instagram', label: 'Instagram' }] : []),
+  ], [pinterestEnabled, instagramEnabled])
+  const conn = useConnectedPlatforms()
+  const [networks, setNetworks] = useSelectedPlatforms(networkOptions.map((n) => n.key), conn)
+  const [story, setStory] = useState(false)
+  const [intervalMins, setIntervalMins] = useState(15)
+  const [queued, setQueued] = useState<QueuedPost[] | null>(null)
+  const [queueNote, setQueueNote] = useState<string | null>(null)
+  const loadQueue = useCallback(async () => {
+    const r = await fetch('/api/deals/hub-socials').then((x) => x.json()).catch(() => null) as { posts?: QueuedPost[]; note?: string; error?: string } | null
+    setQueued(r?.posts ?? [])
+    setQueueNote(r?.note || r?.error || null)
+  }, [])
+  useEffect(() => { void loadQueue() }, [loadQueue])
   const cancelRead = useRef(false)
   const stopBatch = useRef(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -128,13 +167,54 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
     setPicked((s) => {
       const n = new Set(s)
       if (n.has(asin)) n.delete(asin)
-      else if (n.size < MAX_PER_BATCH) n.add(asin)
+      else if (n.size < HUB_MAX_BATCH) n.add(asin)
       return n
     })
   }
 
+  async function scheduleSocials() {
+    if (!pickedDeals.length || running) return
+    if (!networks.size && !story) { setBatchNote({ tone: 'bad', text: 'Pick at least one network.' }); return }
+    setRunning(true); setBatchNote(null)
+    try {
+      const res = await fetch('/api/deals/hub-socials', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deals: pickedDeals.map((d) => ({
+            asin: d.asin, title: d.title, brand: d.brand, imageUrl: d.image, discountPct: d.discountPct, belowYtd: d.belowYtd,
+            startsAt: new Date(d.startsAt as number).toISOString(), endsAt: d.endsAt ? new Date(d.endsAt).toISOString() : null,
+          })),
+          platforms: [...networks], story, intervalMins,
+        }),
+      })
+      const j = await res.json().catch(() => ({})) as { ok?: boolean; scheduled?: Array<{ asin: string; at: string }>; skipped?: Array<{ asin: string; reason: string }>; error?: string }
+      if (!res.ok || !j.ok) { setBatchNote({ tone: 'bad', text: j.error || `Nothing was scheduled: MVP answered ${res.status}.` }); return }
+      const names = networkOptions.filter((n) => networks.has(n.key)).map((n) => n.label).concat(story ? ['an Instagram Story'] : []).join(', ')
+      setRows((r) => {
+        const n = { ...r }
+        for (const s of j.scheduled || []) n[s.asin] = { state: 'scheduled', text: `Queued for ${when(Date.parse(s.at))} on ${names}.` }
+        for (const s of j.skipped || []) n[s.asin] = { state: 'failed', text: `Not queued: ${s.reason}` }
+        return n
+      })
+      const ok = j.scheduled?.length || 0, bad = j.skipped?.length || 0
+      setBatchNote(ok
+        ? { tone: bad ? 'warn' : 'ok', text: `${ok} deal${ok === 1 ? '' : 's'} queued for ${names}, each when its deal starts, ${intervalMins} minutes or more apart.${bad ? ` ${bad} not queued; each says why.` : ''}` }
+        : { tone: 'bad', text: 'No deal was queued. Each one says why.' })
+      if (ok) { setPicked(new Set()); void loadQueue() }
+    } catch {
+      setBatchNote({ tone: 'bad', text: 'The request did not finish. Check the queue below before trying again.' })
+    } finally { setRunning(false) }
+  }
+
+  async function cancelQueued(id: string) {
+    const r = await fetch(`/api/deals/hub-socials?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).then((x) => x.json()).catch(() => ({ error: 'The request did not finish.' })) as { ok?: boolean; error?: string }
+    if (!r.ok) setQueueNote(r.error || 'Could not cancel it.')
+    void loadQueue()
+  }
+
   async function writePosts() {
     if (!pickedDeals.length || running) return
+    if (pickedDeals.length > MAX_PER_BATCH) { setBatchNote({ tone: 'bad', text: `Blog posts go ${MAX_PER_BATCH} at a time. Untick ${pickedDeals.length - MAX_PER_BATCH}.` }); return }
     stopBatch.current = false
     setRunning(true); setBatchNote(null)
     setRows((r) => { const n = { ...r }; for (const d of pickedDeals) n[d.asin] = { state: 'waiting', text: 'Waiting' }; return n })
@@ -262,7 +342,7 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
             <input value={filter.search || ''} onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))} placeholder="Search name, brand or ASIN" className="input-field !py-1.5 !text-[12.5px] max-w-[14rem]" />
           </div>
 
-          <p className="mt-2 text-[12px]" style={faint}>{visible.length.toLocaleString()} deals match. Pick up to {MAX_PER_BATCH} at a time.</p>
+          <p className="mt-2 text-[12px]" style={faint}>{visible.length.toLocaleString()} deals match. Pick up to {HUB_MAX_BATCH} at a time.</p>
 
           <ul className="mt-2 flex flex-col divide-y rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
             {visible.slice(0, shown).map((d) => {
@@ -271,7 +351,7 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
               const upcoming = d.startsAt != null && d.startsAt > Date.now()
               return (
                 <li key={`${d.asin}-${d.startsAt}`} className="flex items-start gap-3 px-3 py-2.5" style={{ borderColor: 'var(--border)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
-                  <input type="checkbox" checked={on} disabled={running || (!on && picked.size >= MAX_PER_BATCH)} onChange={() => toggle(d.asin)} className="mt-1" aria-label={`Pick ${d.title}`} />
+                  <input type="checkbox" checked={on} disabled={running || (!on && picked.size >= HUB_MAX_BATCH)} onChange={() => toggle(d.asin)} className="mt-1" aria-label={`Pick ${d.title}`} />
                   {d.image && <img src={d.image} alt="" loading="lazy" referrerPolicy="no-referrer" className="w-11 h-11 rounded-md object-contain bg-white flex-shrink-0" />}
                   <div className="min-w-0 flex-1">
                     <a href={`https://www.amazon.com/dp/${d.asin}`} target="_blank" rel="noopener noreferrer" className="block text-[13px] font-semibold truncate hover:underline" style={{ color: 'var(--text)' }}>{d.title}</a>
@@ -302,15 +382,51 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
             <button type="button" onClick={() => setShown((n) => n + PAGE)} className="mt-2 text-[12.5px] font-semibold" style={{ color: PURPLE }}>Show {Math.min(PAGE, visible.length - shown)} more</button>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          {/* SOCIAL FIRST: where the picked deals go, and how far apart. */}
+          <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Post the picked deals to social</p>
+            <p className="text-[12px] mt-0.5" style={faint}>Each one goes out when its deal starts on Amazon, never before, with a deal card and a caption written when it posts. A deal that has ended by then is skipped.</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {networkOptions.map((n) => {
+                const on = networks.has(n.key)
+                const notConnected = conn.known && !conn.connected.has(n.key)
+                return (
+                  <button key={n.key} type="button" disabled={running} aria-pressed={on}
+                    onClick={() => setNetworks((s) => { const x = new Set(s); if (x.has(n.key)) x.delete(n.key); else x.add(n.key); return x })}
+                    className="px-2.5 py-1 rounded-full border text-[12px] font-semibold"
+                    style={on ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}
+                    title={notConnected ? 'Not connected yet: connect it in Settings or the post fails there' : undefined}>
+                    {n.label}{notConnected ? ' (not connected)' : ''}
+                  </button>
+                )
+              })}
+              {instagramEnabled && (
+                <label className="inline-flex items-center gap-1.5 text-[12px] ml-1" style={soft}>
+                  <input type="checkbox" checked={story} disabled={running} onChange={(e) => setStory(e.target.checked)} /> Also an Instagram Story
+                </label>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <select value={intervalMins} onChange={(e) => setIntervalMins(Number(e.target.value))} disabled={running} className="input-field !py-1.5 !text-[12.5px] max-w-[11rem]">
+                {HUB_INTERVALS.map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes apart` : `${m / 60} hour${m === 60 ? '' : 's'} apart`}</option>)}
+              </select>
+              <button type="button" onClick={() => void scheduleSocials()} disabled={!picked.size || running}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                {running ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                {running ? 'Working...' : `Post ${picked.size || ''} deal${picked.size === 1 ? '' : 's'} to social`}
+              </button>
+            </div>
+          </div>
+
+          {/* A blog post per deal: the second option, for the few worth one. */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => void writePosts()} disabled={!picked.size || running}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
-              {running ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={14} />}
-              {running ? 'Writing...' : `Write ${picked.size || ''} deal post${picked.size === 1 ? '' : 's'}`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-[12.5px] font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+              <FileText size={13} /> Write blog posts instead
             </button>
             {running && <button type="button" onClick={() => { stopBatch.current = true }} className="text-[12.5px] font-semibold" style={{ color: RED }}>Stop after this one</button>}
             <p className="text-[12px] max-w-xl" style={faint}>
-              Each post uses one from your monthly allowance and takes a minute or two. Keep this page open until they are done.
+              A blog post per deal uses one from your monthly allowance and takes a minute or two each, up to {MAX_PER_BATCH} at a time. Keep this page open until they are done.
             </p>
           </div>
           {batchNote && (
@@ -318,6 +434,34 @@ export default function DealsHubImport({ onPosted }: { onPosted?: () => void }) 
           )}
         </>
       )}
+
+      {/* WHAT IS QUEUED, and what happened to it once it fired: posted, failed
+          with the reason, or not sent because the deal had ended. */}
+      {!!queued?.length && (
+        <div className="mt-5">
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Your Deals Hub social posts</p>
+          <ul className="mt-2 flex flex-col divide-y rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            {queued.slice(0, 30).map((q) => {
+              const st = STATUS_WORDS[q.status] || { text: q.status, color: 'var(--text-soft)' }
+              const nets = (q.platforms || []).map((k) => networkOptions.find((n) => n.key === k)?.label || k).concat(q.story ? ['Story'] : []).join(', ')
+              return (
+                <li key={q.id} className="px-3 py-2 text-[12.5px] flex items-start gap-3" style={{ borderColor: 'var(--border)' }}>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold" style={{ color: 'var(--text)' }}>{q.title || q.asin}</p>
+                    <p className="mt-0.5" style={soft}>{when(Date.parse(q.scheduled_at))} · {nets} · <span style={{ color: st.color }}>{st.text}</span></p>
+                    {q.error_message && <p className="mt-0.5" style={{ color: q.status === 'failed' ? RED : AMBER }}>{q.error_message}</p>}
+                    {q.status === 'completed' && q.results?.some((r) => !r.ok) && (
+                      <p className="mt-0.5" style={{ color: AMBER }}>Not posted on {q.results.filter((r) => !r.ok).map((r) => r.platform).join(', ')}: {q.results.find((r) => !r.ok)?.error || 'no reason given'}</p>
+                    )}
+                  </div>
+                  {q.status === 'pending' && <button type="button" onClick={() => void cancelQueued(q.id)} className="text-[12px] font-semibold flex-shrink-0" style={{ color: RED }}>Cancel</button>}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+      {queueNote && <p className="mt-2 text-[12px]" style={{ color: AMBER }}>{queueNote}</p>}
     </div>
   )
 }

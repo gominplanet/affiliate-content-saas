@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
-import { executeDealQuickPost } from '@/lib/deal-quick-post'
+import { executeDealQuickPost, type KnownDeal } from '@/lib/deal-quick-post'
 import { QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
 import { getDeadChannels, shouldSkipChannel, type DeadChannel } from '@/lib/channel-health'
 
@@ -45,6 +45,9 @@ interface DealScheduleRow {
    *  redirect a post they already approved. Null = Amazon, the default. */
   destination_url: string | null
   destination_kind: string | null
+  /** A deal from the member's own Deals Hub file (migration 445): its window
+   *  decides whether it is live, since Deal Radar never carried it. */
+  deal_known?: KnownDeal | null
 }
 
 export async function GET(request: Request) {
@@ -151,13 +154,19 @@ export async function GET(request: Request) {
         useShowcase: row.destination_kind === 'showcase',
         showcaseUrl: row.destination_url ?? null,
         requireLiveDeal: true,
+        knownDeal: row.deal_known ?? null,
       })
 
       // Deal ended before fire time → skip, don't post a dead deal.
       if (out.dealEnded && out.results.length === 0) {
+        const endedAt = row.deal_known?.endsAt ? Date.parse(row.deal_known.endsAt) : NaN
         await (admin as any).from("deal_scheduled_posts").update({
           status: 'skipped',
-          error_message: 'Deal was no longer live at post time — not sent.',
+          error_message: row.deal_known
+            ? (Number.isFinite(endedAt) && Date.now() >= endedAt
+              ? `The deal ended on Amazon (${new Date(endedAt).toUTCString()}) before this post time, so it was not sent.`
+              : 'The deal had not started on Amazon at this post time, so it was not sent.')
+            : 'Deal was no longer live at post time — not sent.',
           updated_at: new Date().toISOString(),
         }).eq('id', row.id)
         return { id: row.id, status: 'skipped' as const }

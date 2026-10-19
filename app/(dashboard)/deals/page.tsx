@@ -1095,7 +1095,7 @@ create index if not exists blog_posts_deal_meta_gin
             This one reads the file in the browser and sends only the deals
             picked (components/deals/DealsHubImport). Labs while it is tested. */}
         {canUsePreview('deals_import', tier) && (
-          <DealsHubImport onPosted={async () => {
+          <DealsHubImport pinterestEnabled={tier ? tierAllowsSocial(tier, 'pinterest') : false} instagramEnabled={tier ? tierAllowsSocial(tier, 'instagram') : false} onPosted={async () => {
             const list = await fetch('/api/deals').then((r) => r.json()).catch(() => null) as { deals?: DealRow[] } | null
             if (list?.deals) setDeals(list.deals)
           }} />

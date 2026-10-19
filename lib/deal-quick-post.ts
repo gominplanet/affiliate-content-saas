@@ -22,6 +22,31 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveCloakedLinkDetailed, cloakFallbackNote, getLinkStyle } from '@/lib/link-cloak'
 import { CHANNEL_GROUP_NAMES, channelKey } from '@/lib/geniuslink-group'
 import type { Tier } from '@/lib/tier'
+import { fetchAmazonProduct } from '@/services/amazon'
+
+/** A deal from the member's own Deals Hub file (components/deals/DealsHubImport),
+ *  stored on its scheduled row (migration 445, deal_known). Deal Radar never
+ *  saw it, so the file's own window says whether it is live at post time. */
+export interface KnownDeal {
+  source: 'deals_hub'
+  title: string
+  brand?: string | null
+  imageUrl?: string | null
+  discountPct?: number | null
+  /** The deal price is at or under the lowest price this year. */
+  belowYtd?: boolean
+  startsAt: string
+  endsAt?: string | null
+}
+
+/** Live at `now` by the file's own window: started (a minute's grace for the
+ *  clock) and not yet ended. */
+export function knownDealLive(k: Pick<KnownDeal, 'startsAt' | 'endsAt'>, now = Date.now()): boolean {
+  const starts = Date.parse(k.startsAt), ends = k.endsAt ? Date.parse(k.endsAt) : NaN
+  if (Number.isFinite(starts) && now < starts - 60_000) return false
+  if (Number.isFinite(ends) && now >= ends) return false
+  return true
+}
 
 export interface DealQuickPostInput {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +89,9 @@ export interface DealQuickPostInput {
   // the radar — a scheduled deal that has since ended must not go out. The
   // immediate path keeps false so a re-share from Price Alerts still works.
   requireLiveDeal?: boolean
+  /** The deal as the member's Deals Hub file gave it, for a deal Deal Radar
+   *  never carried. Its window decides "live" when requireLiveDeal is set. */
+  knownDeal?: KnownDeal | null
 }
 
 export interface DealQuickPostOutput {
@@ -94,6 +122,28 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   let { data: deal } = await db.from('deal_radar_cache')
     .select('asin,title,brand,image_url,discount_pct,deal_quality,lowest_label')
     .eq('asin', asin).maybeSingle()
+
+  // A DEAL FROM THE MEMBER'S OWN DEALS HUB FILE: its own start and end say
+  // whether it is live, not the radar, which never carried it.
+  const known = input.knownDeal && input.knownDeal.source === 'deals_hub' ? input.knownDeal : null
+  if (known) {
+    if (requireLiveDeal && !knownDealLive(known)) return { results: [], caption: null, geniuslinkNote: null, dealEnded: true }
+    if (!deal) {
+      let image = (known.imageUrl || '').trim() || null
+      // The file may carry no picture: the listing's own, best effort.
+      if (!image) {
+        try {
+          const p = await Promise.race([fetchAmazonProduct(asin), new Promise<null>((r) => setTimeout(() => r(null), 20_000))])
+          image = p?.imageUrl || p?.images?.[0] || null
+        } catch { /* posted without a product photo; the platform results say so */ }
+      }
+      deal = {
+        asin, title: known.title, brand: known.brand ?? null, image_url: image,
+        discount_pct: known.discountPct ?? null, deal_quality: null,
+        lowest_label: known.belowYtd ? 'Lowest price this year' : null,
+      }
+    }
+  }
 
   if (!deal) {
     // Scheduled posts: an ASIN that has dropped out of the radar means the deal

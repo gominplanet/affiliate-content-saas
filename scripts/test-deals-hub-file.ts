@@ -9,6 +9,8 @@
 
 import { readFileSync } from 'node:fs'
 import { CsvStream, mapColumns, readDeal, parseDealTime, toPct, asinFrom, DealPool, filterDeals, dealScore, MAX_PER_BATCH, type HubDeal } from '../lib/deals-hub-file'
+import { hubSchedule, HUB_MAX_BATCH } from '../lib/deals-hub-socials'
+import { knownDealLive } from '../lib/deal-quick-post'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => { if (!cond) failures.push(`${name}${detail ? `: ${detail}` : ''}`) }
@@ -104,6 +106,44 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the deals route takes the deal prices from the member’s own file', /dealPrices\?: \{ sale\?: number; was\?: number; pct\?: number \}/.test(ROUTE) && /fileDealPrices\(body\.dealPrices\)/.test(ROUTE))
   const PAGE = readFileSync('app/(dashboard)/deals/page.tsx', 'utf8')
   check('the importer is behind Labs while it is tested', /canUsePreview\('deals_import', tier\)/.test(PAGE) && /<DealsHubImport/.test(PAGE))
+}
+
+// ── social first (Seb, 2026-10-19: "we should really focus on social media
+// pushes from there. So Pinterest, Facebook, Instagram") ────────────────────
+{
+  const now = Date.UTC(2026, 10, 1, 12)
+  const bf = new Date(Date.UTC(2026, 10, 20, 12)).toISOString()
+  const end = new Date(Date.UTC(2026, 11, 1, 8)).toISOString()
+  const deal = (asin: string, startsAt: string, endsAt: string | null = end) => ({ asin, title: asin, startsAt, endsAt })
+  const plan = hubSchedule([deal('B0AAAAAAA1', bf), deal('B0AAAAAAA2', bf), deal('B0AAAAAAA3', bf)], 15, now)
+  const at = plan.scheduled.map((x) => Date.parse(x.at))
+  check('deals that start together go out at the start, then fifteen minutes apart', at.length === 3 && at[0] === Date.parse(bf) && at[1] - at[0] === 15 * 60_000 && at[2] - at[1] === 15 * 60_000, JSON.stringify(plan))
+  const live = hubSchedule([deal('B0AAAAAAA4', new Date(now - 86_400_000).toISOString())], 15, now)
+  check('a deal already live goes out two minutes from now, never in the past', Date.parse(live.scheduled[0].at) === now + 120_000)
+  const ended = hubSchedule([deal('B0AAAAAAA5', new Date(now - 2 * 86_400_000).toISOString(), new Date(now - 1000).toISOString())], 15, now)
+  check('an ended deal is not queued, and says so', !ended.scheduled.length && /already ended/.test(ended.skipped[0]?.reason || ''))
+  const tight = hubSchedule([deal('B0AAAAAAA6', bf, new Date(Date.parse(bf) + 20 * 60_000).toISOString()), deal('B0AAAAAAA7', bf, new Date(Date.parse(bf) + 20 * 60_000).toISOString())], 15, now)
+  check('a deal whose turn would come after it ends is not queued, and says why', tight.scheduled.length === 1 && /after the deal ends/.test(tight.skipped[0]?.reason || ''))
+  check('a deal picked twice is queued once', hubSchedule([deal('B0AAAAAAA8', bf), deal('B0AAAAAAA8', bf)], 15, now).scheduled.length === 1)
+  check('a social batch is capped too', HUB_MAX_BATCH <= 30)
+  check('live by the file\'s own window: not before it starts, not after it ends',
+    !knownDealLive({ startsAt: bf, endsAt: end }, Date.parse(bf) - 5 * 60_000) && knownDealLive({ startsAt: bf, endsAt: end }, Date.parse(bf)) && !knownDealLive({ startsAt: bf, endsAt: end }, Date.parse(end)))
+
+  const QP = readFileSync('lib/deal-quick-post.ts', 'utf8')
+  check('a scheduled Deals Hub deal is posted by its own window, not skipped for being off Deal Radar',
+    /if \(requireLiveDeal && !knownDealLive\(known\)\) return/.test(QP) && QP.indexOf('const known = input.knownDeal') < QP.indexOf("if (!deal) {\n    // Scheduled posts"))
+  const CRON = readFileSync('app/api/cron/process-deal-schedules/route.ts', 'utf8')
+  check('the cron passes the file\'s deal, and says whether it ended or had not started', /knownDeal: row\.deal_known \?\? null/.test(CRON) && /The deal ended on Amazon/.test(CRON) && /had not started on Amazon/.test(CRON))
+  const ROUTE = readFileSync('app/api/deals/hub-socials/route.ts', 'utf8')
+  check('the queue is Deal Radar\'s own, each row carrying the file\'s deal', /from\('deal_scheduled_posts'\)\.insert\(rows\)/.test(ROUTE) && /deal_known: \{/.test(ROUTE) && /hubSchedule\(deals, intervalMins\)/.test(ROUTE))
+  check('a missing migration 445 says so instead of a generic error', /migration 445/.test(ROUTE))
+  check('the daily spam cap applies', /DAILY_SCHEDULE_CAP = 50/.test(ROUTE))
+  check('it is Labs only on the server too', /canUsePreview\('deals_import', tier\)/.test(ROUTE))
+  check('only a post not yet sent can be cancelled', /\.eq\('status', 'pending'\)\.select\('id'\)/.test(ROUTE))
+  check('migration 445 is safe to run twice', /add column if not exists deal_known jsonb/.test(readFileSync('supabase/migrations/445_deal_known.sql', 'utf8')))
+  const UI = readFileSync('components/deals/DealsHubImport.tsx', 'utf8')
+  check('social is the main action, blog posts the second', /Post \$\{picked\.size \|\| ''\} deal/.test(UI) && /Write blog posts instead/.test(UI) && UI.indexOf('scheduleSocials()}') < UI.indexOf('writePosts()}'))
+  check('what happened to each queued post is shown: posted, failed with why, or not sent', /Your Deals Hub social posts/.test(UI) && /q\.error_message/.test(UI) && /Not posted on/.test(UI))
 }
 
 if (failures.length) {
