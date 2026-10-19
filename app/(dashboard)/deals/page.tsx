@@ -52,6 +52,8 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
+import { canUsePreview } from '@/lib/labs-preview'
+import DealsHubImport from '@/components/deals/DealsHubImport'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { tierAllowsSocial } from '@/lib/tier'
@@ -1088,10 +1090,16 @@ create index if not exists blog_posts_deal_meta_gin
           </form>
         )}
 
-        {/* ── Bulk CSV import (Amazon Creator Connections) ──────────── */}
-        {/* Bulk CSV importer removed 2026-06-05 — see header comment for
-            rationale. Users add deals via the single-product form
-            above. */}
+        {/* ── Import your Deals Hub file ─────────────────────────────── */}
+        {/* The June importer sent every row to the server and was removed.
+            This one reads the file in the browser and sends only the deals
+            picked (components/deals/DealsHubImport). Labs while it is tested. */}
+        {canUsePreview('deals_import', tier) && (
+          <DealsHubImport onPosted={async () => {
+            const list = await fetch('/api/deals').then((r) => r.json()).catch(() => null) as { deals?: DealRow[] } | null
+            if (list?.deals) setDeals(list.deals)
+          }} />
+        )}
 
         {/* ── Recent deals list ──────────────────────────────────────── */}
         <div className="card p-6">

@@ -122,6 +122,21 @@ function dollarsToNum(s: string | null | undefined): number | null {
   return isFinite(n) ? n : null
 }
 
+/** Deal prices sent from a Deals Hub file, as the listing's price fields, or
+ *  null when there is no usable sale price. Numbers only, within reason. */
+function fileDealPrices(v: unknown): Pick<AmazonProduct, 'price' | 'priceSale' | 'priceWas' | 'discountPct'> | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as { sale?: unknown; was?: unknown; pct?: unknown }
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 && x < 100_000 ? x : null)
+  const sale = num(o.sale)
+  if (sale == null) return null
+  const was = num(o.was)
+  const pctRaw = num(o.pct)
+  const pct = pctRaw != null && pctRaw < 100 ? Math.round(pctRaw) : (was && was > sale ? Math.round((1 - sale / was) * 100) : null)
+  const usd = (n: number) => `$${n.toFixed(2)}`
+  return { price: usd(sale), priceSale: usd(sale), priceWas: was && was > sale ? usd(was) : null, discountPct: pct }
+}
+
 /** Compute a savings-badge label preferring (in order):
  *    1. occasion badge (e.g. "PRIME DAY") — only when the occasion isn't 'none'
  *    2. dollars-off ("$47 OFF") when we have both prices
@@ -420,6 +435,10 @@ export async function POST(req: Request) {
      *  October ones. Without this the server has no way to know, and one click
      *  of Generate publishes an embargoed price. */
     dealStartsAt?: string
+    /** The deal's own prices from the member's Deals Hub file (DealsHubImport).
+     *  A deal that has not started shows its usual price on Amazon today, so
+     *  a post written now from the listing would describe no discount. */
+    dealPrices?: { sale?: number; was?: number; pct?: number }
     /** Send this post's clicks to the creator's TikTok Shop showcase instead of
      *  Amazon. showcaseUrl overrides their saved default for this post only. */
     useShowcase?: boolean
@@ -614,6 +633,10 @@ export async function POST(req: Request) {
       code: 'amazon_block',
     }, { status: 502 })
   }
+  // THE DEAL'S OWN PRICES, from the member's Deals Hub file, over the
+  // listing's: for a deal that starts later, today's listing is the usual price.
+  const filePrices = fileDealPrices(body.dealPrices)
+  if (filePrices) product = { ...product, ...filePrices }
 
   // Compute deal envelope. If Amazon's manual end-date override is set, it
   // beats whatever we scraped. Otherwise we use the scraped value (may be
