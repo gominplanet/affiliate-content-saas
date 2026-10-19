@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, Trophy, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, type LucideIcon } from 'lucide-react'
 import { requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
@@ -36,7 +36,6 @@ import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
 import TrybeUpload from '@/components/labs/TrybeUpload'
-import TrybeHowTheyWin from '@/components/labs/TrybeHowTheyWin'
 import { collectTop100 } from '@/components/labs/trybe-collect'
 import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
@@ -108,7 +107,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'create' | 'upload' | 'win' | 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
+type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -309,13 +308,12 @@ const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string }> = [
   { id: 'brands', label: 'Get brands', says: 'Reach out and reply' },
   { id: 'track', label: 'Track', says: 'Pay and news' },
 ]
-const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string; teamOnly?: boolean }> = [
+const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
   // TEAM ONLY (Seb, 2026-10-18: "how they win may not be very helpful" as its
   // own tab). A member's help is in Make videos, where Their best videos now
   // carries the words collected here. The team keeps this to collect them.
-  { id: 'win', label: 'Top 100 words', icon: Trophy, group: 'create', teamOnly: true, says: 'Team only. Collect TRYBE’s Top 100 and their words. Members see them in Make videos, under Their best videos for each brand.' },
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
@@ -505,10 +503,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     const today = new Date().toISOString().slice(0, 10)
     try { if (localStorage.getItem(KEY) === today) return } catch { return }
     autoCollect.current = true
-    void collectTop100({ listen: false }).then((r) => {
+    void collectTop100().then((r) => {
       if (!r.ok) { toast.error(`Today’s Top 100 was not collected: ${r.error}`); return }
       try { localStorage.setItem(KEY, today) } catch { /* runs again next visit */ }
-      toast[r.report.filed ? 'success' : 'error'](`Today’s Top 100: ${r.report.lines.slice(0, 2).join(' ')}`, { duration: 8000 })
+      // QUIET WHEN FINE (Seb, 2026-10-19: the filed and shared counts meant
+      // nothing to him). A problem says what it was; otherwise one line.
+      if (r.report.tone === 'warn') toast.warning(`Today’s Top 100: ${r.report.lines.join(' ')}`, { duration: 12000 })
+      else toast.success('Today’s TRYBE Top 100 is in. Make videos writes from its winning ads.', { duration: 5000 })
     }).catch((e) => toast.error(`Today’s Top 100 was not collected: ${e instanceof Error ? e.message : 'no answer'}`))
   }, [preview, isAdmin, canMyBrands])
   // What changed, read ahead. Read again once SCOUT can read your joined
@@ -1387,7 +1388,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{g.says}</span>
             </p>
             <div className="grid grid-cols-2 md:grid-cols-1 gap-1">
-              {TABS.filter((t) => t.group === g.id && (!t.teamOnly || isAdmin)).map(({ id, label, icon: Icon }) => {
+              {TABS.filter((t) => t.group === g.id).map(({ id, label, icon: Icon }) => {
                 const n = preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
                 const on = (lockedTab ?? tab) === id
                 const locked = preview && id !== 'find'
@@ -1436,7 +1437,6 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {tab === 'upload' && <TrybeUpload />}
 
-      {tab === 'win' && isAdmin && <TrybeHowTheyWin canRead={canMyBrands} isAdmin={isAdmin} />}
 
       {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (

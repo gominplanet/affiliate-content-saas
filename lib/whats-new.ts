@@ -53,6 +53,15 @@ export const WHATS_NEW: WhatsNewItem[] = [
     desc: 'Set up once: where each kind of video goes, YouTube, Amazon or both, your CTA, thumbnail look, posting times and days, channel, playlist and Studio steps. Then just drop videos. Each long video is prepared while you check it, with its product photo, thumbnail, title and its own time on its card. Vertical videos go to TikTok, Reels, Shorts, a Facebook Reel, a video pin, Amazon and the TRYBE brand you pick. The board shows where each one landed.',
     href: '/drop',
   },
+  {
+    date: '2026-10-19',
+    gate: 'trybe',
+    badge: 'BETTER',
+    tone: '#7C3AED',
+    title: 'Make videos writes from TRYBE\u2019s winning ads',
+    desc: 'Every day MVP collects the words of the videos in TRYBE\u2019s Top 100, the ads brands are paying to run. When you plan videos for a brand, MVP now learns from up to six of them: that brand\u2019s own first, then ones in the same category. It learns how they are built and never copies their words, and the plan says how many it used.',
+    href: '/trybe?tab=create',
+  },
   // TRYBE, after TrybeDaily's Today, What's Working, Creators and Brands (2026-10-17).
   {
     date: '2026-10-17',

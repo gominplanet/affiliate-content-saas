@@ -36,11 +36,8 @@ import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTie
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd } from '@/lib/trybe-adsgallery'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import {
-  cleanScript, toTranscribe, coverageWords, rewriteMissing, rewritePrompt, readRewrite, bestRank,
-  readCloseness, tooAlike, SCRIPT_MAX, whyNoWords, noWordsSentence, type TopScript,
+  cleanScript, toTranscribe, coverageWords, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
-import { transcriptionConfigured } from '@/lib/shorts-transcribe'
-import { hearTopVideo } from '@/lib/trybe-top-hear'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { NextResponse } from 'next/server'
@@ -1095,11 +1092,21 @@ export async function POST(request: Request) {
     // HOOKS WINNING ON TRYBE THIS WEEK, when MVP read them in the last 10 days.
     const topHooks = await readTopHookList(admin).catch(() => null)
     const hooksText = topHooks && Date.now() - Date.parse(topHooks.at) < 10 * 86_400_000 ? hooksBlock(topHooks.hooks, String(row.name || '')) : ''
+    // WINNING TRYBE ADS AS EXAMPLES (lib/trybe-scripts pickExamples): the full
+    // words of the Top 100 videos MVP collects every day, this brand's own
+    // first, then its category, then the best placed. Any failure plans
+    // without them, and the answer says how many were used.
+    let examples: ReturnType<typeof pickExamples<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>> = []
+    try {
+      const { data: ex } = await admin.from('trybe_top_scripts').select('brand_id,brand_name,best_rank,category,script,state').eq('state', 'ready').order('best_rank', { ascending: true }).limit(400)
+      examples = pickExamples((ex ?? []) as Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>, { id: lookupId || null, name: String(row.name || ''), categories: Array.isArray(row.categories) ? row.categories as string[] : [] }, 6)
+    } catch { examples = [] }
+    const examplesText = examplesBlock(examples, String(row.name || ''))
     try {
       const msg = await createAnthropicClient().messages.create({
         model: MODEL, max_tokens: 6000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
@@ -1111,7 +1118,7 @@ export async function POST(request: Request) {
           const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
           if (smUp) kept = false
         } catch { kept = false }
-        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length })
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length })
       }
       // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
       // has no row on the MVP list, and its ideas used to be lost.
@@ -1128,7 +1135,7 @@ export async function POST(request: Request) {
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }
@@ -1973,33 +1980,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, videos: rows, coverage: coverageWords(rows) })
   }
 
-  if (action === 'top_scripts_stats') {
-    // What the store actually holds, so the page can lead with a sentence
-    // rather than with an empty brand list. Read by any member.
-    const { data, error } = await admin.from('trybe_top_scripts')
-      .select('brand_id,brand_name,state,source,updated_at,detail,video_url').limit(4000)
-    if (error) {
-      if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    const rows = (data ?? []) as Array<{ brand_id: string | null; brand_name: string | null; state: string; source: string; updated_at: string; detail: string | null; video_url: string | null }>
-    const by = new Map<string, { id: string | null; name: string; videos: number; words: number }>()
-    let words = 0, heard = 0, shared = 0, last = ''
-    for (const r of rows) {
-      const name = r.brand_name || 'A brand'
-      const k = r.brand_id || `name:${name.toLowerCase()}`
-      const cur = by.get(k) ?? { id: r.brand_id, name, videos: 0, words: 0 }
-      cur.videos++
-      if (r.state === 'ready') { cur.words++; words++; if (r.source === 'transcribed') heard++; if (r.source === 'trybe') shared++ }
-      by.set(k, cur)
-      if (r.updated_at > last) last = r.updated_at
-    }
-    const brands = [...by.values()].sort((a, b) => b.words - a.words || b.videos - a.videos || a.name.localeCompare(b.name))
-    // WHY THE REST HAVE NONE, counted, so 85 of 134 is never left to guess at.
-    const without = noWordsSentence(whyNoWords(rows))
-    return NextResponse.json({ ok: true, videos: rows.length, words, heard, shared, without, brands: brands.slice(0, 60), collectedAt: last || null })
-  }
-
   if (action === 'top_scripts_seen') {
     // The team's Top 100 read, filed. Each entry becomes a row the first time
     // it is seen, so a video keeps its best place across days, and the answer
@@ -2092,65 +2072,6 @@ export async function POST(request: Request) {
     const { error } = await admin.from('trybe_top_scripts').update(patch).eq('submission_id', id)
     if (error) return NextResponse.json({ error: scriptsMissing(error.message) ? setupWords(tier, SCRIPTS_SQL) : error.message }, { status: scriptsMissing(error.message) ? 409 : 500 })
     return NextResponse.json({ ok: true, saved: cleaned.ok ? 1 : 0, ...(cleaned.ok ? {} : { why: cleaned.why }) })
-  }
-
-  if (action === 'top_script_hear') {
-    // MVP listens to the video itself. This is the one that costs money, so
-    // it is the team's to spend, one video per call, and never on a video
-    // that already has words.
-    if (tier !== 'admin') return NextResponse.json({ ok: true, heard: 0, kept: true })
-    if (!transcriptionConfigured()) return NextResponse.json({ error: 'Transcription is not configured on this deployment (FAL_KEY).' }, { status: 503 })
-    const id = typeof body.submissionId === 'string' ? body.submissionId.slice(0, 120) : ''
-    if (!id) return NextResponse.json({ error: 'No video.' }, { status: 400 })
-    const { data: row, error: rErr } = await admin.from('trybe_top_scripts').select('submission_id,video_url,state').eq('submission_id', id).maybeSingle()
-    if (rErr) return NextResponse.json({ error: scriptsMissing(rErr.message) ? setupWords(tier, SCRIPTS_SQL) : rErr.message }, { status: scriptsMissing(rErr.message) ? 409 : 500 })
-    if (!row) return NextResponse.json({ error: 'That video is not one MVP has seen in the Top 100.' }, { status: 404 })
-    // One implementation with the daily job (lib/trybe-top-hear): the same
-    // rules, and every listen counted against the same daily ledger.
-    const heard = await hearTopVideo(admin, row)
-    if ('error' in heard) return NextResponse.json({ error: `MVP could not listen to that video: ${heard.error}` }, { status: 502 })
-    return NextResponse.json({ ok: true, ...heard })
-  }
-
-  if (action === 'script_rewrite') {
-    // One winning video turned into a script in the creator's own voice, at
-    // the closeness they picked.
-    const reference = typeof body.reference === 'string' ? body.reference.replace(/\s+/g, ' ').trim().slice(0, SCRIPT_MAX) : ''
-    const input = {
-      reference,
-      avatar: typeof body.avatar === 'string' ? body.avatar.trim().slice(0, 600) : '',
-      experience: typeof body.experience === 'string' ? body.experience.trim().slice(0, 900) : '',
-      closeness: readCloseness(body.closeness),
-      product: typeof body.product === 'string' ? body.product.trim().slice(0, 160) : '',
-      brand: typeof body.brand === 'string' ? body.brand.trim().slice(0, 120) : 'the brand',
-      brief: typeof body.brief === 'string' ? body.brief.trim().slice(0, 1200) : undefined,
-      voice: (Array.isArray(body.voice) ? body.voice : []).map((v) => String(v ?? '').replace(/\s+/g, ' ').trim()).filter((v) => v.length > 12).slice(0, 3),
-    }
-    const missing = rewriteMissing(input)
-    if (missing.length) return NextResponse.json({ error: `MVP needs ${missing.join(', and ')}.` }, { status: 400 })
-    const spend = await spendGate(userId, tier)
-    if (spend) return spend
-    try {
-      const msg = await createAnthropicClient().messages.create({
-        model: FIT_MODEL, max_tokens: 1200,
-        system: `You write short video scripts for creators. ${BANNED_RULE}`,
-        messages: [{ role: 'user', content: rewritePrompt(input) }],
-      })
-      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_script_rewrite', model: FIT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const raw = scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
-      const out = readRewrite(raw)
-      if (!out) return NextResponse.json({ error: 'MVP did not get a script back it could use. Try again.' }, { status: 502 })
-      // THE CHECK THAT PROTECTS THE CREATOR. "Close to it" invites copying,
-      // and a script that is the reference with two words changed is the one
-      // that gets somebody dropped by a brand. Refused, not shown with a
-      // warning nobody reads.
-      if (tooAlike(reference, out.script)) {
-        return NextResponse.json({ error: 'That came back too close to the original video. Move the dial to Same shape or Just the idea and write it again.' }, { status: 409 })
-      }
-      return NextResponse.json({ ok: true, hooks: out.hooks, script: out.script })
-    } catch (e) {
-      return NextResponse.json({ error: e instanceof Error ? `MVP could not write it: ${e.message}` : 'MVP could not write it.' }, { status: 502 })
-    }
   }
 
   if (action === 'suggest_reply') {

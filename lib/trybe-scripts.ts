@@ -90,6 +90,57 @@ export function toTranscribe<T extends { submissionId: string | null; rank: numb
     .slice(0, Math.max(0, max))
 }
 
+/**
+ * WINNING TRYBE ADS AS EXAMPLES FOR MAKE VIDEOS (Seb, 2026-10-19: "using
+ * these successful top 100 words ... for examples to create our own videos
+ * within MVP TRYBE under Make Videos").
+ *
+ * The full words of the Top 100 videos MVP collects every day, picked for the
+ * brand being planned: its own first, then the same category, then the best
+ * placed of the rest. At most two from any one brand, so six examples are six
+ * different ads rather than one brand's campaign. Only videos with words.
+ * Pure.
+ */
+const catWords = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !['and', 'the', 'for'].includes(w))
+export function pickExamples<T extends Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>(
+  rows: T[], brand: { id?: string | null; name: string; categories?: string[] | null }, max = 6,
+): T[] {
+  const own = (r: T) => (!!brand.id && r.brand_id === brand.id) || (!!r.brand_name && r.brand_name.trim().toLowerCase() === brand.name.trim().toLowerCase())
+  const want = new Set((brand.categories || []).flatMap(catWords))
+  const near = (r: T) => !!r.category && catWords(r.category).some((w) => want.has(w))
+  const score = (r: T) => (own(r) ? 0 : near(r) ? 1 : 2)
+  const ready = rows.filter((r) => r.state === 'ready' && typeof r.script === 'string' && r.script.trim().length >= SCRIPT_MIN)
+    .sort((a, b) => score(a) - score(b) || (a.best_rank ?? 999) - (b.best_rank ?? 999))
+  const per = new Map<string, number>()
+  const out: T[] = []
+  for (const r of ready) {
+    const k = (r.brand_id || r.brand_name || '').toLowerCase()
+    if ((per.get(k) ?? 0) >= 2) continue
+    per.set(k, (per.get(k) ?? 0) + 1)
+    out.push(r)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** The prompt block: how winning ads are built, never their words. Another
+ *  brand's name becomes "the brand", and each example is cut to its first
+ *  450 characters, which is the hook and the body of a short ad. Pure. */
+export function examplesBlock(rows: Array<Pick<TopScript, 'brand_name' | 'best_rank' | 'category' | 'script'>>, forBrand: string): string {
+  if (!rows.length) return ''
+  const own = forBrand.trim().toLowerCase()
+  const lines = rows.map((r, i) => {
+    let t = String(r.script || '').replace(/\s+/g, ' ').trim().slice(0, 450)
+    if (r.brand_name && r.brand_name.trim().toLowerCase() !== own) t = t.replace(new RegExp(r.brand_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'the brand')
+    const tag = [r.best_rank ? `#${r.best_rank} in the Top 100` : 'in the Top 100', r.category || ''].filter(Boolean).join(', ')
+    return `Ad ${i + 1} (${tag}): ${t}`
+  })
+  return [
+    'WINNING TRYBE ADS RIGHT NOW (the full words of videos in TRYBE’s Top 100, the ads brands are paying to run). Learn how they are built: the opening line, how fast the product shows up, the problem, the proof, the ask. Never copy their sentences, never name another brand, and never borrow their numbers, prices or results.',
+    ...lines,
+  ].join('\n')
+}
+
 /** Why the filed videos without words have none, counted from their rows
  *  (Seb, 2026-10-19: a board at 85 of 134 said nothing about the other 49).
  *  'none' rows were heard with almost nothing said, or had no file; 'waiting'

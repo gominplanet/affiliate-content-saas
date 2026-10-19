@@ -284,7 +284,10 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
         : b0.state === 'none' ? 'TRYBE shows no brief for this brand, so these come from the brand and its website.'
         : !brandId ? 'MVP has no TRYBE page for this brand, so these come from the product and what MVP knows of the brand.'
         : canRead ? 'MVP could not read their brief on TRYBE, so these come from the brand and its website.' : 'Update SCOUT to 1.46.0 or newer and MVP also plans from the brand\'s brief.'
-      const from = [briefSaid, fromWin].filter(Boolean).join(' ')
+      // HOW MANY WINNING TRYBE ADS WENT IN, said, so a plan written with
+      // none of them (the Top 100 had no words yet) never reads as one that had.
+      const fromTop = d.fromTop100 ? `Written with ${d.fromTop100} winning ad${d.fromTop100 === 1 ? '' : 's'} from TRYBE’s Top 100 as examples.` : ''
+      const from = [briefSaid, fromWin, fromTop].filter(Boolean).join(' ')
       if (d.onList === false) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}${name} is not on your MVP list, so these ideas are shown but not kept. Copy what you want.` })
       else if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These ideas are shown but could not be saved, so they will be gone next visit. Copy what you want to keep.` })
       else if (from) setPlanNote({ tone: 'ok', text: from })
