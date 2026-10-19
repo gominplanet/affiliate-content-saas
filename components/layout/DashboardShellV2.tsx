@@ -693,6 +693,10 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
+        // Deals Hub import: the member's own Deals Hub file, read in the
+        // browser, posted to social as each deal starts (lib/labs-preview
+        // deals_import). It lives on the Deals Hub page; this goes straight to it.
+        { href: '/deals#deals-import', icon: <UploadCloud size={15} />, label: 'Deals Hub import', gate: isAdmin, badge: 'New' },
       ],
     },
     {

@@ -225,6 +225,14 @@ export default function DealsHubPage() {
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
 
+  // Opened from Labs > Deals Hub import: the panel renders once the tier is
+  // known, so the browser's own jump to #deals-import happens too early.
+  useEffect(() => {
+    if (!tier || typeof window === 'undefined' || window.location.hash !== '#deals-import') return
+    const t = setTimeout(() => document.getElementById('deals-import')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+    return () => clearTimeout(t)
+  }, [tier])
+
   // ── Deal Radar hand-off ──────────────────────────────────────────────────
   // Amazon Deal Radar's "Make blog post" deep-links here with ?asin=… so the
   // creator lands with the product prefilled, ready to generate.
@@ -676,6 +684,22 @@ export default function DealsHubPage() {
           </div>
         </div>
 
+        {/* ── Import your Deals Hub file ─────────────────────────────── */}
+        {/* The June importer sent every row to the server and was removed.
+            This one reads the file in the browser and sends only the deals
+            picked (components/deals/DealsHubImport). Labs while it is tested.
+            AT THE TOP, with an anchor the Labs menu links to (Seb, 2026-10-19:
+            "can't see anywhere ... where to upload this CSV file"): it sat
+            below the form, between it and Recent deals, and was missed. */}
+        {canUsePreview('deals_import', tier) && (
+          <div id="deals-import" className="scroll-mt-20">
+          <DealsHubImport pinterestEnabled={tier ? tierAllowsSocial(tier, 'pinterest') : false} instagramEnabled={tier ? tierAllowsSocial(tier, 'instagram') : false} onPosted={async () => {
+            const list = await fetch('/api/deals').then((r) => r.json()).catch(() => null) as { deals?: DealRow[] } | null
+            if (list?.deals) setDeals(list.deals)
+          }} />
+          </div>
+        )}
+
         {/* Amazon's embargo, said before anyone presses Generate.
             Amazon prints this on the Deals Hub itself, and the Deals Hub lists
             deals weeks ahead: in September its queue is full of October ones.
@@ -1088,17 +1112,6 @@ create index if not exists blog_posts_deal_meta_gin
               </Button>
             </div>
           </form>
-        )}
-
-        {/* ── Import your Deals Hub file ─────────────────────────────── */}
-        {/* The June importer sent every row to the server and was removed.
-            This one reads the file in the browser and sends only the deals
-            picked (components/deals/DealsHubImport). Labs while it is tested. */}
-        {canUsePreview('deals_import', tier) && (
-          <DealsHubImport pinterestEnabled={tier ? tierAllowsSocial(tier, 'pinterest') : false} instagramEnabled={tier ? tierAllowsSocial(tier, 'instagram') : false} onPosted={async () => {
-            const list = await fetch('/api/deals').then((r) => r.json()).catch(() => null) as { deals?: DealRow[] } | null
-            if (list?.deals) setDeals(list.deals)
-          }} />
         )}
 
         {/* ── Recent deals list ──────────────────────────────────────── */}
