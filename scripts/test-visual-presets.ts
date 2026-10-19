@@ -212,10 +212,11 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
   check('no loud execution note survives',
     !/vibrant, modern, high-contrast and layered/.test(quiet))
 
-  // The loud look keeps all of it, because there the brief furniture belongs.
+  // The loud look keeps ONE small extra and no banner (Seb, 2026-10-19:
+  // "too much text typically means a greater ratio of errors").
   const loud = head('bold', { concept: brief, banner: 'GAME CHANGER!', callouts: ['144Hz', 'QUIET'] })
-  check('the loud look still renders the banner', /GAME CHANGER/.test(loud))
-  check('and the callouts', /144Hz/.test(loud))
+  check('the loud look no longer renders a banner', !/GAME CHANGER/.test(loud), loud)
+  check('and keeps one chip, the first', /144Hz/.test(loud) && !/QUIET/.test(loud), loud)
 }
 
 // ── the art director writes inside the look ─────────────────────────────────
@@ -236,8 +237,8 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
     /scroll-stopping/.test(rules) && /vibrant/.test(rules), rules)
 
   const loudRules = presetToBriefRules(resolvePreset('bold'))
-  check('while the loud look invites them',
-    /Banners, starburst badges and callout chips all belong/.test(loudRules))
+  check('while the loud look allows one small extra',
+    /a starburst badge OR one callout chip, never both and never more than one/.test(loudRules), loudRules)
 }
 
 // ── the wiring ──────────────────────────────────────────────────────────────

@@ -28,6 +28,14 @@ export interface WhatsNewItem {
 export const WHATS_NEW: WhatsNewItem[] = [
   // Your own thumbnail text (Seb, 2026-10-18). For everyone who makes thumbnails.
   {
+    date: '2026-10-19',
+    badge: 'BETTER',
+    tone: '#7C3AED',
+    title: 'Thumbnails with less text, and only what is true',
+    desc: 'Every thumbnail and design now carries the headline plus at most one small badge or chip, so there is less to get wrong. MVP also checks the words against your video, your post and the product listing: a claim like TESTED, CONFIRMED or ALL NIGHT, or a number, only goes on when one of those says it. When MVP swaps a headline or leaves a chip out, Co-Pilot tells you what it changed.',
+    href: '/co-pilot',
+  },
+  {
     date: '2026-10-18',
     badge: 'NEW',
     tone: '#7C3AED',

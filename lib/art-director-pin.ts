@@ -13,6 +13,8 @@ import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
 import { badDealCopy, dealFallbackHeadline, DEAL_FALLBACK_SUBHEAD } from '@/lib/deal-pin-copy'
 import { scrubBanned } from '@/lib/scrub'
 import { resolvePreset, presetToPrompt } from '@/lib/visual-presets'
+import { factCheckBriefs, factsText } from '@/lib/thumb-facts'
+import { TEXT_BUDGET } from '@/lib/thumbnail-prompt'
 
 interface Brief { line1: string; line2: string; callouts: string[]; concept: string; palette: string }
 
@@ -29,18 +31,20 @@ const BANNED_Q = /\b(money|price|pricing|priced|cost|costs|costly|cheap|cheaper|
 
 const BRIEF_SYSTEM = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping vertical Pinterest pin for a product. Return STRICT JSON: {"line1","line2","callouts","concept","palette"}.
 - line1 / line2: a punchy 2-line ALL-CAPS headline for the product (line1 ≤ 15 chars, line2 ≤ 20 chars). Specific to THIS product's category, standout feature or benefit.
-- callouts: 3 short benefit/spec chips (2-4 words each), grounded in the product.
+- callouts: AT MOST ONE short real spec or feature chip (1-3 words) taken from the DETAILS, or an empty array. Fewer words means fewer mistakes.
 - concept: one sentence describing the layout + vibe.
 - palette: the colour direction, tuned to the product.
+FACTS ONLY: every word comes from the product title or DETAILS. Never a test, result, verdict, guarantee, time span or number they do not contain ("TESTED", "PROVEN", "CONFIRMED", "ALL NIGHT", "AFTER 30 DAYS").
 HARD RULES: never the word "Amazon" or a retailer name/logo. No people. NEVER a year or date (no "2025", "2026", "THIS YEAR") — keep it evergreen so the graphic never looks dated. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS" — be specific and fresh. JSON only, no markdown.`
 
 // Question-hook variant: same designed look, but the headline is a short,
 // specific curiosity QUESTION about the product's real claim/effect/experience.
 const BRIEF_SYSTEM_QUESTION = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping thumbnail for a product, in the CURIOSITY-QUESTION style. The headline is a short, punchy QUESTION that makes someone need to click to find the answer. Return STRICT JSON: {"line1","line2","callouts","concept","palette"}.
 - line1 / line2: split ONE question across two ALL-CAPS lines (line1 ≤ 16 chars, line2 ≤ 20 chars). Make it SPECIFIC to THIS product's real claim, effect, taste/feel or result — not generic. Examples of the vibe: a fat-burner → "DOES IT REALLY" / "BURN FAT???"; fish oil → "ANY FISHY" / "AFTERTASTE?"; a testosterone complex → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?". End with a question mark ("?" or "???" for punch).
-- callouts: 3 short benefit/spec chips (2-4 words each), grounded in the product.
+- callouts: AT MOST ONE short real spec or feature chip (1-3 words) taken from the DETAILS, or an empty array. Fewer words means fewer mistakes.
 - concept: one sentence describing the layout + vibe.
 - palette: the colour direction, tuned to the product.
+FACTS ONLY: every word comes from the product title or DETAILS. Never a test, result, verdict, guarantee, time span or number they do not contain.
 HARD RULES for the QUESTION: NEVER mention money, price, cost, "cheap", "expensive", value, "worth it", "amazon", "purchase", or "buy"/"buying"/"bought"/"should I buy". NEVER say "game changer". Ask about performance, results, taste/feel, quality, or whether it lives up to the hype — NEVER about price or buying. Never a retailer name/logo, no people described here, NEVER a year or date. JSON only, no markdown.`
 
 async function designPinBrief(productTitle: string, productContext: string, userId?: string | null, tier?: string | null, headlineStyle: HeadlineStyle = 'statement'): Promise<Brief | null> {
@@ -63,11 +67,20 @@ async function designPinBrief(productTitle: string, productContext: string, user
     // "game changer"). If the model slipped one in, fall back to a safe generic
     // curiosity question rather than shipping a banned headline.
     if (isQuestion && BANNED_Q.test(`${line1} ${line2}`)) { line1 = 'DOES IT'; line2 = 'ACTUALLY WORK?' }
-    return {
+    // FACTS ONLY, the same check the thumbnails get (lib/thumb-facts): a pin
+    // has only the listing to go on, so nothing may claim what happened.
+    const [checked] = factCheckBriefs([{
       line1,
       line2,
-      callouts: Array.isArray(j.callouts) ? j.callouts.map((c) => clean(c, 24)).filter(Boolean).slice(0, 3) : [],
+      callouts: Array.isArray(j.callouts) ? j.callouts.map((c) => clean(c, 24).toUpperCase()).filter(Boolean).slice(0, 1) : [],
       concept: String(j.concept || '').trim().slice(0, 400),
+    }], factsText([productTitle, productContext]), { question: isQuestion })
+    if (checked.textNotes.length) console.warn(`[thumb-facts] pin: ${checked.textNotes.join(' | ')}`)
+    return {
+      line1: checked.line1,
+      line2: checked.line2,
+      callouts: checked.callouts,
+      concept: checked.concept,
       palette: String(j.palette || '').trim().slice(0, 140),
     }
   } catch { return null }
@@ -118,10 +131,11 @@ export async function generateArtDirectorPin(opts: {
       `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently — its true shape, colours and its own printed branding. Light it naturally with a grounded shadow; no glow ring.`,
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
-      preset.badges && callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      preset.badges && callouts.length ? `ONE CHIP: add a single small spec pill reading exactly "${callouts[0]}", correctly spelled. Just this one.` : '',
+      TEXT_BUDGET,
       'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
-      'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
+      'FRAMING: the entire canvas is shown — nothing cropped. Keep every word and the whole product inside a ~5% safe margin on all four sides.',
     ].filter(Boolean).join('\n')
 
     const openai = createOpenAIService()
@@ -192,10 +206,11 @@ export async function generateArtDirectorBlogHero(opts: {
       'PRODUCT (the hero): recreate the product from Image 1 accurately and prominently — its true shape, colours and its own printed branding. Light it naturally with a grounded shadow; no glow ring.',
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
-      resolvePreset(opts.presetId).badges && callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      resolvePreset(opts.presetId).badges && callouts.length ? `ONE CHIP: add a single small spec pill reading exactly "${callouts[0]}", correctly spelled. Just this one.` : '',
+      TEXT_BUDGET,
       'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
-      'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
+      'FRAMING: the entire canvas is shown — nothing cropped. Keep every word and the whole product inside a ~5% safe margin on all four sides.',
     ].filter(Boolean).join('\n')
 
     const openai = createOpenAIService()

@@ -28,7 +28,7 @@ import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
-import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
+import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout, oneChip, TEXT_BUDGET } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
@@ -38,6 +38,7 @@ import {
   type EffectiveFraming,
 } from '@/lib/body-framing'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
+import { factsText, factCheckBriefs, unsupportedClaims, SAFE_HEADLINE } from '@/lib/thumb-facts'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -151,6 +152,11 @@ function clampLine(s: string, max: number): string {
   return (lastSpace >= Math.floor(max / 2) ? cut.slice(0, lastSpace) : cut).trim()
 }
 
+/** The facts check's notes across the briefs that were rendered, once each. */
+function textNotesOf(briefs: unknown[]): string[] {
+  return Array.from(new Set(briefs.flatMap((b) => (b as { textNotes?: string[] }).textNotes ?? []))).slice(0, 6)
+}
+
 function flatCopy(c: ThumbCopy | string | null | undefined): string {
   if (!c) return ''
   // Scrub here too — flatCopy feeds the overlay-text draw + response payload,
@@ -162,7 +168,7 @@ function flatCopy(c: ThumbCopy | string | null | undefined): string {
 const ANGLE_DEFS: Record<CtrAngle, string> = {
   NEGATION: 'Tell the viewer to STOP doing something normal/wasteful that the product replaces. Examples: "NEVER USE | CANDLES AGAIN!" · "STOP BUYING | THESE FOREVER" · "QUIT WASTING | MONEY ON THIS". Emphasis word is usually "NEVER" / "STOP" / "QUIT".',
   CURIOSITY_GAP: 'Hint at a secret, an unspoken truth, or a singular missing piece of info. Examples: "THE *ONE* THING | NOBODY TELLS YOU" · "WHY EVERYONE | IS WRONG" · "THE SECRET | THEY HIDE". Emphasis word is usually "ONE" / "SECRET" / "WHY".',
-  SKEPTIC: 'Attack the product up front to spike drama and force the click to see if it\'s vindicated. Examples: "WASTE OF | MONEY?!" · "BIGGEST SCAM | OF 2026?" · "DON\'T BELIEVE | THE HYPE". Emphasis word is usually "WASTE" / "SCAM" / "DON\'T".',
+  SKEPTIC: 'Attack the product up front to spike drama and force the click to see if it\'s vindicated. Examples: "WASTE OF | MONEY?!" · "BIGGEST LETDOWN | YET?" · "DON\'T BELIEVE | THE HYPE". Emphasis word is usually "WASTE" / "SCAM" / "DON\'T".',
   VALUE_DISRUPTION: 'Compare the item to a much pricier/different category to make it look like an insane life-hack. Examples: "CHEAPER THAN | YOUR LATTE!" · "BEATS A $300 | GADGET?" · "$20 vs $200 | NO CONTEST". Emphasis word is usually "CHEAPER" / "BEATS" / the dollar amount.',
 }
 
@@ -195,7 +201,12 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
 // ── Claude Haiku: single ThumbCopy (kept for callers that want just one) ────
 async function generateHook(videoTitle: string, productContext = '', claimsSheet = ''): Promise<string> {
   const c = await generateThumbCopy(videoTitle, 'NEGATION', productContext, claimsSheet)
-  return flatCopy(c)
+  const hook = flatCopy(c)
+  // FACTS ONLY, same check as the briefs (lib/thumb-facts).
+  const why = unsupportedClaims(hook, factsText([videoTitle, productContext, claimsSheet]))
+  if (!why.length) return hook
+  console.warn(`[thumb-facts] quick hook "${hook}" ${why[0]}`)
+  return `${SAFE_HEADLINE.statement.line1} ${SAFE_HEADLINE.statement.line2}`
 }
 
 // ── Claude Haiku: distil the video transcript into a compact "claims sheet" ──
@@ -343,6 +354,9 @@ interface ThumbBrief extends ThumbCopy {
   /** Body pose / gesture (e.g. "pointing at the product", "arms crossed",
    *  "holding it up", "thumbs up"). Varies so it isn't always the pointing pose. */
   pose: string
+  /** What the facts check changed on this brief and why, for the screen
+   *  (lib/thumb-facts). Absent or empty when it changed nothing. */
+  textNotes?: string[]
 }
 
 const ART_DIRECTOR_SYSTEM = `You are a world-class YouTube thumbnail ART DIRECTOR for product-review channels. You brief an image model that renders your design.
@@ -356,15 +370,17 @@ For the product given, output N_BRIEFS DISTINCT design briefs — each a differe
 Each brief has:
 - line1 / line2: the headline, split into two short punchy lines (line1 ≤ 15 chars, line2 ≤ 20 chars), ALL CAPS. VARY the approach across briefs — product-descriptive ("KERATIN HAIR CARE", "22\" 144Hz MONITOR"), bold benefit ("SALON-SMOOTH HAIR"), curiosity, or a negation of the real problem. Do NOT make every headline a "NO MORE ___" negation — mix it up like a real designer. No brand model numbers as the whole headline.
 - emphasisWord: the ONE word in the headline to accent in a bright colour.
-- banner: a SHORT extra punch phrase for a hand-painted banner ("GAME CHANGER!", "SO POWERFUL!", "WORTH IT?!"), or "" if it doesn't need one.
-- badge: a 1–3 word starburst badge naming ONE real benefit or spec from the product details, ALL CAPS, punchy ("SO SOFT", "MAX POWER!", "400 TC", "WHISPER QUIET"). Must be DIFFERENT from the banner and from every callout. Correctly spelled.
+- banner: always "". The headline is the only phrase on the design.
+- badge: a 1–3 word starburst badge naming ONE real spec or feature from the FACTS below, ALL CAPS ("400 TC", "WHISPER QUIET", "MAGSAFE"). It is only drawn when the creator asks for a badge, and then INSTEAD of the callout. Correctly spelled.
 - palette: the colour direction, tuned to the product/brand (e.g. "deep purple gradient, hot-pink + white type" for a beauty product; "black + electric-orange, F1 energy" for a McLaren blender). Avoid defaulting to plain yellow-on-black every time.
-- callouts: 2–3 SHORT real benefit/spec callouts drawn from the product details (e.g. "SMOOTHER", "144Hz", "NOISE REDUCTION"). Correctly spelled, a few words each.
-- concept: 2–4 sentences describing the finished thumbnail — the background (vivid studio gradient, themed graphic scene, or real-life setting that suits the product), the composition, how the title is styled (which words pop, banner placement), and the mood. This is what the image model builds. Make it specific to THIS product, and make it look designed and premium, never flat.
+- callouts: AT MOST ONE short real spec or feature, 1 to 3 words, taken from the FACTS below (e.g. "144Hz", "NOISE REDUCTION"), or an empty array. Fewer words on a thumbnail means fewer mistakes, and an empty array is often the better design.
+- concept: 2–4 sentences describing the finished thumbnail — the background (vivid studio gradient, themed graphic scene, or real-life setting that suits the product), the composition, how the headline is styled (which word pops), and the mood. This is what the image model builds. Make it specific to THIS product, and make it look designed and premium, never flat. The concept never adds words: no sublines, banners, ribbons, checklists, ticks with labels, stickers or captions. The only words on the design are the headline and, at most, that one callout.
 - expression: the creator's facial REACTION, chosen to fit THIS headline/product — and VARIED across the briefs so they don't all look the same. Pick the emotion the video earns: e.g. "wide-eyed shocked", "delighted open-mouth grin", "skeptical raised eyebrow", "amazed wow face", "excited eyebrows-up", "curious intrigued look", "confident smirk", "thrilled laughing". A "worth it?" angle → skeptical; a big deal/benefit → excited or amazed. Two to four words.
 - pose: the creator's body/gesture, also VARIED (not always pointing): e.g. "pointing at the product", "holding the product up", "arms crossed, confident", "thumbs up", "hand on chin, thinking", "open-handed presenting". Match it to the expression. Two to five words.
 
 HARD RULE (non-negotiable): NEVER put the word "Amazon" (or "Prime", "Amazon Prime") anywhere in line1, line2, emphasisWord, callouts, banner, or concept. Never describe the Amazon smile / swoosh arrow logo. The design must never name or draw the retailer. Lead with the product's real category, standout feature, or benefit instead.
+
+FACTS ONLY (non-negotiable): every word on the design comes from the FACTS: what the creator said in the video or wrote in the post, the video title, and the product details. Never state or suggest a test, a result, a verdict, a guarantee or a time span the facts do not contain: no "CONFIRMED", "PROVEN", "TESTED", "SPOILER", "YES!", "VERDICT", "ALL NIGHT", "ALL SEASON", "AFTER 30 DAYS", "I TRIED", unless the facts say exactly that. Never a number the facts do not contain. A thumbnail that promises what the video does not show loses the viewer and the creator's trust.
 
 ANTI-CLICHÉ (non-negotiable): do NOT default to overused, generic hype phrases for the headline OR the banner. NEVER use "HIDDEN GEM", "GAME CHANGER", "GAME-CHANGING", "MUST-HAVE", "YOU NEED THIS", "LIFE CHANGING", "OBSESSED", "VIRAL". These are banned. Every brief's headline and banner must be SPECIFIC to THIS product — its category, its standout feature, a real benefit, a number/spec, or the problem it solves — and genuinely VARIED from brief to brief. Write like a designer who never repeats themselves.
 
@@ -373,7 +389,7 @@ OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasis
 // Curiosity-question override for the art-director briefs: every headline
 // becomes a short question, with a matching facial reaction, and hard-bans the
 // money/price/buy/amazon/"game changer" angles.
-const QUESTION_DIRECTIVE = `HEADLINE STYLE — CURIOSITY QUESTION (this overrides the headline guidance above): For EVERY brief, line1 + line2 must together form ONE short, punchy QUESTION about THIS product's real claim, effect, taste/feel, quality or result — the kind that makes someone need to click to find the answer. Examples of the vibe: fish oil → "ANY FISHY" / "AFTERTASTE?"; a supplement → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?"; a blender → "CAN IT CRUSH" / "FROZEN FRUIT?". NEVER name a body effect, condition or symptom, not even as the question: "DOES IT BURN FAT???", "BOOST YOUR ENERGY?" and "SUPPORTS TESTOSTERONE?" are all forbidden. Ask about the PRODUCT (does it work, is it worth it, what does it taste like, how does it compare), never about what it does to a body. End with a question mark ("?" or "???"). Set each brief's "expression" to a reaction that MATCHES its question — skeptical, doubtful, unsure, curious/intrigued, or wide-eyed surprised — so the face sells the question. The "banner" may be a short question or "".
+const QUESTION_DIRECTIVE = `HEADLINE STYLE — CURIOSITY QUESTION (this overrides the headline guidance above): For EVERY brief, line1 + line2 must together form ONE short, punchy QUESTION about THIS product's real claim, effect, taste/feel, quality or result — the kind that makes someone need to click to find the answer. Examples of the vibe: fish oil → "ANY FISHY" / "AFTERTASTE?"; a supplement → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?"; a blender → "CAN IT CRUSH" / "FROZEN FRUIT?". NEVER name a body effect, condition or symptom, not even as the question: "DOES IT BURN FAT???", "BOOST YOUR ENERGY?" and "SUPPORTS TESTOSTERONE?" are all forbidden. Ask about the PRODUCT (does it work, is it worth it, what does it taste like, how does it compare), never about what it does to a body. End with a question mark ("?" or "???"). Set each brief's "expression" to a reaction that MATCHES its question — skeptical, doubtful, unsure, curious/intrigued, or wide-eyed surprised — so the face sells the question. The "banner" stays "".
 BANNED IN THE QUESTION (non-negotiable): NEVER mention money, price, cost, "cheap", "expensive", value, "worth it", "amazon", "purchase", or "buy"/"buying"/"bought"/"should I buy", and NEVER "game changer". Ask about performance, results, taste/feel, quality or living up to the hype — never about price or buying.`
 
 // Banned words for question headlines (mirrors art-director-pin.ts BANNED_Q).
@@ -390,6 +406,9 @@ async function designThumbnailBriefs(input: {
   productBrand?: string
   productContext?: string
   claimsSheet?: string
+  /** The creator's own words in full: the transcript, or the post. Checked
+   *  against as well as the claims sheet, which is a summary of it. */
+  sourceText?: string
   lockedHeadline?: string | null
   noHuman?: boolean
   headlineStyle?: 'statement' | 'question'
@@ -409,6 +428,15 @@ async function designThumbnailBriefs(input: {
   const fixedExpression = (input.fixedExpression || '').trim()
   const isQuestion = input.headlineStyle === 'question'
   const anthropic = createAnthropicClient()
+  // FACTS ONLY (lib/thumb-facts): every word the briefs put on the design is
+  // checked against what MVP was given, after the art director writes it.
+  const facts = factsText([input.videoTitle, input.productTitle, input.productBrand, input.productContext, input.claimsSheet, input.sourceText, input.lockedHeadline])
+  const factChecked = (bs: ThumbBrief[]): ThumbBrief[] => {
+    const out = factCheckBriefs(bs, facts, { lockedHeadline: !!input.lockedHeadline, question: isQuestion })
+    const notes = out.flatMap((b) => b.textNotes)
+    if (notes.length) console.warn(`[thumb-facts] ${notes.join(' | ')}`)
+    return out
+  }
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
     let l1 = clampLine(stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase(), 18)
     let l2 = clampLine(stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase(), 26)
@@ -426,7 +454,7 @@ async function designThumbnailBriefs(input: {
     // question if the model slipped a money/buy/amazon angle in.
     if (isQuestion && BANNED_Q_THUMB.test(`${l1} ${l2}`)) { l1 = 'DOES IT'; l2 = 'ACTUALLY WORK?' }
     const calls = Array.isArray(o.callouts)
-      ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => stripDesignBrands(scrubBanned(c.trim())).slice(0, 28)).filter(Boolean).slice(0, 3)
+      ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => clampLine(stripDesignBrands(scrubBanned(c.trim())).toUpperCase(), 28)).filter(Boolean).slice(0, 1)
       : []
     return {
       angle: ANGLE_ROTATION[i % ANGLE_ROTATION.length],
@@ -437,7 +465,9 @@ async function designThumbnailBriefs(input: {
       concept: String(o.concept || '').trim().slice(0, 900),
       palette: String(o.palette || '').trim().slice(0, 160),
       callouts: calls,
-      banner: stripDesignBrands(scrubBanned(String(o.banner || '').trim())).slice(0, 40),
+      // HEADLINE PLUS ONE SMALL BADGE OR CHIP (Seb, 2026-10-19: "too much text
+      // typically means a greater ratio of errors"). No banner, ever.
+      banner: '',
       badge: clampLine(stripDesignBrands(scrubBanned(String(o.badge || '').trim())).toUpperCase(), 18),
       // The creator's pick wins even if the model ignored the rule above.
       expression: fixedExpression || String(o.expression || '').trim().slice(0, 60),
@@ -448,8 +478,10 @@ async function designThumbnailBriefs(input: {
     `VIDEO TITLE: "${input.videoTitle}"`,
     input.productTitle ? `PRODUCT: ${input.productTitle}` : '',
     input.productBrand ? `BRAND: ${input.productBrand}` : '',
-    input.productContext ? `PRODUCT DETAILS (features / specs — ground callouts here, do NOT invent):\n${input.productContext.slice(0, 900)}` : '',
-    input.claimsSheet ? `WHAT THE CREATOR SAID IN THE VIDEO (strongest grounding):\n${input.claimsSheet.slice(0, 500)}` : '',
+    input.productContext ? `FACTS, THE PRODUCT DETAILS (features / specs, the callout comes from here or from the creator's words, never invented):\n${input.productContext.slice(0, 900)}` : '',
+    input.claimsSheet ? `FACTS, WHAT THE CREATOR SAID (strongest grounding, in the video or the post):\n${input.claimsSheet.slice(0, 700)}`
+      : input.sourceText ? `FACTS, THE CREATOR'S OWN WORDS (strongest grounding, from the video or the post):\n${input.sourceText.slice(0, 1500)}`
+        : 'The creator\'s own words are not available for this one, so keep the headline about the product itself and claim nothing that happened.',
     input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
     input.noHuman ? 'PRODUCT-ONLY (hard rule): these designs must contain NO people at all. Do NOT reference a person, model, hands, or anyone using the product in the concept, callouts or banner. The concept centers on the PRODUCT itself. Leave expression and pose empty.' : '',
     input.fixedExpression ? `EXPRESSION IS FIXED (hard rule, overrides every other instruction about reactions, including the headline-style guidance): the creator chose ${input.fixedExpression}. Set every brief's "expression" field to exactly that, and make sure NOTHING in the concept, banner or callouts describes them reacting any other way. Do not write a doubtful or skeptical face into the concept unless that IS the chosen expression.` : '',
@@ -479,7 +511,7 @@ async function designThumbnailBriefs(input: {
       ? (JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>[])
       : []
     const briefs = arr.slice(0, n).map(clampBrief).filter(b => b.line1 || b.line2)
-    if (briefs.length > 0) return briefs
+    if (briefs.length > 0) return factChecked(briefs)
   } catch { /* fall through to the copy-only fallback below */ }
   // Question mode fallback: the statement copy generator below writes CTR
   // headlines (one angle is money/price framing) and applies NO banned-word
@@ -506,8 +538,8 @@ async function designThumbnailBriefs(input: {
   }
   // Statement-mode fallback: reuse the existing headline generator so the graphic
   // path still gets valid line1/line2 and just uses the static brief.
-  const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet)
-  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', badge: '', expression: '', pose: '' }))
+  const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet || input.sourceText?.slice(0, 1500))
+  return factChecked(copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', badge: '', expression: '', pose: '' })))
 }
 
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
@@ -1464,7 +1496,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
       // The wear toggle changes what the art director is asked for, so a brief
       // written before it was ticked must not be handed back after.
-      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}${typeof expressionChoice === 'string' && expressionChoice && expressionChoice !== 'auto' ? `:x${expressionChoice}` : ''}${Array.isArray(comparisonAsins) && comparisonAsins.length > 1 ? `:cmp${comparisonAsins.length}` : ''}`
+      // ':t2' is the text rules of 2026-10-19 (one extra, facts only): a brief
+      // cached before them carries a banner and three chips.
+      ? `${briefKey.trim().slice(0, 192)}:t2${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}${typeof expressionChoice === 'string' && expressionChoice && expressionChoice !== 'auto' ? `:x${expressionChoice}` : ''}${Array.isArray(comparisonAsins) && comparisonAsins.length > 1 ? `:cmp${comparisonAsins.length}` : ''}`
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -1491,13 +1525,13 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // format (overrides any 16:9 wording further down). Landscape/FB keep the
     // default thumbnail styling, so no directive.
     const pinDirective = isPin
-      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
+      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy: a big bold headline across the TOP, at most ONE small chip or spec badge with a real product detail, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). No other text: every extra line of words is another chance of a misspelling. NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
       : isIg
-      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM FEED POST (1080×1350, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A scroll-stopping shopping post: a big bold headline near the TOP, a short STACKED list of 2–4 benefit/feature callouts in the middle, product large and central. NEVER the word "Amazon". Fill the frame, but SAFE AREA: the TOP and BOTTOM ~10% get cropped — keep every word, badge, logo and the product edge inside a safe margin, never touching the top or bottom edge.${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") near the bottom (inside the safe area).'}`
+      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM FEED POST (1080×1350, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A scroll-stopping shopping post: a big bold headline near the TOP, at most ONE small chip with a real product detail, product large and central. No other text. NEVER the word "Amazon". Fill the frame, but SAFE AREA: the TOP and BOTTOM ~10% get cropped — keep every word, badge, logo and the product edge inside a safe margin, never touching the top or bottom edge.${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") near the bottom (inside the safe area).'}`
       : isShortCover
       ? 'FORMAT, READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL 9:16 VERTICAL YOUTUBE SHORTS THUMBNAIL (portrait, like the Short itself), NOT a 16:9 thumbnail. Ignore any "16:9" or "landscape" wording that follows. The headline goes large in the upper third; the person and the product fill the middle. The image will be trimmed a little on the left and right, so keep every word and the whole product in the central 80% of the width. Keep the bottom 20% free of text, because YouTube covers it with the title and buttons. No "link in bio", no URL, never the word "Amazon".'
       : isStory
-      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL VERTICAL INSTAGRAM STORY design (portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, 1–3 short punchy callouts. Fill the whole tall frame edge to edge, no empty dead space. Keep the headline a little below the very top and the call-to-action a little above the very bottom so the phone's story UI never covers them. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
+      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL VERTICAL INSTAGRAM STORY design (portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, at most ONE small chip with a real product detail. No other text. Fill the whole tall frame edge to edge, no empty dead space. Keep the headline a little below the very top and the call-to-action a little above the very bottom so the phone's story UI never covers them. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
       : ''
     // Telemetry feature per format, so each Amazon-social format is counted
     // against its own monthly cap (below) rather than lumped as "thumbnail".
@@ -2021,25 +2055,24 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               const briefP = copy as ThumbBrief
               const conceptP = (briefP.concept || '').trim()
               const paletteP = (briefP.palette || '').trim()
-              const bannerP = (briefP.banner || '').trim()
               // Zero-typing Boost (product-only path): typed values win, else the
               // auto toggles use this brief's own badge / emphasis word.
               const badgeP = badge || (wantAutoBadge ? String(briefP.badge || '') : '')
               const accentP = accentW || (wantAutoAccent ? String(briefP.emphasisWord || '') : '')
-              const calloutsP = Array.isArray(briefP.callouts) ? briefP.callouts.filter(Boolean) : []
+              // HEADLINE PLUS ONE SMALL BADGE OR CHIP, same rule as the face path.
+              const chipP = oneChip({ callouts: Array.isArray(briefP.callouts) ? briefP.callouts : [], badge: badgeP })
               const headP = conceptP
                 ? [
                     `Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Bring THIS art-director brief (written for this product) to life exactly:`,
                     '',
                     `DESIGN CONCEPT: ${conceptP}`,
                     paletteP ? `COLOUR PALETTE: ${paletteP}. Do NOT default to plain yellow-on-black.` : '',
-                    bannerP ? `BANNER PHRASE: render "${bannerP}" inside a hand-painted brush-stroke or torn banner (correct spelling).` : '',
-                    calloutsP.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips or spec pill badges — correctly spelled, a few words each: ${calloutsP.join(' · ')}.` : '',
+                    chipP ? `ONE CHIP: add a single small spec pill or icon chip reading exactly "${chipP}", correctly spelled. Just this one, no checklist and no other chips.` : '',
                     'Vibrant, modern, high-contrast, layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
                     ...gfxBoostLinesFor(badgeP, accentP),
                   ].filter(Boolean)
                 : [
-                    'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
+                    'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and at most ONE small chip with a real product detail.',
                   ]
               const prompt = [
                 pinDirective,
@@ -2050,9 +2083,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   : `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
-                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${[line1, line2].filter(Boolean).join(' ')}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
+                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${[line1, line2].filter(Boolean).join(' ')}". Style it as the concept describes (mixed colour/size/weight) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
+                TEXT_BUDGET,
                 `REAL COPY ONLY — every word on the design must be the headline above or a SPECIFIC, true detail about THIS product (its category, a real feature, a spec, a benefit). Do NOT add generic showcase or photography-direction labels such as "HERO SHOT", "FULL DETAILS", "CLOSE-UP REVEAL", "FEATURED PICK", "SPOTLIGHT", "THE PRODUCT", "PRODUCT REVIEW" — those are placeholder filler and must never appear.`,
-                `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
+                `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every word and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
               const refs = productPngsP.map((b, i) => ({ data: b, filename: productPngsP.length > 1 ? `product_${i + 1}.png` : 'product.png', mime: 'image/png' as const }))
               const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
@@ -2090,6 +2124,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           belowThreshold: false,
           overlayHook: gfxHookP,
           overlayHooks: gfxCopiesP.slice(0, gfxUrlsP.length).map(c => flatCopy(c)),
+          // What the facts check left out or swapped, in words (lib/thumb-facts).
+          textNotes: textNotesOf(gfxCopiesP.slice(0, gfxUrlsP.length)),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,
@@ -2519,7 +2555,6 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             const brief = copy as ThumbBrief
             const briefConcept = (brief.concept || '').trim()
             const briefPalette = (brief.palette || '').trim()
-            const briefBanner = (brief.banner || '').trim()
             const briefCallouts = Array.isArray(brief.callouts) ? brief.callouts.filter(Boolean) : []
             // The brief's own reaction and gesture are passed RAW to
             // buildGraphicThumbnailPrompt, which owns the rule about what
@@ -2697,8 +2732,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 line1, line2,
                 concept: briefConcept,
                 palette: briefPalette,
-                banner: briefBanner,
+                // HEADLINE PLUS ONE SMALL BADGE OR CHIP: the module draws the
+                // first callout only, and none when the badge is on.
                 callouts: briefCallouts,
+                badge: gfxBadge,
                 // The RAW brief values. The module decides what survives when the
                 // creator has chosen an expression, so that rule lives in one
                 // place instead of being re-derived at each call site.
@@ -2931,6 +2968,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           belowThreshold: false,
           overlayHook: gfxHook,
           overlayHooks: gfxCopies.slice(0, gfxUrls.length).map(c => flatCopy(c)),
+          textNotes: textNotesOf(gfxCopies.slice(0, gfxUrls.length)),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,

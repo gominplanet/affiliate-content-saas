@@ -42,12 +42,17 @@ export interface ThumbnailPromptInput {
   /** The art director's brief for this variant. Empty on the fallback path. */
   concept?: string
   palette?: string
+  /** Never drawn any more (Seb, 2026-10-19: headline plus one small badge or
+   *  chip). Kept on the type so an old cached brief still reads. */
   banner?: string
+  /** At most the first one is drawn, and none when there is a badge. */
   callouts?: string[]
   /** The reaction the brief chose. Ignored when the creator picked one. */
   briefExpression?: string
   /** The gesture the brief chose, or the creator's pose override. */
   briefPose?: string
+  /** The starburst badge this render carries, if any. When there is one, it
+   *  is the one extra and no chip is drawn. */
   badge?: string
   accentWord?: string
   /** The creator's chosen expression clause (lib/face-expression), or null. */
@@ -219,8 +224,7 @@ export function paletteLine(input: ThumbnailPromptInput): string {
  *  the brief a render follows most closely. */
 export function creativeHead(input: ThumbnailPromptInput): string[] {
   const concept = (input.concept || '').trim()
-  const callouts = (input.callouts || []).filter(Boolean)
-  const banner = (input.banner || '').trim()
+  const chip = oneChip(input)
   if (concept) {
     // The brief was written inside the chosen look (the art director is given
     // the same preset), but a brief can still drift, and a render follows the
@@ -240,8 +244,7 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
         ? 'NOTE ON THE CONCEPT ABOVE: follow it for the layout, palette, background, badges and energy. If it describes the person reacting, looking doubtful, smiling, or feeling any way at all, IGNORE that part — the facial expression is specified separately below and that specification wins.'
         : '',
       paletteLine(input),
-      p.badges && banner ? `BANNER PHRASE: render "${banner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
-      p.badges && callouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${callouts.join(' · ')}.` : '',
+      p.badges && chip ? `ONE CHIP: add a single small spec pill or icon chip reading exactly "${chip}", correctly spelled. Just this one, no checklist and no other chips.` : '',
       p.badges
         ? 'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.'
         : 'NO BADGES: no checkmark chips, no spec pills, no starbursts, no stickers, no banner ribbon. If the brief above described any of those, leave them out. One of them turns this look back into a generic advert, which is what the creator chose this look to avoid.',
@@ -272,6 +275,21 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
     ...(input.boostLines || []),
   ].filter(Boolean)
 }
+
+/** The one small extra a render may carry besides the headline: the first
+ *  callout, and none when a starburst badge is on the design, because the
+ *  badge is then that one extra. Pure. */
+export function oneChip(input: Pick<ThumbnailPromptInput, 'callouts' | 'badge'>): string {
+  if ((input.badge || '').trim()) return ''
+  return ((input.callouts || []).find((c) => typeof c === 'string' && c.trim()) || '').trim()
+}
+
+/** HEADLINE PLUS ONE SMALL BADGE OR CHIP (Seb, 2026-10-19: "too much text
+ *  typically means a greater ratio of errors"). Every word the model adds is
+ *  a word it can misspell or a claim the video never made, so the budget is
+ *  stated as a hard rule rather than left to the design direction. */
+export const TEXT_BUDGET =
+  "TEXT (hard rule): the only words on the design are the MAIN HEADLINE and, at most, ONE small badge or chip, plus a call-to-action only where the FORMAT line asks for one. No sublines, banners, ribbons, checklists, captions, labels, stickers or extra chips with words on them. The product's own printing stays exactly as it is on the product."
 
 /** The last word on logos. Short on purpose: a final check that runs long is
  *  read as more design direction. */
@@ -309,10 +327,11 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     '',
     productLine(input),
     '',
-    `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${[input.line1, input.line2].filter(Boolean).join(' ')}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
+    `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${[input.line1, input.line2].filter(Boolean).join(' ')}". Style it as the concept describes: split it across lines, give words their own colour/size/weight — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
     '',
-    'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
+    'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every word, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
     'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
+    TEXT_BUDGET,
     // Twice, on purpose, exactly as the doc comment above this function says:
     // an image model weights the last thing it read, and an instruction placed
     // only at the top loses to a paragraph of design direction. This is the one

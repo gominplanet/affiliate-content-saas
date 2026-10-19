@@ -77,7 +77,7 @@ export const VISUAL_PRESETS: VisualPreset[] = [
     name: 'Bold and loud',
     blurb: 'High contrast, big type, badges. The look most product channels use.',
     direction: 'High-energy product-review thumbnail in the style of today\'s biggest review channels. Vibrant, high-contrast and layered, built to stop a scroll. Never flat or dull.',
-    typography: 'Heavy modern display type, mixed weights and sizes so one key word dominates. A short punchy phrase inside a hand-painted brush stroke or torn banner.',
+    typography: 'Heavy modern display type, mixed weights and sizes so one key word dominates. The key word may sit inside a hand-painted brush stroke, with no extra words added.',
     background: 'A vivid studio colour gradient or a bold themed graphic scene, with real depth and soft focus behind the subject. Never a plain flat wall.',
     badges: true,
     fallbackPalette: 'saturated primaries against a deep contrasting ground',
@@ -107,7 +107,7 @@ export const VISUAL_PRESETS: VisualPreset[] = [
     name: 'Editorial',
     blurb: 'Like a magazine feature. Serif type, whitespace, muted colour.',
     direction: 'Magazine feature photography. Composed and considered, with the product placed off centre and real negative space left empty on purpose. Reads as journalism rather than advertising.',
-    typography: 'A serif headline set at a readable size, not a shouted one, with tight leading and plenty of room around it. A small uppercase kicker line above it in a letterspaced sans.',
+    typography: 'A serif headline set at a readable size, not a shouted one, with tight leading and plenty of room around it. The first line of the headline may be set as a small uppercase kicker in a letterspaced sans, with no words added.',
     background: 'A real surface with texture: paper, linen, painted wood, stone. Natural light falling across it from one side.',
     badges: false,
     fallbackPalette: 'muted earth tones, ink black type, one desaturated accent',
@@ -464,7 +464,10 @@ export function presetToBriefRules(preset: VisualPreset): string {
       'The concept must not ask for anything "vibrant", "high-contrast", "scroll-stopping" or "impossible to miss". Those belong to a different look.',
     )
   } else {
-    lines.push('Banners, starburst badges and callout chips all belong in this look. Use them where they fit.')
+    // HEADLINE PLUS ONE SMALL BADGE OR CHIP (Seb, 2026-10-19). This line used
+    // to invite a banner, a starburst and a row of chips together, which put
+    // six blocks of text on a thumbnail and six chances to misspell one.
+    lines.push('One small extra belongs in this look: a starburst badge OR one callout chip, never both and never more than one. Return "" for banner. The headline plus at most one small extra.')
   }
   return lines.join('\n')
 }
@@ -495,7 +498,7 @@ export function presetToPrompt(
     `BACKGROUND: ${preset.background}`,
     `COLOUR: ${palette}.`,
     preset.badges
-      ? 'CALLOUTS: short benefit chips, spec pills or a single hero badge are welcome here, correctly spelled and only where they fit the composition.'
+      ? 'CALLOUTS: at most ONE small benefit chip, spec pill or hero badge, correctly spelled and only where it fits the composition. Never a checklist or a row of chips.'
       : 'NO BADGES: this look has no checkmark chips, no spec pills, no hero badges, no starbursts and no stickers. One of those turns it back into an advert, which is the opposite of what was asked for.',
     opts.productFacts ? `Any text must come only from these real product details:\n${opts.productFacts}` : '',
     '',
