@@ -31,7 +31,7 @@ import Link from 'next/link'
 // stood here are gone: the in-app tour is read by members, and a section
 // headed "what Pro adds on top of the Amazon plan" offers a plan nobody can buy.
 import { TIERS } from '@/lib/tier'
-import { GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 import { INTRO_DAYS } from '@/lib/intro-allowance'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
@@ -737,7 +737,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </p>
           {!isApp && (
             <p className="text-[14px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
-              Every new member starts on {TIERS.pro.label} with every feature open from day one. {GUARANTEE_SENTENCE}
+              Every new member starts on {TIERS.pro.label} with every feature open from day one. {FREE_WEEK_SENTENCE}
             </p>
           )}
           {isApp ? (

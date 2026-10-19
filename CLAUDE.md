@@ -50,9 +50,13 @@ MVP sells exactly ONE plan: **Pro at $199/month** ($1,999/year). From
 January 1, 2027 new members pay $299/month ($2,990/year); anyone who joined
 before keeps their price for as long as they stay subscribed.
 
-There is no free trial for new signups (since 2026-10-18): every new member
-starts on Pro with a **7-day refund, no questions asked, one refund per
-creator**, and their first 7 days run at a quarter of each monthly allowance.
+Since 2026-10-19 the **monthly** plan starts with **7 days free**: the card is
+taken at signup, nothing is charged until day 8, and cancelling before then
+costs nothing. One free week per creator (matched on card and email). The
+**yearly** plan has no free week and is charged at signup. There is no refund;
+members who paid on day one between 2026-10-18 and the free week keep the
+7-day refund they joined with. The first 7 days run at a quarter of each
+monthly allowance.
 There is no free plan, and no Amazon, Creator or Studio plan to quote. Those
 tier names still exist in `lib/tier.ts` for legacy accounts; never present
 them as plans in reports, comparisons, copy or answers.

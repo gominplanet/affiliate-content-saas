@@ -2,12 +2,12 @@
 //
 // THE FIRST WEEK RUNS AT A QUARTER (Seb, 2026-10-18).
 //
-// The free trial is gone: every new member starts on Pro with the whole
-// product open, and a 7-day refund in place of the trial (lib/guarantee).
-// A refund window over a full month of allowances would let somebody pay,
-// spend a month of AI in a week, and take the money back. So while the window
-// is open each monthly allowance is a quarter of its full amount, and the rest
-// opens on day 8. The billing month is not shortened: on day 8 the member has
+// Every new member starts on Pro with the whole product open. The first week
+// is the free week on the monthly plan (lib/guarantee, Seb 2026-10-19), and
+// before it a 7-day refund: either way a full month of allowances in that
+// week would be a month of AI for nothing. So for the first 7 days each
+// monthly allowance is a quarter of its full amount, and the rest opens on
+// day 8, which is also when a free week is charged. The billing month is not shortened: on day 8 the member has
 // the full allowance for the same month, less what they already used.
 //
 // Only subscriptions that start after the trial ended (lib/free-trial
@@ -15,11 +15,11 @@
 // and a member whose start date was never recorded (no migration 439, or no
 // subscription event yet) is never held back by a date we could not read.
 
-import { GUARANTEE_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS } from '@/lib/guarantee'
 import { NO_TRIAL_FROM } from '@/lib/free-trial'
 
-/** How long the quarter allowances last: the refund window. */
-export const INTRO_DAYS = GUARANTEE_DAYS
+/** How long the quarter allowances last: the free week. */
+export const INTRO_DAYS = FREE_WEEK_DAYS
 /** The share of each monthly allowance open during those days. */
 export const INTRO_SHARE = 0.25
 

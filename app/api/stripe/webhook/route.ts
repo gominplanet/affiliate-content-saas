@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
 import { TIERS, type Tier } from '@/lib/tier'
+import { normalizeEmail, priorFreeWeek, type TrialRow, type RefundRow } from '@/lib/creator-refund'
 
 /**
  * A tier-write failed. Release this event's idempotency claim so Stripe's retry
@@ -310,13 +311,23 @@ export async function POST(request: NextRequest) {
       await alertOps('Stripe checkout completed but no MVP user matched', `customer ${session.customer}, price ${priceId}. Set their tier manually in /admin/users.`)
       return NextResponse.json({ received: true, unmatched: true })
     }
+    // THE FREE WEEK (lib/guarantee): a monthly signup arrives trialing. One
+    // free week per creator, so a card or email that had one before, or a
+    // refund, is charged now instead (freeWeekAtSignup). The status written is
+    // the subscription's own, never an assumed 'active'.
+    const week = await freeWeekAtSignup(admin, stripe, {
+      userId: user_id,
+      subscriptionId: session.subscription,
+      customerId: session.customer,
+      email: session.customer_details?.email || session.customer_email || null,
+    })
     const { error } = await admin.from('integrations').upsert(
       {
         user_id,
         tier,
         stripe_customer_id: session.customer,
         stripe_subscription_id: session.subscription,
-        subscription_status: 'active',
+        subscription_status: week.status,
       },
       { onConflict: 'user_id' },
     )
@@ -329,7 +340,23 @@ export async function POST(request: NextRequest) {
     // duplicate. Awaited (not fire-and-forget) because a serverless function
     // can be frozen the moment the response is returned, which would drop the
     // request mid-flight and lose the conversion.
-    await sendMetaEvent({
+    // A FREE WEEK IS A TRIAL, NOT A SALE. Nothing was charged, so Meta hears
+    // StartTrial now (same event id the browser sends), and Purchase on the
+    // first real charge (invoice.payment_succeeded below). A signup refused
+    // the free week is charged at once and reported there too.
+    if (week.freeWeek) {
+      await sendMetaEvent({
+        eventName: 'StartTrial',
+        eventId: purchaseEventId(session.id),
+        value: TIERS[tier].price,
+        currency: 'USD',
+        email: session.customer_details?.email || session.customer_email,
+        externalId: user_id,
+        fbp: session.metadata?.fbp || null,
+        fbc: session.metadata?.fbc || null,
+        custom: { tier, content_name: TIERS[tier].label, predicted_ltv: TIERS[tier].price },
+      })
+    } else if (!(typeof session.amount_total === 'number' && session.amount_total <= 0)) await sendMetaEvent({
       eventName: 'Purchase',
       eventId: purchaseEventId(session.id),
       // amount_total is what actually cleared, in cents. Falls back to the
@@ -521,6 +548,10 @@ export async function POST(request: NextRequest) {
           .eq('stripe_subscription_id', subId)
         if (tErr) return releaseAndRetry(admin, event.id, 'invoice.payment_succeeded', tErr)
       }
+      // THE FIRST REAL CHARGE AFTER A FREE WEEK is the sale, so it is the
+      // Purchase Meta hears (checkout reported StartTrial). Only for a
+      // subscription that had a trial, and only its first paid invoice.
+      await purchaseAfterFreeWeek(stripe, subId, event.data.object as { id: string; amount_paid?: number | null; customer_email?: string | null })
     }
   }
 
@@ -550,4 +581,93 @@ async function recordSubscribedAt(admin: any, sub: { start_date?: number | null;
     const { error } = who.userId ? await q.eq('user_id', who.userId) : await q.eq('stripe_customer_id', who.customer)
     if (error && !/subscribed_at/.test(error.message || '')) console.warn('[stripe-webhook] subscribed_at not saved', error.message)
   } catch { /* the billing fields above are what matters; this never fails the event */ }
+}
+
+/**
+ * THE FREE WEEK AT SIGNUP (lib/guarantee, Seb 2026-10-19). A monthly signup
+ * arrives trialing. One free week per creator, matched on the card and the
+ * email (lib/creator-refund priorFreeWeek) against earlier free weeks
+ * (migration 444, creator_trials) and earlier refunds (creator_refunds): a
+ * match ends the trial now, so Stripe charges the month today, and the reason
+ * is written down. Every free week started is recorded so the next one can be
+ * matched. Without migration 444 nothing can be matched, so the free week is
+ * kept and the team is told once per signup rather than charged on a guess.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>, o: { userId: string; subscriptionId: string; customerId: string; email: string | null }): Promise<{ status: string; freeWeek: boolean }> {
+  let sub
+  try { sub = await stripe.subscriptions.retrieve(o.subscriptionId) } catch { return { status: 'active', freeWeek: false } }
+  if (sub.status !== 'trialing') return { status: sub.status, freeWeek: false }
+  // The card it started on: the subscription's own, else the customer's.
+  let card: string | null = null
+  try {
+    const pmId = typeof sub.default_payment_method === 'string' ? sub.default_payment_method
+      : (await stripe.paymentMethods.list({ customer: o.customerId, type: 'card', limit: 1 })).data[0]?.id
+    if (pmId) card = (await stripe.paymentMethods.retrieve(pmId)).card?.fingerprint ?? null
+  } catch { /* matched on the email alone */ }
+  const email = normalizeEmail(o.email)
+  const or = [email ? `email_norm.eq.${email}` : '', card ? `card_fingerprint.eq.${card}` : ''].filter(Boolean).join(',')
+  let reason: string | null = null
+  let matchable = true
+  if (or) {
+    const [t, r] = await Promise.all([
+      admin.from('creator_trials').select('user_id,email_norm,card_fingerprint').or(or).limit(20),
+      admin.from('creator_refunds').select('user_id,email_norm,card_fingerprint,youtube_channel_id,amazon_tag,storefront,refunded_at').or(or).limit(20),
+    ])
+    if (t.error) { matchable = false; console.warn('[stripe-webhook] free week not matched (run migration 444):', t.error.message) }
+    reason = priorFreeWeek(o.userId, { email, card }, (t.data ?? []) as TrialRow[], (r.data ?? []) as RefundRow[])
+  }
+  if (!matchable) {
+    await alertOps('A free week could not be checked', `Signup ${o.userId} kept its free week because creator_trials is missing. Run migration 444 in Supabase so a second free week on the same card or email is charged instead.`)
+    return { status: 'trialing', freeWeek: true }
+  }
+  let status = 'trialing'
+  if (reason) {
+    try {
+      const ended = await stripe.subscriptions.update(sub.id, { trial_end: 'now', proration_behavior: 'none' })
+      status = ended.status
+    } catch (e) {
+      // Said, not swallowed: the member keeps a free week they should not have.
+      reason = `${reason} Ending the free week failed (${e instanceof Error ? e.message : 'unknown'}), so it was kept.`
+      await alertOps('A repeat free week could not be ended', `Signup ${o.userId}: ${reason}`)
+    }
+  }
+  try {
+    await admin.from('creator_trials').upsert({
+      user_id: o.userId, email_norm: email, card_fingerprint: card,
+      stripe_customer_id: o.customerId, stripe_subscription_id: sub.id,
+      free_week: status === 'trialing', reason,
+    }, { onConflict: 'user_id' })
+  } catch { /* the signup itself is what matters */ }
+  return { status, freeWeek: status === 'trialing' }
+}
+
+/**
+ * The Purchase for a subscription that started with a free week: its first
+ * paid invoice, once, with the same match data the signup carried (stamped on
+ * the subscription's metadata at checkout).
+ */
+async function purchaseAfterFreeWeek(stripe: ReturnType<typeof getStripe>, subId: string, invoice: { id: string; amount_paid?: number | null; customer_email?: string | null }) {
+  if (!invoice.amount_paid || invoice.amount_paid <= 0) return
+  try {
+    const sub = await stripe.subscriptions.retrieve(subId)
+    if (!sub.trial_end) return
+    const paid = await stripe.invoices.list({ subscription: subId, status: 'paid', limit: 5 })
+    if (paid.data.filter((i) => (i.amount_paid ?? 0) > 0).length !== 1) return
+    const meta = (sub.metadata || {}) as { user_id?: string; tier?: Tier; fbp?: string; fbc?: string }
+    const tier = meta.tier && TIERS[meta.tier] ? meta.tier : null
+    await sendMetaEvent({
+      eventName: 'Purchase',
+      eventId: purchaseEventId(invoice.id),
+      value: invoice.amount_paid / 100,
+      currency: 'USD',
+      email: invoice.customer_email,
+      externalId: meta.user_id || null,
+      fbp: meta.fbp || null,
+      fbc: meta.fbc || null,
+      ...(tier ? { custom: { tier, content_name: TIERS[tier].label } } : {}),
+    })
+  } catch (e) {
+    console.warn('[stripe-webhook] Purchase after the free week not sent:', e instanceof Error ? e.message : e)
+  }
 }

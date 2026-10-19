@@ -1,33 +1,22 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// A PROMISE ON A SALES PAGE IS IN THE TERMS, OR IT IS NOT MADE.
+// A PROMISE ON A SALES PAGE IS IN THE TERMS, AND IN CHECKOUT, OR IT IS NOT MADE.
 //
-// WHAT WAS LIVE. /own-your-blog and /run-your-storefront promised a "30-day
-// money-back guarantee" five times between them: twice directly under a
-// checkout button, once as an FAQ answer ending "no questions", and twice as
-// a tile reading "30-day guarantee · If it is not for you, you get your money
-// back." Section 9 of the Terms of Service, the document a buyer agrees to at
-// checkout, said the opposite in one line:
+// Once, /own-your-blog and /run-your-storefront promised a 30-day money-back
+// guarantee five times while section 9 of the Terms said fees were
+// non-refundable. Nothing on screen showed it: each page read perfectly on its
+// own, and the contradiction only surfaced when somebody asked for their money.
 //
-//     Fees already paid are non-refundable except where required by law.
-//
-// WHAT ITS FAILURE LOOKED LIKE ON SCREEN. Nothing, which is why it lasted.
-// Each page reads perfectly on its own. Nobody opens clause 9 beside a
-// landing page before paying. The contradiction becomes visible at exactly
-// one moment: when somebody asks for their money back and we have to decide
-// which of our own documents to honour. Whichever way that goes, it goes
-// badly, and it goes badly in writing.
-//
-// The operator confirmed on 2026-09-23 that the guarantee is real, so the
-// Terms carry it now.
-//
-// THE RULE THIS FILE ENFORCES is narrow and worth stating plainly: if a page
-// that sells a subscription promises a refund, the Terms must promise one
-// too, and both must mean the same number of days. It does not police the
-// wording, only that neither side can exist without the other.
+// THE PROMISE NOW (Seb, 2026-10-19) is the free week: on the monthly plan the
+// card is taken at signup and nothing is charged for 7 days; cancel before
+// day 8 and they pay nothing. One per creator. The yearly plan has no free
+// week. It replaced the 7-day refund, which members who paid on day one before
+// it keep. This guard holds the pages, the Terms, Ask MVP and the checkout
+// that makes it true to the same days and the same rules.
 
 import { readFileSync } from 'node:fs'
-import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT, REFUND_EMAIL } from '../lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_FROM, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, LEGACY_REFUND_DAYS, SUPPORT_EMAIL } from '../lib/guarantee'
+import { refundCheck } from '../lib/creator-refund'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -38,100 +27,73 @@ const live = (src: string) => src
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, ' '))
   .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
   .split('\n').map((l) => (/^\s*(?:\/\/|\*)/.test(l) ? '' : l)).join('\n')
-
-/** live(), minus the import lines.
- *
- *  THIS IS NOT FUSSINESS. Two of the mutations written to break this file
- *  passed it the first time for exactly one reason: `import { GUARANTEE_DAYS,
- *  GUARANTEE_LABEL }` is still at the top of a file whose body has stopped
- *  using either. A guard satisfied by an import is a guard that checks the
- *  page still knows the constant exists, which is not the question. */
-const body = (src: string) => live(src)
-  .split('\n').filter((l) => !/^\s*import\b/.test(l)).join('\n')
+/** live(), minus the import lines: a guard satisfied by an import checks that
+ *  a page still knows the constant exists, which is not the question. */
+const body = (src: string) => live(src).split('\n').filter((l) => !/^\s*import\b/.test(l)).join('\n')
 
 const TERMS = body(read('app/terms/page.tsx'))
-const SELLING = [
-  'app/own-your-blog/page.tsx',
-  'app/run-your-storefront/page.tsx',
-]
+const SELLING = ['app/own-your-blog/page.tsx', 'app/run-your-storefront/page.tsx', 'app/page.tsx', 'app/pricing/page.tsx']
 
-// ── the constant is sane ───────────────────────────────────────────────────
-{
-  check('the window is a real number of days',
-    Number.isInteger(GUARANTEE_DAYS) && GUARANTEE_DAYS > 0,
-    `got ${GUARANTEE_DAYS}`)
-  check('and both phrasings carry it',
-    GUARANTEE_LABEL.includes(String(GUARANTEE_DAYS)) && GUARANTEE_SHORT.includes(String(GUARANTEE_DAYS)),
-    `"${GUARANTEE_LABEL}" / "${GUARANTEE_SHORT}" — a label that has lost its number cannot be checked against the terms`)
+// ── the constants say it ────────────────────────────────────────────────────
+check('the free week is a real number of days', Number.isInteger(FREE_WEEK_DAYS) && FREE_WEEK_DAYS === 7, `got ${FREE_WEEK_DAYS}`)
+check('every phrasing carries the number', [FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE].every((t) => t.includes(String(FREE_WEEK_DAYS))))
+check('the label says it is the monthly plan', /monthly plan/.test(FREE_WEEK_LABEL), FREE_WEEK_LABEL)
+check('the sentence says the card is charged on day 8, cancelling costs nothing, once per creator, and the yearly plan is charged at once',
+  /not charged until day 8/.test(FREE_WEEK_SENTENCE) && /cancel before then you pay nothing/.test(FREE_WEEK_SENTENCE)
+    && /One free week per creator/.test(FREE_WEEK_SENTENCE) && /yearly plan is charged when you join/.test(FREE_WEEK_SENTENCE), FREE_WEEK_SENTENCE)
+check('no refund is promised to new members any more', !/refund/i.test(FREE_WEEK_LABEL + FREE_WEEK_SHORT + FREE_WEEK_SENTENCE))
+
+// ── the Terms make the same promise ─────────────────────────────────────────
+check('the Terms read the days rather than typing them', /FREE_WEEK_DAYS/.test(TERMS) && /from '@\/lib\/guarantee'/.test(read('app/terms/page.tsx')))
+check('the Terms say the card is taken and nothing charged for the free week', /The free week on the monthly plan\./.test(TERMS) && /nothing is charged for the first \{FREE_WEEK_DAYS\} days/.test(TERMS.replace(/\s+/g, ' ')))
+check('and that cancelling before day 8 costs nothing', /you are never charged/.test(TERMS.replace(/\s+/g, ' ')))
+check('and that the yearly plan has no free week', /The yearly plan has no free week/.test(TERMS.replace(/\s+/g, ' ')))
+check('and one free week per creator', /One free week per creator\./.test(TERMS))
+check('payments are otherwise not refundable, in writing', /Payments are not refundable except where required by law/.test(TERMS.replace(/\s+/g, ' ')))
+check('members who joined with the refund keep it, with the inbox', /Members who joined before the free week\./.test(TERMS) && /LEGACY_REFUND_DAYS/.test(TERMS) && /mailto:\$\{SUPPORT_EMAIL\}/.test(TERMS))
+check('no refund window is typed by hand in the Terms', !/\b\d+-day refund\b/.test(TERMS))
+
+// ── the pages read it from one place ────────────────────────────────────────
+for (const f of SELLING) {
+  const src = read(f)
+  check(`${f} reads the free week from lib/guarantee`, /from '@\/lib\/guarantee'/.test(src) && /FREE_WEEK_(LABEL|SHORT|SENTENCE|DAYS)/.test(body(src)))
+  check(`${f} promises no refund or money back`, !/money.back|\brefund\b|no questions asked/i.test(body(src)), f)
+  check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src)))
 }
 
-// ── the terms make the promise, and for the same window ────────────────────
+// ── checkout makes it true ──────────────────────────────────────────────────
 {
-  check('the Terms carry a refund clause',
-    /refund/i.test(TERMS),
-    'a guarantee absent from the document a buyer agrees to is a guarantee we would have to argue about')
-  check('and it is not the old flat refusal',
-    !/Fees already paid are non-refundable\s*$/m.test(TERMS)
-    && !/paid are non-refundable\s+except where required by law\.\s*<\/p>/.test(TERMS.replace(/\s+/g, ' ')),
-    'this sentence and the sales pages cannot both be true')
-  check('the Terms read the window rather than typing it',
-    /GUARANTEE_DAYS/.test(TERMS) && /from '@\/lib\/guarantee'/.test(read('app/terms/page.tsx')),
-    'two typed numbers is how 30 on the page becomes 14 in the terms')
-  check('and the clause types no day count of its own',
-    !/\b\d+\s*(?:-day|days)\b/.test(TERMS.slice(
-      Math.max(0, TERMS.indexOf('money-back') - 400),
-      TERMS.indexOf('money-back') + 900)),
-    'a hand-typed window beside an interpolated one is the drift, not the fix')
-
-  // The refusal still has to survive SOMEWHERE, because it is true of
-  // everything the guarantee does not cover. What must not survive is a
-  // blanket version with no exception carved out of it.
-  check('renewals and used credits are still excluded in writing',
-    /renewals/i.test(TERMS) && /credit packs/i.test(TERMS),
-    'an unbounded "we refund anything" is a different liability from the one that was agreed')
+  const SIGNUP = read('app/api/auth/signup-paid/route.ts')
+  const CHECKOUT = read('app/api/stripe/checkout/route.ts')
+  check('a monthly signup gets the free week, a yearly one does not', /const freeWeek = !annualId\n/.test(SIGNUP) && /trial_period_days: FREE_WEEK_DAYS/.test(SIGNUP) && /payment_method_collection: 'always'/.test(SIGNUP))
+  check('an account that was a Stripe customer before gets no free week', /const freeWeek = !annualId && !customerId/.test(CHECKOUT) && /trial_period_days: FREE_WEEK_DAYS/.test(CHECKOUT))
+  check('a free week without a card ends rather than runs on', (SIGNUP + CHECKOUT).match(/missing_payment_method: 'cancel'/g)?.length === 2)
+  const HOOK = read('app/api/stripe/webhook/route.ts')
+  check('a card or email that had a free week, or a refund, is charged at once', /priorFreeWeek\(o\.userId/.test(HOOK) && /trial_end: 'now'/.test(HOOK) && /from\('creator_refunds'\)/.test(HOOK))
+  check('every free week is recorded so the next can be matched', /from\('creator_trials'\)\.upsert/.test(HOOK))
+  check('the status written is the subscription’s own, never an assumed active', /subscription_status: week\.status/.test(HOOK))
+  check('a free week is reported as a trial, and the first real charge as the purchase', /eventName: 'StartTrial'/.test(HOOK) && /purchaseAfterFreeWeek\(stripe, subId/.test(HOOK))
+  check('migration 444 is safe to run twice', /create table if not exists public\.creator_trials/.test(read('supabase/migrations/444_creator_trials.sql')))
 }
 
-// ── every page that promises it points at the same constant ────────────────
+// ── one inbox ───────────────────────────────────────────────────────────────
 {
-  for (const f of SELLING) {
-    const src = read(f)
-    const used = body(src)
-    const promises = /money-back|money back|GUARANTEE_LABEL|GUARANTEE_SHORT/.test(used)
-    if (!promises) continue
-
-    check(`${f} reads the guarantee from lib/guarantee`,
-      /from '@\/lib\/guarantee'/.test(src),
-      'a page that promises a refund in its own words is a page the terms cannot follow')
-    check(`${f} types no window of its own`,
-      !/\b\d+-day money-back/.test(used) && !/\b\d+-day guarantee/.test(used),
-      'the number belongs in one file')
-  }
-
-  // AND THE PAGES DID NOT QUIETLY STOP PROMISING IT. Deleting the claim is a
-  // legitimate way to end the contradiction, but it is a decision, not a
-  // side effect, and this asserts the decision that was actually made.
-  const promising = SELLING.filter((f) => /GUARANTEE_LABEL|GUARANTEE_SHORT/.test(body(read(f))))
-  check('both sales pages still make the promise',
-    promising.length === SELLING.length,
-    `only ${promising.join(', ') || 'none'} — the operator confirmed the guarantee is real, so a page dropping it is a regression, not a fix`)
-}
-
-// ── one inbox for the refund ────────────────────────────────────────────────
-//
-// The Terms say "email us" and Ask MVP answers "where do I send it?". They read
-// one constant so a member is never given two addresses for the same request.
-{
-  const TERMS = read('app/terms/page.tsx')
   const ASK = read('lib/assistant-features-doc.ts')
-  check('the refund inbox is a real address',
-    /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(REFUND_EMAIL), REFUND_EMAIL)
-  check('the Terms refund clause names the inbox',
-    /email\{' '\}\s*<a href=\{`mailto:\$\{REFUND_EMAIL\}`\}/.test(TERMS))
-  check('Ask MVP gives the same inbox',
-    (ASK.match(/email \$\{REFUND_EMAIL\}|email\n\$\{REFUND_EMAIL\}/g) || []).length >= 2)
-  check('no older refund address survives in either',
-    !/us@gominplanet\.com/.test(TERMS) && !/us@gominplanet\.com/.test(ASK),
-    'the old inbox, replaced on 2026-10-18')
+  check('the inbox is a real address', /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(SUPPORT_EMAIL), SUPPORT_EMAIL)
+  check('Ask MVP gives the free week and the same inbox', /FREE_WEEK_SENTENCE/.test(ASK) && /email \$\{SUPPORT_EMAIL\}/.test(ASK) && /\$\{LEGACY_REFUND_DAYS\}-day/.test(ASK))
+  check('Ask MVP never offers a free week on the yearly plan', /Never offer a free plan, any plan other than Pro, or a free week on the yearly plan\./.test(ASK))
+  check('no older inbox survives', !/us@gominplanet\.com/.test(read('app/terms/page.tsx') + ASK))
+}
+check('the legacy refund window is still the 7 days those members joined with', LEGACY_REFUND_DAYS === 7)
+
+// ── the refund is kept by those who joined with it, and only by them ────────
+{
+  const from = Date.parse(FREE_WEEK_FROM)
+  const at = (ms: number) => new Date(ms).toISOString()
+  const before = refundCheck({ paidAtISO: at(from - 2 * 864e5), alreadyRefunded: false, matches: [], now: new Date(from) })
+  check('a member who paid before the free week still gets the refund in their window', before.eligible, before.reason)
+  const after = refundCheck({ paidAtISO: at(from + 864e5), alreadyRefunded: false, matches: [], now: new Date(from + 2 * 864e5) })
+  check('a member who paid after the free week began is told no refund was promised', !after.eligible && /replaced the refund/.test(after.reason), after.reason)
 }
 
 if (failures.length) {
@@ -139,4 +101,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ guarantee: the refund promised on the sales pages is the one in the terms, for the same number of days')
+console.log('✅ guarantee: the free week on the sales pages is the one in the Terms and in checkout, monthly only, once per creator')

@@ -30,7 +30,7 @@ import {
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { FREE_TRIAL } from '@/lib/free-trial'
-import { GUARANTEE_SHORT } from '@/lib/guarantee'
+import { FREE_WEEK_SHORT } from '@/lib/guarantee'
 
 export const metadata: Metadata = {
   title: 'MVP for Amazon Influencers: thumbnails, designs, videos & brand deals',
@@ -330,7 +330,7 @@ export default function AmazonInfluencerPage() {
           Start with a {FREE_TRIAL.trialDays}-day free trial, no card. Then ${AMZ.price}/mo, locked for life. Cancel anytime.
         </p>
         <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[13px] text-[#6e6e73] dark:text-[#ebebf0]">
-          {['No website needed', 'No card to start', 'Priority support', GUARANTEE_SHORT].map((f) => (
+          {['No website needed', `${FREE_WEEK_SHORT} on monthly`, 'Priority support', 'Cancel anytime'].map((f) => (
             <li key={f} className="flex items-center gap-1.5"><Check size={14} style={{ color: ACCENT }} />{f}</li>
           ))}
         </ul>

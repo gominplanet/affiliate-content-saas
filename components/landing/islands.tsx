@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Play, X as XIcon, Plus, Minus, Sparkles, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
-import { GUARANTEE_LABEL, GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
@@ -300,7 +300,7 @@ export function FAQSection() {
 const FAQS = [
   {
     q: 'What if MVP isn\'t for me?',
-    a: `${GUARANTEE_SENTENCE} You keep everything you made with it, and you can cancel any time from your billing page.`,
+    a: `${FREE_WEEK_SENTENCE} You keep everything you made with it, and you can cancel any time from your billing page.`,
   },
   {
     // TRYBE (Seb, 2026-10-18). What a buyer asks first; no promise of pay.
@@ -439,7 +439,7 @@ export function StickyBottomBar() {
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
-            MVP {TIERS.pro.label}, with a {GUARANTEE_LABEL}.
+            MVP {TIERS.pro.label}, with {FREE_WEEK_LABEL}.
           </p>
           <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Every tool in MVP from the first day. One refund per creator.

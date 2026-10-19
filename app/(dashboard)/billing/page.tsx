@@ -9,7 +9,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
-import { GUARANTEE_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
@@ -23,6 +23,8 @@ export default function BillingPage() {
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
   const [upgraded, setUpgraded] = useState(false)
+  // THE FREE WEEK (lib/guarantee): when the card is charged, from Stripe.
+  const [freeWeek, setFreeWeek] = useState<{ chargeAt: number; amountUsd: number | null; cancelled: boolean } | null>(null)
   // The plan Stripe's success URL says they just bought, and how many times we
   // have re-read the row waiting for the webhook to grant it (see below).
   const [boughtPlan, setBoughtPlan] = useState<Tier | null>(null)
@@ -95,6 +97,7 @@ export default function BillingPage() {
         const ps = await fetch('/api/stripe/plan-status').then(r => (r.ok ? r.json() : null))
         setPendingDowngrade(ps?.pendingDowngrade ?? null)
         setPaying(ps?.paying ?? null)
+        setFreeWeek(ps?.freeWeek ?? null)
       } catch { /* non-fatal — just don't show the note */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
@@ -125,8 +128,11 @@ export default function BillingPage() {
       const cs = q.get('cs')
       if (plan && TIERS[plan]) setBoughtPlan(plan)
       const value = plan && TIERS[plan] ? TIERS[plan].price : undefined
+      // A FREE WEEK IS A TRIAL, NOT A SALE: StartTrial now, with the event id
+      // the webhook uses; the Purchase comes from the server on the first
+      // real charge.
       trackMeta(
-        'Purchase',
+        q.get('freeweek') === '1' ? 'StartTrial' : 'Purchase',
         { currency: 'USD', ...(value ? { value } : {}), ...(plan ? { tier: plan } : {}) },
         cs ? `stripe_${cs}` : undefined,
       )
@@ -402,11 +408,24 @@ export default function BillingPage() {
             </div>
           )}
 
+          {/* THE FREE WEEK, said with its date: when the card is charged, or
+              that it will not be because they cancelled. */}
+          {freeWeek && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/25">
+              <Zap size={18} className="text-[#7C3AED] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {freeWeek.cancelled
+                  ? `Your free week ends ${new Date(freeWeek.chargeAt * 1000).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}. You cancelled, so your card will not be charged.`
+                  : `You are in your free week. Your card is charged${freeWeek.amountUsd != null ? ` $${freeWeek.amountUsd.toLocaleString()}` : ''} on ${new Date(freeWeek.chargeAt * 1000).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} unless you cancel before then in Manage subscription.`}
+              </p>
+            </div>
+          )}
+
           {mustStart && realTier === 'trial' && !awaitingWebhook && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-[#7C3AED]/10 border border-[#7C3AED]/25">
               <Zap size={18} className="text-[#7C3AED] flex-shrink-0" />
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                Your account is ready. MVP opens when you start Pro below, and you have {GUARANTEE_DAYS} days to ask for a full refund, no questions asked.
+                Your account is ready. MVP opens when you start Pro below. {FREE_WEEK_SENTENCE}
               </p>
             </div>
           )}

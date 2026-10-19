@@ -44,7 +44,7 @@ import {
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
-import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
 }
 
 const CTA_HREF = '/signup?tier=amazon'
-const CTA_LABEL = 'Start free, no card'
+const CTA_LABEL = 'Start your free week'
 
 function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
   return (
@@ -77,7 +77,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext({ dark = false }: { dark?: boolean }) {
   return (
     <p className={`mt-3 text-[13px] ${dark ? 'text-white/55' : 'text-black/50'}`}>
-      No card to start · {TIERS.trial.thumbnailsPerMonth} thumbnails free · {GUARANTEE_LABEL}
+      Every feature from day one · {FREE_WEEK_LABEL} · Cancel anytime
     </p>
   )
 }
@@ -177,7 +177,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What if it does not work for me?',
-    a: `Start free with no card and make ${TIERS.trial.thumbnailsPerMonth} thumbnails before you decide anything. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}.`,
+    a: `${FREE_WEEK_SENTENCE} Cancel any time from your billing page.`,
   },
 ]
 
@@ -312,7 +312,7 @@ export default function RunYourStorefrontPage() {
               What it costs, and what you get
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
-              Start free with no card if you want to see it work first. If you already know you want it, skip the trial.
+              On the monthly plan your first {FREE_WEEK_DAYS} days are free, so you can see it work before you pay. The yearly plan is charged when you join.
             </p>
           </div>
           <AdPricingTable focus="amazon" freeHref={CTA_HREF} />
@@ -353,10 +353,10 @@ export default function RunYourStorefrontPage() {
       <section className="px-6 lg:px-8 py-16" style={{ background: 'linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)' }}>
         <div className="max-w-2xl mx-auto text-center text-white">
           <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]" style={{ color: '#FFFFFF' }}>
-            Make {TIERS.trial.thumbnailsPerMonth} thumbnails before you decide anything.
+            See it work for {FREE_WEEK_DAYS} days before you pay.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start free with no card. Upload one product photo and see what comes back. If it is not better than what you are making now, you have lost nothing.
+            Start your free week. Upload one product photo and see what comes back. If it is not better than what you are making now, cancel before day {FREE_WEEK_DAYS + 1} and you have lost nothing.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
@@ -366,7 +366,7 @@ export default function RunYourStorefrontPage() {
             {[
               { icon: <Wand2 size={15} />, t: `$${TIERS.amazon.price} a month`, b: TIERS.amazon.regularPrice > TIERS.amazon.price ? `New members pay $${TIERS.amazon.regularPrice} from January 1. Join before and yours is locked for as long as you stay.` : 'Locked for as long as you stay.' },
               { icon: <LayoutTemplate size={15} />, t: 'No blog needed', b: 'Built for the storefront and the socials around it. No WordPress.' },
-              { icon: <ShieldCheck size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
+              { icon: <ShieldCheck size={15} />, t: FREE_WEEK_SHORT, b: `On the monthly plan your card is not charged until day ${FREE_WEEK_DAYS + 1}. Cancel before then and you pay nothing.` },
             ].map((f) => (
               <div key={f.t} className="rounded-xl border border-white/12 bg-white/[0.05] p-4">
                 <p className="flex items-center gap-2 text-[13px] font-semibold text-white">{f.icon}{f.t}</p>

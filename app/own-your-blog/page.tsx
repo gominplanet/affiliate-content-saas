@@ -42,7 +42,7 @@ import {
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
-import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -82,7 +82,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext() {
   return (
     <p className="mt-3 text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-      Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
+      Every feature from day one · {FREE_WEEK_LABEL} · Cancel anytime
     </p>
   )
 }
@@ -144,7 +144,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What if it does not work for me?',
-    a: `Ask within ${GUARANTEE_DAYS} days of your first payment and you get it all back, no questions asked, and nothing you made is taken away. One refund per creator.`,
+    a: `${FREE_WEEK_SENTENCE} Cancel any time and nothing you made is taken away.`,
   },
   {
     q: 'How much of my time does this take?',
@@ -298,7 +298,7 @@ export default function OwnYourBlogPage() {
               What it costs, and what you get
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
-              One plan with every feature open from the day you join, and {GUARANTEE_DAYS} days to change your mind.
+              One plan with every feature open from the day you join, and {FREE_WEEK_DAYS} days free on the monthly plan.
             </p>
           </div>
           <AdPricingTable focus="pro" freeHref={CTA_HREF} />
@@ -343,19 +343,19 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start Pro, connect a channel, pick a video, and read what it writes. If it is not for you, ask within {GUARANTEE_DAYS} days and you get every cent back, no questions asked.
+            Start Pro, connect a channel, pick a video, and read what it writes. On the monthly plan your first {FREE_WEEK_DAYS} days are free, and if it is not for you, cancel before day {FREE_WEEK_DAYS + 1} and you pay nothing.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
             <p className="mt-3 text-[13px] text-white/55">
-              Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
+              Every feature from day one · {FREE_WEEK_LABEL} · Cancel anytime
             </p>
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
             {[
               { icon: <ShieldCheck size={15} />, t: 'Yours to keep', b: 'The blog, the domain and every post stay yours if you leave.' },
               { icon: <Globe size={15} />, t: 'Every country counts', b: 'Shoppers are routed to their own Amazon. Unlimited, no per-click fee.' },
-              { icon: <Check size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
+              { icon: <Check size={15} />, t: FREE_WEEK_SHORT, b: `On the monthly plan your card is not charged until day ${FREE_WEEK_DAYS + 1}. Cancel before then and you pay nothing.` },
             ].map((f) => (
               <div key={f.t} className="rounded-xl border border-white/12 bg-white/[0.05] p-4">
                 <p className="flex items-center gap-2 text-[13px] font-semibold text-white">{f.icon}{f.t}</p>

@@ -22,7 +22,7 @@ import { newPricesLive } from '@/lib/price-schedule'
 import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
@@ -67,7 +67,7 @@ const DARK_SECTION_VARS: React.CSSProperties = {
 //   pages, while the Terms of Service said fees already paid are
 //   non-refundable. Five promises against one refusal, and the refusal was
 //   the document a buyer actually agrees to.
-const GUARANTEE: string | null = GUARANTEE_LABEL
+const GUARANTEE: string | null = FREE_WEEK_LABEL
 //
 // NO DEADLINE. There was one, set three months out, and it was removed on
 //   request. A date that far away does not create urgency; it reads as a
@@ -510,7 +510,7 @@ function PricingSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every feature opens the day you join. {GUARANTEE_SENTENCE} Cancel anytime, and your WordPress site stays yours forever.
+            Every feature opens the day you join. {FREE_WEEK_SENTENCE} Cancel anytime, and your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
@@ -560,7 +560,7 @@ function PricingSection() {
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
+            <Check size={12} className="text-[#10B981]" /> {FREE_WEEK_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours forever
@@ -1240,7 +1240,7 @@ function FinalCTASection() {
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          Pro is ${TIERS.pro.price} a month with every feature open from day one. {GUARANTEE_SENTENCE}
+          Pro is ${TIERS.pro.price} a month with every feature open from day one. {FREE_WEEK_SENTENCE}
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
@@ -1273,7 +1273,7 @@ function FinalCTASection() {
         {/* Trust strip — matches pricing section's strip for consistency. */}
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
+            <Check size={12} className="text-[#10B981]" /> {FREE_WEEK_LABEL}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Every feature from day one
@@ -1432,7 +1432,7 @@ function Hero() {
               credibility BEFORE the bold value claim, so the headline
               lands on a primed visitor. */}
           <p className="mb-6 text-[12px] font-medium" style={{ color: 'var(--text-subtle)' }}>
-            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. {GUARANTEE_SHORT}, no questions asked.
+            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. {FREE_WEEK_SHORT} on the monthly plan, cancel anytime.
           </p>
 
           {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).

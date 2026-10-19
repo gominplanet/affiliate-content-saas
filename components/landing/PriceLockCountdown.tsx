@@ -21,7 +21,7 @@
 import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, timeUntilPriceChange } from '@/lib/price-schedule'
-import { GUARANTEE_LABEL } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL } from '@/lib/guarantee'
 
 // THE OFFER, IN NUMBERS. Today's price next to the January price and the
 // monthly difference, so "lock in" means something concrete. Honest about
@@ -111,7 +111,7 @@ export default function PriceLockCountdown({ tone = 'auto', className = '' }: { 
       </div>
 
       <p className={`mt-4 text-[12px] leading-relaxed ${soft}`}>
-        No catch: a {GUARANTEE_LABEL}, and you can cancel anytime. The lock lasts while your membership is
+        No catch: {FREE_WEEK_LABEL}, and you can cancel anytime. The lock lasts while your membership is
         active, so if you cancel and come back after January 1, you join at the price of the day. From January 1,
         new members pay ${NEW_MEMBER_PRICES.pro.month} a month for Pro.
       </p>

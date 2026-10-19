@@ -117,15 +117,16 @@ const split = strip(SPLIT)
   for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
     check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src),
       'there is no trial for new signups; every new member starts on Pro')
-    check(`${name} reads the refund from lib/guarantee`, /GUARANTEE_(LABEL|SENTENCE|SHORT)/.test(src),
-      'a typed "7-day" goes stale the way every price on this page did')
+    // The free week on the monthly plan replaced the refund (Seb, 2026-10-19).
+    check(`${name} reads the free week from lib/guarantee`, /FREE_WEEK_(LABEL|SENTENCE|SHORT)/.test(src),
+      'a typed "7 days free" goes stale the way every price on this page did')
     check(`${name} does not claim there is no time limit`, !/no time limit/i.test(src),
       'nothing on these pages should promise an open-ended free period')
   }
   const FAQ = strip(readFileSync('components/landing/islands.tsx', 'utf8'))
   check('nor does the FAQ', !/no time limit/i.test(FAQ),
     'it is the longest-form answer on the site and it said it outright')
-  check('and the FAQ answers the refund question from the same sentence', /GUARANTEE_SENTENCE/.test(FAQ))
+  check('and the FAQ answers the free week question from the same sentence', /FREE_WEEK_SENTENCE/.test(FAQ))
 }
 
 // ── the collab cap is on the DRAFTING, not on the outreach ─────────────────

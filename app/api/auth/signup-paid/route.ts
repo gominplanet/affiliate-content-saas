@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
+import { FREE_WEEK_DAYS } from '@/lib/guarantee'
 import { priceMismatch } from '@/lib/price-guard'
 import { couponToApply } from '@/lib/coupon-guard'
 import type { Tier } from '@/lib/tier'
@@ -180,18 +181,28 @@ export async function POST(request: NextRequest) {
   // The account exists from here on. A Stripe failure used to escape as a raw
   // 500, the form said "try again", and the retry answered "an account with
   // this email already exists". Say what actually happened instead.
+  // THE FREE WEEK (lib/guarantee, Seb 2026-10-19): the monthly plan takes the
+  // card and charges nothing for 7 days; the yearly plan is charged now. The
+  // webhook charges at once instead when this creator had a free week before.
+  const freeWeek = !annualId
   let session
   try {
     session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
+      ...(freeWeek ? { payment_method_collection: 'always' as const } : {}),
       line_items: [{ price: priceId, quantity: 1 }],
       customer_email: cleanEmail,
       // Stamp BOTH the session and the subscription with user_id + tier so the
       // webhook can apply the upgrade regardless of which event arrives first
       // (mirrors /api/stripe/checkout).
       metadata: { user_id: userId, tier, ...(fbp ? { fbp } : {}), ...(fbc ? { fbc } : {}) },
-      subscription_data: { metadata: { user_id: userId, tier } },
+      // fbp/fbc on the subscription too: the first real charge comes on day 8
+      // with a free week, and the Purchase reported then needs them.
+      subscription_data: {
+        metadata: { user_id: userId, tier, ...(fbp ? { fbp } : {}), ...(fbc ? { fbc } : {}) },
+        ...(freeWeek ? { trial_period_days: FREE_WEEK_DAYS, trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } } } : {}),
+      },
       // Rewardful coupon (double-sided incentive) and manual promo codes are
       // mutually exclusive on a Checkout session — pick one.
       // Only an approved or mild coupon (lib/coupon-guard).
@@ -201,7 +212,7 @@ export async function POST(request: NextRequest) {
       // Same shape as /api/stripe/checkout: `plan` gives the browser Purchase a
       // value and `cs` gives it the webhook's event id, so Meta counts the sale
       // once. Without them every paid signup was reported twice.
-      success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}`,
+      success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}${freeWeek ? '&freeweek=1' : ''}`,
       cancel_url: `${appUrl}/pricing`,
     })
   } catch (e) {

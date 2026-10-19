@@ -11,7 +11,8 @@
 // "lock it in" paragraph says the current price instead.
 //
 // ONE PLAN (Seb, 2026-10-18): Pro is the only plan sold, with no free trial and
-// a refund window in its place (lib/guarantee), so the letter prices Pro alone.
+// the free week on the monthly plan in its place (lib/guarantee), so the
+// letter prices Pro alone.
 
 import type { Metadata } from 'next'
 import NextImage from 'next/image'
@@ -20,7 +21,7 @@ import { ArrowRight, Mail } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, newPricesLive } from '@/lib/price-schedule'
-import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS } from '@/lib/guarantee'
 
 const serif = Newsreader({ subsets: ['latin'], style: ['normal', 'italic'], weight: ['400', '500', '600'], display: 'swap', variable: '--font-letter' })
 
@@ -233,18 +234,18 @@ export default function PartnerLetter() {
                 {!later && <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Goes up to ${NEW_MEMBER_PRICES.pro.month} on January 1</p>}
               </div>
               <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px' }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.soft }}>Refund</p>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.soft }}>Free on monthly</p>
                 <p style={{ margin: '6px 0 0', fontSize: 34, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                  {GUARANTEE_DAYS}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> days</span>
+                  {FREE_WEEK_DAYS}<span style={{ fontSize: 15, fontWeight: 600, color: C.soft }}> days</span>
                 </p>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>No questions asked, one refund per creator</p>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>Card at signup, charged on day 8, one per creator</p>
               </div>
             </div>
             <p className="pl-letter" style={{ margin: '18px 0 0' }}>
               {later
                 ? <>One plan, {TIERS.pro.label}, at ${proNow} a month.</>
                 : <>One plan, {TIERS.pro.label}. It goes up to ${NEW_MEMBER_PRICES.pro.month} a month on January 1. Anyone who joins before that keeps ${proNow} for as long as they stay subscribed, so there is a real reason to move now.</>}
-              {' '}Every member pays from the first day and gets the whole product, and if it is not for them, there is a {GUARANTEE_LABEL}.
+              {' '}Every member gets the whole product from the first day. On the monthly plan the first {FREE_WEEK_DAYS} days are free: the card is taken at signup and charged on day {FREE_WEEK_DAYS + 1} unless they cancel. The yearly plan is charged when they join.
             </p>
           </div>
         </article>

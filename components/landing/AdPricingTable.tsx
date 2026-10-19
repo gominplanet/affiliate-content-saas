@@ -29,7 +29,7 @@ import { Check, ArrowRight } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 import { AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH } from '@/lib/amazon-plan'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
-import { GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { FREE_WEEK_SENTENCE } from '@/lib/guarantee'
 
 type PaidTier = 'amazon' | 'pro'
 
@@ -246,7 +246,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
       </div>
 
       <p className="mt-7 text-center text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-        {GUARANTEE_SENTENCE} Cancel any time, and everything you have already made stays yours.
+        {FREE_WEEK_SENTENCE} Cancel any time, and everything you have already made stays yours.
       </p>
     </div>
   )

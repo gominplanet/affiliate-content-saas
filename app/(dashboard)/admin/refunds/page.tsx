@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Search, Loader2, CheckCircle2, XCircle, RotateCcw } from 'lucide-react'
-import { GUARANTEE_DAYS } from '@/lib/guarantee'
+import { LEGACY_REFUND_DAYS } from '@/lib/guarantee'
 
 interface Row {
   userId: string
@@ -77,7 +77,7 @@ export default function AdminRefundsPage() {
   return (
     <div className="max-w-4xl mx-auto flex flex-col gap-5">
       <PageHero accent="rgba(16,185,129,0.25)" title="Refunds"
-        subtitle={`Pro starts with a ${GUARANTEE_DAYS}-day refund, no questions asked, once per creator. New members are listed with whether they can have it.`} />
+        subtitle={`Members who paid on their first day, before the free week replaced it, keep a ${LEGACY_REFUND_DAYS}-day refund, once per creator. New members start with the free week instead, and the free week is not refunded. Each member is listed with whether they can have it.`} />
 
       {need && <p className="rounded-xl px-4 py-3 text-[13px] text-amber-700 bg-amber-500/15 dark:text-amber-300 dark:bg-amber-400/15">{need}</p>}
 

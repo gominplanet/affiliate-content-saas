@@ -15,7 +15,7 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
 import { safeNextPath } from '@/lib/safe-next'
-import { GUARANTEE_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS } from '@/lib/guarantee'
 
 // PRO ONLY, NO TRIAL (Seb, 2026-10-18): every signup is a Pro checkout. A
 // link that still says ?tier=amazon or carries no plan at all buys Pro, and
@@ -245,7 +245,9 @@ export default function SignupForm() {
         : `Start ${tierLabel || 'Pro'}`}</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{invited
         ? 'Confirm your email and you come straight back to the invite to accept it.'
-        : `Create your account, then continue to secure checkout. Everything in MVP opens today, and you have ${GUARANTEE_DAYS} days to ask for a full refund, no questions asked.`}</p>
+        : annual
+          ? 'Create your account, then continue to secure checkout. Everything in MVP opens today, and the yearly plan is charged when you join.'
+          : `Create your account, then add your card at secure checkout. Everything in MVP opens today, and your first ${FREE_WEEK_DAYS} days are free: you are charged on day ${FREE_WEEK_DAYS + 1} unless you cancel before then.`}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -312,7 +314,7 @@ export default function SignupForm() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
           {invited
             ? 'No credit card needed to join a team'
-            : `Secure checkout by Stripe · ${GUARANTEE_DAYS}-day refund · Cancel anytime`}
+            : annual ? 'Secure checkout by Stripe · Cancel anytime' : `Secure checkout by Stripe · ${FREE_WEEK_DAYS} days free · Cancel anytime`}
         </p>
       </form>
 

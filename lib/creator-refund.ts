@@ -1,9 +1,12 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// ONE REFUND PER CREATOR (Seb, 2026-10-18).
+// ONE REFUND PER CREATOR (Seb, 2026-10-18), AND ONE FREE WEEK (2026-10-19).
 //
-// Pro starts with a 7-day refund, no questions asked (lib/guarantee). Taken
-// once, it is not available again to the same creator under a new account.
+// Members who joined between the end of the old free trial and the free week
+// started with a 7-day refund, no questions asked (lib/guarantee), and keep
+// it. Taken once, it is not available again to the same creator under a new
+// account. The free week that replaced it is matched the same way, on the
+// card and the email, the two things known at signup (priorFreeWeek).
 // "The same creator" is matched on what MVP is useless without: their card,
 // their YouTube channel, their Amazon Associates tag and storefront, and
 // their email with the usual tricks taken out. A match does not stop anybody
@@ -12,7 +15,7 @@
 //
 // Pure: the admin route reads the rows and Stripe, and these decide.
 
-import { GUARANTEE_DAYS } from '@/lib/guarantee'
+import { FREE_WEEK_FROM, LEGACY_REFUND_DAYS as GUARANTEE_DAYS } from '@/lib/guarantee'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -113,6 +116,31 @@ export function refundCheck(o: {
     return { eligible: false, day, reason: `Refunded before under another account (${[...new Set(o.matches.flatMap((m) => m.on))].join(', ')}). One refund per creator.` }
   }
   if (day === null) return { eligible: false, day, reason: 'No payment found to refund.' }
+  // Paid on or after the free week began: they joined with the free week (or
+  // on the yearly plan), which replaced the refund.
+  if (paid >= Date.parse(FREE_WEEK_FROM)) return { eligible: false, day, reason: 'Joined after the free week replaced the refund, so no refund was promised.' }
   if (day > GUARANTEE_DAYS) return { eligible: false, day, reason: `Day ${day}: the ${GUARANTEE_DAYS}-day window has closed.` }
   return { eligible: true, day, reason: `Day ${day} of ${GUARANTEE_DAYS}. Eligible.` }
+}
+
+/** A free week someone started: who, and the card and email they started it
+ *  with (migration 444, creator_trials). */
+export interface TrialRow {
+  user_id: string
+  email_norm: string | null
+  card_fingerprint: string | null
+}
+
+/** Why this creator gets no free week, or null when they may have one. A
+ *  free week before, or a refund under the old promise, on the same card or
+ *  the same email, never counting this account's own rows. Pure. */
+export function priorFreeWeek(userId: string, ids: { email: string | null; card: string | null }, trials: TrialRow[], refunds: RefundRow[]): string | null {
+  for (const t of trials) {
+    if (t.user_id === userId) continue
+    if (ids.card && t.card_fingerprint === ids.card) return 'This card already had a free week on another account.'
+    if (ids.email && t.email_norm === ids.email) return 'This email already had a free week on another account.'
+  }
+  const refunded = priorRefunds(userId, { email: ids.email, card: ids.card, channel: null, tag: null, storefront: null }, refunds)
+  if (refunded.length) return `Refunded before under another account (${[...new Set(refunded.flatMap((m) => m.on))].join(', ')}).`
+  return null
 }

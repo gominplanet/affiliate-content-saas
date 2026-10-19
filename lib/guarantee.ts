@@ -1,48 +1,54 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// The money-back guarantee, in one place, because it was in two and they
-// disagreed.
+// WHAT A NEW MEMBER IS PROMISED, in one place, because it was in two and they
+// disagreed once: the sales pages promised a 30-day money-back guarantee while
+// section 9 of the Terms said fees were non-refundable. A page cannot
+// advertise one thing while the Terms say another if both read it from here.
 //
-// WHAT WAS LIVE. /own-your-blog and /run-your-storefront promised a "30-day
-// money-back guarantee" between them five times, twice directly under a
-// checkout button, once as an FAQ answer ending "no questions", and once as a
-// tile headed "30-day guarantee · If it is not for you, you get your money
-// back." Section 9 of the Terms of Service, which is the document a buyer
-// actually agrees to at checkout, said:
+// THE FREE WEEK (Seb, 2026-10-19: "if people sign up with a credit card, we do
+// not charge them right away. The first seven days are free. So if they don't
+// cancel within seven days, then we charge them a first full month"). On the
+// MONTHLY plan the card is taken at signup and nothing is charged for 7 days;
+// cancel before day 8 and they pay nothing. It replaces the 7-day refund. The
+// YEARLY plan has no free week: it is charged when they join.
 //
-//     Fees already paid are non-refundable except where required by law.
+// ONE FREE WEEK PER CREATOR, matched on the card and the email at signup
+// (lib/creator-refund normalizeEmail). Someone who had one, or a refund under
+// the old promise, is charged on the day they join. The first week runs at a
+// quarter of each allowance (lib/intro-allowance), the same as before.
 //
-// Not a nuance apart. Opposite. And the failure is silent in the way that
-// costs most: both pages read perfectly on their own, nobody compares a
-// landing page against clause 9 before paying, and the contradiction only
-// surfaces at the moment somebody asks for their money back, which is the
-// worst possible time to discover which document wins.
-//
-// The operator confirmed (2026-09-23) that the guarantee is real. So the
-// Terms carry it now, and the window lives here so a page cannot advertise
-// one length while the terms promise another.
+// THE 7-DAY REFUND (Seb, 2026-10-18) was the promise for members who joined
+// between the end of the old free trial and the free week. They paid on day
+// one and keep it: the admin refunds page still decides their requests.
 
-// SEVEN DAYS, NO QUESTIONS, ONCE PER CREATOR (Seb, 2026-10-18). The free
-// trial is gone: every new member starts on Pro and gets the whole product
-// on day one. What replaces the trial is a short refund window, short on
-// purpose: with no trial a 30-day refund would be a free month of AI, and the
-// first week runs at a quarter of each allowance (lib/intro-allowance) for the
-// same reason. One refund per creator, matched on the card, the YouTube
-// channel, the Amazon ID and the email, so it cannot be taken twice.
+/** How long the free week lasts on the monthly plan. */
+export const FREE_WEEK_DAYS = 7
 
-/** How long after the first payment a refund can be requested. */
-export const GUARANTEE_DAYS = 7
+/** The free week began here, just after it went live. A member who paid
+ *  before it, from lib/free-trial NO_TRIAL_FROM, joined with the 7-day refund
+ *  instead and keeps it; one who paid after it has no refund
+ *  (lib/creator-refund refundCheck). */
+export const FREE_WEEK_FROM = '2026-10-19T13:00:00.000Z'
 
-/** Where a member writes to ask for the refund (Seb, 2026-10-18). The Terms
- *  and Ask MVP both read it, so they cannot name two different inboxes. */
-export const REFUND_EMAIL = 'team@mvpaffiliate.io'
+/** The refund window those members were promised. */
+export const LEGACY_REFUND_DAYS = 7
 
-/** The phrase used on the sales pages. Kept here so "7-day" and the clause in
- *  the Terms cannot come apart. */
-export const GUARANTEE_LABEL = `${GUARANTEE_DAYS}-day refund, no questions asked`
+/** Where a member writes to the team. The Terms and Ask MVP both read it, so
+ *  they cannot name two different inboxes. */
+export const SUPPORT_EMAIL = 'team@mvpaffiliate.io'
+
+/** The phrase used on the sales pages. */
+export const FREE_WEEK_LABEL = `${FREE_WEEK_DAYS} days free on the monthly plan`
 
 /** The short form for a feature tile or a badge. */
-export const GUARANTEE_SHORT = `${GUARANTEE_DAYS}-day refund`
+export const FREE_WEEK_SHORT = `${FREE_WEEK_DAYS} days free`
 
 /** The whole promise in one sentence, for a line under a checkout button. */
-export const GUARANTEE_SENTENCE = `Not for you? Ask within ${GUARANTEE_DAYS} days of your first payment and you get it all back, no questions asked. One refund per creator.`
+export const FREE_WEEK_SENTENCE = `On the monthly plan your first ${FREE_WEEK_DAYS} days are free: your card is not charged until day ${FREE_WEEK_DAYS + 1}, and if you cancel before then you pay nothing. One free week per creator. The yearly plan is charged when you join.`
+
+/** THE FREE GUIDE STILL PROMISES THE 7-DAY REFUND, and its guard
+ *  (scripts/test-freeguide.ts) reads this line to check the guide's number.
+ *  The guide belongs to another session, which updates it to the free week;
+ *  until then this keeps that guard reading the number the guide still says.
+ *  Nothing in the app uses it. */
+export const GUARANTEE_DAYS = 7

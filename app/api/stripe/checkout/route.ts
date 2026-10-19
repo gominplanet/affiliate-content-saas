@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
 import { getStripe, PRICE_IDS, PRICE_ID_LIST, isValidPriceId, annualPriceIdFor, planChangeTarget, type BillingInterval } from '@/lib/stripe'
+import { FREE_WEEK_DAYS } from '@/lib/guarantee'
 import { priceMismatch } from '@/lib/price-guard'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
@@ -348,9 +349,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // THE FREE WEEK (lib/guarantee, Seb 2026-10-19): the monthly plan takes the
+  // card and charges nothing for 7 days, for an account that was never a
+  // Stripe customer. A returning member, and the yearly plan, are charged now.
+  // The webhook also charges at once when the card or email had one before.
+  const freeWeek = !annualId && !customerId
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
+    ...(freeWeek ? { payment_method_collection: 'always' as const } : {}),
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
     // fbp/fbc ride along so the webhook can attach them to the server-side
@@ -363,7 +370,10 @@ export async function POST(request: NextRequest) {
     // a first purchase. Stamping the subscription lets the webhook upsert by
     // user_id directly, so the upgrade applies even if checkout.session.completed
     // is delayed or not subscribed in the dashboard.
-    subscription_data: { metadata: { user_id: user.id, tier } },
+    subscription_data: {
+      metadata: { user_id: user.id, tier, ...(fbp ? { fbp } : {}), ...(fbc ? { fbc } : {}) },
+      ...(freeWeek ? { trial_period_days: FREE_WEEK_DAYS, trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } } } : {}),
+    },
     // Rewardful double-sided incentives vs manual promo codes —
     // Stripe makes these mutually exclusive on a Checkout session
     // (passing both 422s the request). So if Rewardful sent us a
@@ -384,7 +394,7 @@ export async function POST(request: NextRequest) {
     // SAME Meta event_id the webhook uses and the two Purchase events
     // deduplicate. `plan` lets the browser report a real value instead of the
     // valueless Purchase it fired before.
-    success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}`,
+    success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}${freeWeek ? '&freeweek=1' : ''}`,
     cancel_url: `${appUrl}/pricing`,
   })
 

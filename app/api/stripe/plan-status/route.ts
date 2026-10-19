@@ -40,23 +40,29 @@ export async function GET() {
     const paying = livePrice?.unit_amount != null
       ? { amountUsd: livePrice.unit_amount / 100, interval: livePrice.recurring?.interval === 'year' ? 'year' : 'month', lockedIn: isLockedInPrice(livePrice.id) }
       : null
-    if (!live?.schedule) return NextResponse.json({ pendingDowngrade: null, paying })
+    // THE FREE WEEK (lib/guarantee): when the card is charged, and whether they
+    // already cancelled, so the billing page says it in words.
+    const freeWeek = live?.status === 'trialing' && live.trial_end
+      ? { chargeAt: live.trial_end, amountUsd: livePrice?.unit_amount != null ? livePrice.unit_amount / 100 : null, cancelled: !!live.cancel_at_period_end }
+      : null
+    if (!live?.schedule) return NextResponse.json({ pendingDowngrade: null, paying, freeWeek })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const schedId = typeof live.schedule === 'string' ? live.schedule : (live.schedule as any).id
     const sched = await stripe.subscriptionSchedules.retrieve(schedId)
     if (sched.status !== 'active' && sched.status !== 'not_started') {
-      return NextResponse.json({ pendingDowngrade: null, paying })
+      return NextResponse.json({ pendingDowngrade: null, paying, freeWeek })
     }
     const targetTier = (sched.metadata?.mvp_downgrade_to as Tier | undefined) || null
     const nowSec = Math.floor(Date.now() / 1000)
     // The next phase that hasn't started yet is the queued downgrade.
     const nextPhase = (sched.phases || []).find(p => (p.start_date ?? 0) > nowSec)
-    if (!targetTier || !nextPhase) return NextResponse.json({ pendingDowngrade: null, paying })
+    if (!targetTier || !nextPhase) return NextResponse.json({ pendingDowngrade: null, paying, freeWeek })
 
     return NextResponse.json({
       pendingDowngrade: { tier: targetTier, effectiveAt: nextPhase.start_date },
       paying,
+      freeWeek,
     })
   } catch (err) {
     // Best-effort — never break the billing page over a Stripe hiccup.

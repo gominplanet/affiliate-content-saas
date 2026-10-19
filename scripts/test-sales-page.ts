@@ -23,7 +23,7 @@
 // the product does not keep. A sales page is the one surface where being wrong
 // is not a bug report, it is a refund and a chargeback.
 import { readFileSync } from 'node:fs'
-import { GUARANTEE_LABEL, GUARANTEE_DAYS } from '../lib/guarantee'
+import { FREE_WEEK_LABEL, FREE_WEEK_DAYS } from '../lib/guarantee'
 import { join } from 'node:path'
 import { TIERS } from '../lib/tier'
 
@@ -71,17 +71,17 @@ const noImports = (src: string) => src
 // than what any of them happens to spell. test-guarantee.ts owns the harder
 // half: that the promise exists in the terms at all.
 {
-  const homepage = GUARANTEE_LABEL
+  const homepage = FREE_WEEK_LABEL
   check('the homepage states a guarantee', homepage.length > 0)
   check('and it reads it from lib/guarantee rather than typing one',
-    /const GUARANTEE: string \| null = GUARANTEE_LABEL/.test(PAGE_LIVE),
+    /const GUARANTEE: string \| null = FREE_WEEK_LABEL/.test(PAGE_LIVE),
     'a typed string here is how the homepage and /features disagreed the first time')
-  // 30 days while there was a free trial; 7 with no trial (Seb, 2026-10-18),
-  // because the refund IS the trial now and a month of Pro is a lot to hand back.
-  check('and it is the 7 days we settled on',
-    GUARANTEE_DAYS === 7 && new RegExp(`\\b${GUARANTEE_DAYS}-day\\b`).test(homepage), homepage)
+  // The free week on the monthly plan (Seb, 2026-10-19), which replaced the
+  // 7-day refund.
+  check('and it is the 7 days free on the monthly plan',
+    FREE_WEEK_DAYS === 7 && new RegExp(`\\b${FREE_WEEK_DAYS} days free on the monthly plan\\b`).test(homepage), homepage)
   check('/features states the same one',
-    /\{GUARANTEE_LABEL\}/.test(FEATURES),
+    /\{FREE_WEEK_LABEL\}/.test(FEATURES),
     `homepage says "${homepage}"`)
   check('no 14-day guarantee survives anywhere on the marketing pages',
     !/14-day money-back/.test(PAGE) && !/14-day money-back/.test(FEATURES),
@@ -131,10 +131,10 @@ const noImports = (src: string) => src
   check('the old product-first headline is gone',
     !/Everything an Amazon<br \/>affiliate needs/.test(PAGE),
     'it was a claim about us, addressed to people who have never heard of us')
-  // There is no trial to start without a card any more (Seb, 2026-10-18), so
-  // the hero answers the same objection with the refund instead.
-  check('the hero states the refund',
-    /GUARANTEE_SHORT/.test(hero) && /\{GUARANTEE\}/.test(hero),
+  // There is no start without a card (Seb, 2026-10-18), so the hero answers
+  // the same objection with the free week (2026-10-19).
+  check('the hero states the free week',
+    /FREE_WEEK_SHORT/.test(hero) && /\{GUARANTEE\}/.test(hero),
     'the single biggest objection on a cold click, now that there is no free way in')
   check('and no longer promises a start with no card',
     !/No card to start|Start free/i.test(hero),
@@ -270,7 +270,7 @@ for (const { label, src } of AD_PAGES) {
   // four different things. Still checked against the LIVE source, because the
   // first version of this passed on the phrase appearing in a header comment.
   check(`${label} states the guarantee in the copy, not only in a comment`,
-    /GUARANTEE_LABEL/.test(noImports(label.includes('own-your-blog') ? AD_LIVE : AD2_LIVE)),
+    /FREE_WEEK_LABEL/.test(noImports(label.includes('own-your-blog') ? AD_LIVE : AD2_LIVE)),
     'two different guarantees across two pages is the drift that already happened once')
   check(`${label} carries the Amazon disclaimer`,
     /not affiliated with, endorsed by, or sponsored by Amazon/.test(src))
@@ -386,9 +386,9 @@ for (const { label, src } of AD_PAGES) {
   check('there is no free column',
     !/name="Free/.test(CARD),
     'there is no free trial to offer')
-  check('the refund is stated under the price',
-    /\{GUARANTEE_SENTENCE\}/.test(CARD),
-    'the refund is the way in now, so it sits where the trial was')
+  check('the free week is stated under the price',
+    /\{FREE_WEEK_SENTENCE\}/.test(CARD),
+    'the free week is the way in now, so it sits under the price')
   check('the toggle hides itself when nothing is sold yearly',
     /bestPct > 0 && \(/.test(CARD),
     'a toggle that flips to an option that does not exist is worse than no toggle')

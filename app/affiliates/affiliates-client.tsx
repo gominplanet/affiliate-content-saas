@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { TIERS as PLAN_TIERS, SELLABLE_TIERS } from '@/lib/tier'
-import { GUARANTEE_LABEL } from '@/lib/guarantee'
+import { FREE_WEEK_LABEL } from '@/lib/guarantee'
 import { AFFILIATE_CAMPAIGN, AFFILIATE_RATE } from '@/lib/affiliate-campaign'
 
 // The terms themselves now live in lib/affiliate-campaign.ts, so the in-app
@@ -289,7 +289,7 @@ function Product() {
     <><b>The agent pipeline</b> turns a video into a full blog post, social fan-out, thumbnails, and brand-pitch emails, automatically.</>,
     <><b>YouTube autopilot</b> watches a channel and drafts content the moment a new video lands.</>,
     <>A <b>branded review site</b> on Pro: their content, their domain, their links.</>,
-    <>One plan, <b>{PLAN_TIERS.pro.label}</b>, with every feature open from the first day and a <b>{GUARANTEE_LABEL}</b> (one per creator). That makes the first click an easy yes for your audience.</>,
+    <>One plan, <b>{PLAN_TIERS.pro.label}</b>, with every feature open from the first day and <b>{FREE_WEEK_LABEL}</b> (one per creator). That makes the first click an easy yes for your audience.</>,
   ]
   return (
     <section className="sec alt">

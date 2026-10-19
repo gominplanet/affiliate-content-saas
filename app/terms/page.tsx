@@ -1,4 +1,4 @@
-import { GUARANTEE_DAYS, GUARANTEE_LABEL, REFUND_EMAIL } from '@/lib/guarantee'
+import { FREE_WEEK_DAYS, LEGACY_REFUND_DAYS, SUPPORT_EMAIL } from '@/lib/guarantee'
 
 export const metadata = {
   title: 'Terms of Service',
@@ -9,7 +9,7 @@ export default function TermsPage() {
   return (
     <main className="max-w-3xl mx-auto px-6 py-16 text-[#1d1d1f] dark:text-[#f5f5f7]">
       <h1 className="text-3xl font-bold mb-2">Terms of Service</h1>
-      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: October 18, 2026</p>
+      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: October 19, 2026</p>
 
       <section className="prose prose-sm max-w-none space-y-8 text-[#374151] leading-relaxed">
 
@@ -123,25 +123,33 @@ export default function TermsPage() {
             takes effect at the end of the current billing period.
           </p>
           <p>
-            <strong>{GUARANTEE_LABEL[0].toUpperCase() + GUARANTEE_LABEL.slice(1)}.</strong> If you subscribe and MVP Affiliate is not
-            for you, email{' '}
-            <a href={`mailto:${REFUND_EMAIL}`} className="text-[#7C3AED] hover:underline">{REFUND_EMAIL}</a>{' '}
-            within {GUARANTEE_DAYS} days of your first payment and we will refund it in full and
-            cancel the subscription. No questions, and nothing you made with it is taken away. The
-            guarantee covers your first payment on a subscription; renewals after that are not
-            refundable except where required by law, and neither are one-off purchases such as
-            credit packs once the credits have been used.
+            <strong>The free week on the monthly plan.</strong> When you start the monthly plan your card is
+            taken at checkout and nothing is charged for the first {FREE_WEEK_DAYS} days. If you cancel before
+            day {FREE_WEEK_DAYS + 1}, your subscription ends when the free week does and you are never charged.
+            If you do not cancel, your first month is charged on day {FREE_WEEK_DAYS + 1} and the subscription
+            renews every month from then. The yearly plan has no free week: it is charged when you
+            subscribe. Payments are not refundable except where required by law, and neither are
+            one-off purchases such as credit packs once the credits have been used.
           </p>
           <p>
-            <strong>One refund per creator.</strong> The refund can be given once to each person. A new
-            account that uses the same payment card, YouTube channel, Amazon Associates ID or
-            storefront, or email address as an account that was refunded before can still subscribe,
-            but its first payment is not covered by the guarantee.
+            <strong>One free week per creator.</strong> A new account that uses the same payment card or
+            email address as an account that already had a free week, or a refund, can still subscribe,
+            but it is charged on the day it subscribes.
           </p>
           <p>
-            <strong>Your first {GUARANTEE_DAYS} days.</strong> While the refund window is open, each monthly
-            allowance runs at a quarter of its full amount. The rest opens on day {GUARANTEE_DAYS + 1}, and
-            your billing month is not shortened by it.
+            <strong>Members who joined before the free week.</strong> If you paid on your first day under
+            the {LEGACY_REFUND_DAYS}-day refund that MVP Affiliate offered before the free week, it still applies to
+            you: email{' '}
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[#7C3AED] hover:underline">{SUPPORT_EMAIL}</a>{' '}
+            within {LEGACY_REFUND_DAYS} days of that first payment and we will refund it in full and cancel the
+            subscription. It is given once to each person: an account that uses the same payment card,
+            YouTube channel, Amazon Associates ID or storefront, or email address as an account that was
+            refunded before is not covered.
+          </p>
+          <p>
+            <strong>Your first {FREE_WEEK_DAYS} days.</strong> Each monthly allowance runs at a quarter of its
+            full amount for your first {FREE_WEEK_DAYS} days. The rest opens on day {FREE_WEEK_DAYS + 1}, and your
+            billing month is not shortened by it.
           </p>
         </div>
 
@@ -220,7 +228,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">16. Contact</h2>
           <p>
             Questions about these Terms? Contact us at{' '}
-            <a href={`mailto:${REFUND_EMAIL}`} className="text-[#7C3AED] hover:underline">{REFUND_EMAIL}</a>.
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[#7C3AED] hover:underline">{SUPPORT_EMAIL}</a>.
           </p>
         </div>
 
