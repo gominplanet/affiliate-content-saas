@@ -18,6 +18,8 @@
  *   res:  { url: "https://…/source.mp4", durationSeconds: number }
  */
 
+import { alertOps } from '@/lib/ops-alert'
+
 export function ingestConfigured(): boolean {
   return !!process.env.YOUTUBE_INGEST_URL
 }
@@ -217,7 +219,9 @@ export async function ingestYouTubeVideoWhy(
       const body = await res.text().catch(() => '')
       let msg = body
       try { const j = JSON.parse(body) as { error?: unknown }; if (typeof j?.error === 'string' && j.error) msg = j.error } catch { /* raw */ }
-      return { ok: false, why: `HTTP ${res.status}: ${msg || 'no reason given'}`.slice(0, 400) }
+      const why = `HTTP ${res.status}: ${msg || 'no reason given'}`.slice(0, 400)
+      if (isProxyFailure(why)) await alertProxyDown(why)
+      return { ok: false, why }
     }
     const data = await res.json() as {
       url?: string; durationSeconds?: number; audioLanguage?: unknown; audioLanguageNote?: unknown
@@ -244,6 +248,23 @@ export async function ingestYouTubeVideoWhy(
   }
 }
 
+/** The downloader's proxy refused or could not be reached: MVP's account,
+ *  not the member's video, so it is the team's to fix. Pure. */
+export function isProxyFailure(why: string): boolean {
+  return /unable to connect to proxy|ProxyError|407 Proxy Authentication|Tunnel connection failed|402 Payment Required/i.test(String(why || ''))
+}
+
+// THE TEAM HEARS IT BEFORE A MEMBER DOES (Seb, 2026-10-19: Alejandro saw
+// "cannot reach its proxy" first). Once an hour per server at most, so a
+// morning of failed fetches is one alert, not fifty.
+let proxyAlertAt = 0
+async function alertProxyDown(why: string): Promise<void> {
+  if (Date.now() - proxyAlertAt < 60 * 60_000) return
+  proxyAlertAt = Date.now()
+  await alertOps('Video downloads are failing: the proxy is refusing traffic',
+    `Members asking MVP to fetch a YouTube video are told to upload the MP4. The downloader said: ${why.slice(0, 300)}\n\nCheck YT_DLP_PROXY on Railway and the proxy account (credit, password, plan). ${process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'}/api/admin/ingest-status shows the proxy's own answer.`)
+}
+
 /** A failed fetch in a creator's words, from the service's reason. Pure. */
 export function ingestFailureWords(why: string): string {
   const w = String(why || '')
@@ -251,13 +272,15 @@ export function ingestFailureWords(why: string): string {
   if (w === 'timeout') return 'the downloader took longer than five minutes'
   if (/private video|members[- ]only|join this channel/i.test(w)) return 'YouTube says this video is private or members only'
   if (/video unavailable|has been removed|no longer available/i.test(w)) return 'YouTube says this video is unavailable'
-  if (/not a bot|sign in to confirm/i.test(w)) return 'YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in)'
-  if (/DRM/i.test(w)) return 'YouTube only offered a protected copy'
+  // The proxy first: when the downloader tried again without it, both reasons
+  // come back, and the proxy is the cause (2026-10-19).
   // THE PROXY ACCOUNT RAN OUT (Seb, 2026-10-09): every fetch failed with the
   // proxy's own "Tunnel connection failed: 402 Payment Required" pasted on
   // screen. It is MVP's paid proxy plan, not the member's video, so it says so.
   if (/402 Payment Required/i.test(w) || (/proxy/i.test(w) && /\b402\b/.test(w))) return 'MVP\u2019s download service is out of credit, so automatic fetching is paused for everyone (we\u2019re on it)'
   if (/unable to connect to proxy|ProxyError|407 Proxy Authentication/i.test(w)) return 'MVP\u2019s download service cannot reach its proxy right now'
+  if (/not a bot|sign in to confirm/i.test(w)) return 'YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in)'
+  if (/DRM/i.test(w)) return 'YouTube only offered a protected copy'
   if (/HTTP 401|HTTP 403/.test(w) && !/ERROR/i.test(w)) return 'the downloader refused MVP\u2019s key'
   if (/did not answer|ECONNREFUSED|ENOTFOUND|HTTP 50[234]: (?!.*ERROR)/i.test(w)) return 'the downloader is not answering'
   return `the downloader said: ${w.replace(/^HTTP \d+: /, '').replace(/^ERROR:\s*/i, '').slice(0, 200)}`

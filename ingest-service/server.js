@@ -260,7 +260,7 @@ function probeProxy() {
 
 app.get('/health', async (_req, res) => {
   const p = await probeProxy()
-  res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD })
+  res.json({ ok: true, lastProxyFallback, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD })
 })
 
 // Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
@@ -292,11 +292,37 @@ app.post('/cookies', (req, res) => {
   }
 })
 
-function ytDlp(args) {
+// THE PROXY FAILING IS NOT THE VIDEO FAILING (2026-10-19: Alejandro's fetch
+// failed with "cannot reach its proxy"). When the proxy refuses or cannot be
+// reached, the call is tried once more without it: cookies and the PO token
+// still get past YouTube some of the time, which beats failing every time.
+// If that fails too, both reasons are returned, the proxy's first.
+const PROXY_FAILED = /unable to connect to proxy|ProxyError|407 Proxy Authentication|Tunnel connection failed|402 Payment Required/i
+let lastProxyFallback = null
+async function ytDlp(args) {
+  try {
+    return await ytDlpOnce(args, !!PROXY)
+  } catch (e) {
+    const why = (e && e.message) || ''
+    if (!PROXY || !PROXY_FAILED.test(why)) throw e
+    console.warn('[yt-dlp] the proxy failed, trying once without it:', why.replace(PROXY, '[proxy]').slice(0, 200))
+    lastProxyFallback = { at: new Date().toISOString(), proxyError: why.replace(PROXY, '[proxy]').slice(0, 200), ok: null }
+    try {
+      const out = await ytDlpOnce(args, false)
+      lastProxyFallback.ok = true
+      return out
+    } catch (e2) {
+      lastProxyFallback.ok = false
+      throw new Error(`${why.replace(PROXY, '[proxy]').slice(0, 240)} | without the proxy: ${((e2 && e2.message) || '').slice(0, 240)}`)
+    }
+  }
+}
+
+function ytDlpOnce(args, useProxy) {
   // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
   // player clients + retries, to beat YouTube's bot check as best we can.
   const full = [
-    ...(PROXY ? ['--proxy', PROXY] : []),
+    ...(useProxy ? ['--proxy', PROXY] : []),
     ...(cookiesReady ? ['--cookies', COOKIES_FILE] : []),
     '--extractor-args', `youtube:player_client=${PLAYER_CLIENTS}`,
     // Tell the bgutil plugin where the PO-token provider lives (only when set).

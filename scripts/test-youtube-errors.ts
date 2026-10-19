@@ -5,7 +5,7 @@
 // so the playlist picker told a creator to reconnect YouTube.
 import { readFileSync } from 'node:fs'
 import { youTubeErrorText } from '../services/youtube'
-import { ingestFailureWords } from '../lib/youtube-ingest'
+import { ingestFailureWords, isProxyFailure } from '../lib/youtube-ingest'
 import { toGb, usedPct } from '../lib/proxy-usage'
 
 const failures: string[] = []
@@ -36,6 +36,16 @@ check('the admin costs page shows the proxy gauge', /<ProxyUsage \/>/.test(readF
 check('the proxy gauge is admin only', /tier !== 'admin'/.test(readFileSync('app/api/admin/proxy-usage/route.ts', 'utf8')))
 check('a service that is down is named as down', /not answering/.test(ingestFailureWords('the service did not answer (fetch failed)')))
 check('anything else shows the downloader\'s own words', /downloader said: Requested format is not available/.test(ingestFailureWords('HTTP 502: ERROR: Requested format is not available')))
+// Seb, 2026-10-19: Alejandro saw "cannot reach its proxy". The downloader now
+// tries once without the proxy, and when both fail the proxy is still named.
+check('a proxy that failed, then a bot wall without it, names the proxy', /cannot reach its proxy/.test(ingestFailureWords("HTTP 502: ERROR: Unable to connect to proxy | without the proxy: ERROR: [youtube] abc: Sign in to confirm you're not a bot")))
+check('a proxy failure is the team\'s, and alerts them', isProxyFailure('HTTP 502: ERROR: Unable to connect to proxy') && isProxyFailure('Tunnel connection failed: 402 Payment Required') && !isProxyFailure("Sign in to confirm you're not a bot")
+  && /if \(isProxyFailure\(why\)\) await alertProxyDown\(why\)/.test(readFileSync('lib/youtube-ingest.ts', 'utf8')))
+{
+  const S = readFileSync('ingest-service/server.js', 'utf8')
+  check('the downloader tries once without a failing proxy, and reports it on /health', /return await ytDlpOnce\(args, !!PROXY\)/.test(S) && /const out = await ytDlpOnce\(args, false\)/.test(S) && /lastProxyFallback, cookies/.test(S))
+  check('the proxy address, which holds its password, is never echoed', (S.match(/why\.replace\(PROXY, '\[proxy\]'\)/g) || []).length >= 2)
+}
 {
   const R = readFileSync('app/api/youtube/shorts/ingest/route.ts', 'utf8')
   check('the Short fetch puts the reason on screen', /ingestFailureWords\(got\.why\)/.test(R) && /why: got\.why/.test(R))
