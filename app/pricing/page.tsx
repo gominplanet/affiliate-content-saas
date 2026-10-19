@@ -148,7 +148,7 @@ const plans: PlanExt[] = [
       `Up to ${TIERS.pro.sites} WordPress sites on one subscription`,
       `Up to ${TIERS.pro.youtubeChannels} YouTube channels: set a default channel per blog, or pull from any channel onto any blog`,
       `Up to ${TIERS.pro.vaSeats} Team seats for your VAs, each with its own permissions`,
-      'Deals Hub: deal posts draw from your monthly generations, with countdown banners + Amazon CSV bulk import',
+      'Deals Hub: deal posts for Amazon sales like Black Friday, with countdown banners, from your monthly generations',
       `${TIERS.pro.maxFaces} saved faces, Photobooth ${TIERS.pro.photoboothPerMonth} / month`,
       `Scriptwriter: video script & shot list (${TIERS.pro.scriptsPerMonth} / month)`,
       `Brand pitches: ${TIERS.pro.collabsPerMonth} long-form outreach emails drafted / month (Creator Connections messages are unlimited)`,

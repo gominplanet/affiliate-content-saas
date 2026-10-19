@@ -69,9 +69,16 @@ const ANNOUNCE = new Date(EVENT_ANNOUNCE_EMBARGO.prime_big_deal_days!)
 
   check('canNameEvent agrees with the verdict',
     !canNameEvent('prime_big_deal_days', justBefore) && canNameEvent('prime_big_deal_days', exactly))
-  // Events with no embargo are always nameable. Black Friday's date is not a
-  // secret and must not be treated as one.
-  check('an unembargoed event is always nameable', canNameEvent('black_friday', SEP) && canNameEvent('none', SEP))
+  // Events with no embargo are always nameable.
+  check('an unembargoed event is always nameable', canNameEvent('prime_day', SEP) && canNameEvent('holiday', SEP) && canNameEvent('none', SEP))
+  // Amazon's Black Friday event dates (the Deals Hub, seen by Seb 2026-10-19):
+  // "can be communicated only after November 9th, 2026 at 10 p.m. PST".
+  const bf = Date.parse('2026-11-10T06:00:00.000Z')
+  check('Black Friday and Cyber Monday are held until November 9, 10 pm Pacific, and released on it',
+    !canNameEvent('black_friday', new Date(bf - 1000)) && canNameEvent('black_friday', new Date(bf))
+      && !canNameEvent('cyber_monday', new Date(bf - 1000)) && canNameEvent('cyber_monday', new Date(bf)))
+  check('a Black Friday post written before then is scheduled for then, not refused',
+    dealEmbargo({ occasion: 'black_friday', now: new Date('2026-10-19T12:00:00Z') }).publishableAt === '2026-11-10T06:00:00.000Z')
   check('no occasion is nameable', canNameEvent(null, SEP) && canNameEvent(undefined, SEP))
 }
 

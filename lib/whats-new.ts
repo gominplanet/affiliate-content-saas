@@ -26,6 +26,26 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Deals Hub reopened for Black Friday (Seb, 2026-10-19: "make this something
+  // that people can be aware of in the pop-up update when people log in").
+  {
+    date: '2026-10-19',
+    badge: 'BACK',
+    tone: '#DB2777',
+    title: 'Deals Hub is back for Black Friday',
+    desc: 'Amazon\u2019s Black Friday deals are out in the Deals Hub of your Amazon Associates account, so Deals Hub in MVP is open again. Paste the deal\u2019s Amazon link and MVP writes the deal post for your blog, with the price, a countdown to when the deal ends and, if you have one, your promo code in every button. Amazon lists deals before they start: schedule the post for the deal\u2019s start time and it goes live by itself, badged for the sale it belongs to, so you are ready without posting early.',
+    href: '/deals',
+  },
+  // A TRYBE chat read on MVP stays read (Seb, 2026-10-19).
+  {
+    date: '2026-10-19',
+    gate: 'trybe',
+    badge: 'FIXED',
+    tone: '#7C3AED',
+    title: 'TRYBE: a chat you read stays read',
+    desc: 'Some TRYBE chats, like brand announcements, kept counting 1 unread after you opened them, even on TRYBE\u2019s own app. Open one in MVP and it now stays read here until a new message comes in, and the chat says TRYBE still marks it unread.',
+    href: '/trybe?tab=inbox',
+  },
   // Your own thumbnail text (Seb, 2026-10-18). For everyone who makes thumbnails.
   {
     date: '2026-10-19',

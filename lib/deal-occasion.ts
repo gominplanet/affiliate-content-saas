@@ -25,11 +25,14 @@
  * ⚠️  Flip to FALSE the moment the next Amazon sale starts to bring it back.
  *
  * PAUSED 2026-10-10 (Seb: "close the deals hub feature till I tell you to
- * reopen it, prime day is over"). Reopen only when Seb says so. When it opens
- * again, lib/deal-embargo.ts still keeps a pre-announcement deal from going
- * live early; the two belong together.
+ * reopen it, prime day is over").
+ * REOPENED 2026-10-19 (Seb: "Black Friday deals are now available from Amazon,
+ * so we should turn on the deals back up ... it's seasonal, but it's on now").
+ * Close it again only when Seb says so. lib/deal-embargo.ts keeps a deal that
+ * Amazon has listed but not started from going live early; the two belong
+ * together.
  */
-export const DEALS_HUB_PAUSED = true
+export const DEALS_HUB_PAUSED = false
 
 /** Closed for this account right now: paused between sales, admins excepted
  *  so they can stage a post ahead of the next one. A season switch, not a plan

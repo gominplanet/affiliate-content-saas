@@ -486,8 +486,13 @@ export async function POST(req: Request) {
   }
   const promoCode = (body.promoCode || '').trim().slice(0, 40) // hard cap
   const promoUrl = (body.promoUrl || '').trim().slice(0, 500)
+  // AUTO PICKS THE SALE THE DEAL BELONGS TO, by the deal's own start time or
+  // the time the post is scheduled for, and only then today: Amazon lists
+  // Black Friday deals weeks ahead, and a post written now for one that starts
+  // on Black Friday should carry that badge, not a plain DEAL.
+  const occasionDay = [body.dealStartsAt, body.scheduledAt].map((v) => (v ? new Date(v) : null)).find((d) => d && !isNaN(d.getTime())) ?? new Date()
   const requestedOccasion: DealOccasionSlug = body.occasion === 'auto' || !body.occasion
-    ? detectOccasion()
+    ? detectOccasion(occasionDay)
     : (body.occasion as DealOccasionSlug)
   const occasion = getOccasion(requestedOccasion)
   const manualDealEnd = (body.manualDealEnd || '').trim() || null
@@ -564,9 +569,11 @@ export async function POST(req: Request) {
   // moment the embargo lifts, which is what the creator wanted anyway and what
   // the scheduling path below already knows how to do.
   {
+    // The occasion the post will carry, picked or auto: auto can now name
+    // Black Friday from the scheduled date, and that name is embargoed too.
     const verdict = dealEmbargo({
       dealStartsAt: body.dealStartsAt,
-      occasion: body.occasion && body.occasion !== 'auto' ? body.occasion : null,
+      occasion: requestedOccasion !== 'none' ? requestedOccasion : null,
     })
     if (verdict.blocked && verdict.publishableAt) {
       const held = new Date(verdict.publishableAt).getTime()

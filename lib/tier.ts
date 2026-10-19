@@ -1292,7 +1292,7 @@ export async function checkDealsUsage(
   if (cap === 0) {
     return {
       allowed: false,
-      reason: 'Deals Hub is a paid feature. Upgrade to publish timely deal posts with countdown banners and bulk-import from your Amazon Associates dashboard.',
+      reason: 'Deals Hub is a paid feature. Upgrade to publish timely deal posts with countdown banners for Amazon sales.',
       tier,
       used: 0,
       cap: 0,
