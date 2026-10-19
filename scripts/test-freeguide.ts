@@ -450,16 +450,18 @@ check('and so does the footer',
   check('the panel was found',
     panel.includes('Join MVP'), 'everything below is checking an empty string otherwise')
 
-  // THE FREE TRIAL IS GONE (Seb, 2026-10-18). Every new member starts on the
-  // one plan with a refund window instead (lib/guarantee) and a first week at
-  // a fraction of each allowance (lib/intro-allowance). The panel once kept
-  // promising "Try it free" and thirty free days after checkout stopped
-  // offering them, so the promise is read from those files, not typed here.
+  // THE OFFER IS A FREE WEEK ON THE MONTHLY PLAN (Seb, 2026-10-19), after a
+  // day of a 7-day refund that replaced the old 30-day trial. Each change left
+  // this panel promising the previous offer, so the promise is read from
+  // lib/guarantee, not typed here.
   const GUAR = read('lib/guarantee.ts')
-  const days = (/GUARANTEE_DAYS = (\d+)/.exec(GUAR) ?? ['', '«unreadable»'])[1]
-  check(`it promises the ${days}-day refund lib/guarantee grants`,
-    panel.includes(`${days}-day refund, no questions asked`) && panel.includes(`within ${days} days of your first payment`), '')
-  check('and says it is one refund per creator', panel.includes('One refund per creator'), '')
+  const days = (/FREE_WEEK_DAYS = (\d+)/.exec(GUAR) ?? ['', '«unreadable»'])[1]
+  check(`it offers the ${days} free days lib/guarantee grants, on the monthly plan`,
+    panel.includes(`${days} days free on the monthly plan`) && panel.includes(`nothing is charged until day ${Number(days) + 1}`), '')
+  check('and says it is one free week per creator, and that yearly is charged at once',
+    panel.includes('One free week per creator') && panel.includes('yearly plan has no free week'), '')
+  check('no refund is promised, since the free week replaced it',
+    !/refund/i.test(panel), (panel.match(/[^.]*refund[^.]*/i) ?? [''])[0])
   check('the first week at a quarter is stated, since it is what a new member meets',
     /INTRO_SHARE = 0\.25/.test(read('lib/intro-allowance.ts')) && panel.includes('a quarter of each monthly allowance'),
     'change INTRO_SHARE and this fails until the guide says the new share')
