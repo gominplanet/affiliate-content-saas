@@ -32,7 +32,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'BETTER',
     tone: '#7C3AED',
     title: 'Thumbnails with less text, and only what is true',
-    desc: 'Every thumbnail and design now carries the headline plus at most one small badge or chip, so there is less to get wrong. MVP also checks the words against your video, your post and the product listing: a claim like TESTED, CONFIRMED or ALL NIGHT, or a number, only goes on when one of those says it. When MVP swaps a headline or leaves a chip out, Co-Pilot tells you what it changed.',
+    desc: 'Every thumbnail and design now carries the headline plus at most one small badge or chip, so there is less to get wrong. MVP also checks the words against your video, your post and the product listing: a claim like TESTED, CONFIRMED or ALL NIGHT, or a number, only goes on when one of those says it. Video Launchpad, Liftoff and Drop now listen to the video for this, and Co-Pilot uses its transcript even when you pick the headline. Every word on the image is read back for spelling, not just the headline, and a wrong one is made again once. When MVP swaps a headline, leaves a chip out, or still could not get a word right, Co-Pilot tells you.',
     href: '/co-pilot',
   },
   {

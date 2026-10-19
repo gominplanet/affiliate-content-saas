@@ -329,7 +329,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
   // More rows than the budget, because rows still waiting for a product are
   // skipped, and a short list of those used to hold every other creator up.
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,asin,title,title_source,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries,updated_at')
+    .select('id,user_id,batch_id,asin,title,title_source,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries,updated_at,source_url,rendered_url,clean_url,duration_seconds')
     .eq('state', 'preparing')
     .order('created_at', { ascending: true }).limit(40)
   const items = rows ?? []
@@ -575,7 +575,10 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         try {
           // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
           // look.
-          const branded = await styledThumbnail(it.user_id, title, asin, preset, ownText)
+          // The video file goes too, so the thumbnail's words come from what
+          // the creator says in it (lib/thumb-facts).
+          const file = [it.clean_url, it.rendered_url, it.source_url].find((u) => typeof u === 'string' && /^https:\/\//i.test(u)) as string | undefined
+          const branded = await styledThumbnail(it.user_id, title, asin, preset, ownText, { url: file, seconds: Number(it.duration_seconds) || null })
           if (branded.url) patch.thumbnail_url = branded.url
           else {
             plainWhy = branded.why
@@ -777,6 +780,7 @@ async function videoMetadata(
  */
 async function styledThumbnail(
   userId: string, title: string, asin: string, preset: ThumbnailPreset, ownText = '',
+  video: { url?: string; seconds?: number | null } = {},
 ): Promise<{ url: string | null; why: string; limited?: boolean }> {
   const started = Date.now()
   const secs = () => Math.round((Date.now() - started) / 1000)
@@ -797,6 +801,8 @@ async function styledThumbnail(
         ...presetToRequestFields(preset),
         // The creator's own words for this video, used exactly (lib/thumb-text).
         ...(ownText ? { customHeadline: ownText } : {}),
+        // What is said in it, for the facts check (lib/thumb-facts).
+        ...(video.url ? { videoFileUrl: video.url, videoSeconds: video.seconds ?? null } : {}),
       },
     })
     if (!res.ok) {

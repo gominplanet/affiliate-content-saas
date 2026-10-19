@@ -128,6 +128,24 @@ check('briefs cached before these rules are not handed back', /:t2\$\{wantQuesti
 check('the notes go back to the page', (R.match(/textNotes: textNotesOf\(/g) || []).length === 2)
 check('no current year in the headline examples', !/OF 2026\?/.test(R))
 
+// ── step 5: the creator's own words reach the thumbnail ─────────────────────
+check('the claims sheet is no longer skipped for the creator\'s own headline',
+  /const claimsSheetPromise: Promise<string> = sourceTextPromise/.test(R) && !/\(!lockedHeadline && youtubeVideoId\)/.test(R),
+  'the badge and chip are still MVP\'s words and need the facts')
+check('the words come from the post, the saved transcript, or the file',
+  /typed\.length >= 20/.test(R) && /\.from\('youtube_videos'\)[\s\S]{0,120}\.select\('transcript'\)/.test(R) && /return transcribeForThumbnail\(videoFileUrl, videoSeconds\)/.test(R))
+check('a file is transcribed only when it is safe, short enough, and with a time limit',
+  /assertPublicHttpUrl\(u\)/.test(R) && /TRANSCRIBE_MAX_SECONDS = 1800/.test(R) && /Promise\.race\(\[run, late\]\)/.test(R))
+check('and the run is booked when it runs', /feature: 'yt_thumb_transcribe', model: 'fal-whisper'/.test(R))
+check('both art director calls get the full words', (R.match(/sourceText: sourceText(P|Gfx),/g) || []).length === 2)
+check('Launchpad sends its video', /videoFileUrl: renderedUrl/.test(read('app/(dashboard)/launchpad/page.tsx')))
+{
+  const D = read('app/api/cron/launch-drain/route.ts')
+  check('Liftoff and Drop send each video\'s file and length',
+    /thumb_tries,updated_at,source_url,rendered_url,clean_url,duration_seconds/.test(D)
+    && /videoFileUrl: video\.url, videoSeconds: video\.seconds/.test(D))
+}
+
 const PIN = read('lib/art-director-pin.ts')
 check('pins and blog heroes get the same check', /factCheckBriefs\(\[\{/.test(PIN) && /\.slice\(0, 1\) : \[\]/.test(PIN))
 check('and one chip with the text budget', (PIN.match(/ONE CHIP: add a single small spec pill/g) || []).length === 2 && (PIN.match(/TEXT_BUDGET,/g) || []).length === 2)

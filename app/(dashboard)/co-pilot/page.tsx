@@ -1952,6 +1952,10 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
     // never mistaken for the one MVP first wrote.
     const textNotes = Array.isArray(data.textNotes) ? (data.textNotes as unknown[]).filter((n): n is string => typeof n === 'string') : []
     if (textNotes.length) toast(`MVP kept the text to what your video and the listing say. ${textNotes[0]}${textNotes.length > 1 ? ` And ${textNotes.length - 1} more change${textNotes.length > 2 ? 's' : ''} like it.` : ''}`, { duration: 9000 })
+    // TEXT STILL WRONG after the one re-render: said, because a misspelt
+    // thumbnail looks finished and nothing else on screen would tell.
+    const stillWrong = Array.isArray(data.textStillWrong) ? (data.textStillWrong as unknown[]).filter((n): n is string => typeof n === 'string') : []
+    if (stillWrong.length) toast.warning(`Check the text before you use ${stillWrong.length === 1 ? 'this thumbnail' : 'these thumbnails'}: ${stillWrong[0]}.`, { duration: 12000 })
     setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
     setThumbnailDebug((data.faceDebug as string | null) ?? null)
     // Server may return one or many. Backwards-compat: single thumbnailUrl

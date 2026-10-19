@@ -89,7 +89,7 @@ const read = (p: string) => readFileSync(p, 'utf8')
     /thumbnail_text: text,[\s\S]{0,200}thumbnail_url: null/.test(ITEM))
   const DRAIN = read('app/api/cron/launch-drain/route.ts')
   check('the background builder sends each video\'s own words',
-    /styledThumbnail\(it\.user_id, title, asin, preset, ownText\)/.test(DRAIN) && /customHeadline: ownText/.test(DRAIN))
+    /styledThumbnail\(it\.user_id, title, asin, preset, ownText[,)]/.test(DRAIN) && /customHeadline: ownText/.test(DRAIN))
   check('and a fallback thumbnail says it does not carry them',
     /It does not have your text/.test(DRAIN))
   check('the migration is safe to run twice',

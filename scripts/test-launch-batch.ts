@@ -2115,7 +2115,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /select\('thumbnail_face'\)\.eq\('id', it\.id\)/.test(DRAIN)
     && /const own = frErr \? null : parseFacePick\(fr\?\.thumbnail_face\)/.test(DRAIN)
     && /if \(own\) preset = \{ \.\.\.batchPreset, face: own \}/.test(DRAIN)
-    && inOrder(DRAIN, 'if (own) preset = { ...batchPreset, face: own }', 'await styledThumbnail(it.user_id, title, asin, preset, ownText)'),
+    && inOrder(DRAIN, 'if (own) preset = { ...batchPreset, face: own }', 'await styledThumbnail(it.user_id, title, asin, preset, ownText'),
     'a face chosen and never used is the plan, not the result')
   check('an unknown face follows the batch rather than guessing',
     /export function parseFacePick/.test(PRESET) && /return id \? \{ kind: 'face', faceId: id \} : null/.test(PRESET),

@@ -39,6 +39,10 @@ import {
 } from '@/lib/body-framing'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { factsText, factCheckBriefs, unsupportedClaims, SAFE_HEADLINE } from '@/lib/thumb-facts'
+import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { cuesToText } from '@/lib/shorts-transcript'
+import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
+import { readBackPrompt, parseReadBack, readBackRetryNote, keepRetry, type ReadBack, type ReadBackWant } from '@/lib/thumb-read-back'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -150,6 +154,44 @@ function clampLine(s: string, max: number): string {
   const cut = t.slice(0, max)
   const lastSpace = cut.lastIndexOf(' ')
   return (lastSpace >= Math.floor(max / 2) ? cut.slice(0, lastSpace) : cut).trim()
+}
+
+/** How long a thumbnail waits for a transcript of the creator's own file. It
+ *  runs alongside the face and product work, so this is time that is mostly
+ *  spent anyway; past it the thumbnail goes ahead on the title and product. */
+const TRANSCRIBE_WAIT_MS = 50_000
+/** Files longer than this are not transcribed for a thumbnail: the wait above
+ *  would rarely be enough, and the run is paid either way. */
+const TRANSCRIBE_MAX_SECONDS = 1800
+
+/** The creator's uploaded video, transcribed for the facts check. Paid when it
+ *  runs, so it is booked when it runs, whether or not it finished in time. */
+async function transcribeForThumbnail(url: unknown, seconds: unknown): Promise<string> {
+  const u = typeof url === 'string' ? url.trim() : ''
+  if (!/^https:\/\//i.test(u) || !transcriptionConfigured()) return ''
+  if (Number(seconds) > TRANSCRIBE_MAX_SECONDS) return ''
+  try { assertPublicHttpUrl(u) } catch { return '' }
+  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_transcribe', model: 'fal-whisper', images: 1 })
+  const run = transcribeToCues(u).then((cues) => cuesToText(cues).slice(0, 20000)).catch(() => '')
+  const late = new Promise<string>((resolve) => setTimeout(() => resolve(''), TRANSCRIBE_WAIT_MS))
+  const text = await Promise.race([run, late])
+  if (!text) console.warn('[thumb-facts] no transcript of the video file in time; the thumbnail uses the title and product')
+  return text
+}
+
+/** A product-only re-render is tried only before this much of the request has
+ *  gone: one more render plus the read back must still fit the client's 240s. */
+const PRODUCT_RETRY_BEFORE_MS = 110_000
+
+/** A verdict on the kept render after its one re-make, worded so the screen
+ *  says a second try was made. */
+function afterRemake(r: ReadBack): ReadBack {
+  return r.ok === false ? { ...r, problems: r.problems.map((p) => `${p}, even after MVP made it a second time`) } : r
+}
+
+/** The read back's problems that survived, one line per render. */
+function stillWrong(checks: ReadBack[]): string[] {
+  return checks.filter((c) => c?.ok === false).map((c) => c.problems[0]).filter(Boolean).slice(0, 4)
 }
 
 /** The facts check's notes across the briefs that were rendered, once each. */
@@ -644,7 +686,7 @@ async function garmentMatchesProduct(opts: {
 
 
 /**
- * Did the renderer spell the headline right.
+ * Did the renderer spell EVERY word right.
  *
  * WHY THIS IS CHECKED RATHER THAN ARGUED WITH. An image model draws letters,
  * it does not type them, so a long word occasionally comes out a letter short.
@@ -653,36 +695,27 @@ async function garmentMatchesProduct(opts: {
  * correctly" in the prompt fixes that, because nothing was misunderstood: the
  * render is a sample, and some samples drop a letter.
  *
- * So it is read back. A misspelling is the single most expensive defect this
- * pipeline can ship, because it is the one thing every viewer notices and the
- * only one that makes a channel look careless, and unlike a wrong garment it
- * cannot be waved through as a matter of taste.
+ * EVERY WORD, NOT JUST THE HEADLINE (Seb, 2026-10-19). This used to judge the
+ * big headline alone, and a chip reading "Q12.2 25W" went out unread. The
+ * reader is now told everything the design was meant to carry and leaves out
+ * only the product's own printing (lib/thumb-read-back).
  *
  * NEVER BREAKS THE THING IT GUARDS. Any failure returns "unknown" rather than
  * a verdict, so a thumbnail still ships when the checker is unavailable.
  */
-async function headlineSpelledRight(opts: {
-  renderB64: string
-  expected: string
-}): Promise<{ ok: boolean | null; got: string; reason: string }> {
-  const expected = opts.expected.replace(/\s+/g, ' ').trim()
-  if (!expected) return { ok: null, got: '', reason: 'no headline to check' }
+async function textSpelledRight(opts: { renderB64: string } & ReadBackWant): Promise<ReadBack> {
+  const unknown: ReadBack = { ok: null, headlineWrong: false, extraWrong: false, strayWrong: false, problems: [] }
+  if (!opts.headline.replace(/\s+/g, ' ').trim()) return unknown
   try {
     const anthropic = createAnthropicClient()
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [{
         role: 'user',
         content: [
           { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: opts.renderB64 } },
-          { type: 'text' as const, text: `Read the LARGE headline text in this thumbnail, exactly as the letters appear.
-
-It was supposed to say: "${expected}"
-
-Reply with ONLY JSON: {"got":"<the words you can actually read, verbatim>","same":true|false}
-
-"same" is false ONLY if a word is misspelled, truncated or has letters missing or added. Ignore differences in line breaks, punctuation, capitalisation, and small badge or label text elsewhere in the image. Judge the big headline alone.` },
+          { type: 'text' as const, text: readBackPrompt(opts) },
         ],
       }],
     }))
@@ -691,14 +724,10 @@ Reply with ONLY JSON: {"got":"<the words you can actually read, verbatim>","same
       feature: 'yt_thumb_spell_check', model: 'claude-haiku-4-5-20251001',
     })
     const first = msg.content[0] as { type: string; text?: string }
-    const raw = first?.text || ''
-    const parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { got?: string; same?: boolean }
-    const got = String(parsed.got || '').replace(/\s+/g, ' ').trim()
-    if (parsed.same === false) return { ok: false, got, reason: `it reads "${got}" instead of "${expected}"` }
-    return { ok: true, got, reason: '' }
+    return parseReadBack(first?.text || '', opts)
   } catch (e) {
     console.warn('[spell-check] skipped:', e instanceof Error ? e.message : e)
-    return { ok: null, got: '', reason: 'check unavailable' }
+    return unknown
   }
 }
 
@@ -1079,6 +1108,8 @@ async function withoutStoreLogos(res: Response, userId: string | null, productTi
 
 // ── Main route ────────────────────────────────────────────────────────────────
 async function generateThumbnail(request: Request, memo: ImageMemo) {
+  // When this request began, so a re-render is only tried with time left for it.
+  const requestStarted = Date.now()
   try {
     // ── SERVICE MODE ──────────────────────────────────────────────────────
     //
@@ -1229,6 +1260,11 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       noHuman,
       videoDescription,
       youtubeVideoId,
+      // THE CREATOR'S OWN WORDS for the facts check (lib/thumb-facts): the
+      // post text, or the video file MVP already has, transcribed here.
+      sourceText,
+      videoFileUrl,
+      videoSeconds,
       textMode,
       capturedFrameDataUrl,
       capturedFrames,
@@ -1299,6 +1335,14 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  the creator + product are already in the frame, so no face upload is
        *  needed. */
       youtubeVideoId?: string | null
+      /** What the creator wrote or said for this piece, when the caller has
+       *  it: a post's text, or a transcript. */
+      sourceText?: string | null
+      /** The creator's own uploaded video file (https), transcribed when no
+       *  transcript is saved, so the thumbnail says only what the video says. */
+      videoFileUrl?: string | null
+      /** Its length, when known. Long files are not transcribed here. */
+      videoSeconds?: number | null
       /** 'graphic' is the only mode this route still builds: gpt-image renders
        *  the design with the headline typography baked in. 'baked' and 'clean'
        *  belonged to the removed engines and now return a 400; the union keeps
@@ -1513,6 +1557,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // hero YouTube render (its model, quality and thumbnail cap), only taller.
     const isShortCover = format === 'short'
     const isPortrait = isPin || isIg || isStory || isShortCover
+    // The formats whose design carries a call to action, so the read back
+    // does not count a LINK IN BIO as text that was never asked for.
+    const hasCta = isPin || ((isIg || isStory) && ctaLinkInBio !== false)
     // gpt-image-2 only renders two native sizes: portrait 2:3 (1024×1536) and
     // landscape 16:9 (1536×864). We render at the closest one, then downscale/crop
     // to the exact platform dimensions below.
@@ -1673,25 +1720,34 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       if (why) return NextResponse.json({ error: why, code: 'thumb_text' }, { status: 400 })
     }
 
-    // Ground the thumbnail copy in what the creator ACTUALLY said: pull the
-    // cached transcript and distil it to a claims sheet. Kicked off now so it
-    // overlaps the rest of the pipeline (image gen) rather than adding latency;
-    // awaited at the copy call sites. Skipped for a locked headline (no copy
-    // gen) or when there's no video. Any failure → '' → title+product only.
-    const claimsSheetPromise: Promise<string> = (!lockedHeadline && youtubeVideoId)
-      ? (async () => {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: vid } = await (supabase as any)
-              .from('youtube_videos')
-              .select('transcript')
-              .eq('user_id', user.id)
-              .eq('youtube_video_id', youtubeVideoId)
-              .maybeSingle()
-            return await distillThumbnailClaims((vid?.transcript as string | null) || '')
-          } catch { return '' }
-        })()
-      : Promise.resolve('')
+    // THE CREATOR'S OWN WORDS, from wherever this caller has them: text it
+    // sent (a post), the saved transcript of the YouTube video, or the video
+    // file itself, transcribed now. Kicked off here so it overlaps the rest of
+    // the pipeline rather than adding latency; awaited at the copy call sites.
+    // NOT SKIPPED FOR THE CREATOR'S OWN HEADLINE (Seb, 2026-10-19): the badge
+    // and chip are still MVP's, and they are checked against these words.
+    // Any failure gives '' and the copy falls back to title and product only.
+    const sourceTextPromise: Promise<string> = (async () => {
+      const typed = typeof sourceText === 'string' ? sourceText.replace(/\s+/g, ' ').trim() : ''
+      if (typed.length >= 20) return typed.slice(0, 20000)
+      if (youtubeVideoId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: vid } = await (supabase as any)
+            .from('youtube_videos')
+            .select('transcript')
+            .eq('user_id', user.id)
+            .eq('youtube_video_id', youtubeVideoId)
+            .maybeSingle()
+          const t = String((vid?.transcript as string | null) || '').trim()
+          if (t.length >= 80) return t
+        } catch { /* fall through to the file */ }
+      }
+      return transcribeForThumbnail(videoFileUrl, videoSeconds)
+    })()
+    const claimsSheetPromise: Promise<string> = sourceTextPromise
+      .then((t) => distillThumbnailClaims(t))
+      .catch(() => '')
 
     // For graphic mode: prefetch a storyboard frame to use as identity reference,
     // running in parallel with face-model loading + product resolution below.
@@ -2018,6 +2074,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       try {
         const openaiGfxP = createOpenAIService()
         const claimsSheetP = await claimsSheetPromise
+        const sourceTextP = await sourceTextPromise
         // Same art director as the face path — bespoke product-specific design.
         const gfxArtCtxP = [
           productTitle ? `Product: ${productTitle}` : '',
@@ -2037,6 +2094,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             productTitle,
             productContext: gfxArtCtxP,
             claimsSheet: claimsSheetP,
+            sourceText: sourceTextP,
             lockedHeadline: lockedHeadline || undefined,
             noHuman: true,
             headlineStyle: wantQuestion ? 'question' : 'statement',
@@ -2047,6 +2105,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         const productBytesP = productPngsP[0] ?? null
         if (!productBytesP) throw new Error('no product image for product-only graphic')
         const gfxModelP = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+        const textChecksP: ReadBack[] = []
         const gfxRawUrlsP = await Promise.all(
           gfxCopiesP.slice(0, variantCount).map(async (copy, idx) => {
             const attemptP = async (): Promise<string | null> => {
@@ -2089,8 +2148,36 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every word and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
               const refs = productPngsP.map((b, i) => ({ data: b, filename: productPngsP.length > 1 ? `product_${i + 1}.png` : 'product.png', mime: 'image/png' as const }))
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+              let b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModelP, images: 1 })
+              // EVERY WORD READ BACK, as on the face path. The re-render here
+              // was once a main cause of the 240s client timeout, so it runs
+              // only while there is time for one more render; otherwise the
+              // problem is reported and the first render kept.
+              if (b64) {
+                const wantP: ReadBackWant = { headline: [line1, line2].filter(Boolean).join(' '), extra: badgeP || (conceptP ? chipP : ''), cta: hasCta }
+                const spellP = await textSpelledRight({ renderB64: b64, ...wantP })
+                textChecksP[idx] = spellP
+                if (spellP.ok === false && Date.now() - requestStarted < PRODUCT_RETRY_BEFORE_MS) {
+                  console.warn(`[spell-check] product-only, re-rendering once: ${spellP.problems.join('; ')}`)
+                  const typedP = !!badge
+                  const dropP = (spellP.extraWrong || spellP.strayWrong) && !typedP
+                  const retryP = await openaiGfxP.generateWithReferences({ prompt: `${prompt}\n\n${readBackRetryNote(spellP, { extraTyped: typedP })}`, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+                  if (retryP) {
+                    recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModelP, images: 1 })
+                    const secondP = await textSpelledRight({ renderB64: retryP, ...wantP, extra: dropP ? '' : wantP.extra })
+                    if (keepRetry(spellP, secondP)) { b64 = retryP; textChecksP[idx] = afterRemake(secondP) }
+                    else {
+                      textChecksP[idx] = afterRemake(spellP)
+                      console.warn(`[spell-check] product-only, kept the first render: retry also wrong (${secondP.problems.join('; ')})`)
+                    }
+                  }
+                } else if (spellP.ok === false) {
+                  // SAID AS IT HAPPENED: no second try was made.
+                  textChecksP[idx] = { ...spellP, problems: spellP.problems.map((p) => `${p}, and there was no time left to make it again`) }
+                  console.warn(`[spell-check] product-only, no time for a re-render: ${spellP.problems.join('; ')}`)
+                }
+              }
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
                 forcedDecoration === 'none' ? 'none'
@@ -2126,6 +2213,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           overlayHooks: gfxCopiesP.slice(0, gfxUrlsP.length).map(c => flatCopy(c)),
           // What the facts check left out or swapped, in words (lib/thumb-facts).
           textNotes: textNotesOf(gfxCopiesP.slice(0, gfxUrlsP.length)),
+          // Text still wrong after the one re-render (or with no time for it).
+          textStillWrong: stillWrong(textChecksP),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,
@@ -2209,6 +2298,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       try {
         const openaiGfx = createOpenAIService()
         const claimsSheetGfx = await claimsSheetPromise
+        const sourceTextGfx = await sourceTextPromise
         // ART DIRECTOR: one reasoning call designs N bespoke, product-specific
         // briefs (headline + palette + callouts + banner + full visual concept)
         // — the step ChatGPT does internally that we were skipping. gpt-image
@@ -2232,6 +2322,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             productTitle,
             productContext: gfxArtCtx,
             claimsSheet: claimsSheetGfx,
+            sourceText: sourceTextGfx,
             lockedHeadline: lockedHeadline || undefined,
             headlineStyle: wantQuestion ? 'question' : 'statement',
             wornOn: wearLine ? wearable.on : null,
@@ -2544,6 +2635,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         const gfxModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
         const productLabel = productTitle || 'the product'
 
+        // What the read back said about each variant, kept so a render still
+        // wrong after its one retry is said on screen rather than shipped quietly.
+        const textChecks: ReadBack[] = []
         // One gpt-image-1 call per variant, all in parallel.
         const gfxRawUrls = await Promise.all(
           gfxCopies.slice(0, variantCount).map(async (copy, idx) => {
@@ -2778,23 +2872,35 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             let b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
 
-            // ── DID IT SPELL THE HEADLINE RIGHT? ───────────────────────────
+            // ── DID IT SPELL EVERY WORD RIGHT? ─────────────────────────────
             //
             // Reported by a creator: a thumbnail that should have read DOES
             // LIGHT REALLY DANCE THROUGH IT came out saying REALL. An image
             // model draws letters rather than typing them, so this is variance
-            // in the renderer and not a sentence to fix.
+            // in the renderer and not a sentence to fix. The badge or chip is
+            // read too (lib/thumb-read-back), and so is any text it added.
             //
             // CHECKED FIRST, before the garment, because a misspelling is the
             // one defect every viewer notices and the only one that makes a
             // channel look careless. One retry, same reasoning as below: the
             // second render is a fresh sample, not a smarter attempt.
             if (b64) {
-              const want = [line1, line2].filter(Boolean).join(' ')
-              const spell = await headlineSpelledRight({ renderB64: b64, expected: want })
+              // What is actually on this design besides the headline: the
+              // badge, or else the one chip when this look draws chips.
+              const chipOn = !sceneDirection && !!briefConcept && resolvePreset(visualPreset).badges
+              const want: ReadBackWant = {
+                headline: [line1, line2].filter(Boolean).join(' '),
+                extra: gfxBadge || (chipOn ? oneChip({ callouts: briefCallouts }) : ''),
+                cta: hasCta,
+              }
+              const spell = await textSpelledRight({ renderB64: b64, ...want })
+              textChecks[idx] = spell
               if (spell.ok === false) {
-                console.warn(`[spell-check] re-rendering once: ${spell.reason}`)
-                const retryPrompt = `${prompt}\n\nTHE PREVIOUS ATTEMPT MISSPELLED THE HEADLINE: ${spell.reason} Render every word of the headline complete and correctly spelled, letter for letter.`
+                console.warn(`[spell-check] re-rendering once: ${spell.problems.join('; ')}`)
+                // A wrong chip the creator did not type is left out, not tried again.
+                const extraTyped = !!badge
+                const dropExtra = (spell.extraWrong || spell.strayWrong) && !extraTyped
+                const retryPrompt = `${prompt}\n\n${readBackRetryNote(spell, { extraTyped })}`
                 const retry = await openaiGfx.generateWithReferences({ prompt: retryPrompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
                 if (retry) {
                   recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
@@ -2802,9 +2908,12 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   // better. A retry that misspells a DIFFERENT word is not an
                   // improvement, and swapping it in unchecked would be the
                   // plan reported as the result.
-                  const second = await headlineSpelledRight({ renderB64: retry, expected: want })
-                  if (second.ok !== false) b64 = retry
-                  else console.warn(`[spell-check] kept the first render: retry also wrong (${second.reason})`)
+                  const second = await textSpelledRight({ renderB64: retry, ...want, extra: dropExtra ? '' : want.extra })
+                  if (keepRetry(spell, second)) { b64 = retry; textChecks[idx] = afterRemake(second) }
+                  else {
+                    textChecks[idx] = afterRemake(spell)
+                    console.warn(`[spell-check] kept the first render: retry also wrong (${second.problems.join('; ')})`)
+                  }
                 }
               }
             }
@@ -2969,6 +3078,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           overlayHook: gfxHook,
           overlayHooks: gfxCopies.slice(0, gfxUrls.length).map(c => flatCopy(c)),
           textNotes: textNotesOf(gfxCopies.slice(0, gfxUrls.length)),
+          textStillWrong: stillWrong(textChecks),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,

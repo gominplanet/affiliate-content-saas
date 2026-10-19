@@ -543,6 +543,9 @@ export default function LaunchpadPage() {
         // path at a clean 1280×720 with safe margins.
         body: JSON.stringify({
           videoTitle: t, asin: asinClean || undefined, textMode: 'graphic',
+          // The video itself, so the thumbnail's words come from what is said
+          // in it rather than from the title alone (lib/thumb-facts).
+          ...(renderedUrl && /^https:\/\//i.test(renderedUrl) ? { videoFileUrl: renderedUrl } : {}),
           // Quick style / Match a look / Fine-tune — the same fields Co-Pilot sends.
           ...boost.requestFields(),
           // The creator's pick: a specific saved face, or product-only.
