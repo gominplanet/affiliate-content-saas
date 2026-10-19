@@ -12,6 +12,7 @@ import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
 import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
+import { seenCovers } from '../lib/trybe-read'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
@@ -311,7 +312,19 @@ check('no search box names the page it saw', /steps\.push\(`no search box \(\$\{
 
 // Seb, 2026-10-07: opening a conversation clears its count on TRYBE, and the
 // page does not jump.
-check('opening an unread conversation tells TRYBE it was read, then reads the count back', /if \(c\.unread > 0\) await markRead\(c, list\)/.test(INBOX) && /requestTrybeApi\('POST', path, \{ messageId: lastId \}\)/.test(INBOX) && /const fresh = await loadList\(\)/.test(INBOX) && /TRYBE still counts/.test(INBOX))
+check('opening an unread conversation tells TRYBE it was read, then reads the count back', /if \(c\.unread > 0 \|\| c\.stuckOnTrybe\) await markRead\(c, list\)/.test(INBOX) && /requestTrybeApi\('POST', path, \{ messageId: lastId \}\)/.test(INBOX) && /const fresh = await loadList\(\)/.test(INBOX) && /TRYBE still counts/.test(INBOX))
+// Seb, 2026-10-19: an announcement TRYBE kept counting unread after it was
+// opened, on MVP and on TRYBE's own phone app. Read here, it is read here.
+check('a conversation read here is not counted unread while its latest message is the one seen',
+  seenCovers(1, 1000, 1000) && seenCovers(2, 1000, 5000) && !seenCovers(1, 6000, 5000) && !seenCovers(0, 1000, 1000) && !seenCovers(1, 0, 1000) && !seenCovers(1, 1000, 0))
+check('opening a conversation remembers its latest message before TRYBE is asked',
+  /rememberSeen\(c\.id, Math\.max\(c\.at, list\.length \? list\[list\.length - 1\]\.at : 0\)\)\n\s*(\/\/.*\n\s*)*if \(c\.unread > 0 \|\| c\.stuckOnTrybe\)/.test(INBOX))
+check('every count MVP shows goes through it: the list, the page, the menu badge',
+  /const stuckOnTrybe = seenCovers\(trybeUnread, at, seenUpTo\(\)\[id\] \?\? 0\)/.test(INBOX) && /unread: stuckOnTrybe \? 0 : trybeUnread/.test(INBOX)
+    && /convos: listOf\(r\.json\)\.map\(readConversation\)/.test(INBOX))
+check('a quiet badge is never mistaken for TRYBE agreeing: the list and the thread say TRYBE still marks it unread',
+  /c\.stuckOnTrybe && <span[^>]*>Read here\. TRYBE still marks it unread\./.test(INBOX) && /now\?\.stuckOnTrybe\) setReadNote\('TRYBE still marks this unread/.test(INBOX))
+check('marking read names the conversation\'s own latest message first', /const lastId = str\(lastObj \? \(lastObj\.id \?\? lastObj\.messageId \?\? lastObj\._id\) : ''\) \|\| /.test(INBOX))
 check('the conversation scrolls inside itself, not the page', !/scrollIntoView/.test(INBOX.replace(/\/\/.*$/gm, '')) && /el\.scrollTop = el\.scrollHeight/.test(INBOX))
 check('SCOUT lets MVP mark a TRYBE conversation read', /\(messages\|read\)\$\//.test(BG))
 

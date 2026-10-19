@@ -24,6 +24,7 @@ import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
 import { replyBlanks, REPLY_STEPS, type ReplySteps } from '@/lib/trybe-outreach'
 import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { seenCovers, seenUpTo, rememberSeen } from '@/lib/trybe-read'
 
 const PURPLE = '#7C3AED'
 const RED = '#DC2626'
@@ -72,7 +73,9 @@ export function listOf(json: unknown): unknown[] {
   return []
 }
 
-export interface Conversation { id: string; name: string; last: string; at: number; unread: number; raw: Obj }
+/** `stuckOnTrybe`: TRYBE still counts it unread, but its latest message was
+ *  already read here (lib/trybe-read), so `unread` is 0 and the list says so. */
+export interface Conversation { id: string; name: string; last: string; at: number; unread: number; stuckOnTrybe: boolean; raw: Obj }
 interface Message { id: string; text: string; who: string; whoId: string; whoIds: string[]; at: number; mine: boolean | null }
 
 /** UNREAD, IN EVERY SHAPE TRYBE MAY USE (Seb, 2026-10-08: a new chat from
@@ -109,7 +112,11 @@ export function readConversation(raw: unknown): Conversation | null {
   const lastAt = lastObj ? pick(lastObj, ['createdAt', 'created_at', 'sentAt', 'sent_at', 'timestamp']) : undefined
   const atRaw = lastAt ?? raw.lastMessageAt ?? raw.last_message_at ?? pick(raw, ['lastMessageAt', 'last_message_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at'])
   const at = Date.parse(str(atRaw)) || 0
-  return { id, name, last, at, unread: unreadOf(raw, at), raw }
+  // READ HERE, STUCK ON TRYBE (Seb, 2026-10-19): an announcement TRYBE kept
+  // counting unread after it was opened, on MVP and on TRYBE's own app.
+  const trybeUnread = unreadOf(raw, at)
+  const stuckOnTrybe = seenCovers(trybeUnread, at, seenUpTo()[id] ?? 0)
+  return { id, name, last, at, unread: stuckOnTrybe ? 0 : trybeUnread, stuckOnTrybe, raw }
 }
 
 export function readMessage(raw: unknown, me: string[], myName = ''): Message | null {
@@ -318,7 +325,10 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
     openRef.current = c.id
     setOpenId(c.id); setMsgs(null); setReply(''); setSendNote(null); setReadNote(null); setSuggestNote(null); setBeforeSuggest(null); setBlanks([])
     const list = await loadMessages(c.id)
-    if (c.unread > 0) await markRead(c, list)
+    // Remembered before TRYBE is asked, so the count read back afterwards is
+    // already right here even when TRYBE keeps its own.
+    rememberSeen(c.id, Math.max(c.at, list.length ? list[list.length - 1].at : 0))
+    if (c.unread > 0 || c.stuckOnTrybe) await markRead(c, list)
   }
 
   /** READ ON TRYBE, NOT JUST HERE (Seb, 2026-10-07: "if I've read the message
@@ -328,14 +338,17 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   async function markRead(c: Conversation, list: Message[]) {
     const path = `/backend/api/channels/${encodeURIComponent(c.id)}/read`
     // TRYBE's own read request, seen 2026-10-07: { messageId } of the latest
-    // message, the one read up to.
-    const lastId = list.length ? list[list.length - 1].id : ''
+    // message, the one read up to. The conversation's own latest message
+    // first: the first page of messages may not reach it.
+    const lastObj = isObj(c.raw.lastMessage) ? c.raw.lastMessage : isObj(c.raw.last_message) ? c.raw.last_message : null
+    const lastId = str(lastObj ? (lastObj.id ?? lastObj.messageId ?? lastObj._id) : '') || (list.length ? list[list.length - 1].id : '')
     if (!lastId) { setReadNote('MVP could not mark this read: no message was read from TRYBE.'); return }
     const r = await requestTrybeApi('POST', path, { messageId: lastId })
     if (!r.ok) { setReadNote(`TRYBE did not mark this read: ${errWords(r)}`); return }
     const fresh = await loadList()
     const now = fresh?.find(x => x.id === c.id)
-    if (now && now.unread > 0) setReadNote(`TRYBE still counts ${now.unread} unread here. It may clear when you open it on TRYBE.`)
+    if (now?.stuckOnTrybe) setReadNote('TRYBE still marks this unread, even after it was opened, so MVP counts it read: you have seen its latest message. A new message will show as new.')
+    else if (now && now.unread > 0) setReadNote(`TRYBE still counts ${now.unread} unread here. It may clear when you open it on TRYBE.`)
   }
 
   async function suggestReply() {
@@ -436,6 +449,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 <span className="font-semibold text-[13px] truncate">{c.name}</span>
                 {c.unread > 0 && <span className="ml-auto text-[10px] font-bold rounded-full px-1.5 py-0.5 text-white" style={{ background: PURPLE }}>{c.unread}</span>}
               </span>
+              {c.stuckOnTrybe && <span className="block text-[11px] mt-0.5" style={soft}>Read here. TRYBE still marks it unread.</span>}
               {c.last && <span className="block text-[12px] truncate mt-0.5" style={soft}>{c.last}</span>}
               {c.at > 0 && <span className="block text-[11px] mt-0.5" style={soft}>{new Date(c.at).toLocaleString()}</span>}
             </button>
