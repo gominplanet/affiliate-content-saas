@@ -1,13 +1,13 @@
 /**
  * / — public-facing homepage (mvpaffiliate.io).
  *
- * Promoted from /landing-preview on 2026-06-04 — the dark sales page
- * is now the canonical landing surface. The previous light-themed
- * homepage was archived (git history) when this took over.
+ * Creator-Lens-style look (2026-10-19): warm cream background, a single teal
+ * accent (#008080), soft lifted cards and the Plus Jakarta Sans font, matching
+ * /features and /landing-preview. This was a visual retint only; the copy and
+ * structure are pinned by the sales-page guards and were left unchanged.
  *
- * Sits outside /preview/* so it doesn't inherit the dashboard preview's
- * sidebar/topbar layout. Uses the same CSS-variable theme system so the
- * sun/moon toggle works identically.
+ * Still CSS-variable driven (LIGHT_VARS + GRAD below): change those to re-theme
+ * most surfaces at once. Emphasis bands flip to light text via DARK_SECTION_VARS.
  *
  * Source of truth for tier copy: lib/tier.ts, READ from it below rather than
  * mirrored by hand. The hand-mirror had drifted: this page promised Studio 1,000
@@ -54,8 +54,8 @@ const DARK_SECTION_VARS: React.CSSProperties = {
   ['--text-subtle' as string]: 'rgba(255,255,255,0.55)',
   ['--text-faint' as string]: 'rgba(255,255,255,0.42)',
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 30px rgba(0,0,0,0.35)',
-  ['--accent-soft' as string]: 'rgba(124,58,237,0.18)',
-  ['--accent-text' as string]: '#C4B5FD',
+  ['--accent-soft' as string]: 'rgba(0,128,128,0.18)',
+  ['--accent-text' as string]: '#7FD4D0',
 }
 
 // ── Sales-page config (edit these; each renders only when it has a real value,
@@ -91,22 +91,22 @@ function DarkBand({ children, bg, accent }: { children: React.ReactNode; bg?: st
 }
 
 const LIGHT_VARS: React.CSSProperties = {
-  ['--bg' as string]: '#FAFAF8',
+  ['--bg' as string]: '#FBF7F2',
   ['--surface' as string]: '#FFFFFF',
   ['--surface-bright' as string]: 'rgba(0,0,0,0.05)',
   ['--border' as string]: 'rgba(0,0,0,0.10)',
-  ['--text' as string]: '#1D1D1F',
+  ['--text' as string]: '#1C1917',
   ['--text-muted' as string]: 'rgba(0,0,0,0.82)',
   ['--text-soft' as string]: 'rgba(0,0,0,0.62)',
   ['--text-subtle' as string]: 'rgba(0,0,0,0.50)',
   ['--text-faint' as string]: 'rgba(0,0,0,0.40)',
-  ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03)',
+  ['--card-shadow' as string]: '0 1px 3px rgba(28,25,23,0.04), 0 16px 38px -16px rgba(28,25,23,0.18)',
   ['--hero-opacity' as string]: '0.22',
-  ['--line-color' as string]: 'rgba(124,58,237,0.55)',
-  ['--line-glow' as string]: 'rgba(124,58,237,0.18)',
-  ['--center-bg' as string]: 'linear-gradient(135deg, #7C3AED, #C026D3)',
-  ['--accent-soft' as string]: 'rgba(124,58,237,0.12)',
-  ['--accent-text' as string]: '#7C3AED',
+  ['--line-color' as string]: 'rgba(0,128,128,0.55)',
+  ['--line-glow' as string]: 'rgba(0,128,128,0.18)',
+  ['--center-bg' as string]: 'linear-gradient(135deg, #008080, #2DD4BF)',
+  ['--accent-soft' as string]: 'rgba(0,128,128,0.12)',
+  ['--accent-text' as string]: '#0C6E6B',
 }
 
 
@@ -124,7 +124,7 @@ export default function LandingPreview() {
         backgroundColor: 'var(--bg)',
         color: 'var(--text)',
       }}
-      className="min-h-screen font-[Inter,system-ui,sans-serif]"
+      className="min-h-screen font-[family-name:var(--font-jakarta)]"
     >
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
@@ -182,7 +182,7 @@ export default function LandingPreview() {
       <FounderSection />
       <PricingSection />
       <FAQSection />
-      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
+      <DarkBand bg="linear-gradient(160deg, #0A1A1A 0%, #0E2A28 55%, #10302E 100%)">
         <FinalCTASection />
       </DarkBand>
       <Footer />
@@ -201,18 +201,18 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
       <section className="px-6 lg:px-8 pb-16 sm:pb-20 relative">
         <p className="max-w-3xl mx-auto text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           Not building a blog? The{' '}
-          <a href="/amazon-influencer" className="font-bold" style={{ color: '#EA580C' }}>Amazon storefront plan</a>{' '}
+          <a href="/amazon-influencer" className="font-bold" style={{ color: '#008080' }}>Amazon storefront plan</a>{' '}
           covers thumbnails, designs, review videos, storefront and brand deals, from ${TIERS.amazon.price}/mo.
         </p>
       </section>
     )
   }
   return (
-    <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(192,38,211,0.06))', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(45,212,191,0.06))', borderBottom: '1px solid var(--border)' }}>
       <div className="max-w-6xl mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-center gap-x-4 gap-y-1.5 flex-wrap text-center text-[13.5px]">
         <b style={{ color: 'var(--text)' }}>Not building a blog?</b>
         <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from ${TIERS.amazon.price}/mo.</span>
-        <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#EA580C' }}>
+        <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#008080' }}>
           See the Amazon plan <ArrowRight size={13} />
         </a>
       </div>
@@ -234,7 +234,7 @@ function HowItWorks() {
     <section id="how-it-works" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-8 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>The MVP Loop</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>The MVP Loop</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             Find. Create. Publish. Earn.
           </h2>
@@ -246,7 +246,7 @@ function HowItWorks() {
           {LOOP_STEPS.map((s, i) => (
             <div key={s.n} className="rounded-2xl border p-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2.5 mb-3">
-                <div className="w-8 h-8 rounded-lg grid place-items-center text-white font-extrabold text-[15px]" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{i + 1}</div>
+                <div className="w-8 h-8 rounded-lg grid place-items-center text-white font-extrabold text-[15px]" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>{i + 1}</div>
                 <h3 className="text-[18px] font-extrabold tracking-tight" style={{ color: 'var(--text)' }}>{s.n}</h3>
               </div>
               <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{s.d}</p>
@@ -276,7 +276,7 @@ function FeaturesGridCondensed() {
     <section id="features" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-24 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Everything in one place</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>Everything in one place</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             One subscription replaces your whole stack
           </h2>
@@ -287,17 +287,17 @@ function FeaturesGridCondensed() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
           {CONDENSED_FEATURES.map(f => (
             <div key={f.title} className="rounded-2xl border p-5 transition-all hover:-translate-y-0.5" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}>{f.icon}</div>
+              <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}>{f.icon}</div>
               <h3 className="text-[16.5px] font-bold mb-1.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text)' }}>
                 {f.title}
-                {f.isNew && <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>New</span>}
+                {f.isNew && <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>New</span>}
               </h3>
               <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{f.desc}</p>
             </div>
           ))}
         </div>
         <div className="text-center mt-9">
-          <a href="/features" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
+          <a href="/features" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#008080' }}>
             See every feature, by the MVP Loop <ArrowRight size={15} />
           </a>
         </div>
@@ -386,7 +386,7 @@ function RolesSection() {
     <section id="roles" className="px-6 lg:px-8 pt-4 pb-16 sm:pb-24 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Every job, covered</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>Every job, covered</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             The team you would otherwise hire
           </h2>
@@ -400,10 +400,10 @@ function RolesSection() {
             return (
               <article key={r.role} id={r.id} className="rounded-2xl border p-6 sm:p-7 flex flex-col scroll-mt-24" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{r.icon}</div>
+                  <div className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>{r.icon}</div>
                   <span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{r.role}</span>
                   {r.gate !== null && (live
-                    ? <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>New</span>
+                    ? <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>New</span>
                     : <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full border" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>Coming soon</span>)}
                 </div>
                 <h3 className="text-[21px] sm:text-[23px] font-extrabold tracking-tight leading-tight mt-4" style={{ color: 'var(--text)' }}>{r.title}</h3>
@@ -411,7 +411,7 @@ function RolesSection() {
                 <ul className="mt-4 flex flex-col gap-2.5">
                   {r.points.map((pt) => (
                     <li key={pt} className="flex gap-2.5 text-[14px] leading-snug" style={{ color: 'var(--text)' }}>
-                      <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                      <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: '#008080' }} />
                       <span>{pt}</span>
                     </li>
                   ))}
@@ -453,7 +453,7 @@ function FeatureSpotlights() {
         {SPOTLIGHTS.map((s, i) => (
           <div key={s.title} className={`grid lg:grid-cols-2 gap-8 lg:gap-12 items-center ${i % 2 ? 'lg:[&>*:first-child]:order-2' : ''}`}>
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-white px-2 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{s.eyebrow}</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-white px-2 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>{s.eyebrow}</span>
               <h3 className="text-[28px] sm:text-[36px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-4" style={{ color: 'var(--text)' }}>{s.title}</h3>
               <p className="mt-4 text-[15.5px] leading-relaxed max-w-xl" style={{ color: 'var(--text-soft)' }}>{s.desc}</p>
             </div>
@@ -474,7 +474,7 @@ function PricingSection() {
       <div
         aria-hidden
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[560px] rounded-full blur-[120px] opacity-[0.5]"
-        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.22) 0%, rgba(192,38,211,0.10) 45%, transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, rgba(0,128,128,0.22) 0%, rgba(45,212,191,0.10) 45%, transparent 70%)' }}
       />
       <div className="max-w-6xl mx-auto relative">
         {/* Prices go up for new members on January 1; the lock and countdown. */}
@@ -483,9 +483,9 @@ function PricingSection() {
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
             style={{
-              backgroundColor: 'rgba(124,58,237,0.12)',
-              color: '#9D6BFF',
-              border: '1px solid rgba(124,58,237,0.25)',
+              backgroundColor: 'rgba(0,128,128,0.12)',
+              color: '#0C6E6B',
+              border: '1px solid rgba(0,128,128,0.25)',
             }}
           >
             <Sparkles size={10} />
@@ -498,7 +498,7 @@ function PricingSection() {
             One plan.{' '}
             <span
               style={{
-                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                background: 'linear-gradient(135deg, #008080 0%, #2DD4BF 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -554,7 +554,7 @@ function PricingSection() {
 
         {/* Link to the full pricing page (bundle math + free-research breakdown). */}
         <div className="mt-6 text-center">
-          <a href="/pricing" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#9D6BFF' }}>
+          <a href="/pricing" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#0C6E6B' }}>
             See the full breakdown, plus what MVP replaces
             <ArrowRight size={15} />
           </a>
@@ -632,10 +632,10 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Rocket size={16} />,
     logo: '/png/mvp-affiliate-pro.png',
     accent: {
-      grad: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
-      solid: '#4F46E5',
-      tint: 'rgba(79,70,229,0.12)',
-      ring: 'rgba(79,70,229,0.35)',
+      grad: 'linear-gradient(135deg, #008080 0%, #008080 100%)',
+      solid: '#008080',
+      tint: 'rgba(0,128,128,0.12)',
+      ring: 'rgba(0,128,128,0.35)',
     },
     features: [
       `📝 Your blog: ${TIERS.pro.postsPerMonth} posts / month on your own WordPress, written in your real voice`,
@@ -816,7 +816,7 @@ function FounderSection() {
     <section id="founder" className="px-6 lg:px-8 pt-12 pb-8 relative">
       <div className="max-w-5xl mx-auto">
         <div className="rounded-3xl border p-6 sm:p-10 grid md:grid-cols-[minmax(0,300px)_1fr] gap-8 items-center"
-          style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.05), rgba(192,38,211,0.04))', borderColor: 'var(--border)' }}>
+          style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.05), rgba(45,212,191,0.04))', borderColor: 'var(--border)' }}>
           <NextImage
             src="/png/sebmichelle.webp"
             alt="Seb and Michelle, the founders of MVP Affiliate"
@@ -827,14 +827,14 @@ function FounderSection() {
             style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
           />
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Built by creators, not a software company</span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>Built by creators, not a software company</span>
             <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-3" style={{ color: 'var(--text)' }}>
               We built MVP to run our own business.
             </h2>
             <p className="mt-4 text-[15.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
               We&apos;re Seb and Michelle. We grew Gominplanet past <span className="font-semibold" style={{ color: 'var(--text)' }}>$3M a year</span> in affiliate revenue, and we got tired of stitching together a stack of tools that each took a cut and none of which sounded like us. So we built the tool we wished existed and ran our whole business on it. Now it runs yours, in your voice.
             </p>
-            <p className="mt-4 text-[13px] font-semibold" style={{ color: '#9D6BFF' }}>Seb and Michelle, Gominplanet</p>
+            <p className="mt-4 text-[13px] font-semibold" style={{ color: '#0C6E6B' }}>Seb and Michelle, Gominplanet</p>
           </div>
         </div>
       </div>
@@ -908,7 +908,7 @@ function OldWayNewWay() {
     <section id="old-new" className="px-6 lg:px-8 pt-16 sm:pt-20 pb-8 relative">
       <div className="max-w-5xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>The difference</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>The difference</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             Same videos. Completely different business.
           </h2>
@@ -931,8 +931,8 @@ function OldWayNewWay() {
             </ul>
           </div>
           {/* New way */}
-          <div className="rounded-2xl border p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(192,38,211,0.04))', borderColor: 'rgba(124,58,237,0.25)' }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4" style={{ color: '#7C3AED' }}>With MVP</p>
+          <div className="rounded-2xl border p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.06), rgba(45,212,191,0.04))', borderColor: 'rgba(0,128,128,0.25)' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4" style={{ color: '#008080' }}>With MVP</p>
             <ul className="flex flex-col gap-3.5">
               {ROWS.map((r, i) => (
                 <li key={i} className="flex gap-2.5 text-[14px] leading-relaxed" style={{ color: 'var(--text)' }}>
@@ -956,7 +956,7 @@ function TestimonialsSection() {
     <section id="testimonials" className="px-6 lg:px-8 pt-16 sm:pt-20 pb-8 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Loved by creators</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>Loved by creators</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             What creators say
           </h2>
@@ -1022,9 +1022,9 @@ function PassportSpotlight() {
   return (
     <section id="passport" className="px-6 lg:px-8 pt-12 pb-8 relative">
       <div className="max-w-5xl mx-auto rounded-3xl border p-6 sm:p-10"
-        style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+        style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(0,128,128,0.25)' }}>
         <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white px-2.5 py-1 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+          <span className="inline-flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white px-2.5 py-1 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>
             <Globe size={12} /> A first of its kind
           </span>
           <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-4" style={{ color: 'var(--text)' }}>
@@ -1040,8 +1040,8 @@ function PassportSpotlight() {
             <p className="text-[15px] font-semibold mt-2" style={{ color: 'var(--text)' }}>Monthly fee, then charged by the click.</p>
             <p className="text-[13px] mt-1.5" style={{ color: 'var(--text-soft)' }}>Your cost grows with your traffic. The more you scale, the more you pay.</p>
           </div>
-          <div className="rounded-2xl border p-5" style={{ borderColor: 'rgba(124,58,237,0.4)', background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(52,199,89,0.06))' }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: '#7C3AED' }}>Passport Links</p>
+          <div className="rounded-2xl border p-5" style={{ borderColor: 'rgba(0,128,128,0.4)', background: 'linear-gradient(135deg, rgba(0,128,128,0.1), rgba(52,199,89,0.06))' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: '#008080' }}>Passport Links</p>
             <p className="text-[15px] font-semibold mt-2" style={{ color: 'var(--text)' }}>Free on your plan. Unlimited links and clicks.</p>
             <p className="text-[13px] mt-1.5" style={{ color: 'var(--text-soft)' }}>No per-click fees, no overage. The more you scale, the more you keep.</p>
           </div>
@@ -1063,7 +1063,7 @@ function CommunitySection() {
     <section id="community" className="px-6 lg:px-8 pt-12 pb-8 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>You are not doing this alone</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#008080' }}>You are not doing this alone</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             Support and a community behind you
           </h2>
@@ -1072,11 +1072,11 @@ function CommunitySection() {
           {COMMUNITY.map(({ Icon, title, desc, href, cta }) => {
             const inner = (
               <>
-                <div className="w-11 h-11 rounded-xl grid place-items-center mx-auto mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}><Icon size={20} /></div>
+                <div className="w-11 h-11 rounded-xl grid place-items-center mx-auto mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}><Icon size={20} /></div>
                 <h3 className="text-[16.5px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{title}</h3>
                 <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
                 {href && cta && (
-                  <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold mt-3" style={{ color: '#7C3AED' }}>{cta} <ArrowRight size={12} /></span>
+                  <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold mt-3" style={{ color: '#008080' }}>{cta} <ArrowRight size={12} /></span>
                 )}
               </>
             )
@@ -1106,9 +1106,9 @@ function ProofSection() {
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
             style={{
-              backgroundColor: 'rgba(124,58,237,0.12)',
-              color: '#9D6BFF',
-              border: '1px solid rgba(124,58,237,0.25)',
+              backgroundColor: 'rgba(0,128,128,0.12)',
+              color: '#0C6E6B',
+              border: '1px solid rgba(0,128,128,0.25)',
             }}
           >
             <TrendingUp size={10} />
@@ -1126,7 +1126,7 @@ function ProofSection() {
           >
             Gominplanet grew this affiliate business past $3M a year in revenue, and it&apos;s a big reason brands want to work with us. We built MVP to run our own business. Now it runs yours, in your voice.
           </p>
-          <p className="mt-4 text-[13px] font-semibold" style={{ color: '#9D6BFF' }}>
+          <p className="mt-4 text-[13px] font-semibold" style={{ color: '#0C6E6B' }}>
             Seb and Michelle, Gominplanet
           </p>
         </div>
@@ -1169,7 +1169,7 @@ function StatCard({ stat }: { stat: Stat }) {
       <p
         className="text-[36px] sm:text-[42px] font-semibold tracking-tight tabular-nums leading-none"
         style={{
-          background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+          background: 'linear-gradient(135deg, #008080 0%, #2DD4BF 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           backgroundClip: 'text',
@@ -1208,7 +1208,7 @@ function FinalCTASection() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 70% 60% at 50% 30%, rgba(124,58,237,0.18), transparent 70%)',
+            'radial-gradient(ellipse 70% 60% at 50% 30%, rgba(0,128,128,0.18), transparent 70%)',
         }}
         aria-hidden
       />
@@ -1217,9 +1217,9 @@ function FinalCTASection() {
         <span
           className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-6"
           style={{
-            backgroundColor: 'rgba(124,58,237,0.15)',
-            color: '#C4B5FD',
-            border: '1px solid rgba(124,58,237,0.30)',
+            backgroundColor: 'rgba(0,128,128,0.15)',
+            color: '#7FD4D0',
+            border: '1px solid rgba(0,128,128,0.30)',
           }}
         >
           Ready when you are
@@ -1233,7 +1233,7 @@ function FinalCTASection() {
           One plan. Every platform.{' '}
           <span
             style={{
-              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+              background: 'linear-gradient(135deg, #008080 0%, #2DD4BF 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -1255,8 +1255,8 @@ function FinalCTASection() {
             href="/signup?tier=pro"
             className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
             style={{
-              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
-              boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
+              background: 'linear-gradient(135deg, #008080 0%, #2DD4BF 100%)',
+              boxShadow: '0 8px 28px rgba(0,128,128,0.40)',
             }}
           >
             {FREE_WEEK_CTA}
@@ -1360,7 +1360,7 @@ function Nav() {
         {/* Primary CTA, short enough to never crowd the wordmark on a phone. */}
         <a
           href="/signup?tier=pro"
-          className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
+          className="px-3.5 py-1.5 rounded-lg bg-[#008080] hover:bg-[#00706E] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
         >
           {/* The whole offer from sm up; on a phone the short form keeps the
               wordmark clear. */}
@@ -1402,7 +1402,7 @@ function Hero() {
           backgroundImage: 'url(/png/specialbkg.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
-          opacity: 0.5,
+          opacity: 0.12,
           maskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)',
           WebkitMaskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)',
         }}
@@ -1414,9 +1414,9 @@ function Hero() {
         style={{
           opacity: 'var(--hero-opacity)',
           background: `
-            radial-gradient(50% 70% at 25% 25%, rgba(124,58,237,0.55), transparent 60%),
-            radial-gradient(45% 65% at 80% 20%, rgba(192,38,211,0.45), transparent 65%),
-            radial-gradient(70% 50% at 60% 100%, rgba(99,102,241,0.30), transparent 70%)
+            radial-gradient(50% 70% at 25% 25%, rgba(0,128,128,0.55), transparent 60%),
+            radial-gradient(45% 65% at 80% 20%, rgba(45,212,191,0.45), transparent 65%),
+            radial-gradient(70% 50% at 60% 100%, rgba(45,212,191,0.28), transparent 70%)
           `,
         }}
       />
@@ -1433,7 +1433,7 @@ function Hero() {
               color: 'var(--text-soft)',
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#008080]" />
             For Amazon Influencers &amp; UGC creators
           </div>
 
@@ -1463,8 +1463,8 @@ function Hero() {
             style={{ color: 'var(--text)' }}
           >
             <span className="block">Film it once.</span>
-            <span className="block" style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does</span>
-            <span className="block" style={{ background: 'linear-gradient(120deg, #C026D3 0%, #7C3AED 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>everything else.</span>
+            <span className="block" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #2DD4BF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>MVP does</span>
+            <span className="block" style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #008080 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>everything else.</span>
           </h1>
           <p
             className="mt-6 text-[18px] sm:text-[20px] font-semibold tracking-tight leading-snug max-w-2xl [text-wrap:pretty]"
@@ -1488,7 +1488,7 @@ function Hero() {
             <div className="flex flex-wrap items-center gap-3">
               <a
                 href="/signup?tier=pro"
-                className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
+                className="px-5 py-3 rounded-xl bg-[#008080] hover:bg-[#00706E] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(0,128,128,0.3)]"
               >
                 {FREE_WEEK_CTA}
                 <ArrowRight size={14} />
@@ -1529,19 +1529,19 @@ function Hero() {
               href="#trybe"
               className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
               style={{
-                background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(192,38,211,0.14))',
+                background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
                 border: '1px solid rgba(249,115,22,0.3)',
                 color: 'var(--text)',
               }}
             >
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)', color: '#fff' }}>
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
                 <Handshake size={14} />
               </span>
               <span>
                 <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
                 <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
               </span>
-              <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#F97316' }} />
+              <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
             </a>
           </div>
         </div>
@@ -1648,7 +1648,7 @@ function ComparisonSection() {
           </span>
           <h2 className="text-[36px] sm:text-[52px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ color: 'var(--text)' }}>
             One tool. Every feature.<br />
-            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+            <span style={{ background: 'linear-gradient(120deg, #2DD4BF 0%, #2DD4BF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Your data stays yours.
             </span>
           </h2>
@@ -1681,7 +1681,7 @@ function ComparisonSection() {
                 {r.label}
               </div>
               <div className="w-[92px] sm:w-[120px] px-2 py-4 flex items-center justify-center" style={{ background: r.highlight ? 'transparent' : 'var(--accent-soft)' }}>
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}>
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #008080, #2DD4BF)' }}>
                   <Check size={15} strokeWidth={3} />
                 </span>
               </div>
@@ -1730,7 +1730,7 @@ function PlatformBar() {
         </p>
         <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
           Every post auto-publishes natively to{' '}
-          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>.
+          <span className="font-bold" style={{ color: '#008080' }}>{PLATFORMS.length} channels</span>.
           {' '}No copy-paste, no separate scheduler.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2.5">
@@ -1795,7 +1795,7 @@ function Footer() {
             <div className="flex items-center gap-2 mb-2">
               <span
                 className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
-                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+                style={{ background: 'linear-gradient(135deg, #008080, #2DD4BF)' }}
               >
                 <Sparkles size={14} className="text-white" />
               </span>
@@ -1810,7 +1810,7 @@ function Footer() {
           <a
             href="/signup?tier=pro"
             className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
-            style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+            style={{ background: 'linear-gradient(135deg, #008080, #2DD4BF)' }}
           >
             {FREE_WEEK_CTA_SHORT} →
           </a>
